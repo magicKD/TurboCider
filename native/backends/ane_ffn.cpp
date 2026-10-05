@@ -116,6 +116,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
         require(calibration != nullptr, "automatic ANE channels require a model-supplied calibration workload");
         const auto selection = calibrate_channels(manifest, hidden, width, budget, cancelled, require_lora_inputs, *calibration);
         calibrated_channels = selection.channels;
+        metrics_.runtime_weight_calibration = selection.report;
         calibration_reason_ = selection.reason + (selection.cache_hit ? "; cache hit" : "; measured/not cached");
         calibration_declined_ = selection.channels == 0;
     }

@@ -41,15 +41,12 @@ struct Bank {
 void numerical_trial(const Tensor &candidate, const Tensor &reference, ChannelTrialEvidence &trial) {
     require(candidate.shape() == reference.shape(), "calibration trial output shape mismatch");
     auto a = mx::astype(candidate,mx::float32), b = mx::astype(reference,mx::float32);
-    auto finite = mx::all(mx::isfinite(a));
+    auto finite = mx::all(mx::isfinite(a)) & mx::all(mx::isfinite(b));
     auto delta = mx::sum(mx::square(a-b)), aa = mx::sum(mx::square(a));
     auto bb = mx::sum(mx::square(b)), dot = mx::sum(a*b);
     mx::eval({finite,delta,aa,bb,dot});
-    require(finite.item<bool>(), "calibration candidate produced nonfinite values");
-    const double norm = bb.item<float>(), own = aa.item<float>();
-    require(norm > 0 && own > 0, "calibration trial requires finite nonzero reference and output");
-    trial.relative_l2 = std::max(trial.relative_l2,std::sqrt(double(delta.item<float>())/norm));
-    trial.cosine = std::min(trial.cosine,double(dot.item<float>())/std::sqrt(own*norm));
+    require(trial.observe_quality(delta.item<float>(),bb.item<float>(),aa.item<float>(),dot.item<float>(),finite.item<bool>()),
+        "calibration trial rejects nonfinite values/statistics or zero reference/output energy");
 }
 #endif
 } // namespace
@@ -70,30 +67,40 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         workload.layers >= 5 && workload.rows > 0 && workload.rows <= 4224 && workload.weights && workload.gpu &&
         workload.channel_gpu && (workload.dtype == mx::bfloat16 || workload.dtype == mx::float16),
         "invalid model-supplied channel calibration workload/geometry");
+    auto report = std::make_shared<ChannelCalibrationReport>();
+    report->actual_rows=workload.rows;report->hidden=h;report->width=width;
+    report->bucket_rows=shape.rows;report->layer_count=workload.layers;
+    auto select=[&](int channels,bool passed,const std::string &status,const std::string &reason) {
+        report->selected_channels=channels;report->trial_passed=passed;
+        report->status=status;report->reason=reason;
+        return ChannelSelection{channels,false,passed,reason,std::make_shared<const ChannelCalibrationReport>(*report)};
+    };
     // Never reuse a base cost model for adapter corrections or multiple row
     // chunks. Existing explicit channel/LoRA routes remain unchanged.
     if (lora || !workload.adapter_identity.empty())
-        return {0,false,false,"adapter-aware automatic calibration is not yet admitted; optimized GPU-only"};
+        return select(0,false,"unsupported","adapter-aware automatic calibration is not yet admitted; optimized GPU-only");
     if (workload.rows > shape.rows)
-        return {0,false,false,"automatic calibration requires a bucket covering the complete FFN rows; optimized GPU-only"};
+        return select(0,false,"unsupported","automatic calibration requires a bucket covering the complete FFN rows; optimized GPU-only");
     shape.lora_inputs = false;
     const bool prefetch = calibration_prefetch();
     ChannelCalibrationIdentity identity{workload.model_sha256, workload.adapter_identity, workload.encoding,
         workload.dtype == mx::bfloat16 ? "bf16" : "fp16", "private_ane", "sylvester-dh-b128-b512-rne-norm-f16-v2-base",
         device_info().gpu, os_build(), runtime_build_identity(), executor_configuration_identity()+workload.gpu_configuration,
-        "prepared-channel-base-v1-b"+std::to_string(shape.rows), workload.source_generation,
+        "prepared-channel-base-v1-b"+std::to_string(shape.rows)+"-l"+std::to_string(workload.layers), workload.source_generation,
         workload.rows, h, width, shape.tile_k, shape.tile_n, prefetch};
     require(identity.valid() && !workload.source_owners.empty() &&
         std::none_of(workload.source_owners.begin(),workload.source_owners.end(),[](const auto &p){return p.expired();}),
         "native channel calibration requires content/runtime/geometry identities and live source generations");
+    report->identity=identity;
 #ifndef TURBOCIDER_ENABLE_PRIVATE_ANE
-    return {0,false,false,"Private backend omitted from this build; optimized GPU-only"};
+    return select(0,false,"unsupported","Private backend omitted from this build; optimized GPU-only");
 #else
     static ChannelSelectionCache cache;
     if (auto saved = cache.find(identity)) return *saved; // constructor rechecks actual graph admission
     try {
         const std::array<int,5> depth{0,(workload.layers-1)/4,(workload.layers-1)/2,
             3*(workload.layers-1)/4,workload.layers-1};
+        report->sampled_depths.assign(depth.begin(),depth.end());
         std::array<std::vector<FfnWeight>,5> sources;
         std::array<std::array<DeviceWeightView,3>,5> views;
         for (size_t layer=0;layer<depth.size();++layer) {
@@ -119,6 +126,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             for(int layer=0;layer<count;++layer)full.push_back(workload.gpu(depth[layer],input));
             mx::async_eval(full);
         },[&]{mx::eval(full);checkpoint(cancelled);});
+        report->baseline=baseline;
         full.clear();mx::synchronize();
         const std::array<int,2> shares{int(std::round(.4*(width/512)))*512,int(std::round(.8*(width/512)))*512};
         std::array<CalibrationPoint,2> points;
@@ -201,19 +209,22 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                         mx::astype(slice_axis(tails[layer],1,0,workload.rows),mx::float32),workload.dtype));mx::async_eval(joined.back());
                 },[&]{mx::eval(joined);checkpoint(cancelled);});
             points[sampled]=series.point;
+            report->points.push_back(std::move(series));
         }
+        report->complete=true;
         const auto fit=ChannelCostModel::fit(points[0],points[1]);
-        if(!fit)return {0,false,false,"independent complete-traffic evidence rejected by bandwidth fit"};
+        if(!fit)return select(0,false,"rejected","independent complete-traffic evidence rejected by bandwidth fit");
         auto proposal=fit->select(width,512,baseline.layer_seconds,[&](int fa) {
             const auto plan=plan_gpu_calibration_memory(shape.rows,h,fa,false,{},getpagesize());
             const uint64_t head=uint64_t(workload.rows)*(8ull*h+6ull*(width-fa))*2+(128ull<<20);
             return plan && admit_memory(observe_runtime_memory(mx::get_active_memory()),{4ull<<30,budget},0,plan->estimated_bytes+head).allowed();
         });
-        if(!proposal.ane_channels)return {0,false,false,proposal.reason};
+        report->proposed_channels=proposal.ane_channels;report->predicted_layer_seconds=proposal.predicted_seconds;
+        if(!proposal.ane_channels)return select(0,false,"gpu_only",proposal.reason);
         // Fresh actual inference executor, not the independent measurement
         // adapter. It must stage/launch/restore/join through run_channels().
         HybridFfn candidate(manifest,h,width,budget,cancelled,false,nullptr,proposal.ane_channels);
-        if(!candidate.available())return {0,false,false,"proposed graph failed actual admission/self-test"};
+        if(!candidate.available())return select(0,false,"rejected","proposed graph failed actual admission/self-test");
         candidate.scheduler_=std::make_unique<RowScheduler>(shape.rows,1,PartitionAxis::IntermediateChannels);
         candidate.fixed_async_=true;candidate.profile_=false;candidate.defer_channel_join_=false;
         candidate.begin_request();
@@ -225,7 +236,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                 [&](const Tensor &v,int first,int count){return workload.channel_gpu(depth[index],v,first,count);},
                 [&](int next){return next<5?sources[next]:std::vector<FfnWeight>{};});
         };
-        ChannelTrialEvidence trial;trial.relative_l2=0;trial.cosine=1;
+        auto &trial=report->trial.emplace();trial.relative_l2=0;trial.cosine=1;
         for(int layer=0;layer<4;++layer) {
             auto reference=workload.gpu(depth[layer],input),actual=run_candidate(layer);
             numerical_trial(actual,reference,trial);
@@ -251,12 +262,12 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         trial.fallbacks=after.runtime_weight_fallback_blocks;
         trial.retries=after.runtime_weight_overflow_retries;
         trial.completed=!after.runtime_failed && trial.calls==9*4;
-        if(!trial.accepts())return {0,false,false,"actual complete-runtime window or independent FFN numerical trial rejected candidate"};
-        ChannelSelection selected{proposal.ane_channels,false,true,"accepted complete-runtime FFN candidate; E2E qualification still required"};
+        if(!trial.accepts())return select(0,false,"rejected","actual complete-runtime window or independent FFN numerical trial rejected candidate");
+        auto selected=select(proposal.ane_channels,true,"accepted","accepted complete-runtime FFN candidate; E2E qualification still required");
         cache.admit(identity,selected,trial,workload.source_owners);
         return selected;
     } catch(const Cancelled &) { throw; }
-      catch(const std::exception &error) { return {0,false,false,std::string("calibration rejected; optimized GPU-only: ")+error.what()}; }
+      catch(const std::exception &error) { return select(0,false,"rejected",std::string("calibration rejected; optimized GPU-only: ")+error.what()); }
 #endif
 }
 } // namespace tc::ane

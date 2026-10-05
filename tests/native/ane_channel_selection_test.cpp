@@ -16,6 +16,17 @@ int main() {
     try {
         const auto identity=key();const auto trial=evidence();
         check(identity.valid() && trial.accepts(),"valid identity/trial rejected");
+        for(int bad_stat=0;bad_stat<7;++bad_stat) {
+            auto quality=trial;
+            const double delta=bad_stat==0?NAN:bad_stat==1?INFINITY:bad_stat==2?-1.:.0001;
+            const double norm=bad_stat==3?INFINITY:bad_stat==4?0.:1.;
+            const double own=bad_stat==5?INFINITY:1.;
+            check(!quality.observe_quality(delta,norm,own,1.,bad_stat!=6) && !quality.accepts(),
+                "nonfinite statistics/reference or zero energy masked by min/max");
+        }
+        auto finite_quality=trial;
+        check(finite_quality.observe_quality(.0001,1.,1.,.9999,true) && finite_quality.accepts(),
+            "valid finite quality observation rejected");
         auto owner=std::make_shared<int>(1);
         const std::vector<std::weak_ptr<void>> sources{owner};
         ChannelSelectionCache cache;
@@ -23,6 +34,11 @@ int main() {
         cache.admit(identity,{4096,false,true,"accepted"},trial,sources);
         auto found=cache.find(identity);
         check(found && found->channels==4096 && found->cache_hit && found->trial_passed,"accepted candidate not cached");
+        auto report=std::make_shared<ChannelCalibrationReport>();report->status="accepted";
+        cache.admit(identity,{4096,false,true,"accepted",report},trial,sources);
+        auto reported=cache.find(identity);
+        check(reported && reported->report && reported->report->cache_hit && !report->cache_hit &&
+            reported->report.get()!=report.get(),"cache hit mutated or lost original immutable evidence");
         for(int field=0;field<19;++field) {
             auto changed=identity;
             switch(field) {

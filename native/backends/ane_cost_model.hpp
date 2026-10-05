@@ -1,4 +1,5 @@
 #pragma once
+#include "../core/ane_calibration_report.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,9 +17,6 @@ namespace tc::ane {
 // CPU-only shared policy, independent of Core ML/Private/MLX. Times are
 // measured complete GPU-side work / independent ANE / both host spans, NOT
 // exposed finish waits. Units are seconds throughout.
-struct CalibrationPoint {
-    double share = 0, gpu = 0, ane = 0, both = 0;
-};
 inline double calibration_layer_seconds(double one, double four) {
     if (!std::isfinite(one) || !std::isfinite(four) || one <= 0 || four <= one)
         throw std::invalid_argument("calibration requires positive ordered one/four layer spans");

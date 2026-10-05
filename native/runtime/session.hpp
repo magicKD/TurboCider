@@ -1,5 +1,6 @@
 #pragma once
 #include "common.hpp"
+#include "../core/ane_calibration_report.hpp"
 #include "memory_accounting.hpp"
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
@@ -35,6 +36,7 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    std::shared_ptr<const ane::ChannelCalibrationReport> runtime_weight_calibration;
     std::string runtime_weight_backend, runtime_weight_backend_fallback_reason;
     std::string runtime_weight_io_path;
     std::string runtime_weight_data_path;

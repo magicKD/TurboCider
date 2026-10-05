@@ -925,6 +925,52 @@ NSDictionary *to_dictionary(const LoadResult &r) {
         @"mlx_active_bytes" : @(r.active_bytes)
     };
 }
+static id calibration_number(double value) {
+    return std::isfinite(value) ? (id)@(value) : (id)NSNull.null;
+}
+static NSArray *calibration_values(const std::vector<double> &values) {
+    NSMutableArray *result=[NSMutableArray arrayWithCapacity:values.size()];
+    for(double value:values)[result addObject:calibration_number(value)];
+    return result;
+}
+static NSDictionary *calibration_dictionary(const ane::ChannelCalibrationReport &r) {
+    id identity=NSNull.null,baseline=NSNull.null,trial=NSNull.null;
+    if(r.identity) {
+        const auto &k=*r.identity;
+        identity=@{@"model_sha256":@(k.model_sha256.c_str()),@"adapter":@(k.adapter.c_str()),
+            @"encoding":@(k.encoding.c_str()),@"precision":@(k.precision.c_str()),@"backend":@(k.backend.c_str()),
+            @"recipe":@(k.recipe.c_str()),@"soc":@(k.soc.c_str()),@"os_build":@(k.os_build.c_str()),
+            @"runtime_build":@(k.runtime_build.c_str()),@"metal_abi":@(k.metal_abi.c_str()),@"graph_abi":@(k.graph_abi.c_str()),
+            @"source_generation":@(k.source_generation.c_str()),@"rows":@(k.rows),@"hidden":@(k.hidden),
+            @"width":@(k.width),@"tile_k":@(k.tile_k),@"tile_n":@(k.tile_n),@"prefetch":@(k.prefetch)};
+    }
+    if(r.baseline)baseline=@{@"layer_seconds":calibration_number(r.baseline->layer_seconds),
+        @"raw_seconds":@[calibration_values(r.baseline->seconds[0]),calibration_values(r.baseline->seconds[1])]};
+    NSMutableArray *points=[NSMutableArray arrayWithCapacity:r.points.size()];
+    for(const auto &sample:r.points) {
+        NSMutableArray *raw=[NSMutableArray arrayWithCapacity:3];
+        for(const auto &part:sample.seconds)[raw addObject:@[calibration_values(part[0]),calibration_values(part[1])]];
+        [points addObject:@{@"share":calibration_number(sample.point.share),@"gpu":calibration_number(sample.point.gpu),
+            @"ane":calibration_number(sample.point.ane),@"both":calibration_number(sample.point.both),
+            @"prefetch":@(sample.prefetch),@"ane_calls":@(sample.ane_calls),@"raw_seconds":raw}];
+    }
+    if(r.trial) {
+        const auto &t=*r.trial;
+        trial=@{@"gpu_seconds":calibration_values(t.gpu_seconds),@"candidate_seconds":calibration_values(t.candidate_seconds),
+            @"calls":@(t.calls),@"fallbacks":@(t.fallbacks),@"retries":@(t.retries),
+            @"relative_l2":calibration_number(t.relative_l2),@"cosine":calibration_number(t.cosine),
+            @"completed":@(t.completed),@"accepted":@(t.accepts())};
+    }
+    NSMutableArray *depth=[NSMutableArray arrayWithCapacity:r.sampled_depths.size()];
+    for(int value:r.sampled_depths)[depth addObject:@(value)];
+    return @{@"schema_version":@(r.schema_version),@"enabled":@(r.enabled),@"cache_hit":@(r.cache_hit),
+        @"trial_passed":@(r.trial_passed),@"complete":@(r.complete),@"selected_channels":@(r.selected_channels),
+        @"proposed_channels":@(r.proposed_channels),@"bucket_rows":@(r.bucket_rows),@"actual_rows":@(r.actual_rows),
+        @"hidden":@(r.hidden),@"width":@(r.width),@"layer_count":@(r.layer_count),@"warmups":@(r.warmups),
+        @"repeats":@(r.repeats),@"status":@(r.status.c_str()),@"reason":@(r.reason.c_str()),@"scope":@(r.scope.c_str()),
+        @"input_recipe":@(r.input_recipe.c_str()),@"sampled_depths":depth,@"identity":identity,
+        @"baseline":baseline,@"points":points,@"trial":trial,@"predicted_layer_seconds":calibration_number(r.predicted_layer_seconds)};
+}
 NSDictionary *to_dictionary(const HybridMetrics &m) {
     // Runtime provenance/counters belong to the graph contract, not a
     // particular precision label. W8A8 and FP16 share the same receipt.
@@ -932,6 +978,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
                                 m.mlp_output_kind == "runtime_weight_swiglu_lora_inputs";
     return @{
         @"runtime_weight" : runtime_weight ? @{
+            @"channel_calibration" : m.runtime_weight_calibration ? (id)calibration_dictionary(*m.runtime_weight_calibration) : (id)NSNull.null,
             @"executor_backend" : m.runtime_weight_backend.empty() ? [NSNull null] : @(m.runtime_weight_backend.c_str()),
             @"backend_fallback_reason" : @(m.runtime_weight_backend_fallback_reason.c_str()),
             @"io_path" : @(m.runtime_weight_io_path.c_str()),

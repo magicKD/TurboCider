@@ -8,11 +8,6 @@
 
 namespace tc::ane {
 
-struct GpuCalibrationSamples {
-    std::array<std::vector<double>, 2> seconds; // one/four complete optimized GPU FFNs
-    double layer_seconds = 0;
-};
-
 inline bool calibration_sampling_valid(int warmups, int repeats) noexcept {
     return warmups >= 1 && warmups <= 8 && repeats >= 3 && repeats <= 31 && repeats % 2;
 }

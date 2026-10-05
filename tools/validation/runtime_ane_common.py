@@ -6,10 +6,12 @@ module independent of runner entry points and optional MLX/Core ML packages.
 import argparse
 import hashlib
 import json
+import json
 import math
 import os
 import subprocess
 import time
+from runtime_ane_calibration import validate_channel_calibration
 
 
 def sha256_file(path):
@@ -61,7 +63,7 @@ def chunk_policy(value):
 
 
 def validate_results(rows, route, expected_count, model_id="z-image-turbo", expect_lora=False,
-                     runtime_backend="public", expect_device_io=False, expected_data_path=None):
+                     runtime_backend="public", expect_device_io=False, expected_data_path=None, channel_auto=False):
     """Do not report a failed/degraded route as a successful acceleration run.
 
     Raw JSONL/PNG evidence is already saved by the caller. Adaptive GPU probes
@@ -84,6 +86,10 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     allowed_backends = {backend}
     if route == "runtime" and runtime_backend != "public":
         allowed_backends = {private_backend} if runtime_backend == "private" else {backend, private_backend}
+    if channel_auto:
+        if route != "runtime" or runtime_backend == "public":
+            raise ValueError("native automatic channels require an authorized runtime route")
+        allowed_backends.add(base_backend)
     session_backend = None
     previous_calls = 0
     previous_qkv_gpu = 0
@@ -103,6 +109,8 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     previous_deferred_join = 0
     deferred_join_policy = None
     lora_channel_receipt_seen = False
+    calibration_signature = None
+    previous_declined_gpu = 0
     for row in rows:
         actual_backend = row.get("runtime_backend")
         if actual_backend not in allowed_backends:
@@ -159,6 +167,30 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
             previous_calls, previous_qkv_gpu = calls, gpu
             continue
         hybrid = row.get("hybrid") or {}
+        if channel_auto:
+            runtime = hybrid.get("runtime_weight") or {}
+            report = runtime.get("channel_calibration")
+            full_width, hidden = (12288,4096) if model_id == "qwen-image-2.1" else (10240,3840)
+            selected = validate_channel_calibration(report, full_width, hidden)
+            signature = json.dumps({k:v for k,v in report.items() if k != "cache_hit"}, sort_keys=True, allow_nan=False)
+            if calibration_signature is not None and signature != calibration_signature:
+                raise ValueError("native automatic calibration evidence changed within resident session")
+            calibration_signature = signature
+            if selected == 0:
+                gpu_blocks = session_counter(runtime,"gpu_blocks_session_total")
+                if (actual_backend != base_backend or hybrid.get("runtime_failed") is not False or
+                        session_counter(hybrid,"runtime_failures_session_total") or
+                        session_counter(hybrid,"runtime_calls_session_total") or
+                        session_counter(runtime,"fallback_blocks_session_total") or
+                        session_counter(runtime,"overflow_retries_session_total") or
+                        session_counter(runtime,"device_io_calls_session_total") or
+                        gpu_blocks <= previous_declined_gpu or runtime.get("executor_backend") not in (None, "")):
+                    raise ValueError("declined native calibration was not a clean whole-GPU route")
+                previous_declined_gpu = gpu_blocks
+                continue
+            if (actual_backend != private_backend or runtime.get("partition_axis") != "intermediate_channels" or
+                    runtime.get("ane_channels") != selected or runtime.get("gpu_channels") != full_width-selected):
+                raise ValueError("native automatic calibration and adopted runtime geometry disagree")
         if expect_lora and hybrid.get("mlp_output_kind") != (
                 "runtime_weight_swiglu_lora_inputs" if route == "runtime" else "fused_lora"):
             raise ValueError("LoRA benchmark requires a complete activation-correction graph")

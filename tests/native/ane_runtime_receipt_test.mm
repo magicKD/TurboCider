@@ -3,6 +3,22 @@
 
 int main() {
     @autoreleasepool {
+        {
+            tc::HybridMetrics metrics;metrics.mlp_output_kind="runtime_weight_swiglu";
+            auto report=std::make_shared<tc::ane::ChannelCalibrationReport>();
+            report->baseline=tc::ane::GpuCalibrationSamples{{std::vector<double>{.01,.02,.03},std::vector<double>{.04,.05,.06}},.01};
+            report->points.push_back({});report->points.back().seconds[0][0]={.013,.017};
+            report->trial.emplace(); // unknown numeric quality must be JSON null, never NaN/Inf or a passing zero
+            metrics.runtime_weight_calibration=report;
+            NSDictionary *encoded=tc::to_dictionary(metrics);
+            NSDictionary *data=encoded[@"runtime_weight"][@"channel_calibration"];
+            if([data[@"baseline"][@"raw_seconds"][0] count]!=3 ||
+                [data[@"points"][0][@"raw_seconds"][0][0] count]!=2 ||
+                data[@"trial"][@"relative_l2"]!=NSNull.null || data[@"trial"][@"cosine"]!=NSNull.null ||
+                [data[@"trial"][@"accepted"] boolValue])return 1;
+            NSError *error=nil;
+            if(![NSJSONSerialization dataWithJSONObject:encoded options:0 error:&error] || error)return 1;
+        }
         for (const auto &variant : {"runtime_fp16", "runtime_w8a8", "future_representation"}) {
             for (const auto &kind : {"runtime_weight_swiglu", "runtime_weight_swiglu_lora_inputs"}) {
                 tc::HybridMetrics metrics;

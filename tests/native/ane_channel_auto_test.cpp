@@ -64,6 +64,10 @@ int main(int argc,char **argv) {
         check(supplied==5 && full>0 && heads>0,"native constructor bypassed the model-supplied sampling callbacks");
         check(automatic.usable_configuration() && !automatic.metrics().runtime_failed,"native auto returned a failed configuration");
         check(automatic.selection_label().find("native channel auto")!=std::string::npos,"native calibration decision missing from actual selection");
+        const auto report=automatic.metrics().runtime_weight_calibration;
+        check(report && report->baseline && report->points.size()==2 && report->complete &&
+            report->baseline->seconds[0].size()==7 && report->points[0].seconds[0][0].size()==7 &&
+            report->points[1].ane_calls==90,"native automatic selection discarded raw calibration evidence");
         if(automatic.available()) {
             check(automatic.channel_split() && automatic.ane_channels()>0 && automatic.ane_channels()%512==0 &&
                 automatic.ane_channels()<f,"automatic accepted graph has invalid selected geometry");

@@ -24,6 +24,7 @@ from runtime_ane_common import (
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
+from runtime_ane_calibration import channel_policy
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -99,8 +100,8 @@ def main():
     p.add_argument("--private-gpu-io", action="store_true", help="explicit private IOSurface GPU transfer experiment; verifies actual I/O receipt")
     p.add_argument("--private-data-path", choices=("fp16", "w8a8"), default="fp16",
                    help="private runtime representation; W8A8 requires private backend and GPU I/O")
-    p.add_argument("--private-channels", type=int, default=0,
-                   help="0: row split; positive 512-aligned ANE intermediate channels with W8A8; all tokens use that split")
+    p.add_argument("--private-channels", type=channel_policy, default=0,
+                   help="0: rows; positive aligned width: fixed channels; auto: native calibrated candidate with raw evidence")
     p.add_argument("--private-prefetch", choices=("0","1"), default="0",
                    help="private W8 future-bank staging ablation; source-matched activation/reuse fences remain checked")
     p.add_argument("--private-scale-cache",choices=("0","1"),default="1",
@@ -178,9 +179,11 @@ def main():
     if args.private_data_path == "w8a8" and (args.runtime_backend != "private" or not args.private_gpu_io):
         p.error("W8A8 requires --runtime-backend private --private-gpu-io")
     full_width = 12288 if args.model_id == "qwen-image-2.1" else 10240
-    if args.private_channels < 0 or (args.private_channels and
+    native_auto = args.private_channels == "auto"
+    if (native_auto and (args.runtime_backend != "private" or args.private_data_path != "w8a8" or
+                        args.chunks not in ("auto","1"))) or (not native_auto and (args.private_channels < 0 or (args.private_channels and
             (args.private_channels % 512 or args.private_channels >= full_width or args.private_data_path != "w8a8" or
-             args.chunks not in ("auto","0","1"))):
+             args.chunks not in ("auto","0","1"))))):
         p.error("private channels require W8A8, a positive 512 multiple below FFN width and chunks=auto,0,1")
     if args.private_lora_channel_range is not None and (args.runtime_backend!="private" or
             not args.private_channels or not args.lora or args.chunks=="0"):
@@ -347,14 +350,17 @@ def main():
         load_receipt = observed_load.verify() if observed_load else None
         rows = [json.loads(line) for line in (args.output / f"{trial}-{route}.stdout.jsonl").read_text().splitlines()]
         validate_results(rows, route, len(requests), args.model_id, bool(args.lora), args.runtime_backend, args.private_gpu_io,
-                         "w8a8_hadamard" if args.private_data_path == "w8a8" else None)
+                         "w8a8_hadamard" if args.private_data_path == "w8a8" else None,
+                         channel_auto=native_auto and route=="runtime")
+        active_runtime_rows = [row for row in rows if not native_auto or
+            ((row.get("hybrid") or {}).get("runtime_weight") or {}).get("executor_backend")=="private_ane"]
         if route=="runtime" and args.private_lora_channel_range is not None:
             validate_lora_channel_range(rows,args.private_lora_channel_range=="1")
-        if route=="runtime" and args.fixed_async is not None:
-            validate_fixed_async(rows,args.fixed_async=="1")
-        if route=="runtime" and args.defer_channel_join is not None:
-            validate_deferred_channel_join(rows,args.defer_channel_join=="1")
-        if route == "runtime" and args.private_channels:
+        if route=="runtime" and args.fixed_async is not None and active_runtime_rows:
+            validate_fixed_async(active_runtime_rows,args.fixed_async=="1")
+        if route=="runtime" and args.defer_channel_join is not None and active_runtime_rows:
+            validate_deferred_channel_join(active_runtime_rows,args.defer_channel_join=="1")
+        if route == "runtime" and args.private_channels and not native_auto:
             for row in rows:
                 receipt = row["hybrid"]["runtime_weight"]
                 if (receipt.get("partition_axis") != "intermediate_channels" or
@@ -362,7 +368,7 @@ def main():
                         receipt.get("gpu_channels") != full_width-args.private_channels):
                     raise ValueError("requested physical channel partition was not reported")
         if route == "runtime" and args.private_data_path=="w8a8":
-            for row in rows:
+            for row in active_runtime_rows:
                 receipt=row["hybrid"]["runtime_weight"]
                 if receipt.get("prefetch_enabled") is not (args.private_prefetch=="1"):
                     raise ValueError("requested W8 future-bank prefetch policy was not reported")
@@ -398,6 +404,9 @@ def main():
             cumulative = [row["hybrid"]["runtime_calls_session_total"] for row in rows]
             record["runtime_calls_per_request"] = [current - prior for current, prior in
                                                    zip(cumulative, [0, *cumulative[:-1]])]
+            if native_auto:
+                record["native_channel_calibration"] = rows[-1]["hybrid"]["runtime_weight"]["channel_calibration"]
+                record["native_channel_auto_declined"] = record["native_channel_calibration"]["selected_channels"] == 0
         if sampled_memory is not None:
             record["sampled_memory"] = sampled_memory
         if load_receipt is not None:

@@ -85,13 +85,7 @@ class W8GpuCalibrationWork {
     std::unique_ptr<Impl> impl_;
 };
 
-struct ChannelCalibrationSamples {
-    // [GPU, ANE, Both][one, four], every raw hot sample retained.
-    std::array<std::array<std::vector<double>,2>,3> seconds;
-    CalibrationPoint point;
-    bool prefetch = false;
-    uint64_t ane_calls = 0;
-};
+using tc::ane::ChannelCalibrationSamples;
 // Preserve the earlier qualified API while sharing its CPU-only timing
 // implementation with Public calibration consumers.
 using tc::ane::GpuCalibrationSamples;
