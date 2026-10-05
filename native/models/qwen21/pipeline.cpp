@@ -612,6 +612,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // do not label base-only requests as using a LoRA approximation.
     if (lora_fp16 && !r.loras.empty())
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
+    if (lora_1024_generation(r))
+        result.selection += "; experimental 1024px six-step runtime LoRA generation, FP32 rank; quality unqualified";
     if (norm_rope && std::string_view(norm_rope) == "1")
         result.selection += "; experimental fused Metal Q/K norm-RoPE";
     result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
@@ -696,6 +698,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             RuntimeFunction gpu_qkv;
             std::vector<RuntimeFunction> runtime_lora_gpu, runtime_lora_gate_up, runtime_lora_down_add;
             std::vector<RuntimeFunction> runtime_lora_gate_up_channels;
+            std::vector<RuntimeFunction> runtime_lora_channel_gpu;
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
@@ -731,6 +734,17 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                 auto gate=transformer_.lora_delta_slice(a[0],p+"gate_up",first,first+count,0,4096);
                                 auto up=transformer_.lora_delta_slice(a[0],p+"gate_up",12288+first,12288+first+count,0,4096);
                                 return std::vector<Tensor>{mx::contiguous(gate),mx::contiguous(up)};
+                            }));
+                            // Same checkpoint-only down and per-projection
+                            // FP32 rank/BF16 rounding as the existing callback.
+                            // Request-local captures cannot outlive/reuse a
+                            // differently rebound adapter or channel share.
+                            runtime_lora_channel_gpu.push_back(mx::compile([this,p,first](const std::vector<Tensor> &a) {
+                                auto gate=transformer_.project_slice(a[0],p+"gate_up",0,first,0,4096,false);
+                                auto up=transformer_.project_slice(a[0],p+"gate_up",12288,12288+first,0,4096,false);
+                                auto hidden=silu(gate)*up;
+                                auto base=transformer_.project_base_slice(hidden,p+"out",0,4096,0,first,false);
+                                return std::vector<Tensor>{base,hidden};
                             }));
                         }
                         runtime_lora_down_add.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
@@ -780,6 +794,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                               transformer_.at(p + "out.weight")})[0];
                     }, cancelled, transformer_.has_runtime_loras() ? &adapter : nullptr,
                     [&](const Tensor &x,int first,int count) {
+                        if (transformer_.has_runtime_loras()) {
+                            require(first==0 && count==runtime_ffn_->gpu_channels(),
+                                    "Qwen GPU channel LoRA range changed within request");
+                            auto result=runtime_lora_channel_gpu.at(block)({x});
+                            return std::make_pair(result[0],result[1]);
+                        }
                         auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
                         auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false);
                         auto hidden=silu(g)*u;

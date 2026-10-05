@@ -46,6 +46,42 @@ def plan(r):
     return status,json.loads(a) if a else None,b
 
 class ContractTests(unittest.TestCase):
+    def test_qwen21_1024_lora_is_explicit_generation_only_with_fp32_rank(self):
+        flag='TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC'
+        adapter=dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors',
+                     strength=1,role='transformer')
+        request=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',
+                     width=1024,height=1024,steps=6,audio=False,frames=1,
+                     execution='gpu',allow_approximation=True,residency='resident',
+                     loras=[adapter],lora_strategy='inference_time')
+        runtime={**request,'execution':'gpu_ane','hybrid_mlp_mode':'runtime',
+                 'ane_manifest':'v2-checked-at-execution.json'}
+        for value in ('0','2','true',''):
+            with patch.dict(os.environ,{flag:value}):
+                self.assertNotEqual(plan(request)[0],0)
+                self.assertNotEqual(plan(runtime)[0],0)
+        with patch.dict(os.environ,{flag:'1','TURBOCIDER_QWEN21_VIGGLE_LORA_FP16':'0'}):
+            for valid in (request,runtime):
+                code,result,error=plan(valid)
+                self.assertEqual(code,0,error)
+                self.assertIn('qwen21_lora_1024_generation_fp32_diagnostic',
+                              result['algorithm_approximations'])
+            for invalid in (dict(width=512,height=512),dict(steps=5),
+                            dict(allow_approximation=False),dict(residency='component_staged'),
+                            dict(operation='image.edit',inputs=[dict(kind='image',role='reference',path='ref.png')]),
+                            dict(prompt_enhance=True),dict(qwen21_w8a8=True)):
+                self.assertNotEqual(plan({**runtime,**invalid})[0],0)
+            base={**request,'loras':[],'lora_strategy':'auto','steps':40}
+            code,result,error=plan(base)
+            self.assertEqual(code,0,error)
+            self.assertNotIn('qwen21_lora_1024_generation_fp32_diagnostic',
+                             result['algorithm_approximations'])
+        for other in ('TURBOCIDER_QWEN21_VIGGLE_LORA_FP16',
+                      'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE'):
+            with patch.dict(os.environ,{flag:'1',other:'1'}):
+                self.assertNotEqual(plan(request)[0],0)
+                self.assertNotEqual(plan(runtime)[0],0)
+
     def test_qwen21_runtime_qkv_is_base_only_and_distinct_from_ffn(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
                     width=1024, height=1024, steps=5, audio=False, frames=1,

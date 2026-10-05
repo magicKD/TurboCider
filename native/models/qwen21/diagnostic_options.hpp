@@ -35,6 +35,19 @@ inline bool fused_lora_ane(const Request &request) {
     return request.hybrid_mlp_mode == "lora_fused";
 }
 
+// Explicit six-step 1024px generation experiment. Keep this predicate shared
+// by validation, plan labels and execution receipts; no edit/frozen/cache tier.
+inline bool lora_1024_generation(const Request &request) {
+    return option_enabled(std::getenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC")) &&
+        request.model == "qwen-image-2.1" && request.width == 1024 && request.height == 1024 &&
+        request.steps == 6 && request.operation == "image.generate" && request.inputs.empty() &&
+        request.loras.size() == 1 && request.allow_approximation && request.residency == "resident" &&
+        !request.prompt_enhance && !request.qwen21_w8a8 && !request.qwen21_gpu_w8a16 &&
+        request.qwen21_gpu_full_ffn_blocks.empty() &&
+        (request.execution == "gpu" || (request.execution == "gpu_ane" &&
+                                       request.hybrid_mlp_mode == "runtime"));
+}
+
 // Return a negative sentinel for malformed values so planning and execution
 // reject the same threshold rather than silently falling back to a default.
 inline float db_cache_threshold(const char *value) {

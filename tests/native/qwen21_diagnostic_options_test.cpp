@@ -31,6 +31,35 @@ int main() {
     assert(db_cache_max_consecutive("9") < 0);
     assert(db_cache_max_consecutive("4oops") < 0);
 
+    tc::Request lora;
+    lora.model="qwen-image-2.1";
+    lora.width=lora.height=1024;lora.steps=6;lora.allow_approximation=true;
+    lora.loras.push_back({"adapter.safetensors",1.f,"transformer"});
+    unsetenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC");
+    assert(!lora_1024_generation(lora));
+    setenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC","1",1);
+    assert(lora_1024_generation(lora));
+    lora.execution="gpu_ane";lora.hybrid_mlp_mode="runtime";
+    assert(lora_1024_generation(lora));
+    for(int mode=0;mode<11;++mode) {
+        auto invalid=lora;
+        if(mode==0)invalid.width=512;
+        if(mode==1)invalid.steps=5;
+        if(mode==2)invalid.allow_approximation=false;
+        if(mode==3)invalid.operation="image.edit";
+        if(mode==4)invalid.inputs.resize(1);
+        if(mode==5)invalid.loras.clear();
+        if(mode==6)invalid.residency="component_staged";
+        if(mode==7)invalid.qwen21_w8a8=true;
+        if(mode==8)invalid.hybrid_mlp_mode="lora_fused";
+        if(mode==9)invalid.prompt_enhance=true;
+        if(mode==10)invalid.qwen21_gpu_full_ffn_blocks={3,5,7};
+        assert(!lora_1024_generation(invalid));
+    }
+    setenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC","0",1);
+    assert(!lora_1024_generation(lora));
+    unsetenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC");
+
     W8A8CallBudget budget{
         .steps = 20, .decode_layers = 32, .db_skipped_layers = 24,
         .total_tokens = 4096, .tile_rows = 1024,

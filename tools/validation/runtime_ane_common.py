@@ -365,6 +365,39 @@ def validate_qwen_qk_receipts(rows, enabled):
             raise ValueError("Q/K norm-RoPE selection does not match the requested experiment")
 
 
+def qwen_lora_1024_environment(model_id, size, steps, enabled, *, has_lora,
+                               references=False, fp16=False, routes=("gpu", "runtime")):
+    """One opt-in on EVERY route; retain original rank precision and workload."""
+    if not enabled:
+        return {}
+    if (model_id != "qwen-image-2.1" or size != 1024 or steps != 6 or
+            not has_lora or references or fp16 or
+            not routes or any(route not in ("gpu", "runtime") for route in routes)):
+        raise ValueError("1024 LoRA diagnostic requires Qwen 1024px six-step GPU/runtime generation with an adapter and FP32 rank")
+    return {"TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC": "1"}
+
+
+def validate_qwen_lora_1024_receipts(rows, enabled):
+    """An env/self-test is not an actual model route or precision receipt."""
+    if not rows:
+        raise ValueError("missing 1024 LoRA receipts")
+    marker = "experimental 1024px six-step runtime LoRA generation, FP32 rank"
+    label = "qwen21_lora_1024_generation_fp32_diagnostic"
+    for row in rows:
+        selection = row.get("acceleration_selection", "")
+        plan = row.get("plan") or {}
+        labels = plan.get("algorithm_approximations", []) if isinstance(plan, dict) else None
+        if (not isinstance(selection, str) or not isinstance(labels, list) or
+                (marker in selection) != enabled or (label in labels) != enabled):
+            raise ValueError("1024 LoRA selection/plan does not match the requested diagnostic")
+        if enabled and (any(type(row.get(key)) is not int or row.get(key) != expected
+                               for key,expected in (("width",1024),("height",1024),("actual_denoise_steps",6))) or
+                        row.get("lora_strategy") != "inference_time" or
+                        "experimental FP16 low-rank LoRA matmuls" in selection or
+                        "qwen21_viggle_lora_fp16_matmuls" in labels):
+            raise ValueError("1024 LoRA workload or FP32 rank receipt is inconsistent")
+
+
 def validate_fixed_async(rows, enabled):
     """Require actual successful model-block receipts for this ablation.
 

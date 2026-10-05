@@ -349,6 +349,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         [algorithm_approximations addObject:@"qwen21_w8a8_full_reference_diagnostic"];
     if (r.model == "qwen-image-2.1" && !r.loras.empty())
         [algorithm_approximations addObject:@"qwen21_viggle_v021_r256_6step_distillation"];
+    if (qwen21::lora_1024_generation(r))
+        [algorithm_approximations addObject:@"qwen21_lora_1024_generation_fp32_diagnostic"];
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
         if (fp16_lora && std::string_view(fp16_lora) == "1")

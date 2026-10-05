@@ -19,6 +19,7 @@ from runtime_ane_common import (
     benchmark_environment, check_load, chunk_policy, session_counter, sha256_file,
     system_memory, validate_edit_results, validate_results, wait_for_idle,
     qwen_qk_environment, validate_qwen_qk_receipts, validate_lora_channel_range, validate_fixed_async,
+    qwen_lora_1024_environment, validate_qwen_lora_1024_receipts,
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
@@ -139,6 +140,8 @@ def main():
     p.add_argument("--lora-strength", type=float, default=1.0)
     p.add_argument("--qwen-lora-fp16", action="store_true",
                    help="explicit approximate FP16 LoRA rank matmuls on EVERY route; Qwen 512px/6-step LoRA only")
+    p.add_argument("--qwen-lora-1024", action="store_true",
+                   help="explicit 1024px six-step LoRA generation on EVERY GPU/runtime route; original FP32 rank only")
     p.add_argument("--qwen-qk-norm-rope", action="store_true",
                    help="explicit fused GPU Q/K norm-RoPE on EVERY route; Qwen 512px or 1024px base generation")
     p.add_argument("--reference", type=Path, action="append", default=[],
@@ -158,6 +161,13 @@ def main():
     routes = args.routes.split(",")
     if not routes or any(route not in ("gpu", "runtime", "qkv", "frozen") for route in routes):
         p.error("routes must be comma-separated gpu,runtime,qkv,frozen")
+    try:
+        lora_1024_environment = qwen_lora_1024_environment(
+            args.model_id, args.size, args.steps, args.qwen_lora_1024,
+            has_lora=args.lora is not None, references=bool(args.reference),
+            fp16=args.qwen_lora_fp16, routes=routes)
+    except ValueError as error:
+        p.error(str(error))
     if args.runtime_backend != "public" and "runtime" not in routes:
         p.error("runtime backend selection requires runtime route")
     if args.private_gpu_io and (args.runtime_backend == "public" or "runtime" not in routes):
@@ -240,6 +250,9 @@ def main():
             summary["lora"]["rank_matmul_dtype"] = "fp16" if args.qwen_lora_fp16 else "fp32"
     env = benchmark_environment()
     env.update(qk_environment)
+    env.update(lora_1024_environment)
+    if args.qwen_lora_1024:
+        summary["qwen_lora_1024_diagnostic"] = True
     if args.qwen_qk_norm_rope:
         summary["qwen_qk_norm_rope"] = True
     if args.qwen_lora_fp16:
@@ -354,6 +367,7 @@ def main():
             validate_qwen_qk_receipts(rows, args.qwen_qk_norm_rope)
         if args.model_id == "qwen-image-2.1" and args.lora:
             validate_qwen_lora_precision(rows, args.qwen_lora_fp16)
+            validate_qwen_lora_1024_receipts(rows, args.qwen_lora_1024)
         reference_tokens = validate_edit_results(rows, edit)
         if edit:
             if summary.get("reference_tokens", reference_tokens) != reference_tokens:

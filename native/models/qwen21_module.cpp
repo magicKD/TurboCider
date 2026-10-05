@@ -45,6 +45,14 @@ ModelModule qwen21_module() {
             const char *lora_ref512_flag = std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC");
             const bool runtime_ane = r.hybrid_mlp_mode == "runtime";
             const bool runtime_qkv = r.hybrid_mlp_mode == "runtime_qkv";
+            const char *lora_1024_flag = std::getenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC");
+            require(qwen21::binary_option_or_unset(lora_1024_flag),
+                    "TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC accepts only 0 or 1");
+            const bool lora_1024 = qwen21::lora_1024_generation(r);
+            // Base requests ignore the valid flag so a resident batch can
+            // return to base without inheriting an adapter approximation.
+            require(!qwen21::option_enabled(lora_1024_flag) || r.loras.empty() || lora_1024,
+                    "Qwen21 1024 LoRA diagnostic requires resident six-step GPU/runtime generation, no references, frozen W8A8 or prompt enhancement");
             require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
                         r.hybrid_mlp_mode == "lora_suffix" || r.hybrid_mlp_mode == "lora_gate_up" ||
                         r.hybrid_mlp_mode == "lora_fused" || runtime_ane || runtime_qkv,
@@ -206,12 +214,12 @@ ModelModule qwen21_module() {
                             r.steps == 6 && (r.execution == "gpu" ||
                                              (r.execution == "gpu_ane" && (lora_base_ane || runtime_ane))) &&
                             r.allow_approximation &&
-                            r.width == 512 && r.height == 512 &&
+                            ((r.width == 512 && r.height == 512) || lora_1024) &&
                             (r.qwen21_reference_size == 1024 ||
                              (r.qwen21_reference_size == 512 &&
                               qwen21::option_enabled(lora_ref512_flag))) &&
                             (r.operation != "image.edit" || r.inputs.size() <= 3),
-                        "Qwen21 requires one six-step runtime transformer LoRA with explicit 512px approximation; lora_fused/runtime permit an unqualified adapter/strength with the Viggle schedule");
+                        "Qwen21 requires one six-step runtime transformer LoRA with explicit 512px approximation or the opt-in 1024px generation diagnostic; lora_fused/runtime permit an unqualified adapter/strength with the Viggle schedule");
             }
             const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
             const char *fused_qkv = std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC");
@@ -358,6 +366,8 @@ ModelModule qwen21_module() {
             const char *lora_fp16 = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
             require(qwen21::binary_option_or_unset(lora_fp16),
                     "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16 accepts only 0 or 1");
+            require(!lora_1024 || !qwen21::option_enabled(lora_fp16),
+                    "Qwen21 1024 LoRA diagnostic retains original FP32 rank matmuls; FP16 is not qualified");
             // With no adapter attached this flag has no effect, allowing a
             // resident session to switch back to the base GPU model.
             require(r.qwen21_gpu_full_ffn_blocks.empty() ||

@@ -21,6 +21,51 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_qwen_lora_1024_environment_is_matched_and_limited(self):
+        options=dict(model_id="qwen-image-2.1",size=1024,steps=6,enabled=True,
+                     has_lora=True,references=False,fp16=False,routes=("gpu","runtime"))
+        self.assertEqual(COMMON.qwen_lora_1024_environment(**options),
+                         {"TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC":"1"})
+        self.assertEqual(COMMON.qwen_lora_1024_environment(**{**options,"enabled":False}),{})
+        for changes in ({"model_id":"z-image-turbo"},{"size":512},{"steps":40},
+                        {"has_lora":False},{"references":True},{"fp16":True},
+                        {"routes":("gpu","frozen")},{"routes":()}):
+            with self.subTest(changes=changes),self.assertRaises(ValueError):
+                COMMON.qwen_lora_1024_environment(**{**options,**changes})
+
+    def test_qwen_lora_1024_requires_actual_plan_and_fp32_execution(self):
+        row=dict(width=1024,height=1024,actual_denoise_steps=6,lora_strategy="inference_time",
+                 acceleration_selection="experimental 1024px six-step runtime LoRA generation, FP32 rank",
+                 plan={"algorithm_approximations":["qwen21_lora_1024_generation_fp32_diagnostic"]})
+        COMMON.validate_qwen_lora_1024_receipts([row],True)
+        COMMON.validate_qwen_lora_1024_receipts([{}],False)
+        for change in ({"width":512},{"width":1024.0},{"actual_denoise_steps":True},
+                       {"actual_denoise_steps":40},{"lora_strategy":"in_memory_merge"},
+                       {"plan":{}},{"acceleration_selection":"configured only"},
+                       {"plan":{"algorithm_approximations":["qwen21_lora_1024_generation_fp32_diagnostic",
+                                                             "qwen21_viggle_lora_fp16_matmuls"]}},
+                       {"acceleration_selection":row["acceleration_selection"]+
+                        "; experimental FP16 low-rank LoRA matmuls"}):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                COMMON.validate_qwen_lora_1024_receipts([{**row,**change}],True)
+        with self.assertRaises(ValueError):
+            COMMON.validate_qwen_lora_1024_receipts([row],False)
+        with self.assertRaises(ValueError):
+            COMMON.validate_qwen_lora_1024_receipts([],True)
+
+    def test_qwen_lora_1024_invalid_options_do_not_create_output(self):
+        for extras in ([],["--lora","missing.safetensors","--qwen-lora-fp16"],
+                       ["--lora","missing.safetensors","--reference","missing.png"],
+                       ["--lora","missing.safetensors","--routes","gpu,frozen"]):
+            with tempfile.TemporaryDirectory() as directory:
+                output=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,"-B",str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id","qwen-image-2.1","--size","1024",
+                    "--steps","6","--routes","gpu","--output",str(output),"--qwen-lora-1024",*extras],
+                    capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertFalse(output.exists())
+
     def test_fixed_async_requires_actual_successful_untimed_heads(self):
         row=copy.deepcopy(self.row);runtime=row["hybrid"]["runtime_weight"]
         runtime.update(hybrid_blocks_session_total=8,untimed_hybrid_blocks_session_total=8,async_hybrid_blocks_session_total=8)
