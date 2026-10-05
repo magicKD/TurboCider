@@ -108,9 +108,18 @@ int configured_chunks() {
 } // namespace
 
 HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
-                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs)
+                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
+                     const CalibrationWorkload *calibration, std::optional<int> calibrated_channels)
     : memory_budget_(budget) {
     checkpoint(cancelled);
+    if (private_channel_count(width) < 0 && !calibrated_channels) {
+        require(calibration != nullptr, "automatic ANE channels require a model-supplied calibration workload");
+        const auto selection = calibrate_channels(manifest, hidden, width, budget, cancelled, require_lora_inputs, *calibration);
+        calibrated_channels = selection.channels;
+        calibration_reason_ = selection.reason + (selection.cache_hit ? "; cache hit" : "; measured/not cached");
+        calibration_declined_ = selection.channels == 0;
+    }
+    const int selected_channels = resolved_private_channel_count(width, calibrated_channels);
     const int chunks = configured_chunks();
     const char *lora_range = std::getenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE");
     require(!lora_range || std::string(lora_range)=="0" || std::string(lora_range)=="1",
@@ -134,7 +143,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     require(!f32 || std::string(f32)=="0" || std::string(f32)=="1","runtime ANE F32 channel join requires 0 or 1");
     const bool requested_fp32=f32 && std::string(f32)=="1";
     require(!requested_fp32 || !require_lora_inputs,"experimental F32 channel join is base-only; LoRA hidden ABI unchanged");
-    require(!requested_defer || (fixed_async_ && private_channel_count(width)>0 &&
+    require(!requested_defer || (fixed_async_ && (selected_channels>0 || calibration_declined_) &&
             configured_backend().allow_private &&
             (configured_backend().preferred==BackendPreference::Private ||
              configured_backend().preferred==BackendPreference::Auto)),
@@ -151,11 +160,12 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     double verified_seconds = 0;
     try {
         auto built = build_runtime_executor(manifest, budget,
-            GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend());
+            GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels);
         graph_ = std::move(built.executor); verified = built.self_test_passed;
         verified_seconds = built.self_test_seconds;
         metrics_.runtime_weight_backend_fallback_reason = std::move(built.fallback_reason);
-        if (!graph_) { failed_ = true; reason_ = metrics_.runtime_weight_backend_fallback_reason; return; }
+        if (!graph_) { failed_ = !calibration_declined_; reason_ = calibration_declined_ ? calibration_reason_ :
+            metrics_.runtime_weight_backend_fallback_reason; return; }
     }
     catch (const MemoryBudgetError &error) { degrade(error.what(), -1); return; }
     catch (const CapabilityError &error) { degrade(error.what(), -1); return; }
@@ -203,6 +213,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     metrics_.runtime_weight_prefetch_enabled = prefetch_;
     checkpoint(cancelled);
 }
+DeviceWeightView HybridFfn::calibration_source(const FfnWeight &weight) { return device_weight_view(weight); }
 HybridFfn::~HybridFfn() { drain(); }
 std::string HybridFfn::executor_configuration_identity() {
     std::string identity;

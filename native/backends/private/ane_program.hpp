@@ -24,6 +24,9 @@ class PreparedRequest;
 class Transfer;
 class QuantStage;
 inline constexpr size_t scale_cache_budget_bytes = 4u << 20;
+// Shared model-independent cache root for inference and native calibration.
+// Program still validates absolute paths, permissions and source digests.
+std::filesystem::path default_cache_directory();
 
 class Surface {
   public:

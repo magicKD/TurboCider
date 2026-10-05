@@ -57,6 +57,13 @@
 @end
 
 namespace tc::ane::private_api {
+std::filesystem::path default_cache_directory() {
+    @autoreleasepool {
+        NSString *directory = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+        if (!directory) throw CapabilityError("private ANE cache unavailable");
+        return std::filesystem::path(directory.UTF8String) / "TurboCider/ane/private";
+    }
+}
 namespace {
 constexpr unsigned qos = QOS_CLASS_DEFAULT;
 std::atomic<bool> process_healthy{true};

@@ -34,6 +34,9 @@ class RuntimeHostTests(unittest.TestCase):
     def test_shared_gpu_calibration_order_samples_and_exception_drain(self):
         self.run_host_test("ane_calibration_timing_test")
 
+    def test_native_channel_identity_trial_gate_and_weak_source_cache(self):
+        self.run_host_test("ane_channel_selection_test")
+
     def test_qkv_complete_block_controller_and_periodic_reprobe(self):
         self.run_host_test("ane_qkv_scheduler_test")
 

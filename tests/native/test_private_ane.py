@@ -213,6 +213,24 @@ class PrivateAneHardwareTests(unittest.TestCase):
 @unittest.skipUnless(sys.platform == "darwin" and os.environ.get("TURBOCIDER_TEST_PRIVATE_CHANNEL_MLX") == "1",
                      "set TURBOCIDER_TEST_PRIVATE_CHANNEL_MLX=1 and select a private-enabled native library")
 class PrivateAneChannelMlxTests(unittest.TestCase):
+    def test_native_automatic_channel_constructor_and_safe_declines(self):
+        spec = importlib.util.spec_from_file_location("native_channel_auto_export", ROOT / "tools/coreml/export_runtime_ane.py")
+        export = importlib.util.module_from_spec(spec); spec.loader.exec_module(export)
+        library = (ROOT / os.environ.get("TURBOCIDER_NATIVE_LIBRARY_DIR", "build/native")).resolve()
+        with tempfile.TemporaryDirectory(prefix="tc-native-channel-auto-") as directory:
+            root = Path(directory).resolve()
+            graph, build = root / "template", root / "build"
+            export.export(graph, export.geometry("swiglu", 33, 128, 2560, 128, 128, lora_inputs=True))
+            subprocess.run(["bash", "tools/native/build_ane_channel_auto_test.sh"], cwd=ROOT, check=True,
+                env={**os.environ,"TURBOCIDER_NATIVE_OUT":str(build),"TURBOCIDER_NATIVE_LIBRARY_DIR":str(library)},
+                capture_output=True,text=True,timeout=120)
+            result = subprocess.run([str(build / "ane-channel-auto-test"),str(graph / "manifest.json")],
+                cwd=ROOT,capture_output=True,text=True,timeout=120)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn("PASS native automatic channel constructor",result.stdout)
+            self.assertIn("no model/E2E performance qualification",result.stdout)
+            print(result.stdout.strip())
+
     def test_all_rows_physical_range_joint_lora_and_late_failure(self):
         spec = importlib.util.spec_from_file_location("private_channel_export", ROOT / "tools/coreml/export_runtime_ane.py")
         export = importlib.util.module_from_spec(spec); spec.loader.exec_module(export)

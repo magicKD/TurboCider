@@ -19,6 +19,17 @@ int main() {
     }
     unsetenv("TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES");
     if (private_channel_count(10240) != 0) return 1;
+    setenv("TURBOCIDER_PRIVATE_ANE_CHANNELS","auto",1);
+    if(private_channel_count(10240)!=-1 || resolved_private_channel_count(10240,4096)!=4096 ||
+        resolved_private_channel_count(10240,0)!=0)return 1;
+    try {resolved_private_channel_count(10240);return 1;}catch(const std::runtime_error&) {}
+    for(int bad:{-1,513,10240}) {
+        try {resolved_private_channel_count(10240,bad);return 1;}catch(const std::runtime_error&) {}
+    }
+    setenv("TURBOCIDER_PRIVATE_ANE_CHANNELS","4096",1);
+    if(resolved_private_channel_count(10240)!=4096)return 1;
+    try {resolved_private_channel_count(10240,5120);return 1;}catch(const std::runtime_error&) {}
+    unsetenv("TURBOCIDER_PRIVATE_ANE_CHANNELS");
     for (const auto &value : {"0","512","3072"}) { setenv("TURBOCIDER_PRIVATE_ANE_CHANNELS",value,1); private_channel_count(10240); }
     for (const auto &value : {"","-512","513","10240","9999999999999"," 512"}) {
         setenv("TURBOCIDER_PRIVATE_ANE_CHANNELS",value,1);

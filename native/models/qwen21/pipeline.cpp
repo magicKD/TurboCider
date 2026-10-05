@@ -7,6 +7,7 @@
 #include "pe_generation.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../backends/ane_backend.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
 #include <bit>
@@ -392,14 +393,55 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto") +
             ane::HybridFfn::executor_configuration_identity();
-        if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
-            (!r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
+        const bool native_channel_auto = ane::private_channel_count(12288) < 0;
+        const std::string request_identity = identity + (native_channel_auto ?
+            ":rows="+std::to_string((r.height/16)*(r.width/16))+":prefix="+std::to_string(text.shape(1))+
+            ":adapter="+active_lora_identity_ : "");
+        if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
+            (runtime_ffn_->available() && !r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
                                                      mx::get_active_memory());
+            std::optional<ane::HybridFfn::CalibrationWorkload> calibration;
+            if(native_channel_auto) {
+                emit(event,"calibrate_native_ane_channels",0,1);
+                calibration.emplace();
+                calibration->model_sha256=sha256_file(root_/"diffusion_models/qwen_image_2.1_bf16.safetensors");
+                calibration->adapter_identity=r.loras.empty()?std::string{}:active_lora_identity_;
+                calibration->encoding="dense-bf16-fused-gate-up";
+                calibration->rows=(r.height/16)*(r.width/16);
+                for(int ordinal:{0,7,15,23,31})for(const auto *suffix:{"gate_up.weight","out.weight"}) {
+                    const auto &value=transformer_.at("transformer_blocks."+std::to_string(ordinal)+".img_mlp."+suffix);
+                    calibration->source_generation += ":"+std::to_string(value.id());
+                    calibration->source_owners.push_back(value.data_shared_ptr());
+                }
+                calibration->source_generation += ":prefix="+std::to_string(text.shape(1));
+                calibration->weights=[&](int ordinal) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    auto gu=mx::split(transformer_.at(prefix+"gate_up.weight"),2,0);mx::eval(gu);
+                    return std::vector<ane::FfnWeight>{{gu[0],std::nullopt,std::nullopt},{gu[1],std::nullopt,std::nullopt},
+                        {transformer_.at(prefix+"out.weight"),std::nullopt,std::nullopt}};
+                };
+                calibration->gpu=[&](int ordinal,const Tensor &input) {
+                    static auto compiled=mx::compile([](const std::vector<Tensor>&a) {
+                        auto gu=mx::split(mx::matmul(a[0],mx::transpose(a[1])),2,-1);
+                        return std::vector<Tensor>{mx::matmul(silu(gu[0])*gu[1],mx::transpose(a[2]))};
+                    });
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    return compiled({input,transformer_.at(prefix+"gate_up.weight"),transformer_.at(prefix+"out.weight")})[0];
+                };
+                calibration->channel_gpu=[&](int ordinal,const Tensor &input,int first,int count) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    auto gate=transformer_.project_slice(input,prefix+"gate_up",first,first+count,0,4096,false);
+                    auto up=transformer_.project_slice(input,prefix+"gate_up",12288+first,12288+first+count,0,4096,false);
+                    auto hidden=silu(gate)*up;
+                    return std::make_pair(transformer_.project_base_slice(hidden,prefix+"out",0,4096,first,first+count,false),hidden);
+                };
+            }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
-                                                         !r.loras.empty());
-            runtime_manifest_ = identity;
+                                                         !r.loras.empty(),calibration?&*calibration:nullptr);
+            runtime_manifest_ = request_identity;
+            if(native_channel_auto)emit(event,"calibrate_native_ane_channels",1,1);
         }
         runtime_ffn_->begin_request(active_lora_identity_);
     }

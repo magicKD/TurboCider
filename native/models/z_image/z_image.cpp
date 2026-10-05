@@ -1,4 +1,5 @@
 #include "../../runtime/build_identity.hpp"
+#include "../../backends/ane_backend.hpp"
 #include "z_image.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
@@ -1182,6 +1183,29 @@ std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string
     };
     return {source(ffn+".w1",3840),source(ffn+".w3",3840),source(ffn+".w2",10240)};
 }
+ZImageGpuGraph &z_runtime_full_ffn_graph() {
+    static auto *gpu = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
+        auto project = [](const Tensor &v, const Tensor &weight) {
+            const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
+            const bool tuned = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
+                z_image_small_shape_metal_default() && v.shape(1) <= 1056;
+            if ((mode && std::string(mode) != "attention_out") || (!mode && tuned))
+                return z_metal::projection(v, weight);
+            return mx::matmul(v, mx::transpose(weight));
+        };
+        auto hidden = [&] {
+            if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
+                return z_metal::swiglu_dual_gemm(a[0], a[1], a[2]);
+            auto up = project(a[0], a[2]);
+            if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
+                (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()))
+                return z_metal::swiglu_gemm(a[0], a[1], up);
+            return silu(project(a[0], a[1])) * up;
+        }();
+        return std::vector<Tensor>{project(hidden, a[3])};
+    }));
+    return *gpu;
+}
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
                        int block, std::atomic<bool> &cancelled, bool gguf_compatibility) {
@@ -1264,28 +1288,9 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         w.at(prefix + ".ffn_norm1.weight")});
     // Use the same tuned short-row projections and fused SwiGLU as the base
     // GPU block. Weights are arguments, never captured from another layer.
-    static auto *gpu = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
-        auto project = [](const Tensor &v, const Tensor &weight) {
-            const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
-            const bool tuned = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
-                z_image_small_shape_metal_default() && v.shape(1) <= 1056;
-            if ((mode && std::string(mode) != "attention_out") || (!mode && tuned))
-                return z_metal::projection(v, weight);
-            return mx::matmul(v, mx::transpose(weight));
-        };
-        auto hidden = [&] {
-            if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
-                return z_metal::swiglu_dual_gemm(a[0], a[1], a[2]);
-            auto up = project(a[0], a[2]);
-            if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
-                (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()))
-                return z_metal::swiglu_gemm(a[0], a[1], up);
-            return silu(project(a[0], a[1])) * up;
-        }();
-        return std::vector<Tensor>{project(hidden, a[3])};
-    }));
+    auto &gpu = z_runtime_full_ffn_graph();
     auto feed = runtime.run(block, pre[1], [&](const Tensor &input) {
-        return (*gpu)({input, weights[0], weights[1], weights[2]})[0];
+        return gpu({input, weights[0], weights[1], weights[2]})[0];
     }, cancelled, nullptr, [&](const Tensor &input,int first,int count) {
         // This callback is consumed only by an explicit private channel
         // split. Preserve the existing short-row path and use the same
@@ -3859,15 +3864,66 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto")+
             ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "");
-        if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
-            (!active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
+        const bool native_channel_auto = ane::private_channel_count(10240) < 0;
+        const std::string request_identity = identity + (native_channel_auto ?
+            ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
+        if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
+            (runtime_ffn_->available() && !active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
             const auto physical = device_info().physical_memory;
             const size_t budget = std::min(uint64_t(2) << 30,
                 physical - std::min(physical, uint64_t(mx::get_active_memory()) + (uint64_t(4) << 30)));
+            std::optional<ane::HybridFfn::CalibrationWorkload> calibration;
+            if (native_channel_auto) {
+                event("calibrate_native_ane_channels",0,1);
+                calibration.emplace();
+                calibration->model_sha256 = sha256_file(transformer_checkpoint_);
+                calibration->adapter_identity = active_loras_.empty() ? std::string{} : cached_lora_identity_;
+                calibration->rows = image_rows+caption_rows;
+                calibration->encoding = gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
+                calibration->dtype = gguf_transformer_ ? mx::float16 : mx::bfloat16;
+                auto stem = [](int ordinal) {return (ordinal<2?"noise_refiner."+std::to_string(ordinal):
+                    "layers."+std::to_string(ordinal-2))+".feed_forward";};
+                for(int ordinal:{0,7,15,23,31})for(const auto *projection:{"w1","w3","w2"}) {
+                    const auto name=stem(ordinal)+"."+projection;
+                    for(const auto *suffix:{".weight",".scales",".biases"})if(transformer_.has(name+suffix)) {
+                        const auto &value=transformer_.at(name+suffix);
+                        calibration->source_generation += ":"+std::to_string(value.id());
+                        calibration->source_owners.push_back(value.data_shared_ptr());
+                    }
+                }
+                for(const auto *key:{"TURBOCIDER_Z_MPP_PROJECTIONS","TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS",
+                    "TURBOCIDER_Z_MPP_SWIGLU","TURBOCIDER_Z_MPP_SWIGLU_DUAL","TURBOCIDER_Z_DISABLE_MPP_SWIGLU"}) {
+                    const auto *value=std::getenv(key);
+                    calibration->gpu_configuration += std::string(key)+"="+(value?value:"<unset>")+";";
+                }
+                calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal));};
+                calibration->gpu = [&,stem](int ordinal,const Tensor &input) {
+                    const auto prefix=stem(ordinal);
+                    if(!gguf_transformer_ && !convrot_transformer_ && !transformer_.has_runtime_loras())
+                        return z_runtime_full_ffn_graph()({input,transformer_.at(prefix+".w1.weight"),
+                            transformer_.at(prefix+".w3.weight"),transformer_.at(prefix+".w2.weight")})[0];
+                    return z_ffn(input,transformer_,prefix);
+                };
+                calibration->channel_gpu = [&,stem](int ordinal,const Tensor &input,int first,int count) {
+                    const auto prefix=stem(ordinal);
+                    if(!gguf_transformer_ && !convrot_transformer_ && input.dtype()==mx::bfloat16 &&
+                        z_image_small_shape_metal_default() && input.shape(1)<=4224) {
+                        auto up=z_metal::projection_range(input,transformer_.at(prefix+".w3.weight"),first,first+count,0,3840);
+                        auto hidden=z_metal::swiglu_gemm_range(input,transformer_.at(prefix+".w1.weight"),up,first,count);
+                        return std::make_pair(z_metal::projection_range(hidden,transformer_.at(prefix+".w2.weight"),
+                            0,3840,first,first+count),hidden);
+                    }
+                    auto gate=transformer_.project_slice(input,prefix+".w1",first,first+count,0,3840,false);
+                    auto up=transformer_.project_slice(input,prefix+".w3",first,first+count,0,3840,false);
+                    auto hidden=silu(gate)*up;
+                    return std::make_pair(transformer_.project_base_slice(hidden,prefix+".w2",0,3840,first,first+count,false),hidden);
+                };
+            }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
-                                                         !active_loras_.empty());
-            runtime_manifest_ = identity;
+                                                         !active_loras_.empty(),calibration?&*calibration:nullptr);
+            runtime_manifest_ = request_identity;
+            if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }
         runtime_ffn_->begin_request(cached_lora_identity_);
     }

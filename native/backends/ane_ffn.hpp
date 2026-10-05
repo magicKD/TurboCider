@@ -3,6 +3,7 @@
 #include "ane_runtime.hpp"
 #include "ane_memory.hpp"
 #include "ane_scheduler.hpp"
+#include "ane_channel_selection.hpp"
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
 
@@ -42,8 +43,19 @@ class HybridFfn {
         // channel callers without this extension remain compatible.
         std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> gate_up_channels = {};
     };
+    struct CalibrationWorkload {
+        std::string model_sha256, adapter_identity, source_generation, encoding, gpu_configuration;
+        std::vector<std::weak_ptr<void>> source_owners;
+        int rows = 0, layers = 32;
+        mx::Dtype dtype = mx::bfloat16;
+        NextWeights weights;
+        std::function<Tensor(int, const Tensor &)> gpu;
+        std::function<std::pair<Tensor, Tensor>(int, const Tensor &, int, int)> channel_gpu;
+    };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
-              size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false);
+              size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false,
+              const CalibrationWorkload *calibration = nullptr,
+              std::optional<int> calibrated_channels = std::nullopt);
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
@@ -68,6 +80,7 @@ class HybridFfn {
     HybridMetrics metrics() const;
     const std::string &reason() const { return reason_; }
     bool available() const { return graph_ && !failed_; }
+    bool usable_configuration() const { return available() || calibration_declined_; }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
     bool channel_split() const { return axis_ == PartitionAxis::IntermediateChannels; }
     int gpu_channels() const { return metrics_.runtime_weight_gpu_channels; }
@@ -87,11 +100,14 @@ class HybridFfn {
             (comfy ? "runtime_convrot_w8a8_ffn" : w8 ? "runtime_w8a8_ffn" : "runtime_fp16_ffn") + (gguf ? "" : "_bf16_io");
     }
     std::string selection_label() const {
+        const auto calibration = calibration_reason_.empty() ? std::string{} :
+            "; native channel auto: " + calibration_reason_;
         if (metrics_.runtime_weight_backend.empty())
-            return "gpu: runtime-weight executor unavailable; full GPU FFN fallback";
+            return (calibration_declined_ ? "gpu: native channel calibration declined hybrid" :
+                "gpu: runtime-weight executor unavailable; full GPU FFN fallback") + calibration;
         return std::string("gpu_ane runtime-weight ") +
             (channel_split() ? "intermediate-channel" : "token-row") + " FFN contract (" +
-            metrics_.runtime_weight_data_path + "); base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
+            metrics_.runtime_weight_data_path + "); base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified" + calibration;
     }
     std::string resolve_selection(const std::string &requested) const {
         constexpr std::string_view end = "physical placement unverified";
@@ -108,6 +124,8 @@ class HybridFfn {
     std::vector<uint16_t> output_, hidden_;
     HybridMetrics metrics_;
     bool failed_ = false, pending_ = false;
+    bool calibration_declined_ = false;
+    std::string calibration_reason_;
     bool planned_ = false;
     std::optional<RowScheduler::Plan> block_plan_;
     bool block_sample_valid_ = false;
@@ -131,6 +149,9 @@ class HybridFfn {
                         std::atomic<bool> &, const Adapter *, const NextWeights &);
     std::vector<DeviceWeightRegion> device_regions(const std::vector<FfnWeight> &) const;
     void maybe_prefetch(int, int, const NextWeights &);
+    static DeviceWeightView calibration_source(const FfnWeight &);
+    static ChannelSelection calibrate_channels(const std::filesystem::path &, int, int, size_t,
+        std::atomic<bool> &, bool, const CalibrationWorkload &);
 };
 
 } // namespace tc::ane

@@ -7,7 +7,8 @@
 
 namespace tc::ane {
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
-                                    GraphGeometry expected, BackendPolicy policy) {
+                                    GraphGeometry expected, BackendPolicy policy,
+                                    std::optional<int> calibrated_channels) {
     BuiltExecutor result;
     if (policy.preferred == BackendPreference::Off) { result.fallback_reason = "ANE disabled by backend policy"; return result; }
     if (policy.preferred == BackendPreference::Private && !policy.allow_private)
@@ -27,7 +28,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         throw std::runtime_error("private ANE A8 group scope requires input, hidden or both");
     if(scope && !requested_group)throw std::runtime_error("A8 group scope requires explicit group size 256");
     if(requested_group && !try_private)throw std::runtime_error("group A8 requires an authorized private backend");
-    const int channels = private_channel_count(expected.width);
+    const int channels = resolved_private_channel_count(expected.width, calibrated_channels);
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
     if (try_private) {
         // Malformed manifests/geometries remain configuration failures, not
@@ -36,6 +37,10 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         if (shape.kind != expected.kind || shape.hidden != expected.hidden || shape.width != expected.width ||
             (expected.require_lora_inputs && !shape.lora_inputs))
             throw std::runtime_error("runtime ANE graph does not match model FFN geometry");
+        if (calibrated_channels && channels == 0) {
+            result.fallback_reason = "native channel calibration selected optimized GPU-only";
+            return result;
+        }
         try {
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
             const std::string path = std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") ? std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") : "fp16";
@@ -45,6 +50,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
             if(bf16_boundaries && path!="convrot_w8a8")throw std::runtime_error("BF16 value boundaries require convrot_w8a8 data path");
             if (channels && path == "fp16") throw std::runtime_error("channel split requires the W8A8 data path");
             if (channels) shape.width = channels; // base template still validated against the FULL model
+            if (calibrated_channels) shape.lora_inputs = expected.require_lora_inputs;
             std::unique_ptr<Executor> graph = path != "fp16" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,
                 std::filesystem::path{},path=="convrot_w8a8"?W8Basis::ComfyH256:W8Basis::SylvesterDH)) :
                 std::unique_ptr<Executor>(std::make_unique<PrivateGraph>(shape,budget));

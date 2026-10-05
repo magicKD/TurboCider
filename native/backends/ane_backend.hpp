@@ -15,11 +15,25 @@ inline int private_channel_count(int full_width) {
     const char *raw = std::getenv("TURBOCIDER_PRIVATE_ANE_CHANNELS");
     if (!raw) return 0;
     const std::string value(raw);
+    if (value == "auto") return -1; // must be resolved by native calibration, never a graph width
     if (value.empty() || value.size() > 5 || value.find_first_not_of("0123456789") != std::string::npos)
         throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_CHANNELS requires 0 or aligned intermediate channels");
     const int channels = std::stoi(value);
     if (channels && (full_width % 512 || channels % 512 || channels >= full_width))
         throw std::runtime_error("private ANE channels must be a positive 512 multiple smaller than the full FFN width");
+    return channels;
+}
+inline int resolved_private_channel_count(int full_width, std::optional<int> calibrated = std::nullopt) {
+    const int configured = private_channel_count(full_width);
+    if (!calibrated) {
+        if (configured < 0) throw std::runtime_error("automatic ANE channels require a native calibration workload");
+        return configured;
+    }
+    const int channels = *calibrated;
+    if (channels < 0 || (channels && (full_width % 512 || channels % 512 || channels >= full_width)))
+        throw std::runtime_error("calibrated ANE channels must be zero or a positive aligned partial width");
+    if (configured >= 0 && configured != channels)
+        throw std::runtime_error("calibration cannot override an explicit ANE channel configuration");
     return channels;
 }
 inline BackendPolicy configured_backend() {
@@ -46,5 +60,6 @@ struct BuiltExecutor {
     std::string fallback_reason;
 };
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
-                                    GraphGeometry expected, BackendPolicy policy);
+                                    GraphGeometry expected, BackendPolicy policy,
+                                    std::optional<int> calibrated_channels = std::nullopt);
 }
