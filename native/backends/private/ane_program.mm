@@ -309,6 +309,12 @@ void Device::signal(uint64_t value) {
     impl_->last_signal = value;
     [buffer commit];
 }
+void Device::release_prepared(uint64_t value) {
+    require(value > impl_->last_signal && value > impl_->event.signaledValue,
+            "private ANE prepared event timeline not monotonic");
+    impl_->last_signal = value;
+    impl_->release(value);
+}
 bool Device::wait(uint64_t value, std::chrono::milliseconds timeout) {
     // Wait is queued AFTER the leading signal has already been committed.
     // A host deadline releases a stuck wait, but it NEVER certifies success.
@@ -812,9 +818,55 @@ Completion Ticket::finish(std::chrono::milliseconds timeout) {
     }
     return impl_->result;
 }
+void PreparedRequest::discard() noexcept {
+    if (!state_) return;
+    // No driver work exists until submit consumes state_. A prepared request
+    // owns its callback, which owns this state, so explicitly break the cycle.
+    { std::lock_guard lock(state_->mutex); state_->request = nil; }
+    state_.reset();
+}
+PreparedRequest::~PreparedRequest() { discard(); }
+PreparedRequest::PreparedRequest(PreparedRequest &&other) noexcept
+    : state_(std::move(other.state_)) {}
+PreparedRequest &PreparedRequest::operator=(PreparedRequest &&other) noexcept {
+    if (this != &other) { discard(); state_ = std::move(other.state_); }
+    return *this;
+}
+Ticket PreparedRequest::submit() {
+    require(bool(state_), "private ANE prepared request already consumed");
+    require(Program::healthy(), "private ANE disabled after failed/missing completion");
+    auto state = std::exchange(state_, {});
+    auto program = std::static_pointer_cast<Program::Impl>(state->program);
+    @autoreleasepool {
+      @try {
+        NSError *error = nil;
+        if (![program->connection evaluateWithModel:program->model options:@{} request:state->request qos:qos error:&error]) {
+            process_healthy = false;
+            if (state->failure) state->failure();
+            state->release(state->signal);
+            // A failed submission may still have reached the driver. Retain
+            // its callback resources exactly like the inference enqueue path.
+            std::lock_guard lock(state->mutex);
+            state->result = {false, false, "private ANE enqueue failed: " + description(error)};
+            state->done = true;
+        }
+        Ticket ticket; ticket.impl_ = std::move(state); return ticket;
+      } @catch (NSException *exception) {
+        process_healthy = false;
+        if (state->failure) state->failure();
+        state->release(state->signal);
+        throw CapabilityError("private ANE enqueue exception: " + std::string(exception.reason.UTF8String ?: "unknown"));
+      }
+    }
+}
 Ticket Program::enqueue(std::span<const std::pair<std::string, Surface>> inputs,
                         std::span<const std::pair<std::string, Surface>> outputs,
                         uint64_t wait_value, uint64_t signal_value, std::function<void()> failure) {
+    return prepare(inputs, outputs, wait_value, signal_value, std::move(failure)).submit();
+}
+PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>> inputs,
+                                std::span<const std::pair<std::string, Surface>> outputs,
+                                uint64_t wait_value, uint64_t signal_value, std::function<void()> failure) {
     @autoreleasepool {
       auto emergency_failure = failure;
       @try {
@@ -870,17 +922,7 @@ Ticket Program::enqueue(std::span<const std::pair<std::string, Surface>> inputs,
             }
             state->cv.notify_all();
         }];
-        NSError *error = nil;
-        if (![impl_->connection evaluateWithModel:impl_->model options:@{} request:state->request qos:qos error:&error]) {
-            process_healthy = false;
-            if (state->failure) state->failure();
-            state->release(signal_value);
-            // Keep the request's callback resources alive: a driver might
-            // report failure after accepting part of the submission.
-            std::lock_guard lock(state->mutex);
-            state->result = {false, false, "private ANE enqueue failed: " + description(error)}; state->done = true;
-        }
-        Ticket ticket; ticket.impl_ = std::move(state); return ticket;
+        PreparedRequest prepared; prepared.state_ = std::move(state); return prepared;
       } @catch (NSException *exception) {
         process_healthy = false;
         if (emergency_failure) emergency_failure();

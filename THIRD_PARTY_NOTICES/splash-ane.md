@@ -16,3 +16,11 @@ cache ownership/process locking/content validation; retained asynchronous
 resource ownership and bounded timeout quarantine; distribution build gate.
 The native FP16 micrograph emitter and Executor adapter are TurboCider code.
 No Splash model loader, inference engine or binaries are linked.
+
+TurboCider modifications (2026-10-05): move-only prepared request bindings,
+separate driver submission, CPU-pre-met calibration dependencies and one-shot
+calibration batch cleanup. Normal inference keeps its GPU-produced dependency
+signals. The calibration fixture's two shares and one-versus-four evaluations
+follow the methodology in Splash `runtime/ops/AneFfn.cpp` at the same pinned
+revision; its sampling/ownership implementation is TurboCider code, not a
+port of Splash's model loader or Metal command-graph engine.

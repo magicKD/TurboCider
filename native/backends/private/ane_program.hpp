@@ -20,6 +20,7 @@ enum class Element { FP16, I8 };
 class Device;
 class Program;
 class Ticket;
+class PreparedRequest;
 class Transfer;
 class QuantStage;
 inline constexpr size_t scale_cache_budget_bytes = 4u << 20;
@@ -61,6 +62,11 @@ class Device {
     // Commit a separate leading command buffer. Do not defer the signal
     // until the command buffer containing the matching wait is committed.
     void signal(uint64_t value);
+    // Calibration only: all producers are already joined and all requests
+    // prepared but not submitted. Meet their dependency on the CPU BEFORE
+    // starting the timer; no Metal/ANE handoff is part of an alone sample.
+    // Normal inference continues to signal from its GPU producer.
+    void release_prepared(uint64_t value);
     bool wait(uint64_t value, std::chrono::milliseconds timeout);
     uint64_t value() const;
     Transfer prepare_transfer(std::vector<Upload>, std::vector<Download>,
@@ -115,6 +121,25 @@ class Ticket {
     struct Impl;
     std::shared_ptr<Impl> impl_;
     friend class Program;
+    friend class PreparedRequest;
+};
+
+// Bind/retain the immutable inputs and independent outputs without issuing
+// driver work. Move-only; destroying an unsubmitted request breaks its
+// completion-handler ownership cycle. submit() consumes it exactly once.
+class PreparedRequest {
+  public:
+    ~PreparedRequest();
+    PreparedRequest(PreparedRequest &&) noexcept;
+    PreparedRequest &operator=(PreparedRequest &&) noexcept;
+    PreparedRequest(const PreparedRequest &) = delete;
+    PreparedRequest &operator=(const PreparedRequest &) = delete;
+    Ticket submit();
+  private:
+    PreparedRequest() = default;
+    std::shared_ptr<Ticket::Impl> state_;
+    void discard() noexcept;
+    friend class Program;
 };
 
 class Program {
@@ -134,8 +159,13 @@ class Program {
                    std::span<const std::pair<std::string, Surface>> outputs,
                    uint64_t wait_value, uint64_t signal_value,
                    std::function<void()> failure = {});
+    PreparedRequest prepare(std::span<const std::pair<std::string, Surface>> inputs,
+                            std::span<const std::pair<std::string, Surface>> outputs,
+                            uint64_t wait_value, uint64_t signal_value,
+                            std::function<void()> failure = {});
   private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
+    friend class PreparedRequest;
 };
 } // namespace tc::ane::private_api

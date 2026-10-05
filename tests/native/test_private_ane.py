@@ -194,5 +194,24 @@ class PrivateAneChannelMlxTests(unittest.TestCase):
             print(result.stdout.strip())
 
 
+@unittest.skipUnless(sys.platform == "darwin" and os.environ.get("TURBOCIDER_TEST_PRIVATE_CALIBRATION_MLX") == "1",
+                     "set TURBOCIDER_TEST_PRIVATE_CALIBRATION_MLX=1 for prepared W8/MLX calibration tests")
+class PrivateAneCalibrationMlxTests(unittest.TestCase):
+    def test_prepared_w8_alone_concurrent_lifetime_and_failure_cleanup(self):
+        with tempfile.TemporaryDirectory(prefix="tc-private-calibration-") as directory:
+            root = Path(directory).resolve()
+            build = root / "build"
+            subprocess.run(["bash", "tools/native/build_ane_calibration_test.sh"], cwd=ROOT, check=True,
+                           env={**os.environ, "TURBOCIDER_NATIVE_OUT": str(build)},
+                           capture_output=True, text=True, timeout=120)
+            result = subprocess.run([str(build / "private-ane-calibration-test"), str(root / "cache")],
+                                    cwd=ROOT, capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.count("PASS prepared W8 calibration channels="), 2)
+            self.assertIn("PASS prepared calibration ownership", result.stdout)
+            self.assertIn("not model/E2E calibration or physical overlap proof", result.stdout)
+            print(result.stdout.strip())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

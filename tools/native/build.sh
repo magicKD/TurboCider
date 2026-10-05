@@ -165,7 +165,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/media/pe_image.mm
 )
 if [[ "$PRIVATE_ANE" == "1" ]]; then
- SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm)
+ SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm)
 fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
