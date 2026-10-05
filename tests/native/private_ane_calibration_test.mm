@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <iomanip>
 #include <unistd.h>
 
 namespace mx = mlx::core;
@@ -34,11 +35,63 @@ struct Bank {
           d(device, h, f, Element::I8), sd(device, h, 1, Element::FP16) {}
     uint64_t bytes() const { return g.bytes() + sg.bytes() + u.bytes() + su.bytes() + d.bytes() + sd.bytes(); }
 };
+mx::array source_silu(const mx::array &gate) {
+    static auto compiled=mx::compile([](const std::vector<mx::array>&a) {
+        return std::vector<mx::array>{a[0]*mx::sigmoid(a[0])};
+    },true);
+    return compiled({gate})[0];
+}
+void test_full_gpu_measurement_contract() {
+    int resets=0, submissions=0, finishes=0;
+    const std::function<void()> reset=[&]{++resets;};
+    const std::function<void(int)> submit=[&](int count){
+        ++submissions;check(count==1 || count==4,"invalid GPU measurement layer count");
+    };
+    const std::function<void()> finish=[&]{++finishes;};
+    for(const auto [warmups,repeats]:std::array<std::pair<int,int>,8>{{
+        {0,7},{9,7},{2,0},{2,2},{2,4},{2,32},{2,33},{-1,7}}}) {
+        bool rejected=false;
+        try {(void)measure_full_gpu_calibration(reset,submit,finish,warmups,repeats);}
+        catch(const std::invalid_argument&) {rejected=true;}
+        check(rejected,"invalid GPU calibration repetition bounds accepted");
+    }
+    for(int missing=0;missing<3;++missing) {
+        bool rejected=false;
+        try {(void)measure_full_gpu_calibration(missing==0?std::function<void()>{}:reset,
+            missing==1?std::function<void(int)>{}:submit,
+            missing==2?std::function<void()>{}:finish);}
+        catch(const std::invalid_argument&) {rejected=true;}
+        check(rejected,"incomplete GPU calibration callbacks accepted");
+    }
+    check(resets==0 && submissions==0 && finishes==0,"invalid arguments invoked GPU callbacks");
+    for(int failure=0;failure<4;++failure) {
+        resets=submissions=finishes=0;
+        const std::string expected=failure==0?"reset failure":failure==2?"finish failure":"submit failure";
+        bool caught=false;
+        try {
+            (void)measure_full_gpu_calibration([&]{
+                ++resets;if(failure==0)throw std::runtime_error("reset failure");
+            },[&](int count){
+                ++submissions;check(count==1,"first cyclic GPU calibration arm changed");
+                // Represents a callback that already queued a partial batch.
+                if(failure==1 || failure==3)throw std::runtime_error("submit failure");
+            },[&]{
+                ++finishes;if(failure==2 || failure==3)throw std::runtime_error("finish failure");
+            });
+        } catch(const std::runtime_error &error) {caught=error.what()==expected;}
+        check(caught,"GPU calibration lost first failure or published a failed sample");
+        check(resets==1 && submissions==(failure==0?0:1) && finishes==(failure==0?0:1),
+              "GPU calibration failed to drain partial submission exactly once");
+    }
+    std::cout<<"PASS full GPU calibration argument bounds, partial-submit drain and first-error preservation\n";
+}
 }
 int main(int argc, char **argv) {
     if (argc != 2 && argc != 5) return 2;
     @autoreleasepool {
       try {
+        test_full_gpu_measurement_contract();
+        if(argc==2 && std::string(argv[1])=="--host-only")return 0;
         const bool actual_model = argc == 5;
         const std::string model = actual_model ? argv[2] : "fixture";
         check(model == "fixture" || model == "z-image-turbo" || model == "qwen-image-2.1", "unknown calibration model");
@@ -50,6 +103,7 @@ int main(int argc, char **argv) {
         // weight set. These are NOT model checkpoints or performance claims.
         constexpr std::array<int, 5> depth{0, 7, 15, 23, 31};
         std::vector<std::array<mx::array, 3>> sources;
+        std::vector<mx::array> fused_sources;
         sources.reserve(depth.size());
         std::vector<mx::array> checkpoint_residency;
         if (actual_model) {
@@ -67,6 +121,7 @@ int main(int argc, char **argv) {
                 } else {
                     const auto stem = "transformer_blocks." + std::to_string(layer) + ".img_mlp.";
                     auto halves = mx::split(tensors.at(stem + "gate_up.weight"), 2, 0); mx::eval(halves);
+                    fused_sources.push_back(tensors.at(stem+"gate_up.weight"));
                     sources.push_back({halves[0], halves[1], tensors.at(stem + "out.weight")});
                 }
                 check(sources.back()[0].shape() == mx::Shape({width, hidden}) &&
@@ -89,6 +144,44 @@ int main(int argc, char **argv) {
         }
         auto input = mx::astype(mx::random::normal({rows, hidden}, mx::float32, mx::random::key(17)) * .25f, mx::bfloat16);
         mx::eval(input);
+        const uint64_t full_gpu_upper=uint64_t(rows)*(8ull*hidden+6ull*width)*2+(128ull<<20);
+        if(!admit_memory(observe_runtime_memory(mx::get_active_memory()),
+            {uint64_t(4)<<30,uint64_t(2)<<30},0,full_gpu_upper).allowed())
+            throw MemoryBudgetError("full GPU calibration scratch admission denied");
+        std::cout<<std::setprecision(17);
+        std::vector<mx::array> full_results;
+        auto full_gpu=[&](int layer) {
+            if(model=="z-image-turbo" && rows<=1056) {
+                const auto normalized=mx::reshape(input,{1,rows,hidden});
+                const auto up=tc::z_metal::projection_range(normalized,sources[layer][1],0,width,0,hidden);
+                const auto z=tc::z_metal::swiglu_gemm_range(normalized,sources[layer][0],up,0,width);
+                return mx::reshape(tc::z_metal::projection_range(z,sources[layer][2],0,hidden,0,width),{rows,hidden});
+            }
+            if(model=="qwen-image-2.1") {
+                static auto compiled=mx::compile([](const std::vector<mx::array>&a) {
+                    auto parts=mx::split(mx::matmul(a[0],mx::transpose(a[1])),2,-1);
+                    return std::vector<mx::array>{mx::matmul(source_silu(parts[0])*parts[1],mx::transpose(a[2]))};
+                });
+                return compiled({input,fused_sources[layer],sources[layer][2]})[0];
+            }
+            static auto compiled=mx::compile([](const std::vector<mx::array>&a) {
+                auto gate=mx::matmul(a[0],mx::transpose(a[1])),up=mx::matmul(a[0],mx::transpose(a[2]));
+                return std::vector<mx::array>{mx::matmul(source_silu(gate)*up,mx::transpose(a[3]))};
+            });
+            return compiled({input,sources[layer][0],sources[layer][1],sources[layer][2]})[0];
+        };
+        const auto full_gpu_samples=measure_full_gpu_calibration([&]{full_results.clear();},[&](int count) {
+            for(int layer=0;layer<count;++layer)full_results.push_back(full_gpu(layer));
+            mx::async_eval(full_results);
+        },[&]{mx::eval(full_results);},2,7);
+        std::cout<<"FULL_GPU_BASELINE model="<<model<<" rows="<<rows<<" per_layer="<<full_gpu_samples.layer_seconds
+            <<" raw_seconds=";
+        for(const auto &values:full_gpu_samples.seconds) {
+            std::cout<<'[';for(size_t i=0;i<values.size();++i)std::cout<<(i?",":"")<<values[i];std::cout<<']';
+        }
+        std::cout<<"; same source/input/full FFN, no staging/ANE, host component span only\n";
+        full_results.clear();mx::synchronize();
+        std::array<std::vector<CalibrationPoint>,2> measured_points;
         const std::array<int, 2> shares{int(std::round(.4 * (width / 512))) * 512,
                                       int(std::round(.8 * (width / 512))) * 512};
         for (int channels : shares) {
@@ -361,7 +454,7 @@ int main(int argc, char **argv) {
                 auto d = mx::slice(sources[layer][2], {0, 0}, {hidden, first});
                 auto gate = mx::matmul(input, mx::transpose(g));
                 auto up = mx::matmul(input, mx::transpose(u));
-                auto z = (gate / (mx::array(1.f, gate.dtype()) + mx::exp(-gate))) * up;
+                auto z = source_silu(gate) * up;
                 heads.push_back(mx::matmul(z, mx::transpose(d))); mx::async_eval(heads.back());
             };
             auto join = [&](int layer) {
@@ -396,6 +489,30 @@ int main(int argc, char **argv) {
                     }
                 }
             }
+            // Exercise the actual complete-traffic measurement adapter, not
+            // the earlier head-only spans. Invalid differences remain a
+            // reported rejected point; do not clamp them into a fast fit.
+            for(bool prefetch:{false,true}) {
+                try {
+                    auto series=measure_w8_channel_point(device,program,{bindings(1),bindings(4)},work,
+                        timeline,double(channels)/width,prefetch,[&]{heads.clear();joined.clear();},head,
+                        [&]{mx::eval(heads);},join,[&]{mx::eval(joined);},2,7);
+                    measured_points[prefetch?1:0].push_back(series.point);
+                    std::cout<<"CALIBRATION_POINT share="<<series.point.share<<" prefetch="<<prefetch
+                        <<" gpu="<<series.point.gpu<<" ane="<<series.point.ane<<" both="<<series.point.both
+                        <<" calls="<<series.ane_calls<<" raw_seconds=";
+                    for(size_t part=0;part<3;++part)for(size_t count=0;count<2;++count) {
+                        std::cout<<'[';
+                        for(size_t i=0;i<series.seconds[part][count].size();++i)
+                            std::cout<<(i?",":"")<<series.seconds[part][count][i];
+                        std::cout<<']';
+                    }
+                    std::cout<<"; complete traffic, measured-range cost point only, no inference selection\n";
+                } catch(const std::invalid_argument &error) {
+                    std::cout<<"CALIBRATION_POINT_REJECTED share="<<double(channels)/width<<" prefetch="<<prefetch
+                        <<" reason="<<error.what()<<"; no fitted/selected result\n";
+                }
+            }
             // A partial GPU head/late join exception must drain all producers
             // and preserve the first failure, with no successful join receipt.
             for (bool join_error : {false, true}) {
@@ -425,6 +542,22 @@ int main(int argc, char **argv) {
                 << " source=original_bf16 checkpoint_resident=1 gpu_head="
                 << (model == "z-image-turbo" ? "native_mpp_physical_range" : "native_dense_projection_rounding")
                 << "; component correctness only; no E2E speedup, calibrated selection, LoRA or physical overlap qualification\n";
+        }
+        for(size_t prefetch=0;prefetch<measured_points.size();++prefetch) {
+            if(measured_points[prefetch].size()!=2) {
+                std::cout<<"CALIBRATION_FIT_REJECTED prefetch="<<prefetch<<" reason=incomplete points\n";continue;
+            }
+            const auto fit=ChannelCostModel::fit(measured_points[prefetch][0],measured_points[prefetch][1]);
+            if(!fit) {std::cout<<"CALIBRATION_FIT_REJECTED prefetch="<<prefetch<<" reason=inconsistent coupled evidence\n";continue;}
+            const auto choice=fit->select(width,512,full_gpu_samples.layer_seconds,[&](int candidate) {
+                // No actual graph/surface claim: restrict this proposal to
+                // widths at/below the largest memory-admitted sampled graph.
+                return candidate<=shares[1];
+            });
+            std::cout<<"CALIBRATION_PROPOSAL prefetch="<<prefetch<<" channels="<<choice.ane_channels
+                <<" gpu="<<choice.gpu_seconds<<" predicted="<<choice.predicted_seconds
+                <<" candidate_trial_required="<<choice.requires_candidate_trial<<" reason="<<choice.reason
+                <<"; not adopted/qualified inference policy\n";
         }
         std::cout << "PASS prepared calibration ownership, one-shot, unsubmitted disposal, alias/timeline rejection and GPU-error cleanup\n";
       } catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }

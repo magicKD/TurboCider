@@ -280,4 +280,63 @@ void W8GpuCalibrationWork::finish(const Fence &heads, const Join &join, const Fe
 W8GpuCalibrationStats W8GpuCalibrationWork::stats() const { return impl_->counters; }
 uint64_t W8GpuCalibrationWork::estimated_bytes() const { return impl_->estimate; }
 uint64_t W8GpuCalibrationWork::allocated_surface_bytes() const { return impl_->allocated; }
+
+GpuCalibrationSamples measure_full_gpu_calibration(const std::function<void()> &reset,
+    const std::function<void(int)> &submit,const std::function<void()> &finish,int warmups,int repeats) {
+    if(!reset || !submit || !finish || warmups<1 || warmups>8 || repeats<3 || repeats>31 || !(repeats%2))
+        throw std::invalid_argument("GPU calibration requires complete callbacks and bounded odd repeats");
+    GpuCalibrationSamples result;
+    for(int sweep=0;sweep<warmups+repeats;++sweep)for(int position=0;position<2;++position) {
+        const int index=(sweep+position)%2,count=index?4:1;
+        reset();
+        const auto start=std::chrono::steady_clock::now();std::exception_ptr error;
+        try {submit(count);}catch(...) {error=std::current_exception();}
+        try {finish();}catch(...) {if(!error)error=std::current_exception();}
+        const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
+        if(error)std::rethrow_exception(error);
+        if(!std::isfinite(seconds) || seconds<=0)throw CapabilityError("invalid full GPU calibration span");
+        if(sweep>=warmups)result.seconds[index].push_back(seconds);
+    }
+    auto median=[](std::vector<double> values){std::sort(values.begin(),values.end());return values[values.size()/2];};
+    result.layer_seconds=calibration_layer_seconds(median(result.seconds[0]),median(result.seconds[1]));
+    return result;
+}
+
+ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &program,
+    const std::array<std::vector<CalibrationBindings>,2> &bindings,W8GpuCalibrationWork &work,
+    uint64_t &timeline,double share,bool prefetch,const std::function<void()> &reset,
+    const W8GpuCalibrationWork::Head &head,const W8GpuCalibrationWork::Fence &heads,
+    const W8GpuCalibrationWork::Join &join,const W8GpuCalibrationWork::Fence &joins,
+    int warmups,int repeats) {
+    if(!std::isfinite(share) || share<=0 || share>=1 || bindings[0].size()!=1 || bindings[1].size()!=4 ||
+        !reset || !head || !heads || !join || !joins || warmups<1 || warmups>8 || repeats<3 || repeats>31 || !(repeats%2))
+        throw std::invalid_argument("channel calibration requires complete one/four bindings, callbacks and bounded odd repeats");
+    ChannelCalibrationSamples result;result.prefetch=prefetch;
+    for(int sweep=0;sweep<warmups+repeats;++sweep) for(int position=0;position<6;++position) {
+        const int cell=(sweep+position)%6,count_index=cell/3,part=cell%3,count=count_index?4:1;
+        reset();
+        if(part!=1)work.prepare(count,prefetch);
+        CalibrationBatch batch(device,program,bindings[count_index],timeline);
+        const auto measured=part==1?batch.measure(true):batch.measure(part==2,
+            [&]{work.submit(head);},[&]{work.finish(heads,join,joins);});
+        if(!measured.ok || !std::isfinite(measured.seconds) || measured.seconds<=0 ||
+            measured.ane_calls!=uint64_t(part==0?0:count))
+            throw CapabilityError("invalid channel calibration completion/count/timing");
+        if(part!=1) {
+            const auto traffic=work.stats();
+            if(!traffic.completed || !traffic.independent_gpu_transfer || traffic.layers!=uint64_t(count) ||
+                traffic.weight_projections!=uint64_t(3*(count+(prefetch?1:0))) || traffic.activation_packs!=uint64_t(count) ||
+                traffic.restore_downloads<uint64_t(count) || traffic.joins!=uint64_t(count))
+                throw CapabilityError("channel calibration lacks complete staging/pack/restore/join/future traffic");
+        }
+        result.ane_calls+=measured.ane_calls;
+        if(sweep>=warmups)result.seconds[part][count_index].push_back(measured.seconds);
+    }
+    auto median=[](std::vector<double> values) {std::sort(values.begin(),values.end());return values[values.size()/2];};
+    result.point={share,
+        calibration_layer_seconds(median(result.seconds[0][0]),median(result.seconds[0][1])),
+        calibration_layer_seconds(median(result.seconds[1][0]),median(result.seconds[1][1])),
+        calibration_layer_seconds(median(result.seconds[2][0]),median(result.seconds[2][1]))};
+    return result;
+}
 } // namespace tc::ane::private_api

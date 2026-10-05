@@ -2,6 +2,7 @@
 
 #include "ane_program.hpp"
 #include "../ane_calibration_memory.hpp"
+#include "../ane_cost_model.hpp"
 #include <array>
 
 namespace tc::ane::private_api {
@@ -82,4 +83,31 @@ class W8GpuCalibrationWork {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+struct ChannelCalibrationSamples {
+    // [GPU, ANE, Both][one, four], every raw hot sample retained.
+    std::array<std::array<std::vector<double>,2>,3> seconds;
+    CalibrationPoint point;
+    bool prefetch = false;
+    uint64_t ane_calls = 0;
+};
+struct GpuCalibrationSamples {
+    std::array<std::vector<double>,2> seconds; // one/four full optimized GPU FFNs
+    double layer_seconds = 0;
+};
+GpuCalibrationSamples measure_full_gpu_calibration(const std::function<void()> &reset,
+    const std::function<void(int)> &submit,const std::function<void()> &finish,
+    int warmups = 2,int repeats = 7);
+// Connect independent prepared ANE submissions and complete GPU traffic to
+// the shared cost policy. This does not select an inference graph or cache a
+// model qualification. Every cell is warmed; serial cyclic order and medians
+// are used, not minimum-time cherry-picking. Caller observes external load,
+// owns source snapshots/outputs and supplies the family's optimized GPU head.
+ChannelCalibrationSamples measure_w8_channel_point(
+    Device &, Program &, const std::array<std::vector<CalibrationBindings>,2> &,
+    W8GpuCalibrationWork &, uint64_t &timeline, double share, bool prefetch,
+    const std::function<void()> &reset,
+    const W8GpuCalibrationWork::Head &, const W8GpuCalibrationWork::Fence &heads,
+    const W8GpuCalibrationWork::Join &, const W8GpuCalibrationWork::Fence &joins,
+    int warmups = 2, int repeats = 7);
 } // namespace tc::ane::private_api
