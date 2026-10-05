@@ -31,8 +31,8 @@ bool same_region(const DeviceWeightRegion &a,const DeviceWeightRegion &b) {
     return std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
            std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
         same_optional(x.scales,y.scales)&&same_optional(x.offsets,y.offsets)&&
-        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis)==
-        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis);
+        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis,p.activation_group_size)==
+        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis,q.activation_group_size);
 }
 class Worker {
     std::mutex mutex_;
@@ -73,6 +73,7 @@ struct Buffer {
 struct PrivateW8Graph::Impl {
     GraphShape shape;
     W8Basis basis = W8Basis::SylvesterDH;
+    int activation_group_size = 0;
     private_api::Device device;
     std::unique_ptr<private_api::Program> program;
     // Exactly two source-independent banks, reused across every layer/step.
@@ -108,7 +109,7 @@ struct PrivateW8Graph::Impl {
     Worker staging_worker;
     Worker worker; // destroyed first, draining before any source/slot release
     void build(float scale) {
-        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis);
+        auto emitted = private_api::w8_swiglu_program(shape, basis==W8Basis::ComfyH256?0:20260930, scale, basis,activation_group_size);
         program = std::make_unique<private_api::Program>(device, emitted.mil, emitted.constants, cache);
         headroom = scale;
     }
@@ -123,7 +124,8 @@ struct PrivateW8Graph::Impl {
             dsel.rows == s.hidden && dsel.columns == s.width && gsel.rotation_block == up_block && usel.rotation_block == up_block &&
             dsel.rotation_block == down_block && !gsel.transpose && !usel.transpose && !dsel.transpose &&
             gsel.rotation_seed == seed && usel.rotation_seed == seed && dsel.rotation_seed == seed &&
-            gsel.basis==basis && usel.basis==basis && dsel.basis==basis,
+            gsel.basis==basis && usel.basis==basis && dsel.basis==basis &&
+            gsel.activation_group_size==0 && usel.activation_group_size==0 && dsel.activation_group_size==0,
             "W8 source projection selection/recipe mismatch");
         auto &b = *banks[target]; b.ready = false;
         std::array<std::optional<private_api::QuantStage>,3> producers;
@@ -184,7 +186,7 @@ struct PrivateW8Graph::Impl {
             DeviceWeightView activation{input.buffer,input.buffer_bytes,input.offset_bytes + size_t(row)*(input.row_stride_bytes ? input.row_stride_bytes : size_t(s.hidden)*(input.dtype==DType::FP32?4:2)),
                 input.row_stride_bytes,s.rows,s.hidden,DeviceWeightEncoding::Dense,input.dtype,32,{}, {},input.owner};
             const bool comfy=basis==W8Basis::ComfyH256;
-            activations[slot] = device.stage_w8(activation,{0,s.rows,0,s.hidden,comfy?256:128,comfy?0u:20260930u,true,basis},*x[slot],*tx[slot]);
+            activations[slot] = device.stage_w8(activation,{0,s.rows,0,s.hidden,comfy?256:128,comfy?0u:20260930u,true,basis,activation_group_size},*x[slot],*tx[slot]);
         };
         for (int row = 0; row < input.rows; row += s.rows) {
             const int slot = a8_lookahead ? (row / s.rows) % 2 : 0;
@@ -251,12 +253,18 @@ struct PrivateW8Graph::Impl {
 PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache,W8Basis basis) : impl_(std::make_unique<Impl>()) {
     @autoreleasepool {
         auto start=Clock::now(); auto &p=*impl_; p.shape=shape;p.basis=basis;
+        const char *group=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE");
+        check(!group || std::string(group)=="0" || std::string(group)=="256","private ANE A8 group size requires 0 or 256");
+        p.activation_group_size=group && std::string(group)=="256"?256:0;
+        check(!p.activation_group_size || basis==W8Basis::ComfyH256,"group A8 requires the explicit Comfy direct-code basis");
         const char *lookahead=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD");
         check(!lookahead || std::string(lookahead)=="0" || std::string(lookahead)=="1", "private ANE A8 lookahead requires 0 or 1");
         p.a8_lookahead=lookahead && std::string(lookahead)=="1";
-        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis);
+        auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size);
         p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes;
         if (p.a8_lookahead) p.estimate += uint64_t(shape.hidden + 1) * ((uint64_t(shape.rows) + 63) / 64 * 64 + 128);
+        if(p.activation_group_size)p.estimate+=uint64_t(shape.hidden/256-1)*
+            ((uint64_t(shape.rows)*2+63)/64*64+128)*(p.a8_lookahead?2:1)+(64u<<10);
         if (p.estimate>budget) throw MemoryBudgetError("W8 graph/banks exceed memory budget");
         const auto decision=admit_memory(observe_runtime_memory(0),{uint64_t(4)<<30,budget},0,p.estimate);
         if (!decision.allowed()) throw MemoryBudgetError("W8 system memory admission denied");
@@ -266,7 +274,7 @@ PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesys
         for (auto &bank:p.banks) { bank=std::make_unique<Impl::Bank>(p.device,shape); p.allocated+=bank->bytes(); }
         auto add=[&](std::unique_ptr<Surface>&slot,int rows,int cols,Element element) { slot=std::make_unique<Surface>(p.device,rows,cols,element);p.allocated+=slot->bytes(); };
         for (int slot=0;slot<(p.a8_lookahead?2:1);++slot) {
-            add(p.x[slot],shape.hidden,shape.rows,Element::I8);add(p.tx[slot],1,shape.rows,Element::FP16);
+            add(p.x[slot],shape.hidden,shape.rows,Element::I8);add(p.tx[slot],p.activation_group_size?shape.hidden/256:1,shape.rows,Element::FP16);
         }
         add(p.y,spec.packed_rows,shape.rows,Element::FP16);
         if (shape.lora_inputs) {add(p.dg,shape.width,shape.rows,Element::FP16);add(p.du,shape.width,shape.rows,Element::FP16);}
@@ -282,13 +290,15 @@ const GraphShape &PrivateW8Graph::shape() const{return impl_->shape;}
 size_t PrivateW8Graph::slot_bytes() const{return impl_->allocated;}
 size_t PrivateW8Graph::estimated_bytes() const{return impl_->estimate;}
 double PrivateW8Graph::load_seconds() const{return impl_->load_time;}
-std::string PrivateW8Graph::weight_recipe() const{return impl_->basis==W8Basis::ComfyH256?convrot_w8a8_recipe:w8a8_recipe;}
+std::string PrivateW8Graph::weight_recipe() const{return impl_->activation_group_size?convrot_group_w8a8_recipe:
+    impl_->basis==W8Basis::ComfyH256?convrot_w8a8_recipe:w8a8_recipe;}
 std::string PrivateW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
 bool PrivateW8Graph::supports_fp32_device_output() const{return impl_->basis==W8Basis::ComfyH256;}
+int PrivateW8Graph::activation_group_size() const{return impl_->activation_group_size;}
 void PrivateW8Graph::stage_weights(std::vector<WeightView>){throw CapabilityError("W8 requires explicit GPU weight bindings");}
 void PrivateW8Graph::launch(MatrixView,uint16_t*,size_t,DType,std::optional<AdapterInput>){throw CapabilityError("W8 requires explicit GPU I/O bindings");}
 void PrivateW8Graph::stage_device_weights(std::vector<DeviceWeightView> sources){

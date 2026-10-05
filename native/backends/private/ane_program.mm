@@ -181,8 +181,8 @@ bool same_scale_key(const DeviceWeightRegion&a,const DeviceWeightRegion&b) {
     return same_generation(x.allocation_identity,y.allocation_identity)&&meta(x.scales,y.scales)&&meta(x.offsets,y.offsets)&&
         std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
         std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
-        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis)==
-        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis);
+        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis,p.activation_group_size)==
+        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis,q.activation_group_size);
 }
 bool live_scale_key(const DeviceWeightRegion&key) {
     return !key.source.allocation_identity.expired() &&
@@ -213,10 +213,10 @@ struct Device::Impl {
     bool specialize_staging = false;
     struct W8Pipelines { id<MTLComputePipelineState> scales, codes; };
     std::mutex pipelines_mutex;
-    // At most 18 Sylvester variants + 3 Comfy A dtypes + 2 direct W formats.
+    // At most 18 Sylvester + 3 Comfy row-A + 3 group-A + 2 direct W variants.
     // Keys retain no source allocation or model/adapter values.
-    std::map<std::array<uint32_t,3>,W8Pipelines> w8_pipelines;
-    W8Pipelines pipelines(DeviceWeightEncoding encoding,DType dtype,int block) {
+    std::map<std::array<uint32_t,4>,W8Pipelines> w8_pipelines;
+    W8Pipelines pipelines(DeviceWeightEncoding encoding,DType dtype,int block,bool grouped) {
         std::lock_guard lock(pipelines_mutex);
         NSError *error=nil;
         if(!w8_library) {
@@ -229,11 +229,11 @@ struct Device::Impl {
             w8_scale_copy=[device newComputePipelineStateWithFunction:[w8_library newFunctionWithName:@"tc_ane_w8_scale_copy"] error:&error];
             require(w8_scale_copy!=nil,"W8 scale metadata copy pipeline unavailable");
         }
-        std::array<uint32_t,3> key{0,0,0};
+        std::array<uint32_t,4> key{0,0,0,uint32_t(grouped)};
         const bool direct = encoding==DeviceWeightEncoding::ConvrotQ8Signed || encoding==DeviceWeightEncoding::ConvrotQ8Packed;
-        if(specialize_staging || direct)key={uint32_t(encoding),encoding==DeviceWeightEncoding::Dense?uint32_t(dtype):0u,uint32_t(block)};
+        if(specialize_staging || direct)key={uint32_t(encoding),encoding==DeviceWeightEncoding::Dense?uint32_t(dtype):0u,uint32_t(block),uint32_t(grouped)};
         auto found=w8_pipelines.find(key);if(found!=w8_pipelines.end())return found->second;
-        require(w8_pipelines.size()<23,"W8 pipeline variant bound exceeded");
+        require(w8_pipelines.size()<26,"W8 pipeline variant bound exceeded");
         MTLFunctionConstantValues *constants=[MTLFunctionConstantValues new];
         const bool specialized=specialize_staging;
         [constants setConstantValue:&specialized type:MTLDataTypeBool atIndex:0];
@@ -247,7 +247,7 @@ struct Device::Impl {
                     "W8 pipeline rotation/SIMD capacity unsupported");
             return pipeline;
         };
-        result.scales=make(direct?@"tc_ane_convrot_scales":@"tc_ane_w8_scales");
+        result.scales=make(direct?@"tc_ane_convrot_scales":grouped?@"tc_ane_w8_group_scales":@"tc_ane_w8_scales");
         result.codes=make(direct?@"tc_ane_convrot_codes":@"tc_ane_w8_codes");
         w8_pipelines.emplace(key,result);return result;
     }
@@ -582,7 +582,7 @@ struct W8Params {
     uint32_t source_pitch, physical_cols, encoding, dtype, group_size;
     uint32_t meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint32_t row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
-    uint32_t source_aligned, seed_low, seed_high, basis;
+    uint32_t source_aligned, seed_low, seed_high, basis, activation_group;
     float norm;
 };
 size_t w8_source_row_bytes(const DeviceWeightView &v) {
@@ -616,6 +616,9 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         const size_t row_bytes = w8_source_row_bytes(source);
         const size_t pitch = source.row_stride_bytes ? source.row_stride_bytes : row_bytes;
         const bool comfy = spec.basis==W8Basis::ComfyH256;
+        const bool grouped=spec.activation_group_size==256;
+        require(spec.activation_group_size==0 || (grouped && comfy && spec.transpose && source.encoding==DeviceWeightEncoding::Dense),
+                "group A8 requires explicit Comfy dense activation staging");
         const bool direct = source.encoding==DeviceWeightEncoding::ConvrotQ8Signed || source.encoding==DeviceWeightEncoding::ConvrotQ8Packed;
         require((spec.basis==W8Basis::SylvesterDH || comfy) &&
             (!comfy ? !direct : spec.rotation_block==256 && spec.rotation_seed==0 &&
@@ -633,7 +636,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         require(codes.element() == Element::I8 && scales.element() == Element::FP16 &&
             codes.impl_->buffer.device==impl_->device && scales.impl_->buffer.device==impl_->device &&
             codes.rows() == uint32_t(spec.transpose ? spec.columns : spec.rows) && codes.columns() == uint32_t(spec.transpose ? spec.rows : spec.columns) &&
-            scales.rows() == uint32_t(spec.transpose ? 1 : spec.rows) && scales.columns() == uint32_t(spec.transpose ? spec.rows : 1),
+            scales.rows() == uint32_t(spec.transpose ? (grouped?spec.columns/256:1) : spec.rows) && scales.columns() == uint32_t(spec.transpose ? spec.rows : 1),
             "W8 target surface geometry/type mismatch");
         const bool packed_comfy = source.encoding==DeviceWeightEncoding::ConvrotQ8Packed;
         const bool affine = source.encoding == DeviceWeightEncoding::AffineQ4 || source.encoding == DeviceWeightEncoding::AffineQ8 || packed_comfy;
@@ -663,7 +666,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         disjoint(source.buffer);
         for (const auto *meta : {&source.scales, &source.offsets}) if (*meta) disjoint((**meta).buffer);
         require(codes.impl_->buffer != scales.impl_->buffer, "W8 code/scale target aliases");
-        const auto pipelines=impl_->pipelines(source.encoding,source.dense_dtype,spec.rotation_block);
+        const auto pipelines=impl_->pipelines(source.encoding,source.dense_dtype,spec.rotation_block,grouped);
         require(pipelines.scales.maxTotalThreadsPerThreadgroup>=uint32_t(spec.rotation_block) &&
                 pipelines.codes.maxTotalThreadsPerThreadgroup>=uint32_t(spec.rotation_block),"W8 cached pipeline rotation capacity unsupported");
         auto state = std::make_shared<QuantStage::Impl>(std::move(codes), std::move(scales));
@@ -704,8 +707,8 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             uint32_t(s.scales ? device_pitch(*s.scales) : 0), uint32_t(s.scales ? s.scales->dtype : DType::FP16),
             uint32_t(s.offsets ? device_pitch(*s.offsets) : 0), uint32_t(s.offsets ? s.offsets->dtype : DType::FP16), uint32_t(s.offsets.has_value()),
             uint32_t(spec.row_begin), uint32_t(spec.rows), uint32_t(spec.column_begin), uint32_t(spec.columns), uint32_t(spec.rotation_block),
-            uint32_t(state->codes.pitch()), uint32_t(spec.transpose ? 2 : state->scales.pitch()), uint32_t(spec.transpose),
-            uint32_t(source_aligned), uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), uint32_t(spec.basis), 1.f / std::sqrt(float(spec.rotation_block))};
+            uint32_t(state->codes.pitch()), uint32_t(spec.transpose && !grouped ? 2 : state->scales.pitch()), uint32_t(spec.transpose),
+            uint32_t(source_aligned), uint32_t(spec.rotation_seed), uint32_t(spec.rotation_seed >> 32), uint32_t(spec.basis),uint32_t(spec.activation_group_size), 1.f / std::sqrt(float(spec.rotation_block))};
         // A8 must not queue behind an independently prepared future W bank.
         id<MTLCommandBuffer> command = [(spec.transpose ? impl_->activation_queue : impl_->staging_queue) commandBuffer];
         require(command != nil, "W8 stage command buffer unavailable");
@@ -737,7 +740,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             [scale setBuffer:state->status offset:0 atIndex:4]; [scale setBytes:&p length:sizeof(p) atIndex:5];
             [scale setBuffer:state->signs offset:0 atIndex:6];
             if (direct) [scale dispatchThreads:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];
-            else [scale dispatchThreadgroups:MTLSizeMake(spec.rows, 1, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)];
+            else [scale dispatchThreadgroups:MTLSizeMake(spec.rows, grouped?spec.columns/256:1, 1) threadsPerThreadgroup:MTLSizeMake(spec.rotation_block, 1, 1)];
             [scale endEncoding];
             if(state->cached_scales)copy_scales(false);
         }

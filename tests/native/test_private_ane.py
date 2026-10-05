@@ -117,6 +117,14 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertEqual(result.stdout.count("PASS direct ConvRot Executor"), 4)
         print(result.stdout.strip())
 
+    def test_convrot_group256_executor_and_hidden_scale_join(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                 str(self.root / "convrot-group256-cache"), "group256"], cwd=ROOT,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("group=256"), 4)
+        print(result.stdout.strip())
+
     def test_private_w8a8_normalized_matmul_two_banks_and_gpu_epilogue(self):
         result = subprocess.run([str(self.build / "private-ane-w8-pipeline-test"), str(self.root / "w8-pipeline-cache")],
                                 cwd=ROOT, capture_output=True, text=True, timeout=120)

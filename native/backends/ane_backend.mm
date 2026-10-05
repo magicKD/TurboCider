@@ -14,6 +14,11 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         throw std::runtime_error("private ANE requires explicit authorization");
     const bool try_private = policy.allow_private &&
         (policy.preferred == BackendPreference::Auto || policy.preferred == BackendPreference::Private);
+    const char *group=std::getenv("TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE");
+    if(group && std::string(group)!="0" && std::string(group)!="256")
+        throw std::runtime_error("private ANE A8 group size requires 0 or 256");
+    const bool requested_group=group && std::string(group)=="256";
+    if(requested_group && !try_private)throw std::runtime_error("group A8 requires an authorized private backend");
     const int channels = private_channel_count(expected.width);
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
     if (try_private) {
@@ -28,6 +33,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
             const std::string path = std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") ? std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") : "fp16";
             if (path != "fp16" && path != "w8a8" && path != "convrot_w8a8")
                 throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_DATA_PATH requires fp16, w8a8 or convrot_w8a8");
+            if(requested_group && path!="convrot_w8a8")throw std::runtime_error("group A8 requires convrot_w8a8 data path");
             if (channels && path == "fp16") throw std::runtime_error("channel split requires the W8A8 data path");
             if (channels) shape.width = channels; // base template still validated against the FULL model
             std::unique_ptr<Executor> graph = path != "fp16" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,

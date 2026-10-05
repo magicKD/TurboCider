@@ -13,7 +13,7 @@ struct W8Params {
     uint source_pitch, physical_cols, encoding, dtype, group_size;
     uint meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
-    uint source_aligned, seed_low, seed_high, basis;
+    uint source_aligned, seed_low, seed_high, basis, activation_group;
     float norm;
 };
 inline uint w8_u16(device const uchar *p) { return uint(p[0]) | (uint(p[1]) << 8); }
@@ -155,11 +155,31 @@ kernel void tc_ane_w8_codes(device const uchar *src [[buffer(0)]], device const 
     if (!isfinite(x)) { atomic_fetch_or_explicit(status,1u,memory_order_relaxed); x=0; }
     float rotated = w8_rotate(x, v, lane, p, signs);
     if (!isfinite(rotated)) atomic_fetch_or_explicit(status,2u,memory_order_relaxed);
-    float scale = from_half(row_scales[row * p.scale_pitch / 2]);
+    float scale = from_half(row_scales[p.activation_group ? ulong(tile.y)*p.scale_pitch/2+row : ulong(row)*p.scale_pitch/2]);
     if (!(scale>0) || !isfinite(scale)) atomic_fetch_or_explicit(status,4u,memory_order_relaxed);
     float q = clamp((rotated / scale) * 128.f, -127.f, 127.f);
     if (!isfinite(q)) { atomic_fetch_or_explicit(status, 8u, memory_order_relaxed); q = 0; }
     dst[p.transpose ? ulong(col) * p.code_pitch + row : ulong(row) * p.code_pitch + col] = char(rint(q));
+}
+kernel void tc_ane_w8_group_scales(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]], device ushort *dst [[buffer(3)]], device atomic_uint *status [[buffer(4)]],
+    constant W8Params &p [[buffer(5)]], constant float *signs [[buffer(6)]],
+    uint2 tile [[threadgroup_position_in_grid]], uint lane [[thread_index_in_threadgroup]]) {
+    threadgroup float v[512];
+    float x=w8_decode(src,scales,offsets,p.row_begin+tile.x,p.column_begin+tile.y*256+lane,p);
+    if(!isfinite(x)) {atomic_fetch_or_explicit(status,1u,memory_order_relaxed);x=0;}
+    float rotated=w8_rotate(x,v,lane,p,signs);
+    if(!isfinite(rotated))atomic_fetch_or_explicit(status,2u,memory_order_relaxed);
+    float peak=simd_max(abs(rotated));
+    if(!(lane%32))v[lane/32]=peak;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if(!lane) {
+        float total=v[0];for(uint warp=1;warp<8;++warp)total=max(total,v[warp]);
+        float norm=total==0?128.f:max((total/127.f)*128.f,0x1p-24f);
+        ushort out=to_half(norm);
+        if(!out || (out&0x7c00)==0x7c00) {atomic_fetch_or_explicit(status,4u,memory_order_relaxed);out=0x5800;}
+        dst[ulong(tile.y)*p.scale_pitch/2+tile.x]=out;
+    }
 }
 // Only compact FP16 scale metadata is retained, never a W8/dense matrix.
 kernel void tc_ane_w8_scale_copy(device const ushort *src [[buffer(0)]],device ushort *dst [[buffer(1)]],

@@ -59,6 +59,12 @@ int main() {
     if (w8.mil.find("wg_d = dequantize") != std::string::npos || w8.mil.find("xd = dequantize") != std::string::npos)
         return 1;
     const auto comfy=private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},0,1,W8Basis::ComfyH256);
+    const auto grouped=private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},0,1,W8Basis::ComfyH256,256);
+    if(grouped.packed_rows!=comfy.packed_rows || grouped.constants!=comfy.constants ||
+        grouped.mil.find("[1, 2, 256, 33]")==std::string::npos ||
+        grouped.mil.find("gscaled256")==std::string::npos || grouped.mil.find("hratio_group")==std::string::npos)return 1;
+    try {private_api::w8_swiglu_program({Kind::SwiGLU,33,512,512,256,512,true},20260930,1,W8Basis::SylvesterDH,256);return 1;}
+    catch(const CapabilityError&) {}
     if(comfy.constants.size()!=128+512*256*2 || comfy.mil.find("groups = int32(2)")==std::string::npos ||
         comfy.mil.find("[512, 256, 1, 1]")==std::string::npos) return 1;
     constexpr int h4[4][4]={{1,1,1,-1},{1,1,-1,1},{1,-1,1,1},{-1,1,1,1}};

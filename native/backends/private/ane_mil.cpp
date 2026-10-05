@@ -130,7 +130,7 @@ std::string w8_matmul_program(const GraphShape &s) {
     return "program(1.3)\n{\n    func main_ane<ios18>(" + input_buffer(s.hidden, s.rows) + " x, " + input_buffer(s.width, s.hidden) +
         " w) {\n" + body + "    } -> (y);\n}\n";
 }
-W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis) {
+W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,int activation_group_size) {
     // An explicit 4224-row bucket can cover 1024px image tokens and up to
     // 128 caption tokens in one request. Keep the existing smaller buckets
     // available: fewer handoffs are not a model-speed/quality guarantee.
@@ -140,6 +140,9 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         std::log2(headroom) != std::floor(std::log2(headroom)))
         throw CapabilityError("private W8A8 SwiGLU geometry/headroom unsupported");
     const bool comfy=basis==W8Basis::ComfyH256;
+    const bool grouped=activation_group_size==256;
+    if(activation_group_size!=0 && (!grouped || !comfy))
+        throw CapabilityError("group A8 MIL requires explicit Comfy group256 recipe");
     if ((basis!=W8Basis::SylvesterDH && !comfy) || (comfy && (s.hidden%256 || seed!=0)))
         throw CapabilityError("private W8A8 Comfy basis/seed/geometry unsupported");
     const int rotation_block=comfy?256:512;
@@ -174,8 +177,9 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         line(typed(type, r, c) + " " + name + "_t = tensor_buffer_to_tensor<ios17>(input = " + name + ")");
     };
     auto f = [&](const std::string &name, int r, const std::string &expression) { line(typed("fp16", r, s.rows) + " " + name + " = " + expression); };
-    auto projection = [&](const std::string &name, const std::string &w, const std::string &x, int n, int k) {
-        const int tile = s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
+    auto projection = [&](const std::string &name, const std::string &w, const std::string &x, int n, int k,
+                          const std::string &group_scales=std::string{},const std::string &row_scales=std::string{}) {
+        const int tile = grouped ? 256 : s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
         if (tile < 128) throw CapabilityError("private W8A8 K tile too small");
         std::string total;
         for (int begin = 0; begin < k; begin += tile) {
@@ -191,21 +195,39 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
             line(typed("int8", width, s.rows) + " " + xt + "q = slice_by_size(x = " + x + ", begin = tensor<int32, [4]>([0, 0, " + suffix + ", 0]), size = tensor<int32, [4]>(" + shape(width, s.rows) + "))");
             f(xt, width, "dequantize(input = " + xt + "q, scale = fp16(0x1p-7))");
             f(p, n, "matmul(transpose_x = bool(false), transpose_y = bool(false), x = " + wt + ", y = " + xt + ")");
-            if (total.empty()) total = p;
-            else { const auto sum = name + "s" + suffix; f(sum, n, "add(x = " + total + ", y = " + p + ")"); total = sum; }
+            std::string partial=p;
+            if(grouped) {
+                const auto scale=name+"scale"+suffix;
+                f(scale,1,"slice_by_size(x = "+group_scales+", begin = tensor<int32, [4]>([0, 0, "+
+                    std::to_string(begin/256)+", 0]), size = tensor<int32, [4]>("+shape(1,s.rows)+"))");
+                if(!row_scales.empty()) {
+                    partial=name+"row"+suffix;f(partial,n,"mul(x = "+p+", y = "+row_scales+")");
+                }
+                const auto scaled=name+"scaled"+suffix;f(scaled,n,"mul(x = "+partial+", y = "+scale+")");partial=scaled;
+            }
+            if (total.empty()) total = partial;
+            else { const auto sum = name + "s" + suffix; f(sum, n, "add(x = " + total + ", y = " + partial + ")"); total = sum; }
         }
         return total;
     };
-    input("int8", "x", s.hidden, s.rows); input("fp16", "tx", 1, s.rows);
+    input("int8", "x", s.hidden, s.rows); input("fp16", "tx", grouped?s.hidden/256:1, s.rows);
     input("int8", "wg", s.width, s.hidden); input("fp16", "sg", s.width, 1);
     input("int8", "wu", s.width, s.hidden); input("fp16", "su", s.width, 1);
     input("int8", "wd", s.hidden, s.width);
-    const auto g = projection("g", "wg", "x_t", s.width, s.hidden), u = projection("u", "wu", "x_t", s.width, s.hidden);
+    if(grouped) {
+        // Keep all partial dots in the same bounded normalized domain as
+        // the row recipe. Restore W/token scales only ONCE after the sum.
+        f("tx_global",1,"reduce_max(x = tx_t, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        f("tx_ratio",s.hidden/256,"real_div(x = tx_t, y = tx_global)");
+    }
+    const auto g = projection("g", "wg", "x_t", s.width, s.hidden,grouped?"tx_ratio":""),
+        u = projection("u", "wu", "x_t", s.width, s.hidden,grouped?"tx_ratio":"");
+    const std::string tx=grouped?"tx_global":"tx_t";
     f("gs", s.width, "mul(x = " + g + ", y = sg_t)");
-    f("gt", s.width, "mul(x = gs, y = tx_t)");
+    f("gt", s.width, "mul(x = gs, y = "+tx+")");
     line(typed("fp16", s.width, 1) + " su_safe = real_div(x = su_t, y = fp16(" + std::to_string(headroom) + "))");
     f("us_norm", s.width, "mul(x = " + u + ", y = su_safe)");
-    f("us", s.width, "mul(x = us_norm, y = tx_t)");
+    f("us", s.width, "mul(x = us_norm, y = "+tx+")");
     std::string gate = "gt", up = "us";
     if (s.lora_inputs) {
         input("fp16", "dg", s.width, s.rows); input("fp16", "du", s.width, s.rows);
@@ -223,12 +245,27 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> hr4 = conv(dilations = tensor<int32, [2]>([1, 1]), groups = int32(" +
         std::to_string(s.width / rotation_block) + "), pad = tensor<int32, [4]>([0, 0, 0, 0]), pad_type = string(\"valid\"), strides = tensor<int32, [2]>([1, 1]), weight = rotation, x = h4)");
     f("hr", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
-    f("habs", s.width, "abs(x = hr)"); f("peak", 1, "reduce_max(x = habs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
-    f("floor", 1, "maximum(x = peak, y = fp16(0x1p-12))");
-    f("ratio", s.width, "real_div(x = hr, y = floor)"); f("a8", s.width, "mul(x = ratio, y = fp16(127))");
-    line(typed("int8", s.width, s.rows) + " hq = quantize(input = a8, scale = fp16(1), output_dtype = string(\"int8\"))");
+    if(grouped) {
+        const auto groups=std::to_string(s.width/256),gshape="[1, "+groups+", 256, "+m+"]",pshape="[1, "+groups+", 1, "+m+"]";
+        line("tensor<fp16, "+gshape+"> hg = reshape(x = hr, shape = tensor<int32, [4]>("+gshape+"))");
+        line("tensor<fp16, "+gshape+"> hgabs = abs(x = hg)");
+        line("tensor<fp16, "+pshape+"> hgpeak = reduce_max(x = hgabs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        line("tensor<fp16, "+pshape+"> hgfloor = maximum(x = hgpeak, y = fp16(0x1p-12))");
+        f("group_floor",s.width/256,"reshape(x = hgfloor, shape = tensor<int32, [4]>("+shape(s.width/256,s.rows)+"))");
+        f("floor",1,"reduce_max(x = group_floor, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        line("tensor<fp16, "+gshape+"> hgratio = real_div(x = hg, y = hgfloor)");
+        line("tensor<fp16, "+gshape+"> hga8 = mul(x = hgratio, y = fp16(127))");
+        line("tensor<int8, "+gshape+"> hgq = quantize(input = hga8, scale = fp16(1), output_dtype = string(\"int8\"))");
+        line(typed("int8",s.width,s.rows)+" hq = reshape(x = hgq, shape = tensor<int32, [4]>("+shape(s.width,s.rows)+"))");
+        f("hratio_group",s.width/256,"real_div(x = group_floor, y = floor)");
+    } else {
+        f("habs", s.width, "abs(x = hr)"); f("peak", 1, "reduce_max(x = habs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        f("floor", 1, "maximum(x = peak, y = fp16(0x1p-12))");
+        f("ratio", s.width, "real_div(x = hr, y = floor)"); f("a8", s.width, "mul(x = ratio, y = fp16(127))");
+        line(typed("int8", s.width, s.rows) + " hq = quantize(input = a8, scale = fp16(1), output_dtype = string(\"int8\"))");
+    }
     f("hscale", 1, "mul(x = floor, y = fp16(0x1.0204081020408p+0))");
-    const auto y = projection("d", "wd", "hq", s.hidden, s.width);
+    const auto y = projection("d", "wd", "hq", s.hidden, s.width,grouped?"hratio_group":"");
     const std::string outputs = "(" + y + ", hscale" + (s.lora_inputs ? ", hsafe" : "") + ")";
     f("packed", result.packed_rows, "concat(values = " + outputs + ", axis = int32(2), interleave = bool(false))");
     const int pitch = (s.rows + 31) / 32 * 32; const auto plane = std::to_string(uint64_t(result.packed_rows) * pitch);

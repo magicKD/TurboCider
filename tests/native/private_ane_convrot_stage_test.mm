@@ -112,6 +112,7 @@ int main() {
             std::vector<float> values(size_t(physical_rows)*k);
             for(int r=0;r<physical_rows;++r)for(int c=0;c<k;++c) {
                 float x=r==1?0:r==2?0x1p-20f:float((r*13+c*17)%1024-512)/1024.f;
+                const float factors[4]={8.f,.125f,0x1p-20f,1.f};x*=factors[(c/256)%4];
                 values[r*k+c]=store(static_cast<char*>(source.value.contents)+offset+r*pitch+c*item,x,dtype);
             }
             DeviceWeightView view{(__bridge void*)source.value,source.value.length,offset,pitch,physical_rows,k,
@@ -134,8 +135,30 @@ int main() {
                 for(int c=0;c<count;++c)check(static_cast<const int8_t*>(q.data())[c*q.pitch()+r]==quantize_rotated(rotated[c],expected),"Comfy A8 code/source rounding mismatch");
             }
             padding(q,m);padding(s,m*2);
+            auto group_spec=spec;group_spec.activation_group_size=256;
+            Surface gs(generic,count/256,m,Element::FP16),fast_gs(specialized,count/256,m,Element::FP16);
+            fill(q);fill(fast_q);fill(gs);fill(fast_gs);
+            auto grouped=generic.stage_w8(view,group_spec,q,gs),fast_grouped=specialized.stage_w8(view,group_spec,fast_q,fast_gs);
+            check(grouped.finish().ok && fast_grouped.finish().ok,"Comfy group A8 stage failed");
+            check(!std::memcmp(q.data(),fast_q.data(),q.rows()*q.pitch()) &&
+                !std::memcmp(gs.data(),fast_gs.data(),gs.rows()*gs.pitch()),"group A8 generic/specialized mismatch");
+            for(int r=0;r<m;++r)for(int group=0;group<count/256;++group) {
+                std::vector<float> rotated(values.begin()+(r+1)*k+first+group*256,values.begin()+(r+1)*k+first+(group+1)*256);
+                rotate_comfy_block(rotated,dtype);
+                float peak=0;for(float x:rotated)peak=std::max(peak,std::abs(x));
+                const auto expected=normalized_scale(peak);
+                check(reinterpret_cast<const uint16_t*>(static_cast<const char*>(gs.data())+group*gs.pitch())[r]==expected,
+                    "group A8 CPU scale oracle mismatch");
+                for(int c=0;c<256;++c)check(static_cast<const int8_t*>(q.data())[(group*256+c)*q.pitch()+r]==quantize_rotated(rotated[c],expected),
+                    "group A8 CPU code oracle mismatch");
+            }
+            padding(q,m);padding(gs,m*2);
+            auto invalid=group_spec;invalid.activation_group_size=128;
+            try {generic.stage_w8(view,invalid,q,gs);throw std::runtime_error("unqualified group size accepted");}
+            catch(const CapabilityError&) {}
         }
         std::cout<<"PASS 9 Comfy H256 A8 typed/strided cases: K512/3840/10240, exact CPU radix-4/source rounding/RNE and padding\n";
+        std::cout<<"PASS 9 Comfy group256 A8 cases: independent per-group peaks, zero/tiny/outlier groups, exact source rounding/RNE, physical slices and padding\n";
         // Direct scale overflow/underflow is a failed stage, never zeroed W
         // reported as successful. No quantizer floor may alter source scales.
         Buffer codes(gpu,256),meta(gpu,4);

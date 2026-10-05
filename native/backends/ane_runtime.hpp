@@ -78,6 +78,7 @@ struct W8StageSpec {
     uint64_t rotation_seed = 20260930;
     bool transpose = false; // A8 channel-major vs W8 out/in
     W8Basis basis = W8Basis::SylvesterDH;
+    int activation_group_size = 0; // 0: per-token; 256: explicit Comfy A8 groups
 };
 // Logical selection over an unchanged physical source. In particular a down
 // channel slice keeps the full packed row pitch/metadata geometry and owner.
@@ -212,6 +213,7 @@ class Executor {
     // Base-down partial only. Retain FP32 until a channel join's ONE final
     // model-dtype rounding. Does not imply an FP32 ANE graph or hidden ABI.
     virtual bool supports_fp32_device_output() const { return false; }
+    virtual int activation_group_size() const { return 0; }
 };
 
 // Explicit opt-in runtime-weight backend; never selected by auto routing.
