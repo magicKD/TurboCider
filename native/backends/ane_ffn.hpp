@@ -113,6 +113,7 @@ class HybridFfn {
     bool prefetch_ = false;
     bool lora_channel_range_ = true;
     bool fixed_async_ = false;
+    bool defer_channel_join_ = false;
     int prefetched_layer_ = -1;
     size_t memory_budget_ = 0;
     std::string reason_;

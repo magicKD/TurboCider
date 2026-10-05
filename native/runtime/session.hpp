@@ -61,6 +61,8 @@ struct HybridMetrics {
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;
     uint64_t runtime_weight_untimed_hybrid_blocks = 0; // hybrid subset without whole-block timing fences
     uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
+    bool runtime_weight_deferred_join_enabled = false;
+    uint64_t runtime_weight_deferred_join_blocks = 0; // explicit channel/untimed subset; output remains owned
     uint64_t runtime_weight_unsplit_gpu_blocks = 0; // subset of GPU blocks; no FFN bridge
     uint64_t runtime_weight_full_gpu_probe_blocks = 0; // measured subset of unsplit GPU blocks
     double runtime_weight_full_gpu_probe_seconds = 0;
@@ -75,6 +77,8 @@ struct HybridMetrics {
     // output restoration, optional down-LoRA and final concatenation/eval;
     // async post_join also includes any GPU-head work still outstanding at
     // the final output fence. None is a GPU kernel/physical overlap timer.
+    // For a deferred block this is only host graph construction;
+    // subsequent GPU consumption is charged to the complete request wall.
     double runtime_weight_lora_gate_up_seconds = 0, runtime_weight_post_join_seconds = 0;
     // Combined attention/input + LoRA correction readiness; subset of pre,
     // not a pure LoRA kernel timer or part of the parallel FFN window.

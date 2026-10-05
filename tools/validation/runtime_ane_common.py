@@ -100,6 +100,8 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     stage_policy = None
     previous_stage_variants = 0
     previous_lora_channels = (0, 0)
+    previous_deferred_join = 0
+    deferred_join_policy = None
     lora_channel_receipt_seen = False
     for row in rows:
         actual_backend = row.get("runtime_backend")
@@ -169,6 +171,24 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
         previous_calls = calls
         if route == "runtime":
             runtime = hybrid.get("runtime_weight") or {}
+            defer_keys=("deferred_channel_join_enabled","deferred_channel_join_blocks_session_total","post_join_scope")
+            has_defer=any(name in runtime for name in defer_keys)
+            if deferred_join_policy is not None and not has_defer:
+                raise ValueError("deferred join receipt disappeared")
+            if has_defer:
+                enabled=runtime.get("deferred_channel_join_enabled")
+                count=session_counter(runtime,"deferred_channel_join_blocks_session_total")
+                channels=session_counter(runtime,"channel_blocks_session_total")
+                asynchronous=session_counter(runtime,"async_hybrid_blocks_session_total")
+                expected_scope=("evaluated_join_host_span" if count==0 else
+                    "host_graph_construction_deferred_gpu_consumption" if count==channels else
+                    "mixed_evaluated_and_deferred_join_spans")
+                if (type(enabled) is not bool or count<previous_deferred_join or
+                        count>channels or count>asynchronous or (not enabled and count) or
+                        (deferred_join_policy is not None and enabled is not deferred_join_policy) or
+                        runtime.get("post_join_scope")!=expected_scope):
+                    raise ValueError("invalid deferred join policy/count/timing scope")
+                previous_deferred_join,deferred_join_policy=count,enabled
             lora_keys=("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total")
             has_lora_channels=any(name in runtime for name in lora_keys)
             if lora_channel_receipt_seen and not has_lora_channels:
@@ -414,6 +434,25 @@ def validate_fixed_async(rows, enabled):
         if blocks<=0 or (enabled and (untimed!=blocks or asynchronous!=blocks)) or (
                 not enabled and (untimed!=0 or asynchronous!=0)):
             raise ValueError("requested fixed async head policy was not executed")
+
+
+def validate_deferred_channel_join(rows, enabled):
+    """Actual owned channel joins, not flag intent or a component self-test."""
+    if not rows:
+        raise ValueError("missing deferred channel join results")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks=session_counter(runtime,"channel_blocks_session_total")
+        asynchronous=session_counter(runtime,"async_hybrid_blocks_session_total")
+        deferred=session_counter(runtime,"deferred_channel_join_blocks_session_total")
+        if (runtime.get("executor_backend")!="private_ane" or
+                runtime.get("partition_axis")!="intermediate_channels" or blocks<=0 or
+                runtime.get("deferred_channel_join_enabled") is not enabled or
+                (enabled and asynchronous!=blocks) or deferred>asynchronous or
+                deferred!=(blocks if enabled else 0) or
+                runtime.get("post_join_scope")!=("host_graph_construction_deferred_gpu_consumption"
+                    if enabled else "evaluated_join_host_span")):
+            raise ValueError("requested deferred channel join policy was not executed")
 
 
 def validate_lora_channel_range(rows, enabled):

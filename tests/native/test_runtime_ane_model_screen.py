@@ -21,6 +21,71 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_deferred_channel_join_requires_actual_owned_untimed_execution(self):
+        row=copy.deepcopy(self.row)
+        r=row["hybrid"]["runtime_weight"]
+        r.update(executor_backend="private_ane",partition_axis="intermediate_channels",
+                 channel_blocks_session_total=2,async_hybrid_blocks_session_total=2,
+                 deferred_channel_join_enabled=True,deferred_channel_join_blocks_session_total=2,
+                 post_join_scope="host_graph_construction_deferred_gpu_consumption")
+        COMMON.validate_deferred_channel_join([row],True)
+        for change in ({"deferred_channel_join_enabled":False},
+                       {"deferred_channel_join_blocks_session_total":0},
+                       {"async_hybrid_blocks_session_total":1},
+                       {"post_join_scope":"evaluated_join_host_span"},
+                       {"executor_backend":"public_coreml"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.assertRaises(ValueError):COMMON.validate_deferred_channel_join([bad],True)
+        r.update(deferred_channel_join_enabled=False,deferred_channel_join_blocks_session_total=0,
+                 post_join_scope="evaluated_join_host_span")
+        COMMON.validate_deferred_channel_join([row],False)
+        with self.assertRaises(ValueError):COMMON.validate_deferred_channel_join([],True)
+
+    def test_deferred_join_receipts_are_complete_bounded_and_monotonic(self):
+        row=copy.deepcopy(self.row)
+        receipt=row["hybrid"]["runtime_weight"]
+        group=dict(deferred_channel_join_enabled=True,deferred_channel_join_blocks_session_total=1,
+                   post_join_scope="mixed_evaluated_and_deferred_join_spans")
+        receipt.update(channel_blocks_session_total=2,hybrid_blocks_session_total=2,
+                       untimed_hybrid_blocks_session_total=2,async_hybrid_blocks_session_total=2,
+                       async_ane_wait_seconds_session_total=.1,hybrid_ffn_seconds_session_total=.2,**group)
+        SCREEN.validate_results([row],"runtime",1)
+        for change in ({"deferred_channel_join_enabled":False},{"deferred_channel_join_enabled":1},
+                       {"deferred_channel_join_blocks_session_total":True},
+                       {"deferred_channel_join_blocks_session_total":-1},
+                       {"deferred_channel_join_blocks_session_total":3},
+                       {"async_hybrid_blocks_session_total":0},
+                       {"post_join_scope":"evaluated_join_host_span"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                SCREEN.validate_results([bad],"runtime",1)
+        for name in group:
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.subTest(name=name),self.assertRaises(ValueError):
+                SCREEN.validate_results([bad],"runtime",1)
+        later=copy.deepcopy(row)
+        later["hybrid"]["runtime_weight"].update(deferred_channel_join_blocks_session_total=2,
+                                               post_join_scope="host_graph_construction_deferred_gpu_consumption")
+        SCREEN.validate_results([row,later],"runtime",2)
+        with self.assertRaises(ValueError):SCREEN.validate_results([later,row],"runtime",2)
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,self.row],"runtime",2)
+        changed=copy.deepcopy(row)
+        changed["hybrid"]["runtime_weight"].update(deferred_channel_join_enabled=False,
+            deferred_channel_join_blocks_session_total=0,post_join_scope="evaluated_join_host_span")
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,changed],"runtime",2)
+
+    def test_deferred_join_invalid_screen_options_are_rejected_before_output(self):
+        for options in ([],["--fixed-async","1"],["--private-channels","4096"],
+                        ["--fixed-async","1","--profile"]):
+            with tempfile.TemporaryDirectory() as directory:
+                out=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,"-B",str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id","z-image-turbo","--steps","8",
+                    "--routes","gpu,runtime","--chunks","1","--defer-channel-join","1",
+                    "--output",str(out),*options],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertFalse(out.exists())
+
     def test_qwen_lora_1024_environment_is_matched_and_limited(self):
         options=dict(model_id="qwen-image-2.1",size=1024,steps=6,enabled=True,
                      has_lora=True,references=False,fp16=False,routes=("gpu","runtime"))

@@ -188,6 +188,9 @@ class PrivateAneChannelMlxTests(unittest.TestCase):
             self.assertIn("PASS channel MLX/W8 Executor",result.stdout)
             self.assertIn("PASS channel LoRA range callback",result.stdout)
             self.assertIn("PASS fixed async channel",result.stdout)
+            self.assertIn("PASS deferred channel join",result.stdout)
+            self.assertIn("PASS deferred typed lifetime",result.stdout)
+            self.assertIn("PASS channel failure cleanup",result.stdout)
             print(result.stdout.strip())
 
 

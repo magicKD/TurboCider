@@ -115,6 +115,15 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     fixed_async_ = fixed_async && std::string(fixed_async)=="1";
     require(!fixed_async_ || (chunks>0 && !profile_),
             "runtime ANE fixed async requires positive fixed chunks and profiling disabled");
+    const char *defer = std::getenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+    require(!defer || std::string(defer)=="0" || std::string(defer)=="1",
+            "runtime ANE deferred channel join requires 0 or 1");
+    const bool requested_defer = defer && std::string(defer)=="1";
+    require(!requested_defer || (fixed_async_ && private_channel_count(width)>0 &&
+            configured_backend().allow_private &&
+            (configured_backend().preferred==BackendPreference::Private ||
+             configured_backend().preferred==BackendPreference::Auto)),
+            "runtime ANE deferred join requires authorized private channels and fixed async");
     metrics_.weight_variant = "runtime_fp16";
     metrics_.mlp_output_kind = "runtime_weight_swiglu";
     metrics_.hidden = metrics_.output_channels = hidden;
@@ -152,6 +161,8 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     if (metrics_.runtime_weight_data_path == "w8a8_hadamard") {
         metrics_.weight_variant = "runtime_w8a8";
     }
+    defer_channel_join_ = requested_defer && channel_split();
+    metrics_.runtime_weight_deferred_join_enabled = defer_channel_join_;
     metrics_.bucket = graph_->shape().rows;
     if (graph_->shape().lora_inputs) metrics_.mlp_output_kind = "runtime_weight_swiglu_lora_inputs";
     metrics_.load_seconds = graph_->load_seconds();
@@ -178,7 +189,8 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_PRIVATE_ANE_GPU_IO","TURBOCIDER_PRIVATE_ANE_CHANNELS","TURBOCIDER_PRIVATE_ANE_PREFETCH",
                            "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE","TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE",
                            "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",
-                           "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC"}) {
+                           "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",
+                           "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN"}) {
         const char *raw = std::getenv(key);
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;
@@ -764,7 +776,14 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             merged = adapter->down_and_add(full_hidden,merged);
             require(merged.shape() == input.shape() && merged.dtype() == input.dtype(), "channel down-LoRA output contract mismatch");
         }
-        mx::eval(merged);
+        // ANE and its GPU restoration are already complete. Each output and
+        // hidden backing is independently MLX-owned, not the next job's y
+        // surface. Only the explicit fixed/untimed channel experiment may
+        // leave the join/down-LoRA lazy for the family's normal consumer.
+        // Measured plans, fallback and exception cleanup keep their fences.
+        const bool deferred = defer_channel_join_ && async_head;
+        if (!deferred) mx::eval(merged);
+        if (deferred) ++metrics_.runtime_weight_deferred_join_blocks;
         metrics_.runtime_weight_post_join_seconds += elapsed(post_start);
         const double wall = elapsed(start);
         if (block_plan_) {

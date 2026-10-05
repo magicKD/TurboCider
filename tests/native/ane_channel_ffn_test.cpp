@@ -95,6 +95,19 @@ int main(int argc,char**argv) {
             catch(const std::exception&) { bad_range_policy=true; }
             check(bad_range_policy,"invalid LoRA channel policy reported GPU success");
             setenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","1",1);
+            const auto before_defer_identity=ane::HybridFfn::executor_configuration_identity();
+            setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","1",1);
+            check(before_defer_identity!=ane::HybridFfn::executor_configuration_identity(),"deferred policy absent from identity");
+            bool invalid_defer=false;
+            try { ane::HybridFfn bad(argv[1],h,f,1,cancelled,true); }
+            catch(const std::exception&) {invalid_defer=true;}
+            check(invalid_defer,"defer without fixed async accepted");
+            setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","2",1);
+            invalid_defer=false;
+            try { ane::HybridFfn bad(argv[1],h,f,1,cancelled,true); }
+            catch(const std::exception&) {invalid_defer=true;}
+            check(invalid_defer,"malformed defer flag accepted");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
             ane::HybridFfn unavailable(argv[1],h,f,1,cancelled,true);
             check(!unavailable.available() && unavailable.metrics().runtime_failed &&
                   unavailable.backend_label()=="mlx_cpp_metal" && unavailable.precision_label()=="bf16" &&
@@ -226,10 +239,12 @@ int main(int argc,char**argv) {
         auto after_prefetch=runtime.metrics();
         check(after_prefetch.runtime_weight_prefetch_submissions==before_prefetch.runtime_weight_prefetch_submissions+1&&
               after_prefetch.runtime_weight_prefetch_hits==before_prefetch.runtime_weight_prefetch_hits+1,"model did not consume prefetched bank");
-        {
+        for(bool deferred:{false,true}) {
             setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN",deferred?"1":"0",1);
             ane::HybridFfn asynchronous(argv[1],h,f,512u<<20,cancelled,true);
             unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
             auto execute=[&](const Tensor&input,const ane::HybridFfn::Gpu&fallback) {
                 auto plan=asynchronous.plan_block(0,input.shape(1));
                 check(plan.mode==ane::RowScheduler::Mode::HybridUntimed&&!plan.measured()&&plan.chunks==1,
@@ -249,6 +264,17 @@ int main(int argc,char**argv) {
             check(counters.runtime_weight_async_hybrid_blocks==2&&counters.runtime_weight_untimed_hybrid_blocks==2&&
                   counters.runtime_weight_gpu_seconds==0&&counters.runtime_weight_join_seconds==0,
                   "fixed async channel receipt counts a timed GPU branch");
+            check(counters.runtime_weight_deferred_join_enabled==deferred&&
+                  counters.runtime_weight_deferred_join_blocks==(deferred?2u:0u),
+                  "deferred join policy/actual counter mismatch");
+            // Do not consume the first result before the next ANE request
+            // reuses y. Returned joins retain independent head/tail owners.
+            auto retained=execute(px,full);
+            auto different=mx::full(px.shape(),-.4f,px.dtype());
+            auto next=execute(different,full);
+            mx::eval({retained,next});
+            check(mx::all(retained==pb).item<bool>()&&!mx::all(retained==next).item<bool>(),
+                  "pending join borrowed reusable ANE output scratch");
             auto bad=mx::concatenate({mx::full({1,33,h},.1f,mx::bfloat16),
                 mx::full({1,34,h},std::numeric_limits<float>::quiet_NaN(),mx::bfloat16)},1);
             int fallbacks=0;
@@ -256,8 +282,115 @@ int main(int argc,char**argv) {
             check(fallbacks==1&&mx::all(recovered==Tensor(7.f,mx::bfloat16)).item<bool>()&&asynchronous.metrics().runtime_failed,
                   "fixed async late chunk published partial scratch");
             check(mx::all(saved==got).item<bool>(),"failed async channel invalidated retained output");
+            check(asynchronous.metrics().runtime_weight_deferred_join_blocks==(deferred?4u:0u),
+                  "failed ANE chunk counted as a deferred successful join");
             std::cout<<"PASS fixed async channel: identical output, untimed receipts, ownership and full late-chunk GPU recomputation\n";
+            if(deferred)std::cout<<"PASS deferred channel join: delayed consumption after y reuse and complete failure fallback\n";
         }
+        // Exercise cleanup while work is in flight, not only constructor
+        // gates or failures before ANE submission. Failed attempts must never
+        // publish/count a deferred join, even with full-hidden down-LoRA.
+        for(bool deferred:{false,true}) for(int failure=0;failure<5;++failure) {
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN",deferred?"1":"0",1);
+            ane::HybridFfn op(argv[1],h,f,512u<<20,cancelled,true);
+            unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+            int down_calls=0,full_calls=0;
+            ane::HybridFfn::Adapter correction{
+                [&](const Tensor&input){return std::make_pair(mx::zeros({1,input.shape(1),f},input.dtype()),
+                                                             mx::zeros({1,input.shape(1),f},input.dtype()));},
+                [&](const Tensor&z,const Tensor&base)->Tensor{
+                    ++down_calls;
+                    check(z.shape()==mx::Shape({1,67,f}),"failure fixture did not join full hidden");
+                    if(failure==2)throw std::runtime_error("channel down callback failure");
+                    return base;}};
+            auto input=failure>=3?mx::concatenate({mx::full({1,33,h},.1f,mx::bfloat16),
+                mx::full({1,34,h},std::numeric_limits<float>::quiet_NaN(),mx::bfloat16)},1):px;
+            auto head=[&](const Tensor&x,int first,int count)->std::pair<Tensor,Tensor>{
+                if(failure==1)throw std::runtime_error("channel GPU callback failure");
+                auto result=partial(x,first,count);
+                if(failure==0)cancelled.store(true);
+                return result;
+            };
+            auto fallback=[&](const Tensor&x)->Tensor{
+                ++full_calls;
+                if(failure==4)throw std::runtime_error("complete GPU fallback failure");
+                return mx::full(x.shape(),7.f,x.dtype());
+            };
+            op.plan_block(0,67);op.stage(0,67,sources);
+            bool caught=false;
+            try {
+                auto result=op.run(0,input,fallback,cancelled,failure>=2?&correction:nullptr,head);
+                check(failure==3&&mx::all(result==Tensor(7.f,mx::bfloat16)).item<bool>(),
+                      "failed channel operation published partial output or swallowed an exception");
+            } catch(const Cancelled&) {
+                check(failure==0,"unexpected cancellation");caught=true;
+            } catch(const std::runtime_error&error) {
+                const std::string expected=failure==1?"channel GPU callback failure":
+                    failure==2?"channel down callback failure":"complete GPU fallback failure";
+                check((failure==1||failure==2||failure==4)&&error.what()==expected,"wrong channel exception");
+                caught=true;
+            }
+            cancelled.store(false);op.drain();
+            check(caught==(failure!=3)&&full_calls==(failure>=3?1:0)&&down_calls==(failure==2?1:0),
+                  "channel failure callback counts changed");
+            check(op.metrics().runtime_weight_deferred_join_blocks==0&&op.metrics().runtime_weight_channel_blocks==0,
+                  "failed channel operation counted a successful join");
+            if(failure<3) {
+                op.plan_block(0,67);op.stage(0,67,sources);
+                auto recovered=op.run(0,px,full,cancelled,nullptr,partial);mx::eval(recovered);
+                check(mx::all(recovered==pb).item<bool>()&&op.metrics().runtime_weight_channel_blocks==1&&
+                      op.metrics().runtime_weight_deferred_join_blocks==(deferred?1u:0u),
+                      "channel executor was not reusable after cancellation/callback exception");
+            } else {
+                check(op.metrics().runtime_failed&&op.metrics().runtime_weight_fallback_blocks==1,
+                      "late LoRA chunk failure did not retire ANE and select whole GPU fallback");
+            }
+        }
+        std::cout<<"PASS channel failure cleanup: eager/deferred cancellation, GPU/down exceptions, late LoRA full fallback and fallback exception\n";
+        // Independent lazy output lifetime: neither executor destruction nor
+        // later GPU work may invalidate a pending join/full-hidden down-LoRA.
+        for(auto dtype:{mx::bfloat16,mx::float16,mx::float32}) for(bool adapter_enabled:{false,true}) {
+            auto fused=mx::astype(wg,dtype),down=mx::astype(wd,dtype);mx::eval({fused,down});
+            auto halves=mx::split(fused,2,0);mx::eval(halves);
+            std::vector<Tensor> typed_sources{halves[0],halves[1],down};
+            Weights typed;typed.bind_arrays({p+"gate_up.weight",p+"out.weight"},{fused,down});
+            auto input=mx::full({1,67,h},.25f,dtype);
+            auto gpu_full=[&](const Tensor&x){auto q=mx::split(typed.project(x,p+"gate_up"),2,-1);
+                return typed.project(silu(q[0])*q[1],p+"out");};
+            auto gpu_range=[&](const Tensor&x,int first,int count){
+                auto g=typed.project_base_slice(x,p+"gate_up",first,first+count,0,h,false);
+                auto u=typed.project_base_slice(x,p+"gate_up",f+first,f+first+count,0,h,false);
+                auto z=silu(g)*u;return std::make_pair(typed.project_base_slice(z,p+"out",0,h,first,first+count,false),z);};
+            int down_calls=0;
+            ane::HybridFfn::Adapter correction{
+                [&](const Tensor&x){return std::make_pair(mx::full({1,x.shape(1),f},.01f,dtype),
+                                                        mx::full({1,x.shape(1),f},.02f,dtype));},
+                [&](const Tensor&z,const Tensor&base){++down_calls;
+                    check(z.shape()==mx::Shape({1,67,f}),"deferred down correction did not get full hidden");
+                    return base+mx::astype(mx::sum(mx::astype(z,mx::float32),-1,true)*.001f,dtype);}};
+            auto execute=[&](ane::HybridFfn&op,const ane::HybridFfn::Adapter*ad){
+                op.plan_block(0,67);op.stage(0,67,typed_sources);
+                return op.run(0,input,gpu_full,cancelled,ad,gpu_range);};
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","0",1);
+            ane::HybridFfn eager(argv[1],h,f,512u<<20,cancelled,true);
+            auto expected=execute(eager,adapter_enabled?&correction:nullptr);mx::eval(expected);
+            std::optional<Tensor> retained;
+            setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","1",1);
+            {
+                ane::HybridFfn lazy(argv[1],h,f,512u<<20,cancelled,true);
+                retained=execute(lazy,adapter_enabled?&correction:nullptr);
+                check(lazy.metrics().runtime_weight_deferred_join_blocks==1,"typed lazy join not executed");
+            }
+            unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+            mx::eval(*retained);
+            check(mx::all(*retained==expected).item<bool>()&&down_calls==(adapter_enabled?2:0),
+                  "deferred typed output changed or lost owners after executor destruction");
+        }
+        std::cout<<"PASS deferred typed lifetime: BF16/FP16/FP32 base/one-full-hidden correction after executor destruction\n";
         // Failure in the SECOND ANE chunk must select the whole-operation GPU
         // callback, not combine valid GPU partial with poisoned ANE scratch.
         std::vector<float> poison(67*h,.1f);poison[50*h]=std::numeric_limits<float>::quiet_NaN();

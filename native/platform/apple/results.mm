@@ -967,6 +967,11 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"full_gpu_probe_blocks_session_total" : @(m.runtime_weight_full_gpu_probe_blocks),
             @"untimed_hybrid_blocks_session_total" : @(m.runtime_weight_untimed_hybrid_blocks),
             @"async_hybrid_blocks_session_total" : @(m.runtime_weight_async_hybrid_blocks),
+            @"deferred_channel_join_enabled" : @(m.runtime_weight_deferred_join_enabled),
+            @"deferred_channel_join_blocks_session_total" : @(m.runtime_weight_deferred_join_blocks),
+            @"post_join_scope" : !m.runtime_weight_deferred_join_blocks ? @"evaluated_join_host_span"
+                : m.runtime_weight_deferred_join_blocks == m.runtime_weight_channel_blocks
+                    ? @"host_graph_construction_deferred_gpu_consumption" : @"mixed_evaluated_and_deferred_join_spans",
             @"full_gpu_probe_seconds_session_total" : @(m.runtime_weight_full_gpu_probe_seconds),
             @"fallback_blocks_session_total" : @(m.runtime_weight_fallback_blocks),
             @"ane_rows_session_total" : @(m.runtime_weight_ane_rows),
