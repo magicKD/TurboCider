@@ -94,6 +94,7 @@ struct W8GpuCalibrationWork::Impl {
     uint64_t estimate = 0, allocated = 0;
     int count = 0, gpu_channels = 0;
     bool prepared = false, active = false, head_attempted = false, transfer_submitted = false;
+    bool streamed = false, join_attempted = false;
     bool dynamic_corrections = false;
     std::vector<bool> correction_attempted;
     std::vector<std::pair<DeviceMatrixView,DeviceMatrixView>> correction_sources;
@@ -229,12 +230,17 @@ W8GpuCalibrationWork::W8GpuCalibrationWork(Device &device, GraphShape shape,
         std::vector<W8GpuCalibrationLayer> layers, MemoryLimits limits, uint64_t resident, uint64_t mlx_active)
     : impl_(std::make_unique<Impl>(device, shape, std::move(layers), limits, resident, mlx_active)) {}
 W8GpuCalibrationWork::~W8GpuCalibrationWork() { impl_->drain(); }
-void W8GpuCalibrationWork::prepare(int count, bool prefetch) {
+void W8GpuCalibrationWork::prepare(int count, bool prefetch, bool streamed) {
     auto &p = *impl_;
     if (p.active || (count != 1 && count != 4)) throw std::invalid_argument("W8 calibration prepare requires idle one/four layers");
+    if (streamed && (!p.dynamic_corrections ||
+            std::any_of(p.layers.begin(), p.layers.begin()+count, [](const auto &layer) { return !layer.correction_producer; })))
+        throw std::invalid_argument("streamed GPU calibration requires complete dynamic LoRA producers");
     if (const auto error = p.drain()) std::rethrow_exception(error);
     p.prepared = false; p.transfer.reset();
     p.count = count; p.counters = {}; p.counters.layers = count; p.counters.prefetch = prefetch;
+    p.streamed = streamed; p.counters.gpu_retention_layers = streamed ? 1 : 4;
+    p.join_attempted = false;
     p.head_attempted = p.transfer_submitted = false; p.submit_error = {};
     p.correction_attempted.assign(size_t(count),false);p.correction_sources.clear();
     std::vector<Upload> uploads;
@@ -257,7 +263,7 @@ void W8GpuCalibrationWork::prepare(int count, bool prefetch) {
 }
 void W8GpuCalibrationWork::submit(const Head &head) {
     auto &p = *impl_;
-    if (!p.prepared || p.active || !head) throw std::invalid_argument("W8 calibration GPU work unprepared or missing head");
+    if (!p.prepared || p.active || p.streamed || !head) throw std::invalid_argument("W8 calibration GPU work unprepared or missing head");
     p.prepared = false; p.active = true;
     try {
         if (p.counters.prefetch) p.stage_bank(0, 0);
@@ -295,6 +301,43 @@ void W8GpuCalibrationWork::submit(const Head &head) {
         p.transfer->submit(); p.transfer_submitted = true;
     } catch (...) { p.submit_error = std::current_exception(); throw; }
 }
+void W8GpuCalibrationWork::submit_streamed(const Head &head, const Fence &heads, const Join &join, const Fence &joins) {
+    auto &p = *impl_;
+    if (!p.prepared || p.active || !p.streamed || !head || !heads || !join || !joins)
+        throw std::invalid_argument("streamed GPU calibration requires prepared work and complete callbacks");
+    p.prepared = false; p.active = true;
+    try {
+        if (p.counters.prefetch) p.stage_bank(0, 0);
+        for (int layer = 0; layer < p.count; ++layer) {
+            const auto &source = p.layers.at(layer);
+            p.correction_attempted[size_t(layer)] = true;
+            auto correction = source.correction_producer();
+            for (const auto *view : {&correction.first, &correction.second})
+                if (view->rows != p.shape.rows || view->cols != p.shape.width || !view->owner)
+                    throw std::invalid_argument("dynamic calibration correction produced invalid owned geometry");
+            p.correction_sources.push_back(std::move(correction));
+            ++p.counters.correction_computations;
+            const auto &views = p.correction_sources.back();
+            p.transfer = p.device.prepare_gpu_transfer(
+                {{views.first, *p.dg[layer & 1], 0}, {views.second, *p.du[layer & 1], 0}}, source.restoration);
+            p.counters.independent_gpu_transfer = p.transfer->independent_gpu();
+            p.counters.correction_uploads += 2;
+            if (!p.counters.prefetch) p.stage_bank(layer, layer & 1);
+            p.stage_activation(layer, layer & 1);
+            p.head_attempted = true; head(layer, p.gpu_channels);
+            if (p.counters.prefetch) p.stage_bank(layer + 1, (layer + 1) & 1);
+            p.transfer->submit(); p.transfer_submitted = true;
+            // Do not keep four sets of GPU corrections/hidden/results live.
+            // ANE inputs/output banks and the frozen restore copies never alias
+            // these mutable targets, even while its four requests are in flight.
+            p.head_attempted = false; heads();
+            if (const auto error = p.drain()) std::rethrow_exception(error);
+            p.transfer.reset(); p.transfer_submitted = false; p.correction_sources.clear();
+            p.join_attempted = true; join(layer); ++p.counters.joins;
+            p.join_attempted = false; joins();
+        }
+    } catch (...) { p.submit_error = std::current_exception(); throw; }
+}
 void W8GpuCalibrationWork::finish(const Fence &heads, const Join &join, const Fence &joins) {
     auto &p = *impl_;
     if (!p.active) throw std::invalid_argument("W8 calibration GPU work not active");
@@ -305,7 +348,12 @@ void W8GpuCalibrationWork::finish(const Fence &heads, const Join &join, const Fe
         catch (...) { if (!error) error = std::current_exception(); }
     }
     if (const auto produced = p.drain(); produced && !error) error = produced;
-    if (!error) {
+    if (p.streamed && p.join_attempted) {
+        p.join_attempted = false;
+        try { if (!joins) throw std::invalid_argument("calibration missing join fence"); joins(); }
+        catch (...) { if (!error) error = std::current_exception(); }
+    }
+    if (!error && !p.streamed) {
         try {
             if (!join || !joins) throw std::invalid_argument("calibration missing join/fence");
             for (int layer = 0; layer < p.count; ++layer) { join(layer); ++p.counters.joins; }
@@ -327,7 +375,7 @@ ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &progr
     uint64_t &timeline,double share,bool prefetch,const std::function<void()> &reset,
     const W8GpuCalibrationWork::Head &head,const W8GpuCalibrationWork::Fence &heads,
     const W8GpuCalibrationWork::Join &join,const W8GpuCalibrationWork::Fence &joins,
-    int warmups,int repeats) {
+    int warmups,int repeats,bool streamed) {
     if(!std::isfinite(share) || share<=0 || share>=1 || bindings[0].size()!=1 || bindings[1].size()!=4 ||
         !reset || !head || !heads || !join || !joins || !calibration_sampling_valid(warmups,repeats))
         throw std::invalid_argument("channel calibration requires complete one/four bindings, callbacks and bounded odd repeats");
@@ -335,10 +383,11 @@ ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &progr
     for(int sweep=0;sweep<warmups+repeats;++sweep) for(int position=0;position<6;++position) {
         const int cell=(sweep+position)%6,count_index=cell/3,part=cell%3,count=count_index?4:1;
         reset();
-        if(part!=1)work.prepare(count,prefetch);
+        if(part!=1)work.prepare(count,prefetch,streamed);
         CalibrationBatch batch(device,program,bindings[count_index],timeline);
         const auto measured=part==1?batch.measure(true):batch.measure(part==2,
-            [&]{work.submit(head);},[&]{work.finish(heads,join,joins);});
+            [&]{if(streamed)work.submit_streamed(head,heads,join,joins);else work.submit(head);},
+            [&]{work.finish(heads,join,joins);});
         if(!measured.ok || !std::isfinite(measured.seconds) || measured.seconds<=0 ||
             measured.ane_calls!=uint64_t(part==0?0:count))
             throw CapabilityError("invalid channel calibration completion/count/timing");
@@ -346,7 +395,8 @@ ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &progr
             const auto traffic=work.stats();
             if(!traffic.completed || !traffic.independent_gpu_transfer || traffic.layers!=uint64_t(count) ||
                 traffic.weight_projections!=uint64_t(3*(count+(prefetch?1:0))) || traffic.activation_packs!=uint64_t(count) ||
-                traffic.restore_downloads<uint64_t(count) || traffic.joins!=uint64_t(count))
+                traffic.restore_downloads<uint64_t(count) || traffic.joins!=uint64_t(count) ||
+                traffic.gpu_retention_layers!=(streamed?1:4))
                 throw CapabilityError("channel calibration lacks complete staging/pack/restore/join/future traffic");
             result.correction_computations+=traffic.correction_computations;
             result.correction_uploads+=traffic.correction_uploads;

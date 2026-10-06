@@ -967,7 +967,17 @@ static NSDictionary *calibration_dictionary(const ane::ChannelCalibrationReport 
     }
     NSMutableArray *depth=[NSMutableArray arrayWithCapacity:r.sampled_depths.size()];
     for(int value:r.sampled_depths)[depth addObject:@(value)];
+    NSMutableArray *admissions=[NSMutableArray arrayWithCapacity:r.memory_admissions.size()];
+    for(const auto &m:r.memory_admissions) [admissions addObject:@{
+        @"channels":@(m.channels),@"surface_bytes":@(m.surface_bytes),
+        @"gpu_scratch_upper_bytes":@(m.gpu_scratch_upper_bytes),@"gpu_restore_bytes":@(m.gpu_restore_bytes),
+        @"input_bytes":@(m.input_bytes),@"internal_allowance_bytes":@(m.internal_allowance_bytes),
+        @"estimated_bytes":@(m.estimated_bytes),@"optional_limit_bytes":@(m.optional_limit_bytes),
+        @"headroom_bytes":@(m.headroom_bytes),@"admitted":@(m.admitted),@"reason":@(m.reason.c_str())}];
     return @{@"schema_version":@(r.schema_version),@"enabled":@(r.enabled),@"cache_hit":@(r.cache_hit),
+        @"gpu_retention_layers":@(r.gpu_retention_layers),@"memory_limited_points":@(r.memory_limited_points),
+        @"memory_admission_scope":@"complete calibration payload estimate; preflight observation; not physical RAM cap",
+        @"memory_admissions":admissions,
         @"trial_passed":@(r.trial_passed),@"complete":@(r.complete),@"lora":@(r.lora),@"selected_channels":@(r.selected_channels),
         @"proposed_channels":@(r.proposed_channels),@"bucket_rows":@(r.bucket_rows),@"actual_rows":@(r.actual_rows),
         @"hidden":@(r.hidden),@"width":@(r.width),@"layer_count":@(r.layer_count),@"warmups":@(r.warmups),

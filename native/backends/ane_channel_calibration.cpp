@@ -5,6 +5,7 @@
 #include "../runtime/build_identity.hpp"
 #include <sys/sysctl.h>
 #include <unistd.h>
+#include <map>
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
 #include "private/ane_calibration.hpp"
 #include "private/ane_mil.hpp"
@@ -71,6 +72,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
     report->actual_rows=workload.rows;report->hidden=h;report->width=width;
     report->bucket_rows=shape.rows;report->layer_count=workload.layers;
     report->lora=lora;
+    report->gpu_retention_layers=lora?1:4;
     auto select=[&](int channels,bool passed,const std::string &status,const std::string &reason) {
         report->selected_channels=channels;report->trial_passed=passed;
         report->status=status;report->reason=reason;
@@ -87,7 +89,8 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         workload.dtype == mx::bfloat16 ? "bf16" : "fp16", "private_ane",
         lora?"sylvester-dh-b128-b512-rne-norm-f16-v2-lora":"sylvester-dh-b128-b512-rne-norm-f16-v2-base",
         device_info().gpu, os_build(), runtime_build_identity(), executor_configuration_identity()+workload.gpu_configuration,
-        "prepared-channel-base-v1-b"+std::to_string(shape.rows)+"-l"+std::to_string(workload.layers), workload.source_generation,
+        std::string(lora?"prepared-channel-streamed-gpu-v2-b":"prepared-channel-base-v1-b")+
+            std::to_string(shape.rows)+"-l"+std::to_string(workload.layers), workload.source_generation,
         workload.rows, h, width, shape.tile_k, shape.tile_n, prefetch};
     require(identity.valid() && !workload.source_owners.empty() &&
         std::none_of(workload.source_owners.begin(),workload.source_owners.end(),[](const auto &p){return p.expired();}),
@@ -141,7 +144,22 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         },[&]{mx::eval(full);checkpoint(cancelled);});
         report->baseline=baseline;
         full.clear();mx::synchronize();
-        const std::array<int,2> shares{int(std::round(.4*(width/512)))*512,int(std::round(.8*(width/512)))*512};
+        const auto sampling_observation=observe_runtime_memory(mx::get_active_memory());
+        std::map<int,bool> admitted_points;
+        const auto sampling=plan_channel_sampling(width,[&](int fa) {
+            if(const auto prior=admitted_points.find(fa);prior!=admitted_points.end())return prior->second;
+            const auto memory=plan_native_channel_calibration_memory(workload.rows,shape.rows,h,width,fa,lora,lora,getpagesize());
+            if(!memory)return false;
+            const auto decision=admit_memory(sampling_observation,{4ull<<30,budget},0,memory->estimated_bytes);
+            report->memory_admissions.push_back({fa,memory->surface_bytes,memory->gpu_scratch_upper_bytes,
+                memory->gpu_restore_bytes,memory->input_bytes,memory->internal_allowance_bytes,
+                memory->estimated_bytes,budget,decision.headroom_bytes,decision.allowed(),
+                memory_denial_reason(decision.denial,sampling_observation)});
+            admitted_points.emplace(fa,decision.allowed());return decision.allowed();
+        });
+        if(!sampling)return select(0,false,"rejected","complete calibration arenas cannot admit two independent channel points; optimized GPU-only");
+        report->memory_limited_points=sampling->memory_limited;
+        const auto &shares=sampling->channels;
         std::array<CalibrationPoint,2> points;
         using namespace private_api;
         for(size_t sampled=0;sampled<shares.size();++sampled) {
@@ -149,27 +167,13 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             const int fa=shares[sampled],fg=width-fa;
             auto candidate_shape=shape;candidate_shape.width=fa;
             const auto spec=w8_swiglu_program(candidate_shape,20260930,1.f);
-            std::vector<CalibrationSurfaceShape> arena_shapes;
-            for(int layer=0;layer<4;++layer) {
-                for(int p=0;p<2;++p) {arena_shapes.push_back({uint64_t(fa),uint64_t(h),1});arena_shapes.push_back({uint64_t(fa),1,2});}
-                arena_shapes.push_back({uint64_t(h),uint64_t(fa),1});arena_shapes.push_back({uint64_t(h),1,2});
-                arena_shapes.push_back({uint64_t(spec.packed_rows),uint64_t(shape.rows),2});
-                arena_shapes.push_back({uint64_t(h),uint64_t(shape.rows),2});
-                arena_shapes.push_back({uint64_t(h),1,2});arena_shapes.push_back({1,uint64_t(shape.rows),2});
-                if(lora) {
-                    // Four immutable DG/DU input pairs and frozen restored
-                    // full-tail hidden; mutable GPU correction slots are in plan.
-                    arena_shapes.push_back({uint64_t(fa),uint64_t(shape.rows),2});
-                    arena_shapes.push_back({uint64_t(fa),uint64_t(shape.rows),2});
-                    arena_shapes.push_back({uint64_t(fa),uint64_t(shape.rows),2});
-                }
-            }
-            arena_shapes.push_back({uint64_t(h),uint64_t(shape.rows),1});arena_shapes.push_back({1,uint64_t(shape.rows),2});
-            const auto arena=plan_gpu_calibration_memory(shape.rows,h,fa,lora,arena_shapes,getpagesize());
-            const uint64_t head_upper=uint64_t(workload.rows)*(8ull*h+6ull*fg)*2+(128ull<<20)+
-                (lora?uint64_t(shape.rows)*(12ull*fa+4ull*width)*2:0);
-            if(!arena || !admit_memory(observe_runtime_memory(mx::get_active_memory()),{4ull<<30,budget},
-                0,arena->estimated_bytes+head_upper).allowed())throw MemoryBudgetError("native calibration complete arena admission denied");
+            const auto memory=plan_native_channel_calibration_memory(workload.rows,shape.rows,h,width,fa,lora,lora,getpagesize());
+            require(bool(memory),"native calibration complete memory plan invalid");
+            const auto observed=observe_runtime_memory(mx::get_active_memory());
+            const auto admission=admit_memory(observed,{4ull<<30,budget},0,memory->estimated_bytes);
+            if(!admission.allowed())throw MemoryBudgetError("native calibration complete arena admission denied ("+
+                memory_denial_reason(admission.denial,observed)+"; estimated_bytes="+std::to_string(memory->estimated_bytes)+")");
+            const uint64_t head_upper=memory->gpu_scratch_upper_bytes;
             Device device;Program program(device,spec.mil,spec.constants,default_cache_directory());
             std::vector<Bank> banks;std::vector<Surface> outputs;
             std::vector<Surface> frozen_dg,frozen_du;
@@ -233,13 +237,14 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                 item.weights={{{views[layer][0],{fg,fa,0,h,128}}, {views[layer][1],{fg,fa,0,h,128}},
                     {views[layer][2],{0,h,fg,fa,512}}}};
                 if(layer<4) {
-                    tails.push_back(mx::zeros({1,shape.rows,h},workload.dtype));mx::eval(tails.back());resident+=tails.back().nbytes();
+                    tails.push_back(lora && layer?tails.front():mx::zeros({1,shape.rows,h},workload.dtype));
+                    mx::eval(tails.back());if(!lora || !layer)resident+=tails.back().nbytes();
                     item.activation=matrix(padded,shape.rows,h);
                     item.restoration.push_back({outputs[layer].slice_rows(0,h),matrix(tails.back(),shape.rows,h),0,
                         workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f,banks[layer].sd,outputs[layer].slice_rows(h,1)});
                     if(lora) {
-                        tail_hidden.push_back(mx::zeros({1,shape.rows,fa},workload.dtype));mx::eval(tail_hidden.back());
-                        resident+=tail_hidden.back().nbytes();
+                        tail_hidden.push_back(layer?tail_hidden.front():mx::zeros({1,shape.rows,fa},workload.dtype));
+                        mx::eval(tail_hidden.back());if(!layer)resident+=tail_hidden.back().nbytes();
                         item.restoration.push_back({outputs[layer].slice_rows(h+1,fa),matrix(tail_hidden.back(),shape.rows,fa),
                             0,workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f});
                         item.correction_producer=[&,layer]() {
@@ -256,15 +261,17 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             std::vector<Tensor> heads,head_hidden,joined;
             auto series=measure_w8_channel_point(device,program,{bindings(1),bindings(4)},work,timeline,
                 double(fa)/width,prefetch,[&]{heads.clear();head_hidden.clear();joined.clear();checkpoint(cancelled);},[&](int layer,int first) {
+                    if(lora){heads.clear();head_hidden.clear();joined.clear();}
                     auto result=workload.channel_gpu(depth[layer],input,0,first);heads.push_back(result.first);
                     if(lora)head_hidden.push_back(result.second);mx::async_eval(heads.back());
                 },[&]{mx::eval(heads);if(lora)mx::eval(head_hidden);},[&](int layer) {
-                    auto merged=mx::astype(mx::astype(heads[layer],mx::float32)+
+                    const int current=lora?0:layer;
+                    auto merged=mx::astype(mx::astype(heads[current],mx::float32)+
                         mx::astype(slice_axis(tails[layer],1,0,workload.rows),mx::float32),workload.dtype);
-                    if(lora)merged=adapters[layer]->down_and_add(mx::concatenate({head_hidden[layer],
+                    if(lora)merged=adapters[layer]->down_and_add(mx::concatenate({head_hidden[current],
                         slice_axis(tail_hidden[layer],1,0,workload.rows)},-1),merged);
                     joined.push_back(merged);mx::async_eval(joined.back());
-                },[&]{mx::eval(joined);checkpoint(cancelled);});
+                },[&]{mx::eval(joined);checkpoint(cancelled);},2,7,lora);
             points[sampled]=series.point;
             report->points.push_back(std::move(series));
         }

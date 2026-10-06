@@ -59,6 +59,10 @@ def validate_channel_calibration(report, full_width, hidden):
     lora=report.get("lora",False)
     if type(lora) is not bool:
         raise ValueError("invalid channel calibration adapter marker")
+    live = report.get("gpu_retention_layers", 4)
+    limited = report.get("memory_limited_points", False)
+    if type(live) is not int or live not in (1, 4) or type(limited) is not bool:
+        raise ValueError("invalid channel calibration retention/sampling policy")
     if report.get("status") not in ("accepted", "gpu_only", "rejected", "unsupported"):
         raise ValueError("invalid channel calibration final status")
     if not isinstance(report.get("reason"), str) or not report["reason"]:
@@ -99,6 +103,9 @@ def validate_channel_calibration(report, full_width, hidden):
             raise ValueError("channel calibration identity/geometry/recipe mismatch")
         if bool(identity["adapter"]) != lora:
             raise ValueError("channel calibration bound adapter/recipe mismatch")
+        streamed = identity["graph_abi"].startswith("prepared-channel-streamed-gpu-v2-b")
+        if streamed != (lora and live == 1):
+            raise ValueError("channel calibration GPU retention/graph ABI mismatch")
         for name in ("tile_k", "tile_n"):
             _integer(identity, name, minimum=1)
     if accepted and (identity is None or rows > bucket or proposed != selected or not report["complete"]):
@@ -121,10 +128,37 @@ def validate_channel_calibration(report, full_width, hidden):
         if report.get("sampled_depths") != expected_depths:
             raise ValueError("channel calibration did not sample the declared model depths")
     shares = []
+    admissions = report.get("memory_admissions", [])
+    if not isinstance(admissions, list) or len(admissions) > 32:
+        raise ValueError("invalid channel calibration memory admission count")
+    admitted_widths, observed_widths = set(), set()
+    for memory in admissions:
+        if not isinstance(memory, dict) or type(memory.get("admitted")) is not bool:
+            raise ValueError("invalid channel calibration memory admission")
+        channels = _integer(memory, "channels", minimum=1)
+        if channels % 512 or channels >= full_width or channels in observed_widths:
+            raise ValueError("invalid channel calibration memory candidate width")
+        observed_widths.add(channels)
+        components = ["surface_bytes", "gpu_scratch_upper_bytes", "gpu_restore_bytes", "input_bytes", "internal_allowance_bytes"]
+        total = sum(_integer(memory, name, minimum=1) for name in components)
+        if _integer(memory, "estimated_bytes", minimum=1) != total:
+            raise ValueError("channel calibration memory estimate lost a live payload")
+        optional = _integer(memory, "optional_limit_bytes")
+        headroom = _integer(memory, "headroom_bytes")
+        if not isinstance(memory.get("reason"), str) or not memory["reason"]:
+            raise ValueError("channel calibration memory admission reason missing")
+        if memory["admitted"]:
+            if total > min(optional, headroom):
+                raise ValueError("channel calibration admitted an over-budget arena")
+            admitted_widths.add(channels)
+    if admissions and report.get("memory_admission_scope") != "complete calibration payload estimate; preflight observation; not physical RAM cap":
+        raise ValueError("channel calibration memory scope missing")
     for point in points:
         if not isinstance(point, dict):
             raise ValueError("invalid channel calibration point")
         share = _number(point.get("share"), "share")
+        if live == 1 and round(share*full_width) not in admitted_widths:
+            raise ValueError("streamed calibration point lacks complete memory admission")
         if share >= 1 or type(point.get("prefetch")) is not bool or point["prefetch"] != identity["prefetch"]:
             raise ValueError("channel calibration share/prefetch mismatch")
         if _integer(point, "ane_calls") != 2 * (warmups + repeats) * 5:

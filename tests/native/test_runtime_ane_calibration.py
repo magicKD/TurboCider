@@ -37,6 +37,27 @@ def report():
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_streamed_points_require_auditable_complete_memory_admission(self):
+        value=report();value.update(lora=True,gpu_retention_layers=1,memory_limited_points=True,
+            memory_admission_scope="complete calibration payload estimate; preflight observation; not physical RAM cap")
+        value["identity"].update(adapter="real-adapter",recipe="sylvester-dh-b128-b512-rne-norm-f16-v2-lora",
+            graph_abi="prepared-channel-streamed-gpu-v2-b1056-l32")
+        value["memory_admissions"]=[]
+        for point in value["points"]:
+            point.update(correction_computations=90,correction_uploads=180)
+            value["memory_admissions"].append(dict(channels=round(point["share"]*value["width"]),
+                surface_bytes=100,gpu_scratch_upper_bytes=100,gpu_restore_bytes=100,input_bytes=100,
+                internal_allowance_bytes=100,estimated_bytes=500,optional_limit_bytes=600,headroom_bytes=600,
+                admitted=True,reason="none"))
+        self.assertEqual(validate_channel_calibration(value,10240,3840),4096)
+        for key,changed in (("gpu_retention_layers",4),("memory_limited_points",1),
+                            ("memory_admissions",[]),("memory_admission_scope","physical process RAM cap")):
+            bad=copy.deepcopy(value);bad[key]=changed
+            with self.subTest(key=key),self.assertRaises(ValueError):validate_channel_calibration(bad,10240,3840)
+        for key,changed in (("admitted",False),("estimated_bytes",499),("optional_limit_bytes",499),
+                            ("headroom_bytes",499),("channels",512),("surface_bytes",True)):
+            bad=copy.deepcopy(value);bad["memory_admissions"][0][key]=changed
+            with self.subTest(key=key),self.assertRaises(ValueError):validate_channel_calibration(bad,10240,3840)
     def test_adapter_costs_require_actual_dynamic_correction_traffic(self):
         value=report();value["lora"]=True;value["identity"]["adapter"]="actual-sha-strength-role";
         value["identity"]["recipe"]="sylvester-dh-b128-b512-rne-norm-f16-v2-lora"

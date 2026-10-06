@@ -273,6 +273,7 @@ class PrivateAneCalibrationMlxTests(unittest.TestCase):
             self.assertIn("PASS prepared calibration ownership", result.stdout)
             self.assertEqual(result.stdout.count("PASS complete GPU calibration:"), 2)
             self.assertEqual(result.stdout.count("PASS dynamic correction partial-submit/geometry/head/drain/join failures"), 2)
+            self.assertEqual(result.stdout.count("PASS streamed dynamic correction partial-submit/geometry/head/drain/join failures"), 2)
             self.assertIn("not model/E2E calibration or physical overlap proof", result.stdout)
             print(result.stdout.strip())
 

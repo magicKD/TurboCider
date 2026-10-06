@@ -120,6 +120,8 @@ int main(int argc,char **argv) {
             std::cout<<"adapter diagnostic: "<<lora_auto.selection_label()<<" points="<<(observed?observed->points.size():0)
                 <<" corrections="<<(observed && !observed->points.empty()?observed->points[0].correction_computations:0)<<std::endl;
             check(observed && observed->lora && observed->identity && observed->identity->adapter==workload.adapter_identity &&
+                observed->gpu_retention_layers==1 && observed->memory_admissions.size()>=2 &&
+                observed->identity->graph_abi.starts_with("prepared-channel-streamed-gpu-v2-b") &&
                 observed->points.size()==2 && observed->points[0].correction_computations==90 &&
                 observed->points[1].correction_uploads==180 && !lora_auto.metrics().runtime_failed,
                 "automatic adapter calibration skipped real correction compute/upload traffic or identity");

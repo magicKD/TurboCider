@@ -39,5 +39,40 @@ int main() {
         assert(!plan_gpu_calibration_memory(33, 128, 1024, false, snapshots, 16384));
     }
     assert(!plan_gpu_calibration_memory(33, 128, 1024, false, {}, uint64_t(1) << 63));
+    for (uint64_t page : {4096u, 16384u}) for (uint64_t rows : {1056u, 4128u}) {
+        const uint64_t bucket = rows == 1056 ? 1056 : 4224;
+        const auto batch = plan_native_channel_calibration_memory(rows, bucket, 3840, 10240, 4096, true, false, page);
+        const auto streamed = plan_native_channel_calibration_memory(rows, bucket, 3840, 10240, 4096, true, true, page);
+        assert(batch && streamed && batch->surface_bytes == streamed->surface_bytes &&
+            batch->internal_allowance_bytes == streamed->internal_allowance_bytes && batch->input_bytes == streamed->input_bytes);
+        const uint64_t retired = 6*bucket*(3840+4*4096+10240)+6*rows*3840;
+        assert(batch->estimated_bytes-streamed->estimated_bytes == retired);
+        assert(streamed->estimated_bytes == streamed->surface_bytes+streamed->internal_allowance_bytes+
+            streamed->input_bytes+streamed->gpu_restore_bytes+streamed->gpu_scratch_upper_bytes);
+    }
+    const auto defaults = plan_channel_sampling(10240, [](int) { return true; });
+    assert(defaults && defaults->channels == (std::array<int, 2>{4096, 8192}) && !defaults->memory_limited);
+    for (const auto geometry : {std::array<uint64_t, 3>{3840,10240,4128}, {4096,12288,4096}}) {
+        const auto [hidden, width, rows] = geometry;
+        const auto sampling = plan_channel_sampling(int(width), [&](int candidate) {
+            const auto plan = plan_native_channel_calibration_memory(rows,4224,hidden,width,candidate,true,true,16384);
+            return plan && plan->estimated_bytes <= (2ull<<30);
+        });
+        assert(sampling && sampling->memory_limited && sampling->channels[0] < sampling->channels[1]);
+        for (int candidate : sampling->channels) {
+            assert(candidate%512 == 0 && candidate < int(width));
+            const auto plan = plan_native_channel_calibration_memory(rows,4224,hidden,width,candidate,true,true,16384);
+            assert(plan && plan->estimated_bytes <= (2ull<<30));
+        }
+    }
+    assert(!plan_channel_sampling(10240, [](int c) { return c==512; }));
+    const auto nonmonotonic = plan_channel_sampling(10240, [](int c) { return c==2560 || c==4096; });
+    assert(nonmonotonic && nonmonotonic->channels == (std::array<int,2>{2560,4096}));
+    for (int width : {0,512,1024,1025,32768}) assert(!plan_channel_sampling(width, [](int) { return true; }));
+    assert(!plan_channel_sampling(10240, {}));
+    assert(!plan_native_channel_calibration_memory(4225,4224,3840,10240,4096,true,true,16384));
+    assert(!plan_native_channel_calibration_memory(1056,1056,3840,10240,4096,false,true,16384));
+    std::cout << "PASS native calibration retention: same independent ANE arena, released GPU planes, complete payload accounting, "
+                 "original/admission-limited aligned points without extrapolation\n";
     std::cout << "PASS calibration memory: exact page/pitch two W/A/correction banks, frozen snapshots, long model geometries and overflow rejection\n";
 }

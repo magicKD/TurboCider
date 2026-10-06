@@ -9,6 +9,9 @@ int main() {
             report->baseline=tc::ane::GpuCalibrationSamples{{std::vector<double>{.01,.02,.03},std::vector<double>{.04,.05,.06}},.01};
             report->points.push_back({});report->points.back().seconds[0][0]={.013,.017};
             report->lora=true;
+            report->gpu_retention_layers=1;
+            report->memory_limited_points=true;
+            report->memory_admissions.push_back({512,1,2,3,4,5,15,20,20,true,"none"});
             report->points.back().correction_computations=90;
             report->points.back().correction_uploads=180;
             report->trial.emplace(); // unknown numeric quality must be JSON null, never NaN/Inf or a passing zero
@@ -18,6 +21,8 @@ int main() {
             if([data[@"baseline"][@"raw_seconds"][0] count]!=3 ||
                 [data[@"points"][0][@"raw_seconds"][0][0] count]!=2 ||
                 ![data[@"lora"] boolValue] ||
+                [data[@"gpu_retention_layers"] intValue]!=1 || ![data[@"memory_limited_points"] boolValue] ||
+                [data[@"memory_admissions"][0][@"estimated_bytes"] unsignedLongLongValue]!=15 ||
                 [data[@"points"][0][@"correction_computations"] unsignedLongLongValue]!=90 ||
                 [data[@"points"][0][@"correction_uploads"] unsignedLongLongValue]!=180 ||
                 data[@"trial"][@"relative_l2"]!=NSNull.null || data[@"trial"][@"cosine"]!=NSNull.null ||

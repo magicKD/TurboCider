@@ -87,19 +87,41 @@ void test_full_gpu_measurement_contract() {
 }
 void test_dynamic_correction_cleanup(Device &device, GraphShape shape,
                                      std::vector<W8GpuCalibrationLayer> traffic,
-                                     const mx::array &input, uint64_t resident) {
+                                     const mx::array &input, uint64_t resident, bool streamed = false,
+                                     const std::vector<mx::array> *expected_tails = nullptr) {
     shape.lora_inputs = true;
     const auto rank_a = mx::full({4, shape.hidden}, .01f, mx::bfloat16);
     const auto rank_b = mx::full({shape.width, 4}, .02f, mx::bfloat16);
     mx::eval({rank_a, rank_b});
+    std::optional<mx::array> shared_tail, shared_hidden;
+    std::vector<Surface> hidden_snapshots;
+    if (streamed) {
+        check(expected_tails && expected_tails->size() == 4, "streamed fixture lacks independent restore oracles");
+        shared_tail = mx::zeros({shape.rows, shape.hidden}, mx::bfloat16);
+        shared_hidden = mx::zeros({shape.rows, shape.width}, mx::bfloat16);
+        mx::eval({*shared_tail, *shared_hidden});
+        resident += shared_tail->nbytes() + shared_hidden->nbytes();
+        for (int layer = 0; layer < 4; ++layer) {
+            hidden_snapshots.emplace_back(device, shape.width, shape.rows, Element::FP16);
+            auto &surface = hidden_snapshots.back(); resident += surface.bytes();
+            for (uint32_t row = 0; row < surface.rows(); ++row) {
+                auto *values = reinterpret_cast<uint16_t *>(static_cast<uint8_t *>(surface.data()) + row*surface.pitch());
+                for (int column = 0; column < shape.rows; ++column)
+                    values[column] = tc::gguf::float_to_fp16_rne(float(layer+1)/128);
+            }
+            traffic[layer].restoration.front().destination = matrix(*shared_tail);
+            traffic[layer].restoration.push_back({surface, matrix(*shared_hidden), 0, DType::BF16, 1.f});
+        }
+    }
     std::array<int, 4> attempts{}, drains{};
     std::array<std::optional<std::pair<mx::array, mx::array>>, 4> pending;
     std::array<std::pair<std::weak_ptr<void>, std::weak_ptr<void>>, 4> owners;
     std::vector<mx::array> heads, joined;
-    int failure = -1, head_fences = 0, join_fences = 0, joins = 0;
+    int failure = -1, head_fences = 0, join_fences = 0, joins = 0, last_head = -1;
     auto reset = [&] {
         attempts.fill(0); drains.fill(0); pending = {}; owners = {};
         heads.clear(); joined.clear(); head_fences = join_fences = joins = 0;
+        last_head = -1;
     };
     for (int layer = 0; layer < 4; ++layer) {
         auto &item = traffic.at(layer);
@@ -124,34 +146,54 @@ void test_dynamic_correction_cleanup(Device &device, GraphShape shape,
             check(drains[layer] == 1, "dynamic correction drained twice");
             mx::eval({pending[layer]->first, pending[layer]->second});
             for (int earlier = 0; earlier < layer; ++earlier)
-                check(!owners[earlier].first.expired() && !owners[earlier].second.expired(),
+                check(streamed ? owners[earlier].first.expired() && owners[earlier].second.expired() :
+                      !owners[earlier].first.expired() && !owners[earlier].second.expired(),
                       "dynamic transfer owner released before all producers drained");
+            if (streamed) pending[layer].reset();
             if ((failure == 3 || failure == 5 || failure == 6) && layer == 1)
                 throw std::runtime_error("dynamic correction drain failure");
         };
     }
     auto head = [&](int layer, int first) {
         check(first > 0, "dynamic fixture has no GPU head");
+        if (streamed) heads.clear();
+        last_head = layer;
         heads.push_back(input * float(layer + 1)); mx::async_eval(heads.back());
         if ((failure == 2 || failure == 6) && layer == 1)
             throw std::runtime_error("dynamic head submit failure");
     };
     auto head_fence = [&] {
         ++head_fences; mx::eval(heads);
-        if (failure == 6) throw std::runtime_error("dynamic head fence failure");
+        if (failure == 6 && last_head == 1) throw std::runtime_error("dynamic head fence failure");
     };
     auto join = [&](int layer) {
-        ++joins; joined.push_back(heads.at(layer) + input); mx::async_eval(joined.back());
+        if (streamed) {
+            check(mx::all(*shared_tail == expected_tails->at(layer)).item<bool>(), "streamed base-down restore aliased a different layer");
+            check(mx::all(*shared_hidden == mx::array(float(layer+1)/128, mx::bfloat16)).item<bool>(),
+                  "streamed hidden restore was overwritten before its join");
+        }
+        if (streamed) joined.clear();
+        ++joins; joined.push_back(heads.at(streamed ? 0 : layer) + input); mx::async_eval(joined.back());
         if (failure == 4 && layer == 1) throw std::runtime_error("dynamic join failure");
     };
-    auto join_fence = [&] { ++join_fences; mx::eval(joined); };
+    auto join_fence = [&] {
+        ++join_fences; mx::eval(joined);
+        if (streamed) {
+            check(mx::all(joined.back() == input*float(last_head+2)).item<bool>(), "streamed join changed GPU values");
+            heads.clear(); joined.clear();
+        }
+    };
+    auto submit = [&](W8GpuCalibrationWork &work) {
+        if (streamed) work.submit_streamed(head, head_fence, join, join_fence);
+        else work.submit(head);
+    };
     {
         W8GpuCalibrationWork work(device, shape, traffic, {4ull << 30, 2ull << 30},
                                    resident, mx::get_active_memory());
         for (int scenario = 0; scenario < 7; ++scenario) {
-            reset(); failure = scenario; work.prepare(4, scenario % 2 == 0);
+            reset(); failure = scenario; work.prepare(4, scenario % 2 == 0, streamed);
             std::exception_ptr error;
-            try { work.submit(head); } catch (...) { error = std::current_exception(); }
+            try { submit(work); } catch (...) { error = std::current_exception(); }
             try { work.finish(head_fence, join, join_fence); }
             catch (...) { if (!error) error = std::current_exception(); }
             check(bool(error) && !work.stats().completed, "dynamic failure published a complete receipt");
@@ -162,21 +204,24 @@ void test_dynamic_correction_cleanup(Device &device, GraphShape shape,
                 scenario == 2 || scenario == 6 ? "dynamic head submit failure" :
                 scenario == 3 ? "dynamic correction drain failure" : "dynamic join failure";
             check(reason == expected, "dynamic correction cleanup replaced the first failure");
-            const int attempted = scenario == 3 || scenario == 4 ? 4 : 2;
+            const int attempted = !streamed && (scenario == 3 || scenario == 4) ? 4 : 2;
             for (int layer = 0; layer < 4; ++layer) {
                 check(attempts[layer] == int(layer < attempted) && drains[layer] == attempts[layer],
                       "dynamic cleanup skipped an attempted producer or drained an unsubmitted one");
                 check(owners[layer].first.expired() && owners[layer].second.expired(),
                       "dynamic failure retained transfer sources after completion");
             }
-            check(head_fences == 1 && joins == (scenario == 4 ? 2 : 0) &&
-                  join_fences == (scenario == 4 ? 1 : 0), "dynamic failure published joins or skipped a fence");
+            const int expected_heads = streamed && scenario != 0 && scenario != 1 && scenario != 5 ? 2 : 1;
+            check(head_fences == expected_heads && joins == (scenario == 4 ? 2 : streamed ? 1 : 0) &&
+                  join_fences == (streamed ? (scenario == 4 ? 2 : 1) : scenario == 4 ? 1 : 0),
+                  "dynamic failure published joins or skipped a fence");
             // The same admitted scratch must refill after every failure.
-            reset(); failure = -1; work.prepare(4, scenario % 2 != 0);
-            work.submit(head); work.finish(head_fence, join, join_fence);
+            reset(); failure = -1; work.prepare(4, scenario % 2 != 0, streamed);
+            submit(work); work.finish(head_fence, join, join_fence);
             const auto stats = work.stats();
             check(stats.completed && stats.correction_computations == 4 && stats.correction_uploads == 8 &&
-                  stats.independent_gpu_transfer && joins == 4 && head_fences == 1 && join_fences == 1,
+                  stats.independent_gpu_transfer && stats.gpu_retention_layers == (streamed ? 1 : 4) && joins == 4 &&
+                  head_fences == (streamed ? 4 : 1) && join_fences == (streamed ? 4 : 1),
                   "dynamic correction scratch could not refill after failure");
             for (int layer = 0; layer < 4; ++layer)
                 check(attempts[layer] == 1 && drains[layer] == 1 && owners[layer].first.expired() &&
@@ -187,9 +232,9 @@ void test_dynamic_correction_cleanup(Device &device, GraphShape shape,
     {
         W8GpuCalibrationWork work(device, shape, traffic, {4ull << 30, 2ull << 30},
                                    resident, mx::get_active_memory());
-        work.prepare(4, false);
+        work.prepare(4, false, streamed);
         bool caught = false;
-        try { work.submit(head); } catch (const std::runtime_error &) { caught = true; }
+        try { submit(work); } catch (const std::runtime_error &) { caught = true; }
         check(caught, "destructor fixture did not queue a partial producer");
         // Heads are caller-owned. The adapter destructor drains its own
         // correction/stage resources; normal measurements still call finish.
@@ -197,7 +242,8 @@ void test_dynamic_correction_cleanup(Device &device, GraphShape shape,
     }
     check(drains == std::array<int, 4>{1, 1, 0, 0} && owners[0].first.expired(),
           "dynamic destructor did not drain partial corrections exactly once");
-    std::cout << "PASS dynamic correction partial-submit/geometry/head/drain/join failures, first-error preservation, "
+    std::cout << (streamed ? "PASS streamed dynamic correction " : "PASS dynamic correction ")
+              << "partial-submit/geometry/head/drain/join failures, first-error preservation, "
                  "exactly-once producer drains, owner lifetime, scratch refill and destructor cleanup\n";
 }
 }
@@ -652,7 +698,8 @@ int main(int argc, char **argv) {
                     "full calibration could not reuse scratch after exception");
             }
             std::cout << "PASS complete GPU calibration: W/A staging, independent frozen restore/join, 1-vs-4 future weights, prefetch off/on, memory ceiling and exception reuse\n";
-            if (!actual_model) test_dynamic_correction_cleanup(device, shape, traffic, input, caller_bytes);
+            if (!actual_model) for (bool streamed : {false, true})
+                test_dynamic_correction_cleanup(device, shape, traffic, input, caller_bytes, streamed, &reference_tails);
             if (actual_model) std::cout << "PASS actual checkpoint calibration model=" << model << " rows=" << rows
                 << " channels=" << channels << " tile_k=" << shape.tile_k << " tile_n=" << shape.tile_n
                 << " source=original_bf16 checkpoint_resident=1 gpu_head="

@@ -84,10 +84,20 @@ struct ChannelTrialEvidence {
     }
 };
 
+struct ChannelCalibrationMemoryAdmission {
+    int channels = 0;
+    uint64_t surface_bytes = 0, gpu_scratch_upper_bytes = 0, gpu_restore_bytes = 0, input_bytes = 0;
+    uint64_t internal_allowance_bytes = 0, estimated_bytes = 0, optional_limit_bytes = 0, headroom_bytes = 0;
+    bool admitted = false;
+    std::string reason;
+};
 struct ChannelCalibrationReport {
     int schema_version = 1;
     bool enabled = true, cache_hit = false, trial_passed = false, complete = false;
     bool lora = false;
+    int gpu_retention_layers = 4;
+    bool memory_limited_points = false;
+    std::vector<ChannelCalibrationMemoryAdmission> memory_admissions;
     int selected_channels = 0, proposed_channels = 0, bucket_rows = 0, layer_count = 0;
     int actual_rows = 0, hidden = 0, width = 0;
     int warmups = 2, repeats = 7;

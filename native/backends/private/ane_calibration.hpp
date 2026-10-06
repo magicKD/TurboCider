@@ -59,6 +59,7 @@ struct W8GpuCalibrationStats {
     uint64_t layers = 0, weight_projections = 0, activation_packs = 0;
     uint64_t correction_uploads = 0, restore_downloads = 0, joins = 0;
     uint64_t correction_computations = 0;
+    int gpu_retention_layers = 4;
     bool prefetch = false, independent_gpu_transfer = false, completed = false;
 };
 
@@ -78,9 +79,14 @@ class W8GpuCalibrationWork {
     W8GpuCalibrationWork(const W8GpuCalibrationWork &) = delete;
     W8GpuCalibrationWork &operator=(const W8GpuCalibrationWork &) = delete;
     // Outside clock: select 1/4, compile/prepare restore bindings, reset stats.
-    void prepare(int count, bool prefetch);
+    void prepare(int count, bool prefetch, bool streamed = false);
     // Inside clock. On submit failure the caller MUST still call finish().
     void submit(const Head &);
+    // LoRA calibration: drain upload/restore/head/join for each layer before
+    // refilling shared GPU targets. Immutable ANE bindings remain independent.
+    // The caller releases head/hidden/join tensors in the supplied fences;
+    // finish() is still required after partial submission or an exception.
+    void submit_streamed(const Head &, const Fence &heads, const Join &, const Fence &joins);
     void finish(const Fence &heads, const Join &, const Fence &joins);
     W8GpuCalibrationStats stats() const;
     uint64_t estimated_bytes() const;
@@ -106,5 +112,5 @@ ChannelCalibrationSamples measure_w8_channel_point(
     const std::function<void()> &reset,
     const W8GpuCalibrationWork::Head &, const W8GpuCalibrationWork::Fence &heads,
     const W8GpuCalibrationWork::Join &, const W8GpuCalibrationWork::Fence &joins,
-    int warmups = 2, int repeats = 7);
+    int warmups = 2, int repeats = 7, bool streamed = false);
 } // namespace tc::ane::private_api
