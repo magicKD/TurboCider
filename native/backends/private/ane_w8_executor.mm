@@ -164,9 +164,11 @@ struct PrivateW8Graph::Impl {
         check(!disabled && current >= 0 && banks[current]->ready && input.rows > 0 && input.rows % s.rows == 0 && input.cols == s.hidden &&
             output.rows == input.rows && output.cols == s.hidden &&
             (output.dtype == DType::FP16 || output.dtype == DType::BF16 ||
-                (output.dtype == DType::FP32 && basis==W8Basis::ComfyH256 && !adapter)), "W8 launch geometry/slots unavailable");
+                output.dtype == DType::FP32), "W8 launch geometry/slots unavailable");
         check(!adapter || (s.lora_inputs && adapter->gate.rows == input.rows && adapter->up.rows == input.rows && adapter->hidden.rows == input.rows &&
-            adapter->gate.cols == s.width && adapter->up.cols == s.width && adapter->hidden.cols == s.width && adapter->hidden.dtype == output.dtype), "W8 LoRA geometry mismatch");
+            adapter->gate.cols == s.width && adapter->up.cols == s.width && adapter->hidden.cols == s.width &&
+            (output.dtype==DType::FP32 ? (adapter->hidden.dtype==DType::BF16 || adapter->hidden.dtype==DType::FP16) :
+                adapter->hidden.dtype==output.dtype)), "W8 LoRA geometry mismatch");
         check(!bf16_value_boundaries || input.dtype==DType::BF16,"BF16 value-boundary recipe requires original BF16 activation input");
         check(input.buffer != output.buffer && (!adapter || (adapter->hidden.buffer != output.buffer && adapter->hidden.buffer != input.buffer &&
             adapter->gate.buffer != output.buffer && adapter->up.buffer != output.buffer)), "W8 source/output aliases");
@@ -215,7 +217,8 @@ struct PrivateW8Graph::Impl {
                 auto norm = y->slice_rows(0,s.hidden), hs = y->slice_rows(s.hidden,1);
                 std::vector<private_api::Download> downloads{{norm,output,row,output.dtype,headroom,b.sd,hs}};
                 if(basis==W8Basis::ComfyH256)downloads[0].row_scale_policy=private_api::RowScalePolicy::SignedFinite;
-                if (s.lora_inputs) downloads.push_back({y->slice_rows(s.hidden+1,s.width),adapter ? std::optional<DeviceMatrixView>(adapter->hidden) : std::nullopt,row,output.dtype,headroom});
+                if (s.lora_inputs) downloads.push_back({y->slice_rows(s.hidden+1,s.width),adapter ? std::optional<DeviceMatrixView>(adapter->hidden) : std::nullopt,
+                    row,adapter?adapter->hidden.dtype:output.dtype==DType::FP32?input.dtype:output.dtype,headroom});
                 const auto submit_start = Clock::now();
                 auto io = device.prepare_transfer(std::move(uploads),std::move(downloads),ready,done);
                 std::pair<std::string,Surface> outputs[]{{"y",*y}};
@@ -318,7 +321,7 @@ WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
-bool PrivateW8Graph::supports_fp32_device_output() const{return impl_->basis==W8Basis::ComfyH256;}
+bool PrivateW8Graph::supports_fp32_device_output() const{return true;}
 int PrivateW8Graph::activation_group_size() const{return impl_->activation_group_size;}
 int PrivateW8Graph::hidden_activation_group_size() const{return impl_->hidden_group_size;}
 void PrivateW8Graph::stage_weights(std::vector<WeightView>){throw CapabilityError("W8 requires explicit GPU weight bindings");}

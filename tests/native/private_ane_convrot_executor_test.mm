@@ -127,8 +127,24 @@ int main(int argc,char **argv) {
             for(int r=0;r<rows;++r)for(int c=0;c<h;++c)
                 check(tc::gguf::float_to_bf16_rne(f32.value(r,c))==static_cast<uint16_t*>(y.row(r))[c],"F32 restore changed normalized computation or final BF16 rounding");
             f32.guard();
-            graph.launch_device(x.view,f32.view,DeviceAdapterInput{dg.view,du.view,hidden.view});
-            check(!graph.finish().ok,"experimental F32 output silently widened/dropped LoRA hidden ABI");
+            if(!bf16) {
+                run(true,.125f,-.25f,.25f);
+                std::vector<uint8_t> saved_hidden(hidden.buffer.length);
+                std::memcpy(saved_hidden.data(),hidden.buffer.contents,saved_hidden.size());
+                graph.launch_device(x.view,f32.view,DeviceAdapterInput{dg.view,du.view,hidden.view});
+                const auto partial=graph.finish();check(partial.ok,partial.error);
+                check(partial.copied_output_bytes==size_t(rows)*(h*4+f*2),"ConvRot F32 partial/hidden byte receipt wrong");
+                for(int r=0;r<rows;++r)for(int c=0;c<h;++c)
+                    check(tc::gguf::float_to_bf16_rne(f32.value(r,c))==static_cast<uint16_t*>(y.row(r))[c],
+                        "ConvRot F32 partial changed base-down boundary");
+                check(!std::memcmp(saved_hidden.data(),hidden.buffer.contents,saved_hidden.size()),"ConvRot F32 partial changed LoRA hidden/padding");
+                Storage bad_hidden(gpu,rows,f,DType::FP32);
+                graph.launch_device(x.view,f32.view,DeviceAdapterInput{dg.view,du.view,bad_hidden.view});
+                check(!graph.finish().ok,"experimental F32 output silently widened LoRA hidden ABI");
+            } else {
+                graph.launch_device(x.view,f32.view,DeviceAdapterInput{dg.view,du.view,hidden.view});
+                check(!graph.finish().ok,"base-only BF16 software rounding silently accepted LoRA");
+            }
             stage(-.25f,.125f,-.5f);run(true,-.25f,.125f,-.5f);
             stage(.125f,-.25f,0);run(true,.125f,-.25f,0);
             stage(.125f,-.25f,.25f);

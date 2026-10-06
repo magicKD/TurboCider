@@ -21,6 +21,31 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_fp32_partial_requires_actual_private_channel_recipe(self):
+        row=copy.deepcopy(self.row)
+        runtime=row["hybrid"]["runtime_weight"]
+        runtime.update(fp32_channel_join_enabled=True,executor_backend="private_ane",partition_axis="intermediate_channels",
+            data_path="w8a8_hadamard",source_recipe="sylvester-dh-b128-b512-rne-norm-f16-v2+fp32-partial-join-v1")
+        SCREEN.validate_fp32_channel_join([row],True)
+        for changed in ({"fp32_channel_join_enabled":False},{"fp32_channel_join_enabled":1},
+                        {"source_recipe":"fp32_ane"},{"executor_backend":"public_coreml"},{"partition_axis":"rows"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(changed)
+            with self.subTest(changed=changed),self.assertRaises(ValueError):SCREEN.validate_fp32_channel_join([bad],True)
+        with self.assertRaises(ValueError):SCREEN.validate_fp32_channel_join([row],False)
+        declined=dict(hybrid=dict(runtime_calls_session_total=0,runtime_weight=dict(executor_backend=None,fp32_channel_join_enabled=False)))
+        SCREEN.validate_fp32_channel_join([declined],True,allow_gpu_decline=True)
+        with self.assertRaises(ValueError):SCREEN.validate_fp32_channel_join([declined],True)
+
+    def test_invalid_fp32_partial_options_fail_before_writes(self):
+        for extra in ([],["--runtime-backend","private"],
+                      ["--runtime-backend","private","--private-gpu-io","--private-data-path","w8a8"],
+                      ["--runtime-backend","private","--private-gpu-io","--private-data-path","w8a8","--private-channels","4096","--chunks","0"]):
+            with tempfile.TemporaryDirectory() as directory:
+                output=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id","qwen-image-2.1","--steps","6","--routes","gpu,runtime",
+                    "--fp32-channel-join","--output",str(output),*extra],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr);self.assertFalse(output.exists())
     def test_invalid_explicit_gpu_policy_fails_before_output(self):
         for model,routes,policy in (("qwen-image-2.1","gpu,runtime","2"),
                                     ("z-image-turbo","gpu","2"),("z-image-turbo","gpu,runtime","2,2")):

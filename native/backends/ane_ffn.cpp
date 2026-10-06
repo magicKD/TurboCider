@@ -141,10 +141,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     require(!defer || std::string(defer)=="0" || std::string(defer)=="1",
             "runtime ANE deferred channel join requires 0 or 1");
     const bool requested_defer = defer && std::string(defer)=="1";
-    const char *f32=std::getenv("TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN");
-    require(!f32 || std::string(f32)=="0" || std::string(f32)=="1","runtime ANE F32 channel join requires 0 or 1");
-    const bool requested_fp32=f32 && std::string(f32)=="1";
-    require(!requested_fp32 || !require_lora_inputs,"experimental F32 channel join is base-only; LoRA hidden ABI unchanged");
+    const bool requested_fp32=configured_fp32_channel_join();
     require(!requested_defer || (fixed_async_ && (selected_channels>0 || calibration_declined_) &&
             configured_backend().allow_private &&
             (configured_backend().preferred==BackendPreference::Private ||
@@ -191,9 +188,10 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
         metrics_.weight_variant = "runtime_w8a8";
     }
     require(!requested_fp32 || (channel_split() && graph_->supports_fp32_device_output()),
-            "F32 channel join requires a supported Private ConvRot channel executor");
+            "F32 channel join requires a supported Private W8 channel executor");
     fp32_channel_join_=requested_fp32;
     metrics_.runtime_weight_fp32_channel_join_enabled=fp32_channel_join_;
+    if(fp32_channel_join_)metrics_.runtime_weight_source_recipe+="+fp32-partial-join-v1";
     defer_channel_join_ = requested_defer && channel_split();
     metrics_.runtime_weight_deferred_join_enabled = defer_channel_join_;
     metrics_.bucket = graph_->shape().rows;
@@ -727,8 +725,8 @@ Tensor HybridFfn::run(int layer, const Tensor &input, const Gpu &gpu,
 Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, const ChannelGpu &channel_gpu,
                               std::atomic<bool> &cancelled, const Adapter *adapter,const NextWeights &next_weights) {
     require(bool(channel_gpu), "channel split requires a complete GPU range/hidden implementation");
-    require(!fp32_channel_join_ || (!adapter && input.dtype()==mx::bfloat16),
-            "experimental F32 channel join requires base-only BF16 activations");
+    require(!fp32_channel_join_ || input.dtype()==mx::bfloat16,
+            "experimental F32 channel join requires original BF16 activations");
     auto fallback = [&] {
         block_sample_valid_ = false;
         ++metrics_.runtime_weight_gpu_blocks;
@@ -744,7 +742,8 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     // the complete hidden needed for ONE down-LoRA. No checkpoint W copies.
     const uint64_t scratch = padded64 * (uint64_t(h) * (fp32_channel_join_?4:2) + (adapter ? uint64_t(fa) * 10 : 0)) +
         (padded != rows_ ? padded64 * h * input.itemsize() : 0) +
-        (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4;
+        (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4 +
+        (fp32_channel_join_?uint64_t(rows_)*h*2:0); // extra GPU head partial bytes, not just restored tail
     if (graph_->estimated_bytes() > memory_budget_ || scratch > memory_budget_ - graph_->estimated_bytes() ||
         !admit_memory(observe_runtime_memory(mx::get_active_memory()), {uint64_t(4)<<30,memory_budget_},
                       graph_->estimated_bytes(), scratch).allowed()) {

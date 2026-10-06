@@ -30,14 +30,16 @@ inline Function corrections(const Weights &weights, const std::string &prefix,
 }
 
 inline Function channels(const Weights &weights, const std::string &prefix,
-                         int first, int count, int hidden = 4096, int width = 12288) {
+                         int first, int count, int hidden = 4096, int width = 12288,
+                         bool fp32_partial = false) {
     require(first >= 0 && count > 0 && first <= width-count && hidden > 0,
             "invalid Qwen FFN channel graph range");
-    return mx::compile([&weights, prefix, first, count, hidden, width](const std::vector<Tensor> &a) {
+    return mx::compile([&weights, prefix, first, count, hidden, width, fp32_partial](const std::vector<Tensor> &a) {
         auto gate = weights.project_slice(a[0], prefix+"gate_up", first, first+count, 0, hidden, false);
         auto up = weights.project_slice(a[0], prefix+"gate_up", width+first, width+first+count, 0, hidden, false);
         auto intermediate = silu(gate)*up;
-        auto base = weights.project_base_slice(intermediate, prefix+"out", 0, hidden, first, first+count, false);
+        auto base = fp32_partial ? weights.project_base_slice_fp32(intermediate,prefix+"out",0,hidden,first,first+count) :
+            weights.project_base_slice(intermediate, prefix+"out", 0, hidden, first, first+count, false);
         // Down-LoRA is NOT rounded once per shard. Apply it to joined hidden.
         return std::vector<Tensor>{base, intermediate};
     });

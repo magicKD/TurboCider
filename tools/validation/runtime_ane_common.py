@@ -113,6 +113,28 @@ def validate_requested_gpu_layers(rows, layers, steps):
             raise ValueError("explicit GPU block policy/actual execution count does not match the screen")
 
 
+def validate_fp32_channel_join(rows, enabled, *, allow_gpu_decline=False):
+    """F32 is a GPU partial/epilogue contract, not ANE arithmetic or hidden ABI."""
+    if type(enabled) is not bool or not rows:
+        raise ValueError("invalid F32 channel join request/results")
+    for row in rows:
+        hybrid=row.get("hybrid") or {}
+        runtime=hybrid.get("runtime_weight") or {}
+        marker=runtime.get("fp32_channel_join_enabled")
+        if (enabled and allow_gpu_decline and runtime.get("executor_backend") is None and
+                hybrid.get("runtime_calls_session_total")==0 and marker is False):
+            continue
+        if not enabled and marker is None:continue  # explicit legacy compatibility
+        if type(marker) is not bool or marker is not enabled:
+            raise ValueError("requested F32 channel join was not actually selected")
+        if enabled and (runtime.get("executor_backend")!="private_ane" or
+                runtime.get("partition_axis")!="intermediate_channels" or
+                runtime.get("data_path") not in ("w8a8_hadamard","w8a8_convrot") or
+                not isinstance(runtime.get("source_recipe"),str) or
+                not runtime["source_recipe"].endswith("+fp32-partial-join-v1")):
+            raise ValueError("F32 channel join lacks Private W8 partial recipe")
+
+
 def validate_edit_results(rows, edit):
     """Shared edit receipt contract for timing screens and graph-switch tests.
 
@@ -295,6 +317,8 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
             if (session_counter(runtime, "overflow_retries_session_total") or
                     type(headroom) not in (int, float) or not math.isfinite(headroom) or headroom != 1):
                 raise ValueError("native automatic runtime changed the calibrated headroom recipe")
+            calibration_fp32=report["identity"]["recipe"].endswith("+fp32-partial-join-v1")
+            validate_fp32_channel_join([row],calibration_fp32)
         if expect_lora and hybrid.get("mlp_output_kind") != (
                 "runtime_weight_swiglu_lora_inputs" if route == "runtime" else "fused_lora"):
             raise ValueError("LoRA benchmark requires a complete activation-correction graph")

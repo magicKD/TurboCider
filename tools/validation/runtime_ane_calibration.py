@@ -95,8 +95,13 @@ def validate_channel_calibration(report, full_width, hidden):
                      "metal_abi", "graph_abi", "source_generation"):
             if not isinstance(identity.get(name), str) or not identity[name]:
                 raise ValueError(f"missing channel calibration identity {name}")
+        expected_recipe="sylvester-dh-b128-b512-rne-norm-f16-v2-"+("lora" if lora else "base")
+        fp32_partial=identity["recipe"].endswith("+fp32-partial-join-v1")
+        if fp32_partial:expected_recipe+="+fp32-partial-join-v1"
         if (identity.get("backend") != "private_ane" or identity.get("precision") not in ("bf16", "fp16") or
-                identity.get("recipe") != "sylvester-dh-b128-b512-rne-norm-f16-v2-"+("lora" if lora else "base") or
+                identity.get("recipe") != expected_recipe or
+                (fp32_partial and identity["precision"]!="bf16") or
+                fp32_partial!=identity["graph_abi"].endswith("-fp32-partial-join-v1") or
                 _integer(identity,"rows",minimum=1) != rows or _integer(identity,"hidden",minimum=1) != hidden or
                 _integer(identity,"width",minimum=1) != full_width or
                 type(identity.get("prefetch")) is not bool or type(identity.get("adapter")) is not str):

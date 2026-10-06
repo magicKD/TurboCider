@@ -6,8 +6,16 @@
 #include "ane_channel_selection.hpp"
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
+#include <cstdlib>
 
 namespace tc::ane {
+
+inline bool configured_fp32_channel_join() {
+    const char *raw=std::getenv("TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN");
+    require(!raw || std::string(raw)=="0" || std::string(raw)=="1",
+        "runtime ANE F32 channel join requires 0 or 1");
+    return raw && std::string(raw)=="1";
+}
 
 // Explicit representation, never inferred from checkpoint filenames. Packed
 // matrices use MLX affine uint32 codes; scales/offsets stay owned until drain.

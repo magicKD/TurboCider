@@ -1270,7 +1270,7 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
                 auto g = w.project_slice(input,ffn+".w1",first,first+count,0,3840,false);
                 auto u = w.project_slice(input,ffn+".w3",first,first+count,0,3840,false);
                 auto hidden = silu(g)*u;
-                auto base = runtime.fp32_channel_join() ? w.project_range_fp32(hidden,ffn+".w2",0,3840,first,first+count) :
+                auto base = runtime.fp32_channel_join() ? w.project_base_slice_fp32(hidden,ffn+".w2",0,3840,first,first+count) :
                     w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
                 return std::make_pair(base,hidden);
             },next_weights);
@@ -1300,13 +1300,14 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         if (input.dtype() == mx::bfloat16 && z_image_small_shape_metal_default() && input.shape(1)<=4224) {
             auto u = z_metal::projection_range(input,weights[1],first,first+count,0,3840);
             auto hidden = z_metal::swiglu_gemm_range(input,weights[0],u,first,count);
-            auto base = z_metal::projection_range(hidden,weights[2],0,3840,first,first+count);
+            auto base = dense_gpu::projection_range(hidden,weights[2],0,3840,first,first+count,32,runtime.fp32_channel_join());
             return std::make_pair(base,hidden);
         }
         auto g = mx::matmul(input,mx::transpose(slice_axis(weights[0],0,first,first+count)));
         auto u = mx::matmul(input,mx::transpose(slice_axis(weights[1],0,first,first+count)));
         auto hidden = silu(g)*u;
-        auto base = mx::matmul(hidden,mx::transpose(slice_axis(weights[2],1,first,first+count)));
+        auto base = runtime.fp32_channel_join() ? dense_gpu::projection_range(hidden,weights[2],0,3840,first,first+count,32,true) :
+            mx::matmul(hidden,mx::transpose(slice_axis(weights[2],1,first,first+count)));
         return std::make_pair(base,hidden);
     },next_weights);
     static auto *post = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
@@ -3932,13 +3933,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                         z_image_small_shape_metal_default() && input.shape(1)<=4224) {
                         auto up=z_metal::projection_range(input,transformer_.at(prefix+".w3.weight"),first,first+count,0,3840);
                         auto hidden=z_metal::swiglu_gemm_range(input,transformer_.at(prefix+".w1.weight"),up,first,count);
-                        return std::make_pair(z_metal::projection_range(hidden,transformer_.at(prefix+".w2.weight"),
-                            0,3840,first,first+count),hidden);
+                        return std::make_pair(dense_gpu::projection_range(hidden,transformer_.at(prefix+".w2.weight"),
+                            0,3840,first,first+count,32,ane::configured_fp32_channel_join()),hidden);
                     }
                     auto gate=transformer_.project_slice(input,prefix+".w1",first,first+count,0,3840,false);
                     auto up=transformer_.project_slice(input,prefix+".w3",first,first+count,0,3840,false);
                     auto hidden=silu(gate)*up;
-                    return std::make_pair(transformer_.project_base_slice(hidden,prefix+".w2",0,3840,first,first+count,false),hidden);
+                    auto base=ane::configured_fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,prefix+".w2",0,3840,first,first+count) :
+                        transformer_.project_base_slice(hidden,prefix+".w2",0,3840,first,first+count,false);
+                    return std::make_pair(base,hidden);
                 };
             }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,

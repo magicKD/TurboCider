@@ -20,11 +20,16 @@ int main(int argc,char**argv) {
             auto wide=z_metal::projection_range(x,w,7,72,512,1024,tile);
             auto packed=z_metal::projection_range(x,compact,0,65,0,512,tile);
             check(mx::all(wide==packed).item<bool>(),"physical dense range vs compact MPP not bit-exact");
+            auto wide32=dense_gpu::projection_range(x,w,7,72,512,1024,tile,true);
+            auto packed32=dense_gpu::projection_range(x,compact,0,65,0,512,tile,true);
+            check(wide32.dtype()==mx::float32 && mx::all(wide32==packed32).item<bool>(),"F32 partial physical/compact leading dimension mismatch");
+            check(mx::all(mx::astype(wide32,dtype)==wide).item<bool>(),"F32 partial changed established projection accumulation/output boundary");
             bool bad_tile=false;
             try { z_metal::projection_range(x,w,7,72,512,1024,0); }
             catch(const std::invalid_argument&) { bad_tile=true; }
             check(bad_tile,"invalid MPP range tile accepted");
         }
+        std::cout<<"PASS dense GPU F32 partial: original FP16/BF16 operands, physical pitch/tails and exact old final rounding\n";
         for(int rows:{33,4128}) {
             auto x=mx::astype(mx::random::normal({1,rows,3840},mx::float32,mx::random::key(13))*.1f,mx::bfloat16);
             auto g=mx::astype(mx::random::normal({10240,3840},mx::float32,mx::random::key(14))*.01f,mx::bfloat16);
@@ -454,6 +459,62 @@ int main(int argc,char**argv) {
                   "deferred typed output changed or lost owners after executor destruction");
         }
         std::cout<<"PASS deferred typed lifetime: BF16/FP16/FP32 base/one-full-hidden correction after executor destruction\n";
+        // F32 partials are a GPU restore/join option, not a changed hidden
+        // or LoRA rank ABI. The base boundary still precedes ONE down-LoRA.
+        setenv("TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN","1",1);
+        setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+        for(int rows:{17,67})for(float strength:{0.f,.75f,-.5f,0.f}) {
+            w.clear();w.bind_arrays({p+"gate_up.weight",p+"out.weight"},{wg,wd});
+            w.apply_loras(strength?std::vector<LoRAAsset>{{adapter_path.string(),strength}}:std::vector<LoRAAsset>{},
+                "transformer",[](const std::string&,int,int){},cancelled,true);
+            auto input=mx::astype(mx::random::normal({1,rows,h},mx::float32,mx::random::key(rows))*.3f,mx::bfloat16);
+            auto full=qwen21::runtime_ffn::full(w,p);
+            auto head=qwen21::runtime_ffn::channels(w,p,0,fg,h,f,true);
+            auto delta=qwen21::runtime_ffn::corrections(w,p,fg,fa,h,f);
+            auto full_delta=qwen21::runtime_ffn::corrections(w,p,0,f,h,f);
+            auto down=qwen21::runtime_ffn::down_add(w,p,h,f);
+            int down_count=0;
+            ane::HybridFfn::Adapter correction{
+                [&](const Tensor&x) {auto result=full_delta({x});return std::make_pair(result[0],result[1]);},
+                [&](const Tensor&hidden,const Tensor&base) {
+                    ++down_count;check(hidden.shape()==mx::Shape({1,rows,f}) && hidden.dtype()==mx::bfloat16 &&
+                        base.dtype()==mx::bfloat16,"F32 join widened hidden or skipped canonical base rounding before down-LoRA");
+                    return down({hidden,base})[0];
+                },[&](const Tensor&x,int first,int count) {
+                    check(first==fg && count==fa,"F32 correction range changed");
+                    auto result=delta({x});return std::make_pair(result[0],result[1]);
+                }};
+            ane::HybridFfn op(argv[1],h,f,512u<<20,cancelled,true);
+            check(op.available() && op.fp32_channel_join() && op.metrics().runtime_weight_source_recipe.ends_with("+fp32-partial-join-v1"),
+                "F32 channel contract not selected/reported");
+            auto halves=mx::split(wg,2,0);mx::eval(halves);
+            op.plan_block(0,rows);op.stage(0,rows,{halves[0],halves[1],wd});
+            auto output=op.run(0,input,[&](const Tensor&x){return full({x})[0];},cancelled,strength?&correction:nullptr,
+                [&](const Tensor&x,int first,int count) {
+                    check(first==0 && count==fg,"F32 GPU head physical range changed");
+                    auto result=head({x});return std::make_pair(result[0],result[1]);
+                });
+            mx::eval(output);const auto metrics=op.metrics();
+            check(output.shape()==input.shape() && output.dtype()==input.dtype() && mx::all(mx::isfinite(output)).item<bool>() &&
+                down_count==(strength?1:0) && metrics.runtime_calls==uint64_t(rows==17?1:3) &&
+                metrics.runtime_weight_fallback_blocks==0 && metrics.runtime_weight_overflow_retries==0,
+                "F32 channel join lost rows, down-LoRA, or actual Private execution");
+        }
+        w.clear();w.bind_arrays({p+"gate_up.weight",p+"out.weight"},{wg,wd});
+        {
+            ane::HybridFfn op(argv[1],h,f,512u<<20,cancelled,true);
+            std::vector<float> values(67*h,.1f);values[50*h]=std::numeric_limits<float>::quiet_NaN();
+            auto input=mx::astype(Tensor(values.data(),{1,67,h},mx::float32),mx::bfloat16);
+            auto halves=mx::split(wg,2,0);mx::eval(halves);op.plan_block(0,67);op.stage(0,67,{halves[0],halves[1],wd});
+            int recomputed=0;
+            auto result=op.run(0,input,[&](const Tensor&x){++recomputed;return mx::full(x.shape(),7.f,x.dtype());},cancelled,nullptr,
+                [](const Tensor&x,int,int count) {return std::make_pair(mx::zeros(x.shape(),mx::float32),
+                    mx::zeros({1,x.shape(1),count},x.dtype()));});
+            check(recomputed==1 && mx::all(result==Tensor(7.f,mx::bfloat16)).item<bool>() && op.metrics().runtime_failed,
+                "F32 late chunk failure published partial scratch");
+        }
+        unsetenv("TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN");unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+        std::cout<<"PASS F32 channel join: base/A/B/base, original BF16 hidden/base-before-LoRA, ONE down correction and full late-failure GPU recomputation\n";
         // Failure in the SECOND ANE chunk must select the whole-operation GPU
         // callback, not combine valid GPU partial with poisoned ANE scratch.
         std::vector<float> poison(67*h,.1f);poison[50*h]=std::numeric_limits<float>::quiet_NaN();

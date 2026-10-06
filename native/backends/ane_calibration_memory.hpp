@@ -61,7 +61,7 @@ struct NativeChannelCalibrationMemoryPlan {
 // is an opportunistic admission estimate, not a hard process/driver RAM cap.
 inline std::optional<NativeChannelCalibrationMemoryPlan> plan_native_channel_calibration_memory(
         uint64_t actual_rows, uint64_t bucket, uint64_t hidden, uint64_t full_width,
-        uint64_t channels, bool lora, bool streamed, uint64_t page_bytes) {
+        uint64_t channels, bool lora, bool streamed, uint64_t page_bytes, bool fp32_output = false) {
     if (!actual_rows || actual_rows > bucket || !full_width || full_width > 16384 ||
             !channels || channels >= full_width || (streamed && !lora)) return std::nullopt;
     std::vector<CalibrationSurfaceShape> snapshots;
@@ -80,8 +80,8 @@ inline std::optional<NativeChannelCalibrationMemoryPlan> plan_native_channel_cal
     if (!arena) return std::nullopt;
     const uint64_t live = streamed ? 1 : 4;
     const uint64_t scratch = actual_rows*((streamed?5:8)*hidden+6*(full_width-channels))*2+(128ull<<20)+
-        (lora ? bucket*live*(3*channels+full_width)*2 : 0);
-    const uint64_t targets = bucket*live*(hidden+(lora?channels:0))*2;
+        (lora ? bucket*live*(3*channels+full_width)*2 : 0)+(fp32_output?actual_rows*live*hidden*2:0);
+    const uint64_t targets = bucket*live*(hidden*(fp32_output?4:2)+(lora?channels*2:0));
     // Charge both input wrappers conservatively even if padding aliases input.
     const uint64_t inputs = (actual_rows+bucket)*hidden*2;
     return NativeChannelCalibrationMemoryPlan{arena->surface_bytes, scratch, targets, inputs,

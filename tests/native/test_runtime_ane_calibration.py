@@ -37,6 +37,16 @@ def report():
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_fp32_partial_recipe_requires_bf16_and_distinct_graph_abi(self):
+        value=report()
+        value["identity"]["recipe"]+="+fp32-partial-join-v1"
+        with self.assertRaises(ValueError):validate_channel_calibration(value,10240,3840)
+        value["identity"]["graph_abi"]+="-fp32-partial-join-v1"
+        self.assertEqual(validate_channel_calibration(value,10240,3840),4096)
+        for key,changed in (("precision","fp16"),("recipe","sylvester-dh-b128-b512-rne-norm-f16-v2-base"),
+                           ("graph_abi","prepared-channel-base-v1-b1056-l32")):
+            bad=copy.deepcopy(value);bad["identity"][key]=changed
+            with self.subTest(key=key),self.assertRaises(ValueError):validate_channel_calibration(bad,10240,3840)
     def test_streamed_points_require_auditable_complete_memory_admission(self):
         value=report();value.update(lora=True,gpu_retention_layers=1,memory_limited_points=True,
             memory_admission_scope="complete calibration payload estimate; preflight observation; not physical RAM cap")
@@ -129,6 +139,13 @@ class CalibrationTests(unittest.TestCase):
             bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
             with self.subTest(change=change),self.assertRaises(ValueError):
                 COMMON.validate_results([bad],"runtime",1,runtime_backend="private",channel_auto=True)
+        fp32=copy.deepcopy(row)
+        fp32["hybrid"]["runtime_weight"]["channel_calibration"]["identity"]["recipe"]+="+fp32-partial-join-v1"
+        fp32["hybrid"]["runtime_weight"]["channel_calibration"]["identity"]["graph_abi"]+="-fp32-partial-join-v1"
+        with self.assertRaises(ValueError):COMMON.validate_results([fp32],"runtime",1,runtime_backend="private",channel_auto=True)
+        fp32["hybrid"]["runtime_weight"].update(fp32_channel_join_enabled=True,
+            source_recipe="sylvester-dh-b128-b512-rne-norm-f16-v2+fp32-partial-join-v1")
+        COMMON.validate_results([fp32],"runtime",1,runtime_backend="private",channel_auto=True)
 
     def test_channel_cli_policy_does_not_accept_negative_unresolved_width(self):
         self.assertEqual(channel_policy("auto"),"auto")

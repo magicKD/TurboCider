@@ -26,10 +26,11 @@ bool calibration_prefetch() {
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
 DeviceMatrixView matrix(const Tensor &value, int rows, int columns) {
     require(value.flags().row_contiguous && value.buffer().ptr() && value.offset() >= 0 &&
-        value.size() == size_t(rows)*columns && (value.dtype() == mx::bfloat16 || value.dtype() == mx::float16),
-        "calibration matrix requires produced contiguous BF16/FP16 storage");
+        value.size() == size_t(rows)*columns && (value.dtype() == mx::bfloat16 || value.dtype() == mx::float16 || value.dtype()==mx::float32),
+        "calibration matrix requires produced contiguous BF16/FP16/FP32 storage");
     return {const_cast<void *>(value.buffer().ptr()), value.buffer_size(), size_t(value.offset()), rows, columns,
-        size_t(columns)*2, value.dtype() == mx::bfloat16 ? DType::BF16 : DType::FP16, std::make_shared<Tensor>(value)};
+        size_t(columns)*value.itemsize(), value.dtype() == mx::bfloat16 ? DType::BF16 : value.dtype()==mx::float16?DType::FP16:DType::FP32,
+        std::make_shared<Tensor>(value)};
 }
 struct Bank {
     private_api::Surface g, sg, u, su, d, sd;
@@ -56,6 +57,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
     size_t budget, std::atomic<bool> &cancelled, bool lora, const CalibrationWorkload &workload) {
     checkpoint(cancelled);
     const auto policy = configured_backend();
+    const bool fp32_partial=configured_fp32_channel_join();
     require(policy.allow_private && (policy.preferred == BackendPreference::Private || policy.preferred == BackendPreference::Auto),
         "automatic ANE channels require an explicitly authorized Private backend");
     const std::string path = std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH") ?
@@ -84,13 +86,15 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
     if (workload.rows > shape.rows)
         return select(0,false,"unsupported","automatic calibration requires a bucket covering the complete FFN rows; optimized GPU-only");
     shape.lora_inputs = lora;
+    require(!fp32_partial || workload.dtype==mx::bfloat16,"F32 partial calibration requires original BF16 activations");
     const bool prefetch = calibration_prefetch();
     ChannelCalibrationIdentity identity{workload.model_sha256, workload.adapter_identity, workload.encoding,
         workload.dtype == mx::bfloat16 ? "bf16" : "fp16", "private_ane",
-        lora?"sylvester-dh-b128-b512-rne-norm-f16-v2-lora":"sylvester-dh-b128-b512-rne-norm-f16-v2-base",
+        std::string(lora?"sylvester-dh-b128-b512-rne-norm-f16-v2-lora":"sylvester-dh-b128-b512-rne-norm-f16-v2-base")+
+            (fp32_partial?"+fp32-partial-join-v1":""),
         device_info().gpu, os_build(), runtime_build_identity(), executor_configuration_identity()+workload.gpu_configuration,
         std::string(lora?"prepared-channel-streamed-gpu-v2-b":"prepared-channel-base-v1-b")+
-            std::to_string(shape.rows)+"-l"+std::to_string(workload.layers), workload.source_generation,
+            std::to_string(shape.rows)+"-l"+std::to_string(workload.layers)+(fp32_partial?"-fp32-partial-join-v1":""), workload.source_generation,
         workload.rows, h, width, shape.tile_k, shape.tile_n, prefetch};
     require(identity.valid() && !workload.source_owners.empty() &&
         std::none_of(workload.source_owners.begin(),workload.source_owners.end(),[](const auto &p){return p.expired();}),
@@ -148,7 +152,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         std::map<int,bool> admitted_points;
         const auto sampling=plan_channel_sampling(width,[&](int fa) {
             if(const auto prior=admitted_points.find(fa);prior!=admitted_points.end())return prior->second;
-            const auto memory=plan_native_channel_calibration_memory(workload.rows,shape.rows,h,width,fa,lora,lora,getpagesize());
+            const auto memory=plan_native_channel_calibration_memory(workload.rows,shape.rows,h,width,fa,lora,lora,getpagesize(),fp32_partial);
             if(!memory)return false;
             const auto decision=admit_memory(sampling_observation,{4ull<<30,budget},0,memory->estimated_bytes);
             report->memory_admissions.push_back({fa,memory->surface_bytes,memory->gpu_scratch_upper_bytes,
@@ -167,7 +171,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             const int fa=shares[sampled],fg=width-fa;
             auto candidate_shape=shape;candidate_shape.width=fa;
             const auto spec=w8_swiglu_program(candidate_shape,20260930,1.f);
-            const auto memory=plan_native_channel_calibration_memory(workload.rows,shape.rows,h,width,fa,lora,lora,getpagesize());
+            const auto memory=plan_native_channel_calibration_memory(workload.rows,shape.rows,h,width,fa,lora,lora,getpagesize(),fp32_partial);
             require(bool(memory),"native calibration complete memory plan invalid");
             const auto observed=observe_runtime_memory(mx::get_active_memory());
             const auto admission=admit_memory(observed,{4ull<<30,budget},0,memory->estimated_bytes);
@@ -237,11 +241,11 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                 item.weights={{{views[layer][0],{fg,fa,0,h,128}}, {views[layer][1],{fg,fa,0,h,128}},
                     {views[layer][2],{0,h,fg,fa,512}}}};
                 if(layer<4) {
-                    tails.push_back(lora && layer?tails.front():mx::zeros({1,shape.rows,h},workload.dtype));
+                    tails.push_back(lora && layer?tails.front():mx::zeros({1,shape.rows,h},fp32_partial?mx::float32:workload.dtype));
                     mx::eval(tails.back());if(!lora || !layer)resident+=tails.back().nbytes();
                     item.activation=matrix(padded,shape.rows,h);
                     item.restoration.push_back({outputs[layer].slice_rows(0,h),matrix(tails.back(),shape.rows,h),0,
-                        workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f,banks[layer].sd,outputs[layer].slice_rows(h,1)});
+                        fp32_partial?DType::FP32:workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f,banks[layer].sd,outputs[layer].slice_rows(h,1)});
                     if(lora) {
                         tail_hidden.push_back(layer?tail_hidden.front():mx::zeros({1,shape.rows,fa},workload.dtype));
                         mx::eval(tail_hidden.back());if(!layer)resident+=tail_hidden.back().nbytes();
@@ -281,7 +285,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         auto proposal=fit->select(width,512,baseline.layer_seconds,[&](int fa) {
             const auto plan=plan_gpu_calibration_memory(shape.rows,h,fa,lora,{},getpagesize());
             const uint64_t head=uint64_t(workload.rows)*(8ull*h+6ull*(width-fa))*2+(128ull<<20)+
-                (lora?uint64_t(shape.rows)*(4ull*fa+4ull*width)*2:0);
+                (lora?uint64_t(shape.rows)*(4ull*fa+4ull*width)*2:0)+(fp32_partial?uint64_t(workload.rows)*h*4:0);
             return plan && admit_memory(observe_runtime_memory(mx::get_active_memory()),{4ull<<30,budget},0,plan->estimated_bytes+head).allowed();
         });
         report->proposed_channels=proposal.ane_channels;report->predicted_layer_seconds=proposal.predicted_seconds;

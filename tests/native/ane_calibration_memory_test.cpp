@@ -49,6 +49,15 @@ int main() {
         assert(batch->estimated_bytes-streamed->estimated_bytes == retired);
         assert(streamed->estimated_bytes == streamed->surface_bytes+streamed->internal_allowance_bytes+
             streamed->input_bytes+streamed->gpu_restore_bytes+streamed->gpu_scratch_upper_bytes);
+        for(bool stream:{false,true}) {
+            const auto original=plan_native_channel_calibration_memory(rows,bucket,3840,10240,4096,true,stream,page);
+            const auto fp32=plan_native_channel_calibration_memory(rows,bucket,3840,10240,4096,true,stream,page,true);
+            const uint64_t live=stream?1:4;
+            assert(fp32 && original && fp32->surface_bytes==original->surface_bytes && fp32->input_bytes==original->input_bytes);
+            assert(fp32->gpu_restore_bytes-original->gpu_restore_bytes==bucket*live*3840*2);
+            assert(fp32->gpu_scratch_upper_bytes-original->gpu_scratch_upper_bytes==rows*live*3840*2);
+            assert(fp32->estimated_bytes-original->estimated_bytes==(bucket+rows)*live*3840*2);
+        }
     }
     const auto defaults = plan_channel_sampling(10240, [](int) { return true; });
     assert(defaults && defaults->channels == (std::array<int, 2>{4096, 8192}) && !defaults->memory_limited);

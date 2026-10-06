@@ -9,7 +9,7 @@ import struct
 
 import numpy as np
 
-from runtime_ane_common import sha256_file,validate_results
+from runtime_ane_common import sha256_file,validate_results,validate_fp32_channel_join
 from runtime_ane_image_compare import compare_png
 
 LAYOUTS = {
@@ -136,6 +136,9 @@ def bind_execution(reference,candidate,model_id):
             raise ValueError("native quality requested and actual steps differ")
         validate_results(rows,route,1,model_id=model_id,runtime_backend="private",expect_device_io=route=="runtime",
             expected_data_path="w8a8_hadamard" if route=="runtime" else None,channel_auto=route=="runtime")
+        if route=="runtime":
+            runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+            validate_fp32_channel_join(rows,runtime.get("fp32_channel_join_enabled",False),allow_gpu_decline=True)
         if sha256_file(path)!=digest:raise ValueError("quality execution receipt changed")
         records.append(dict(receipt_sha256=digest,binary_sha256=raw.get("binary_sha256"),
             adjacent_library_sha256=library,artifacts_unchanged=raw.get("artifacts_unchanged"),

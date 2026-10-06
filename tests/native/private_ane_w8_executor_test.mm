@@ -92,6 +92,26 @@ int main(int argc, char **argv) {
         for(bool adapter:{false,true,false}) { fill_weights(.125f,-.25f,.25f); stage(); run(adapter,.125f,-.25f,.25f); }
         fill_weights(-.25f,.125f,-.5f); stage(); run(true,-.25f,.125f,-.5f);
         fill_weights(.125f,-.25f,.25f); stage(); run(false,.125f,-.25f,.25f);
+        Storage fp32_partial(gpu,rows,h,DType::FP32),wrong_hidden(gpu,rows,f,DType::FP32);
+        check(graph.supports_fp32_device_output(),"Sylvester F32 partial capability missing");
+        for(bool adapter:{false,true,false}) {
+            run(adapter,.125f,-.25f,.25f);
+            std::vector<uint8_t> hidden_snapshot(hidden.buffer.length);
+            if(adapter)std::memcpy(hidden_snapshot.data(),hidden.buffer.contents,hidden_snapshot.size());
+            graph.launch_device(x.view,fp32_partial.view,adapter?std::optional<DeviceAdapterInput>({dg.view,du.view,hidden.view}):std::nullopt);
+            const auto result=graph.finish();check(result.ok,result.error);
+            check(result.copied_output_bytes==size_t(rows)*(h*4+(adapter?f*2:0)),"F32 partial plus model-dtype hidden byte receipt wrong");
+            for(int r=0;r<rows;++r)for(int c=0;c<h;++c)
+                check(round_bf16(static_cast<float*>(fp32_partial.row(r))[c])==static_cast<uint16_t*>(y.row(r))[c],
+                    "Sylvester F32 restore changed normalized result/final BF16 boundary");
+            if(adapter)check(!std::memcmp(hidden_snapshot.data(),hidden.buffer.contents,hidden_snapshot.size()),
+                "F32 base partial changed BF16 LoRA hidden ABI/padding");
+            fp32_partial.guard();hidden.guard();
+        }
+        graph.launch_device(x.view,fp32_partial.view,DeviceAdapterInput{dg.view,du.view,wrong_hidden.view});
+        check(!graph.finish().ok,"F32 partial silently widened LoRA hidden ABI");
+        stage();run(true,.125f,-.25f,.25f);
+        std::cout<<"PASS W8 F32 GPU partial restore: base/LoRA/base, exact BF16 boundary, unchanged hidden ABI, bytes/guards and recovery\n";
         if (lookahead) {
             // Buffer identities/queue scheduling must not change the actual
             // W8A8 recipe, rounding boundaries or LoRA-hidden output. Compare

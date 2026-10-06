@@ -22,6 +22,7 @@ from runtime_ane_common import (
     qwen_lora_1024_environment, validate_qwen_lora_1024_receipts,
     validate_deferred_channel_join,
     gpu_layer_policy, z_gpu_layer_environment, validate_requested_gpu_layers,
+    validate_fp32_channel_join,
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
@@ -119,6 +120,8 @@ def main():
                    help="explicit fixed-partition untimed/async head ablation; requires positive fixed chunks and no profile")
     p.add_argument("--defer-channel-join",choices=("0","1"),default=None,
                    help="private channel fixed-async owned lazy-join ablation; request_wall remains the timing scope")
+    p.add_argument("--fp32-channel-join",action="store_true",
+                   help="Private W8 F32 GPU partial restore/join; original BF16 hidden and ONE down-LoRA retained")
     p.add_argument("--z-runtime-gpu-blocks",type=gpu_layer_policy,
                    help="explicit complete GPU blocks by FFN ordinal; Z BF16 runtime route only, never applied to GPU/frozen")
     p.add_argument("--qkv-manifest", type=Path,
@@ -200,6 +203,10 @@ def main():
     if args.defer_channel_join is not None and (args.runtime_backend!="private" or
             not args.private_channels or args.fixed_async!="1" or args.profile or "runtime" not in routes):
         p.error("deferred channel join requires private channels, fixed-async=1 and no profile")
+    if args.fp32_channel_join and (args.runtime_backend!="private" or args.private_data_path!="w8a8" or
+            not args.private_gpu_io or not args.private_channels or args.chunks=="0" or "runtime" not in routes or
+            args.model_id not in ("z-image-turbo","qwen-image-2.1")):
+        p.error("F32 channel join screen requires BF16 Z/Qwen, Private W8 GPU I/O and active channels")
     if "qkv" in routes and (args.model_id != "qwen-image-2.1" or args.lora or args.reference or
                              args.qkv_chunks == "0"):
         p.error("qkv screen requires Qwen base generation and positive or auto QKV chunks")
@@ -246,6 +253,7 @@ def main():
                "private_lora_channel_range": args.private_lora_channel_range,
                "fixed_async": args.fixed_async,
                "defer_channel_join": args.defer_channel_join,
+               "fp32_channel_join":args.fp32_channel_join,
                "z_runtime_gpu_blocks": args.z_runtime_gpu_blocks,
                "placement": "unknown",
                "profile": args.profile, "warm_repeats": args.warm_repeats,
@@ -313,6 +321,7 @@ def main():
         route_env.update(z_gpu_layer_environment(args.model_id,route,args.z_runtime_gpu_blocks,routes))
         if route == "runtime":
             route_env["TURBOCIDER_RUNTIME_ANE_CHUNKS"] = args.chunks
+            if args.fp32_channel_join:route_env["TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN"]="1"
             if args.fixed_async is not None:
                 route_env["TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC"] = args.fixed_async
             if args.defer_channel_join is not None:
@@ -364,6 +373,7 @@ def main():
         active_runtime_rows = [row for row in rows if not native_auto or
             ((row.get("hybrid") or {}).get("runtime_weight") or {}).get("executor_backend")=="private_ane"]
         if route=="runtime":validate_requested_gpu_layers(rows,args.z_runtime_gpu_blocks,args.steps)
+        if route=="runtime":validate_fp32_channel_join(rows,args.fp32_channel_join,allow_gpu_decline=native_auto)
         if route=="runtime" and args.private_lora_channel_range is not None:
             validate_lora_channel_range(rows,args.private_lora_channel_range=="1")
         if route=="runtime" and args.fixed_async is not None and active_runtime_rows:

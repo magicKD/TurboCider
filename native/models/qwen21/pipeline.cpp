@@ -470,13 +470,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         const RangeKey key{ordinal,first,count};
                         auto at=lora_channels->find(key);
                         if(at==lora_channels->end())at=lora_channels->emplace(key,
-                            runtime_ffn::channels(transformer_,prefix,first,count)).first;
+                            runtime_ffn::channels(transformer_,prefix,first,count,4096,12288,ane::configured_fp32_channel_join())).first;
                         auto result=at->second({input});return std::make_pair(result[0],result[1]);
                     }
                     auto gate=transformer_.project_slice(input,prefix+"gate_up",first,first+count,0,4096,false);
                     auto up=transformer_.project_slice(input,prefix+"gate_up",12288+first,12288+first+count,0,4096,false);
                     auto hidden=silu(gate)*up;
-                    return std::make_pair(transformer_.project_base_slice(hidden,prefix+"out",0,4096,first,first+count,false),hidden);
+                    auto base=ane::configured_fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,prefix+"out",0,4096,first,first+count) :
+                        transformer_.project_base_slice(hidden,prefix+"out",0,4096,first,first+count,false);
+                    return std::make_pair(base,hidden);
                 };
             }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
@@ -803,7 +805,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             // FP32 rank/BF16 rounding as the existing callback.
                             // Request-local captures cannot outlive/reuse a
                             // differently rebound adapter or channel share.
-                            runtime_lora_channel_gpu.push_back(runtime_ffn::channels(transformer_,p,0,first));
+                            runtime_lora_channel_gpu.push_back(runtime_ffn::channels(transformer_,p,0,first,4096,12288,runtime_ffn_->fp32_channel_join()));
                         }
                         runtime_lora_down_add.push_back(runtime_ffn::down_add(transformer_,p));
                     }
@@ -855,7 +857,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
                         auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false);
                         auto hidden=silu(g)*u;
-                        auto base=transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
+                        auto base=runtime_ffn_->fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,p+"out",0,4096,first,first+count) :
+                            transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
                         return std::make_pair(base,hidden);
                     },[&](int next) {
                         std::vector<ane::FfnWeight> sources;
