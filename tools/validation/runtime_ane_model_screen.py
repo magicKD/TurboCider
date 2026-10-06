@@ -21,6 +21,7 @@ from runtime_ane_common import (
     qwen_qk_environment, validate_qwen_qk_receipts, validate_lora_channel_range, validate_fixed_async,
     qwen_lora_1024_environment, validate_qwen_lora_1024_receipts,
     validate_deferred_channel_join,
+    gpu_layer_policy, z_gpu_layer_environment, validate_requested_gpu_layers,
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
@@ -118,6 +119,8 @@ def main():
                    help="explicit fixed-partition untimed/async head ablation; requires positive fixed chunks and no profile")
     p.add_argument("--defer-channel-join",choices=("0","1"),default=None,
                    help="private channel fixed-async owned lazy-join ablation; request_wall remains the timing scope")
+    p.add_argument("--z-runtime-gpu-blocks",type=gpu_layer_policy,
+                   help="explicit complete GPU blocks by FFN ordinal; Z BF16 runtime route only, never applied to GPU/frozen")
     p.add_argument("--qkv-manifest", type=Path,
                    help="Qwen base-only Q/K/V MatMul runtime graph; separate from FFN runtime")
     p.add_argument("--frozen-manifest", type=Path)
@@ -165,6 +168,10 @@ def main():
     routes = args.routes.split(",")
     if not routes or any(route not in ("gpu", "runtime", "qkv", "frozen") for route in routes):
         p.error("routes must be comma-separated gpu,runtime,qkv,frozen")
+    try:
+        z_gpu_layer_environment(args.model_id,"runtime",args.z_runtime_gpu_blocks,routes)
+    except ValueError as error:
+        p.error(str(error))
     try:
         lora_1024_environment = qwen_lora_1024_environment(
             args.model_id, args.size, args.steps, args.qwen_lora_1024,
@@ -239,6 +246,7 @@ def main():
                "private_lora_channel_range": args.private_lora_channel_range,
                "fixed_async": args.fixed_async,
                "defer_channel_join": args.defer_channel_join,
+               "z_runtime_gpu_blocks": args.z_runtime_gpu_blocks,
                "placement": "unknown",
                "profile": args.profile, "warm_repeats": args.warm_repeats,
                "continuous_load_observation": args.observe_load,
@@ -302,6 +310,7 @@ def main():
             requests.append(path.resolve())
         route_env = dict(env)
         route_env.update(reference_environment(route, edit, bool(args.lora)))
+        route_env.update(z_gpu_layer_environment(args.model_id,route,args.z_runtime_gpu_blocks,routes))
         if route == "runtime":
             route_env["TURBOCIDER_RUNTIME_ANE_CHUNKS"] = args.chunks
             if args.fixed_async is not None:
@@ -354,6 +363,7 @@ def main():
                          channel_auto=native_auto and route=="runtime")
         active_runtime_rows = [row for row in rows if not native_auto or
             ((row.get("hybrid") or {}).get("runtime_weight") or {}).get("executor_backend")=="private_ane"]
+        if route=="runtime":validate_requested_gpu_layers(rows,args.z_runtime_gpu_blocks,args.steps)
         if route=="runtime" and args.private_lora_channel_range is not None:
             validate_lora_channel_range(rows,args.private_lora_channel_range=="1")
         if route=="runtime" and args.fixed_async is not None and active_runtime_rows:

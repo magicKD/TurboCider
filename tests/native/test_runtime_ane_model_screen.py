@@ -21,6 +21,16 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_invalid_explicit_gpu_policy_fails_before_output(self):
+        for model,routes,policy in (("qwen-image-2.1","gpu,runtime","2"),
+                                    ("z-image-turbo","gpu","2"),("z-image-turbo","gpu,runtime","2,2")):
+            with tempfile.TemporaryDirectory() as directory:
+                out=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,"-B",str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id",model,"--steps","8","--routes",routes,
+                    "--z-runtime-gpu-blocks",policy,"--output",str(out)],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertFalse(out.exists())
     def test_deferred_channel_join_requires_actual_owned_untimed_execution(self):
         row=copy.deepcopy(self.row)
         r=row["hybrid"]["runtime_weight"]

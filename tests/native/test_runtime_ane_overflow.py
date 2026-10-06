@@ -6,7 +6,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 with mock.patch.object(sys, "path", [str(ROOT/"tools/validation"), *sys.path]):
-    from runtime_ane_common import validate_overflow_events, validate_results, validate_gpu_layer_policy
+    from runtime_ane_common import (validate_overflow_events, validate_results, validate_gpu_layer_policy,
+                                   gpu_layer_policy,z_gpu_layer_environment,validate_requested_gpu_layers)
 
 
 def event(layer=0, begin=0, completed=True):
@@ -21,6 +22,23 @@ def receipt(events=None):
 
 
 class OverflowTests(unittest.TestCase):
+    def test_explicit_screen_policy_is_canonical_runtime_only_and_byte_checked(self):
+        layers=gpu_layer_policy("5,2")
+        self.assertEqual(layers,(2,5))
+        self.assertEqual(z_gpu_layer_environment("z-image-turbo","runtime",layers,("gpu","runtime")),
+                         {"TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS":"2,5"})
+        for route in ("gpu","frozen"):
+            self.assertEqual(z_gpu_layer_environment("z-image-turbo",route,layers,("gpu","runtime")),{})
+        for value in ("","2,","-1","32","2,2","2,,3"," 2","none","9999"):
+            with self.subTest(value=value),self.assertRaises(Exception):gpu_layer_policy(value)
+        with self.assertRaises(ValueError):z_gpu_layer_environment("qwen-image-2.1","runtime",layers,("gpu","runtime"))
+        with self.assertRaises(ValueError):z_gpu_layer_environment("z-image-turbo","runtime",layers,("gpu",))
+        row=dict(actual_denoise_steps=8,hybrid=dict(runtime_weight=dict(requested_gpu_layers=[2,5],
+                 forced_gpu_blocks_session_total=16,gpu_blocks_session_total=16,unsplit_gpu_blocks_session_total=16)))
+        validate_requested_gpu_layers([row],layers,8)
+        for change in ({"requested_gpu_layers":[2]},{"forced_gpu_blocks_session_total":0},{"unsplit_gpu_blocks_session_total":15}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.assertRaises(ValueError):validate_requested_gpu_layers([bad],layers,8)
     def test_gpu_layer_policy_requires_unsplit_blocks_and_canonical_ordinals(self):
         data=dict(requested_gpu_layers=[2,5],forced_gpu_blocks_session_total=8,
             gpu_blocks_session_total=8,unsplit_gpu_blocks_session_total=8)

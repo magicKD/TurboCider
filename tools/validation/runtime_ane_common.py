@@ -78,6 +78,41 @@ def validate_gpu_layer_policy(runtime):
     return tuple(layers),forced
 
 
+def gpu_layer_policy(value):
+    """Mirror native Z policy syntax, canonicalize before any artifact writes."""
+    parts=value.split(",")
+    if (not parts or len(parts)>32 or any(not x or len(x)>3 or not x.isascii() or not x.isdigit() for x in parts)):
+        raise argparse.ArgumentTypeError("GPU blocks require comma-separated ordinals 0...31")
+    layers=sorted(map(int,parts))
+    if any(x>=32 for x in layers) or len(set(layers))!=len(layers):
+        raise argparse.ArgumentTypeError("GPU blocks require unique ordinals 0...31")
+    return tuple(layers)
+
+
+def z_gpu_layer_environment(model_id, route, layers, routes):
+    if layers is None:
+        return {}
+    if (not isinstance(layers,tuple) or not layers or len(layers)>32 or
+            any(type(x) is not int or not 0<=x<32 for x in layers) or layers!=tuple(sorted(set(layers)))):
+        raise ValueError("invalid canonical Z runtime GPU layer policy")
+    if model_id!="z-image-turbo" or "runtime" not in routes:
+        raise ValueError("explicit GPU block screen currently requires Z-Image BF16 and a runtime route")
+    if route!="runtime":
+        return {}
+    return {"TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS":",".join(map(str,layers))}
+
+
+def validate_requested_gpu_layers(rows, layers, steps):
+    if layers is None:
+        return
+    for index,row in enumerate(rows):
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        reported=validate_gpu_layer_policy(runtime)
+        if (reported is None or reported[0]!=layers or reported[1]!=(index+1)*steps*len(layers) or
+                type(row.get("actual_denoise_steps")) is not int or row["actual_denoise_steps"]!=steps):
+            raise ValueError("explicit GPU block policy/actual execution count does not match the screen")
+
+
 def validate_edit_results(rows, edit):
     """Shared edit receipt contract for timing screens and graph-switch tests.
 
