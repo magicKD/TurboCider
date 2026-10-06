@@ -376,10 +376,12 @@ void PrivateW8Graph::launch_device(DeviceMatrixView input,DeviceMatrixView outpu
     auto &p=*impl_;p.worker.join();const auto stage=p.result.stage_seconds;p.result={};p.result.stage_seconds=stage;
     {std::lock_guard lock(p.submission_mutex);p.submitted=false;p.launch_finished=false;}
     p.worker.submit([&p,input=std::move(input),output=std::move(output),adapter=std::move(adapter)]{
+        p.result.headroom_start_scale=p.headroom;
         auto start=Clock::now();
         auto notify=[&p]{ {std::lock_guard lock(p.submission_mutex);p.submitted=true;}p.submission_cv.notify_all(); };
         try{check(p.verified,"W8 self-test required");p.run(input,output,adapter,notify);p.result.ok=true;}
         catch(const std::exception&e){p.result.error=e.what();}
+        p.result.headroom_scale=p.headroom;
         p.result.total_seconds=elapsed(start);
         {std::lock_guard lock(p.submission_mutex);p.launch_finished=true;}p.submission_cv.notify_all();
     });

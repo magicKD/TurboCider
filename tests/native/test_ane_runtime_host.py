@@ -15,6 +15,10 @@ SPEC.loader.exec_module(EXPORT)
 
 
 class RuntimeHostTests(unittest.TestCase):
+    def test_bounded_allocation_free_overflow_event_prefix(self):
+        self.run_host_test("ane_overflow_report_test")
+    def test_canonical_gpu_layer_policy_and_invalid_ordinals(self):
+        self.run_host_test("ane_gpu_layer_policy_test")
     def run_host_test(self, name, sources=()):
         with tempfile.TemporaryDirectory(prefix="tc-ane-host-") as temporary:
             binary = Path(temporary) / name

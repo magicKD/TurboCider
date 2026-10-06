@@ -151,6 +151,7 @@ struct RunResult {
     double output_seconds = 0, total_seconds = 0;
     uint64_t calls = 0, copied_output_bytes = 0;
     uint64_t overflow_retries = 0;
+    float headroom_start_scale = 1.f;
     float headroom_scale = 1.f;
     // Successful lookahead submissions, not proof of physical GPU/ANE overlap.
     uint64_t activation_prefetches = 0;

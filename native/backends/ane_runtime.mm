@@ -661,6 +661,7 @@ void RuntimeGraph::launch(MatrixView input, uint16_t *output, size_t output_elem
     p.result = {};
     p.result.stage_seconds = stage_time;
     p.worker.submit([&p, input, output, output_elements, output_dtype, adapter] {
+        p.result.headroom_start_scale = p.headroom;
         const auto start = Clock::now();
         try {
             check(p.verified && p.staged, "runtime ANE has no verified staged weights");

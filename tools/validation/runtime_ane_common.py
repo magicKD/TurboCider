@@ -31,6 +31,53 @@ def session_counter(data, name):
     return value
 
 
+def validate_overflow_events(runtime, calls):
+    """Bounded per-launch diagnostics, never a physical trace/quality gate."""
+    keys = ("overflow_events", "overflow_events_dropped_session_total", "overflow_event_scope")
+    if not any(key in runtime for key in keys):
+        return None  # Explicit backward compatibility for older receipts.
+    events = runtime.get("overflow_events")
+    if (not isinstance(events, list) or len(events) > 32 or
+            runtime.get("overflow_event_scope") != "aggregated per-FFN launch host telemetry; no chunk/physical-engine trace"):
+        raise ValueError("invalid bounded overflow event telemetry/scope")
+    dropped = session_counter(runtime, "overflow_events_dropped_session_total")
+    total = session_counter(runtime, "overflow_retries_session_total")
+    retries, last_end = 0, 0
+    for event in events:
+        if not isinstance(event, dict) or type(event.get("completed")) is not bool:
+            raise ValueError("invalid overflow event completion")
+        session_counter(event, "layer")
+        rows = session_counter(event, "rows")
+        begin, count = (session_counter(event, key) for key in ("runtime_call_begin", "runtime_call_count"))
+        attempted = session_counter(event, "retries")
+        before, after = event.get("headroom_before"), event.get("headroom_after")
+        if (not rows or not attempted or count < attempted+int(event["completed"]) or
+                begin < last_end or begin+count > calls or
+                any(type(x) not in (int, float) or not math.isfinite(x) or x < 1 for x in (before, after)) or
+                after <= before):
+            raise ValueError("overflow event lost its layer/calls/retry/headroom transition")
+        retries += attempted
+        last_end = begin+count
+    if ((dropped == 0 and retries != total) or
+            (dropped and (len(events) != 32 or total < retries+dropped))):
+        raise ValueError("overflow event prefix disagrees with cumulative retries")
+    return events, dropped
+
+
+def validate_gpu_layer_policy(runtime):
+    keys=("requested_gpu_layers","forced_gpu_blocks_session_total")
+    if not any(key in runtime for key in keys):
+        return None
+    layers=runtime.get("requested_gpu_layers")
+    if (not isinstance(layers,list) or len(layers)>128 or
+            any(type(x) is not int or not 0<=x<128 for x in layers) or layers!=sorted(set(layers))):
+        raise ValueError("invalid explicit GPU layer policy")
+    forced=session_counter(runtime,"forced_gpu_blocks_session_total")
+    if forced>min(session_counter(runtime,"gpu_blocks_session_total"),session_counter(runtime,"unsplit_gpu_blocks_session_total")):
+        raise ValueError("forced GPU blocks were not complete unsplit GPU blocks")
+    return tuple(layers),forced
+
+
 def validate_edit_results(rows, edit):
     """Shared edit receipt contract for timing screens and graph-switch tests.
 
@@ -110,6 +157,8 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     lora_channel_receipt_seen = False
     calibration_signature = None
     previous_declined_gpu = 0
+    previous_overflows = None
+    previous_gpu_layers = None
     for row in rows:
         actual_backend = row.get("runtime_backend")
         if actual_backend not in allowed_backends:
@@ -166,6 +215,20 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
             previous_calls, previous_qkv_gpu = calls, gpu
             continue
         hybrid = row.get("hybrid") or {}
+        if route == "runtime":
+            current_gpu_layers=validate_gpu_layer_policy(hybrid.get("runtime_weight") or {})
+            if previous_gpu_layers is not None and (current_gpu_layers is None or
+                    current_gpu_layers[0]!=previous_gpu_layers[0] or current_gpu_layers[1]<previous_gpu_layers[1]):
+                raise ValueError("explicit GPU layer policy/counters changed within resident session")
+            previous_gpu_layers=current_gpu_layers
+            current_overflows = validate_overflow_events(hybrid.get("runtime_weight") or {},
+                session_counter(hybrid, "runtime_calls_session_total"))
+            if previous_overflows is not None:
+                prior, dropped = previous_overflows
+                if (current_overflows is None or current_overflows[0][:len(prior)] != prior or
+                        current_overflows[1] < dropped):
+                    raise ValueError("overflow event prefix changed within resident session")
+            previous_overflows = current_overflows
         if channel_auto:
             runtime = hybrid.get("runtime_weight") or {}
             report = runtime.get("channel_calibration")

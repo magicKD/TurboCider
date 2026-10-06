@@ -274,6 +274,7 @@ void PrivateGraph::launch(MatrixView input, uint16_t *output, size_t elements, D
     auto &p = *impl_; p.worker.join(); const double stage_time = p.result.stage_seconds;
     p.result = {}; p.result.stage_seconds = stage_time;
     p.worker.submit([&p, input, output, elements, dtype, adapter] {
+        p.result.headroom_start_scale = p.headroom;
         const auto start = Clock::now();
         try {
             const auto &s = p.shape;
@@ -322,6 +323,7 @@ void PrivateGraph::launch_device(DeviceMatrixView input, DeviceMatrixView output
     auto &p = *impl_; p.worker.join();
     const double stage_time = p.result.stage_seconds; p.result = {}; p.result.stage_seconds = stage_time;
     p.worker.submit([&p, input = std::move(input), output = std::move(output), adapter = std::move(adapter)] {
+        p.result.headroom_start_scale = p.headroom;
         const auto start = Clock::now();
         try {
             const auto &s = p.shape;

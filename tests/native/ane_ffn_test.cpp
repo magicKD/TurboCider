@@ -308,6 +308,14 @@ void lora_tests(const char *manifest) {
         assert(mx::max(mx::abs(mx::astype(actual, mx::float32) - mx::astype(expected_base, mx::float32)) /
             mx::abs(mx::astype(expected_base, mx::float32))).item<float>() < .025f);
         assert(base_runtime.metrics().runtime_weight_overflow_retries > 0 && !base_runtime.metrics().runtime_failed);
+        const auto &events=base_runtime.metrics().runtime_weight_overflow_events;
+        assert(events.size==1 && events.events[0].layer==1 && events.events[0].rows==97 &&
+            events.events[0].completed && events.events[0].headroom_after>events.events[0].headroom_before &&
+            events.events[0].retries==base_runtime.metrics().runtime_weight_overflow_retries);
+        const auto prior_calls=base_runtime.metrics().runtime_calls;
+        base_runtime.set_gpu_layers({1});base_runtime.begin_request("public-explicit-gpu");
+        assert(base_runtime.plan_block(1,97).mode==ane::RowScheduler::Mode::Gpu &&
+            base_runtime.metrics().runtime_weight_forced_gpu_blocks==1 && base_runtime.metrics().runtime_calls==prior_calls);
     }
     auto high_gate_up = [](const Tensor &input) {
         return std::make_pair(mx::full({1, input.shape(1), 96}, 16.f, mx::bfloat16),

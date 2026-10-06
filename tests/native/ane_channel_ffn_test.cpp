@@ -1,6 +1,7 @@
 #include "../../native/backends/ane_ffn.hpp"
 #include "../../native/models/z_image/metal/projection.hpp"
 #include "../../native/models/z_image/metal/swiglu_gemm.hpp"
+#include "../../native/models/qwen21/runtime_ffn_graphs.hpp"
 #include <cmath>
 #include <iostream>
 
@@ -74,6 +75,7 @@ int main(int argc,char**argv) {
         setenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","1",1);
         ane::HybridFfn runtime(argv[1],h,f,512u<<20,cancelled,true);
         check(runtime.available()&&runtime.channel_split()&&runtime.ane_channels()==512&&runtime.gpu_channels()==512,runtime.reason());
+        const int fg=runtime.gpu_channels(),fa=runtime.ane_channels();
         check(runtime.metrics().runtime_weight_a8_lookahead_enabled,"channel executor did not bind A8 lookahead");
         check(runtime.selection_label().find("intermediate-channel")!=std::string::npos &&
               runtime.selection_label().find("w8a8_hadamard")!=std::string::npos &&
@@ -129,6 +131,41 @@ int main(int argc,char**argv) {
                     auto parts=mx::split(w.project(input,p+"gate_up"),2,-1);
                     return w.project(silu(parts[0])*parts[1],p+"out");
                 };
+                // Shared model/calibration factories against the previous
+                // request-local compiled bodies, including base/A/B/base.
+                auto old_full=mx::compile([&](const std::vector<Tensor> &a) {return std::vector<Tensor>{full(a[0])};});
+                auto new_full=qwen21::runtime_ffn::full(w,p);
+                check(mx::all(old_full({x})[0]==new_full({x})[0]).item<bool>(),"shared Qwen full GPU graph changed arithmetic");
+                for(int begin:{0,fg}) {
+                    const int count=begin?fa:fg;
+                    auto old_head=mx::compile([&,begin,count](const std::vector<Tensor> &a) {
+                        auto g=w.project_slice(a[0],p+"gate_up",begin,begin+count,0,h,false);
+                        auto u=w.project_slice(a[0],p+"gate_up",f+begin,f+begin+count,0,h,false);
+                        auto hidden=silu(g)*u;
+                        return std::vector<Tensor>{w.project_base_slice(hidden,p+"out",0,h,begin,begin+count,false),hidden};
+                    });
+                    auto newer=qwen21::runtime_ffn::channels(w,p,begin,count,h,f)({x});
+                    auto older=old_head({x});
+                    check(mx::all(newer[0]==older[0]).item<bool>() && mx::all(newer[1]==older[1]).item<bool>(),
+                        "shared Qwen physical channel graph changed base/hidden arithmetic");
+                    auto old_delta=mx::compile([&,begin,count](const std::vector<Tensor> &a) {
+                        return std::vector<Tensor>{mx::contiguous(w.lora_delta_slice(a[0],p+"gate_up",begin,begin+count,0,h)),
+                            mx::contiguous(w.lora_delta_slice(a[0],p+"gate_up",f+begin,f+begin+count,0,h))};
+                    });
+                    auto new_delta=qwen21::runtime_ffn::corrections(w,p,begin,count,h,f)({x});
+                    auto prior=old_delta({x});
+                    check(mx::all(new_delta[0]==prior[0]).item<bool>() && mx::all(new_delta[1]==prior[1]).item<bool>(),
+                        "shared Qwen correction graph changed LoRA intersections/rounding");
+                }
+                auto halves=mx::split(w.project(x,p+"gate_up"),2,-1);auto full_hidden=silu(halves[0])*halves[1];
+                auto down_base=w.project_base_slice(full_hidden,p+"out",0,h,0,f,false);
+                auto old_down=mx::compile([&](const std::vector<Tensor> &a) {
+                    auto delta=w.lora_delta_slice(a[0],p+"out",0,h,0,f);
+                    return std::vector<Tensor>{mx::astype(mx::astype(a[1],mx::float32)+mx::astype(delta,mx::float32),a[1].dtype())};
+                });
+                auto down=qwen21::runtime_ffn::down_add(w,p,h,f);
+                check(mx::all(down({full_hidden,down_base})[0]==old_down({full_hidden,down_base})[0]).item<bool>(),
+                    "shared Qwen down graph changed ONE-full-hidden correction");
                 int down_calls=0,full_gate_calls=0,range_gate_calls=0;
                 ane::HybridFfn::Adapter adapter{
                     [&](const Tensor&input){++full_gate_calls;return std::make_pair(w.lora_delta_slice(input,p+"gate_up",0,f,0,h),
@@ -189,6 +226,7 @@ int main(int argc,char**argv) {
                 check(mx::all(w.at(p+"gate_up.weight")==snap_g).item<bool>()&&mx::all(w.at(p+"out.weight")==snap_d).item<bool>(),"channel staging mutated base weights");
             }
         }
+        std::cout<<"PASS shared compiled Qwen FFN graph factories: full/channel/corrections/down, base/A/B/base\n";
         auto metrics=runtime.metrics();check(metrics.runtime_weight_channel_blocks==12&&metrics.runtime_weight_device_io_calls>=12,"channel execution counters missing");
         check(metrics.runtime_weight_lora_channel_range_calls==4&&metrics.runtime_weight_lora_channel_full_calls==4,
               "actual narrow/full LoRA correction receipts missing");
@@ -231,6 +269,31 @@ int main(int argc,char**argv) {
             check(rejected,"narrow callback published a full-width or malformed correction");
         }
         const auto before_prefetch=runtime.metrics();
+        {
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            ane::HybridFfn routed(argv[1],h,f,512u<<20,cancelled,true);
+            unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            routed.set_gpu_layers({2});routed.begin_request("explicit-gpu-block");
+            const auto skip=routed.plan_block(2,67);
+            check(skip.mode==ane::RowScheduler::Mode::Gpu && !skip.measured() &&
+                routed.metrics().runtime_weight_forced_gpu_blocks==1 && !routed.metrics().runtime_calls,
+                "explicit GPU block still issued an ANE plan/call");
+            bool rejected=false;
+            try{routed.stage(2,67,sources);}catch(const std::invalid_argument&){rejected=true;}
+            check(rejected,"explicit GPU block staged private scratch");
+            rejected=false;try{routed.set_gpu_layers({2,2});}catch(const std::invalid_argument&){rejected=true;}
+            check(rejected && routed.metrics().runtime_weight_gpu_layers==std::vector<int>{2},
+                "invalid GPU policy changed the active routing");
+            auto restored=full(px);mx::eval(restored); // family full-GPU path, no bridge
+            routed.set_gpu_layers({});routed.begin_request("back-to-hybrid");
+            check(routed.plan_block(0,67).mode==ane::RowScheduler::Mode::HybridUntimed,"GPU override leaked after removal");
+            rejected=false;try{routed.set_gpu_layers({2});}catch(const std::invalid_argument&){rejected=true;}
+            check(rejected,"GPU policy changed while an operation owned its plan");
+            routed.stage(0,67,sources);auto resumed=routed.run(0,px,full,cancelled,nullptr,partial);mx::eval(resumed);
+            check(routed.metrics().runtime_calls>0 && !routed.metrics().runtime_failed,
+                "GPU override removal broke resumed hybrid execution");
+            std::cout<<"PASS explicit GPU layer policy: full-family GPU plan, no bridge/staging, immutable policy and hybrid resume\n";
+        }
         runtime.stage(0,67,sources);
         auto pa=runtime.run(0,px,full,cancelled,nullptr,partial,[&](int next){
             std::vector<ane::FfnWeight> result;if(next==1)for(const auto&s:sources)result.push_back({s,std::nullopt,std::nullopt});return result;});

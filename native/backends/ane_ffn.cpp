@@ -1,4 +1,5 @@
 #include "ane_ffn.hpp"
+#include "ane_gpu_layer_policy.hpp"
 #include "ane_backend.hpp"
 #include "ane_runtime_quant.hpp"
 #include "ane_runtime_packed.hpp"
@@ -305,10 +306,19 @@ void HybridFfn::begin_request(const std::string &adapter_identity,
     planned_ = false;
     block_plan_.reset();
 }
+void HybridFfn::set_gpu_layers(std::vector<int> layers) {
+    layers=normalized_gpu_layers(std::move(layers));
+    require(!planned_ && !pending_ && !block_plan_,"cannot change runtime GPU layer policy during an operation");
+    if(layers==metrics_.runtime_weight_gpu_layers)return;
+    drain();
+    if(graph_)scheduler_=std::make_unique<RowScheduler>(graph_->shape().rows,configured_chunks(),axis_);
+    metrics_.runtime_weight_gpu_layers=std::move(layers);
+}
 RowScheduler::Plan HybridFfn::plan_block(int layer, int rows) {
     require(!planned_ && !block_plan_ && rows > 0, "runtime ANE block already planned or invalid rows");
     drain(false);
-    auto plan = available() ? scheduler_->plan(layer, rows)
+    const bool forced=std::binary_search(metrics_.runtime_weight_gpu_layers.begin(),metrics_.runtime_weight_gpu_layers.end(),layer);
+    auto plan = available() && !forced ? scheduler_->plan(layer, rows)
                                  : RowScheduler::Plan{RowScheduler::Mode::Gpu, 0};
     // Fixed partitions do not learn from timing samples. Let an explicit
     // ablation use the already-owned untimed plan instead of adding a GPU
@@ -327,6 +337,7 @@ RowScheduler::Plan HybridFfn::plan_block(int layer, int rows) {
     else {
         ++metrics_.runtime_weight_gpu_blocks;
         ++metrics_.runtime_weight_unsplit_gpu_blocks;
+        if(forced)++metrics_.runtime_weight_forced_gpu_blocks;
     }
     return plan;
 }
@@ -364,6 +375,8 @@ void HybridFfn::stage(int layer, int rows, std::vector<Tensor> weights) {
     stage_weights(layer, rows, std::move(sources));
 }
 void HybridFfn::stage_weights(int layer, int rows, std::vector<FfnWeight> weights) {
+    require(!std::binary_search(metrics_.runtime_weight_gpu_layers.begin(),metrics_.runtime_weight_gpu_layers.end(),layer),
+            "explicit GPU layer must not stage the FFN bridge");
     require(!block_plan_ || (planned_ && block_plan_->split()),
             "runtime ANE cannot stage a full GPU probe or restage a measured block");
     require(!planned_ || (layer == layer_ && rows == rows_), "runtime ANE plan/stage mismatch");
@@ -457,6 +470,7 @@ std::vector<DeviceWeightRegion> HybridFfn::device_regions(const std::vector<FfnW
 }
 void HybridFfn::maybe_prefetch(int next,int rows,const NextWeights &provider) {
     if(!prefetch_ || !available() || !provider || prefetched_layer_>=0)return;
+    if(std::binary_search(metrics_.runtime_weight_gpu_layers.begin(),metrics_.runtime_weight_gpu_layers.end(),next))return;
     const auto plan=scheduler_->peek_plan(next,rows);
     if(!plan.split() || !plan.chunks)return;
     try {
@@ -620,6 +634,8 @@ Tensor HybridFfn::run(int layer, const Tensor &input, const Gpu &gpu,
         pending_ = false;
         const double join = elapsed(join_start);
         checkpoint(cancelled);
+        metrics_.runtime_weight_overflow_events.record({layer,rows_,metrics_.runtime_calls,result.calls,
+            result.overflow_retries,result.headroom_start_scale,result.headroom_scale,result.ok});
         metrics_.calls += result.calls; metrics_.runtime_calls += result.calls;
         if (device_io) metrics_.runtime_weight_device_io_calls += result.calls;
         metrics_.prediction_seconds += result.prediction_seconds;
@@ -792,6 +808,8 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         const double gpu_seconds = async_head ? 0 : elapsed(gpu_start);
         const auto join_start = Clock::now(); const auto result = graph_->finish(); pending_ = false;
         const double join = elapsed(join_start); checkpoint(cancelled);
+        metrics_.runtime_weight_overflow_events.record({layer,rows_,metrics_.runtime_calls,result.calls,
+            result.overflow_retries,result.headroom_start_scale,result.headroom_scale,result.ok});
         metrics_.calls += result.calls; metrics_.runtime_calls += result.calls;
         metrics_.runtime_weight_device_io_calls += result.calls;
         metrics_.prediction_seconds += result.prediction_seconds;

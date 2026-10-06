@@ -16,8 +16,18 @@ int main() {
             report->points.back().correction_uploads=180;
             report->trial.emplace(); // unknown numeric quality must be JSON null, never NaN/Inf or a passing zero
             metrics.runtime_weight_calibration=report;
+            metrics.runtime_weight_overflow_events.record({2,1056,0,3,2,NAN,16,true});
+            metrics.runtime_weight_gpu_layers={2,5};metrics.runtime_weight_forced_gpu_blocks=7;
             NSDictionary *encoded=tc::to_dictionary(metrics);
             NSDictionary *data=encoded[@"runtime_weight"][@"channel_calibration"];
+            NSDictionary *runtime=encoded[@"runtime_weight"];
+            if([runtime[@"requested_gpu_layers"] count]!=2 || [runtime[@"requested_gpu_layers"][0] intValue]!=2 ||
+                [runtime[@"forced_gpu_blocks_session_total"] unsignedLongLongValue]!=7)return 1;
+            if([runtime[@"overflow_events"] count]!=1 ||
+                [runtime[@"overflow_events"][0][@"layer"] intValue]!=2 ||
+                runtime[@"overflow_events"][0][@"headroom_before"]!=NSNull.null ||
+                [runtime[@"overflow_events"][0][@"headroom_after"] doubleValue]!=16 ||
+                [runtime[@"overflow_events_dropped_session_total"] unsignedLongLongValue]!=0)return 1;
             if([data[@"baseline"][@"raw_seconds"][0] count]!=3 ||
                 [data[@"points"][0][@"raw_seconds"][0][0] count]!=2 ||
                 ![data[@"lora"] boolValue] ||

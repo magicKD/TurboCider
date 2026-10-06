@@ -1,6 +1,7 @@
 #pragma once
 #include "common.hpp"
 #include "../core/ane_calibration_report.hpp"
+#include "../core/ane_overflow_report.hpp"
 #include "memory_accounting.hpp"
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
@@ -73,6 +74,9 @@ struct HybridMetrics {
     double runtime_weight_full_gpu_probe_seconds = 0;
     uint64_t runtime_weight_fallback_blocks = 0, runtime_weight_ane_rows = 0;
     uint64_t runtime_weight_overflow_retries = 0;
+    ane::OverflowReport runtime_weight_overflow_events;
+    std::vector<int> runtime_weight_gpu_layers;
+    uint64_t runtime_weight_forced_gpu_blocks = 0;
     double runtime_weight_stage_seconds = 0, runtime_weight_stage_wait_seconds = 0;
     double runtime_weight_join_seconds = 0, runtime_weight_gpu_seconds = 0;
     // Async steady blocks are excluded from the two branch timers above.

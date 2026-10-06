@@ -150,8 +150,13 @@ int main(int argc, char **argv) {
         fill_weights(32.f,32.f,.25f); stage();
         const auto high=run(true,32.f,32.f,.25f);
         check(high.overflow_retries>0&&high.headroom_scale>=4,"W8 headroom retry not exercised");
-        check(!run(false,32.f,32.f,.25f).overflow_retries,"W8 headroom not retained");
-        graph.launch_device(x.view,x.view); check(!graph.finish().ok,"W8 alias accepted");
+        check(high.headroom_start_scale==1,"W8 retry did not report actual launch headroom");
+        const auto reused=run(false,32.f,32.f,.25f);
+        check(!reused.overflow_retries && reused.headroom_start_scale==high.headroom_scale &&
+            reused.headroom_scale==high.headroom_scale,"W8 headroom not retained/reported");
+        graph.launch_device(x.view,x.view); const auto alias=graph.finish();
+        check(!alias.ok && alias.headroom_start_scale==high.headroom_scale &&
+            alias.headroom_scale==high.headroom_scale,"W8 alias accepted or failed launch lost actual headroom");
         *static_cast<uint16_t*>(x.row(0))=0x7f80;
         graph.launch_device(x.view,y.view); check(!graph.finish().ok,"W8 nonfinite accepted");
         *static_cast<uint16_t*>(x.row(0))=round_bf16(8.f);

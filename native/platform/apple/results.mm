@@ -990,6 +990,16 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
     // particular precision label. W8A8 and FP16 share the same receipt.
     const bool runtime_weight = m.mlp_output_kind == "runtime_weight_swiglu" ||
                                 m.mlp_output_kind == "runtime_weight_swiglu_lora_inputs";
+    NSMutableArray *overflow_events=[NSMutableArray arrayWithCapacity:m.runtime_weight_overflow_events.size];
+    NSMutableArray *gpu_layers=[NSMutableArray arrayWithCapacity:m.runtime_weight_gpu_layers.size()];
+    for(int layer:m.runtime_weight_gpu_layers)[gpu_layers addObject:@(layer)];
+    for(size_t i=0;i<m.runtime_weight_overflow_events.size;++i) {
+        const auto &e=m.runtime_weight_overflow_events.events[i];
+        [overflow_events addObject:@{@"layer":@(e.layer),@"rows":@(e.rows),
+            @"runtime_call_begin":@(e.runtime_call_begin),@"runtime_call_count":@(e.runtime_call_count),
+            @"retries":@(e.retries),@"headroom_before":calibration_number(e.headroom_before),
+            @"headroom_after":calibration_number(e.headroom_after),@"completed":@(e.completed)}];
+    }
     return @{
         @"runtime_weight" : runtime_weight ? @{
             @"channel_calibration" : m.runtime_weight_calibration ? (id)calibration_dictionary(*m.runtime_weight_calibration) : (id)NSNull.null,
@@ -1042,6 +1052,11 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"fallback_blocks_session_total" : @(m.runtime_weight_fallback_blocks),
             @"ane_rows_session_total" : @(m.runtime_weight_ane_rows),
             @"overflow_retries_session_total" : @(m.runtime_weight_overflow_retries),
+            @"overflow_events" : overflow_events,
+            @"overflow_events_dropped_session_total" : @(m.runtime_weight_overflow_events.dropped),
+            @"overflow_event_scope" : @"aggregated per-FFN launch host telemetry; no chunk/physical-engine trace",
+            @"requested_gpu_layers" : gpu_layers,
+            @"forced_gpu_blocks_session_total" : @(m.runtime_weight_forced_gpu_blocks),
             @"headroom_scale" : @(m.runtime_weight_headroom),
             @"source_recipe" : @(m.runtime_weight_source_recipe.c_str()),
             @"convrot_stage_submissions_session_total" : @(m.runtime_weight_convrot_stage_submissions),

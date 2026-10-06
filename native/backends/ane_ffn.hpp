@@ -63,6 +63,10 @@ class HybridFfn {
     // use an owner-thread Mach observation on every resident request.
     void begin_request(const std::string &adapter_identity = {},
                        std::optional<MemoryObservation> observation = std::nullopt);
+    // Explicit family policy, not an error fallback or a precision change.
+    // Install only while idle; these blocks use the family's complete GPU
+    // path without staging or invoking any FFN/LoRA bridge callback.
+    void set_gpu_layers(std::vector<int>);
     // Optional early decision, before the family chooses its compiled block.
     // Hybrid/HybridUntimed/SplitProbe: stage/run once. HybridUntimed owns its
     // completed output and ends the plan in run(), with no observe callback.

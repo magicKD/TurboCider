@@ -1,5 +1,6 @@
 #include "../../runtime/build_identity.hpp"
 #include "../../backends/ane_backend.hpp"
+#include "../../backends/ane_gpu_layer_policy.hpp"
 #include "z_image.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
@@ -3504,6 +3505,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     ZProfileRequest profile(r);
     auto begin = Clock::now();
     require(r.model == model_id_, "Z-Image session received a different model id");
+    const auto runtime_gpu_layers=ane::parse_gpu_layers(std::getenv("TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS"),32);
+    require(runtime_gpu_layers.empty() || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" && !load_only),
+            "explicit Z runtime GPU blocks require a gpu_ane runtime generation request");
     auto plan = make_plan(r);
     require(!r.prompt.empty() && (warmup || load_only || !r.output.empty()),
             "prompt and output are required");
@@ -3865,7 +3869,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "");
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
-        const std::string request_identity = identity + (native_channel_auto ?
+        std::string gpu_policy;
+        for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
+        const std::string request_identity = identity + ":gpu-layers="+gpu_policy + (native_channel_auto ?
             ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
         if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
             (runtime_ffn_->available() && !active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
@@ -3882,6 +3888,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 calibration->rows = image_rows+caption_rows;
                 calibration->encoding = gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
                 calibration->dtype = gguf_transformer_ ? mx::float16 : mx::bfloat16;
+                calibration->gpu_configuration="explicit-gpu-layers="+gpu_policy+";";
                 auto stem = [](int ordinal) {return (ordinal<2?"noise_refiner."+std::to_string(ordinal):
                     "layers."+std::to_string(ordinal-2))+".feed_forward";};
                 for(int ordinal:{0,7,15,23,31})for(const auto *projection:{"w1","w3","w2"}) {
@@ -3939,6 +3946,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             runtime_manifest_ = request_identity;
             if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }
+        runtime_ffn_->set_gpu_layers(runtime_gpu_layers);
         runtime_ffn_->begin_request(cached_lora_identity_);
     }
     if (load_only) {

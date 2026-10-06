@@ -249,6 +249,8 @@ class PrivateAneChannelMlxTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIn("PASS channel MLX/W8 Executor",result.stdout)
             self.assertIn("PASS channel LoRA range callback",result.stdout)
+            self.assertIn("PASS shared compiled Qwen FFN graph factories",result.stdout)
+            self.assertIn("PASS explicit GPU layer policy",result.stdout)
             self.assertIn("PASS fixed async channel",result.stdout)
             self.assertIn("PASS deferred channel join",result.stdout)
             self.assertIn("PASS deferred typed lifetime",result.stdout)
