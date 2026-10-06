@@ -37,6 +37,16 @@ def report():
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_adapter_costs_require_actual_dynamic_correction_traffic(self):
+        value=report();value["lora"]=True;value["identity"]["adapter"]="actual-sha-strength-role";
+        value["identity"]["recipe"]="sylvester-dh-b128-b512-rne-norm-f16-v2-lora"
+        for point in value["points"]:point.update(correction_computations=90,correction_uploads=180)
+        self.assertEqual(validate_channel_calibration(value,10240,3840),4096)
+        for change in ({"correction_computations":0},{"correction_uploads":0},{"correction_computations":89}):
+            bad=copy.deepcopy(value);bad["points"][0].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):validate_channel_calibration(bad,10240,3840)
+        bad=copy.deepcopy(value);bad["identity"]["adapter"]=""
+        with self.assertRaises(ValueError):validate_channel_calibration(bad,10240,3840)
     def test_accepted_native_samples_are_independently_recomputable(self):
         value=report()
         self.assertEqual(validate_channel_calibration(value,10240,3840),4096)
@@ -87,11 +97,14 @@ class CalibrationTests(unittest.TestCase):
             hybrid=dict(runtime_failed=False,runtime_failures_session_total=0,runtime_calls_session_total=1,
                 runtime_weight=dict(channel_calibration=report(),executor_backend="private_ane",io_path="gpu_iosurface",
                     data_path="w8a8_hadamard",partition_axis="intermediate_channels",ane_channels=4096,gpu_channels=6144,
-                    fallback_blocks_session_total=0,failure_reason="",device_io_calls_session_total=1)))
+                    fallback_blocks_session_total=0,failure_reason="",device_io_calls_session_total=1,
+                    overflow_retries_session_total=0,headroom_scale=1)))
         COMMON.validate_results([row],"runtime",1,runtime_backend="private",expect_device_io=True,
             expected_data_path="w8a8_hadamard",channel_auto=True)
         for change in ({"ane_channels":5120},{"gpu_channels":4096},{"channel_calibration":None},
-                       {"executor_backend":"public_coreml"}):
+                       {"executor_backend":"public_coreml"},{"overflow_retries_session_total":1},
+                       {"overflow_retries_session_total":None},{"headroom_scale":4},{"headroom_scale":True},
+                       {"headroom_scale":float("nan")},{"headroom_scale":None}):
             bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
             with self.subTest(change=change),self.assertRaises(ValueError):
                 COMMON.validate_results([bad],"runtime",1,runtime_backend="private",channel_auto=True)

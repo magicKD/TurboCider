@@ -85,6 +85,121 @@ void test_full_gpu_measurement_contract() {
     }
     std::cout<<"PASS full GPU calibration argument bounds, partial-submit drain and first-error preservation\n";
 }
+void test_dynamic_correction_cleanup(Device &device, GraphShape shape,
+                                     std::vector<W8GpuCalibrationLayer> traffic,
+                                     const mx::array &input, uint64_t resident) {
+    shape.lora_inputs = true;
+    const auto rank_a = mx::full({4, shape.hidden}, .01f, mx::bfloat16);
+    const auto rank_b = mx::full({shape.width, 4}, .02f, mx::bfloat16);
+    mx::eval({rank_a, rank_b});
+    std::array<int, 4> attempts{}, drains{};
+    std::array<std::optional<std::pair<mx::array, mx::array>>, 4> pending;
+    std::array<std::pair<std::weak_ptr<void>, std::weak_ptr<void>>, 4> owners;
+    std::vector<mx::array> heads, joined;
+    int failure = -1, head_fences = 0, join_fences = 0, joins = 0;
+    auto reset = [&] {
+        attempts.fill(0); drains.fill(0); pending = {}; owners = {};
+        heads.clear(); joined.clear(); head_fences = join_fences = joins = 0;
+    };
+    for (int layer = 0; layer < 4; ++layer) {
+        auto &item = traffic.at(layer);
+        item.corrections.reset();
+        item.correction_producer = [&, layer] {
+            ++attempts[layer];
+            auto low = mx::matmul(input, mx::transpose(rank_a));
+            auto gate = mx::matmul(low, mx::transpose(rank_b));
+            pending[layer] = std::make_pair(gate, -gate);
+            mx::async_eval({pending[layer]->first, pending[layer]->second});
+            if ((failure == 0 || failure == 5) && layer == 1)
+                throw std::runtime_error("dynamic correction submit failure");
+            // Resolve storage, then return independently retained transfer views.
+            mx::eval({pending[layer]->first, pending[layer]->second});
+            auto views = std::make_pair(matrix(pending[layer]->first), matrix(pending[layer]->second));
+            owners[layer] = {views.first.owner, views.second.owner};
+            if (failure == 1 && layer == 1) --views.first.cols;
+            return views;
+        };
+        item.correction_drain = [&, layer] {
+            ++drains[layer];
+            check(drains[layer] == 1, "dynamic correction drained twice");
+            mx::eval({pending[layer]->first, pending[layer]->second});
+            for (int earlier = 0; earlier < layer; ++earlier)
+                check(!owners[earlier].first.expired() && !owners[earlier].second.expired(),
+                      "dynamic transfer owner released before all producers drained");
+            if ((failure == 3 || failure == 5 || failure == 6) && layer == 1)
+                throw std::runtime_error("dynamic correction drain failure");
+        };
+    }
+    auto head = [&](int layer, int first) {
+        check(first > 0, "dynamic fixture has no GPU head");
+        heads.push_back(input * float(layer + 1)); mx::async_eval(heads.back());
+        if ((failure == 2 || failure == 6) && layer == 1)
+            throw std::runtime_error("dynamic head submit failure");
+    };
+    auto head_fence = [&] {
+        ++head_fences; mx::eval(heads);
+        if (failure == 6) throw std::runtime_error("dynamic head fence failure");
+    };
+    auto join = [&](int layer) {
+        ++joins; joined.push_back(heads.at(layer) + input); mx::async_eval(joined.back());
+        if (failure == 4 && layer == 1) throw std::runtime_error("dynamic join failure");
+    };
+    auto join_fence = [&] { ++join_fences; mx::eval(joined); };
+    {
+        W8GpuCalibrationWork work(device, shape, traffic, {4ull << 30, 2ull << 30},
+                                   resident, mx::get_active_memory());
+        for (int scenario = 0; scenario < 7; ++scenario) {
+            reset(); failure = scenario; work.prepare(4, scenario % 2 == 0);
+            std::exception_ptr error;
+            try { work.submit(head); } catch (...) { error = std::current_exception(); }
+            try { work.finish(head_fence, join, join_fence); }
+            catch (...) { if (!error) error = std::current_exception(); }
+            check(bool(error) && !work.stats().completed, "dynamic failure published a complete receipt");
+            std::string reason;
+            try { std::rethrow_exception(error); } catch (const std::exception &e) { reason = e.what(); }
+            const std::string expected = scenario == 0 || scenario == 5 ? "dynamic correction submit failure" :
+                scenario == 1 ? "dynamic calibration correction produced invalid owned geometry" :
+                scenario == 2 || scenario == 6 ? "dynamic head submit failure" :
+                scenario == 3 ? "dynamic correction drain failure" : "dynamic join failure";
+            check(reason == expected, "dynamic correction cleanup replaced the first failure");
+            const int attempted = scenario == 3 || scenario == 4 ? 4 : 2;
+            for (int layer = 0; layer < 4; ++layer) {
+                check(attempts[layer] == int(layer < attempted) && drains[layer] == attempts[layer],
+                      "dynamic cleanup skipped an attempted producer or drained an unsubmitted one");
+                check(owners[layer].first.expired() && owners[layer].second.expired(),
+                      "dynamic failure retained transfer sources after completion");
+            }
+            check(head_fences == 1 && joins == (scenario == 4 ? 2 : 0) &&
+                  join_fences == (scenario == 4 ? 1 : 0), "dynamic failure published joins or skipped a fence");
+            // The same admitted scratch must refill after every failure.
+            reset(); failure = -1; work.prepare(4, scenario % 2 != 0);
+            work.submit(head); work.finish(head_fence, join, join_fence);
+            const auto stats = work.stats();
+            check(stats.completed && stats.correction_computations == 4 && stats.correction_uploads == 8 &&
+                  stats.independent_gpu_transfer && joins == 4 && head_fences == 1 && join_fences == 1,
+                  "dynamic correction scratch could not refill after failure");
+            for (int layer = 0; layer < 4; ++layer)
+                check(attempts[layer] == 1 && drains[layer] == 1 && owners[layer].first.expired() &&
+                      owners[layer].second.expired(), "dynamic refill lost exactly-once drain or source release");
+        }
+    }
+    reset(); failure = 0;
+    {
+        W8GpuCalibrationWork work(device, shape, traffic, {4ull << 30, 2ull << 30},
+                                   resident, mx::get_active_memory());
+        work.prepare(4, false);
+        bool caught = false;
+        try { work.submit(head); } catch (const std::runtime_error &) { caught = true; }
+        check(caught, "destructor fixture did not queue a partial producer");
+        // Heads are caller-owned. The adapter destructor drains its own
+        // correction/stage resources; normal measurements still call finish.
+        mx::eval(heads);
+    }
+    check(drains == std::array<int, 4>{1, 1, 0, 0} && owners[0].first.expired(),
+          "dynamic destructor did not drain partial corrections exactly once");
+    std::cout << "PASS dynamic correction partial-submit/geometry/head/drain/join failures, first-error preservation, "
+                 "exactly-once producer drains, owner lifetime, scratch refill and destructor cleanup\n";
+}
 }
 int main(int argc, char **argv) {
     if (argc != 2 && argc != 5) return 2;
@@ -537,6 +652,7 @@ int main(int argc, char **argv) {
                     "full calibration could not reuse scratch after exception");
             }
             std::cout << "PASS complete GPU calibration: W/A staging, independent frozen restore/join, 1-vs-4 future weights, prefetch off/on, memory ceiling and exception reuse\n";
+            if (!actual_model) test_dynamic_correction_cleanup(device, shape, traffic, input, caller_bytes);
             if (actual_model) std::cout << "PASS actual checkpoint calibration model=" << model << " rows=" << rows
                 << " channels=" << channels << " tile_k=" << shape.tile_k << " tile_n=" << shape.tile_n
                 << " source=original_bf16 checkpoint_resident=1 gpu_head="

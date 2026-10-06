@@ -416,13 +416,39 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     calibration->source_owners.push_back(value.data_shared_ptr());
                 }
                 calibration->source_generation += ":prefix="+std::to_string(text.shape(1));
+                const char *rank_dtype=std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
+                calibration->gpu_configuration=std::string("qwen-lora-rank=")+(rank_dtype?rank_dtype:"<unset>");
                 calibration->weights=[&](int ordinal) {
                     const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
                     auto gu=mx::split(transformer_.at(prefix+"gate_up.weight"),2,0);mx::eval(gu);
                     return std::vector<ane::FfnWeight>{{gu[0],std::nullopt,std::nullopt},{gu[1],std::nullopt,std::nullopt},
                         {transformer_.at(prefix+"out.weight"),std::nullopt,std::nullopt}};
                 };
-                calibration->gpu=[&](int ordinal,const Tensor &input) {
+                using CalFunction=std::function<std::vector<Tensor>(const std::vector<Tensor>&)>;
+                auto lora_gpu=std::make_shared<std::vector<CalFunction>>();
+                if(transformer_.has_runtime_loras())for(int ordinal=0;ordinal<32;++ordinal) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    lora_gpu->push_back(mx::compile([this,prefix](const std::vector<Tensor>&a) {
+                        auto gu=mx::split(transformer_.project(a[0],prefix+"gate_up"),2,-1);
+                        return std::vector<Tensor>{transformer_.project(silu(gu[0])*gu[1],prefix+"out")};
+                    }));
+                }
+                if(transformer_.has_runtime_loras())calibration->adapter=[this](int ordinal) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    return ane::HybridFfn::Adapter{
+                        [this,prefix](const Tensor &x) {return std::make_pair(
+                            transformer_.lora_delta_slice(x,prefix+"gate_up",0,12288,0,4096),
+                            transformer_.lora_delta_slice(x,prefix+"gate_up",12288,24576,0,4096));},
+                        [this,prefix](const Tensor &hidden,const Tensor &base) {
+                            auto delta=transformer_.lora_delta_slice(hidden,prefix+"out",0,4096,0,12288);
+                            return mx::astype(mx::astype(base,mx::float32)+mx::astype(delta,mx::float32),base.dtype());
+                        },
+                        [this,prefix](const Tensor &x,int first,int count) {return std::make_pair(
+                            transformer_.lora_delta_slice(x,prefix+"gate_up",first,first+count,0,4096),
+                            transformer_.lora_delta_slice(x,prefix+"gate_up",12288+first,12288+first+count,0,4096));}};
+                };
+                calibration->gpu=[&,lora_gpu](int ordinal,const Tensor &input) {
+                    if(!lora_gpu->empty())return lora_gpu->at(ordinal)({input})[0];
                     static auto compiled=mx::compile([](const std::vector<Tensor>&a) {
                         auto gu=mx::split(mx::matmul(a[0],mx::transpose(a[1])),2,-1);
                         return std::vector<Tensor>{mx::matmul(silu(gu[0])*gu[1],mx::transpose(a[2]))};

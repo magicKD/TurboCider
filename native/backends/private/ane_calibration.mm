@@ -94,6 +94,9 @@ struct W8GpuCalibrationWork::Impl {
     uint64_t estimate = 0, allocated = 0;
     int count = 0, gpu_channels = 0;
     bool prepared = false, active = false, head_attempted = false, transfer_submitted = false;
+    bool dynamic_corrections = false;
+    std::vector<bool> correction_attempted;
+    std::vector<std::pair<DeviceMatrixView,DeviceMatrixView>> correction_sources;
     std::exception_ptr submit_error;
 
     Impl(Device &d, GraphShape s, std::vector<W8GpuCalibrationLayer> source,
@@ -126,6 +129,11 @@ struct W8GpuCalibrationWork::Impl {
                 (index < 4 && (a.rows != shape.rows || a.cols != shape.hidden || layer.restoration.empty())))
                 throw std::invalid_argument("W8 calibration physical source/range/activation/restore geometry mismatch");
             gpu_channels = first;
+            if(layer.correction_producer) {
+                if(!shape.lora_inputs || !layer.correction_drain || layer.corrections || index>=4)
+                    throw std::invalid_argument("dynamic calibration correction requires independent producer/drain and current LoRA layer");
+                corrections=true;dynamic_corrections=true;
+            }
             if (layer.corrections) {
                 const auto &c = *layer.corrections;
                 if (!shape.lora_inputs || c.first.rows != shape.rows || c.second.rows != shape.rows ||
@@ -197,6 +205,10 @@ struct W8GpuCalibrationWork::Impl {
     }
     std::exception_ptr drain() noexcept {
         std::exception_ptr error;
+        for(size_t layer=0;layer<correction_attempted.size();++layer)if(correction_attempted[layer]) {
+            correction_attempted[layer]=false;
+            try{layers[layer].correction_drain();}catch(...){if(!error)error=std::current_exception();}
+        }
         for (auto &stage : stages) {
             try { const auto result = stage.finish(); if (!result.ok) throw CapabilityError(result.error); }
             catch (...) { if (!error) error = std::current_exception(); }
@@ -224,6 +236,7 @@ void W8GpuCalibrationWork::prepare(int count, bool prefetch) {
     p.prepared = false; p.transfer.reset();
     p.count = count; p.counters = {}; p.counters.layers = count; p.counters.prefetch = prefetch;
     p.head_attempted = p.transfer_submitted = false; p.submit_error = {};
+    p.correction_attempted.assign(size_t(count),false);p.correction_sources.clear();
     std::vector<Upload> uploads;
     std::vector<Download> downloads;
     for (int layer = 0; layer < count; ++layer) {
@@ -235,8 +248,10 @@ void W8GpuCalibrationWork::prepare(int count, bool prefetch) {
         downloads.insert(downloads.end(), source.restoration.begin(), source.restoration.end());
     }
     p.counters.correction_uploads = uploads.size(); p.counters.restore_downloads = downloads.size();
-    p.transfer = p.device.prepare_gpu_transfer(std::move(uploads), std::move(downloads));
-    p.counters.independent_gpu_transfer = p.transfer->independent_gpu();
+    if(!p.dynamic_corrections) {
+        p.transfer = p.device.prepare_gpu_transfer(std::move(uploads), std::move(downloads));
+        p.counters.independent_gpu_transfer = p.transfer->independent_gpu();
+    }
     p.stages.reserve(size_t(count + 1) * 3 + count);
     p.prepared = true;
 }
@@ -246,11 +261,36 @@ void W8GpuCalibrationWork::submit(const Head &head) {
     p.prepared = false; p.active = true;
     try {
         if (p.counters.prefetch) p.stage_bank(0, 0);
+        std::vector<Upload> uploads;
+        std::vector<Download> downloads;
         for (int layer = 0; layer < p.count; ++layer) {
+            if(p.dynamic_corrections) {
+                const auto &source=p.layers.at(layer);
+                if(source.correction_producer) {
+                    p.correction_attempted[size_t(layer)]=true;
+                    auto correction=source.correction_producer();
+                    for(const auto *view:{&correction.first,&correction.second})
+                        if(view->rows!=p.shape.rows || view->cols!=p.shape.width || !view->owner)
+                            throw std::invalid_argument("dynamic calibration correction produced invalid owned geometry");
+                    p.correction_sources.push_back(std::move(correction));
+                    const auto &views=p.correction_sources.back();
+                    uploads.push_back({views.first,*p.dg[layer&1],0});uploads.push_back({views.second,*p.du[layer&1],0});
+                    ++p.counters.correction_computations;
+                } else if(source.corrections) {
+                    uploads.push_back({source.corrections->first,*p.dg[layer&1],0});
+                    uploads.push_back({source.corrections->second,*p.du[layer&1],0});
+                }
+                downloads.insert(downloads.end(),source.restoration.begin(),source.restoration.end());
+            }
             if (!p.counters.prefetch) p.stage_bank(layer, layer & 1);
             p.stage_activation(layer, layer & 1);
             p.head_attempted = true; head(layer, p.gpu_channels);
             if (p.counters.prefetch) p.stage_bank(layer + 1, (layer + 1) & 1);
+        }
+        if(p.dynamic_corrections) {
+            p.counters.correction_uploads=uploads.size();
+            p.transfer=p.device.prepare_gpu_transfer(std::move(uploads),std::move(downloads));
+            p.counters.independent_gpu_transfer=p.transfer->independent_gpu();
         }
         p.transfer->submit(); p.transfer_submitted = true;
     } catch (...) { p.submit_error = std::current_exception(); throw; }
@@ -275,6 +315,7 @@ void W8GpuCalibrationWork::finish(const Fence &heads, const Join &join, const Fe
     }
     p.counters.completed = !error;
     p.active = false; p.submit_error = {}; p.transfer.reset();
+    p.correction_sources.clear();
     if (error) std::rethrow_exception(error);
 }
 W8GpuCalibrationStats W8GpuCalibrationWork::stats() const { return impl_->counters; }
@@ -307,6 +348,8 @@ ChannelCalibrationSamples measure_w8_channel_point(Device &device,Program &progr
                 traffic.weight_projections!=uint64_t(3*(count+(prefetch?1:0))) || traffic.activation_packs!=uint64_t(count) ||
                 traffic.restore_downloads<uint64_t(count) || traffic.joins!=uint64_t(count))
                 throw CapabilityError("channel calibration lacks complete staging/pack/restore/join/future traffic");
+            result.correction_computations+=traffic.correction_computations;
+            result.correction_uploads+=traffic.correction_uploads;
         }
         result.ane_calls+=measured.ane_calls;
         if(sweep>=warmups)result.seconds[part][count_index].push_back(measured.seconds);

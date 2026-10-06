@@ -56,6 +56,9 @@ def validate_channel_calibration(report, full_width, hidden):
     for name in ("complete", "cache_hit", "trial_passed"):
         if type(report.get(name)) is not bool:
             raise ValueError(f"invalid channel calibration {name}")
+    lora=report.get("lora",False)
+    if type(lora) is not bool:
+        raise ValueError("invalid channel calibration adapter marker")
     if report.get("status") not in ("accepted", "gpu_only", "rejected", "unsupported"):
         raise ValueError("invalid channel calibration final status")
     if not isinstance(report.get("reason"), str) or not report["reason"]:
@@ -89,11 +92,13 @@ def validate_channel_calibration(report, full_width, hidden):
             if not isinstance(identity.get(name), str) or not identity[name]:
                 raise ValueError(f"missing channel calibration identity {name}")
         if (identity.get("backend") != "private_ane" or identity.get("precision") not in ("bf16", "fp16") or
-                identity.get("recipe") != "sylvester-dh-b128-b512-rne-norm-f16-v2-base" or
+                identity.get("recipe") != "sylvester-dh-b128-b512-rne-norm-f16-v2-"+("lora" if lora else "base") or
                 _integer(identity,"rows",minimum=1) != rows or _integer(identity,"hidden",minimum=1) != hidden or
                 _integer(identity,"width",minimum=1) != full_width or
                 type(identity.get("prefetch")) is not bool or type(identity.get("adapter")) is not str):
             raise ValueError("channel calibration identity/geometry/recipe mismatch")
+        if bool(identity["adapter"]) != lora:
+            raise ValueError("channel calibration bound adapter/recipe mismatch")
         for name in ("tile_k", "tile_n"):
             _integer(identity, name, minimum=1)
     if accepted and (identity is None or rows > bucket or proposed != selected or not report["complete"]):
@@ -124,6 +129,9 @@ def validate_channel_calibration(report, full_width, hidden):
             raise ValueError("channel calibration share/prefetch mismatch")
         if _integer(point, "ane_calls") != 2 * (warmups + repeats) * 5:
             raise ValueError("channel calibration independent ANE call count mismatch")
+        if lora and (_integer(point,"correction_computations") != 2*(warmups+repeats)*5 or
+                     _integer(point,"correction_uploads") != 4*(warmups+repeats)*5):
+            raise ValueError("LoRA calibration omitted actual correction compute/upload traffic")
         raw = point.get("raw_seconds")
         if not isinstance(raw, list) or len(raw) != 3:
             raise ValueError("channel calibration lacks GPU/ANE/Both raw samples")

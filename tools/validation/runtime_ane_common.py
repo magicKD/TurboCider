@@ -6,7 +6,6 @@ module independent of runner entry points and optional MLX/Core ML packages.
 import argparse
 import hashlib
 import json
-import json
 import math
 import os
 import subprocess
@@ -191,6 +190,13 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
             if (actual_backend != private_backend or runtime.get("partition_axis") != "intermediate_channels" or
                     runtime.get("ane_channels") != selected or runtime.get("gpu_channels") != full_width-selected):
                 raise ValueError("native automatic calibration and adopted runtime geometry disagree")
+            # The independent trial measured the scale-one graph. A later
+            # successful overflow retry rebuilds a different arithmetic graph;
+            # a retained hot executor is not fresh evidence for that recipe.
+            headroom = runtime.get("headroom_scale")
+            if (session_counter(runtime, "overflow_retries_session_total") or
+                    type(headroom) not in (int, float) or not math.isfinite(headroom) or headroom != 1):
+                raise ValueError("native automatic runtime changed the calibrated headroom recipe")
         if expect_lora and hybrid.get("mlp_output_kind") != (
                 "runtime_weight_swiglu_lora_inputs" if route == "runtime" else "fused_lora"):
             raise ValueError("LoRA benchmark requires a complete activation-correction graph")

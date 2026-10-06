@@ -47,6 +47,10 @@ struct W8GpuCalibrationLayer {
     std::array<DeviceWeightRegion, 3> weights;
     DeviceMatrixView activation;
     std::optional<std::pair<DeviceMatrixView, DeviceMatrixView>> corrections;
+    // Real LoRA producer inside the clock. Mutable GPU tensors must not alias
+    // frozen ANE bindings. Drain is required even after a partial exception.
+    std::function<std::pair<DeviceMatrixView,DeviceMatrixView>()> correction_producer;
+    std::function<void()> correction_drain;
     // Completed ANE snapshots only, never live/borrowed output. Constructor
     // copies these surfaces and all scales into independent private storage.
     std::vector<Download> restoration;
@@ -54,6 +58,7 @@ struct W8GpuCalibrationLayer {
 struct W8GpuCalibrationStats {
     uint64_t layers = 0, weight_projections = 0, activation_packs = 0;
     uint64_t correction_uploads = 0, restore_downloads = 0, joins = 0;
+    uint64_t correction_computations = 0;
     bool prefetch = false, independent_gpu_transfer = false, completed = false;
 };
 

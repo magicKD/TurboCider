@@ -82,6 +82,51 @@ int main(int argc,char **argv) {
         ane::HybridFfn adapter(argv[1],h,f,512u<<20,cancelled,true,&workload);
         check(!adapter.available() && adapter.usable_configuration() && !adapter.metrics().runtime_failed &&
             full==old_full && heads==old_heads,"adapter reused a base-only cost model or failed the GPU-only route");
+        auto rank_a=mx::full({4,h},.01f,mx::float32),gate_b=mx::full({f,4},.015f,mx::float32);
+        auto up_b=mx::full({f,4},-.01f,mx::float32),down_a=mx::full({4,f},.008f,mx::float32);
+        auto down_b=mx::full({h,4},.012f,mx::float32);mx::eval({rank_a,gate_b,up_b,down_a,down_b});
+        float strength=.75f;int correction_calls=0,down_calls=0;
+        auto gate_delta=[&](const Tensor &x,int first,int count) {
+            ++correction_calls;
+            auto low=mx::matmul(mx::astype(x,mx::float32),mx::transpose(rank_a));
+            return std::make_pair(mx::astype(mx::matmul(low,mx::transpose(slice_axis(gate_b,0,first,first+count)))*strength,x.dtype()),
+                mx::astype(mx::matmul(low,mx::transpose(slice_axis(up_b,0,first,first+count)))*strength,x.dtype()));
+        };
+        auto down_add=[&](const Tensor &hidden,const Tensor &base) {
+            ++down_calls;check(hidden.shape(2)==f,"calibration down-LoRA did not receive ONE full hidden");
+            auto delta=mx::astype(mx::matmul(mx::matmul(mx::astype(hidden,mx::float32),mx::transpose(down_a)),
+                mx::transpose(down_b))*strength,hidden.dtype());
+            return mx::astype(mx::astype(base,mx::float32)+mx::astype(delta,mx::float32),base.dtype());
+        };
+        workload.adapter=[&](int) {return ane::HybridFfn::Adapter{
+            [&](const Tensor &x){return gate_delta(x,0,f);},down_add,gate_delta};};
+        workload.channel_gpu=[&](int layer,const Tensor &input,int first,int count) {
+            ++heads;const auto &source=sources.at(layer);auto delta=gate_delta(input,first,count);
+            auto gate=mx::astype(mx::astype(mx::matmul(input,mx::transpose(slice_axis(source[0],0,first,first+count))),mx::float32)+
+                mx::astype(delta.first,mx::float32),input.dtype());
+            auto up=mx::astype(mx::astype(mx::matmul(input,mx::transpose(slice_axis(source[1],0,first,first+count))),mx::float32)+
+                mx::astype(delta.second,mx::float32),input.dtype());
+            auto hidden=silu(gate)*up;
+            return std::make_pair(mx::matmul(hidden,mx::transpose(slice_axis(source[2],1,first,first+count))),hidden);
+        };
+        workload.gpu=[&](int layer,const Tensor &input) {
+            ++full;auto complete=workload.channel_gpu(layer,input,0,f);
+            return down_add(complete.second,complete.first);
+        };
+        for(float value:{.75f,-.5f}) {
+            strength=value;workload.adapter_identity="actual-rank4-strength="+std::to_string(value);
+            ane::HybridFfn lora_auto(argv[1],h,f,512u<<20,cancelled,true,&workload);
+            const auto observed=lora_auto.metrics().runtime_weight_calibration;
+            std::cout<<"adapter diagnostic: "<<lora_auto.selection_label()<<" points="<<(observed?observed->points.size():0)
+                <<" corrections="<<(observed && !observed->points.empty()?observed->points[0].correction_computations:0)<<std::endl;
+            check(observed && observed->lora && observed->identity && observed->identity->adapter==workload.adapter_identity &&
+                observed->points.size()==2 && observed->points[0].correction_computations==90 &&
+                observed->points[1].correction_uploads==180 && !lora_auto.metrics().runtime_failed,
+                "automatic adapter calibration skipped real correction compute/upload traffic or identity");
+            check(correction_calls>0 && down_calls>=180,"adapter sampling omitted nonlinear gate corrections or full-hidden down");
+            std::cout<<"PASS native rank4 LoRA calibration strength="<<value<<": dynamic GPU corrections, frozen ANE bindings, "
+                "ONE full-hidden down, distinct identity; "<<lora_auto.selection_label()<<std::endl;
+        }
         workload.adapter_identity.clear();workload.rows=34;
         ane::HybridFfn multichunk(argv[1],h,f,512u<<20,cancelled,false,&workload);
         check(!multichunk.available() && multichunk.usable_configuration() && !multichunk.metrics().runtime_failed,

@@ -70,21 +70,22 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
     auto report = std::make_shared<ChannelCalibrationReport>();
     report->actual_rows=workload.rows;report->hidden=h;report->width=width;
     report->bucket_rows=shape.rows;report->layer_count=workload.layers;
+    report->lora=lora;
     auto select=[&](int channels,bool passed,const std::string &status,const std::string &reason) {
         report->selected_channels=channels;report->trial_passed=passed;
         report->status=status;report->reason=reason;
         return ChannelSelection{channels,false,passed,reason,std::make_shared<const ChannelCalibrationReport>(*report)};
     };
-    // Never reuse a base cost model for adapter corrections or multiple row
-    // chunks. Existing explicit channel/LoRA routes remain unchanged.
-    if (lora || !workload.adapter_identity.empty())
-        return select(0,false,"unsupported","adapter-aware automatic calibration is not yet admitted; optimized GPU-only");
+    if (lora && (!shape.lora_inputs || workload.adapter_identity.empty() || !workload.adapter))
+        return select(0,false,"unsupported","adapter calibration requires an identity, activation-input graph and complete family callbacks; optimized GPU-only");
+    require(lora || workload.adapter_identity.empty(),"base calibration cannot carry an unbound adapter identity");
     if (workload.rows > shape.rows)
         return select(0,false,"unsupported","automatic calibration requires a bucket covering the complete FFN rows; optimized GPU-only");
-    shape.lora_inputs = false;
+    shape.lora_inputs = lora;
     const bool prefetch = calibration_prefetch();
     ChannelCalibrationIdentity identity{workload.model_sha256, workload.adapter_identity, workload.encoding,
-        workload.dtype == mx::bfloat16 ? "bf16" : "fp16", "private_ane", "sylvester-dh-b128-b512-rne-norm-f16-v2-base",
+        workload.dtype == mx::bfloat16 ? "bf16" : "fp16", "private_ane",
+        lora?"sylvester-dh-b128-b512-rne-norm-f16-v2-lora":"sylvester-dh-b128-b512-rne-norm-f16-v2-base",
         device_info().gpu, os_build(), runtime_build_identity(), executor_configuration_identity()+workload.gpu_configuration,
         "prepared-channel-base-v1-b"+std::to_string(shape.rows)+"-l"+std::to_string(workload.layers), workload.source_generation,
         workload.rows, h, width, shape.tile_k, shape.tile_n, prefetch};
@@ -103,6 +104,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         report->sampled_depths.assign(depth.begin(),depth.end());
         std::array<std::vector<FfnWeight>,5> sources;
         std::array<std::array<DeviceWeightView,3>,5> views;
+        std::array<std::optional<Adapter>,5> adapters;
         for (size_t layer=0;layer<depth.size();++layer) {
             sources[layer]=workload.weights(depth[layer]);
             require(sources[layer].size()==3,"calibration requires complete gate/up/down sources");
@@ -113,6 +115,11 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             }
             mx::eval(ready);
             for(int i=0;i<3;++i)views[layer][i]=calibration_source(sources[layer][i]);
+            if(lora) {
+                adapters[layer]=workload.adapter(depth[layer]);
+                require(adapters[layer]->gate_up && adapters[layer]->gate_up_channels && adapters[layer]->down_and_add,
+                    "LoRA calibration requires full/range gate-up and ONE full-hidden down callbacks");
+            }
         }
         const uint64_t gpu_upper=uint64_t(workload.rows)*(8ull*h+6ull*width)*2+(128ull<<20);
         if(!admit_memory(observe_runtime_memory(mx::get_active_memory()),{4ull<<30,budget},0,gpu_upper).allowed())
@@ -121,6 +128,12 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         auto padded=mx::contiguous(workload.rows==shape.rows?input:mx::concatenate(
             {input,mx::zeros({1,shape.rows-workload.rows,h},workload.dtype)},1));
         mx::eval({input,padded});
+        auto pad_correction=[&](const Tensor &value,int columns) {
+            require(value.shape()==mx::Shape({1,workload.rows,columns}) && value.dtype()==workload.dtype,
+                "calibration adapter correction shape/precision mismatch");
+            return mx::contiguous(workload.rows==shape.rows?value:mx::concatenate(
+                {value,mx::zeros({1,shape.rows-workload.rows,columns},workload.dtype)},1));
+        };
         std::vector<Tensor> full;
         const auto baseline=measure_full_gpu_calibration([&]{full.clear();},[&](int count) {
             for(int layer=0;layer<count;++layer)full.push_back(workload.gpu(depth[layer],input));
@@ -143,14 +156,23 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                 arena_shapes.push_back({uint64_t(spec.packed_rows),uint64_t(shape.rows),2});
                 arena_shapes.push_back({uint64_t(h),uint64_t(shape.rows),2});
                 arena_shapes.push_back({uint64_t(h),1,2});arena_shapes.push_back({1,uint64_t(shape.rows),2});
+                if(lora) {
+                    // Four immutable DG/DU input pairs and frozen restored
+                    // full-tail hidden; mutable GPU correction slots are in plan.
+                    arena_shapes.push_back({uint64_t(fa),uint64_t(shape.rows),2});
+                    arena_shapes.push_back({uint64_t(fa),uint64_t(shape.rows),2});
+                    arena_shapes.push_back({uint64_t(fa),uint64_t(shape.rows),2});
+                }
             }
             arena_shapes.push_back({uint64_t(h),uint64_t(shape.rows),1});arena_shapes.push_back({1,uint64_t(shape.rows),2});
-            const auto arena=plan_gpu_calibration_memory(shape.rows,h,fa,false,arena_shapes,getpagesize());
-            const uint64_t head_upper=uint64_t(workload.rows)*(8ull*h+6ull*fg)*2+(128ull<<20);
+            const auto arena=plan_gpu_calibration_memory(shape.rows,h,fa,lora,arena_shapes,getpagesize());
+            const uint64_t head_upper=uint64_t(workload.rows)*(8ull*h+6ull*fg)*2+(128ull<<20)+
+                (lora?uint64_t(shape.rows)*(12ull*fa+4ull*width)*2:0);
             if(!arena || !admit_memory(observe_runtime_memory(mx::get_active_memory()),{4ull<<30,budget},
                 0,arena->estimated_bytes+head_upper).allowed())throw MemoryBudgetError("native calibration complete arena admission denied");
             Device device;Program program(device,spec.mil,spec.constants,default_cache_directory());
             std::vector<Bank> banks;std::vector<Surface> outputs;
+            std::vector<Surface> frozen_dg,frozen_du;
             for(int layer=0;layer<4;++layer) {
                 banks.emplace_back(device,h,fa);auto &b=banks.back();
                 std::array<std::optional<QuantStage>,3> stages;
@@ -165,6 +187,19 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                 if(error)std::rethrow_exception(error);
                 if(!ok)throw CapabilityError("native calibration W8 staging failed");
                 outputs.emplace_back(device,spec.packed_rows,shape.rows,Element::FP16);
+                if(lora) {
+                    auto deltas=adapters[layer]->gate_up_channels(input,fg,fa);
+                    std::pair<Tensor,Tensor> c{pad_correction(deltas.first,fa),pad_correction(deltas.second,fa)};
+                    mx::eval({c.first,c.second});
+                    frozen_dg.emplace_back(device,fa,shape.rows,Element::FP16);
+                    frozen_du.emplace_back(device,fa,shape.rows,Element::FP16);
+                    auto upload=device.prepare_gpu_transfer({{matrix(c.first,shape.rows,fa),frozen_dg.back(),0},
+                        {matrix(c.second,shape.rows,fa),frozen_du.back(),0}},
+                        {{frozen_dg.back(),std::nullopt,0,DType::FP16,1.f},
+                         {frozen_du.back(),std::nullopt,0,DType::FP16,1.f}});
+                    upload.submit();
+                    if(!upload.finish().ok || upload.validation_flags())throw CapabilityError("LoRA calibration immutable correction upload failed");
+                }
             }
             Surface x(device,h,shape.rows,Element::I8),tx(device,1,shape.rows,Element::FP16);
             DeviceWeightView activation{const_cast<void *>(padded.buffer().ptr()),padded.buffer_size(),size_t(padded.offset()),
@@ -175,18 +210,24 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             auto bindings=[&](int count) {
                 std::vector<CalibrationBindings> result;
                 for(int layer=0;layer<count;++layer) {
-                    auto &b=banks[layer];result.push_back({{{"x",x},{"tx",tx},{"wg",b.g},{"sg",b.sg},
-                        {"wu",b.u},{"su",b.su},{"wd",b.d}},{{"y",outputs[layer]}}});
+                    auto &b=banks[layer];
+                    CalibrationBindings row{{{"x",x},{"tx",tx},{"wg",b.g},{"sg",b.sg},
+                        {"wu",b.u},{"su",b.su},{"wd",b.d}},{{"y",outputs[layer]}}};
+                    if(lora){row.inputs.emplace_back("dg",frozen_dg[layer]);row.inputs.emplace_back("du",frozen_du[layer]);}
+                    result.push_back(std::move(row));
                 }
                 return result;
             };
             uint64_t timeline=0;
             CalibrationBatch freeze(device,program,bindings(4),timeline);
             if(!freeze.measure(true).ok)throw CapabilityError("native calibration initial snapshots failed");
-            std::vector<Tensor> tails;
+            std::vector<Tensor> tails,tail_hidden;
             std::vector<W8GpuCalibrationLayer> traffic;
             uint64_t resident=x.bytes()+tx.bytes()+input.nbytes()+padded.nbytes()+head_upper;
             for(const auto &b:banks)resident+=b.bytes();for(const auto &y:outputs)resident+=y.bytes();
+            if(lora) {
+                for(const auto &s:frozen_dg)resident+=s.bytes();for(const auto &s:frozen_du)resident+=s.bytes();
+            }
             for(int layer=0;layer<5;++layer) {
                 W8GpuCalibrationLayer item;
                 item.weights={{{views[layer][0],{fg,fa,0,h,128}}, {views[layer][1],{fg,fa,0,h,128}},
@@ -196,17 +237,33 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                     item.activation=matrix(padded,shape.rows,h);
                     item.restoration.push_back({outputs[layer].slice_rows(0,h),matrix(tails.back(),shape.rows,h),0,
                         workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f,banks[layer].sd,outputs[layer].slice_rows(h,1)});
+                    if(lora) {
+                        tail_hidden.push_back(mx::zeros({1,shape.rows,fa},workload.dtype));mx::eval(tail_hidden.back());
+                        resident+=tail_hidden.back().nbytes();
+                        item.restoration.push_back({outputs[layer].slice_rows(h+1,fa),matrix(tail_hidden.back(),shape.rows,fa),
+                            0,workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f});
+                        item.correction_producer=[&,layer]() {
+                            auto delta=adapters[layer]->gate_up_channels(input,fg,fa);
+                            auto g=pad_correction(delta.first,fa),u=pad_correction(delta.second,fa);mx::eval({g,u});
+                            return std::make_pair(matrix(g,shape.rows,fa),matrix(u,shape.rows,fa));
+                        };
+                        item.correction_drain=[] {mx::synchronize();};
+                    }
                 }
                 traffic.push_back(std::move(item));
             }
             W8GpuCalibrationWork work(device,candidate_shape,std::move(traffic),{4ull<<30,budget},resident,mx::get_active_memory());
-            std::vector<Tensor> heads,joined;
+            std::vector<Tensor> heads,head_hidden,joined;
             auto series=measure_w8_channel_point(device,program,{bindings(1),bindings(4)},work,timeline,
-                double(fa)/width,prefetch,[&]{heads.clear();joined.clear();checkpoint(cancelled);},[&](int layer,int first) {
-                    auto result=workload.channel_gpu(depth[layer],input,0,first);heads.push_back(result.first);mx::async_eval(heads.back());
-                },[&]{mx::eval(heads);},[&](int layer) {
-                    joined.push_back(mx::astype(mx::astype(heads[layer],mx::float32)+
-                        mx::astype(slice_axis(tails[layer],1,0,workload.rows),mx::float32),workload.dtype));mx::async_eval(joined.back());
+                double(fa)/width,prefetch,[&]{heads.clear();head_hidden.clear();joined.clear();checkpoint(cancelled);},[&](int layer,int first) {
+                    auto result=workload.channel_gpu(depth[layer],input,0,first);heads.push_back(result.first);
+                    if(lora)head_hidden.push_back(result.second);mx::async_eval(heads.back());
+                },[&]{mx::eval(heads);if(lora)mx::eval(head_hidden);},[&](int layer) {
+                    auto merged=mx::astype(mx::astype(heads[layer],mx::float32)+
+                        mx::astype(slice_axis(tails[layer],1,0,workload.rows),mx::float32),workload.dtype);
+                    if(lora)merged=adapters[layer]->down_and_add(mx::concatenate({head_hidden[layer],
+                        slice_axis(tail_hidden[layer],1,0,workload.rows)},-1),merged);
+                    joined.push_back(merged);mx::async_eval(joined.back());
                 },[&]{mx::eval(joined);checkpoint(cancelled);});
             points[sampled]=series.point;
             report->points.push_back(std::move(series));
@@ -215,24 +272,26 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         const auto fit=ChannelCostModel::fit(points[0],points[1]);
         if(!fit)return select(0,false,"rejected","independent complete-traffic evidence rejected by bandwidth fit");
         auto proposal=fit->select(width,512,baseline.layer_seconds,[&](int fa) {
-            const auto plan=plan_gpu_calibration_memory(shape.rows,h,fa,false,{},getpagesize());
-            const uint64_t head=uint64_t(workload.rows)*(8ull*h+6ull*(width-fa))*2+(128ull<<20);
+            const auto plan=plan_gpu_calibration_memory(shape.rows,h,fa,lora,{},getpagesize());
+            const uint64_t head=uint64_t(workload.rows)*(8ull*h+6ull*(width-fa))*2+(128ull<<20)+
+                (lora?uint64_t(shape.rows)*(4ull*fa+4ull*width)*2:0);
             return plan && admit_memory(observe_runtime_memory(mx::get_active_memory()),{4ull<<30,budget},0,plan->estimated_bytes+head).allowed();
         });
         report->proposed_channels=proposal.ane_channels;report->predicted_layer_seconds=proposal.predicted_seconds;
         if(!proposal.ane_channels)return select(0,false,"gpu_only",proposal.reason);
         // Fresh actual inference executor, not the independent measurement
         // adapter. It must stage/launch/restore/join through run_channels().
-        HybridFfn candidate(manifest,h,width,budget,cancelled,false,nullptr,proposal.ane_channels);
+        HybridFfn candidate(manifest,h,width,budget,cancelled,lora,nullptr,proposal.ane_channels);
         if(!candidate.available())return select(0,false,"rejected","proposed graph failed actual admission/self-test");
         candidate.scheduler_=std::make_unique<RowScheduler>(shape.rows,1,PartitionAxis::IntermediateChannels);
         candidate.fixed_async_=true;candidate.profile_=false;candidate.defer_channel_join_=false;
-        candidate.begin_request();
+        candidate.begin_request(workload.adapter_identity);
         candidate.scheduler_=std::make_unique<RowScheduler>(shape.rows,1,PartitionAxis::IntermediateChannels);
         auto run_candidate=[&](int index) {
             candidate.plan_block(index,workload.rows);
             candidate.stage_weights(index,workload.rows,sources[index]);
-            return candidate.run(index,input,[&](const Tensor &v){return workload.gpu(depth[index],v);},cancelled,nullptr,
+            return candidate.run(index,input,[&](const Tensor &v){return workload.gpu(depth[index],v);},cancelled,
+                lora?&*adapters[index]:nullptr,
                 [&](const Tensor &v,int first,int count){return workload.channel_gpu(depth[index],v,first,count);},
                 [&](int next){return next<5?sources[next]:std::vector<FfnWeight>{};});
         };

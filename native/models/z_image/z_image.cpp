@@ -3898,6 +3898,20 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     calibration->gpu_configuration += std::string(key)+"="+(value?value:"<unset>")+";";
                 }
                 calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal));};
+                if(transformer_.has_runtime_loras())calibration->adapter=[&,stem](int ordinal) {
+                    const auto prefix=stem(ordinal);
+                    return ane::HybridFfn::Adapter{
+                        [this,prefix](const Tensor &x) {return std::make_pair(
+                            transformer_.lora_delta_slice(x,prefix+".w1",0,10240,0,3840),
+                            transformer_.lora_delta_slice(x,prefix+".w3",0,10240,0,3840));},
+                        [this,prefix](const Tensor &hidden,const Tensor &base) {
+                            auto delta=transformer_.lora_delta_slice(hidden,prefix+".w2",0,3840,0,10240);
+                            return mx::astype(mx::astype(base,mx::float32)+mx::astype(delta,mx::float32),base.dtype());
+                        },
+                        [this,prefix](const Tensor &x,int first,int count) {return std::make_pair(
+                            transformer_.lora_delta_slice(x,prefix+".w1",first,first+count,0,3840),
+                            transformer_.lora_delta_slice(x,prefix+".w3",first,first+count,0,3840));}};
+                };
                 calibration->gpu = [&,stem](int ordinal,const Tensor &input) {
                     const auto prefix=stem(ordinal);
                     if(!gguf_transformer_ && !convrot_transformer_ && !transformer_.has_runtime_loras())
@@ -3907,7 +3921,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 };
                 calibration->channel_gpu = [&,stem](int ordinal,const Tensor &input,int first,int count) {
                     const auto prefix=stem(ordinal);
-                    if(!gguf_transformer_ && !convrot_transformer_ && input.dtype()==mx::bfloat16 &&
+                    if(!gguf_transformer_ && !convrot_transformer_ && !transformer_.has_runtime_loras() && input.dtype()==mx::bfloat16 &&
                         z_image_small_shape_metal_default() && input.shape(1)<=4224) {
                         auto up=z_metal::projection_range(input,transformer_.at(prefix+".w3.weight"),first,first+count,0,3840);
                         auto hidden=z_metal::swiglu_gemm_range(input,transformer_.at(prefix+".w1.weight"),up,first,count);

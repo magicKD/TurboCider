@@ -23,6 +23,7 @@ struct ChannelCalibrationSamples {
     CalibrationPoint point;
     bool prefetch = false;
     uint64_t ane_calls = 0;
+    uint64_t correction_computations = 0, correction_uploads = 0;
 };
 
 struct ChannelCalibrationIdentity {
@@ -86,6 +87,7 @@ struct ChannelTrialEvidence {
 struct ChannelCalibrationReport {
     int schema_version = 1;
     bool enabled = true, cache_hit = false, trial_passed = false, complete = false;
+    bool lora = false;
     int selected_channels = 0, proposed_channels = 0, bucket_rows = 0, layer_count = 0;
     int actual_rows = 0, hidden = 0, width = 0;
     int warmups = 2, repeats = 7;

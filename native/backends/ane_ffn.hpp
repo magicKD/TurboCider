@@ -51,6 +51,8 @@ class HybridFfn {
         NextWeights weights;
         std::function<Tensor(int, const Tensor &)> gpu;
         std::function<std::pair<Tensor, Tensor>(int, const Tensor &, int, int)> channel_gpu;
+        // Reconstruct per candidate width before using any range captures.
+        std::function<Adapter(int)> adapter;
     };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false,

@@ -953,6 +953,10 @@ static NSDictionary *calibration_dictionary(const ane::ChannelCalibrationReport 
         [points addObject:@{@"share":calibration_number(sample.point.share),@"gpu":calibration_number(sample.point.gpu),
             @"ane":calibration_number(sample.point.ane),@"both":calibration_number(sample.point.both),
             @"prefetch":@(sample.prefetch),@"ane_calls":@(sample.ane_calls),@"raw_seconds":raw}];
+        NSMutableDictionary *point=[points.lastObject mutableCopy];
+        point[@"correction_computations"]=@(sample.correction_computations);
+        point[@"correction_uploads"]=@(sample.correction_uploads);
+        points[points.count-1]=point;
     }
     if(r.trial) {
         const auto &t=*r.trial;
@@ -964,7 +968,7 @@ static NSDictionary *calibration_dictionary(const ane::ChannelCalibrationReport 
     NSMutableArray *depth=[NSMutableArray arrayWithCapacity:r.sampled_depths.size()];
     for(int value:r.sampled_depths)[depth addObject:@(value)];
     return @{@"schema_version":@(r.schema_version),@"enabled":@(r.enabled),@"cache_hit":@(r.cache_hit),
-        @"trial_passed":@(r.trial_passed),@"complete":@(r.complete),@"selected_channels":@(r.selected_channels),
+        @"trial_passed":@(r.trial_passed),@"complete":@(r.complete),@"lora":@(r.lora),@"selected_channels":@(r.selected_channels),
         @"proposed_channels":@(r.proposed_channels),@"bucket_rows":@(r.bucket_rows),@"actual_rows":@(r.actual_rows),
         @"hidden":@(r.hidden),@"width":@(r.width),@"layer_count":@(r.layer_count),@"warmups":@(r.warmups),
         @"repeats":@(r.repeats),@"status":@(r.status.c_str()),@"reason":@(r.reason.c_str()),@"scope":@(r.scope.c_str()),

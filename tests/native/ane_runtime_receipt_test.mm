@@ -8,12 +8,18 @@ int main() {
             auto report=std::make_shared<tc::ane::ChannelCalibrationReport>();
             report->baseline=tc::ane::GpuCalibrationSamples{{std::vector<double>{.01,.02,.03},std::vector<double>{.04,.05,.06}},.01};
             report->points.push_back({});report->points.back().seconds[0][0]={.013,.017};
+            report->lora=true;
+            report->points.back().correction_computations=90;
+            report->points.back().correction_uploads=180;
             report->trial.emplace(); // unknown numeric quality must be JSON null, never NaN/Inf or a passing zero
             metrics.runtime_weight_calibration=report;
             NSDictionary *encoded=tc::to_dictionary(metrics);
             NSDictionary *data=encoded[@"runtime_weight"][@"channel_calibration"];
             if([data[@"baseline"][@"raw_seconds"][0] count]!=3 ||
                 [data[@"points"][0][@"raw_seconds"][0][0] count]!=2 ||
+                ![data[@"lora"] boolValue] ||
+                [data[@"points"][0][@"correction_computations"] unsignedLongLongValue]!=90 ||
+                [data[@"points"][0][@"correction_uploads"] unsignedLongLongValue]!=180 ||
                 data[@"trial"][@"relative_l2"]!=NSNull.null || data[@"trial"][@"cosine"]!=NSNull.null ||
                 [data[@"trial"][@"accepted"] boolValue])return 1;
             NSError *error=nil;
