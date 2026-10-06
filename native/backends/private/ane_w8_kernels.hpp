@@ -181,6 +181,94 @@ kernel void tc_ane_w8_group_scales(device const uchar *src [[buffer(0)]], device
         dst[ulong(tile.y)*p.scale_pitch/2+tile.x]=out;
     }
 }
+// Comfy A8 only: one SIMD group owns H256, eight values per lane. Keep
+// the generic radix-4 expression order and ONE source-dtype boundary.
+// No shared scratch/barriers; W codes, scales and normalized math unchanged.
+inline void w8_comfy_register_rotate(thread float (&value)[8], uint lane, constant W8Params &p) {
+    float next[8];
+    for (uint stride=1; stride<=4; stride*=4) {
+        uint digit=(lane/stride)&3, first=lane-digit*stride;
+        for (uint j=0; j<8; ++j) {
+            float a=simd_shuffle(value[j],first), b=simd_shuffle(value[j],first+stride);
+            float c=simd_shuffle(value[j],first+2*stride), d=simd_shuffle(value[j],first+3*stride);
+            switch (digit) {
+                case 0: next[j]=a+b+c-d; break;
+                case 1: next[j]=a+b-c+d; break;
+                case 2: next[j]=a-b+c+d; break;
+                default: next[j]=-a+b+c+d; break;
+            }
+        }
+        for (uint j=0; j<8; ++j) value[j]=next[j];
+    }
+    for (uint j=0; j<8; ++j) {
+        uint even=j&~1u, first=lane&15u, digit=lane/16+(j&1u)*2;
+        float a=simd_shuffle(value[even],first), b=simd_shuffle(value[even],first+16);
+        float c=simd_shuffle(value[even+1],first), d=simd_shuffle(value[even+1],first+16);
+        switch (digit) {
+            case 0: next[j]=a+b+c-d; break;
+            case 1: next[j]=a+b-c+d; break;
+            case 2: next[j]=a-b+c+d; break;
+            default: next[j]=-a+b+c+d; break;
+        }
+    }
+    for (uint j=0; j<8; ++j) value[j]=next[j];
+    for (uint j=0; j<8; ++j) {
+        uint first=j&1u, digit=j/2;
+        float a=value[first], b=value[first+2], c=value[first+4], d=value[first+6];
+        switch (digit) {
+            case 0: next[j]=a+b+c-d; break;
+            case 1: next[j]=a+b-c+d; break;
+            case 2: next[j]=a-b+c+d; break;
+            default: next[j]=-a+b+c+d; break;
+        }
+        next[j]*=.0625f;
+        next[j]=p.dtype==0 ? from_half(to_half(next[j])) :
+            p.dtype==1 ? as_type<float>(uint(to_bfloat(next[j]))<<16) : next[j];
+    }
+    for (uint j=0; j<8; ++j) value[j]=next[j];
+}
+inline void w8_comfy_register_load(device const uchar *src, device const uchar *scales,
+    device const uchar *offsets, device atomic_uint *status, constant W8Params &p,
+    uint row, uint col, uint lane, thread float (&value)[8]) {
+    for (uint j=0; j<8; ++j) {
+        float x=w8_decode(src,scales,offsets,p.row_begin+row,p.column_begin+col+lane+j*32,p);
+        if (!isfinite(x)) {atomic_fetch_or_explicit(status,1u,memory_order_relaxed);x=0;}
+        value[j]=x;
+    }
+    w8_comfy_register_rotate(value,lane,p);
+    for (uint j=0; j<8; ++j)
+        if (!isfinite(value[j])) atomic_fetch_or_explicit(status,2u,memory_order_relaxed);
+}
+kernel void tc_ane_comfy_register_scales(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]], device ushort *dst [[buffer(3)]], device atomic_uint *status [[buffer(4)]],
+    constant W8Params &p [[buffer(5)]], uint2 tile [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+    float peak=0;
+    const uint begin=p.activation_group ? tile.y*256 : 0, end=p.activation_group ? begin+256 : p.columns;
+    for (uint col=begin; col<end; col+=256) {
+        float value[8];w8_comfy_register_load(src,scales,offsets,status,p,tile.x,col,lane,value);
+        for (uint j=0; j<8; ++j) peak=max(peak,abs(value[j]));
+    }
+    peak=simd_max(peak);
+    if (!lane) {
+        float norm=peak==0 ? 128.f : max((peak/127.f)*128.f,0x1p-24f);
+        ushort out=to_half(norm);
+        if (!out || (out&0x7c00)==0x7c00) {atomic_fetch_or_explicit(status,4u,memory_order_relaxed);out=0x5800;}
+        dst[p.activation_group ? ulong(tile.y)*p.scale_pitch/2+tile.x : ulong(tile.x)*p.scale_pitch/2]=out;
+    }
+}
+kernel void tc_ane_comfy_register_codes(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]], device const ushort *row_scales [[buffer(3)]], device char *dst [[buffer(4)]],
+    device atomic_uint *status [[buffer(5)]], constant W8Params &p [[buffer(6)]],
+    uint2 tile [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+    float value[8];w8_comfy_register_load(src,scales,offsets,status,p,tile.x,tile.y*256,lane,value);
+    float scale=from_half(row_scales[p.activation_group ? ulong(tile.y)*p.scale_pitch/2+tile.x : ulong(tile.x)*p.scale_pitch/2]);
+    if (!(scale>0) || !isfinite(scale)) atomic_fetch_or_explicit(status,4u,memory_order_relaxed);
+    for (uint j=0; j<8; ++j) {
+        float q=clamp((value[j]/scale)*128.f,-127.f,127.f);
+        if (!isfinite(q)) {atomic_fetch_or_explicit(status,8u,memory_order_relaxed);q=0;}
+        dst[ulong(tile.y*256+lane+j*32)*p.code_pitch+tile.x]=char(rint(q));
+    }
+}
 // Only compact FP16 scale metadata is retained, never a W8/dense matrix.
 kernel void tc_ane_w8_scale_copy(device const ushort *src [[buffer(0)]],device ushort *dst [[buffer(1)]],
     constant uint3 &p [[buffer(2)]],uint row [[thread_position_in_grid]]) {

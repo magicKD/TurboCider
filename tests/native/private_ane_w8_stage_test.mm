@@ -217,6 +217,31 @@ int main() {
         f[0]=std::numeric_limits<float>::infinity();
         auto invalid_hit=device.stage_w8(view,{0,1,0,512,128,140},q,s);
         if(invalid_hit.finish().ok||!(invalid_hit.validation_flags()&1))throw std::runtime_error("cached scale path hid nonfinite source");
+        // One generic pipeline is shared across rotation blocks AND bases.
+        // Dispatch dimensions must follow each operation, not its first key.
+        view.immutable_generation=false;
+        for(int c=0;c<512;++c)f[c]=float((c*13)%127-63)/64.f;
+        Surface activation_q(device,512,1,Element::I8),activation_s(device,1,1,Element::FP16);
+        for(int block:{512,128,256,128,512}) {
+            const bool comfy=block==256;
+            W8StageSpec spec{0,1,0,512,block,comfy?0u:20260930u,true,comfy?W8Basis::ComfyH256:W8Basis::SylvesterDH};
+            auto mixed=device.stage_w8(view,spec,activation_q,activation_s);
+            if(!mixed.finish().ok)throw std::runtime_error("mixed generic H128/H512/Comfy refill failed");
+            std::vector<float> rotated(f,f+512);
+            for(int c=0;c<512;c+=block) {
+                if(comfy)rotate_comfy_block({rotated.data()+c,size_t(block)},DType::FP32);
+                else rotate_block({rotated.data()+c,size_t(block)},spec.rotation_seed);
+            }
+            float peak=0;for(float x:rotated)peak=std::max(peak,std::abs(x));
+            const auto expected=normalized_scale(peak);
+            if(*static_cast<const uint16_t*>(activation_s.data())!=expected)
+                throw std::runtime_error("cached generic pipeline used stale rotation geometry");
+            for(int c=0;c<512;++c)
+                if(static_cast<const int8_t*>(activation_q.data())[c*activation_q.pitch()]!=quantize_rotated(rotated[c],expected))
+                    throw std::runtime_error("cached generic pipeline changed mixed-basis codes");
+        }
+        if(device.stage_pipeline_stats().variants!=1)throw std::runtime_error("mixed generic basis created extra pipelines");
+        std::cout<<"PASS W8 shared generic pipeline: H512/H128/Comfy-H256/H128/H512 per-operation launch geometry and CPU code/scale oracle\n";
         std::cout<<"PASS W8 immutable sign metadata: H128/H512 unsigned64 seed oracle and in-flight table replacement\n";
         std::cout<<"PASS W8 pipeline specialization: 9 encodings/dtypes H128/H512 W/A bit-exact, bounded 18 variants\n";
         std::cout<<"PASS W8 dense typed loads: FP16/BF16/FP32 aligned and independently unaligned offset/pitch, H128/H512 W/A bit-exact\n";

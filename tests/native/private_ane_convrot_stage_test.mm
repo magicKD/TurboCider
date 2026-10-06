@@ -159,6 +159,52 @@ int main() {
         }
         std::cout<<"PASS 9 Comfy H256 A8 typed/strided cases: K512/3840/10240, exact CPU radix-4/source rounding/RNE and padding\n";
         std::cout<<"PASS 9 Comfy group256 A8 cases: independent per-group peaks, zero/tiny/outlier groups, exact source rounding/RNE, physical slices and padding\n";
+        // Register and generic paths must agree on aligned typed loads AND
+        // byte-load fallbacks; the pipeline cache never keys source values.
+        for(DType dtype:{DType::FP16,DType::BF16,DType::FP32})
+            for(size_t offset:{size_t(256),size_t(257)})for(size_t extra:{size_t(0),size_t(1)}) {
+            constexpr int k=512,m=17;
+            const size_t item=item_size(dtype),pitch=k*item+16+extra;
+            Buffer source(gpu,offset+m*pitch);
+            for(int r=0;r<m;++r)for(int c=0;c<k;++c) {
+                float x=float((r*37+c*13)%127-63)/64.f;
+                if(r==0)x=std::copysign(0.f,c%2?-1.f:1.f);
+                if(r==1)x=(c%2?-1.f:1.f)*0x1p-24f;
+                store(static_cast<char*>(source.value.contents)+offset+r*pitch+c*item,x,dtype);
+            }
+            DeviceWeightView view{(__bridge void*)source.value,source.value.length,offset,pitch,m,k,
+                DeviceWeightEncoding::Dense,dtype,32,{},{},source.owner};
+            for(int group:{0,256}) {
+                W8StageSpec spec{0,m,0,k,256,0,true,W8Basis::ComfyH256,group};
+                Surface q(generic,k,m,Element::I8),s(generic,group?k/256:1,m,Element::FP16),
+                    fq(specialized,k,m,Element::I8),fs(specialized,group?k/256:1,m,Element::FP16);
+                auto compare=[&](bool success) {
+                    fill(q);fill(s);fill(fq);fill(fs);
+                    auto old_value=generic.value(),fast_value=specialized.value();
+                    auto a=generic.stage_w8(view,spec,q,s);auto b=specialized.stage_w8(view,spec,fq,fs);
+                    const auto ar=a.finish(),br=b.finish();
+                    check(ar.ok==success && br.ok==success && a.validation_flags()==b.validation_flags(),
+                        "register A8 validation/failure mismatch");
+                    check(!std::memcmp(q.data(),fq.data(),q.rows()*q.pitch()) &&
+                        !std::memcmp(s.data(),fs.data(),s.rows()*s.pitch()),"register A8 alignment/refill payload mismatch");
+                    padding(q,m);padding(s,m*2);padding(fq,m);padding(fs,m*2);
+                    check(generic.value()==old_value && specialized.value()==fast_value &&
+                        ((__bridge id<MTLSharedEvent>)a.ready_event()).signaledValue==1 &&
+                        ((__bridge id<MTLSharedEvent>)b.ready_event()).signaledValue==1,
+                        "register A8 staging changed inference timeline");
+                };
+                compare(true);
+                auto *first=static_cast<char*>(source.value.contents)+offset;
+                store(first,std::numeric_limits<float>::infinity(),dtype);compare(false);
+                for(int c=0;c<256;++c)store(first+c*item,65504.f,dtype);
+                compare(false);
+                for(int c=0;c<256;++c)store(first+c*item,0.f,dtype);
+                compare(true);
+            }
+        }
+        check(specialized.stage_pipeline_stats().specialized && specialized.stage_pipeline_stats().variants==8,
+            "Comfy/direct register pipeline cache variant count changed");
+        std::cout<<"PASS 24 Comfy row/group A8 alignment cases: signed zero, subnormals, failure flags, padding, shared-event isolation and healthy refill\n";
         // Direct scale overflow/underflow is a failed stage, never zeroed W
         // reported as successful. No quantizer floor may alter source scales.
         Buffer codes(gpu,256),meta(gpu,4);

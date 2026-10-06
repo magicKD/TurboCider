@@ -99,6 +99,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertIn("PASS W8 immutable sign metadata",result.stdout)
         self.assertIn("PASS W8 pipeline specialization",result.stdout)
         self.assertIn("PASS W8 dense typed loads",result.stdout)
+        self.assertIn("PASS W8 shared generic pipeline",result.stdout)
         print(result.stdout.strip())
 
     def test_convrot_direct_codes_and_comfy_activation_staging(self):
@@ -107,6 +108,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS 37 direct raw/packed Q8 cases", result.stdout)
         self.assertIn("PASS 9 Comfy H256 A8 typed/strided cases", result.stdout)
+        self.assertIn("PASS 24 Comfy row/group A8 alignment cases",result.stdout)
         print(result.stdout.strip())
 
     def test_convrot_direct_executor_lora_channels_and_failure_recovery(self):
