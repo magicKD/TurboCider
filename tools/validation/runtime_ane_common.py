@@ -34,6 +34,36 @@ def session_counter(data, name):
 FP16_BF16_VALUE_RECIPE="fp16-swiglu-compact-bf16-values-canonical-zero-guarded-v1"
 
 
+def validate_row_placement(rows,expected="suffix"):
+    if expected not in ("suffix","image_prefix","image_tail"):
+        raise ValueError("unknown runtime row placement")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        actual=runtime.get("row_placement","suffix")
+        if actual!=expected:raise ValueError("runtime row placement differs from requested policy")
+        keys=("row_suffix_blocks_session_total","row_prefix_blocks_session_total",
+              "row_image_tail_blocks_session_total","row_protected_rows_session_total")
+        if not any(key in runtime for key in keys):
+            if expected!="suffix":raise ValueError("image-only placement lacks actual row telemetry")
+            continue
+        suffix,prefix,tail,protected=(session_counter(runtime,key) for key in keys)
+        if runtime.get("partition_axis")=="intermediate_channels":
+            if expected!="suffix" or any((suffix,prefix,tail,protected)):
+                raise ValueError("channel split cannot claim row placement")
+            continue
+        blocks=session_counter(runtime,"hybrid_blocks_session_total")
+        if suffix+prefix+tail!=blocks:raise ValueError("row placement counters do not cover successful hybrid blocks")
+        if expected=="suffix":
+            if prefix or tail or protected:raise ValueError("suffix route claims protected image rows")
+        else:
+            active=prefix if expected=="image_prefix" else tail
+            if (runtime.get("data_path")!="fp16" or runtime.get("partition_axis")!="rows" or
+                    row.get("model")!="z-image-turbo" or row.get("lora_strategy")!="none" or
+                    active<=0 or (tail if expected=="image_prefix" else prefix) or protected<active or
+                    session_counter(row.get("hybrid") or {},"runtime_calls_session_total")==0):
+                raise ValueError("image-only placement lacks actual dense base FP16 execution")
+
+
 def validate_fp16_bf16_values(rows,requested):
     if type(requested) is not bool:
         raise ValueError("FP16 BF16 value policy must be explicit boolean")

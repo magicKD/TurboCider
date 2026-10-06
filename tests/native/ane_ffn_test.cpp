@@ -819,6 +819,93 @@ void quantized_tests(const char *manifest) {
 }
 }
 
+void row_placement_tests(const char *base_manifest,const char *lora_manifest) {
+    using namespace tc;
+    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","1",1);
+    setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+    unsetenv("TURBOCIDER_RUNTIME_ANE_PROFILE");
+    std::atomic<bool> cancelled{false};
+    std::vector<Tensor> weights{mx::full({96,64},.01f,mx::bfloat16),
+        mx::full({96,64},.01f,mx::bfloat16),mx::full({64,96},.01f,mx::bfloat16)};mx::eval(weights);
+    for(bool lora:{false,true})for(auto placement:{ane::RowPlacement::Suffix,ane::RowPlacement::ImagePrefix,ane::RowPlacement::ImageTail}) {
+        const ane::RowPolicy policy{placement,placement==ane::RowPlacement::Suffix?0:1};
+        const auto window=ane::plan_row_window(97,32,policy);
+        ane::HybridFfn runtime(lora?lora_manifest:base_manifest,64,96,128ull<<20,cancelled,lora);
+        bool poison=false;
+        std::optional<Tensor> saved,snapshot;
+        auto corrections=[&](const Tensor &x) {
+            auto first=mx::slice(x,{0,0,0},{1,x.shape(1),1});
+            auto g=mx::broadcast_to(first*.015625f+.0625f,{1,x.shape(1),96});
+            auto u=mx::broadcast_to(first*.03125f+.125f,{1,x.shape(1),96});
+            return std::make_pair(mx::astype(g,x.dtype()),mx::astype(u,x.dtype()));
+        };
+        auto down=[](const Tensor &h,const Tensor &base){return mx::astype(base+mx::sum(h,-1,true)*.0078125f,base.dtype());};
+        auto gpu=[&](const Tensor &x) {
+            auto g=mx::matmul(x,mx::transpose(weights[0])),u=mx::matmul(x,mx::transpose(weights[1]));
+            if(lora){auto delta=corrections(x);g=g+delta.first;u=u+delta.second;}
+            auto h=(g*mx::sigmoid(g))*u,base=mx::matmul(h,mx::transpose(weights[2]));
+            return lora?down(h,base):base;
+        };
+        std::optional<Tensor> expected_ane;
+        ane::HybridFfn::Adapter adapter{
+            [&](const Tensor &x) {
+                assert(expected_ane && mx::all(x==*expected_ane).item<bool>());
+                auto delta=corrections(x);
+                if(poison)delta.first=mx::full(delta.first.shape(),std::numeric_limits<float>::infinity(),x.dtype());
+                return delta;
+            },down};
+        for(int visit=0;visit<(lora?4:3);++visit) {
+            auto input=mx::astype(mx::broadcast_to(mx::reshape(mx::arange(1,98,mx::float32)/128.f+visit*.03125f,{1,97,1}),
+                {1,97,64}),mx::bfloat16);mx::eval(input);
+            expected_ane=slice_axis(input,1,window.first,window.end());
+            auto expected_gpu=window.gpu_before()==0?slice_axis(input,1,window.end(),97):
+                window.gpu_after()==0?slice_axis(input,1,0,window.first):
+                mx::concatenate({slice_axis(input,1,0,window.first),slice_axis(input,1,window.end(),97)},1);
+            auto plan=runtime.plan_block(0,97,policy);
+            assert(plan.split()&&plan.chunks==1&&!plan.measured());runtime.stage(0,97,weights);
+            poison=lora&&visit==3;int gpu_calls=0;
+            auto output=runtime.run(0,input,[&](const Tensor &x) {
+                ++gpu_calls;
+                assert(mx::all(x==(x.shape(1)==65?expected_gpu:*expected_ane)).item<bool>());
+                return gpu(x);
+            },cancelled,lora?&adapter:nullptr);
+            auto expected=gpu(input);mx::eval({output,expected});
+            assert(output.shape()==input.shape() && mx::all(mx::isfinite(output)).item<bool>());
+            assert(mx::max(mx::abs(mx::astype(output,mx::float32)-mx::astype(expected,mx::float32))).item<float>()<.03f);
+            assert(gpu_calls==(poison?2:1));
+            if(policy.protected_suffix_rows)assert(mx::all(slice_axis(output,1,96,97)==slice_axis(expected,1,96,97)).item<bool>());
+            if(poison)assert(mx::all(output==expected).item<bool>());
+            if(!visit){saved=output;snapshot=mx::copy(output);mx::eval(*snapshot);}
+            else assert(mx::all(*saved==*snapshot).item<bool>());
+        }
+        const auto m=runtime.metrics();assert(m.runtime_failed==lora && m.runtime_weight_fallback_blocks==uint64_t(lora));
+        assert(m.runtime_weight_row_suffix_blocks==(placement==ane::RowPlacement::Suffix?3u:0u));
+        assert(m.runtime_weight_row_prefix_blocks==(placement==ane::RowPlacement::ImagePrefix?3u:0u));
+        assert(m.runtime_weight_row_image_tail_blocks==(placement==ane::RowPlacement::ImageTail?3u:0u));
+        assert(m.runtime_weight_row_protected_rows==(placement==ane::RowPlacement::Suffix?0u:3u));
+        assert(m.runtime_weight_row_pack_peak_bytes==(placement==ane::RowPlacement::ImageTail?65u*64u*2u:0u));
+    }
+    setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","0",1);
+    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","0",1);
+    {
+        ane::HybridFfn probe(base_manifest,64,96,128ull<<20,cancelled);
+        const auto plan=probe.plan_block(0,97,{ane::RowPlacement::ImagePrefix,1});
+        assert(plan.mode==ane::RowScheduler::Mode::SplitProbe&&plan.chunks==0&&plan.measured());
+        probe.stage(0,97,weights);
+        auto input=mx::full({1,97,64},.5f,mx::bfloat16);
+        auto output=probe.run(0,input,[](const Tensor &x){return mx::copy(x);},cancelled);
+        assert(mx::all(output==input).item<bool>());probe.observe_block(0,97,1.);
+    }
+    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","1",1);
+    {
+        ane::HybridFfn protected_only(base_manifest,64,96,128ull<<20,cancelled);
+        const auto plan=protected_only.plan_block(0,97,{ane::RowPlacement::ImageTail,97});
+        assert(plan.mode==ane::RowScheduler::Mode::Gpu&&plan.chunks==0&&!plan.measured());
+    }
+    unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","2",1);
+    std::cout<<"PASS actual row placement: prefix/suffix/interior, exact callback row IDs, protected suffix, base/LoRA, typed lifetime and whole-span failure recomputation\n";
+}
+
 int main(int argc, char **argv) {
     using namespace tc;
     assert(argc == 2 || argc == 3);
@@ -1053,6 +1140,7 @@ int main(int argc, char **argv) {
         correction_input_isolation_tests(argv[2]);
         async_head_tests(argv[1], argv[2]);
         request_scheduler_tests(argv[2]);
+        row_placement_tests(argv[1],argv[2]);
         // LoRA graph compatibility is checked before memory fallback.
         bool rejected = false;
         try { ane::HybridFfn unsupported(argv[1], 64, 96, 1, cancelled, true); }

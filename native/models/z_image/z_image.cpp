@@ -1315,10 +1315,23 @@ Tensor z_compiled_split_gpu_block(const Tensor &x,const Weights &w,const std::st
     // Causal GPU-only control: no executor, surfaces, staging or ANE calls.
     return z_runtime_post_graph()({feed,pre[0],pre[2],w.at(prefix+".ffn_norm2.weight")})[0];
 }
+ane::RowPlacement z_runtime_row_placement() {
+    const char *raw=std::getenv("TURBOCIDER_Z_RUNTIME_ANE_ROWS");
+    const std::string value=raw?raw:"suffix";
+    require(value=="suffix" || value=="image_prefix" || value=="image_tail",
+            "qe_config_conflict: Z runtime row placement requires suffix, image_prefix or image_tail");
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+    require(value=="suffix","qe_capability_unqualified: Z runtime row placement requires experimental build");
+#endif
+    return value=="image_prefix"?ane::RowPlacement::ImagePrefix:
+           value=="image_tail"?ane::RowPlacement::ImageTail:ane::RowPlacement::Suffix;
+}
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
-                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility) {
-    const auto plan = runtime.plan_block(block, x.shape(1));
+                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility,int caption_rows=0) {
+    const auto placement=caption_rows?z_runtime_row_placement():ane::RowPlacement::Suffix;
+    const ane::RowPolicy policy{placement,placement==ane::RowPlacement::Suffix?0:caption_rows};
+    const auto plan = runtime.plan_block(block, x.shape(1),policy);
     // Compare identical complete block windows. A lazy preceding GPU block
     // must not inflate this block's sample. Stable hybrid blocks return owned
     // FFN output and can leave their final residual lazy, like the GPU route.
@@ -1898,7 +1911,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             const bool bf16_fallback = hybrid && z_hybrid_bf16_block(2 + i);
             auto block_input = bf16_fallback ? mx::astype(unified, mx::bfloat16) : unified;
             unified = runtime ? z_runtime_block(block_input, w, "layers." + std::to_string(i),
-                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility)
+                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility,caption_emb.shape(1))
                 : gpu_f16 ? z_compiled_packed_block(block_input,w,"layers."+std::to_string(i),unified_freqs,temb,true,f16_mpp,qmm_f16)
                 : z_block(block_input, weight_stream ? streamed : w,
                               "layers." + std::to_string(i), unified_freqs, temb,
@@ -2806,6 +2819,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
     optimizations_ = device_info().optimizations();
     (void)z_dense_split_gpu_control(); // Reject unsupported builds before loading weights.
     (void)z_runtime_ffn_capture_config();
+    (void)z_runtime_row_placement();
     if (const char *raw=std::getenv("TURBOCIDER_Z_RUNTIME_CONVROT")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1",
                 "qe_config_conflict: TURBOCIDER_Z_RUNTIME_CONVROT requires 0 or 1");
@@ -3625,6 +3639,20 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const bool quantized = r.quantized_execution.active();
     const bool quantized_bf16 = quantized && r.quantized_execution.precision_profile == "z-dense-bf16-v1";
     const bool quantized_raw_gpu=quantized && gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
+    if(z_runtime_row_placement()!=ane::RowPlacement::Suffix) {
+        const auto backend=ane::configured_backend();
+        const char *chunks=std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS");
+        const char *path=std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH");
+        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
+                !public_stream_lease_ && !load_only && r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+                r.residency=="resident" && r.allow_approximation && r.loras.empty() && r.encoder_ane_manifest.empty() &&
+                !r.memory_constrained.enabled && !r.streaming.active() && ane::private_channel_count(10240)==0 &&
+                chunks && std::string_view(chunks)=="1" && (!path || std::string_view(path)=="fp16") &&
+                (backend.preferred==ane::BackendPreference::Public ||
+                 (backend.preferred==ane::BackendPreference::Private && backend.allow_private)) &&
+                !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && !std::getenv("TURBOCIDER_Z_PROFILE"),
+                "qe_config_conflict: image-only ANE rows require explicit dense base resident FP16 runtime/chunks1 without LoRA/streaming");
+    }
     if(z_runtime_ffn_capture_config()) {
         require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
                 !public_stream_lease_ && !load_only && r.residency=="resident" && r.loras.empty() &&
@@ -3996,7 +4024,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
-        const std::string request_identity = identity + ":gpu-layers="+gpu_policy + (native_channel_auto ?
+        const std::string request_identity = identity + ":row-placement="+ane::row_placement_name(z_runtime_row_placement())+
+            ":gpu-layers="+gpu_policy + (native_channel_auto ?
             ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
         if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
             (runtime_ffn_->available() && !active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
@@ -4074,6 +4103,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }
         runtime_ffn_->set_gpu_layers(runtime_gpu_layers);
+        if(z_runtime_row_placement()!=ane::RowPlacement::Suffix && runtime_ffn_->available())
+            require(!runtime_ffn_->channel_split() && runtime_ffn_->metrics().bucket<=image_rows,
+                    "qe_config_conflict: image-only row placement requires bucket within image rows");
         runtime_ffn_->begin_request(cached_lora_identity_);
     }
     if (load_only) {

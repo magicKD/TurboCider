@@ -60,6 +60,17 @@ class RuntimeBoundarySourceTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("TC_ORDINARY_TEST_LIBRARY"),"explicit ordinary native build/local fixtures required")
 class RuntimeBoundaryOrdinaryGateTests(unittest.TestCase):
+    def test_ordinary_release_rejects_image_only_row_placement(self):
+        library=str(Path(os.environ["TC_ORDINARY_TEST_LIBRARY"]).resolve(strict=True))
+        base={k:v for k,v in os.environ.items() if not k.startswith("TURBOCIDER_")}
+        for value,error in (("image_prefix","qe_capability_unqualified"),("image_tail","qe_capability_unqualified"),
+                            ("unknown","qe_config_conflict"),("suffix",None)):
+            with self.subTest(value=value):
+                run=subprocess.run([sys.executable,"-c",CREATE_PROBE,library,str(ROOT/"models/Comfy-Org-z_image_turbo")],
+                    env={**base,"TURBOCIDER_Z_RUNTIME_ANE_ROWS":value},capture_output=True,text=True,timeout=20)
+                self.assertEqual(run.returncode,0,run.stderr);row=json.loads(run.stdout)
+                if error:self.assertNotEqual(row["status"],0);self.assertIn(error,row["error"])
+                else:self.assertEqual(row["status"],0,row["error"])
     def test_public_release_rejects_control_before_loading_weights(self):
         library=str(Path(os.environ["TC_ORDINARY_TEST_LIBRARY"]).resolve(strict=True))
         model=ROOT/"models/Comfy-Org-z_image_turbo"

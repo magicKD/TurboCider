@@ -4,6 +4,7 @@
 #include "ane_memory.hpp"
 #include "ane_scheduler.hpp"
 #include "ane_channel_selection.hpp"
+#include "ane_row_window.hpp"
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
 #include <cstdlib>
@@ -82,7 +83,7 @@ class HybridFfn {
     // without the bridge. Gpu: ordinary unsplit GPU, no timing fence/sample.
     // For measured plans, exclude earlier GPU work BEFORE starting the block
     // clock, then observe_block after its residual output has been evaluated.
-    RowScheduler::Plan plan_block(int layer, int rows);
+    RowScheduler::Plan plan_block(int layer, int rows,RowPolicy row_policy={});
     void observe_block(int layer, int rows, double seconds);
     // Called BEFORE attention submission. Own references until staging joins.
     void stage(int layer, int rows, std::vector<Tensor> weights);
@@ -132,6 +133,7 @@ class HybridFfn {
     std::unique_ptr<Executor> graph_;
     std::unique_ptr<RowScheduler> scheduler_;
     PartitionAxis axis_ = PartitionAxis::Rows;
+    RowPolicy row_policy_;
     std::vector<Tensor> weights_;
     // Worker scratch only. Copy completed results into independently owned
     // tensors before publishing them to GPU consumers or adapter callbacks.

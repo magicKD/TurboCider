@@ -42,6 +42,10 @@ struct HybridMetrics {
     std::string runtime_weight_io_path;
     std::string runtime_weight_data_path;
     std::string runtime_weight_partition_axis = "rows";
+    std::string runtime_weight_row_placement = "suffix";
+    uint64_t runtime_weight_row_suffix_blocks=0,runtime_weight_row_prefix_blocks=0;
+    uint64_t runtime_weight_row_image_tail_blocks=0,runtime_weight_row_protected_rows=0;
+    uint64_t runtime_weight_row_pack_peak_bytes=0;
     int runtime_weight_ane_channels = 0, runtime_weight_gpu_channels = 0;
     uint64_t runtime_weight_channel_blocks = 0;
     bool runtime_weight_prefetch_enabled = false;
