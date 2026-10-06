@@ -224,7 +224,8 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",
                            "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN",
                            "TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE","TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE",
-                           "TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES"}) {
+                           "TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES",
+                           "TURBOCIDER_PRIVATE_ANE_FP16_BF16_VALUES"}) {
         const char *raw = std::getenv(key);
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;

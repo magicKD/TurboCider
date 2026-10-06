@@ -9,7 +9,7 @@ import struct
 
 import numpy as np
 
-from runtime_ane_common import sha256_file,validate_results,validate_fp32_channel_join
+from runtime_ane_common import sha256_file,validate_results,validate_fp32_channel_join,validate_fp16_bf16_values
 from runtime_ane_image_compare import compare_png
 
 LAYOUTS = {
@@ -106,15 +106,18 @@ def compare_generation(reference,candidate,model_id):
     return result
 
 
-def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data_path="w8a8",channel_auto=True,device_io=True,gpu_control=False):
+def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data_path="w8a8",channel_auto=True,device_io=True,gpu_control=False,
+                   fp16_bf16_values=False):
     if runtime_backend not in ("private","public") or data_path not in ("fp16","w8a8"):
         raise ValueError("unsupported quality execution backend/data path")
-    if any(type(flag) is not bool for flag in (channel_auto,device_io,gpu_control)):
+    if any(type(flag) is not bool for flag in (channel_auto,device_io,gpu_control,fp16_bf16_values)):
         raise ValueError("quality execution policy must be explicit booleans")
     if (channel_auto and (runtime_backend!="private" or data_path!="w8a8")) or (device_io and runtime_backend!="private"):
         raise ValueError("unsupported quality execution channel/device policy")
     if gpu_control and (model_id!="z-image-turbo" or channel_auto or device_io):
         raise ValueError("GPU boundary control requires dense Z and no channel/device offload")
+    if fp16_bf16_values and (runtime_backend!="private" or data_path!="fp16" or channel_auto or gpu_control):
+        raise ValueError("FP16 BF16 values require explicitly requested Private FP16 rows")
     records=[]
     for path,route in ((reference,"gpu"),(candidate,"gpu_control" if gpu_control else "runtime")):
         path=Path(path);digest=sha256_file(path)
@@ -161,6 +164,7 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
             expected_data_path=("w8a8_hadamard" if data_path=="w8a8" else "fp16") if route=="runtime" else None,
             channel_auto=route=="runtime" and channel_auto)
         if route=="runtime":
+            validate_fp16_bf16_values(rows,fp16_bf16_values)
             runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
             validate_fp32_channel_join(rows,runtime.get("fp32_channel_join_enabled",False),allow_gpu_decline=True)
         if sha256_file(path)!=digest:raise ValueError("quality execution receipt changed")
@@ -179,7 +183,7 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
                 candidate_coreml_executed=executor=="public_coreml" and calls>0,
                 requested_backend="gpu_only" if gpu_control else runtime_backend,
                 requested_data_path="bf16_gpu" if gpu_control else data_path,
-                gpu_boundary_control=gpu_control,channel_auto=channel_auto,device_io=device_io,
+                gpu_boundary_control=gpu_control,fp16_bf16_values=fp16_bf16_values,channel_auto=channel_auto,device_io=device_io,
                 adjacent_runtime_identity_bound=records[0]["adjacent_library_sha256"] is not None,
                 scope="native execution receipts; no performance or physical-engine qualification")
 
@@ -199,17 +203,19 @@ def main():
     parser.add_argument("--device-io",choices=("0","1"),default="1")
     parser.add_argument("--gpu-only-control",action="store_true",
         help="explicit dense Z GPU split control; also requires --channel-auto 0 --device-io 0")
+    parser.add_argument("--fp16-bf16-values",action="store_true",help="explicit actual Private FP16 base-only compact value-rounding recipe")
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
     if args.output.exists() or args.output.is_symlink():parser.error("output already exists")
     if bool(args.reference_png)!=bool(args.candidate_png):parser.error("provide both matched PNGs")
     if bool(args.reference_receipt)!=bool(args.candidate_receipt):parser.error("provide both execution receipts")
     if args.gpu_only_control and not args.reference_receipt:parser.error("GPU boundary control requires execution receipts")
+    if args.fp16_bf16_values and not args.reference_receipt:parser.error("FP16 BF16 values require execution receipts")
     result=compare_generation(args.reference,args.candidate,args.model_id)
     if args.reference_receipt:
         result["execution"]=bind_execution(args.reference_receipt,args.candidate_receipt,args.model_id,
             runtime_backend=args.runtime_backend,data_path=args.runtime_data_path,channel_auto=args.channel_auto=="1",device_io=args.device_io=="1",
-            gpu_control=args.gpu_only_control)
+            gpu_control=args.gpu_only_control,fp16_bf16_values=args.fp16_bf16_values)
         if args.model_id=="z-image-turbo" and len(result["trajectory"])!=result["execution"]["reference"]["actual_denoise_steps"]:
             raise ValueError("native Z dumps do not cover all executed steps")
         result["n1_with_actual_ane"]=result["n1_final_latent_pass"] and result["execution"]["candidate_ane_executed"]

@@ -1,4 +1,5 @@
 #include "ane_backend.hpp"
+#include "ane_fp16_value_config.hpp"
 #include <chrono>
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
 #include "private/ane_executor.hpp"
@@ -10,6 +11,10 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
                                     GraphGeometry expected, BackendPolicy policy,
                                     std::optional<int> calibrated_channels) {
     BuiltExecutor result;
+    const bool fp16_values=configured_fp16_bf16_values();
+    if(fp16_values && (!policy.allow_private || policy.preferred!=BackendPreference::Private ||
+                      expected.kind!=Kind::SwiGLU || expected.require_lora_inputs))
+        throw std::runtime_error("FP16 BF16 values require explicitly authorized Private base-only SwiGLU");
     if (policy.preferred == BackendPreference::Off) { result.fallback_reason = "ANE disabled by backend policy"; return result; }
     if (policy.preferred == BackendPreference::Private && !policy.allow_private)
         throw std::runtime_error("private ANE requires explicit authorization");
@@ -48,6 +53,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
                 throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_DATA_PATH requires fp16, w8a8 or convrot_w8a8");
             if(requested_group && path!="convrot_w8a8")throw std::runtime_error("group A8 requires convrot_w8a8 data path");
             if(bf16_boundaries && path!="convrot_w8a8")throw std::runtime_error("BF16 value boundaries require convrot_w8a8 data path");
+            if(fp16_values && path!="fp16")throw std::runtime_error("FP16 BF16 values require the fp16 data path");
             if (channels && path == "fp16") throw std::runtime_error("channel split requires the W8A8 data path");
             if (channels) shape.width = channels; // base template still validated against the FULL model
             if (calibrated_channels) shape.lora_inputs = expected.require_lora_inputs;

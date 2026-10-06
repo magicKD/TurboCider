@@ -272,6 +272,68 @@ void z_capture_ffn_input(const Tensor &input, int block) {
     }
 }
 
+struct ZRuntimeFfnCaptureConfig {
+    std::filesystem::path directory;
+    int block=0;
+    uint32_t limit=1;
+};
+const std::optional<ZRuntimeFfnCaptureConfig> &z_runtime_ffn_capture_config() {
+    static const auto config=[]()->std::optional<ZRuntimeFfnCaptureConfig> {
+        const char *directory=std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_DIR");
+        if(!directory) {
+            require(!std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_BLOCK") &&
+                    !std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_LIMIT"),
+                    "qe_config_conflict: runtime FFN capture controls require a directory");
+            return std::nullopt;
+        }
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+        throw std::runtime_error("qe_capability_unqualified: runtime FFN capture requires experimental build");
+#endif
+        require(*directory && std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_BLOCK"),
+                "qe_config_conflict: runtime FFN capture requires a fresh directory and explicit block");
+        ZRuntimeFfnCaptureConfig value{directory,
+            int(z_qwen3_gguf_integer("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_BLOCK",0,31)),
+            uint32_t(z_qwen3_gguf_integer("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_LIMIT",1,32))};
+        require(value.limit && !std::filesystem::exists(value.directory) &&
+                !std::filesystem::is_symlink(value.directory),
+                "qe_config_conflict: runtime FFN capture requires positive limit and unused directory");
+        return value;
+    }();
+    return config;
+}
+void z_capture_runtime_ffn_input(const Tensor &input,int block) {
+    const auto &config=z_runtime_ffn_capture_config();
+    if(!config || block!=config->block)return;
+    // The native GPU owner serializes model requests. The cap applies to the
+    // entire process, including warm requests, not an unbounded per-step dump.
+    static uint32_t captured=0;
+    if(captured>=config->limit)return;
+    require(input.ndim()==3 && input.shape(0)==1 && input.shape(2)==3840 &&
+            input.shape(1)>0 && input.shape(1)<=4224 && input.dtype()==mx::bfloat16,
+            "runtime FFN capture requires original bounded dense BF16 input");
+    auto sample=mx::contiguous(input);
+    mx::eval(sample);
+    require(mx::all(mx::isfinite(mx::astype(sample,mx::float32))).item<bool>(),
+            "runtime FFN capture input is nonfinite");
+    if(!captured)require(std::filesystem::create_directories(config->directory),
+                        "runtime FFN capture directory is no longer unused");
+    const auto stem="sample-"+std::to_string(10000+captured);
+    const auto path=config->directory/(stem+".safetensors");
+    const auto partial=config->directory/(stem+".partial.safetensors");
+    require(!std::filesystem::exists(path) && !std::filesystem::exists(partial),
+            "runtime FFN capture target already exists");
+    try {
+        mx::save_safetensors(partial.string(),{{"tensor",sample}},
+            {{"capture_recipe","z-dense-runtime-original-bf16-v1"},{"block",std::to_string(block)},
+             {"sample",std::to_string(captured)},{"runtime_build",runtime_build_identity()}});
+        std::filesystem::rename(partial,path);
+        ++captured;
+    } catch(...) {
+        std::error_code ignored;std::filesystem::remove(partial,ignored);
+        throw;
+    }
+}
+
 // Small unified-memory machines also need a bounded cache in resident mode.
 // Restore the process-wide setting before another request or model starts.
 struct RequestCacheLimit {
@@ -1245,6 +1307,8 @@ Tensor z_compiled_split_gpu_block(const Tensor &x,const Weights &w,const std::st
         w.at(prefix+".attention.out.weight"),w.at(prefix+".attention_norm2.weight"),
         w.at(prefix+".ffn_norm1.weight")});
     mx::eval(pre[1]);
+    z_capture_runtime_ffn_input(pre[1],std::stoi(prefix.substr(prefix.find_last_of('.')+1))+
+        (prefix.starts_with("layers.")?2:0));
     auto feed=z_runtime_full_ffn_graph()({pre[1],w.at(prefix+".feed_forward.w1.weight"),
         w.at(prefix+".feed_forward.w3.weight"),w.at(prefix+".feed_forward.w2.weight")})[0];
     mx::eval(feed);
@@ -1330,6 +1394,7 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         w.at(prefix + ".attention.q_norm.weight"), w.at(prefix + ".attention.k_norm.weight"),
         w.at(prefix + ".attention.out.weight"), w.at(prefix + ".attention_norm2.weight"),
         w.at(prefix + ".ffn_norm1.weight")});
+    z_capture_runtime_ffn_input(pre[1],block);
     // Use the same tuned short-row projections and fused SwiGLU as the base
     // GPU block. Weights are arguments, never captured from another layer.
     auto &gpu = z_runtime_full_ffn_graph();
@@ -2740,6 +2805,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
     : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
     optimizations_ = device_info().optimizations();
     (void)z_dense_split_gpu_control(); // Reject unsupported builds before loading weights.
+    (void)z_runtime_ffn_capture_config();
     if (const char *raw=std::getenv("TURBOCIDER_Z_RUNTIME_CONVROT")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1",
                 "qe_config_conflict: TURBOCIDER_Z_RUNTIME_CONVROT requires 0 or 1");
@@ -3559,6 +3625,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const bool quantized = r.quantized_execution.active();
     const bool quantized_bf16 = quantized && r.quantized_execution.precision_profile == "z-dense-bf16-v1";
     const bool quantized_raw_gpu=quantized && gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
+    if(z_runtime_ffn_capture_config()) {
+        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
+                !public_stream_lease_ && !load_only && r.residency=="resident" && r.loras.empty() &&
+                r.encoder_ane_manifest.empty() && !r.memory_constrained.enabled && !r.streaming.active() &&
+                !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") && !std::getenv("TURBOCIDER_Z_PROFILE") &&
+                ((r.execution=="gpu" && z_dense_split_gpu_control()) ||
+                 (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime")),
+                "qe_config_conflict: runtime FFN capture requires dense base split-GPU/runtime resident generation");
+    }
     if(z_dense_split_gpu_control()) {
         require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
                 !public_stream_lease_ && !load_only && r.execution=="gpu" && r.residency=="resident" &&

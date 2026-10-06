@@ -23,6 +23,28 @@ def write(path,values,dtype="F32"):
 
 
 class QualityTests(unittest.TestCase):
+    def test_fp16_compact_values_require_explicit_policy_and_actual_recipe(self):
+        from runtime_ane_common import FP16_BF16_VALUE_RECIPE
+        with tempfile.TemporaryDirectory() as folder:
+            gpu,ane=Path(folder)/"gpu.json",Path(folder)/"ane.json"
+            common=dict(model="z-image-turbo",width=512,height=512,seed=42,steps=8,actual_denoise_steps=8,
+                lora_strategy="none",lora_applied_projections=0,timings_seconds=dict(request_wall=1.,denoise=.8))
+            baseline=dict(**common,runtime_backend="mlx_cpp_metal")
+            candidate=dict(**common,runtime_backend="mlx_cpp_metal+private_ane_runtime_weight_experimental",
+                hybrid=dict(runtime_failed=False,runtime_failures_session_total=0,runtime_calls_session_total=1,
+                    runtime_weight=dict(executor_backend="private_ane",data_path="fp16",partition_axis="rows",io_path="gpu_iosurface",
+                        source_recipe=FP16_BF16_VALUE_RECIPE,device_io_calls_session_total=1,fallback_blocks_session_total=0,failure_reason="")))
+            def write_receipt(path,row):
+                path.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                    artifacts_unchanged=True,stdout=json.dumps(row))))
+            write_receipt(gpu,baseline);write_receipt(ane,candidate)
+            policy=dict(data_path="fp16",channel_auto=False,device_io=True)
+            with self.assertRaises(ValueError):bind_execution(gpu,ane,"z-image-turbo",**policy)
+            result=bind_execution(gpu,ane,"z-image-turbo",fp16_bf16_values=True,**policy)
+            self.assertTrue(result["candidate_ane_executed"] and result["fp16_bf16_values"])
+            candidate["hybrid"]["runtime_weight"]["source_recipe"]="";write_receipt(ane,candidate)
+            with self.assertRaises(ValueError):bind_execution(gpu,ane,"z-image-turbo",fp16_bf16_values=True,**policy)
+            with self.assertRaises(ValueError):bind_execution(gpu,ane,"z-image-turbo",runtime_backend="public",fp16_bf16_values=True,**policy)
     def test_gpu_boundary_control_is_explicit_and_cannot_count_as_ane_or_coreml(self):
         with tempfile.TemporaryDirectory() as folder:
             gpu,control=Path(folder)/"gpu.json",Path(folder)/"control.json"

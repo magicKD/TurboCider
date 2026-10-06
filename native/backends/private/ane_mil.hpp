@@ -5,7 +5,7 @@
 namespace tc::ane::private_api {
 // Native fixed micrograph emitter, no externally supplied MIL and no embedded
 // checkpoint weights. FP16 infrastructure baseline; NOT a W8A8 emitter.
-std::string fp16_program(const GraphShape &shape);
+std::string fp16_program(const GraphShape &shape,bool bf16_value_boundaries=false);
 // Native INT8 representation inputs with normalized FP16 output. Scales are
 // restored by the GPU in FP32, not multiplied into a potentially overflowing
 // ANE FP16 output. This does NOT assert native INT8 hardware arithmetic.

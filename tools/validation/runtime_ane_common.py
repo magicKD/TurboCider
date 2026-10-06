@@ -31,6 +31,24 @@ def session_counter(data, name):
     return value
 
 
+FP16_BF16_VALUE_RECIPE="fp16-swiglu-compact-bf16-values-canonical-zero-guarded-v1"
+
+
+def validate_fp16_bf16_values(rows,requested):
+    if type(requested) is not bool:
+        raise ValueError("FP16 BF16 value policy must be explicit boolean")
+    for row in rows:
+        hybrid=row.get("hybrid") or {};runtime=hybrid.get("runtime_weight") or {}
+        actual=runtime.get("source_recipe")==FP16_BF16_VALUE_RECIPE
+        if actual!=requested:
+            raise ValueError("FP16 BF16 value source recipe differs from requested policy")
+        if requested and (runtime.get("executor_backend")!="private_ane" or runtime.get("data_path")!="fp16" or
+                runtime.get("partition_axis")!="rows" or row.get("lora_strategy")!="none" or
+                type(row.get("lora_applied_projections",0)) is not int or row.get("lora_applied_projections",0)!=0 or
+                session_counter(hybrid,"runtime_calls_session_total")==0):
+            raise ValueError("FP16 BF16 value recipe lacks actual base-only Private row execution")
+
+
 def validate_overflow_events(runtime, calls):
     """Bounded per-launch diagnostics, never a physical trace/quality gate."""
     keys = ("overflow_events", "overflow_events_dropped_session_total", "overflow_event_scope")

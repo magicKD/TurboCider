@@ -4,9 +4,11 @@
 #include <iomanip>
 #include <sstream>
 #include "../../native/backends/private/ane_mil_round.hpp"
+#include "../../native/backends/private/ane_mil_round_compact.hpp"
 
 inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
-    const std::filesystem::path &cache,uint64_t &timeline,bool split_powers=false,bool ties_even=false) {
+    const std::filesystem::path &cache,uint64_t &timeline,bool split_powers=false,bool ties_even=false,
+    bool compact=false,bool numeric_policy=false,bool compact_floor=false) {
     using namespace tc::ane;
     using namespace tc::ane::private_api;
     constexpr int columns=4096;
@@ -74,9 +76,10 @@ inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
     } else body+=" "+type+" restored = mul(x = rounded, y = "+previous+");\n";
     body+=" "+boolean+" tiny = less(x = magnitude, y = "+power2(-16)+");\n";
     body+=" "+type+" h = select(cond = tiny, a = xt, b = restored);\n";
-    if(ties_even) {
+    if(ties_even || compact) {
         body.clear();
-        const auto value=tc::ane::private_api::emit_bf16_value_round(body,"xt","diagnostic_bf16_value",shape);
+        const auto value=compact?tc::ane::private_api::emit_bf16_value_round_compact(body,"xt","diagnostic_bf16_value",shape,!compact_floor):
+            tc::ane::private_api::emit_bf16_value_round(body,"xt","diagnostic_bf16_value",shape);
         body+=" "+type+" h = mul(x = "+value+", y = fp16(1));\n";
     }
     const auto mil="program(1.3)\n{\n func main_ane<ios18>("+buffer+" x) {\n "+type+
@@ -93,7 +96,8 @@ inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
             if(std::abs(bf)>65504.f) {++overflow_excluded;continue;}
             pairs.emplace_back(uint16_t(raw),tc::gguf::float_to_fp16_rne(bf));
         }
-        Program model(device,mil,{},cache/(ties_even?"fp16-bf16-value-native-emitter-v6":split_powers?"fp16-bf16-rne-split-powers-v3":"fp16-bf16-rne-bins-v1"));
+        Program model(device,mil,{},cache/(compact?(compact_floor?"fp16-bf16-value-compact-floor-v2":"fp16-bf16-value-compact-magic-v1"):
+            ties_even?"fp16-bf16-value-native-emitter-v6":split_powers?"fp16-bf16-rne-split-powers-v3":"fp16-bf16-rne-bins-v1"));
         size_t wrong=0,calls=0,zero_sign_mismatches=0;
         std::array<size_t,32> mismatches_by_exponent{};
         for(size_t first=0;first<pairs.size();first+=columns) {
@@ -116,14 +120,15 @@ inline bool probe_bf16_emulation(tc::ane::private_api::Device &device,
                 }
             }
         }
-        std::cout<<"EMULATION recipe="<<(ties_even?"native-value-emitter-v6":split_powers?"split-powers-v3":"divide-v1")<<" compiled=1 finite_half_cases="<<pairs.size()<<" half_overflow_excluded="<<overflow_excluded
+        std::cout<<"EMULATION recipe="<<(compact?(compact_floor?"compact-floor-v2":"compact-magic-v1"):ties_even?"native-value-emitter-v6":split_powers?"split-powers-v3":"divide-v1")<<" compiled=1 finite_half_cases="<<pairs.size()<<" half_overflow_excluded="<<overflow_excluded
             <<" driver_calls="<<calls<<" bf16_rne_oracle_mismatches="<<wrong
-            <<" numeric_mismatches="<<(wrong-zero_sign_mismatches)<<" zero_sign_mismatches="<<zero_sign_mismatches<<std::endl;
+            <<" numeric_mismatches="<<(wrong-zero_sign_mismatches)<<" zero_sign_mismatches="<<zero_sign_mismatches
+            <<" declared_policy="<<(numeric_policy?"numeric-canonical-zero":"strict-bits")<<std::endl;
         for(size_t exponent=0;exponent<mismatches_by_exponent.size();++exponent)
             if(mismatches_by_exponent[exponent])std::cout<<"ERROR_BIN half_exponent="<<exponent<<" mismatches="<<mismatches_by_exponent[exponent]<<std::endl;
-        return wrong==0;
+        return wrong==0 || (compact && numeric_policy && wrong==zero_sign_mismatches);
     } catch(const CapabilityError &error) {
         std::cout<<"EMULATION supported=0 reason="<<error.what()<<std::endl;
-        return Program::healthy();
+        return !compact && Program::healthy();
     }
 }

@@ -1,5 +1,6 @@
 #include "ane_mil.hpp"
 #include "ane_mil_round.hpp"
+#include "ane_mil_round_compact.hpp"
 #include <algorithm>
 #include "../ane_w8a8_math.hpp"
 #include <cstring>
@@ -15,11 +16,13 @@ std::string buffer(int rows, int cols) {
         std::to_string(stride) + ", 1], interleave_factors=[1, 1, 1, 1]>";
 }
 }
-std::string fp16_program(const GraphShape &s) {
+std::string fp16_program(const GraphShape &s,bool bf16_value_boundaries) {
     if (s.rows <= 0 || s.rows > 32768 || s.hidden <= 0 || s.hidden > 32768 || s.width <= 0 || s.width > 32768 ||
         s.tile_k <= 0 || s.tile_k > 32768 || s.tile_n <= 0 || s.tile_n > 32768 ||
         (s.kind != Kind::Matmul && s.kind != Kind::SwiGLU) || (s.lora_inputs && s.kind != Kind::SwiGLU))
         throw CapabilityError("private ANE FP16 micrograph geometry/kind unsupported");
+    if(bf16_value_boundaries && s.kind!=Kind::SwiGLU)
+        throw CapabilityError("FP16 BF16 value policy requires SwiGLU");
     if (s.lora_inputs && s.hidden + s.width > 32768)
         throw CapabilityError("private ANE packed output exceeds surface height limit");
     // Prevent huge externally selected graph expansion before allocation.
@@ -37,6 +40,15 @@ std::string fp16_program(const GraphShape &s) {
     };
     auto value = [&](const std::string &name, int rows, const std::string &expr) {
         line(tensor(rows, s.rows) + " " + name + " = " + expr);
+    };
+    std::vector<std::string> carrier_checks;
+    auto round_boundary=[&](const std::string &input,const std::string &prefix,int rows) {
+        value(prefix+"_guard_abs",rows,"abs(x = "+input+")");
+        line("tensor<bool, "+shape(rows,s.rows)+"> "+prefix+"_guard_safe = less(x = "+prefix+"_guard_abs, y = fp16(0x1.ffp+15))");
+        value(prefix+"_guard_bad",rows,"select(cond = "+prefix+"_guard_safe, a = fp16(0), b = fp16(1))");
+        value(prefix+"_guard_token",1,"reduce_max(x = "+prefix+"_guard_bad, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        carrier_checks.push_back(prefix+"_guard_token");
+        return emit_bf16_value_round_compact(body,input,prefix,shape(rows,s.rows));
     };
     auto projection = [&](const std::string &name, const std::string &weight, const std::string &x, int n, int k) {
         std::vector<std::string> outputs;
@@ -89,17 +101,45 @@ std::string fp16_program(const GraphShape &s) {
         // Match the public runtime's tested exp lowering. The private ANE
         // sigmoid LUT fails the signed sparse A/B/A oracle on M4 Max; do not
         // hide that compiler error by widening the numerical tolerance.
+        if(bf16_value_boundaries) {
+            g=round_boundary(g,"gate_bf16",s.width);
+            u=round_boundary(u,"up_bf16",s.width);
+        }
         value("neg", s.width, "mul(x = " + g + ", y = fp16(-1))");
         value("eg", s.width, "exp(x = neg)");
         value("denom", s.width, "add(x = eg, y = fp16(1))");
-        value("silu", s.width, "real_div(x = " + g + ", y = denom)");
-        value("hidden", s.width, "mul(x = silu, y = " + u + ")");
-        const auto y = projection("d", "wd_t", "hidden", s.hidden, s.width);
+        std::string activation="hidden";
+        if(bf16_value_boundaries) {
+            value("sigmoid",s.width,"real_div(x = fp16(1), y = denom)");
+            const auto sigmoid=round_boundary("sigmoid","sigmoid_bf16",s.width);
+            value("silu",s.width,"mul(x = "+g+", y = "+sigmoid+")");
+            const auto silu=round_boundary("silu","silu_bf16",s.width);
+            value("hidden",s.width,"mul(x = "+silu+", y = "+u+")");
+            activation=round_boundary("hidden","hidden_bf16",s.width);
+        } else {
+            value("silu", s.width, "real_div(x = " + g + ", y = denom)");
+            value("hidden", s.width, "mul(x = silu, y = " + u + ")");
+        }
+        auto y = projection("d", "wd_t", activation, s.hidden, s.width);
+        if(bf16_value_boundaries) {
+            y=round_boundary(y,"down_bf16",s.hidden);
+            auto bad=carrier_checks.front();
+            for(size_t i=1;i<carrier_checks.size();++i) {
+                const auto name="carrier_bad_"+std::to_string(i);
+                value(name,1,"add(x = "+bad+", y = "+carrier_checks[i]+")");bad=name;
+            }
+            // The physical FP16 output stores Inf for any unsafe token, even
+            // if a compiler keeps an internal expression wider. Existing IO
+            // validators must reject it before publishing y or hidden.
+            value("carrier_large",1,"mul(x = "+bad+", y = fp16(65504))");
+            value("carrier_invalid",1,"add(x = carrier_large, y = carrier_large)");
+            value("checked_y",s.hidden,"add(x = "+y+", y = carrier_invalid)");y="checked_y";
+        }
         if (s.lora_inputs) {
             // One physical output symbol, so the ANE done event covers BOTH
             // down and corrected hidden. Do not race a second output using
             // a signal attached to only the first symbol.
-            value("packed_yh", s.hidden + s.width, "concat(values = (" + y + ", hidden), axis = int32(2), interleave = bool(false))");
+            value("packed_yh", s.hidden + s.width, "concat(values = (" + y + ", "+activation+"), axis = int32(2), interleave = bool(false))");
             output("y", "packed_yh", s.hidden + s.width);
         } else output("y", y, s.hidden);
     }
