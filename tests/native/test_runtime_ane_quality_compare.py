@@ -23,6 +23,69 @@ def write(path,values,dtype="F32"):
 
 
 class QualityTests(unittest.TestCase):
+    def test_gpu_boundary_control_is_explicit_and_cannot_count_as_ane_or_coreml(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gpu,control=Path(folder)/"gpu.json",Path(folder)/"control.json"
+            common=dict(model="z-image-turbo",width=512,height=512,seed=42,steps=8,actual_denoise_steps=8,
+                lora_strategy="none",lora_applied_projections=0,timings_seconds=dict(request_wall=1.,denoise=.8),
+                execution="gpu",encoder_execution="gpu",encoder_runtime_backend="mlx_cpp_metal",encoder_hybrid={})
+            baseline=dict(**common,runtime_backend="mlx_cpp_metal",gpu_graph="compiled_fused_blocks")
+            candidate=dict(**common,runtime_backend="mlx_cpp_metal_dense_split_gpu_control",gpu_graph="compiled_split_gpu_ffn_control",hybrid={})
+            def store(row):
+                control.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                    artifacts_unchanged=True,stdout=json.dumps(row))))
+            gpu.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                artifacts_unchanged=True,stdout=json.dumps(baseline))))
+            store(candidate)
+            result=bind_execution(gpu,control,"z-image-turbo",gpu_control=True,channel_auto=False,device_io=False)
+            self.assertTrue(result["gpu_boundary_control"])
+            self.assertEqual(result["requested_backend"],"gpu_only")
+            self.assertFalse(result["candidate_ane_executed"] or result["candidate_coreml_executed"])
+            # Native schema stores execution in plan and omits zero LoRA counts.
+            native=dict(candidate,plan=dict(execution="gpu"))
+            native.pop("execution");native.pop("lora_applied_projections")
+            native_reference=dict(baseline,plan=dict(execution="gpu"))
+            native_reference.pop("execution");native_reference.pop("lora_applied_projections")
+            raw=json.loads(gpu.read_text());raw["stdout"]=json.dumps(native_reference);gpu.write_text(json.dumps(raw))
+            store(native)
+            self.assertTrue(bind_execution(gpu,control,"z-image-turbo",gpu_control=True,
+                channel_auto=False,device_io=False)["gpu_boundary_control"])
+            raw["stdout"]=json.dumps(baseline);gpu.write_text(json.dumps(raw));store(candidate)
+            with self.assertRaises(ValueError):bind_execution(gpu,control,"z-image-turbo")
+            with self.assertRaises(ValueError):bind_execution(gpu,control,"z-image-turbo",gpu_control=True)
+            for change in (dict(runtime_backend="mlx_cpp_metal"),dict(gpu_graph="compiled_fused_blocks"),
+                           dict(hybrid=dict(runtime_calls_session_total=1)),dict(execution="gpu_ane"),
+                           dict(encoder_execution="gpu_ane"),dict(encoder_runtime_backend="mlx_cpp_metal+coreml"),
+                           dict(encoder_hybrid=dict(calls_session_total=1)),dict(lora_strategy="inference_time"),
+                           dict(lora_applied_projections=1),dict(lora_applied_projections=False)):
+                store(dict(candidate,**change))
+                with self.subTest(change=change),self.assertRaises(ValueError):
+                    bind_execution(gpu,control,"z-image-turbo",gpu_control=True,channel_auto=False,device_io=False)
+    def test_public_fp16_and_private_fp16_have_explicit_distinct_execution_bindings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gpu,candidate=Path(folder)/"gpu.json",Path(folder)/"runtime.json"
+            common=dict(model="z-image-turbo",width=512,height=512,seed=42,steps=8,actual_denoise_steps=8,
+                lora_strategy="none",lora_applied_projections=0,timings_seconds=dict(request_wall=1.,denoise=.8))
+            baseline=dict(**common,runtime_backend="mlx_cpp_metal")
+            def write_receipt(path,row):
+                path.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                    artifacts_unchanged=True,stdout=json.dumps(row))))
+            write_receipt(gpu,baseline)
+            for backend,executor,label,device in (("public","public_coreml","coreml_runtime_weight",False),
+                                                 ("private","private_ane","private_ane_runtime_weight_experimental",True)):
+                row=dict(**common,runtime_backend="mlx_cpp_metal+"+label,hybrid=dict(runtime_failed=False,
+                    runtime_failures_session_total=0,runtime_calls_session_total=1,runtime_weight=dict(
+                    executor_backend=executor,data_path="fp16",io_path="gpu_iosurface" if device else "host",
+                    device_io_calls_session_total=1 if device else 0,fallback_blocks_session_total=0,failure_reason="")))
+                write_receipt(candidate,row)
+                result=bind_execution(gpu,candidate,"z-image-turbo",runtime_backend=backend,data_path="fp16",
+                    channel_auto=False,device_io=device)
+                self.assertEqual(result["candidate_ane_executed"],backend=="private")
+                self.assertEqual(result["candidate_coreml_executed"],backend=="public")
+                self.assertTrue(result["adjacent_runtime_identity_bound"])
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo")
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo",runtime_backend=backend,
+                    data_path="fp16",channel_auto=True,device_io=device)
     def test_execution_binding_distinguishes_gpu_decline_and_actual_ane(self):
         from tests.native.test_runtime_ane_calibration import report
         with tempfile.TemporaryDirectory() as folder:

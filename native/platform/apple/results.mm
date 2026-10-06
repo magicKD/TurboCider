@@ -41,6 +41,8 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if(result.backend=="mlx_cpp_metal_dense_split_gpu_control")
+        return @"compiled_split_gpu_ffn_control";
     if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
         const auto &m = *result.hybrid;
         if (m.runtime_weight_backend.empty()) {
