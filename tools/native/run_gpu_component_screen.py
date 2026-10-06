@@ -16,6 +16,16 @@ import threading
 import time
 
 
+def artifact_identity(binary):
+    """Snapshot adjacent runtime bytes, not proof of dynamic-loader placement."""
+    def digest(path):
+        with path.open("rb") as source:
+            return hashlib.file_digest(source,"sha256").hexdigest()
+    library=binary.parent/"libturbocider.dylib"
+    return {"binary_sha256":digest(binary),
+            "adjacent_library_sha256":digest(library) if library.is_file() else None}
+
+
 def observe():
     started = time.monotonic()
     result = subprocess.run(
@@ -41,11 +51,11 @@ def main():
     binary = Path(command[0]).resolve(strict=True)
     if not binary.is_file():
         parser.error("command must name a binary file")
-    with binary.open("rb") as binary_file:
-        binary_sha256 = hashlib.file_digest(binary_file, "sha256").hexdigest()
+    identity=artifact_identity(binary)
     receipt = {"schema": "tc-observed-gpu-component-screen-v1",
                "time_utc": datetime.now(timezone.utc).isoformat(),
-               "command": command, "binary_sha256": binary_sha256,
+               "command": command, **identity,
+               "artifact_identity_scope":"binary and optional adjacent dylib before/after hashes; not loaded-image or physical-engine trace",
                "interval_seconds": args.interval, "observations": [], "observation_errors": [],
                "scope": "host-span component diagnostic, observer included; not E2E or physical GPU/ANE trace"}
     stop = threading.Event()
@@ -84,6 +94,11 @@ def main():
     times = [row["monotonic"] for row in receipt["observations"]]
     receipt["maximum_observation_gap_seconds"] = max((b-a for a,b in zip(times,times[1:])), default=0)
     receipt["observation_thread_joined"] = not sampler.is_alive()
+    try:
+        receipt["artifacts_unchanged"]=artifact_identity(binary)==identity
+    except OSError as error:
+        receipt["artifacts_unchanged"]=False
+        receipt["artifact_identity_error"]=str(error)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as output:
         json.dump(receipt, output, indent=2, allow_nan=False)
@@ -91,7 +106,8 @@ def main():
     print(receipt.get("stdout", ""), end="")
     print(receipt.get("stderr", ""), end="")
     print(f"evidence: {args.output}")
-    raise SystemExit(receipt.get("exit_code", 1) or bool(receipt["observation_errors"]) or not receipt["observation_thread_joined"])
+    raise SystemExit(receipt.get("exit_code", 1) or bool(receipt["observation_errors"]) or
+                     not receipt["observation_thread_joined"] or not receipt["artifacts_unchanged"])
 
 
 if __name__ == "__main__":

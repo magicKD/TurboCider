@@ -111,8 +111,17 @@ def bind_execution(reference,candidate,model_id):
     for path,route in ((reference,"gpu"),(candidate,"runtime")):
         path=Path(path);digest=sha256_file(path)
         raw=json.loads(path.read_text())
-        if raw.get("exit_code")!=0 or not isinstance(raw.get("stdout"),str):
+        if type(raw.get("exit_code")) is not int or raw["exit_code"]!=0 or not isinstance(raw.get("stdout"),str):
             raise ValueError("native quality execution receipt incomplete")
+        def valid_digest(value):
+            return isinstance(value,str) and len(value)==64 and all(c in "0123456789abcdef" for c in value)
+        if not valid_digest(raw.get("binary_sha256")):
+            raise ValueError("native quality binary identity missing/invalid")
+        library=raw.get("adjacent_library_sha256")
+        if library is not None and (not valid_digest(library) or raw.get("artifacts_unchanged") is not True):
+            raise ValueError("native quality adjacent library identity missing/changed")
+        if "artifacts_unchanged" in raw and raw["artifacts_unchanged"] is not True:
+            raise ValueError("native quality execution artifacts changed")
         rows=[]
         for line in raw["stdout"].splitlines():
             try:row=json.loads(line)
@@ -121,18 +130,24 @@ def bind_execution(reference,candidate,model_id):
         if len(rows)!=1 or rows[0].get("model")!=model_id:
             raise ValueError("native quality execution workload/result count mismatch")
         row=rows[0]
+        if any(type(row.get(key)) is not int or row[key]<=0 for key in ("width","height","steps","actual_denoise_steps")):
+            raise ValueError("native quality actual geometry/steps missing/invalid")
+        if row["steps"]!=row["actual_denoise_steps"]:
+            raise ValueError("native quality requested and actual steps differ")
         validate_results(rows,route,1,model_id=model_id,runtime_backend="private",expect_device_io=route=="runtime",
             expected_data_path="w8a8_hadamard" if route=="runtime" else None,channel_auto=route=="runtime")
         if sha256_file(path)!=digest:raise ValueError("quality execution receipt changed")
         records.append(dict(receipt_sha256=digest,binary_sha256=raw.get("binary_sha256"),
+            adjacent_library_sha256=library,artifacts_unchanged=raw.get("artifacts_unchanged"),
             runtime_backend=row["runtime_backend"],hybrid=row.get("hybrid"),model=row["model"],
-            width=row["width"],height=row["height"],seed=row["seed"],steps=row["steps"],
+            width=row["width"],height=row["height"],seed=row["seed"],steps=row["steps"],actual_denoise_steps=row["actual_denoise_steps"],
             lora_strategy=row.get("lora_strategy"),lora_applied_projections=row.get("lora_applied_projections")))
-    for key in ("binary_sha256","model","width","height","seed","steps","lora_strategy","lora_applied_projections"):
+    for key in ("binary_sha256","adjacent_library_sha256","model","width","height","seed","steps","actual_denoise_steps","lora_strategy","lora_applied_projections"):
         if records[0][key]!=records[1][key]:raise ValueError("unmatched quality execution field: "+key)
     candidate_hybrid=records[1]["hybrid"] or {}
     active=(candidate_hybrid.get("runtime_weight") or {}).get("executor_backend")=="private_ane" and candidate_hybrid.get("runtime_calls_session_total",0)>0
     return dict(reference=records[0],candidate=records[1],candidate_ane_executed=active,
+                adjacent_runtime_identity_bound=records[0]["adjacent_library_sha256"] is not None,
                 scope="native execution receipts; no performance or physical-engine qualification")
 
 
@@ -153,6 +168,8 @@ def main():
     result=compare_generation(args.reference,args.candidate,args.model_id)
     if args.reference_receipt:
         result["execution"]=bind_execution(args.reference_receipt,args.candidate_receipt,args.model_id)
+        if args.model_id=="z-image-turbo" and len(result["trajectory"])!=result["execution"]["reference"]["actual_denoise_steps"]:
+            raise ValueError("native Z dumps do not cover all executed steps")
         result["n1_with_actual_ane"]=result["n1_final_latent_pass"] and result["execution"]["candidate_ane_executed"]
     if args.reference_png:result["png"]=compare_png(args.reference_png,args.candidate_png)
     args.output.parent.mkdir(parents=True,exist_ok=True)
