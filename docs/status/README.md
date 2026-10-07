@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+512² 本地模型优先的 encoder 接续见
+[Qwen 语言 FFN 与 1–2 参考图/真实 LoRA](local512-qwen-encoder-2026-10-07.md)。
+Private/Public 共用执行器已接入语言 FFN；cache/实际调用标签和真实
+会话切换通过。窄 channel share 有有限热组件收益，冷编辑整请求仍较慢，
+保持显式实验；视觉接近不替代完整性能/质量资格，DiT/ConvRot/GGUF目标仍 active。
+
 以下 Private ANE 接续记录按实验时间归档；构建哈希和“未提交”等说明描述
 当时快照。组件测试或单向初筛通过，不等于产品默认路线或正式性能/质量验收。
 

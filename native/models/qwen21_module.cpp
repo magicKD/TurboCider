@@ -15,7 +15,11 @@ ModelModule qwen21_module() {
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
-            require(r.encoder_ane_manifest.empty(), "Qwen21 encoder ANE is not implemented");
+            if(!r.encoder_ane_manifest.empty())
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 &&
+                        !r.prompt_enhance && (r.operation=="image.generate" ||
+                        (r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2)),
+                        "Qwen21 encoder runtime requires explicit resident 512px approximation, at most two edit references and no prompt enhancement");
             require(r.qwen21_reference_size == 1024 ||
                         ((r.qwen21_reference_size == 256 || r.qwen21_reference_size == 512) &&
                          r.allow_approximation &&
@@ -407,7 +411,7 @@ ModelModule qwen21_module() {
                              diagnostic_full_ref || supported_512),
                         "Qwen21 gpu_ane requires a validated 512px route; 1024px text-to-image, full-reference editing and 768x512/512x768 tiling are diagnostic-only");
             } else {
-                require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
+                require(r.ane_manifest.empty() &&
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                             r.qwen21_gpu_full_ffn_blocks.empty(),
                         "Qwen21 ANE manifests require execution=gpu_ane");
@@ -433,10 +437,12 @@ ModelModule qwen21_module() {
             d.lora_strategies = {"inference_time"}; d.default_lora_strategy = "inference_time";
             d.default_residency = "component_staged"; d.backend = "mlx_cpp_metal";
             d.supports_gpu_ane = true;
+            d.supports_encoder_gpu_ane = true;
             d.runtime_dependency = "bundled-native-mlx-cpp";
             d.candidate_limitations = {
                 "experimental: actual edit material fidelity is under investigation; not quality-qualified",
                 "BF16 Comfy checkpoint plus official processor/tokenizer.json required",
+                "encoder ANE is explicit 512px resident shared runtime language-FFN only; visual tower stays GPU; measured profitability and reference fidelity required",
                 "reference images are resized to approximately 1024 squared pixels with 32-aligned dimensions",
                 "RGBA is preserved; App masks are visual references, not hard pixel-preserving inpainting",
                 "native PE-T2I is optional and slow; PE-I2I requires explicit prompt_enhance_edit_experimental with FP32 vision, supported 8-bit files, and is not quality-qualified; BF16 visual parity remains unaccepted",

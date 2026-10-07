@@ -2,6 +2,7 @@
 #include "../../backends/mlx.hpp"
 #include "../../core/tokenizer.hpp"
 #include <array>
+namespace tc::ane { class HybridFfn; }
 
 namespace tc::qwen21 {
 struct TextConfig {
@@ -20,7 +21,7 @@ struct TextConfig {
 // positions so it can be reused by the multimodal conditioning pipeline.
 class TextEncoder {
   public:
-    TextEncoder(const Weights &, TextConfig = {});
+    TextEncoder(const Weights &, TextConfig = {}, ane::HybridFfn *runtime = nullptr);
     Tensor encode(const Tokens &, const Event &, std::atomic<bool> &) const;
     Tensor encode_embeddings(const Tensor &, const Tensor &positions,
                              int valid_tokens, const Event &, std::atomic<bool> &,
@@ -32,5 +33,6 @@ class TextEncoder {
     const Weights &weights_;
     TextConfig config_;
     std::string language_prefix_;
+    ane::HybridFfn *runtime_ = nullptr; // borrowed through encode completion
 };
 } // namespace tc::qwen21

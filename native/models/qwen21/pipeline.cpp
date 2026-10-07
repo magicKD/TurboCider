@@ -81,9 +81,7 @@ void Session::unload() {
     hybrid_.reset();
     hybrid_manifest_.clear();
     hybrid_runtime_options_.clear();
-    cached_text_.reset();
-    cached_prompt_.clear();
-    cached_edit_.reset();
+    conditioning_cache_.clear();
     transformer_.clear();
     vae_.clear();
     active_lora_identity_.clear();
@@ -231,24 +229,27 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             checkpoint(cancelled);
             image_sha256.push_back(sha256_file(input.path));
         }
-    } else cached_edit_.reset();
-    const bool edit_hit = cached_edit_ && !r.inputs.empty() &&
-        cached_edit_->prompt == r.prompt &&
-        cached_edit_->reference_size == r.qwen21_reference_size &&
-        cached_edit_->image_sha256 == image_sha256;
+    } else conditioning_cache_.edit.reset();
+    const std::string encoder_identity=r.encoder_ane_manifest.empty() ? "gpu" :
+        std::filesystem::canonical(r.encoder_ane_manifest).string()+":"+sha256_file(r.encoder_ane_manifest)+
+        ane::HybridFfn::executor_configuration_identity();
+    conditioning_cache_.select_encoder(encoder_identity);
+    const bool edit_hit = !r.inputs.empty() && conditioning_cache_.edit_hit(
+        r.prompt, r.qwen21_reference_size, image_sha256);
     std::vector<Tensor> images;
     if (!edit_hit) for (const auto &input : r.inputs) {
         checkpoint(cancelled);
         images.push_back(resize_reference(load_rgba_image_tensor(input.path),
                                           r.qwen21_reference_size));
     }
-    const bool hit = edit_hit || (r.inputs.empty() && cached_text_ && cached_prompt_ == r.prompt);
+    const bool hit = edit_hit || (r.inputs.empty() && conditioning_cache_.text_hit(r.prompt));
     if (!hit) clear_prefix_cache();
     Tensor text(0.f);
     std::vector<int> slots;
+    std::optional<HybridMetrics> encoder_metrics; // this request only; never replayed by a cache hit
     auto text_start = Clock::now();
-    if (edit_hit) { text = cached_edit_->text; slots = cached_edit_->image_slots; }
-    else if (hit) text = *cached_text_;
+    if (edit_hit) { text = conditioning_cache_.edit->text; slots = conditioning_cache_.edit->image_slots; }
+    else if (hit) text = *conditioning_cache_.text;
     else {
         // Staged requests release the DiT; resident requests keep its packed
         // suffix too, including when encoding a different prompt.
@@ -276,12 +277,26 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         auto assembled = assemble_prompt(tokens, weights.at("model.embed_tokens.weight"), refs);
         TextConfig config;
         config.final_norm = false; // official checkpoint's pre-final-RMSNorm hidden state
-        TextEncoder encoder(weights, config);
+        std::unique_ptr<ane::HybridFfn> encoder_runtime;
+        if(!r.encoder_ane_manifest.empty()) {
+            const uint64_t physical=device_info().physical_memory;
+            const size_t encoder_budget=std::min(uint64_t(1)<<30,
+                uint64_t(runtime_ane_budget(physical, mx::get_active_memory())));
+            encoder_runtime=std::make_unique<ane::HybridFfn>(r.encoder_ane_manifest,4096,12288,encoder_budget,cancelled);
+            encoder_runtime->begin_request();
+        }
+        TextEncoder encoder(weights, config,encoder_runtime.get());
         text = assembled.retain(encoder.encode_embeddings(assembled.embeddings, assembled.positions,
             assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas));
         mx::eval(text);
+        if(encoder_runtime) {
+            encoder_runtime->drain();
+            encoder_metrics=encoder_runtime->metrics();
+            encoder_metrics->block_count=config.layers;
+            encoder_metrics->session_released_after_encoding=true;
+        }
         slots = assembled.image_slots;
-        if (r.inputs.empty()) { cached_text_ = text; cached_prompt_ = r.prompt; }
+        if (r.inputs.empty()) { conditioning_cache_.text = text; conditioning_cache_.prompt = r.prompt; }
     }
     mx::clear_cache();
     double text_seconds = seconds(text_start);
@@ -289,7 +304,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::vector<ReferenceLatents> references;
     auto image_start = Clock::now();
     if (edit_hit) {
-        references = cached_edit_->reference_latents;
+        references = conditioning_cache_.edit->reference_latents;
         for (size_t i = 0; i < references.size(); ++i)
             dump("qwen21_reference_" + std::to_string(i), references[i].latents);
     } else if (!images.empty()) {
@@ -314,7 +329,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             require(sha256_file(r.inputs[i].path) == image_sha256[i],
                     "Qwen21 reference changed while encoding conditioning");
         }
-        cached_edit_ = CachedEditCondition{r.prompt, r.qwen21_reference_size,
+        conditioning_cache_.edit = ConditioningCache::Edit{r.prompt, r.qwen21_reference_size,
                                           std::move(image_sha256), text, slots, references};
     }
     images.clear(); mx::clear_cache();
@@ -639,6 +654,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             ? "; diagnostic penultimate-step even-layer hybrid FFN reuse"
             : "; experimental penultimate-step even-layer FFN reuse";
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";
+    result.encoder_hybrid=std::move(encoder_metrics);
     if (hybrid_requested) {
         result.backend = "mlx_cpp_metal+coreml";
         result.precision = r.qwen21_w8a8
@@ -695,6 +711,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // Hybrid route descriptions replace the initial GPU description. Keep
     // these GPU-kernel receipts after those replacements, on every route, and
     // do not label base-only requests as using a LoRA approximation.
+    if (!r.encoder_ane_manifest.empty())
+        result.selection += hit ? "; encoder conditioning cache hit (no new ANE call)" :
+            result.encoder_hybrid && result.encoder_hybrid->runtime_calls ?
+            "; explicit shared runtime Qwen3-VL language FFN; vision/attention remain GPU; physical overlap unverified" :
+            "; explicit encoder runtime attempted; no model ANE call; complete GPU language FFN";
     if (lora_fp16 && !r.loras.empty())
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
     if (lora_1024_generation(r))

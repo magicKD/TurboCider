@@ -454,7 +454,7 @@ Request request_from_json(NSDictionary *d) {
                 "encoder_ane_manifest requires allow_approximation=true");
         require(module_for(r.model).describe().supports_encoder_gpu_ane,
                 "encoder_ane_manifest is currently supported for FLUX/Z-Image "
-                "Qwen3, LTX Gemma4, and H3 Qwen3-VL encoders only");
+                "Qwen3, LTX Gemma4, H3/Qwen Image Qwen3-VL encoders only");
     }
     if (r.execution == "gpu_ane") {
         require(!r.ane_manifest.empty(),

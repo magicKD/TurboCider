@@ -77,7 +77,7 @@ static NSString *encoder_backend_label(const Request &request, bool hybrid) {
 }
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
     if (request.model == "qwen-image-2.1")
-        return @"qwen3_vl_deepstack_gpu_only";
+        return hybrid ? @"qwen3_vl_language_runtime_ffn_gpu_complement" : @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
         return hybrid ? @"gemma4_encoder_mlp_complement"
                       : @"gemma4_gpu_only";
@@ -85,6 +85,32 @@ static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
         return hybrid ? @"qwen3_vl_encoder_mlp_complement"
                       : @"qwen3_vl_gpu_only";
     return hybrid ? @"qwen3_encoder_mlp_complement" : @"qwen3_gpu_only";
+}
+static bool encoder_executed(const RunResult &result) {
+    // Keep a cold attempt's failure/decline diagnostics, but never label a
+    // zero-call Qwen encoder or a conditioning cache hit as model ANE work.
+    return result.encoder_hybrid && (result.request.model != "qwen-image-2.1" ||
+                                    result.encoder_hybrid->runtime_calls > 0);
+}
+static NSString *encoder_backend_label(const RunResult &result) {
+    if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
+        !result.encoder_hybrid->runtime_weight_backend.empty())
+        return result.encoder_hybrid->runtime_weight_backend == "private_ane"
+            ? @"mlx_cpp_metal+private_ane_runtime_weight_experimental"
+            : @"mlx_cpp_metal+coreml_runtime_weight";
+    return encoder_backend_label(result.request, encoder_executed(result));
+}
+static NSString *encoder_precision_label(const RunResult &result) {
+    if (!encoder_executed(result)) return @"bf16";
+    const auto &metrics = *result.encoder_hybrid;
+    if (result.request.model == "qwen-image-2.1" &&
+        !metrics.runtime_weight_backend.empty()) {
+        const auto &path = metrics.runtime_weight_data_path;
+        return path == "w8a8_convrot" ? @"bf16_gpu+runtime_convrot_w8a8_ffn_bf16_io" :
+            path == "w8a8_hadamard" ? @"bf16_gpu+runtime_w8a8_ffn_bf16_io" :
+            @"bf16_gpu+runtime_fp16_ffn_bf16_io";
+    }
+    return @(hybrid_precision_label(metrics).c_str());
 }
 static NSString *encoder_weight_validation_label(const Request &request,
                                                   bool hybrid,
@@ -112,6 +138,8 @@ static NSString *encoder_weight_validation_label(const Request &request,
     return @"native Qwen3 checkpoint loaded directly";
 }
 static NSString *encoder_approximation_label(const Request &request) {
+    if (request.model == "qwen-image-2.1")
+        return @"qwen3_vl_language_runtime_ffn_approximation";
     if (ltx_gemma4_encoder(request))
         return @"gemma4_encoder_mlp_coreml_approximation";
     return h3_qwen3_vl_encoder(request)
@@ -837,15 +865,13 @@ static NSDictionary *runtime_plan(const RunResult &result) {
     const bool runtime_unselected = result.request.hybrid_mlp_mode == "runtime" && result.hybrid &&
         result.hybrid->runtime_weight_backend.empty();
     const bool hybrid = result.request.execution == "gpu_ane" && !runtime_unselected;
-    const bool encoder_hybrid = result.encoder_hybrid.has_value();
+    const bool encoder_hybrid = encoder_executed(result);
     plan[@"execution"] = hybrid ? @"gpu_ane_experimental" : @"gpu";
     plan[@"encoder_execution"] = encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    plan[@"encoder_backend"] = encoder_backend_label(
-        result.request, encoder_hybrid);
+    plan[@"encoder_backend"] = encoder_backend_label(result);
     plan[@"encoder_gpu_graph"] =
         encoder_gpu_graph_label(result.request, encoder_hybrid);
-    plan[@"encoder_precision"] = encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
-                                                  : @"bf16";
+    plan[@"encoder_precision"] = encoder_precision_label(result);
     if (result.hybrid && result.request.model != "z-image-turbo-gguf")
         plan[@"precision"] = @((result.precision.empty()
             ? hybrid_precision_label(*result.hybrid) : result.precision).c_str());
@@ -1386,12 +1412,11 @@ NSDictionary *to_dictionary(const RunResult &result) {
         if (result.memory_admission)
             copy[@"plan"] = runtime_plan(result);
         if (result.encoder_hybrid) {
-            copy[@"encoder_execution"] = @"gpu_ane_experimental";
-            copy[@"encoder_runtime_backend"] = encoder_backend_label(
-                result.request, true);
+            copy[@"encoder_execution"] = encoder_executed(result) ? @"gpu_ane_experimental" : @"gpu";
+            copy[@"encoder_runtime_backend"] = encoder_backend_label(result);
             copy[@"encoder_gpu_graph"] =
-                encoder_gpu_graph_label(result.request, true);
-            copy[@"encoder_runtime_precision"] = @(hybrid_precision_label(*result.encoder_hybrid).c_str());
+                encoder_gpu_graph_label(result.request, encoder_executed(result));
+            copy[@"encoder_runtime_precision"] = encoder_precision_label(result);
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
             copy[@"plan"] = runtime_plan(result);
         }
@@ -1419,13 +1444,11 @@ NSDictionary *to_dictionary(const RunResult &result) {
     auto encoder_hybrid = result.encoder_hybrid
                               ? to_dictionary(*result.encoder_hybrid)
                               : @{};
-    auto encoder_execution = result.encoder_quantized_execution ? @"gguf_bounded_gpu_experimental" : result.encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    auto encoder_backend = result.encoder_quantized_execution ? @"mlx_cpp_metal_gguf_bounded" : encoder_backend_label(
-        r, result.encoder_hybrid.has_value());
+    auto encoder_execution = result.encoder_quantized_execution ? @"gguf_bounded_gpu_experimental" : encoder_executed(result) ? @"gpu_ane_experimental" : @"gpu";
+    auto encoder_backend = result.encoder_quantized_execution ? @"mlx_cpp_metal_gguf_bounded" : encoder_backend_label(result);
     auto encoder_gpu_graph =
-        result.encoder_quantized_execution ? @"each-layer-eager-submission" : encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
-    auto encoder_precision = result.encoder_quantized_execution ? @"source_mixed_weights+fp32_residual_rope+bf16_conditioning" : result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
-                                                    : @"bf16";
+        result.encoder_quantized_execution ? @"each-layer-eager-submission" : encoder_gpu_graph_label(r, encoder_executed(result));
+    auto encoder_precision = result.encoder_quantized_execution ? @"source_mixed_weights+fp32_residual_rope+bf16_conditioning" : encoder_precision_label(result);
     if (result.prepared) {
         NSMutableDictionary *prepared = [@{
             @"acceleration_selection" : @(result.selection.c_str()),

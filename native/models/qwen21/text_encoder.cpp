@@ -1,4 +1,6 @@
 #include "text_encoder.hpp"
+#include "../../backends/ane_ffn.hpp"
+#include <chrono>
 #include <cmath>
 
 namespace tc::qwen21 {
@@ -16,9 +18,9 @@ Tensor rotate_half(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
 }
 }
 
-TextEncoder::TextEncoder(const Weights &weights, TextConfig config)
+TextEncoder::TextEncoder(const Weights &weights, TextConfig config,ane::HybridFfn *runtime)
     : weights_(weights), config_(config), language_prefix_(
-          weights.has("model.language_model.embed_tokens.weight") ? "model.language_model." : "model.") {
+          weights.has("model.language_model.embed_tokens.weight") ? "model.language_model." : "model."),runtime_(runtime) {
     require(config.layers > 0 && config.heads > 0 && config.kv_heads > 0 &&
             config.heads % config.kv_heads == 0 && config.head_dim > 0 &&
             config.head_dim % 2 == 0 && config.theta > 0,
@@ -87,6 +89,16 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
     for (int i = 0; i < config_.layers; ++i) {
         checkpoint(cancelled);
         auto p = language_prefix_ + "layers." + std::to_string(i);
+        auto plan=runtime_ ? runtime_->plan_block(i,count) : ane::RowScheduler::Plan{ane::RowScheduler::Mode::Gpu,0};
+        if(plan.measured())mx::eval(hidden);
+        const auto block_start=std::chrono::steady_clock::now();
+        auto source=[&](int layer) {
+            const auto stem=language_prefix_+"layers."+std::to_string(layer)+".mlp.";
+            return std::vector<ane::FfnWeight>{{weights_.at(stem+"gate_proj.weight"),std::nullopt,std::nullopt},
+                {weights_.at(stem+"up_proj.weight"),std::nullopt,std::nullopt},
+                {weights_.at(stem+"down_proj.weight"),std::nullopt,std::nullopt}};
+        };
+        if(plan.split())runtime_->stage_weights(i,count,source(i)); // before attention, same shared stager/banks
         auto input = vl_norm(hidden, weights_.at(p + ".input_layernorm.weight"), config_.epsilon);
         auto q = heads(linear(input, weights_, p + ".self_attn.q_proj"), config_.heads, config_.head_dim);
         auto k = heads(linear(input, weights_, p + ".self_attn.k_proj"), config_.kv_heads, config_.head_dim);
@@ -97,11 +109,30 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
         v = mx::repeat(v, config_.heads / config_.kv_heads, 1);
         hidden = hidden + linear(attend(q, k, v, true, mask), weights_, p + ".self_attn.o_proj");
         input = vl_norm(hidden, weights_.at(p + ".post_attention_layernorm.weight"), config_.epsilon);
-        hidden = hidden + linear(silu(linear(input, weights_, p + ".mlp.gate_proj")) *
-                                  linear(input, weights_, p + ".mlp.up_proj"), weights_, p + ".mlp.down_proj");
+        const auto mlp=p+".mlp";
+        auto gpu=[&](const Tensor &x) {return linear(silu(linear(x,weights_,mlp+".gate_proj"))*
+            linear(x,weights_,mlp+".up_proj"),weights_,mlp+".down_proj");};
+        if(plan.split()) {
+            const int width=weights_.at(mlp+".gate_proj.weight").shape(0),h=input.shape(2);
+            auto channel_gpu=[&](const Tensor &x,int first,int channels) {
+                auto gate=weights_.project_base_slice(x,mlp+".gate_proj",first,first+channels,0,h,false);
+                auto up=weights_.project_base_slice(x,mlp+".up_proj",first,first+channels,0,h,false);
+                auto intermediate=silu(gate)*up;
+                auto down=runtime_->fp32_channel_join() ? weights_.project_base_slice_fp32(intermediate,mlp+".down_proj",0,h,first,first+channels) :
+                    weights_.project_base_slice(intermediate,mlp+".down_proj",0,h,first,first+channels,false);
+                return std::make_pair(down,intermediate);
+            };
+            require(width>0,"Qwen21 encoder FFN width missing");
+            ane::HybridFfn::NextWeights next=[&](int layer) {return layer<config_.layers ? source(layer) : std::vector<ane::FfnWeight>{};};
+            hidden=hidden+runtime_->run(i,input,gpu,cancelled,nullptr,channel_gpu,next);
+        } else hidden=hidden+gpu(input);
         // Visual levels enter consecutive early language layers, not layers
         // 8/16/24. The prompt assembler zeros these deltas outside image spans.
         if (size_t(i) < deepstack_deltas.size()) hidden = hidden + deepstack_deltas[i];
+        if(plan.measured()) {
+            mx::eval(hidden);checkpoint(cancelled);
+            runtime_->observe_block(i,count,std::chrono::duration<double>(std::chrono::steady_clock::now()-block_start).count());
+        }
         if ((i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
         if (event) event("qwen21_text_encode", i + 1, config_.layers);
     }

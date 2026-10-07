@@ -3,6 +3,7 @@
 #include "../../backends/mlx.hpp"
 #include "hybrid.hpp"
 #include "transformer.hpp"
+#include "conditioning_cache.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "../../backends/ane_qkv.hpp"
 
@@ -15,22 +16,12 @@ class Session final : public ModelSession {
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
   private:
-    struct CachedEditCondition {
-        std::string prompt;
-        int reference_size = 0;
-        std::vector<std::string> image_sha256;
-        Tensor text;
-        std::vector<int> image_slots;
-        std::vector<ReferenceLatents> reference_latents;
-    };
     std::filesystem::path root_;
     Weights transformer_, vae_;
     // Diagnostic shallow views of QKV matrices replacing their three source
     // weights in transformer_. Never retained on a route without opt-in.
     std::vector<Tensor> fused_qkv_weights_;
-    std::optional<Tensor> cached_text_;
-    std::string cached_prompt_;
-    std::optional<CachedEditCondition> cached_edit_;
+    ConditioningCache conditioning_cache_;
     // Explicit resident experiment; owns one prefix KV bank at most. The
     // transformer must be destroyed before its referenced weights are cleared.
     std::unique_ptr<Transformer> cached_prefix_transformer_;
