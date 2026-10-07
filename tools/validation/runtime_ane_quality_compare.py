@@ -14,6 +14,7 @@ from runtime_ane_image_compare import compare_png
 
 LAYOUTS = {
     "z-image-turbo": (("z_conditioning", "z_latent_initial"), "z_latent_final"),
+    "z-image-turbo-gguf": (("z_conditioning", "z_latent_initial"), "z_latent_final"),
     "qwen-image-2.1": (("qwen21_text", "qwen21_initial"), "qwen21_latents"),
 }
 
@@ -90,7 +91,7 @@ def compare_generation(reference,candidate,model_id):
         if not measured["exact"]:
             raise ValueError("conditioning/initial state does not match: "+key)
         result["inputs"][key]=measured
-    if model_id=="z-image-turbo":
+    if model_id in ("z-image-turbo","z-image-turbo-gguf"):
         files=[{p.name for p in folder.glob("z_latent_step_*.safetensors")} for folder in (reference,candidate)]
         if not files[0] or files[0]!=files[1]:
             raise ValueError("native Z trajectory dumps incomplete/unmatched")
@@ -108,12 +109,14 @@ def compare_generation(reference,candidate,model_id):
 
 def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data_path="w8a8",channel_auto=True,device_io=True,gpu_control=False,
                    fp16_bf16_values=False,row_placement="suffix"):
-    if runtime_backend not in ("private","public") or data_path not in ("fp16","w8a8"):
+    if runtime_backend not in ("private","public") or data_path not in ("fp16","w8a8","convrot_w8a8"):
         raise ValueError("unsupported quality execution backend/data path")
     if any(type(flag) is not bool for flag in (channel_auto,device_io,gpu_control,fp16_bf16_values)):
         raise ValueError("quality execution policy must be explicit booleans")
-    if (channel_auto and (runtime_backend!="private" or data_path!="w8a8")) or (device_io and runtime_backend!="private" and data_path!="w8a8"):
+    if (channel_auto and (runtime_backend!="private" or data_path!="w8a8")) or (device_io and runtime_backend!="private" and data_path not in ("w8a8","convrot_w8a8")):
         raise ValueError("unsupported quality execution channel/device policy")
+    if data_path=="convrot_w8a8" and model_id!="z-image-turbo":
+        raise ValueError("ConvRot quality route requires explicit Z model, not ordinary GGUF/Qwen")
     if gpu_control and (model_id!="z-image-turbo" or channel_auto or device_io):
         raise ValueError("GPU boundary control requires dense Z and no channel/device offload")
     if fp16_bf16_values and (runtime_backend!="private" or data_path!="fp16" or channel_auto or gpu_control):
@@ -149,6 +152,21 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
         if row["steps"]!=row["actual_denoise_steps"]:
             raise ValueError("native quality requested and actual steps differ")
         validation_rows=rows
+        if data_path=="convrot_w8a8":
+            expected_label="mlx_cpp_metal_convrot_packed_q8" if route=="gpu" else (
+                "mlx_cpp_metal_convrot+coreml_runtime_weight_experimental" if runtime_backend=="public" else
+                "mlx_cpp_metal_convrot+private_ane_runtime_weight_experimental")
+            checkpoint=row.get("checkpoint")
+            if (row.get("runtime_backend")!=expected_label or not isinstance(checkpoint,str) or
+                    not checkpoint.endswith(".safetensors") or "convrot" not in checkpoint.lower() or
+                    (route=="gpu" and row.get("runtime_precision")!="int8_tensorwise_convrot_g256")):
+                raise ValueError("explicit ConvRot execution lacks packed source/actual backend binding")
+            # Only this explicitly validated native source label is mapped
+            # to the shared validator's canonical label; retain originals.
+            canonical="mlx_cpp_metal" if route=="gpu" else (
+                "mlx_cpp_metal+coreml_runtime_weight" if runtime_backend=="public" else
+                "mlx_cpp_metal+private_ane_runtime_weight_experimental")
+            validation_rows=[dict(row,runtime_backend=canonical)]
         if gpu_control:
             expected_backend="mlx_cpp_metal_dense_split_gpu_control" if route=="gpu_control" else "mlx_cpp_metal"
             expected_graph="compiled_split_gpu_ffn_control" if route=="gpu_control" else "compiled_fused_blocks"
@@ -164,7 +182,7 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
             # the shared GPU timing validator. Preserve the actual label below.
             validation_rows=[dict(row,runtime_backend="mlx_cpp_metal")]
         validate_results(validation_rows,"gpu" if route=="gpu_control" else route,1,model_id=model_id,runtime_backend=runtime_backend,expect_device_io=route=="runtime" and device_io,
-            expected_data_path=("w8a8_hadamard" if data_path=="w8a8" else "fp16") if route=="runtime" else None,
+            expected_data_path={"w8a8":"w8a8_hadamard","convrot_w8a8":"w8a8_convrot","fp16":"fp16"}[data_path] if route=="runtime" else None,
             channel_auto=route=="runtime" and channel_auto)
         if route=="runtime":
             validate_row_placement(rows,row_placement)
@@ -174,10 +192,11 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
         if sha256_file(path)!=digest:raise ValueError("quality execution receipt changed")
         records.append(dict(receipt_sha256=digest,binary_sha256=raw.get("binary_sha256"),
             adjacent_library_sha256=library,artifacts_unchanged=raw.get("artifacts_unchanged"),
-            runtime_backend=row["runtime_backend"],gpu_graph=row.get("gpu_graph"),hybrid=row.get("hybrid"),model=row["model"],
+            runtime_backend=row["runtime_backend"],runtime_precision=row.get("runtime_precision"),checkpoint=row.get("checkpoint"),
+            gpu_graph=row.get("gpu_graph"),hybrid=row.get("hybrid"),model=row["model"],
             width=row["width"],height=row["height"],seed=row["seed"],steps=row["steps"],actual_denoise_steps=row["actual_denoise_steps"],
             lora_strategy=row.get("lora_strategy"),lora_applied_projections=row.get("lora_applied_projections")))
-    for key in ("binary_sha256","adjacent_library_sha256","model","width","height","seed","steps","actual_denoise_steps","lora_strategy","lora_applied_projections"):
+    for key in ("binary_sha256","adjacent_library_sha256","model","checkpoint","width","height","seed","steps","actual_denoise_steps","lora_strategy","lora_applied_projections"):
         if records[0][key]!=records[1][key]:raise ValueError("unmatched quality execution field: "+key)
     candidate_hybrid=records[1]["hybrid"] or {}
     executor=(candidate_hybrid.get("runtime_weight") or {}).get("executor_backend")
@@ -203,7 +222,7 @@ def main():
     parser.add_argument("--reference-receipt",type=Path)
     parser.add_argument("--candidate-receipt",type=Path)
     parser.add_argument("--runtime-backend",choices=("private","public"),default="private")
-    parser.add_argument("--runtime-data-path",choices=("fp16","w8a8"),default="w8a8")
+    parser.add_argument("--runtime-data-path",choices=("fp16","w8a8","convrot_w8a8"),default="w8a8")
     parser.add_argument("--channel-auto",choices=("0","1"),default="1")
     parser.add_argument("--device-io",choices=("0","1"),default="1")
     parser.add_argument("--gpu-only-control",action="store_true",
@@ -223,7 +242,7 @@ def main():
         result["execution"]=bind_execution(args.reference_receipt,args.candidate_receipt,args.model_id,
             runtime_backend=args.runtime_backend,data_path=args.runtime_data_path,channel_auto=args.channel_auto=="1",device_io=args.device_io=="1",
             gpu_control=args.gpu_only_control,fp16_bf16_values=args.fp16_bf16_values,row_placement=args.row_placement)
-        if args.model_id=="z-image-turbo" and len(result["trajectory"])!=result["execution"]["reference"]["actual_denoise_steps"]:
+        if args.model_id in ("z-image-turbo","z-image-turbo-gguf") and len(result["trajectory"])!=result["execution"]["reference"]["actual_denoise_steps"]:
             raise ValueError("native Z dumps do not cover all executed steps")
         result["n1_with_actual_ane"]=result["n1_final_latent_pass"] and result["execution"]["candidate_ane_executed"]
         result["n1_with_actual_coreml"]=result["n1_final_latent_pass"] and result["execution"]["candidate_coreml_executed"]

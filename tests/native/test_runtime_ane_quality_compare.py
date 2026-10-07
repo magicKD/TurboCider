@@ -23,6 +23,55 @@ def write(path,values,dtype="F32"):
 
 
 class QualityTests(unittest.TestCase):
+    def test_public_convrot_binding_preserves_specialized_labels_and_checkpoint(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gpu,candidate=Path(folder)/"gpu.json",Path(folder)/"candidate.json"
+            common=dict(model="z-image-turbo",checkpoint="z_image_turbo_int8_convrot.safetensors",width=512,height=512,
+                seed=42,steps=8,actual_denoise_steps=8,lora_strategy="none",lora_applied_projections=0,
+                timings_seconds=dict(request_wall=1.,denoise=.8))
+            baseline=dict(**common,runtime_backend="mlx_cpp_metal_convrot_packed_q8",runtime_precision="int8_tensorwise_convrot_g256")
+            runtime=dict(executor_backend="public_coreml",data_path="w8a8_convrot",partition_axis="rows",io_path="gpu_iosurface",
+                source_recipe="comfy-h256-direct-q8-source-round-a8-rne-norm-f16-v1+public-int8-io-v1",
+                device_io_calls_session_total=1,fallback_blocks_session_total=0,failure_reason="")
+            row=dict(**common,runtime_backend="mlx_cpp_metal_convrot+coreml_runtime_weight_experimental",
+                hybrid=dict(runtime_failed=False,runtime_failures_session_total=0,runtime_calls_session_total=1,runtime_weight=runtime))
+            def store(path,value):
+                path.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                    artifacts_unchanged=True,stdout=json.dumps(value))))
+            store(gpu,baseline);store(candidate,row)
+            policy=dict(runtime_backend="public",data_path="convrot_w8a8",channel_auto=False,device_io=True)
+            result=bind_execution(gpu,candidate,"z-image-turbo",**policy)
+            self.assertTrue(result["candidate_coreml_executed"])
+            self.assertEqual(result["reference"]["runtime_backend"],baseline["runtime_backend"])
+            for change in (dict(checkpoint="other_convrot.safetensors"),dict(runtime_backend="mlx_cpp_metal+coreml_runtime_weight")):
+                bad=dict(row,**change);store(candidate,bad)
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo",**policy)
+            store(candidate,row)
+            for path in ("fp16","w8a8"):
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo",**dict(policy,data_path=path))
+            with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo-gguf",**policy)
+            with self.assertRaises(ValueError):bind_execution(gpu,candidate,"qwen-image-2.1",**policy)
+            # A regular dense/GGUF receipt cannot acquire ConvRot identity
+            # merely by requesting the specialized comparison route.
+            store(gpu,dict(baseline,runtime_backend="mlx_cpp_metal"))
+            with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo",**policy)
+            store(gpu,baseline)
+            bad=dict(row,hybrid=dict(row["hybrid"],runtime_weight=dict(runtime,data_path="w8a8_hadamard")))
+            store(candidate,bad)
+            with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo",**policy)
+
+    def test_gguf_has_explicit_identity_and_same_complete_z_trajectory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            a,b=Path(folder)/"gpu",Path(folder)/"candidate";a.mkdir();b.mkdir()
+            for name in ("z_conditioning","z_latent_initial","z_latent_final","z_latent_step_1"):
+                for root in (a,b):write(root/(name+".safetensors"),[1.,2.,3.])
+            report=compare_generation(a,b,"z-image-turbo-gguf")
+            self.assertEqual(report["model"],"z-image-turbo-gguf")
+            self.assertEqual(len(report["trajectory"]),1)
+            self.assertFalse(report["qualification_passed"])
+            write(a/"z_latent_step_2.safetensors",[1.,2.,3.])
+            with self.assertRaises(ValueError):compare_generation(a,b,"z-image-turbo-gguf")
+
     def test_public_w8_gpu_io_requires_actual_recipe_and_is_not_private_ane(self):
         with tempfile.TemporaryDirectory() as folder:
             gpu,candidate=Path(folder)/"gpu.json",Path(folder)/"candidate.json"

@@ -225,7 +225,7 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
         raise ValueError("wrong result count")
     if runtime_backend not in ("public", "private", "auto"):
         raise ValueError("unknown runtime executor backend")
-    if expected_data_path not in (None, "fp16", "w8a8_hadamard"):
+    if expected_data_path not in (None, "fp16", "w8a8_hadamard", "w8a8_convrot"):
         raise ValueError("unknown runtime data path")
     base_backend = {"z-image-turbo": "mlx_cpp_metal",
                     "qwen-image-2.1": "mlx_cpp_metal",
