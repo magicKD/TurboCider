@@ -13,6 +13,8 @@ from pathlib import Path
 import statistics
 import subprocess
 
+from runtime_ane_gguf import gguf_screen_environment, validate_gguf_screen
+
 # Re-export shared contracts for existing local analysis scripts. New tools
 # should import runtime_ane_common directly, not this runner entry point.
 from runtime_ane_common import (
@@ -105,7 +107,15 @@ def main():
     p.add_argument("--private-channels", type=channel_policy, default=0,
                    help="0: rows; positive aligned width: fixed channels; auto: native calibrated candidate with raw evidence")
     p.add_argument("--private-prefetch", choices=("0","1"), default="0",
-                   help="private W8 future-bank staging ablation; source-matched activation/reuse fences remain checked")
+                   help="W8 future-bank staging ablation; source-matched activation/reuse fences remain checked")
+    p.add_argument("--prefetch-after-gpu",choices=("0","1"),default=None,
+                   help="explicit W8 next-weight producer placement; actual receipt required")
+    p.add_argument("--gguf-import",choices=("mlx","cpu_direct"),default="mlx")
+    p.add_argument("--gguf-ane-source",choices=("affine","raw"),default="affine")
+    p.add_argument("--gguf-retain-packed",action="store_true",
+                   help="experimental resident packed retention on BOTH GPU/runtime routes; not a RAM cap")
+    p.add_argument("--gguf-allocator-cache-bytes",type=int,default=0,
+                   help="explicit 0...1GiB compute-cache hint on BOTH CPU-direct routes; not retained bins or a RAM cap")
     p.add_argument("--private-scale-cache",choices=("0","1"),default="1",
                    help="private W8 compact immutable-generation row-scale cache ablation")
     p.add_argument("--private-launch-fence",choices=("0","1"),default="0",
@@ -123,7 +133,7 @@ def main():
     p.add_argument("--fp32-channel-join",action="store_true",
                    help="Private W8 F32 GPU partial restore/join; original BF16 hidden and ONE down-LoRA retained")
     p.add_argument("--z-runtime-gpu-blocks",type=gpu_layer_policy,
-                   help="explicit complete GPU blocks by FFN ordinal; Z BF16 runtime route only, never applied to GPU/frozen")
+                   help="explicit complete GPU blocks by FFN ordinal; Z BF16/GGUF runtime only, never applied to GPU/frozen")
     p.add_argument("--qkv-manifest", type=Path,
                    help="Qwen base-only Q/K/V MatMul runtime graph; separate from FFN runtime")
     p.add_argument("--frozen-manifest", type=Path)
@@ -172,6 +182,9 @@ def main():
     if not routes or any(route not in ("gpu", "runtime", "qkv", "frozen") for route in routes):
         p.error("routes must be comma-separated gpu,runtime,qkv,frozen")
     try:
+        gguf_environment=gguf_screen_environment(args.model_id,routes,args.gguf_import,args.gguf_ane_source,args.gguf_retain_packed,args.gguf_allocator_cache_bytes)
+    except ValueError as error:p.error(str(error))
+    try:
         z_gpu_layer_environment(args.model_id,"runtime",args.z_runtime_gpu_blocks,routes)
     except ValueError as error:
         p.error(str(error))
@@ -189,9 +202,13 @@ def main():
         p.error("GPU I/O requires runtime and an explicitly authorized Private/Auto or Public W8 route")
     if args.private_data_path == "w8a8" and (args.runtime_backend not in ("private","public") or not args.private_gpu_io):
         p.error("W8A8 requires explicit Public/Private backend and --runtime-gpu-io")
-    if public_w8 and (args.private_channels or args.private_prefetch!="0" or args.private_scale_cache!="1" or
+    if public_w8 and (args.private_channels or args.private_scale_cache!="1" or
             args.private_launch_fence!="1" or args.private_a8_lookahead!="0" or args.private_stage_specialize!="1"):
-        p.error("Public W8 requires its row ABI: channels0/prefetch0/cache1/fence1/lookahead0/specialize1")
+        p.error("Public W8 requires its row ABI: channels0/cache1/fence1/lookahead0/specialize1")
+    if args.prefetch_after_gpu is not None and ("runtime" not in routes or args.private_data_path!="w8a8" or args.private_prefetch!="1"):
+        p.error("prefetch placement requires an active W8 prefetch runtime route")
+    if args.gguf_ane_source=="raw" and "runtime" in routes and args.private_data_path!="w8a8":
+        p.error("raw GGUF screen requires explicit W8 runtime representation")
     full_width = 12288 if args.model_id == "qwen-image-2.1" else 10240
     native_auto = args.private_channels == "auto"
     if (native_auto and (args.runtime_backend != "private" or args.private_data_path != "w8a8" or
@@ -226,8 +243,8 @@ def main():
         p.error("need a nonempty prompt and seed in 0...2147483647")
     if not math.isfinite(args.lora_strength) or not -8 <= args.lora_strength <= 8:
         p.error("LoRA strength must be finite and in [-8,8]")
-    if args.lora and (not args.lora.is_file() or args.model_id == "z-image-turbo-gguf"):
-        p.error("runtime LoRA requires an existing adapter and a supported BF16 model")
+    if args.lora and (not args.lora.is_file() or (args.model_id=="z-image-turbo-gguf" and args.gguf_import!="cpu_direct")):
+        p.error("runtime LoRA requires an existing adapter and BF16 or explicit CPU-direct GGUF")
     if args.qwen_lora_fp16 and (args.model_id != "qwen-image-2.1" or not args.lora or
                                args.size != 512 or args.steps != 6):
         p.error("--qwen-lora-fp16 requires Qwen LoRA, 512px output and 6 steps")
@@ -250,6 +267,10 @@ def main():
                "private_data_path": args.private_data_path,
                "private_channels": args.private_channels,
                "private_prefetch": args.private_prefetch,
+               "prefetch_after_gpu":args.prefetch_after_gpu,
+               "gguf_import":args.gguf_import,"gguf_ane_source":args.gguf_ane_source,
+               "gguf_retain_packed":args.gguf_retain_packed,
+               "gguf_allocator_cache_bytes":args.gguf_allocator_cache_bytes,
                "private_scale_cache": args.private_scale_cache,
                "private_launch_fence": args.private_launch_fence,
                "private_a8_lookahead": args.private_a8_lookahead,
@@ -279,6 +300,7 @@ def main():
         if args.model_id == "qwen-image-2.1":
             summary["lora"]["rank_matmul_dtype"] = "fp16" if args.qwen_lora_fp16 else "fp32"
     env = benchmark_environment()
+    env.update(gguf_environment)
     env.update(qk_environment)
     env.update(lora_1024_environment)
     if args.qwen_lora_1024:
@@ -331,8 +353,9 @@ def main():
             if args.defer_channel_join is not None:
                 route_env["TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN"] = args.defer_channel_join
             route_env["TURBOCIDER_ANE_BACKEND"] = args.runtime_backend
-            if args.runtime_backend != "public":
-                route_env["TURBOCIDER_ALLOW_PRIVATE_ANE"] = "1"
+            if args.runtime_backend != "public" or public_w8:
+                if args.runtime_backend != "public":
+                    route_env["TURBOCIDER_ALLOW_PRIVATE_ANE"] = "1"
                 route_env["TURBOCIDER_PRIVATE_ANE_DATA_PATH"] = args.private_data_path
                 route_env["TURBOCIDER_PRIVATE_ANE_CHANNELS"] = str(args.private_channels)
                 route_env["TURBOCIDER_PRIVATE_ANE_PREFETCH"] = args.private_prefetch
@@ -342,6 +365,8 @@ def main():
                 route_env["TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE"] = args.private_stage_specialize
                 if args.private_lora_channel_range is not None:
                     route_env["TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE"] = args.private_lora_channel_range
+            if args.prefetch_after_gpu is not None:
+                route_env["TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU"]=args.prefetch_after_gpu
             if args.private_gpu_io:
                 route_env["TURBOCIDER_PRIVATE_ANE_GPU_IO"] = "1"
             if args.profile:
@@ -371,7 +396,13 @@ def main():
         check_references(edit, references)
         load_receipt = observed_load.verify() if observed_load else None
         rows = [json.loads(line) for line in (args.output / f"{trial}-{route}.stdout.jsonl").read_text().splitlines()]
-        validate_results(rows, route, len(requests), args.model_id, bool(args.lora), args.runtime_backend, args.private_gpu_io,
+        validation_rows=rows
+        if args.gguf_import=="cpu_direct":
+            validation_rows,source_identity=validate_gguf_screen(rows,route,args.gguf_ane_source,args.gguf_retain_packed,args.gguf_allocator_cache_bytes)
+            if summary.get("gguf_source_identity",source_identity)!=source_identity:
+                raise ValueError("GGUF source/import differs across matched routes")
+            summary["gguf_source_identity"]=source_identity
+        validate_results(validation_rows, route, len(requests), args.model_id, bool(args.lora), args.runtime_backend, args.private_gpu_io,
                          "w8a8_hadamard" if args.private_data_path == "w8a8" else None,
                          channel_auto=native_auto and route=="runtime")
         active_runtime_rows = [row for row in rows if not native_auto or
@@ -396,6 +427,8 @@ def main():
                 receipt=row["hybrid"]["runtime_weight"]
                 if receipt.get("prefetch_enabled") is not (args.private_prefetch=="1"):
                     raise ValueError("requested W8 future-bank prefetch policy was not reported")
+                if args.prefetch_after_gpu is not None and receipt.get("prefetch_after_gpu") is not (args.prefetch_after_gpu=="1"):
+                    raise ValueError("requested W8 producer placement was not reported")
                 if receipt.get("scale_cache_enabled") is not (args.private_scale_cache=="1"):
                     raise ValueError("requested W8 scale-cache policy was not reported")
                 if receipt.get("launch_fence_enabled") is not (args.private_launch_fence=="1"):

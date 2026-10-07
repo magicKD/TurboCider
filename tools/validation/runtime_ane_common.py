@@ -143,8 +143,8 @@ def z_gpu_layer_environment(model_id, route, layers, routes):
     if (not isinstance(layers,tuple) or not layers or len(layers)>32 or
             any(type(x) is not int or not 0<=x<32 for x in layers) or layers!=tuple(sorted(set(layers)))):
         raise ValueError("invalid canonical Z runtime GPU layer policy")
-    if model_id!="z-image-turbo" or "runtime" not in routes:
-        raise ValueError("explicit GPU block screen currently requires Z-Image BF16 and a runtime route")
+    if model_id not in ("z-image-turbo","z-image-turbo-gguf") or "runtime" not in routes:
+        raise ValueError("explicit GPU block screen requires Z-Image BF16/GGUF and a runtime route")
     if route!="runtime":
         return {}
     return {"TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS":",".join(map(str,layers))}

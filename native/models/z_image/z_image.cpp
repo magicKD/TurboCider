@@ -2896,7 +2896,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                 "qe_config_conflict: GPU FP16 compute requires CPU-direct and compiled packed opt-ins");
     }
     if (std::getenv("TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES")) {
-        require(gguf_direct_import_ && gguf_gpu_f16_,"qe_config_conflict: GGUF cache experiment requires explicit CPU-direct FP16 compute");
+        require(gguf_direct_import_,"qe_config_conflict: GGUF cache experiment requires explicit CPU-direct import");
         gguf_allocator_cache_bytes_=z_qwen3_gguf_integer("TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES",0,1ull<<30);
     }
     if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS")) {
