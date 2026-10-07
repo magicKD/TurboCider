@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Matched fresh-condition Qwen requests: GPU / local / retained encoder.
+
+Serial, explicit local fixtures only. Keep every prompt, PNG and observation;
+hot requests must miss the conditioning cache. Never infer visual acceptance,
+physical overlap, or production qualification from these timings.
+"""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import statistics
+
+from runtime_ane_common import benchmark_environment, sha256_file
+from runtime_ane_load import LoadObservation
+from runtime_ane_memory import run_owned, run_sampled
+
+ROOT=Path(__file__).resolve().parents[2]
+MODES=("gpu","encoder_local","encoder_retained")
+
+
+def model_snapshot(model):
+    """Bound the local file generation/layout, not a full payload signature."""
+    result={}
+    for name in ("diffusion_models/qwen_image_2.1_bf16.safetensors",
+                 "text_encoders/qwen3vl_8b_bf16.safetensors","vae/qwen_image_2.1_vae_bf16.safetensors"):
+        path=model/name;before=path.stat()
+        with path.open("rb") as stream:
+            prefix=stream.read(8);length=int.from_bytes(prefix,"little")
+            if len(prefix)!=8 or not 2<=length<=16<<20:raise ValueError("unbounded/invalid model header")
+            header=stream.read(length)
+            if len(header)!=length:raise ValueError("truncated model header")
+        after=path.stat()
+        fields=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+        if fields(before)!=fields(after):raise ValueError("model generation changed while observing header")
+        result[name]=dict(device=after.st_dev,inode=after.st_ino,bytes=after.st_size,
+            mtime_ns=after.st_mtime_ns,ctime_ns=after.st_ctime_ns,header_sha256=hashlib.sha256(header).hexdigest())
+    return result
+
+
+def make_request(prompt, image_paths, output, manifest=None, lora=None):
+    request=dict(model="qwen-image-2.1",operation="image.edit",prompt=prompt,
+        width=512,height=512,steps=6 if lora else 40,seed=29,audio=False,
+        residency="resident",execution="gpu",allow_approximation=True,qwen21_reference_size=512,
+        inputs=[dict(kind="image",role="reference",path=str(path)) for path in image_paths],output=str(output))
+    if manifest:request["encoder_ane_manifest"]=str(manifest)
+    if lora:request.update(lora_strategy="inference_time",loras=[dict(path=str(lora),role="transformer",strength=1.0)])
+    return request
+
+
+def validate_rows(rows, mode, count, private, channels=None):
+    if len(rows)!=count:raise ValueError("missing request receipts")
+    cumulative=0
+    for index,row in enumerate(rows):
+        if row.get("prompt_cache_hit") is not False or row.get("runtime_backend")!="mlx_cpp_metal":
+            raise ValueError("need fresh conditioning and unchanged GPU DiT on every request")
+        if row.get("actual_denoise_steps")!=row.get("steps"):
+            raise ValueError("requested/actual denoise steps mismatch")
+        for field in ("request_wall","text_encode","denoise"):
+            value=(row.get("timings_seconds") or {}).get(field)
+            if type(value) not in (float,int) or not math.isfinite(value) or value<=0:
+                raise ValueError("missing/nonfinite/nonpositive request timing")
+        evidence=row.get("encoder_runtime_reuse")
+        metrics=row.get("encoder_hybrid") or {}
+        if mode=="gpu":
+            if evidence is not None or metrics or row.get("encoder_execution")!="gpu":
+                raise ValueError("GPU baseline unexpectedly used encoder executor")
+            continue
+        retained=mode=="encoder_retained"
+        if not isinstance(evidence,dict) or evidence.get("enabled")!=retained:
+            raise ValueError("retention policy receipt missing/mismatched")
+        if evidence.get("executor_retained")!=retained or evidence.get("executor_reused")!=(retained and index>0):
+            raise ValueError("executor did not follow the requested lifecycle")
+        calls=evidence.get("actual_calls_this_request")
+        if type(calls) is not int or calls<=0 or metrics.get("runtime_failed") is not False:
+            raise ValueError("missing actual successful encoder work")
+        total=metrics.get("runtime_calls_session_total")
+        if total!=(cumulative+calls if retained else calls):
+            raise ValueError("encoder request/cumulative counters disagree")
+        cumulative=total if retained else 0
+        if metrics.get("session_released_after_encoding")!=(not retained):
+            raise ValueError("encoder release receipt mismatch")
+        runtime=metrics.get("runtime_weight") or {}
+        if runtime.get("executor_backend")!=("private_ane" if private else "public_coreml") or runtime.get("fallback_blocks_session_total")!=0:
+            raise ValueError("unexpected encoder executor/fallback")
+        if private and (runtime.get("data_path")!="w8a8_hadamard" or runtime.get("partition_axis")!="intermediate_channels" or
+            (channels is not None and runtime.get("ane_channels")!=channels)):
+            raise ValueError("Private encoder representation/partition mismatch")
+        if retained and not 0<evidence.get("retained_estimated_bytes",0)<=1<<30:
+            raise ValueError("retained executor estimate exceeds its bound")
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cli",type=Path,required=True)
+    parser.add_argument("--model",type=Path,required=True)
+    parser.add_argument("--manifest",type=Path,required=True)
+    parser.add_argument("--reference",type=Path,action="append",required=True)
+    parser.add_argument("--prompt",action="append",required=True)
+    parser.add_argument("--lora",type=Path)
+    parser.add_argument("--backend",choices=("private","public"),default="private")
+    parser.add_argument("--channels",type=int,default=3072)
+    parser.add_argument("--order",default=",".join(MODES))
+    parser.add_argument("--sample-memory",action="store_true")
+    parser.add_argument("--observe-load",action="store_true")
+    parser.add_argument("--output",type=Path,required=True)
+    parser.add_argument("--timeout",type=int,default=900)
+    args=parser.parse_args()
+    order=args.order.split(",")
+    if len(order)!=3 or set(order)!=set(MODES):parser.error("order must include each of the three matched modes once")
+    if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
+        parser.error("need 1..2 references and 3..9 distinct fresh prompts")
+    if any(not prompt.strip() for prompt in args.prompt):parser.error("empty prompt")
+    if not 1<=args.timeout<=3600:parser.error("timeout must be 1..3600 seconds per serial mode")
+    if args.backend=="private" and not (0<args.channels<12288 and args.channels%512==0):parser.error("Private channels require aligned partial width")
+    if args.backend=="public" and args.channels!=0:parser.error("Public uses its row ABI, channels=0")
+    if args.output.exists() or args.output.is_symlink():parser.error("choose a new output directory")
+    cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
+    if not library.is_file() or not os.access(cli,os.X_OK):parser.error("CLI and adjacent native library required")
+    model=args.model.resolve(strict=True);manifest=args.manifest.resolve(strict=True)
+    references=[p.resolve(strict=True) for p in args.reference]
+    lora=args.lora.resolve(strict=True) if args.lora else None
+    before={str(path):sha256_file(path) for path in [cli,library,manifest,*references,*([lora] if lora else [])]}
+    model_before=model_snapshot(model)
+    args.output.mkdir(parents=True)
+    summary=dict(schema="tc-qwen-encoder-residency-screen-v1",time_utc=datetime.now(timezone.utc).isoformat(),
+        status="incomplete",qualification_passed=False,order=order,prompts=args.prompt,source_identities=before,
+        model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
+        backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
+    target=args.output/"summary.json"
+    target.write_text(json.dumps(summary,indent=2)+"\n")
+    for mode in order:
+        if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
+        env=benchmark_environment()
+        if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
+        if mode!="gpu":
+            env.update(TURBOCIDER_ANE_BACKEND=args.backend,TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
+                TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME="1" if mode=="encoder_retained" else "0")
+            if args.backend=="private":env.update(TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",
+                TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.channels),
+                TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE="1",TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE="1",
+                TURBOCIDER_PRIVATE_ANE_PREFETCH="0",TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD="0",
+                TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN="1")
+        requests=[]
+        for index,prompt in enumerate(args.prompt):
+            path=args.output/f"{mode}-{index}.json"
+            path.write_text(json.dumps(make_request(prompt,references,(args.output/f"{mode}-{index}.png").resolve(),
+                manifest if mode!="gpu" else None,lora),indent=2)+"\n")
+            requests.append(str(path.resolve()))
+        command=[str(cli),"batch",str(model),*requests]
+        observer=LoadObservation(args.output/f"{mode}-load.jsonl") if args.observe_load else None
+        print(json.dumps(dict(starting=mode)),flush=True)
+        with (args.output/f"{mode}.stdout.jsonl").open("x") as stdout,(args.output/f"{mode}.stderr.txt").open("x") as stderr:
+            memory=run_sampled(command,repo=ROOT,output=args.output,stem=mode,env=env,stdout=stdout,stderr=stderr,
+                timeout=args.timeout,interval_ms=100,max_gap_ms=500,observer=observer) if args.sample_memory else None
+            if not args.sample_memory:
+                result=run_owned(command,cwd=ROOT,env=env,stdout=stdout,stderr=stderr,timeout=args.timeout,observer=observer)
+                if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
+        load=observer.verify() if observer else None
+        rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
+        validate_rows(rows,mode,len(args.prompt),args.backend=="private",args.channels)
+        if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
+        if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
+        times=[row["timings_seconds"]["request_wall"] for row in rows]
+        trial=dict(mode=mode,cold_request_seconds=times[0],warm_fresh_request_seconds=times[1:],
+            warm_fresh_median_seconds=statistics.median(times[1:]),text_seconds=[row["timings_seconds"]["text_encode"] for row in rows],
+            memory=memory,load=load,png_sha256=[sha256_file(args.output/f"{mode}-{i}.png") for i in range(len(rows))])
+        summary["trials"].append(trial);target.write_text(json.dumps(summary,indent=2)+"\n")
+    summary["status"]="complete_diagnostic";target.write_text(json.dumps(summary,indent=2)+"\n")
+    print(json.dumps(summary,indent=2))
+
+
+if __name__=="__main__":main()

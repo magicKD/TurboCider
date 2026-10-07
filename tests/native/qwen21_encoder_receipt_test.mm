@@ -35,6 +35,24 @@ int main() {
             data=tc::to_dictionary(result);
             tc::require([data[@"encoder_execution"] isEqual:@"gpu"] &&
                 [data[@"encoder_hybrid"] count]==0,"cache hit replayed encoder execution");
+            // A reused graph's historical counters are not this request's
+            // execution. Exercise both zero-call decline and real execution.
+            result.prompt_cache_hit=false;result.encoder_hybrid=metrics;
+            result.encoder_hybrid->runtime_calls=72;
+            result.encoder_runtime_reuse=tc::EncoderRuntimeReuseMetrics{true,true,true,0,123456};
+            data=tc::to_dictionary(result);
+            tc::require([data[@"encoder_execution"] isEqual:@"gpu"] &&
+                [data[@"plan"][@"encoder_execution"] isEqual:@"gpu"] &&
+                [data[@"encoder_runtime_reuse"][@"actual_calls_this_request"] intValue]==0 &&
+                [data[@"encoder_hybrid"][@"runtime_calls_session_total"] intValue]==72,
+                "cumulative encoder calls masqueraded as new execution");
+            result.encoder_runtime_reuse->calls_this_request=36;
+            data=tc::to_dictionary(result);
+            tc::require([data[@"encoder_execution"] isEqual:@"gpu_ane_experimental"] &&
+                [data[@"encoder_runtime_reuse"][@"executor_reused"] boolValue] &&
+                [data[@"encoder_runtime_reuse"][@"executor_retained"] boolValue] &&
+                [data[@"encoder_runtime_reuse"][@"retained_estimated_bytes"] intValue]==123456,
+                "retained executor request evidence lost");
         }
         std::cout << "PASS Qwen encoder receipts: actual calls, Private/Public, W8/FP16, release, cache hits\n";
     }

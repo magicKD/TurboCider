@@ -90,7 +90,15 @@ static bool encoder_executed(const RunResult &result) {
     // Keep a cold attempt's failure/decline diagnostics, but never label a
     // zero-call Qwen encoder or a conditioning cache hit as model ANE work.
     return result.encoder_hybrid && (result.request.model != "qwen-image-2.1" ||
-                                    result.encoder_hybrid->runtime_calls > 0);
+        (result.encoder_runtime_reuse ? result.encoder_runtime_reuse->calls_this_request :
+                                      result.encoder_hybrid->runtime_calls) > 0);
+}
+static id encoder_reuse_dictionary(const RunResult &result) {
+    if(!result.encoder_runtime_reuse)return NSNull.null;
+    const auto &m=*result.encoder_runtime_reuse;
+    return @{@"enabled":@(m.enabled),@"executor_reused":@(m.reused),@"executor_retained":@(m.retained),
+        @"actual_calls_this_request":@(m.calls_this_request),@"retained_estimated_bytes":@(m.retained_estimated_bytes),
+        @"weight_residency":@"request_local",@"scope":@"request-local execution evidence; HybridMetrics remain cumulative; estimate is not a RAM cap"};
 }
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
@@ -1418,6 +1426,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
                 encoder_gpu_graph_label(result.request, encoder_executed(result));
             copy[@"encoder_runtime_precision"] = encoder_precision_label(result);
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
+            copy[@"encoder_runtime_reuse"] = encoder_reuse_dictionary(result);
             copy[@"plan"] = runtime_plan(result);
         }
         if (result.streaming_runtime) {
@@ -1477,6 +1486,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"qkv" : qkv,
             @"encoder_hybrid" : encoder_hybrid
         } mutableCopy];
+        prepared[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
         if (result.memory_admission)
             prepared[@"memory_admission"] =
                 to_dictionary(*result.memory_admission);
@@ -1538,6 +1548,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
+    value[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
     if (result.gguf_import) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{

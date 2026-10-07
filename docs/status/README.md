@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+有界encoder executor复用、取消时staging/source drain与不同prompt配对见
+[复用与512²复测](local512-encoder-retention-2026-10-07.md)。复用少量改善
+但encoder仍慢于GPU；Z512同库双向diagnostic约1.23×，strict窗口仍被
+竞争CPU负载拒绝，不升级默认或声明全部目标完成。
+
 512² 本地模型优先的 encoder 接续见
 [Qwen 语言 FFN 与 1–2 参考图/真实 LoRA](local512-qwen-encoder-2026-10-07.md)。
 Private/Public 共用执行器已接入语言 FFN；cache/实际调用标签和真实

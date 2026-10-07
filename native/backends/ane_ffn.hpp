@@ -38,6 +38,20 @@ struct FfnWeight {
 // No adapter or model weights are embedded in the Core ML graph.
 class HybridFfn {
   public:
+    // Declare AFTER the borrowed source owners. A retained executor can
+    // outlive those owners, including when attention throws after staging.
+    // finish() drains and disarms on success; unwinding preserves the primary
+    // exception while still waiting for all submitted source readers.
+    class SourceScope {
+      public:
+        explicit SourceScope(HybridFfn *runtime) : runtime_(runtime) {}
+        SourceScope(const SourceScope &) = delete;
+        SourceScope &operator=(const SourceScope &) = delete;
+        ~SourceScope() noexcept { if(runtime_)try { runtime_->drain(); } catch(...) {} }
+        void finish() { if(runtime_)runtime_->drain();runtime_=nullptr; }
+      private:
+        HybridFfn *runtime_;
+    };
     using Gpu = std::function<Tensor(const Tensor &)>;
     // Base-down partial and corrected hidden for a logical channel range.
     // Explicit fp32_channel_join() uses an F32 base partial; hidden retains

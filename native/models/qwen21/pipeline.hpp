@@ -22,6 +22,10 @@ class Session final : public ModelSession {
     // weights in transformer_. Never retained on a route without opt-in.
     std::vector<Tensor> fused_qkv_weights_;
     ConditioningCache conditioning_cache_;
+    // Optional one-entry executor only; never retains the complete encoder
+    // weights. Drain before request-owned text sources die or identity changes.
+    std::unique_ptr<ane::HybridFfn> encoder_runtime_;
+    std::string encoder_runtime_identity_;
     // Explicit resident experiment; owns one prefix KV bank at most. The
     // transformer must be destroyed before its referenced weights are cleared.
     std::unique_ptr<Transformer> cached_prefix_transformer_;

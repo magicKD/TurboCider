@@ -51,5 +51,29 @@ int main(int argc,char **argv) {
                 "Qwen encoder shared runtime/causal/deepstack fixture failed");
             std::cout<<"PASS encoder rows="<<rows<<" visual="<<visual<<" relL2="<<error<<" calls="<<runtime.metrics().runtime_calls<<'\n';
         }
+        ane::HybridFfn retained(argv[1],128,512,128ull<<20,cancelled);
+        for(int visit=0;visit<8;++visit) {
+            retained.begin_request();
+            try {
+                auto ephemeral=mx::astype(mx::random::normal({512,128},mx::float32,mx::random::key(visit+700))*.01f,mx::bfloat16);
+                auto down=mx::contiguous(mx::transpose(ephemeral));mx::eval({ephemeral,down});
+                ane::HybridFfn::SourceScope sources(&retained);
+                retained.stage(0,34,{ephemeral,ephemeral,down});
+                if(visit%2)throw std::runtime_error("attention failed before FFN launch");
+                sources.finish();
+            } catch(const std::runtime_error &error) {
+                require(std::string(error.what())=="attention failed before FFN launch","unexpected source-scope error");
+            }
+            require(retained.metrics().runtime_calls==0 && !retained.metrics().runtime_failed,
+                "source-scope drain performed an unexpected model launch");
+        }
+        retained.begin_request();
+        qwen21::TextEncoder restored(weights,config,&retained);
+        auto input=mx::full({1,34,128},.125f,mx::bfloat16);
+        auto positions=mx::broadcast_to(mx::reshape(mx::arange(34,mx::int32),{1,34}),{3,34});
+        auto output=restored.encode_embeddings(input,positions,34,{},cancelled);mx::eval(output);retained.drain();
+        require(retained.metrics().runtime_calls==2 && !retained.metrics().runtime_failed && mx::all(mx::isfinite(output)).item<bool>(),
+            "retained runtime did not recover after staged-source unwind");
+        std::cout<<"PASS retained encoder source scope: staged-only drain, attention failure and recovery\n";
     } catch(const std::exception &error) {std::cerr<<error.what()<<'\n';return 1;}
 }

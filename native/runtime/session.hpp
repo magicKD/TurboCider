@@ -169,6 +169,12 @@ inline std::string hybrid_precision_label(const HybridMetrics &metrics) {
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;
 };
+// Request-local evidence for an optional encoder executor. HybridMetrics
+// counters remain session cumulative when a resident graph is reused.
+struct EncoderRuntimeReuseMetrics {
+    bool enabled = false, reused = false, retained = false;
+    uint64_t calls_this_request = 0, retained_estimated_bytes = 0;
+};
 struct Timings {
     double wall = 0, text = 0, image = 0, hybrid = 0, denoise = 0, decode = 0;
 };
@@ -292,6 +298,7 @@ struct RunResult {
     std::optional<HybridMetrics> hybrid;
     std::optional<QkvMetrics> qkv;
     std::optional<HybridMetrics> encoder_hybrid;
+    std::optional<EncoderRuntimeReuseMetrics> encoder_runtime_reuse;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;

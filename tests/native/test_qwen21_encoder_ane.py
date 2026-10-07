@@ -59,6 +59,11 @@ class EncoderContractTests(unittest.TestCase):
                 dict(width=1024),dict(height=1024),dict(prompt_enhance=True),
                 dict(operation="image.edit",inputs=[]),dict(operation="image.edit",inputs=[reference]*3)):
                 with self.subTest(change=change):self.assertNotEqual(plan(change).returncode,0)
+            env["TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME"]="1"
+            self.assertEqual(plan({}).returncode,0)
+            self.assertNotEqual(plan(dict(memory_budget_bytes=1<<30)).returncode,0)
+            env["TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME"]="2"
+            self.assertNotEqual(plan({}).returncode,0)
 
 
 @unittest.skipUnless(os.environ.get("TURBOCIDER_TEST_QWEN_ENCODER_ANE")=="1","explicit actual encoder GPU/Core ML opt-in required")
@@ -74,6 +79,7 @@ class EncoderAneTests(unittest.TestCase):
                 capture_output=True,text=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertEqual(result.stdout.count("PASS encoder"),8);print(result.stdout)
+            self.assertIn("PASS retained encoder source scope",result.stdout)
 
 
 if __name__=="__main__":unittest.main()

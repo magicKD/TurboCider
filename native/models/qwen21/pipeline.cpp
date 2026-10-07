@@ -27,14 +27,15 @@ void emit(const Event &event, const std::string &phase, int step, int total) {
 double seconds(Clock::time_point start) {
     return std::chrono::duration<double>(Clock::now() - start).count();
 }
-size_t runtime_ane_budget(uint64_t physical, uint64_t active) {
+size_t runtime_ane_budget(uint64_t physical, uint64_t active, uint64_t resident_optional = 0) {
     constexpr uint64_t system_margin = uint64_t(4) << 30;
     constexpr uint64_t optional_cap = uint64_t(2) << 30;
     // Share the same optional-tier allowance between FFN and QKV. Subtract
     // before adding active memory so even an invalidly large reading cannot
     // wrap around and appear to leave headroom.
     const uint64_t headroom = physical > system_margin ? physical - system_margin : 0;
-    return std::min(optional_cap, active < headroom ? headroom - active : uint64_t(0));
+    const uint64_t remaining_optional=resident_optional<optional_cap ? optional_cap-resident_optional : 0;
+    return std::min(remaining_optional, active < headroom ? headroom - active : uint64_t(0));
 }
 std::string read_utf8_file(const std::filesystem::path &path) {
     std::ifstream stream(path, std::ios::binary);
@@ -73,6 +74,7 @@ void Session::clear_prefix_cache() {
     cached_prefix_sigma_ = -1.f;
 }
 void Session::unload() {
+    encoder_runtime_.reset(); encoder_runtime_identity_.clear();
     runtime_ffn_.reset(); runtime_manifest_.clear();
     runtime_qkv_.reset(); qkv_manifest_.clear();
     clear_prefix_cache();
@@ -103,6 +105,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
     const bool qkv_requested = r.hybrid_mlp_mode == "runtime_qkv";
     const bool hybrid_requested = r.execution == "gpu_ane" && !runtime_requested && !qkv_requested;
+    const char *encoder_retain_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME");
+    require(binary_option_or_unset(encoder_retain_flag),"Qwen encoder runtime retention requires 0 or 1");
+    const bool retain_encoder_runtime=option_enabled(encoder_retain_flag) && !r.encoder_ane_manifest.empty();
+    if(retain_encoder_runtime)
+        require(r.residency=="resident" && r.width==512 && r.height==512 &&
+            !r.memory_constrained.enabled && !r.streaming.active() && !r.memory_budget_bytes,
+            "Qwen encoder runtime retention requires unconstrained resident 512px execution");
+    if(!retain_encoder_runtime) {encoder_runtime_.reset();encoder_runtime_identity_.clear();}
     if (!runtime_requested) { runtime_ffn_.reset(); runtime_manifest_.clear(); }
     if (!qkv_requested) { runtime_qkv_.reset(); qkv_manifest_.clear(); }
     const bool rectangular_w8a8 = option_enabled(std::getenv(
@@ -232,7 +242,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     } else conditioning_cache_.edit.reset();
     const std::string encoder_identity=r.encoder_ane_manifest.empty() ? "gpu" :
         std::filesystem::canonical(r.encoder_ane_manifest).string()+":"+sha256_file(r.encoder_ane_manifest)+
-        ane::HybridFfn::executor_configuration_identity();
+        ane::HybridFfn::executor_configuration_identity()+(retain_encoder_runtime ? ":retained-encoder-executor-v1" : ":request-encoder-executor-v1");
+    if(encoder_runtime_identity_!=encoder_identity) {encoder_runtime_.reset();encoder_runtime_identity_.clear();}
     conditioning_cache_.select_encoder(encoder_identity);
     const bool edit_hit = !r.inputs.empty() && conditioning_cache_.edit_hit(
         r.prompt, r.qwen21_reference_size, image_sha256);
@@ -243,10 +254,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                           r.qwen21_reference_size));
     }
     const bool hit = edit_hit || (r.inputs.empty() && conditioning_cache_.text_hit(r.prompt));
+    if(hit && encoder_runtime_) {
+        encoder_runtime_->begin_request(); // resident admission also on condition-cache hits
+        if(!encoder_runtime_->available()) {encoder_runtime_.reset();encoder_runtime_identity_.clear();}
+    }
     if (!hit) clear_prefix_cache();
     Tensor text(0.f);
     std::vector<int> slots;
     std::optional<HybridMetrics> encoder_metrics; // this request only; never replayed by a cache hit
+    std::optional<EncoderRuntimeReuseMetrics> encoder_reuse;
+    if(!r.encoder_ane_manifest.empty()) {
+        encoder_reuse.emplace();encoder_reuse->enabled=retain_encoder_runtime;
+    }
     auto text_start = Clock::now();
     if (edit_hit) { text = conditioning_cache_.edit->text; slots = conditioning_cache_.edit->image_slots; }
     else if (hit) text = *conditioning_cache_.text;
@@ -277,23 +296,48 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         auto assembled = assemble_prompt(tokens, weights.at("model.embed_tokens.weight"), refs);
         TextConfig config;
         config.final_norm = false; // official checkpoint's pre-final-RMSNorm hidden state
-        std::unique_ptr<ane::HybridFfn> encoder_runtime;
+        std::unique_ptr<ane::HybridFfn> request_encoder_runtime;
+        ane::HybridFfn *encoder_runtime=nullptr;
+        uint64_t encoder_calls_before=0;
         if(!r.encoder_ane_manifest.empty()) {
             const uint64_t physical=device_info().physical_memory;
             const size_t encoder_budget=std::min(uint64_t(1)<<30,
-                uint64_t(runtime_ane_budget(physical, mx::get_active_memory())));
-            encoder_runtime=std::make_unique<ane::HybridFfn>(r.encoder_ane_manifest,4096,12288,encoder_budget,cancelled);
+                uint64_t(runtime_ane_budget(physical, mx::get_active_memory(),
+                    (runtime_ffn_ ? runtime_ffn_->metrics().runtime_weight_estimated_bytes : 0)+
+                    (runtime_qkv_ ? runtime_qkv_->metrics().estimated_bytes : 0))));
+            if(encoder_runtime_ && (!encoder_runtime_->usable_configuration() ||
+                encoder_runtime_->metrics().runtime_weight_estimated_bytes>encoder_budget)) {
+                encoder_runtime_.reset();encoder_runtime_identity_.clear();
+            }
+            if(retain_encoder_runtime) {
+                encoder_reuse->reused=bool(encoder_runtime_);
+                if(!encoder_runtime_) {
+                    encoder_runtime_=std::make_unique<ane::HybridFfn>(r.encoder_ane_manifest,4096,12288,encoder_budget,cancelled);
+                    encoder_runtime_identity_=encoder_identity;
+                }
+                encoder_runtime=encoder_runtime_.get();
+            } else {
+                request_encoder_runtime=std::make_unique<ane::HybridFfn>(r.encoder_ane_manifest,4096,12288,encoder_budget,cancelled);
+                encoder_runtime=request_encoder_runtime.get();
+            }
             encoder_runtime->begin_request();
+            encoder_calls_before=encoder_runtime->metrics().runtime_calls;
         }
-        TextEncoder encoder(weights, config,encoder_runtime.get());
+        ane::HybridFfn::SourceScope encoder_sources(encoder_runtime);
+        TextEncoder encoder(weights, config,encoder_runtime);
         text = assembled.retain(encoder.encode_embeddings(assembled.embeddings, assembled.positions,
             assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas));
         mx::eval(text);
+        encoder_sources.finish();
         if(encoder_runtime) {
-            encoder_runtime->drain();
             encoder_metrics=encoder_runtime->metrics();
             encoder_metrics->block_count=config.layers;
-            encoder_metrics->session_released_after_encoding=true;
+            encoder_reuse->calls_this_request=encoder_metrics->runtime_calls-encoder_calls_before;
+            // Do not retain a failed/memory-declined executor or its scratch.
+            if(encoder_runtime_ && !encoder_runtime_->available()) {
+                encoder_runtime_.reset();encoder_runtime_identity_.clear();
+            }
+            encoder_metrics->session_released_after_encoding=!encoder_runtime_;
         }
         slots = assembled.image_slots;
         if (r.inputs.empty()) { conditioning_cache_.text = text; conditioning_cache_.prompt = r.prompt; }
@@ -419,7 +463,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (runtime_ffn_->available() && !r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
-                                                     mx::get_active_memory());
+                                                     mx::get_active_memory(),
+                encoder_runtime_ ? encoder_runtime_->metrics().runtime_weight_estimated_bytes : 0);
             std::optional<ane::HybridFfn::CalibrationWorkload> calibration;
             if(native_channel_auto) {
                 emit(event,"calibrate_native_ane_channels",0,1);
@@ -522,7 +567,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (!runtime_qkv_ || !runtime_qkv_->available() || qkv_manifest_ != identity) {
             runtime_qkv_.reset();
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
-                                                     mx::get_active_memory());
+                                                     mx::get_active_memory(),
+                encoder_runtime_ ? encoder_runtime_->metrics().runtime_weight_estimated_bytes : 0);
             runtime_qkv_ = std::make_unique<ane::HybridQkv>(manifest, budget, cancelled);
             qkv_manifest_ = identity;
         }
@@ -655,6 +701,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             : "; experimental penultimate-step even-layer FFN reuse";
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";
     result.encoder_hybrid=std::move(encoder_metrics);
+    if(encoder_reuse) {
+        encoder_reuse->retained=bool(encoder_runtime_);
+        encoder_reuse->retained_estimated_bytes=encoder_runtime_ ? encoder_runtime_->metrics().runtime_weight_estimated_bytes : 0;
+        result.encoder_runtime_reuse=encoder_reuse;
+    }
     if (hybrid_requested) {
         result.backend = "mlx_cpp_metal+coreml";
         result.precision = r.qwen21_w8a8
@@ -713,9 +764,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // do not label base-only requests as using a LoRA approximation.
     if (!r.encoder_ane_manifest.empty())
         result.selection += hit ? "; encoder conditioning cache hit (no new ANE call)" :
-            result.encoder_hybrid && result.encoder_hybrid->runtime_calls ?
+            result.encoder_runtime_reuse && result.encoder_runtime_reuse->calls_this_request ?
             "; explicit shared runtime Qwen3-VL language FFN; vision/attention remain GPU; physical overlap unverified" :
             "; explicit encoder runtime attempted; no model ANE call; complete GPU language FFN";
+    if(retain_encoder_runtime)result.selection+="; explicit bounded encoder executor retention; full encoder weights remain request-local";
     if (lora_fp16 && !r.loras.empty())
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
     if (lora_1024_generation(r))
@@ -1076,6 +1128,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.active_bytes = mx::get_active_memory(); result.peak_bytes = mx::get_peak_memory();
     return result;
 } catch (...) {
+    encoder_runtime_.reset();encoder_runtime_identity_.clear();
     if (runtime_ffn_) runtime_ffn_->drain();
     if (runtime_qkv_) runtime_qkv_->drain();
     try { mx::synchronize(); } catch (...) {}

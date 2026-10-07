@@ -269,7 +269,10 @@ std::string HybridFfn::executor_configuration_identity() {
     return identity;
 }
 void HybridFfn::drain(bool discard_future) {
-    if (graph_ && pending_) { graph_->finish(); pending_ = false; }
+    // Staging can be in flight BEFORE launch sets pending_. In particular a
+    // retained encoder must finish those borrowed-source reads before a
+    // failed attention scope destroys its request-local checkpoint arrays.
+    if (graph_) { graph_->finish(); pending_ = false; }
     if (graph_ && discard_future) {
         graph_->discard_prefetched_weights();
         if(prefetched_layer_>=0)++metrics_.runtime_weight_prefetch_discards;

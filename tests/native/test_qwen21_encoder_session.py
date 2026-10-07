@@ -54,14 +54,24 @@ class EncoderSessionTests(unittest.TestCase):
                     self.assertTrue(data["prepared"])
                     self.assertEqual(data["prompt_cache_hit"],expected_hit)
                     self.assertFalse(Path(request["output"]).exists())
-                    metrics=data.get("encoder_hybrid",{});calls=metrics.get("runtime_calls_session_total",0)
+                    metrics=data.get("encoder_hybrid",{});reuse=data.get("encoder_runtime_reuse")
+                    calls=reuse["actual_calls_this_request"] if reuse else metrics.get("runtime_calls_session_total",0)
+                    retained=os.environ.get("TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME")=="1" and bool(manifest)
                     if expected_hit or not manifest:
                         self.assertEqual(calls,0);self.assertEqual(data["encoder_execution"],"gpu")
                     else:
                         self.assertGreater(calls,0);self.assertFalse(metrics["runtime_failed"])
-                        self.assertTrue(metrics["session_released_after_encoding"])
+                        self.assertEqual(metrics["session_released_after_encoding"],not retained)
+                    if reuse:
+                        self.assertEqual(reuse["enabled"],retained)
+                        self.assertEqual(reuse["executor_retained"],retained)
+                        if retained and not expected_hit:
+                            self.assertEqual(reuse["executor_reused"],name=="ane-edit-after-generation")
+                            self.assertGreater(reuse["retained_estimated_bytes"],0)
+                            self.assertLessEqual(reuse["retained_estimated_bytes"],1<<30)
                     evidence.append(dict(name=name,cache_hit=data["prompt_cache_hit"],actual_encoder_calls=calls,
-                        execution=data["encoder_execution"],backend=data["encoder_runtime_backend"]))
+                        execution=data["encoder_execution"],backend=data["encoder_runtime_backend"],reuse=reuse,
+                        cumulative_calls=metrics.get("runtime_calls_session_total",0)))
                     return request
                 run("gpu-edit",None,True,False)
                 run("ane-generation",manifests[0],False,False)
@@ -83,6 +93,11 @@ class EncoderSessionTests(unittest.TestCase):
                     self.assertNotEqual(status,0);self.assertTrue(text)
                     self.assertFalse(Path(request["output"]).exists())
                     evidence.append(dict(name=name,rejected=True,error=text))
+                run("recover-after-invalid-template",manifests[0],True,False)
+                if os.environ.get("TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME")=="1":
+                    os.environ["TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME"]="0"
+                    try:run("retention-off",manifests[0],True,False)
+                    finally:os.environ["TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME"]="1"
             print(json.dumps(dict(schema="tc-qwen-encoder-session-switch-v1",
                 library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),requests=evidence,
                 scope="actual prepare-only session/cache contract; not denoise/performance/visual qualification")))
