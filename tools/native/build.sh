@@ -142,7 +142,7 @@ SOURCES=(
  native/workflows/image_workflows.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/backends/ane_memory.cpp native/backends/ane_runtime.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_qkv.cpp native/backends/ane_smoothquant.mm
+ native/backends/ane_memory.cpp native/backends/ane_gpu.mm native/backends/ane_runtime.mm native/backends/ane_public_w8.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_channel_calibration.cpp native/backends/ane_qkv.cpp native/backends/ane_smoothquant.mm
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
@@ -175,7 +175,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/media/reference_preparation.mm
 )
 if [[ "$PRIVATE_ANE" == "1" ]]; then
- SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm)
+ SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm)
 fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories

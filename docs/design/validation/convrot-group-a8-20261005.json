@@ -1,0 +1,50 @@
+{
+  "schema": "tc-convrot-group-a8-validation-v1",
+  "date": "2026-10-05",
+  "production_qualified": false,
+  "default_changed": false,
+  "native_int8_macs_observed": false,
+  "physical_overlap_proven": false,
+  "opt_in": "TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE=256",
+  "final_recipe": "comfy-h256-direct-q8-source-round-group256-a8-rne-ratio-norm-f16-v2",
+  "source_codes_requantized": false,
+  "stage_group_cases": 9,
+  "independent_source_dtype_round_rne_oracle": true,
+  "actual_driver_raw_packed_serial_lookahead_cells": 4,
+  "lora_hidden_abi_preserved": true,
+  "whole_operation_gpu_fallback_preserved": true,
+  "extra_scale_surfaces_memory_admitted": true,
+  "regressions": {"private_pass":15,"private_opt_in_skip":2,"public_pass":13,"gpu_pass":6,"host_pass":8,"full_make_test":false},
+  "build_scope": "working-tree snapshot retaining original ConvRot drafts; not clean staged-tree rebuild",
+  "libraries": {
+    "group_v1_private":"80d8dc96ca6c53399f39152636585459f6f71f145b9826a356b252dbd1f822e7",
+    "group_v2_private":"d66cc548a3ccd660c0336b0a33cf85eb5384ac3dc19f9d6fe7d989a3ffd59a94",
+    "group_v2_public":"e3562eb6319f18e97745b32949a37d3e1fee8f80cd1150f5a9c442b9bcbb765a",
+    "public_actual_release_guard_passed":true
+  },
+  "model": {
+    "id":"z-image-turbo",
+    "source_sha256":"be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    "profile":"legacy packed BF16 scales",
+    "steps":4,"seed":42,"ane_channels":4096,"gpu_channels":6144,"bucket_rows":1056,
+    "n1_gate":{"max_rel_l2":0.03,"min_cosine":0.999},
+    "native_quality_enabled":false,
+    "comparison":"independent CPU FP64 tensor comparison; same binary, source, prompt and seed per GPU/candidate pair",
+    "cells":[
+      {"version":"v1","size":512,"evidence":"outputs/convrot-group256-512-private4096-4-diagnostic","rel_l2":0.07155510332145507,"cosine":0.9974419726473919,"channel_blocks":128,"driver_calls":248,"fallback_blocks":0,"n1_pass":false},
+      {"version":"v1","size":1024,"evidence":"outputs/convrot-group256-1024-private4096-4-diagnostic","rel_l2":0.06652788661910082,"cosine":0.9977859679407606,"channel_blocks":128,"driver_calls":512,"fallback_blocks":0,"n1_pass":false},
+      {"version":"v2","size":512,"evidence":"outputs/convrot-group-ratio-512-private4096-4-diagnostic","rel_l2":0.05183587513123084,"cosine":0.9986557502650669,"channel_blocks":128,"driver_calls":248,"fallback_blocks":0,"group_size":256,"fp32_join":true,"conditioning_exact":true,"initial_latent_exact":true,"headroom":1,"overflow_retries":0,"n1_pass":false},
+      {"version":"v2","size":1024,"evidence":"outputs/convrot-group-ratio-1024-private4096-4-diagnostic","rel_l2":0.08450010831457225,"cosine":0.9964339046684626,"channel_blocks":128,"driver_calls":512,"fallback_blocks":0,"group_size":256,"fp32_join":true,"conditioning_exact":true,"initial_latent_exact":true,"headroom":1,"overflow_retries":0,"n1_pass":false}
+    ],
+    "performance_qualified":false,"media_qualified":false
+  },
+  "pending":[
+    "separate actual input and hidden group effects",
+    "qualify reduction/rounding and source-sensitive GPU/Public layers",
+    "actual model LoRA quality and acceleration",
+    "GGUF bounded dense consumers and reuse/bandwidth accounting",
+    "fitted identity-cache-integrated adaptive share/prefetch",
+    "all four Z/Qwen base cells matched optimized GPU >=1.2x",
+    "reverse multi-prompt, media, memory and physical trace acceptance"
+  ]
+}

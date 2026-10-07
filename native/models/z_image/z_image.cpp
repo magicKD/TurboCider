@@ -1,4 +1,6 @@
 #include "../../runtime/build_identity.hpp"
+#include "../../backends/ane_backend.hpp"
+#include "../../backends/ane_gpu_layer_policy.hpp"
 #include "z_image.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
@@ -268,6 +270,68 @@ void z_capture_ffn_input(const Tensor &input, int block) {
     } catch (...) {
         if (fd >= 0) ::close(fd);
         std::filesystem::remove(partial);
+        throw;
+    }
+}
+
+struct ZRuntimeFfnCaptureConfig {
+    std::filesystem::path directory;
+    int block=0;
+    uint32_t limit=1;
+};
+const std::optional<ZRuntimeFfnCaptureConfig> &z_runtime_ffn_capture_config() {
+    static const auto config=[]()->std::optional<ZRuntimeFfnCaptureConfig> {
+        const char *directory=std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_DIR");
+        if(!directory) {
+            require(!std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_BLOCK") &&
+                    !std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_LIMIT"),
+                    "qe_config_conflict: runtime FFN capture controls require a directory");
+            return std::nullopt;
+        }
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+        throw std::runtime_error("qe_capability_unqualified: runtime FFN capture requires experimental build");
+#endif
+        require(*directory && std::getenv("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_BLOCK"),
+                "qe_config_conflict: runtime FFN capture requires a fresh directory and explicit block");
+        ZRuntimeFfnCaptureConfig value{directory,
+            int(z_qwen3_gguf_integer("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_BLOCK",0,31)),
+            uint32_t(z_qwen3_gguf_integer("TURBOCIDER_Z_RUNTIME_FFN_CAPTURE_LIMIT",1,32))};
+        require(value.limit && !std::filesystem::exists(value.directory) &&
+                !std::filesystem::is_symlink(value.directory),
+                "qe_config_conflict: runtime FFN capture requires positive limit and unused directory");
+        return value;
+    }();
+    return config;
+}
+void z_capture_runtime_ffn_input(const Tensor &input,int block) {
+    const auto &config=z_runtime_ffn_capture_config();
+    if(!config || block!=config->block)return;
+    // The native GPU owner serializes model requests. The cap applies to the
+    // entire process, including warm requests, not an unbounded per-step dump.
+    static uint32_t captured=0;
+    if(captured>=config->limit)return;
+    require(input.ndim()==3 && input.shape(0)==1 && input.shape(2)==3840 &&
+            input.shape(1)>0 && input.shape(1)<=4224 && input.dtype()==mx::bfloat16,
+            "runtime FFN capture requires original bounded dense BF16 input");
+    auto sample=mx::contiguous(input);
+    mx::eval(sample);
+    require(mx::all(mx::isfinite(mx::astype(sample,mx::float32))).item<bool>(),
+            "runtime FFN capture input is nonfinite");
+    if(!captured)require(std::filesystem::create_directories(config->directory),
+                        "runtime FFN capture directory is no longer unused");
+    const auto stem="sample-"+std::to_string(10000+captured);
+    const auto path=config->directory/(stem+".safetensors");
+    const auto partial=config->directory/(stem+".partial.safetensors");
+    require(!std::filesystem::exists(path) && !std::filesystem::exists(partial),
+            "runtime FFN capture target already exists");
+    try {
+        mx::save_safetensors(partial.string(),{{"tensor",sample}},
+            {{"capture_recipe","z-dense-runtime-original-bf16-v1"},{"block",std::to_string(block)},
+             {"sample",std::to_string(captured)},{"runtime_build",runtime_build_identity()}});
+        std::filesystem::rename(partial,path);
+        ++captured;
+    } catch(...) {
+        std::error_code ignored;std::filesystem::remove(partial,ignored);
         throw;
     }
 }
@@ -832,72 +896,84 @@ Tensor z_hybrid_gpu_suffix(const Tensor &x, const Weights &w,
                                 start, end);
 }
 
+Tensor z_dense_gpu_projection(const Tensor &x, const Tensor &w) {
+    const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
+    const bool qualified_default = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
+        z_image_small_shape_metal_default() && x.shape(1) <= 1056;
+    if (mode || qualified_default) {
+        if (!mode || std::string(mode) != "attention_out" ||
+            w.shape() == mx::Shape{3840,3840})
+            return z_metal::projection(x, w);
+    }
+    return mx::matmul(x, mx::transpose(w));
+}
+
+// Shared arithmetic, traced into either the complete GPU graph or the dense
+// runtime pre-FFN graph. Weights remain arguments, not captured layer state.
+std::vector<Tensor> z_dense_gpu_pre_body(const std::vector<Tensor> &args) {
+    require(args.size() >= 12, "invalid Z dense pre-block inputs");
+    auto modulation = mx::expand_dims(
+        mx::matmul(args[2], mx::transpose(args[3])) + args[4], 1);
+    auto mod = mx::split(modulation, 4, -1);
+    auto attention_input = z_modulate_norm(args[0], args[5], mod[0], args[0], false);
+    const bool fused_qkv_projection =
+        !std::getenv("TURBOCIDER_Z_DISABLE_MPP_QKV_PREPARE") &&
+        (std::getenv("TURBOCIDER_Z_MPP_QKV_PREPARE") ||
+         (z_image_small_shape_metal_default() && attention_input.shape(1) <= 1056));
+    auto rotated = fused_qkv_projection
+        ? z_metal::project_prepare_qkv(attention_input,args[6],args[7],args[8],args[1])
+        : z_prepare_qkv(z_dense_gpu_projection(attention_input,args[6]),args[7],args[8],args[1]);
+    auto attention = z_dense_gpu_projection(
+        attend(rotated[0], rotated[1], rotated[2], false, {},
+               !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")), args[9]);
+    auto residual_and_feed = [&] {
+        const char *setting = std::getenv("TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS");
+        const bool qualified_default = !std::getenv("TURBOCIDER_Z_DISABLE_GATE_NORM") &&
+            z_image_small_shape_metal_default() && attention.shape(1) <= 1056;
+        if (setting || qualified_default) {
+            const std::string threads(setting ? setting : "128");
+            require(threads == "128" || threads == "256" || threads == "512",
+                    "virtual gate norm threads must be 128, 256 or 512");
+            require(!std::getenv("TURBOCIDER_Z_DISABLE_FUSED_MOD") &&
+                    !std::getenv("TURBOCIDER_Z_FUSED_GATE_NORM"),
+                    "virtual gate norm conflicts with disabled modulation or scalar gate fusion");
+            if (attention.shape(1) <= 1056)
+                return z_metal::gate_norm_virtual(attention,args[0],args[10],mod[1],
+                    args[11],mod[2],std::stoi(threads));
+        }
+        if (std::getenv("TURBOCIDER_Z_FUSED_GATE_NORM"))
+            return z_metal::gate_norm(attention,args[0],args[10],mod[1],args[11],mod[2]);
+        auto value = z_modulate_norm(attention, args[10], mod[1], args[0], true);
+        return std::vector<Tensor>{value,
+            z_modulate_norm(value, args[11], mod[2], value, false)};
+    }();
+    return {residual_and_feed[0], residual_and_feed[1], mod[3]};
+}
+
+Tensor z_dense_gpu_ffn_body(const Tensor &feed_input, const Tensor &gate_weight,
+                          const Tensor &up_weight, const Tensor &down_weight) {
+    auto activation = [&] {
+        if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
+            return z_metal::swiglu_dual_gemm(feed_input, gate_weight, up_weight);
+        auto up = z_dense_gpu_projection(feed_input, up_weight);
+        if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
+            (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()) &&
+            feed_input.dtype() == mx::bfloat16 && gate_weight.dtype() == mx::bfloat16 &&
+            up.dtype() == mx::bfloat16)
+            return z_metal::swiglu_gemm(feed_input, gate_weight, up);
+        auto gate = z_dense_gpu_projection(feed_input, gate_weight);
+        return (gate * mx::sigmoid(gate)) * up;
+    }();
+    return z_dense_gpu_projection(activation, down_weight);
+}
+
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_gpu_block_graph() {
     static auto graph = mx::compile([](const std::vector<Tensor> &args) {
         require(args.size() == 16, "invalid Z-Image compiled block inputs");
-        auto projection = [](const Tensor &x, const Tensor &w) {
-            const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
-            const bool qualified_default = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
-                z_image_small_shape_metal_default() && x.shape(1) <= 1056;
-            if (mode || qualified_default) {
-                if (!mode || std::string(mode) != "attention_out" ||
-                    w.shape() == mx::Shape{3840,3840})
-                    return z_metal::projection(x, w);
-            }
-            return mx::matmul(x, mx::transpose(w));
-        };
-        auto modulation = mx::expand_dims(
-            mx::matmul(args[2], mx::transpose(args[3])) + args[4], 1);
-        auto mod = mx::split(modulation, 4, -1);
-        auto attention_input = z_modulate_norm(args[0], args[5], mod[0], args[0], false);
-        const bool fused_qkv_projection =
-            !std::getenv("TURBOCIDER_Z_DISABLE_MPP_QKV_PREPARE") &&
-            (std::getenv("TURBOCIDER_Z_MPP_QKV_PREPARE") ||
-             (z_image_small_shape_metal_default() && attention_input.shape(1) <= 1056));
-        auto rotated = fused_qkv_projection
-            ? z_metal::project_prepare_qkv(attention_input,args[6],args[7],args[8],args[1])
-            : z_prepare_qkv(projection(attention_input,args[6]),args[7],args[8],args[1]);
-        auto attention = projection(
-            attend(rotated[0], rotated[1], rotated[2], false, {},
-                   !std::getenv("TURBOCIDER_Z_DISABLE_FUSED_SDPA")),
-            args[9]);
-        auto residual_and_feed = [&] {
-            const char *setting = std::getenv("TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS");
-            const bool qualified_default = !std::getenv("TURBOCIDER_Z_DISABLE_GATE_NORM") &&
-                z_image_small_shape_metal_default() && attention.shape(1) <= 1056;
-            if (setting || qualified_default) {
-                const std::string threads(setting ? setting : "128");
-                require(threads == "128" || threads == "256" || threads == "512",
-                        "virtual gate norm threads must be 128, 256 or 512");
-                require(!std::getenv("TURBOCIDER_Z_DISABLE_FUSED_MOD") &&
-                        !std::getenv("TURBOCIDER_Z_FUSED_GATE_NORM"),
-                        "virtual gate norm conflicts with disabled modulation or scalar gate fusion");
-                if (attention.shape(1) <= 1056)
-                    return z_metal::gate_norm_virtual(attention,args[0],args[10],mod[1],
-                        args[11],mod[2],std::stoi(threads));
-            }
-            if (std::getenv("TURBOCIDER_Z_FUSED_GATE_NORM"))
-                return z_metal::gate_norm(attention,args[0],args[10],mod[1],args[11],mod[2]);
-            auto value = z_modulate_norm(attention, args[10], mod[1], args[0], true);
-            return std::vector<Tensor>{value,
-                z_modulate_norm(value, args[11], mod[2], value, false)};
-        }();
-        auto value = residual_and_feed[0], feed_input = residual_and_feed[1];
-        auto activation = [&] {
-            if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
-                return z_metal::swiglu_dual_gemm(feed_input, args[12], args[13]);
-            auto up = projection(feed_input, args[13]);
-            if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
-                (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()) &&
-                feed_input.dtype() == mx::bfloat16 && args[12].dtype() == mx::bfloat16 &&
-                up.dtype() == mx::bfloat16)
-                return z_metal::swiglu_gemm(feed_input, args[12], up);
-            auto gate = projection(feed_input, args[12]);
-            return (gate * mx::sigmoid(gate)) * up;
-        }();
-        auto feed = projection(activation, args[14]);
+        auto pre = z_dense_gpu_pre_body(args);
+        auto feed = z_dense_gpu_ffn_body(pre[1], args[12], args[13], args[14]);
         return std::vector<Tensor>{
-            z_modulate_norm(feed, args[15], mod[3], value, true)};
+            z_modulate_norm(feed, args[15], pre[2], pre[0], true)};
     });
     return graph;
 }
@@ -974,6 +1050,26 @@ std::function<std::vector<Tensor>(const std::vector<Tensor> &)> &z_hybrid_pre_gr
         return *qkv_graph;
     }
     static auto *graph = new decltype(make(false, false))(make(false, false));
+    return *graph;
+}
+
+// Runtime FFN boundaries must retain the optimized full GPU block's norm,
+// projection and residual kernels. The older frozen-hybrid pre/post bodies
+// intentionally have their own compatibility arithmetic; do not reuse them
+// as if they were a numerically identical split of z_gpu_block_graph().
+ZImageGpuGraph &z_runtime_pre_graph() {
+    static auto *graph=new ZImageGpuGraph(mx::compile([](const std::vector<Tensor>&a) {
+        require(a.size()==12,"invalid Z runtime pre-block inputs");
+        return z_dense_gpu_pre_body(a);
+    }));
+    return *graph;
+}
+
+ZImageGpuGraph &z_runtime_post_graph() {
+    static auto *graph=new ZImageGpuGraph(mx::compile([](const std::vector<Tensor>&a) {
+        require(a.size()==4,"invalid Z runtime post-block inputs");
+        return std::vector<Tensor>{z_modulate_norm(a[0],a[3],a[2],a[1],true)};
+    }));
     return *graph;
 }
 
@@ -1184,10 +1280,60 @@ std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string
     };
     return {source(ffn+".w1",3840),source(ffn+".w3",3840),source(ffn+".w2",10240)};
 }
+ZImageGpuGraph &z_runtime_full_ffn_graph() {
+    static auto *gpu = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
+        require(a.size()==4,"invalid Z runtime GPU FFN inputs");
+        return std::vector<Tensor>{z_dense_gpu_ffn_body(a[0],a[1],a[2],a[3])};
+    }));
+    return *gpu;
+}
+
+bool z_dense_split_gpu_control() {
+    const char *raw=std::getenv("TURBOCIDER_Z_DENSE_SPLIT_GPU_CONTROL");
+    if(!raw)return false;
+    require(std::string_view(raw)=="0" || std::string_view(raw)=="1",
+            "qe_config_conflict: dense split GPU control requires 0 or 1");
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+    require(std::string_view(raw)=="0",
+            "qe_capability_unqualified: dense split GPU control requires experimental build");
+#endif
+    return std::string_view(raw)=="1";
+}
+
+Tensor z_compiled_split_gpu_block(const Tensor &x,const Weights &w,const std::string &prefix,
+                                  const Tensor &freqs,const Tensor &temb) {
+    auto pre=z_runtime_pre_graph()({x,freqs,temb,
+        w.at(prefix+".adaLN_modulation.0.weight"),w.at(prefix+".adaLN_modulation.0.bias"),
+        w.at(prefix+".attention_norm1.weight"),w.at(prefix+".attention.qkv.weight"),
+        w.at(prefix+".attention.q_norm.weight"),w.at(prefix+".attention.k_norm.weight"),
+        w.at(prefix+".attention.out.weight"),w.at(prefix+".attention_norm2.weight"),
+        w.at(prefix+".ffn_norm1.weight")});
+    mx::eval(pre[1]);
+    z_capture_runtime_ffn_input(pre[1],std::stoi(prefix.substr(prefix.find_last_of('.')+1))+
+        (prefix.starts_with("layers.")?2:0));
+    auto feed=z_runtime_full_ffn_graph()({pre[1],w.at(prefix+".feed_forward.w1.weight"),
+        w.at(prefix+".feed_forward.w3.weight"),w.at(prefix+".feed_forward.w2.weight")})[0];
+    mx::eval(feed);
+    // Causal GPU-only control: no executor, surfaces, staging or ANE calls.
+    return z_runtime_post_graph()({feed,pre[0],pre[2],w.at(prefix+".ffn_norm2.weight")})[0];
+}
+ane::RowPlacement z_runtime_row_placement() {
+    const char *raw=std::getenv("TURBOCIDER_Z_RUNTIME_ANE_ROWS");
+    const std::string value=raw?raw:"suffix";
+    require(value=="suffix" || value=="image_prefix" || value=="image_tail",
+            "qe_config_conflict: Z runtime row placement requires suffix, image_prefix or image_tail");
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+    require(value=="suffix","qe_capability_unqualified: Z runtime row placement requires experimental build");
+#endif
+    return value=="image_prefix"?ane::RowPlacement::ImagePrefix:
+           value=="image_tail"?ane::RowPlacement::ImageTail:ane::RowPlacement::Suffix;
+}
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
-                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility) {
-    const auto plan = runtime.plan_block(block, x.shape(1));
+                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility,int caption_rows=0) {
+    const auto placement=caption_rows?z_runtime_row_placement():ane::RowPlacement::Suffix;
+    const ane::RowPolicy policy{placement,placement==ane::RowPlacement::Suffix?0:caption_rows};
+    const auto plan = runtime.plan_block(block, x.shape(1),policy);
     // Compare identical complete block windows. A lazy preceding GPU block
     // must not inflate this block's sample. Stable hybrid blocks return owned
     // FFN output and can leave their final residual lazy, like the GPU route.
@@ -1299,7 +1445,8 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
                 auto g = w.project_slice(input,ffn+".w1",first,first+count,0,3840,false,lora_workspace);
                 auto u = w.project_slice(input,ffn+".w3",first,first+count,0,3840,false,lora_workspace);
                 auto hidden = silu(g)*u;
-                auto base = w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
+                auto base = runtime.fp32_channel_join() ? w.project_base_slice_fp32(hidden,ffn+".w2",0,3840,first,first+count) :
+                    w.project_base_slice(hidden,ffn+".w2",0,3840,first,first+count,false);
                 return std::make_pair(base,hidden);
             },next_weights);
         auto output = value + mx::tanh(parts[3]) * rms(feed, w.at(prefix + ".ffn_norm2.weight"), 1e-5f);
@@ -1308,57 +1455,38 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
     std::vector<Tensor> weights{w.at(ffn + ".w1.weight"), w.at(ffn + ".w3.weight"),
                                 w.at(ffn + ".w2.weight")};
     runtime.stage(block, x.shape(1), weights);
-    const bool small = z_image_small_shape_metal_default() && x.shape(1) <= 1056;
-    auto pre = z_hybrid_pre_graph(small, small)({x, freqs, temb,
+    auto pre = z_runtime_pre_graph()({x, freqs, temb,
         w.at(prefix + ".adaLN_modulation.0.weight"), w.at(prefix + ".adaLN_modulation.0.bias"),
         w.at(prefix + ".attention_norm1.weight"), w.at(prefix + ".attention.qkv.weight"),
         w.at(prefix + ".attention.q_norm.weight"), w.at(prefix + ".attention.k_norm.weight"),
         w.at(prefix + ".attention.out.weight"), w.at(prefix + ".attention_norm2.weight"),
         w.at(prefix + ".ffn_norm1.weight")});
     capture_input(pre[1]);
+    z_capture_runtime_ffn_input(pre[1],block);
     // Use the same tuned short-row projections and fused SwiGLU as the base
     // GPU block. Weights are arguments, never captured from another layer.
-    static auto *gpu = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
-        auto project = [](const Tensor &v, const Tensor &weight) {
-            const char *mode = std::getenv("TURBOCIDER_Z_MPP_PROJECTIONS");
-            const bool tuned = !std::getenv("TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS") &&
-                z_image_small_shape_metal_default() && v.shape(1) <= 1056;
-            if ((mode && std::string(mode) != "attention_out") || (!mode && tuned))
-                return z_metal::projection(v, weight);
-            return mx::matmul(v, mx::transpose(weight));
-        };
-        auto hidden = [&] {
-            if (std::getenv("TURBOCIDER_Z_MPP_SWIGLU_DUAL"))
-                return z_metal::swiglu_dual_gemm(a[0], a[1], a[2]);
-            auto up = project(a[0], a[2]);
-            if (!std::getenv("TURBOCIDER_Z_DISABLE_MPP_SWIGLU") &&
-                (std::getenv("TURBOCIDER_Z_MPP_SWIGLU") || z_image_mpp_swiglu_default()))
-                return z_metal::swiglu_gemm(a[0], a[1], up);
-            return silu(project(a[0], a[1])) * up;
-        }();
-        return std::vector<Tensor>{project(hidden, a[3])};
-    }));
+    auto &gpu = z_runtime_full_ffn_graph();
     auto feed = runtime.run(block, pre[1], [&](const Tensor &input) {
-        return (*gpu)({input, weights[0], weights[1], weights[2]})[0];
+        return gpu({input, weights[0], weights[1], weights[2]})[0];
     }, cancelled, nullptr, [&](const Tensor &input,int first,int count) {
-        if (input.dtype() == mx::bfloat16 && z_image_small_shape_metal_default() && input.shape(1)<=1056) {
+        // This callback is consumed only by an explicit private channel
+        // split. Preserve the existing short-row path and use the same
+        // immutable physical-pitch kernels for the tested 1024px geometry.
+        // Ordinary GPU blocks and Public row executors do not take this path.
+        if (input.dtype() == mx::bfloat16 && z_image_small_shape_metal_default() && input.shape(1)<=4224) {
             auto u = z_metal::projection_range(input,weights[1],first,first+count,0,3840);
             auto hidden = z_metal::swiglu_gemm_range(input,weights[0],u,first,count);
-            auto base = z_metal::projection_range(hidden,weights[2],0,3840,first,first+count);
+            auto base = dense_gpu::projection_range(hidden,weights[2],0,3840,first,first+count,32,runtime.fp32_channel_join());
             return std::make_pair(base,hidden);
         }
         auto g = mx::matmul(input,mx::transpose(slice_axis(weights[0],0,first,first+count)));
         auto u = mx::matmul(input,mx::transpose(slice_axis(weights[1],0,first,first+count)));
         auto hidden = silu(g)*u;
-        auto base = mx::matmul(hidden,mx::transpose(slice_axis(weights[2],1,first,first+count)));
+        auto base = runtime.fp32_channel_join() ? dense_gpu::projection_range(hidden,weights[2],0,3840,first,first+count,32,true) :
+            mx::matmul(hidden,mx::transpose(slice_axis(weights[2],1,first,first+count)));
         return std::make_pair(base,hidden);
     },next_weights);
-    static auto *post = new ZImageGpuGraph(mx::compile([](const std::vector<Tensor> &a) {
-        auto normalized = mx::astype(mx::fast::rms_norm(mx::astype(a[0], mx::float32),
-                                      mx::astype(a[3], mx::float32), 1e-5f), a[0].dtype());
-        return std::vector<Tensor>{a[1] + a[2] * normalized};
-    }));
-    auto output = (*post)({feed, pre[0], pre[2], w.at(prefix + ".ffn_norm2.weight")})[0];
+    auto output = z_runtime_post_graph()({feed,pre[0],pre[2],w.at(prefix+".ffn_norm2.weight")})[0];
     return complete(output);
 }
 
@@ -1453,7 +1581,8 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
     if (allow_dense_compile && !hybrid && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && bf16_graph &&
         !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") &&
         !w.has_runtime_loras() && !profile.split_gpu() && !profile.detail_gpu()) {
-        auto result = z_compiled_gpu_block(x, w, prefix, freqs, temb);
+        auto result = z_dense_split_gpu_control() ? z_compiled_split_gpu_block(x,w,prefix,freqs,temb) :
+            z_compiled_gpu_block(x, w, prefix, freqs, temb);
         profile.finish(result, true);
         return result;
     }
@@ -1837,7 +1966,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             const bool bf16_fallback = hybrid && z_hybrid_bf16_block(2 + i);
             auto block_input = bf16_fallback ? mx::astype(unified, mx::bfloat16) : unified;
             unified = runtime ? z_runtime_block(block_input, w, "layers." + std::to_string(i),
-                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility)
+                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility,caption_emb.shape(1))
                 : gpu_f16 ? z_compiled_packed_block(block_input,w,"layers."+std::to_string(i),unified_freqs,temb,true,f16_mpp,qmm_f16)
                 : z_block(block_input, weight_stream ? streamed : w,
                               "layers." + std::to_string(i), unified_freqs, temb,
@@ -2743,6 +2872,9 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                const std::filesystem::path &transformer_checkpoint)
     : root_(root), model_id_(std::move(model_id)), tokenizer_(root / "tokenizer") {
     optimizations_ = device_info().optimizations();
+    (void)z_dense_split_gpu_control(); // Reject unsupported builds before loading weights.
+    (void)z_runtime_ffn_capture_config();
+    (void)z_runtime_row_placement();
     if (const char *raw=std::getenv("TURBOCIDER_Z_RUNTIME_CONVROT")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1",
                 "qe_config_conflict: TURBOCIDER_Z_RUNTIME_CONVROT requires 0 or 1");
@@ -3550,6 +3682,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     ZProfileRequest profile(r);
     auto begin = Clock::now();
     require(r.model == model_id_, "Z-Image session received a different model id");
+    const auto runtime_gpu_layers=ane::parse_gpu_layers(std::getenv("TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS"),32);
+    require(runtime_gpu_layers.empty() || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" && !load_only),
+            "explicit Z runtime GPU blocks require a gpu_ane runtime generation request");
     auto plan = make_plan(r);
     require(!r.prompt.empty() && (warmup || load_only || !r.output.empty()),
             "prompt and output are required");
@@ -3560,6 +3695,38 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const bool quantized = r.quantized_execution.active();
     const bool quantized_bf16 = quantized && r.quantized_execution.precision_profile == "z-dense-bf16-v1";
     const bool quantized_raw_gpu=quantized && gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
+    if(z_runtime_row_placement()!=ane::RowPlacement::Suffix) {
+        const auto backend=ane::configured_backend();
+        const char *chunks=std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS");
+        const char *path=std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH");
+        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
+                !public_stream_lease_ && !load_only && r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+                r.residency=="resident" && r.allow_approximation && r.loras.empty() && r.encoder_ane_manifest.empty() &&
+                !r.memory_constrained.enabled && !r.streaming.active() && ane::private_channel_count(10240)==0 &&
+                chunks && std::string_view(chunks)=="1" && (!path || std::string_view(path)=="fp16") &&
+                (backend.preferred==ane::BackendPreference::Public ||
+                 (backend.preferred==ane::BackendPreference::Private && backend.allow_private)) &&
+                !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && !std::getenv("TURBOCIDER_Z_PROFILE"),
+                "qe_config_conflict: image-only ANE rows require explicit dense base resident FP16 runtime/chunks1 without LoRA/streaming");
+    }
+    if(z_runtime_ffn_capture_config()) {
+        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
+                !public_stream_lease_ && !load_only && r.residency=="resident" && r.loras.empty() &&
+                r.encoder_ane_manifest.empty() && !r.memory_constrained.enabled && !r.streaming.active() &&
+                !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") && !std::getenv("TURBOCIDER_Z_PROFILE") &&
+                ((r.execution=="gpu" && z_dense_split_gpu_control()) ||
+                 (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime")),
+                "qe_config_conflict: runtime FFN capture requires dense base split-GPU/runtime resident generation");
+    }
+    if(z_dense_split_gpu_control()) {
+        require(!gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ && !quantized &&
+                !public_stream_lease_ && !load_only && r.execution=="gpu" && r.residency=="resident" &&
+                r.loras.empty() && r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
+                !r.memory_constrained.enabled && !r.streaming.active() &&
+                !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") && !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") &&
+                !std::getenv("TURBOCIDER_Z_PROFILE"),
+                "qe_config_conflict: dense split GPU control requires resident dense GPU without LoRA/ANE/streaming/detail overrides");
+    }
     require(!gguf_validate_blocks_ || gguf_gpu_f16_ || quantized_raw_gpu,
             "qe_config_conflict: source validation requires explicit FP16 experiment or raw GPU profile");
     uint64_t raw_gpu_cache_bytes=0;
@@ -3910,18 +4077,94 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto")+
             ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "");
-        if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
-            (!active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
+        const bool native_channel_auto = ane::private_channel_count(10240) < 0;
+        std::string gpu_policy;
+        for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
+        const std::string request_identity = identity + ":row-placement="+ane::row_placement_name(z_runtime_row_placement())+
+            ":gpu-layers="+gpu_policy + (native_channel_auto ?
+            ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
+        if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
+            (runtime_ffn_->available() && !active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
             const auto physical = device_info().physical_memory;
             const size_t budget = std::min(uint64_t(2) << 30,
                 physical - std::min(physical, uint64_t(mx::get_active_memory()) + (uint64_t(4) << 30)));
+            std::optional<ane::HybridFfn::CalibrationWorkload> calibration;
+            if (native_channel_auto) {
+                event("calibrate_native_ane_channels",0,1);
+                calibration.emplace();
+                calibration->model_sha256 = sha256_file(transformer_checkpoint_);
+                calibration->adapter_identity = active_loras_.empty() ? std::string{} : cached_lora_identity_;
+                calibration->rows = image_rows+caption_rows;
+                calibration->encoding = gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
+                calibration->dtype = gguf_transformer_ ? mx::float16 : mx::bfloat16;
+                calibration->gpu_configuration="explicit-gpu-layers="+gpu_policy+";";
+                auto stem = [](int ordinal) {return (ordinal<2?"noise_refiner."+std::to_string(ordinal):
+                    "layers."+std::to_string(ordinal-2))+".feed_forward";};
+                for(int ordinal:{0,7,15,23,31})for(const auto *projection:{"w1","w3","w2"}) {
+                    const auto name=stem(ordinal)+"."+projection;
+                    for(const auto *suffix:{".weight",".scales",".biases"})if(transformer_.has(name+suffix)) {
+                        const auto &value=transformer_.at(name+suffix);
+                        calibration->source_generation += ":"+std::to_string(value.id());
+                        calibration->source_owners.push_back(value.data_shared_ptr());
+                    }
+                }
+                for(const auto *key:{"TURBOCIDER_Z_MPP_PROJECTIONS","TURBOCIDER_Z_DISABLE_MPP_PROJECTIONS",
+                    "TURBOCIDER_Z_MPP_SWIGLU","TURBOCIDER_Z_MPP_SWIGLU_DUAL","TURBOCIDER_Z_DISABLE_MPP_SWIGLU"}) {
+                    const auto *value=std::getenv(key);
+                    calibration->gpu_configuration += std::string(key)+"="+(value?value:"<unset>")+";";
+                }
+                calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal));};
+                if(transformer_.has_runtime_loras())calibration->adapter=[&,stem](int ordinal) {
+                    const auto prefix=stem(ordinal);
+                    return ane::HybridFfn::Adapter{
+                        [this,prefix](const Tensor &x) {return std::make_pair(
+                            transformer_.lora_delta_slice(x,prefix+".w1",0,10240,0,3840),
+                            transformer_.lora_delta_slice(x,prefix+".w3",0,10240,0,3840));},
+                        [this,prefix](const Tensor &hidden,const Tensor &base) {
+                            auto delta=transformer_.lora_delta_slice(hidden,prefix+".w2",0,3840,0,10240);
+                            return mx::astype(mx::astype(base,mx::float32)+mx::astype(delta,mx::float32),base.dtype());
+                        },
+                        [this,prefix](const Tensor &x,int first,int count) {return std::make_pair(
+                            transformer_.lora_delta_slice(x,prefix+".w1",first,first+count,0,3840),
+                            transformer_.lora_delta_slice(x,prefix+".w3",first,first+count,0,3840));}};
+                };
+                calibration->gpu = [&,stem](int ordinal,const Tensor &input) {
+                    const auto prefix=stem(ordinal);
+                    if(!gguf_transformer_ && !convrot_transformer_ && !transformer_.has_runtime_loras())
+                        return z_runtime_full_ffn_graph()({input,transformer_.at(prefix+".w1.weight"),
+                            transformer_.at(prefix+".w3.weight"),transformer_.at(prefix+".w2.weight")})[0];
+                    return z_ffn(input,transformer_,prefix);
+                };
+                calibration->channel_gpu = [&,stem](int ordinal,const Tensor &input,int first,int count) {
+                    const auto prefix=stem(ordinal);
+                    if(!gguf_transformer_ && !convrot_transformer_ && !transformer_.has_runtime_loras() && input.dtype()==mx::bfloat16 &&
+                        z_image_small_shape_metal_default() && input.shape(1)<=4224) {
+                        auto up=z_metal::projection_range(input,transformer_.at(prefix+".w3.weight"),first,first+count,0,3840);
+                        auto hidden=z_metal::swiglu_gemm_range(input,transformer_.at(prefix+".w1.weight"),up,first,count);
+                        return std::make_pair(dense_gpu::projection_range(hidden,transformer_.at(prefix+".w2.weight"),
+                            0,3840,first,first+count,32,ane::configured_fp32_channel_join()),hidden);
+                    }
+                    auto gate=transformer_.project_slice(input,prefix+".w1",first,first+count,0,3840,false);
+                    auto up=transformer_.project_slice(input,prefix+".w3",first,first+count,0,3840,false);
+                    auto hidden=silu(gate)*up;
+                    auto base=ane::configured_fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,prefix+".w2",0,3840,first,first+count) :
+                        transformer_.project_base_slice(hidden,prefix+".w2",0,3840,first,first+count,false);
+                    return std::make_pair(base,hidden);
+                };
+            }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
-                                                         !active_loras_.empty(), std::nullopt,
-                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_));
-            runtime_manifest_ = identity;
+                                                         !active_loras_.empty(),std::nullopt,
+                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_),calibration?&*calibration:nullptr);
+            runtime_manifest_ = request_identity;
+            if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }
+        runtime_ffn_->set_gpu_layers(runtime_gpu_layers);
+        if(z_runtime_row_placement()!=ane::RowPlacement::Suffix && runtime_ffn_->available())
+            require(!runtime_ffn_->channel_split() && runtime_ffn_->metrics().bucket<=image_rows,
+                    "qe_config_conflict: image-only row placement requires bucket within image rows");
         ane::smoothquant::bind_request(*runtime_ffn_,r,transformer_checkpoint_,cached_lora_identity_,3840);
+        runtime_ffn_->begin_request(cached_lora_identity_);
     }
     if (load_only) {
         RunResult result;
@@ -4287,8 +4530,18 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         if (!runtime_convrot_) result.selection = runtime_ffn_->resolve_selection(result.selection);
         if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
         if (runtime_convrot_) {
-            result.backend="mlx_cpp_metal_convrot+coreml_runtime_weight_experimental";
-            result.precision="convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            const auto &metrics=runtime_ffn_->metrics();
+            if (!runtime_ffn_->available()) {
+                result.backend="mlx_cpp_metal_convrot_packed_q8";
+                result.precision="int8_tensorwise_convrot_g256";
+            } else {
+                result.backend=metrics.runtime_weight_backend=="private_ane" ?
+                    "mlx_cpp_metal_convrot+private_ane_runtime_weight_experimental" :
+                    "mlx_cpp_metal_convrot+coreml_runtime_weight_experimental";
+                result.precision=metrics.runtime_weight_data_path=="w8a8_convrot" ? metrics.runtime_weight_source_recipe :
+                    "convrot-legacy-packed-scale-inverse-h256-f16-v1";
+            }
+            result.selection=runtime_ffn_->resolve_selection(result.selection);
         }
     }
     if (quantized) {
@@ -4314,6 +4567,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     }
     result.encoder_hybrid = cached_encoder_hybrid_metrics_;
     result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
+    if(z_dense_split_gpu_control()) {
+        require(!result.hybrid && result.backend=="mlx_cpp_metal" && result.request.execution=="gpu",
+                "dense split GPU control unexpectedly selected a hybrid backend");
+        result.backend="mlx_cpp_metal_dense_split_gpu_control";
+        result.selection+="; experimental GPU-only FFN graph-boundary control; no ANE execution";
+    }
     result.timings.wall = std::chrono::duration<double>(Clock::now() - begin).count();
     result.timings.text = text_seconds;
     result.timings.denoise = denoise_seconds;

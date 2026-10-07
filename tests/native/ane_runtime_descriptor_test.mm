@@ -1,3 +1,4 @@
+#include "../../native/backends/ane_public_w8_availability.hpp"
 // Parsing/fallback only: no private build, graph compilation, model load or GPU work.
 #include "../../native/backends/ane_backend.hpp"
 #include <cstdlib>
@@ -7,6 +8,11 @@ using namespace tc::ane;
 int main(int argc, char **argv) {
     if (argc != 3) return 2;
     try {
+        if (public_w8_array_type(false) != MLMultiArrayDataTypeFloat16) return 1;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED < 260000
+        try { public_w8_array_type(true); return 1; }
+        catch (const CapabilityError &) {}
+#endif
         const std::string mode = argv[2];
         if (mode == "reject") {
             try { runtime_template_descriptor(argv[1]); return 1; }

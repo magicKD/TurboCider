@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | `runtime_ane_common.py` | 共用环境清理、竞争推理预检、流式SHA、编辑/调用/QK receipt校验 | 不加载模型，不代替图像质量验收 |
 | `runtime_ane_model_screen.py` | GPU/runtime/frozen整请求对照、原始结果与PNG、可选独立内存采样 | 单向screen不等于完整匹配对照 |
+| `runtime_ane_image_compare.py` | CPU-only等尺寸PNG哈希、RGB RMSE/PSNR/相关与Gaussian11 SSIM、独立alpha比较 | 不重采样，不下载学习权重，不代替LPIPS/CLIP/latent或语义资格 |
 | `runtime_lora_shared_graph_switch.py` | 同进程base → A → 合成B → base，检查图复用、实际调用和状态隔离 | 合成B不是第二个训练LoRA的质量资格 |
 | `runtime_ane_memory.py` | 采样进程编排、证据绑定、超时处理；复用 `tools/native/` 的采样器 | 进程footprint不是ANE独占或完整driver内存 |
 | `runtime_ane_qkv_regression.py` | 使用既有原生库运行一次合成 QKV 失败回退/取消复用检查；保存日志/hash 并清理所属临时图 | 不加载 checkpoint，不证明 ANE 驻留或推理提速；不属于默认构建 |
@@ -32,6 +33,17 @@ producer，不能把其它优化的收益算作 A8 pipeline 收益。详见
 constants；默认0、同库测量，不改变 recipe 或原始 weight layout。
 `--observe-load` 连续记录 CPU 负载并排除 owned launch tree，检测到竞争或
 观察不完整就保留 raw output、拒绝比较；不是实际 GPU/ANE 独占证明。
+`--private-lora-channel-range 0|1` 对比旧 full gate/up correction 与仅 ANE
+子范围 correction；限定 private W8A8 channel LoRA，并验证实际 narrow/full
+callback counters，不能将 env 或 self-test 当作模型执行。Public/row和
+没有子范围 callback 的调用方保持完整路径；down-LoRA仍用一次完整 hidden。
+`--fixed-async 0|1` 仅用于positive fixed chunks且关闭profile的runtime消融。
+1复用untimed/async head，0保持固定分区计时；verifier要求实际成功block的
+untimed/async counters符合选择。该计数不是物理GPU/ANE overlap证据。
+`--qwen-lora-1024` 显式开启六步1024² LoRA生成diagnostic，对每条GPU/
+runtime路线采用同样的原FP32 rank，拒绝编辑、frozen和FP16混用；核验
+planned与actual 1024 LoRA标记、实际尺寸/步数/未合并binding，不把flag
+或self-test当模型执行/画质资格。原512²精度与入口不变。
 placement保留历史文件名和冻结图 `--blocks` 接口；runtime只有一个共享图，
 不是每层一个图，且不接受 `--blocks`。不要仅为命名统一移动这些入口。
 

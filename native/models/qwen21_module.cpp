@@ -71,6 +71,14 @@ ModelModule qwen21_module() {
                              adapter->rank == "r128" && r.steps == 6 && r.loras[0].strength == 1.f)),
                         "Qwen21 staged runtime diagnostic needs explicit 512px component-staged runtime FFN, base or six-step Viggle r128 strength 1, 0...3 full-size references and no prompt enhancement");
             }
+            const char *lora_1024_flag = std::getenv("TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC");
+            require(qwen21::binary_option_or_unset(lora_1024_flag),
+                    "TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC accepts only 0 or 1");
+            const bool lora_1024 = qwen21::lora_1024_generation(r);
+            // Base requests ignore the valid flag so a resident batch can
+            // return to base without inheriting an adapter approximation.
+            require(!qwen21::option_enabled(lora_1024_flag) || r.loras.empty() || lora_1024,
+                    "Qwen21 1024 LoRA diagnostic requires resident six-step GPU/runtime generation, no references, frozen W8A8 or prompt enhancement");
             require(r.hybrid_mlp_mode == "auto" || r.hybrid_mlp_mode == "base_fused" ||
                         r.hybrid_mlp_mode == "lora_suffix" || r.hybrid_mlp_mode == "lora_gate_up" ||
                         r.hybrid_mlp_mode == "lora_fused" || runtime_ane || runtime_qkv,
@@ -253,7 +261,7 @@ ModelModule qwen21_module() {
                             std::isfinite(r.loras[0].strength) &&
                             r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f &&
                             r.lora_strategy == "inference_time" &&
-                            r.width == 512 && r.height == 512 && r.inputs.size() <= 3,
+                            ((r.width == 512 && r.height == 512) || lora_1024) && r.inputs.size() <= 3,
                         "Qwen21 LoRA needs one runtime transformer adapter with finite strength -8...8, a 512px canvas and 0...3 references");
                 if (viggle || experimental_adapter) {
                     require((!viggle || experimental_adapter || r.loras[0].strength == 1.f) && r.steps == 6 &&
@@ -418,6 +426,8 @@ ModelModule qwen21_module() {
             const char *lora_fp16 = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
             require(qwen21::binary_option_or_unset(lora_fp16),
                     "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16 accepts only 0 or 1");
+            require(!lora_1024 || !qwen21::option_enabled(lora_fp16),
+                    "Qwen21 1024 LoRA diagnostic retains original FP32 rank matmuls; FP16 is not qualified");
             // With no adapter attached this flag has no effect, allowing a
             // resident session to switch back to the base GPU model.
             require(r.qwen21_gpu_full_ffn_blocks.empty() ||

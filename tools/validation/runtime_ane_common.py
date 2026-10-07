@@ -10,6 +10,7 @@ import math
 import os
 import subprocess
 import time
+from runtime_ane_calibration import validate_channel_calibration
 
 
 def sha256_file(path):
@@ -28,6 +29,158 @@ def session_counter(data, name):
     if type(value) is not int or value < 0:
         raise ValueError(f"invalid or missing {name} telemetry")
     return value
+
+
+FP16_BF16_VALUE_RECIPE="fp16-swiglu-compact-bf16-values-canonical-zero-guarded-v1"
+
+
+def validate_row_placement(rows,expected="suffix"):
+    if expected not in ("suffix","image_prefix","image_tail"):
+        raise ValueError("unknown runtime row placement")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        actual=runtime.get("row_placement","suffix")
+        if actual!=expected:raise ValueError("runtime row placement differs from requested policy")
+        keys=("row_suffix_blocks_session_total","row_prefix_blocks_session_total",
+              "row_image_tail_blocks_session_total","row_protected_rows_session_total")
+        if not any(key in runtime for key in keys):
+            if expected!="suffix":raise ValueError("image-only placement lacks actual row telemetry")
+            continue
+        suffix,prefix,tail,protected=(session_counter(runtime,key) for key in keys)
+        if runtime.get("partition_axis")=="intermediate_channels":
+            if expected!="suffix" or any((suffix,prefix,tail,protected)):
+                raise ValueError("channel split cannot claim row placement")
+            continue
+        blocks=session_counter(runtime,"hybrid_blocks_session_total")
+        if suffix+prefix+tail!=blocks:raise ValueError("row placement counters do not cover successful hybrid blocks")
+        if expected=="suffix":
+            if prefix or tail or protected:raise ValueError("suffix route claims protected image rows")
+        else:
+            active=prefix if expected=="image_prefix" else tail
+            if (runtime.get("data_path")!="fp16" or runtime.get("partition_axis")!="rows" or
+                    row.get("model")!="z-image-turbo" or row.get("lora_strategy")!="none" or
+                    active<=0 or (tail if expected=="image_prefix" else prefix) or protected<active or
+                    session_counter(row.get("hybrid") or {},"runtime_calls_session_total")==0):
+                raise ValueError("image-only placement lacks actual dense base FP16 execution")
+
+
+def validate_fp16_bf16_values(rows,requested):
+    if type(requested) is not bool:
+        raise ValueError("FP16 BF16 value policy must be explicit boolean")
+    for row in rows:
+        hybrid=row.get("hybrid") or {};runtime=hybrid.get("runtime_weight") or {}
+        actual=runtime.get("source_recipe")==FP16_BF16_VALUE_RECIPE
+        if actual!=requested:
+            raise ValueError("FP16 BF16 value source recipe differs from requested policy")
+        if requested and (runtime.get("executor_backend")!="private_ane" or runtime.get("data_path")!="fp16" or
+                runtime.get("partition_axis")!="rows" or row.get("lora_strategy")!="none" or
+                type(row.get("lora_applied_projections",0)) is not int or row.get("lora_applied_projections",0)!=0 or
+                session_counter(hybrid,"runtime_calls_session_total")==0):
+            raise ValueError("FP16 BF16 value recipe lacks actual base-only Private row execution")
+
+
+def validate_overflow_events(runtime, calls):
+    """Bounded per-launch diagnostics, never a physical trace/quality gate."""
+    keys = ("overflow_events", "overflow_events_dropped_session_total", "overflow_event_scope")
+    if not any(key in runtime for key in keys):
+        return None  # Explicit backward compatibility for older receipts.
+    events = runtime.get("overflow_events")
+    if (not isinstance(events, list) or len(events) > 32 or
+            runtime.get("overflow_event_scope") != "aggregated per-FFN launch host telemetry; no chunk/physical-engine trace"):
+        raise ValueError("invalid bounded overflow event telemetry/scope")
+    dropped = session_counter(runtime, "overflow_events_dropped_session_total")
+    total = session_counter(runtime, "overflow_retries_session_total")
+    retries, last_end = 0, 0
+    for event in events:
+        if not isinstance(event, dict) or type(event.get("completed")) is not bool:
+            raise ValueError("invalid overflow event completion")
+        session_counter(event, "layer")
+        rows = session_counter(event, "rows")
+        begin, count = (session_counter(event, key) for key in ("runtime_call_begin", "runtime_call_count"))
+        attempted = session_counter(event, "retries")
+        before, after = event.get("headroom_before"), event.get("headroom_after")
+        if (not rows or not attempted or count < attempted+int(event["completed"]) or
+                begin < last_end or begin+count > calls or
+                any(type(x) not in (int, float) or not math.isfinite(x) or x < 1 for x in (before, after)) or
+                after <= before):
+            raise ValueError("overflow event lost its layer/calls/retry/headroom transition")
+        retries += attempted
+        last_end = begin+count
+    if ((dropped == 0 and retries != total) or
+            (dropped and (len(events) != 32 or total < retries+dropped))):
+        raise ValueError("overflow event prefix disagrees with cumulative retries")
+    return events, dropped
+
+
+def validate_gpu_layer_policy(runtime):
+    keys=("requested_gpu_layers","forced_gpu_blocks_session_total")
+    if not any(key in runtime for key in keys):
+        return None
+    layers=runtime.get("requested_gpu_layers")
+    if (not isinstance(layers,list) or len(layers)>128 or
+            any(type(x) is not int or not 0<=x<128 for x in layers) or layers!=sorted(set(layers))):
+        raise ValueError("invalid explicit GPU layer policy")
+    forced=session_counter(runtime,"forced_gpu_blocks_session_total")
+    if forced>min(session_counter(runtime,"gpu_blocks_session_total"),session_counter(runtime,"unsplit_gpu_blocks_session_total")):
+        raise ValueError("forced GPU blocks were not complete unsplit GPU blocks")
+    return tuple(layers),forced
+
+
+def gpu_layer_policy(value):
+    """Mirror native Z policy syntax, canonicalize before any artifact writes."""
+    parts=value.split(",")
+    if (not parts or len(parts)>32 or any(not x or len(x)>3 or not x.isascii() or not x.isdigit() for x in parts)):
+        raise argparse.ArgumentTypeError("GPU blocks require comma-separated ordinals 0...31")
+    layers=sorted(map(int,parts))
+    if any(x>=32 for x in layers) or len(set(layers))!=len(layers):
+        raise argparse.ArgumentTypeError("GPU blocks require unique ordinals 0...31")
+    return tuple(layers)
+
+
+def z_gpu_layer_environment(model_id, route, layers, routes):
+    if layers is None:
+        return {}
+    if (not isinstance(layers,tuple) or not layers or len(layers)>32 or
+            any(type(x) is not int or not 0<=x<32 for x in layers) or layers!=tuple(sorted(set(layers)))):
+        raise ValueError("invalid canonical Z runtime GPU layer policy")
+    if model_id!="z-image-turbo" or "runtime" not in routes:
+        raise ValueError("explicit GPU block screen currently requires Z-Image BF16 and a runtime route")
+    if route!="runtime":
+        return {}
+    return {"TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS":",".join(map(str,layers))}
+
+
+def validate_requested_gpu_layers(rows, layers, steps):
+    if layers is None:
+        return
+    for index,row in enumerate(rows):
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        reported=validate_gpu_layer_policy(runtime)
+        if (reported is None or reported[0]!=layers or reported[1]!=(index+1)*steps*len(layers) or
+                type(row.get("actual_denoise_steps")) is not int or row["actual_denoise_steps"]!=steps):
+            raise ValueError("explicit GPU block policy/actual execution count does not match the screen")
+
+
+def validate_fp32_channel_join(rows, enabled, *, allow_gpu_decline=False):
+    """F32 is a GPU partial/epilogue contract, not ANE arithmetic or hidden ABI."""
+    if type(enabled) is not bool or not rows:
+        raise ValueError("invalid F32 channel join request/results")
+    for row in rows:
+        hybrid=row.get("hybrid") or {}
+        runtime=hybrid.get("runtime_weight") or {}
+        marker=runtime.get("fp32_channel_join_enabled")
+        if (enabled and allow_gpu_decline and runtime.get("executor_backend") is None and
+                hybrid.get("runtime_calls_session_total")==0 and marker is False):
+            continue
+        if not enabled and marker is None:continue  # explicit legacy compatibility
+        if type(marker) is not bool or marker is not enabled:
+            raise ValueError("requested F32 channel join was not actually selected")
+        if enabled and (runtime.get("executor_backend")!="private_ane" or
+                runtime.get("partition_axis")!="intermediate_channels" or
+                runtime.get("data_path") not in ("w8a8_hadamard","w8a8_convrot") or
+                not isinstance(runtime.get("source_recipe"),str) or
+                not runtime["source_recipe"].endswith("+fp32-partial-join-v1")):
+            raise ValueError("F32 channel join lacks Private W8 partial recipe")
 
 
 def validate_edit_results(rows, edit):
@@ -61,7 +214,7 @@ def chunk_policy(value):
 
 
 def validate_results(rows, route, expected_count, model_id="z-image-turbo", expect_lora=False,
-                     runtime_backend="public", expect_device_io=False, expected_data_path=None):
+                     runtime_backend="public", expect_device_io=False, expected_data_path=None, channel_auto=False):
     """Do not report a failed/degraded route as a successful acceleration run.
 
     Raw JSONL/PNG evidence is already saved by the caller. Adaptive GPU probes
@@ -84,6 +237,10 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     allowed_backends = {backend}
     if route == "runtime" and runtime_backend != "public":
         allowed_backends = {private_backend} if runtime_backend == "private" else {backend, private_backend}
+    if channel_auto:
+        if route != "runtime" or runtime_backend == "public":
+            raise ValueError("native automatic channels require an authorized runtime route")
+        allowed_backends.add(base_backend)
     session_backend = None
     previous_calls = 0
     previous_qkv_gpu = 0
@@ -99,6 +256,14 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
     a8_policy = None
     stage_policy = None
     previous_stage_variants = 0
+    previous_lora_channels = (0, 0)
+    previous_deferred_join = 0
+    deferred_join_policy = None
+    lora_channel_receipt_seen = False
+    calibration_signature = None
+    previous_declined_gpu = 0
+    previous_overflows = None
+    previous_gpu_layers = None
     for row in rows:
         actual_backend = row.get("runtime_backend")
         if actual_backend not in allowed_backends:
@@ -155,6 +320,53 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
             previous_calls, previous_qkv_gpu = calls, gpu
             continue
         hybrid = row.get("hybrid") or {}
+        if route == "runtime":
+            current_gpu_layers=validate_gpu_layer_policy(hybrid.get("runtime_weight") or {})
+            if previous_gpu_layers is not None and (current_gpu_layers is None or
+                    current_gpu_layers[0]!=previous_gpu_layers[0] or current_gpu_layers[1]<previous_gpu_layers[1]):
+                raise ValueError("explicit GPU layer policy/counters changed within resident session")
+            previous_gpu_layers=current_gpu_layers
+            current_overflows = validate_overflow_events(hybrid.get("runtime_weight") or {},
+                session_counter(hybrid, "runtime_calls_session_total"))
+            if previous_overflows is not None:
+                prior, dropped = previous_overflows
+                if (current_overflows is None or current_overflows[0][:len(prior)] != prior or
+                        current_overflows[1] < dropped):
+                    raise ValueError("overflow event prefix changed within resident session")
+            previous_overflows = current_overflows
+        if channel_auto:
+            runtime = hybrid.get("runtime_weight") or {}
+            report = runtime.get("channel_calibration")
+            full_width, hidden = (12288,4096) if model_id == "qwen-image-2.1" else (10240,3840)
+            selected = validate_channel_calibration(report, full_width, hidden)
+            signature = json.dumps({k:v for k,v in report.items() if k != "cache_hit"}, sort_keys=True, allow_nan=False)
+            if calibration_signature is not None and signature != calibration_signature:
+                raise ValueError("native automatic calibration evidence changed within resident session")
+            calibration_signature = signature
+            if selected == 0:
+                gpu_blocks = session_counter(runtime,"gpu_blocks_session_total")
+                if (actual_backend != base_backend or hybrid.get("runtime_failed") is not False or
+                        session_counter(hybrid,"runtime_failures_session_total") or
+                        session_counter(hybrid,"runtime_calls_session_total") or
+                        session_counter(runtime,"fallback_blocks_session_total") or
+                        session_counter(runtime,"overflow_retries_session_total") or
+                        session_counter(runtime,"device_io_calls_session_total") or
+                        gpu_blocks <= previous_declined_gpu or runtime.get("executor_backend") not in (None, "")):
+                    raise ValueError("declined native calibration was not a clean whole-GPU route")
+                previous_declined_gpu = gpu_blocks
+                continue
+            if (actual_backend != private_backend or runtime.get("partition_axis") != "intermediate_channels" or
+                    runtime.get("ane_channels") != selected or runtime.get("gpu_channels") != full_width-selected):
+                raise ValueError("native automatic calibration and adopted runtime geometry disagree")
+            # The independent trial measured the scale-one graph. A later
+            # successful overflow retry rebuilds a different arithmetic graph;
+            # a retained hot executor is not fresh evidence for that recipe.
+            headroom = runtime.get("headroom_scale")
+            if (session_counter(runtime, "overflow_retries_session_total") or
+                    type(headroom) not in (int, float) or not math.isfinite(headroom) or headroom != 1):
+                raise ValueError("native automatic runtime changed the calibrated headroom recipe")
+            calibration_fp32=report["identity"]["recipe"].endswith("+fp32-partial-join-v1")
+            validate_fp32_channel_join([row],calibration_fp32)
         if expect_lora and hybrid.get("mlp_output_kind") != (
                 "runtime_weight_swiglu_lora_inputs" if route == "runtime" else "fused_lora"):
             raise ValueError("LoRA benchmark requires a complete activation-correction graph")
@@ -167,6 +379,33 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
         previous_calls = calls
         if route == "runtime":
             runtime = hybrid.get("runtime_weight") or {}
+            defer_keys=("deferred_channel_join_enabled","deferred_channel_join_blocks_session_total","post_join_scope")
+            has_defer=any(name in runtime for name in defer_keys)
+            if deferred_join_policy is not None and not has_defer:
+                raise ValueError("deferred join receipt disappeared")
+            if has_defer:
+                enabled=runtime.get("deferred_channel_join_enabled")
+                count=session_counter(runtime,"deferred_channel_join_blocks_session_total")
+                channels=session_counter(runtime,"channel_blocks_session_total")
+                asynchronous=session_counter(runtime,"async_hybrid_blocks_session_total")
+                expected_scope=("evaluated_join_host_span" if count==0 else
+                    "host_graph_construction_deferred_gpu_consumption" if count==channels else
+                    "mixed_evaluated_and_deferred_join_spans")
+                if (type(enabled) is not bool or count<previous_deferred_join or
+                        count>channels or count>asynchronous or (not enabled and count) or
+                        (deferred_join_policy is not None and enabled is not deferred_join_policy) or
+                        runtime.get("post_join_scope")!=expected_scope):
+                    raise ValueError("invalid deferred join policy/count/timing scope")
+                previous_deferred_join,deferred_join_policy=count,enabled
+            lora_keys=("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total")
+            has_lora_channels=any(name in runtime for name in lora_keys)
+            if lora_channel_receipt_seen and not has_lora_channels:
+                raise ValueError("LoRA channel correction receipt disappeared within session")
+            if has_lora_channels:
+                counts=tuple(session_counter(runtime,name) for name in lora_keys)
+                if any(value<prior for value,prior in zip(counts,previous_lora_channels)):
+                    raise ValueError("LoRA channel correction counters reset within session")
+                previous_lora_channels,lora_channel_receipt_seen=counts,True
             has_stage = any(n in runtime for n in ("stage_specialized","stage_pipeline_variants"))
             if stage_policy is not None and not has_stage:
                 raise ValueError("stage specialization receipt disappeared within session")
@@ -209,9 +448,15 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
                     raise ValueError("invalid future-bank prefetch receipt")
             if expect_device_io:
                 device_calls = session_counter(runtime, "device_io_calls_session_total")
-                if (runtime.get("io_path") != "gpu_iosurface" or runtime.get("executor_backend") != "private_ane" or
+                expected_io_executor="private_ane" if actual_backend==private_backend else "public_coreml"
+                public_w8=expected_io_executor=="public_coreml"
+                if public_w8 and (runtime.get("data_path") not in ("w8a8_hadamard","w8a8_convrot") or
+                        not isinstance(runtime.get("source_recipe"),str) or
+                        not runtime["source_recipe"].endswith("+public-int8-io-v1")):
+                    raise ValueError("Public GPU I/O requires explicit compressed W8 recipe")
+                if (runtime.get("io_path") != "gpu_iosurface" or runtime.get("executor_backend") != expected_io_executor or
                         not previous_device_calls <= device_calls == calls):
-                    raise ValueError("private GPU I/O was not reported consistently for every prediction")
+                    raise ValueError("runtime GPU I/O was not reported consistently for every prediction")
                 previous_device_calls = device_calls
             if expected_data_path is not None and runtime.get("data_path") != expected_data_path:
                 raise ValueError("requested runtime data path was not reported")
@@ -352,6 +597,96 @@ def validate_qwen_qk_receipts(rows, enabled):
                 ("experimental fused Metal Q/K norm-RoPE" in selection) != enabled or
                 ("qwen21_metal_qk_norm_rope" in labels) != enabled):
             raise ValueError("Q/K norm-RoPE selection does not match the requested experiment")
+
+
+def qwen_lora_1024_environment(model_id, size, steps, enabled, *, has_lora,
+                               references=False, fp16=False, routes=("gpu", "runtime")):
+    """One opt-in on EVERY route; retain original rank precision and workload."""
+    if not enabled:
+        return {}
+    if (model_id != "qwen-image-2.1" or size != 1024 or steps != 6 or
+            not has_lora or references or fp16 or
+            not routes or any(route not in ("gpu", "runtime") for route in routes)):
+        raise ValueError("1024 LoRA diagnostic requires Qwen 1024px six-step GPU/runtime generation with an adapter and FP32 rank")
+    return {"TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC": "1"}
+
+
+def validate_qwen_lora_1024_receipts(rows, enabled):
+    """An env/self-test is not an actual model route or precision receipt."""
+    if not rows:
+        raise ValueError("missing 1024 LoRA receipts")
+    marker = "experimental 1024px six-step runtime LoRA generation, FP32 rank"
+    label = "qwen21_lora_1024_generation_fp32_diagnostic"
+    for row in rows:
+        selection = row.get("acceleration_selection", "")
+        plan = row.get("plan") or {}
+        labels = plan.get("algorithm_approximations", []) if isinstance(plan, dict) else None
+        if (not isinstance(selection, str) or not isinstance(labels, list) or
+                (marker in selection) != enabled or (label in labels) != enabled):
+            raise ValueError("1024 LoRA selection/plan does not match the requested diagnostic")
+        if enabled and (any(type(row.get(key)) is not int or row.get(key) != expected
+                               for key,expected in (("width",1024),("height",1024),("actual_denoise_steps",6))) or
+                        row.get("lora_strategy") != "inference_time" or
+                        "experimental FP16 low-rank LoRA matmuls" in selection or
+                        "qwen21_viggle_lora_fp16_matmuls" in labels):
+            raise ValueError("1024 LoRA workload or FP32 rank receipt is inconsistent")
+
+
+def validate_fixed_async(rows, enabled):
+    """Require actual successful model-block receipts for this ablation.
+
+    These host scheduling counters do not prove physical device overlap.
+    A self-test, omitted executor or timed fallback cannot stand in for a
+    fixed async head actually consumed by the model.
+    """
+    if not rows:
+        raise ValueError("missing fixed async results")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks,untimed,asynchronous=(session_counter(runtime,name) for name in
+            ("hybrid_blocks_session_total","untimed_hybrid_blocks_session_total","async_hybrid_blocks_session_total"))
+        if blocks<=0 or (enabled and (untimed!=blocks or asynchronous!=blocks)) or (
+                not enabled and (untimed!=0 or asynchronous!=0)):
+            raise ValueError("requested fixed async head policy was not executed")
+
+
+def validate_deferred_channel_join(rows, enabled):
+    """Actual owned channel joins, not flag intent or a component self-test."""
+    if not rows:
+        raise ValueError("missing deferred channel join results")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks=session_counter(runtime,"channel_blocks_session_total")
+        asynchronous=session_counter(runtime,"async_hybrid_blocks_session_total")
+        deferred=session_counter(runtime,"deferred_channel_join_blocks_session_total")
+        if (runtime.get("executor_backend")!="private_ane" or
+                runtime.get("partition_axis")!="intermediate_channels" or blocks<=0 or
+                runtime.get("deferred_channel_join_enabled") is not enabled or
+                (enabled and asynchronous!=blocks) or deferred>asynchronous or
+                deferred!=(blocks if enabled else 0) or
+                runtime.get("post_join_scope")!=("host_graph_construction_deferred_gpu_consumption"
+                    if enabled else "evaluated_join_host_span")):
+            raise ValueError("requested deferred channel join policy was not executed")
+
+
+def validate_lora_channel_range(rows, enabled):
+    """Verify an explicit correction ablation actually executed that path.
+
+    Counters are per-session callback executions, not prediction counts or
+    environment intent. Auto may stop using ANE in later requests; it cannot
+    invent a narrow/full callback receipt from the executor self-test.
+    """
+    if not rows:
+        raise ValueError("missing LoRA channel correction results")
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        counts=tuple(session_counter(runtime,name) for name in
+                     ("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total"))
+        if (row.get("lora_strategy")!="inference_time" or
+                runtime.get("executor_backend")!="private_ane" or
+                runtime.get("partition_axis")!="intermediate_channels" or
+                counts[0 if enabled else 1]<=0 or counts[1 if enabled else 0]!=0):
+            raise ValueError("requested LoRA channel correction path was not executed")
 
 
 def benchmark_environment():

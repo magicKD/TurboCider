@@ -24,8 +24,8 @@ inline bool same_region(const DeviceWeightRegion &a, const DeviceWeightRegion &b
         same_optional_matrix(p.column_scale, q.column_scale) &&
         std::tie(x.buffer, x.buffer_bytes, x.offset_bytes, x.row_stride_bytes, x.rows, x.cols, x.encoding, x.dense_dtype, x.group_size, x.immutable_generation) ==
         std::tie(y.buffer, y.buffer_bytes, y.offset_bytes, y.row_stride_bytes, y.rows, y.cols, y.encoding, y.dense_dtype, y.group_size, y.immutable_generation) &&
-        std::tie(p.row_begin, p.rows, p.column_begin, p.columns, p.rotation_block, p.rotation_seed, p.transpose, p.inverse_column_scale) ==
-        std::tie(q.row_begin, q.rows, q.column_begin, q.columns, q.rotation_block, q.rotation_seed, q.transpose, q.inverse_column_scale);
+        std::tie(p.row_begin, p.rows, p.column_begin, p.columns, p.rotation_block, p.rotation_seed, p.transpose, p.basis, p.activation_group_size, p.inverse_column_scale) ==
+        std::tie(q.row_begin, q.rows, q.column_begin, q.columns, q.rotation_block, q.rotation_seed, q.transpose, q.basis, q.activation_group_size, q.inverse_column_scale);
 }
 inline bool live_key(const DeviceWeightRegion &key) {
     return !key.source.allocation_identity.expired() &&
@@ -47,7 +47,8 @@ inline void validate_column_scale(const DeviceWeightView &source, const W8StageS
         return;
     }
     const auto &scale = *spec.column_scale;
-    check(spec.rotation_block == 128 && spec.inverse_column_scale == spec.transpose,
+    check(spec.basis == W8Basis::SylvesterDH && spec.activation_group_size == 0 &&
+          spec.rotation_block == 128 && spec.inverse_column_scale == spec.transpose,
           "W8 S1 requires W H128 multiply or transpose A8 H128 divide");
     check(source.cols > 0 && source.cols <= 32768 && scale.owner && scale.buffer &&
           !scale.allocation_identity.expired() && scale.rows == 1 && scale.cols == source.cols && scale.dtype == DType::FP32,

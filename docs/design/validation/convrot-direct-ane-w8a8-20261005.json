@@ -1,0 +1,119 @@
+{
+  "schema": "tc-convrot-direct-ane-w8a8-validation-v1",
+  "date": "2026-10-05",
+  "scope": "direct-code components and actual model numerical diagnostics; not performance or production qualification",
+  "production_qualified": false,
+  "default_route_changed": false,
+  "observed_native_int8_macs": false,
+  "physical_gpu_ane_overlap_proven": false,
+  "recipe": "comfy-h256-direct-q8-source-round-a8-rne-norm-f16-v1",
+  "data_path": "w8a8_convrot",
+  "build_scope": "working-tree snapshot retaining pre-existing ConvRot drafts; not clean staged-tree rebuild",
+  "builds": {
+    "private": {
+      "path": "build/convrot-direct-private/libturbocider.dylib",
+      "sha256": "5015ce346df3e872fd2cb54fda75098cb0246b20361c3d7f4cc6e37c63a054a8",
+      "private_enabled": true,
+      "experimental_probes": true
+    },
+    "public": {
+      "path": "build/convrot-direct-public/libturbocider.dylib",
+      "sha256": "2ac32548989f3f2b3346716d794809a7649c36523a130da8ca8679ad7ef23246",
+      "private_enabled": false,
+      "experimental_probes": false,
+      "actual_release_guard_passed": true
+    }
+  },
+  "regressions": {
+    "private_suite": {"passed": 14, "skipped": 2, "unenabled": ["MLX channel", "MLX prepared calibration"]},
+    "public_suite": {"passed": 13},
+    "host_suite": {"passed": 8},
+    "convrot_gpu_suite": {"passed": 5},
+    "screen_suite": {"passed": 60},
+    "direct_w_stage_cases": 37,
+    "comfy_a8_stage_cases": 9,
+    "gpu_channel_range_cases": 24,
+    "independent_comfy_basis_rows": 256,
+    "direct_executor_raw_packed_serial_lookahead_cells": 4,
+    "full_make_test_run": false
+  },
+  "model": {
+    "id": "z-image-turbo",
+    "checkpoint": "z_image_turbo_int8_convrot.safetensors",
+    "source_sha256": "be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    "source_profile": "legacy packed BF16 row scales",
+    "comparison": "same final binary, same checkpoint, prompt and seed; legacy GPU reference vs direct Private/GPU channels",
+    "steps": 4,
+    "seed": 42,
+    "ane_channels": 4096,
+    "gpu_channels": 6144,
+    "bucket_rows": 1056,
+    "manifest": "outputs/runtime-ane/private-channel-z-c1056-k1024-n512-v1/manifest.json",
+    "native_quality_validation_enabled": false,
+    "acceptance_uses_independent_cpu_fp64_tensor_comparer": true,
+    "n1_gate": {"max_rel_l2": 0.03, "min_cosine": 0.999},
+    "cells": [
+      {
+        "size": 512,
+        "gpu_evidence": "outputs/convrot-direct-final-512-gpu4-diagnostic",
+        "candidate_evidence": "outputs/convrot-direct-final-512-private4096-4-diagnostic",
+        "status": "completed",
+        "actual_backend": "private_ane",
+        "channel_blocks": 128,
+        "device_calls": 248,
+        "runtime_failed": false,
+        "fallback_blocks": 0,
+        "conditioning_exact": true,
+        "initial_latent_exact": true,
+        "step_rel_l2": [0.0019435922673074679, 0.007417397084112531, 0.021917223712014832, 0.047039741157945646],
+        "final_latent_rel_l2": 0.047039741157945646,
+        "final_latent_cosine": 0.9988937845885887,
+        "final_latent_max_abs": 2.549999952316284,
+        "final_latent_n1_pass": false,
+        "rgb_ssim": 0.9901949805670169,
+        "psnr_db": 38.78221065498363,
+        "performance_qualified": false,
+        "media_qualified": false
+      },
+      {
+        "size": 1024,
+        "gpu_evidence": "outputs/convrot-direct-final-1024-gpu4-diagnostic",
+        "candidate_evidence": "outputs/convrot-direct-final-1024-private4096-4-diagnostic",
+        "status": "completed",
+        "actual_backend": "private_ane",
+        "channel_blocks": 128,
+        "device_calls": 512,
+        "runtime_failed": false,
+        "fallback_blocks": 0,
+        "conditioning_exact": true,
+        "initial_latent_exact": true,
+        "step_rel_l2": [0.004643788831267839, 0.023455151721060226, 0.05683285536187026, 0.08725382937879246],
+        "final_latent_rel_l2": 0.08725382937879246,
+        "final_latent_cosine": 0.9961947814627724,
+        "final_latent_max_abs": 3.8015623092651367,
+        "final_latent_n1_pass": false,
+        "rgb_ssim": 0.9836716470872596,
+        "psnr_db": 35.64051494601714,
+        "performance_qualified": false,
+        "media_qualified": false
+      }
+    ]
+  },
+  "preliminary_one_step": {
+    "library_sha256": "85657d19231c83979aaf1a44b15f2047cc57d8f94d95733138cb5d0b2a676655",
+    "size": 512,
+    "steps": 1,
+    "final_latent_rel_l2": 0.012645286791119677,
+    "final_latent_cosine": 0.9999200657359795,
+    "final_latent_n1_pass": true,
+    "superseded_by_four_step_failure": true
+  },
+  "pending": [
+    "isolate full-GPU channel join and original dtype rounding vs input/hidden A8 error",
+    "qualify per-group A8 and sensitive-layer GPU/Public strategies before promotion",
+    "bounded GGUF dense-consumer A/B and actual reuse cost",
+    "fitted/cache-integrated adaptive share and prefetch",
+    "matched optimized GPU 1.2x, reverse multi-prompt and physical trace acceptance",
+    "actual-model ConvRot LoRA qualification"
+  ]
+}

@@ -2,6 +2,7 @@
 #include "../../native/backends/private/ane_mil.hpp"
 #include "../../native/backends/private/ane_executor.hpp"
 #include "../../native/backends/ane_runtime_convert.hpp"
+#include "../../native/core/gguf_decode.hpp"
 #import <Metal/Metal.h>
 #include <bit>
 #include <cmath>
@@ -55,24 +56,82 @@ int main(int argc, char **argv) {
                     else static_cast<uint16_t *>(input.row(r))[c] = round_bf16(value);
                 }
             }
-            // No ANE op here: same ready/done is a real GPU-only transpose
-            // control. The subsequent test uses distinct ANE event values.
-            const auto ready = ++timeline;
-            auto job = device.prepare_transfer({{input.view, surface, 0, 1.f}},
-                {{surface, output.view, 0, DType::BF16, 64.f}, {surface, half.view, 0, DType::FP16, 1.f}}, ready, ready);
-            job.submit(); auto result = job.finish();
-            if (!result.ok || job.validation_flags()) throw std::runtime_error("GPU roundtrip validation failed");
-            std::vector<uint16_t> expected(n);
-            for (int r = 0; r < m; ++r) {
-                if (!convert_fp16_row(input.row(r), expected.data(), n, dtype, true)) throw std::runtime_error("CPU oracle overflow");
-                for (int c = 0; c < n; ++c) {
-                    const auto value = expected[c];
-                    if (static_cast<uint16_t *>(half.row(r))[c] != value) throw std::runtime_error("GPU FP16 RNE/subnormal mismatch");
-                    const uint16_t wanted = round_bf16(float(std::bit_cast<_Float16>(value)) * 64.f);
-                    if (static_cast<uint16_t *>(output.row(r))[c] != wanted) throw std::runtime_error("GPU BF16 headroom RNE mismatch");
+            // The old same-ready/done GPU control still uses two CBs and an
+            // event. Independent calibration must use the same exact kernels
+            // without changing that timeline or requiring an ANE producer.
+            for (bool independent : {false, true}) {
+                std::memset(output.buffer.contents, 0x5a, output.buffer.length);
+                std::memset(half.buffer.contents, 0x5a, half.buffer.length);
+                const auto ready = independent ? 0 : ++timeline;
+                const auto before = device.value();
+                auto job = independent ? device.prepare_gpu_transfer({{input.view, surface, 0, 1.f}},
+                    {{surface, output.view, 0, DType::BF16, 64.f}, {surface, half.view, 0, DType::FP16, 1.f}}) :
+                    device.prepare_transfer({{input.view, surface, 0, 1.f}},
+                    {{surface, output.view, 0, DType::BF16, 64.f}, {surface, half.view, 0, DType::FP16, 1.f}}, ready, ready);
+                if (job.independent_gpu() != independent) throw std::runtime_error("GPU transfer dependency mode mismatch");
+                job.submit(); auto result = job.finish();
+                if (!result.ok || job.validation_flags()) throw std::runtime_error("GPU roundtrip validation failed");
+                if (independent && device.value() != before) throw std::runtime_error("independent GPU transfer changed ANE event");
+                std::vector<uint16_t> expected(n);
+                for (int r = 0; r < m; ++r) {
+                    if (!convert_fp16_row(input.row(r), expected.data(), n, dtype, true)) throw std::runtime_error("CPU oracle overflow");
+                    for (int c = 0; c < n; ++c) {
+                        const auto value = expected[c];
+                        if (static_cast<uint16_t *>(half.row(r))[c] != value) throw std::runtime_error("GPU FP16 RNE/subnormal mismatch");
+                        const uint16_t wanted = round_bf16(float(std::bit_cast<_Float16>(value)) * 64.f);
+                        if (static_cast<uint16_t *>(output.row(r))[c] != wanted) throw std::runtime_error("GPU BF16 headroom RNE mismatch");
+                    }
                 }
+                input.guard(); output.guard(); half.guard();
             }
-            input.guard(); output.guard(); half.guard();
+        }
+        {
+            Storage output(gpu, 33, 65, DType::BF16);
+            Surface snapshot(device, 65, 33, Element::FP16);
+            std::memset(snapshot.data(), 0, snapshot.rows() * snapshot.pitch());
+            auto job = device.prepare_gpu_transfer({}, {{snapshot, output.view, 0, DType::BF16, 1.f}});
+            job.failure_callback()(); // Sticky CPU failure must suppress even independent reads.
+            const auto before = device.value();
+            job.submit();
+            if (job.finish().ok || device.value() != before) throw std::runtime_error("failed independent transfer reported success or changed event");
+            for (size_t i = 0; i < output.buffer.length; ++i)
+                if (static_cast<const uint8_t *>(output.buffer.contents)[i] != 0x5a)
+                    throw std::runtime_error("failed independent transfer wrote output");
+            auto invalid = output.view; invalid.buffer_bytes = invalid.offset_bytes + 1;
+            bool rejected = false;
+            try { device.prepare_gpu_transfer({}, {{snapshot, invalid, 0, DType::BF16, 1.f}}); }
+            catch (const CapabilityError &) { rejected = true; }
+            if (!rejected) throw std::runtime_error("independent transfer accepted invalid device extent");
+        }
+        std::cout << "PASS independent GPU I/O: single-CB upload/restore, exact FP16/BF16/F32 conversion, unchanged ANE timeline, failed-read suppression\n";
+        {
+            constexpr int rows=257,cols=257;
+            Surface source(device,cols,rows,Element::FP16);
+            Storage fp32(gpu,rows,cols,DType::FP32);
+            for(int c=0;c<cols;++c)for(int r=0;r<rows;++r) {
+                uint16_t bits=uint16_t(c*rows+r);
+                if((bits&0x7c00)==0x7c00)bits=0;
+                reinterpret_cast<uint16_t*>(static_cast<char*>(source.data())+c*source.pitch())[r]=bits;
+            }
+            auto restore=device.prepare_gpu_transfer({},{{source,fp32.view,0,DType::FP32,3.25f}});
+            restore.submit();if(!restore.finish().ok || restore.validation_flags())throw std::runtime_error("F32 restore failed");
+            for(int r=0;r<rows;++r)for(int c=0;c<cols;++c) {
+                const auto bits=reinterpret_cast<const uint16_t*>(static_cast<const char*>(source.data())+c*source.pitch())[r];
+                const float expected=tc::gguf::fp16_to_float(bits)*3.25f;
+                if(std::bit_cast<uint32_t>(static_cast<float*>(fp32.row(r))[c])!=std::bit_cast<uint32_t>(expected))
+                    throw std::runtime_error("F32 restore exact finite-FP16/scale oracle mismatch");
+            }
+            fp32.guard();
+            std::memset(fp32.buffer.contents,0x5a,fp32.buffer.length);
+            auto suppressed=device.prepare_gpu_transfer({},{{source,fp32.view,0,DType::FP32,1.f}});
+            suppressed.failure_callback()();suppressed.submit();
+            if(suppressed.finish().ok)throw std::runtime_error("failed F32 restore reported success");
+            for(size_t i=0;i<fp32.buffer.length;++i)if(static_cast<const uint8_t*>(fp32.buffer.contents)[i]!=0x5a)
+                throw std::runtime_error("failed F32 restore published bytes");
+            reinterpret_cast<uint16_t*>(source.data())[0]=0x7bff;
+            auto overflow=device.prepare_gpu_transfer({},{{source,std::nullopt,0,DType::FP32,1e38f}});
+            overflow.submit();if(!overflow.finish().ok || !(overflow.validation_flags()&4))throw std::runtime_error("F32 restore overflow hidden");
+            std::cout<<"PASS F32 partial restore: every finite FP16 encoding, exact scaling, strided tails, failed-read suppression and validation-only overflow\n";
         }
         GraphShape shape{Kind::Matmul, 33, 65, 65, 32, 32, false};
         Program program(device, fp16_program(shape), {}, argv[1]);

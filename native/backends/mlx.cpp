@@ -1,7 +1,11 @@
 #include "mlx.hpp"
+#include "convrot_rotation.hpp"
+#include "affine_gpu_fp32.hpp"
+#include "dense_gpu_projection.hpp"
 #include "mlx_fd_reader.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
+#include "../platform/apple/platform.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -93,6 +97,16 @@ static Tensor convrot_rotate_metal(const Tensor &x) {
     require(x.dtype() == mx::bfloat16 || x.dtype() == mx::float16 ||
                 x.dtype() == mx::float32,
             "Metal ConvRot requires a floating-point activation");
+    // Only the existing explicit Metal ConvRot path takes this candidate.
+    // Dense-H / legacy default, other devices, small modulation vectors and
+    // unmeasured dtypes keep their previous implementation. Four independent
+    // SIMD groups keep H256 entirely in registers, with the same radix-4
+    // ordering and final BF16 rounding as the original shared-memory kernel.
+    static const bool qualified_device = device_info().gpu == "Apple M4 Max";
+    const auto quad_rows = x.size() / size_t(x.shape(-1));
+    if (qualified_device && x.dtype() == mx::bfloat16 && quad_rows >= 1024 && quad_rows <= 4224 &&
+        (x.shape(-1) == 3840 || x.shape(-1) == 10240))
+        return convrot_kernel::rotate(x, convrot_kernel::Rotation::SimdRegister);
     /* H_256 = H_4 kron H_4 kron H_4 kron H_4.  One threadgroup owns one
      * contiguous 256-value tile, reducing the transform from a dense
      * 256x256 matmul to four radix-4 butterflies.  Accumulation stays FP32
@@ -672,7 +686,11 @@ Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
             "invalid sliced projection geometry: " + prefix);
 
     Tensor output = x;
-    if (quantized(prefix)) {
+    if (convrot(prefix)) {
+        // Base projection only: project_slice applies gate/up LoRA below;
+        // channel callers join full corrected hidden before ONE down-LoRA.
+        output=project_range(x,prefix,row_start,row_end,col_start,col_end);
+    } else if (quantized(prefix)) {
         const auto &all_scales = at(prefix + ".scales");
         // GGUF/MLX affine tensors store one scale per 32 logical input
         // values.  Derive the full logical width from the scale matrix,
@@ -891,6 +909,24 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
     auto dense = mx::astype(q, mx::float32) * mx::astype(scale, mx::float32);
     return mx::astype(mx::matmul(mx::astype(rotated, mx::float32),
                                  mx::transpose(dense)), x.dtype());
+}
+
+Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
+    require(convrot(prefix) && at(prefix+".weight").dtype()==mx::uint32 && !has_runtime_loras(),
+            "F32 ConvRot partial requires packed base-only source: "+prefix);
+    return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
+        at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
+}
+
+Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
+    const auto &weight=at(prefix+".weight");
+    if(convrot(prefix)) {
+        require(weight.dtype()==mx::uint32,"F32 ConvRot partial requires original packed source: "+prefix);
+        return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),weight,
+            at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
+    }
+    require(!quantized(prefix) && !nvfp4(prefix),"F32 base partial requires dense or packed ConvRot source: "+prefix);
+    return dense_gpu::projection_range(x,weight,rb,re,cb,ce,32,true);
 }
 
 void Weights::dequantize(const std::vector<std::string> &prefixes) {

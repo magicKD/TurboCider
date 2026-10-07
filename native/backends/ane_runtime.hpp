@@ -53,7 +53,11 @@ struct DeviceMatrixView {
 };
 struct DeviceAdapterInput { DeviceMatrixView gate, up, hidden; };
 
-enum class DeviceWeightEncoding : uint32_t { Dense, AffineQ4, AffineQ8, GgufQ4_0, GgufQ4_K, GgufQ8_0, GgufQ6_K };
+enum class DeviceWeightEncoding : uint32_t {
+    Dense, AffineQ4, AffineQ8, GgufQ4_0, GgufQ4_K, GgufQ8_0, GgufQ6_K,
+    ConvrotQ8Signed, ConvrotQ8Packed
+};
+enum class W8Basis : uint32_t { SylvesterDH, ComfyH256 };
 // Immutable physical source matrix, independent of an executor's W8/FP16
 // representation. cols/pitch remain the FULL source row when staging a slice.
 struct DeviceWeightView {
@@ -73,6 +77,8 @@ struct W8StageSpec {
     int rotation_block = 128;
     uint64_t rotation_seed = 20260930;
     bool transpose = false; // A8 channel-major vs W8 out/in
+    W8Basis basis = W8Basis::SylvesterDH;
+    int activation_group_size = 0; // 0: per-token; 256: explicit Comfy A8 groups
     // Validated immutable SmoothQuant S1, one FP32 value per FULL source
     // column. Applied before H128: W*S1, or X/S1 for transpose A8. H512 does
     // not use S1. The ticket/bank owns its allocation; cache keys stay weak.
@@ -141,6 +147,14 @@ struct RuntimeTemplateDescriptor {
 // Parsing either format does not claim validation of a compiled artifact.
 RuntimeTemplateDescriptor runtime_template_descriptor(const std::filesystem::path &manifest);
 GraphShape runtime_template_shape(const std::filesystem::path &manifest);
+bool runtime_template_w8a8(const std::filesystem::path &manifest);
+struct RuntimeArtifactSnapshot {
+    GraphShape shape;
+    W8Basis basis = W8Basis::SylvesterDH;
+    std::filesystem::path compiled_model;
+    std::shared_ptr<void> lease;
+};
+RuntimeArtifactSnapshot snapshot_runtime_w8a8(const std::filesystem::path &manifest);
 
 // Per-request activation corrections, NEVER merged into weight slots.
 // gate/up have the full launch row count and FFN width. The worker scales up
@@ -159,6 +173,7 @@ struct RunResult {
     double output_seconds = 0, total_seconds = 0;
     uint64_t calls = 0, copied_output_bytes = 0;
     uint64_t overflow_retries = 0;
+    float headroom_start_scale = 1.f;
     float headroom_scale = 1.f;
     // Successful lookahead submissions, not proof of physical GPU/ANE overlap.
     uint64_t activation_prefetches = 0;
@@ -229,6 +244,11 @@ class Executor {
                                std::optional<DeviceAdapterInput> = std::nullopt) {
         throw CapabilityError("executor has no device-buffer I/O path");
     }
+    // Base-down partial only. Retain FP32 until a channel join's ONE final
+    // model-dtype rounding. Does not imply an FP32 ANE graph or hidden ABI.
+    virtual bool supports_fp32_device_output() const { return false; }
+    virtual int activation_group_size() const { return 0; }
+    virtual int hidden_activation_group_size() const { return 0; }
 };
 
 // Explicit opt-in runtime-weight backend; never selected by auto routing.

@@ -78,10 +78,10 @@ int main() {
                             {0, 1, 0, cols}, {{reinterpret_cast<std::byte *>(dense.data() + r * cols), size_t(cols) * 4}, tc::gguf::DecodeDType::f32, cols * 4, 4});
                     }
                 }
-                for (int block : {128, 512}) for (bool transpose : {false, true}) {
-                    const W8StageSpec spec{0, rows, block, block == 128 ? 384 : 512, block, 20260930, transpose};
-                    Surface codes(device, transpose ? spec.columns : rows, transpose ? rows : spec.columns, Element::I8);
-                    Surface scales(device, transpose ? 1 : rows, transpose ? rows : 1, Element::FP16);
+                for (int block : {128, 512}) for (bool transpose : {false, true}) for (int row_begin : {0, 1}) {
+                    const W8StageSpec spec{row_begin, rows-row_begin, block, block == 128 ? 384 : 512, block, 20260930, transpose};
+                    Surface codes(device, transpose ? spec.columns : spec.rows, transpose ? spec.rows : spec.columns, Element::I8);
+                    Surface scales(device, transpose ? 1 : spec.rows, transpose ? spec.rows : 1, Element::FP16);
                     std::memset(codes.data(), 0x5a, codes.rows() * codes.pitch()); std::memset(scales.data(), 0x5a, scales.rows() * scales.pitch());
                     const auto old_value = device.value();
                     auto job = device.stage_w8(view, spec, codes, scales);
@@ -95,10 +95,29 @@ int main() {
                        std::memcmp(codes.data(),fast_codes.data(),codes.rows()*codes.pitch()) ||
                        std::memcmp(scales.data(),fast_scales.data(),scales.rows()*scales.pitch()))
                         throw std::runtime_error("specialized stage differs from generic codes/scales/padding");
+                    {
+                        for (size_t extra_offset : {size_t(0),size_t(1)}) for (size_t extra_pitch : {size_t(0),size_t(1)}) {
+                            const size_t shifted_offset=256+extra_offset,shifted_pitch=packed+32+extra_pitch;
+                            Buffer shifted(gpu,shifted_offset+rows*shifted_pitch+256);
+                            for (int row=0;row<rows;++row)
+                                std::memcpy(static_cast<uint8_t*>(shifted.value.contents)+shifted_offset+row*shifted_pitch,
+                                            static_cast<const uint8_t*>(src.value.contents)+offset+row*pitch,packed);
+                            auto shifted_view=view;shifted_view.buffer=(__bridge void*)shifted.value;
+                            shifted_view.buffer_bytes=shifted.value.length;shifted_view.owner=shifted.owner;
+                            shifted_view.offset_bytes=shifted_offset;shifted_view.row_stride_bytes=shifted_pitch;
+                            std::memset(fast_codes.data(),0x5a,fast_codes.rows()*fast_codes.pitch());
+                            std::memset(fast_scales.data(),0x5a,fast_scales.rows()*fast_scales.pitch());
+                            auto moved=specialized.stage_w8(shifted_view,spec,fast_codes,fast_scales);
+                            if(!moved.finish().ok || moved.validation_flags()!=job.validation_flags() ||
+                               std::memcmp(codes.data(),fast_codes.data(),codes.rows()*codes.pitch()) ||
+                               std::memcmp(scales.data(),fast_scales.data(),scales.rows()*scales.pitch()))
+                                throw std::runtime_error("unaligned dense/packed source changed codes/scales/padding");
+                        }
+                    }
                     if (device.value() != old_value || !job.ready_event() ||
                         ((__bridge id<MTLSharedEvent>)job.ready_event()).signaledValue != 1) throw std::runtime_error("weight staging advanced current ANE timeline");
-                    for (int r = 0; r < rows; ++r) {
-                        std::vector<float> rotated(dense.begin() + r * cols + spec.column_begin, dense.begin() + r * cols + spec.column_begin + spec.columns);
+                    for (int r = 0; r < spec.rows; ++r) {
+                        std::vector<float> rotated(dense.begin() + (spec.row_begin+r) * cols + spec.column_begin, dense.begin() + (spec.row_begin+r) * cols + spec.column_begin + spec.columns);
                         for (int c = 0; c < spec.columns; c += block) rotate_block({rotated.data() + c, size_t(block)}, spec.rotation_seed);
                         float peak = 0; for (float x : rotated) peak = std::max(peak, std::abs(x));
                         const auto expected = normalized_scale(peak);
@@ -130,11 +149,33 @@ int main() {
                             throw std::runtime_error("scale cache ignored rotation identity");
                     }
                     // Padding is not part of the representation and must not be overwritten.
-                    if (transpose) for (int c = 0; c < spec.columns; ++c) for (size_t i = rows; i < codes.pitch(); ++i)
+                    if (transpose) for (int c = 0; c < spec.columns; ++c) for (size_t i = spec.rows; i < codes.pitch(); ++i)
                         if (static_cast<const uint8_t *>(codes.data())[c * codes.pitch() + i] != 0x5a) throw std::runtime_error("A8 padding overwrite");
                     auto invalid = view; invalid.buffer_bytes = invalid.offset_bytes + 1;
                     try { device.stage_w8(invalid, spec, codes, scales); throw std::runtime_error("short buffer accepted"); }
                     catch (const CapabilityError &) {}
+                }
+                if(encoding!=DeviceWeightEncoding::Dense) {
+                    auto *bad_scale=affine?static_cast<uint8_t*>(meta.value.contents):
+                        static_cast<uint8_t*>(src.value.contents)+offset+(ggml==14?208:0);
+                    uint32_t saved=0;const size_t scale_bytes=affine?4:2;
+                    std::memcpy(&saved,bad_scale,scale_bytes);
+                    for(int block:{128,512}) {
+                        Surface bad_q(specialized,1,512,Element::I8),bad_s(specialized,1,1,Element::FP16);
+                        const uint32_t infinity=affine?0x7f800000u:0x7c00u;
+                        std::memcpy(bad_scale,&infinity,scale_bytes);
+                        auto invalid=specialized.stage_w8(view,{0,1,0,512,block},bad_q,bad_s);
+                        if(invalid.finish().ok || !(invalid.validation_flags()&1))
+                            throw std::runtime_error("packed register source hid nonfinite scale");
+                        const uint32_t huge=affine?std::bit_cast<uint32_t>(1e20f):0x7bffu;
+                        std::memcpy(bad_scale,&huge,scale_bytes);
+                        auto overflow=specialized.stage_w8(view,{0,1,0,512,block},bad_q,bad_s);
+                        if(overflow.finish().ok || !(overflow.validation_flags()&4))
+                            throw std::runtime_error("packed register source hid normalized scale overflow");
+                        std::memcpy(bad_scale,&saved,scale_bytes);
+                        auto refill=specialized.stage_w8(view,{0,1,0,512,block},bad_q,bad_s);
+                        if(!refill.finish().ok)throw std::runtime_error("packed register clean refill failed");
+                    }
                 }
                 std::cout << "PASS GPU W8 source=" << unsigned(encoding) << " dtype=" << unsigned(dtype) << " H128/H512 W/A layouts, physical stride/slice, zero/tiny rows\n";
             }
@@ -149,6 +190,20 @@ int main() {
         auto huge = device.stage_w8(view, {0, 1, 0, 512, 128}, q, s); if (huge.finish().ok || !(huge.validation_flags() & 4)) throw std::runtime_error("scale overflow accepted");
         f[0] = 0;
         auto clean = device.stage_w8(view, {0, 1, 0, 512, 128}, q, s); if (!clean.finish().ok) throw std::runtime_error("fresh refill failed");
+        for(int block:{128,512}) {
+            Surface fast_q(specialized,1,512,Element::I8),fast_s(specialized,1,1,Element::FP16);
+            f[0]=std::numeric_limits<float>::infinity();
+            auto nonfinite=specialized.stage_w8(view,{0,1,0,512,block},fast_q,fast_s);
+            if(nonfinite.finish().ok || !(nonfinite.validation_flags()&1))
+                throw std::runtime_error("register Sylvester hid nonfinite source");
+            f[0]=1e20f;
+            auto overflow=specialized.stage_w8(view,{0,1,0,512,block},fast_q,fast_s);
+            if(overflow.finish().ok || !(overflow.validation_flags()&4))
+                throw std::runtime_error("register Sylvester hid scale overflow");
+            f[0]=0;
+            auto refill=specialized.stage_w8(view,{0,1,0,512,block},fast_q,fast_s);
+            if(!refill.finish().ok)throw std::runtime_error("register Sylvester clean refill failed");
+        }
         std::cout << "PASS W8 nonfinite/scale overflow rejection and fresh-slot refill\n";
         auto generation=std::make_shared<int>(1);std::weak_ptr<void> lifetime=generation;
         view.immutable_generation=true;view.allocation_identity=generation;view.owner=generation;f[0]=.25f;
@@ -198,8 +253,35 @@ int main() {
         f[0]=std::numeric_limits<float>::infinity();
         auto invalid_hit=device.stage_w8(view,{0,1,0,512,128,140},q,s);
         if(invalid_hit.finish().ok||!(invalid_hit.validation_flags()&1))throw std::runtime_error("cached scale path hid nonfinite source");
+        // One generic pipeline is shared across rotation blocks AND bases.
+        // Dispatch dimensions must follow each operation, not its first key.
+        view.immutable_generation=false;
+        for(int c=0;c<512;++c)f[c]=float((c*13)%127-63)/64.f;
+        Surface activation_q(device,512,1,Element::I8),activation_s(device,1,1,Element::FP16);
+        for(int block:{512,128,256,128,512}) {
+            const bool comfy=block==256;
+            W8StageSpec spec{0,1,0,512,block,comfy?0u:20260930u,true,comfy?W8Basis::ComfyH256:W8Basis::SylvesterDH};
+            auto mixed=device.stage_w8(view,spec,activation_q,activation_s);
+            if(!mixed.finish().ok)throw std::runtime_error("mixed generic H128/H512/Comfy refill failed");
+            std::vector<float> rotated(f,f+512);
+            for(int c=0;c<512;c+=block) {
+                if(comfy)rotate_comfy_block({rotated.data()+c,size_t(block)},DType::FP32);
+                else rotate_block({rotated.data()+c,size_t(block)},spec.rotation_seed);
+            }
+            float peak=0;for(float x:rotated)peak=std::max(peak,std::abs(x));
+            const auto expected=normalized_scale(peak);
+            if(*static_cast<const uint16_t*>(activation_s.data())!=expected)
+                throw std::runtime_error("cached generic pipeline used stale rotation geometry");
+            for(int c=0;c<512;++c)
+                if(static_cast<const int8_t*>(activation_q.data())[c*activation_q.pitch()]!=quantize_rotated(rotated[c],expected))
+                    throw std::runtime_error("cached generic pipeline changed mixed-basis codes");
+        }
+        if(device.stage_pipeline_stats().variants!=1)throw std::runtime_error("mixed generic basis created extra pipelines");
+        std::cout<<"PASS W8 shared generic pipeline: H512/H128/Comfy-H256/H128/H512 per-operation launch geometry and CPU code/scale oracle\n";
         std::cout<<"PASS W8 immutable sign metadata: H128/H512 unsigned64 seed oracle and in-flight table replacement\n";
         std::cout<<"PASS W8 pipeline specialization: 9 encodings/dtypes H128/H512 W/A bit-exact, bounded 18 variants\n";
+        std::cout<<"PASS W8 dense typed loads: FP16/BF16/FP32 aligned and independently unaligned offset/pitch, H128/H512 W/A bit-exact\n";
+        std::cout<<"PASS W8 packed register loads: raw Q4_0/Q4_K/Q8_0/Q6_K and affine Q4/Q8, unaligned source offset/pitch and nonzero row/column slices, independent CPU code/scale oracle, nonfinite/overflow rejection and clean refill\n";
         std::cout<<"PASS W8 compact scale cache: 9 encodings/dtypes H128/H512 bit-exact, recipe identity, weak generations/address reuse, mutable bypass, bounded metadata\n";
       } catch (const std::exception &error) { std::cerr << error.what() << "\n"; return 1; }
     }

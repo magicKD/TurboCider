@@ -125,6 +125,10 @@ class Weights {
     Tensor project_base_slice(const Tensor &, const std::string &, int row_start,
                               int row_end, int col_start, int col_end,
                               bool add_bias = true) const;
+    // Explicit base-only F32 partial, never a widened checkpoint bank or
+    // per-shard down-LoRA. Original operands/hidden dtype stays unchanged.
+    Tensor project_base_slice_fp32(const Tensor &, const std::string &, int row_start,
+                                  int row_end, int col_start, int col_end) const;
     // Runtime adapter contribution only; Core ML supplies the frozen base
     // gate/up projection. An optional output dtype allows the experimental
     // Z-Image bridge to avoid BF16 rounding before its FP16 Core ML input.
@@ -134,6 +138,8 @@ class Weights {
                             LoRAWorkspace * = nullptr) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
+    Tensor project_range_fp32(const Tensor &, const std::string &, int row_start, int row_end,
+                             int col_start, int col_end) const;
     void clear();
     size_t bytes() const;
     void materialize();

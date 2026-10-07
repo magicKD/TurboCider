@@ -63,8 +63,9 @@ class PrivateAneDescriptorTests(unittest.TestCase):
                             "-Wno-deprecated-declarations", "-fobjc-arc", "-mmacosx-version-min=15.0",
                             "tests/native/ane_runtime_descriptor_test.mm", "native/backends/ane_backend.mm",
                             "native/backends/ane_runtime.mm", "native/backends/ane_memory.cpp",
+                            "native/backends/ane_public_w8.mm", "native/backends/ane_gpu.mm",
                             "native/core/gguf_decode.cpp", "-framework", "Foundation", "-framework", "CoreML",
-                            "-framework", "CoreVideo", "-framework", "IOSurface", "-o", str(binary)],
+                            "-framework", "CoreVideo", "-framework", "IOSurface", "-framework", "Metal", "-o", str(binary)],
                            cwd=ROOT, check=True, capture_output=True, text=True, timeout=120)
             spec = DESCRIPTOR.descriptor("swiglu", 33, 128, 512, lora_inputs=True)
             path = root / "manifest.json"
@@ -155,6 +156,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS GPU Executor", result.stdout)
         self.assertIn("PASS GPU tiled I/O", result.stdout)
+        self.assertIn("PASS independent GPU I/O", result.stdout)
         print(result.stdout.strip())
 
     def test_gpu_w8_stager_raw_gguf_affine_and_dense(self):
@@ -165,6 +167,53 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertIn("PASS W8 compact scale cache",result.stdout)
         self.assertIn("PASS W8 immutable sign metadata",result.stdout)
         self.assertIn("PASS W8 pipeline specialization",result.stdout)
+        self.assertIn("PASS W8 dense typed loads",result.stdout)
+        self.assertIn("PASS W8 packed register loads",result.stdout)
+        self.assertIn("PASS W8 shared generic pipeline",result.stdout)
+        print(result.stdout.strip())
+
+    def test_convrot_direct_codes_and_comfy_activation_staging(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-stage-test")], cwd=ROOT,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS 37 direct raw/packed Q8 cases", result.stdout)
+        self.assertIn("PASS 9 Comfy H256 A8 typed/strided cases", result.stdout)
+        self.assertIn("PASS 24 Comfy row/group A8 alignment cases",result.stdout)
+        print(result.stdout.strip())
+
+    def test_convrot_direct_executor_lora_channels_and_failure_recovery(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                 str(self.root / "convrot-executor-cache")], cwd=ROOT,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("PASS direct ConvRot Executor"), 4)
+        print(result.stdout.strip())
+
+    def test_convrot_group256_executor_and_hidden_scale_join(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                 str(self.root / "convrot-group256-cache"), "group256"], cwd=ROOT,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("group=256"), 4)
+        print(result.stdout.strip())
+
+    def test_convrot_separate_input_hidden_group_scope(self):
+        for scope in ("input", "hidden"):
+            result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                     str(self.root / f"convrot-group-{scope}-cache"), "group256", scope],
+                                    cwd=ROOT, capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.count(f"scope={scope}"), 4)
+            print(result.stdout.strip())
+
+    def test_convrot_numeric_bf16_boundaries_base_only(self):
+        result = subprocess.run([str(self.build / "private-ane-convrot-executor-test"),
+                                 str(self.root / "convrot-bf16-values-cache"), "bf16-values"],
+                                cwd=ROOT, capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("bf16_values=1"), 4)
+        self.assertIn("base-only source oracle", result.stdout)
+        self.assertNotIn("LoRA-hidden", result.stdout)
         print(result.stdout.strip())
 
     def test_private_w8a8_normalized_matmul_two_banks_and_gpu_epilogue(self):
@@ -188,6 +237,8 @@ class PrivateAneHardwareTests(unittest.TestCase):
                                     cwd=ROOT, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("PASS W8 Executor", result.stdout)
+            self.assertIn("PASS W8 F32 GPU partial restore",result.stdout)
+            self.assertIn("PASS full 4224-row W8 bucket", result.stdout)
             self.assertIn(f"bounded A8 lookahead={lookahead}", result.stdout)
             print(result.stdout.strip())
 
@@ -206,11 +257,11 @@ class PrivateAneHardwareTests(unittest.TestCase):
         directory = self.root / "factory-template"
         export.export(directory, export.geometry("swiglu", 33, 64, 96, 32, 48, lora_inputs=True))
         common = ["xcrun", "clang++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
-                  "-Wno-deprecated-declarations", "-fobjc-arc", "-mmacosx-version-min=15.0",
-                  "native/backends/ane_backend.mm", "native/backends/ane_runtime.mm",
+                  "-Wno-deprecated-declarations", "-fobjc-arc", "-mmacosx-version-min=26.2",
+                  "native/backends/ane_backend.mm", "native/backends/ane_runtime.mm", "native/backends/ane_public_w8.mm", "native/backends/ane_gpu.mm",
                   "native/backends/ane_memory.cpp", "native/core/gguf_decode.cpp",
                   "tests/native/ane_backend_factory_test.cpp", "-framework", "Foundation",
-                  "-framework", "CoreML", "-framework", "CoreVideo", "-framework", "IOSurface"]
+                  "-framework", "CoreML", "-framework", "CoreVideo", "-framework", "IOSurface", "-framework", "Metal"]
         for enabled in (False, True):
             binary = self.build / f"factory-{int(enabled)}"
             command = list(common)
@@ -235,6 +286,24 @@ class PrivateAneHardwareTests(unittest.TestCase):
 @unittest.skipUnless(sys.platform == "darwin" and os.environ.get("TURBOCIDER_TEST_PRIVATE_CHANNEL_MLX") == "1",
                      "set TURBOCIDER_TEST_PRIVATE_CHANNEL_MLX=1 and select a private-enabled native library")
 class PrivateAneChannelMlxTests(unittest.TestCase):
+    def test_native_automatic_channel_constructor_and_safe_declines(self):
+        spec = importlib.util.spec_from_file_location("native_channel_auto_export", ROOT / "tools/coreml/export_runtime_ane.py")
+        export = importlib.util.module_from_spec(spec); spec.loader.exec_module(export)
+        library = (ROOT / os.environ.get("TURBOCIDER_NATIVE_LIBRARY_DIR", "build/native")).resolve()
+        with tempfile.TemporaryDirectory(prefix="tc-native-channel-auto-") as directory:
+            root = Path(directory).resolve()
+            graph, build = root / "template", root / "build"
+            export.export(graph, export.geometry("swiglu", 33, 128, 2560, 128, 128, lora_inputs=True))
+            subprocess.run(["bash", "tools/native/build_ane_channel_auto_test.sh"], cwd=ROOT, check=True,
+                env={**os.environ,"TURBOCIDER_NATIVE_OUT":str(build),"TURBOCIDER_NATIVE_LIBRARY_DIR":str(library)},
+                capture_output=True,text=True,timeout=120)
+            result = subprocess.run([str(build / "ane-channel-auto-test"),str(graph / "manifest.json")],
+                cwd=ROOT,capture_output=True,text=True,timeout=120)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn("PASS native automatic channel constructor",result.stdout)
+            self.assertIn("no model/E2E performance qualification",result.stdout)
+            print(result.stdout.strip())
+
     def test_all_rows_physical_range_joint_lora_and_late_failure(self):
         spec = importlib.util.spec_from_file_location("private_channel_export", ROOT / "tools/coreml/export_runtime_ane.py")
         export = importlib.util.module_from_spec(spec); spec.loader.exec_module(export)
@@ -252,6 +321,36 @@ class PrivateAneChannelMlxTests(unittest.TestCase):
                                     cwd=ROOT,capture_output=True,text=True,timeout=120)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIn("PASS channel MLX/W8 Executor",result.stdout)
+            self.assertIn("PASS channel LoRA range callback",result.stdout)
+            self.assertIn("PASS shared compiled Qwen FFN graph factories",result.stdout)
+            self.assertIn("PASS F32 channel join",result.stdout)
+            self.assertIn("PASS explicit GPU layer policy",result.stdout)
+            self.assertIn("PASS fixed async channel",result.stdout)
+            self.assertIn("PASS deferred channel join",result.stdout)
+            self.assertIn("PASS deferred typed lifetime",result.stdout)
+            self.assertIn("PASS channel failure cleanup",result.stdout)
+            print(result.stdout.strip())
+
+
+@unittest.skipUnless(sys.platform == "darwin" and os.environ.get("TURBOCIDER_TEST_PRIVATE_CALIBRATION_MLX") == "1",
+                     "set TURBOCIDER_TEST_PRIVATE_CALIBRATION_MLX=1 for prepared W8/MLX calibration tests")
+class PrivateAneCalibrationMlxTests(unittest.TestCase):
+    def test_prepared_w8_alone_concurrent_lifetime_and_failure_cleanup(self):
+        with tempfile.TemporaryDirectory(prefix="tc-private-calibration-") as directory:
+            root = Path(directory).resolve()
+            build = root / "build"
+            subprocess.run(["bash", "tools/native/build_ane_calibration_test.sh"], cwd=ROOT, check=True,
+                           env={**os.environ, "TURBOCIDER_NATIVE_OUT": str(build)},
+                           capture_output=True, text=True, timeout=120)
+            result = subprocess.run([str(build / "private-ane-calibration-test"), str(root / "cache")],
+                                    cwd=ROOT, capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.count("PASS prepared W8 calibration channels="), 2)
+            self.assertIn("PASS prepared calibration ownership", result.stdout)
+            self.assertEqual(result.stdout.count("PASS complete GPU calibration:"), 2)
+            self.assertEqual(result.stdout.count("PASS dynamic correction partial-submit/geometry/head/drain/join failures"), 2)
+            self.assertEqual(result.stdout.count("PASS streamed dynamic correction partial-submit/geometry/head/drain/join failures"), 2)
+            self.assertIn("not model/E2E calibration or physical overlap proof", result.stdout)
             print(result.stdout.strip())
 
 

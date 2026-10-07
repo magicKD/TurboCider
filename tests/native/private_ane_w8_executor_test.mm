@@ -92,6 +92,26 @@ int main(int argc, char **argv) {
         for(bool adapter:{false,true,false}) { fill_weights(.125f,-.25f,.25f); stage(); run(adapter,.125f,-.25f,.25f); }
         fill_weights(-.25f,.125f,-.5f); stage(); run(true,-.25f,.125f,-.5f);
         fill_weights(.125f,-.25f,.25f); stage(); run(false,.125f,-.25f,.25f);
+        Storage fp32_partial(gpu,rows,h,DType::FP32),wrong_hidden(gpu,rows,f,DType::FP32);
+        check(graph.supports_fp32_device_output(),"Sylvester F32 partial capability missing");
+        for(bool adapter:{false,true,false}) {
+            run(adapter,.125f,-.25f,.25f);
+            std::vector<uint8_t> hidden_snapshot(hidden.buffer.length);
+            if(adapter)std::memcpy(hidden_snapshot.data(),hidden.buffer.contents,hidden_snapshot.size());
+            graph.launch_device(x.view,fp32_partial.view,adapter?std::optional<DeviceAdapterInput>({dg.view,du.view,hidden.view}):std::nullopt);
+            const auto result=graph.finish();check(result.ok,result.error);
+            check(result.copied_output_bytes==size_t(rows)*(h*4+(adapter?f*2:0)),"F32 partial plus model-dtype hidden byte receipt wrong");
+            for(int r=0;r<rows;++r)for(int c=0;c<h;++c)
+                check(round_bf16(static_cast<float*>(fp32_partial.row(r))[c])==static_cast<uint16_t*>(y.row(r))[c],
+                    "Sylvester F32 restore changed normalized result/final BF16 boundary");
+            if(adapter)check(!std::memcmp(hidden_snapshot.data(),hidden.buffer.contents,hidden_snapshot.size()),
+                "F32 base partial changed BF16 LoRA hidden ABI/padding");
+            fp32_partial.guard();hidden.guard();
+        }
+        graph.launch_device(x.view,fp32_partial.view,DeviceAdapterInput{dg.view,du.view,wrong_hidden.view});
+        check(!graph.finish().ok,"F32 partial silently widened LoRA hidden ABI");
+        stage();run(true,.125f,-.25f,.25f);
+        std::cout<<"PASS W8 F32 GPU partial restore: base/LoRA/base, exact BF16 boundary, unchanged hidden ABI, bytes/guards and recovery\n";
         if (lookahead) {
             // Buffer identities/queue scheduling must not change the actual
             // W8A8 recipe, rounding boundaries or LoRA-hidden output. Compare
@@ -150,8 +170,13 @@ int main(int argc, char **argv) {
         fill_weights(32.f,32.f,.25f); stage();
         const auto high=run(true,32.f,32.f,.25f);
         check(high.overflow_retries>0&&high.headroom_scale>=4,"W8 headroom retry not exercised");
-        check(!run(false,32.f,32.f,.25f).overflow_retries,"W8 headroom not retained");
-        graph.launch_device(x.view,x.view); check(!graph.finish().ok,"W8 alias accepted");
+        check(high.headroom_start_scale==1,"W8 retry did not report actual launch headroom");
+        const auto reused=run(false,32.f,32.f,.25f);
+        check(!reused.overflow_retries && reused.headroom_start_scale==high.headroom_scale &&
+            reused.headroom_scale==high.headroom_scale,"W8 headroom not retained/reported");
+        graph.launch_device(x.view,x.view); const auto alias=graph.finish();
+        check(!alias.ok && alias.headroom_start_scale==high.headroom_scale &&
+            alias.headroom_scale==high.headroom_scale,"W8 alias accepted or failed launch lost actual headroom");
         *static_cast<uint16_t*>(x.row(0))=0x7f80;
         graph.launch_device(x.view,y.view); check(!graph.finish().ok,"W8 nonfinite accepted");
         *static_cast<uint16_t*>(x.row(0))=round_bf16(8.f);
@@ -183,6 +208,11 @@ int main(int argc, char **argv) {
                                   std::filesystem::path(argv[1])/"large-rows");
         check(large_graph.self_test(error),error);
         check(large_graph.slot_bytes()<=large_graph.estimated_bytes(),"large-row slot estimate understated");
+        PrivateW8Graph full_graph({Kind::SwiGLU,4224,384,512,256,512,false},256u<<20,
+                                 std::filesystem::path(argv[1])/"full-rows");
+        check(full_graph.self_test(error),error);
+        check(full_graph.slot_bytes()<=full_graph.estimated_bytes(),"full-row slot estimate understated");
+        std::cout<<"PASS full 4224-row W8 bucket: actual driver, three weight generations and every output row\n";
         std::cout<<"PASS W8 Executor: two W banks, bounded A8 lookahead="<<lookahead<<", three-chunk A8 reuse, padded GPU sources/I/O, base-A-base, hidden ABI, headroom retry, failed staging/alias/nonfinite rejection and recovery\n";
       } catch(const std::exception&e) { std::cerr<<e.what()<<"\n";return 1; }
     }

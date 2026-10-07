@@ -1,0 +1,87 @@
+{
+  "schema": "tc-private-ane-dense-load-pilot-v1",
+  "date": "2026-10-04",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "formal_four_way_1_2x_qualified": false,
+  "model_media_latent_quality_qualified": false,
+  "native_int8_mac_observed": false,
+  "public_default_retained": true,
+  "private_stage_specialization_default_changed": false,
+  "dual_gpu_head_integrated_into_model": false,
+  "data_path": "w8a8_hadamard",
+  "recipe": "sylvester-dh-b128-b512-rne-norm-f16-v2",
+  "private_library_sha256": "94c4f87ff8066953880836d8b78e40d731300bc3d07088c8f7fbb08a5d78d8de",
+  "private_library_directory": "build/private-ane-dense-load-runtime",
+  "stage_component_binary_sha256": "c8b8200a40bd56e1ac33bd37180bdd15d70d939aa69051cd6dd0cabb3b89572c",
+  "head_component_binary_sha256": "e8b2b13d98ab8dad2c645392088145a4475b151beda5dea5343f38341a8cb4bc",
+  "tests": {
+    "private_host_hardware_mlx_with_new_library_and_specialization_1_passed": 13,
+    "screen_host_passed": 51,
+    "load_observer_host_passed": 4,
+    "repository_layout_passed": 8,
+    "diff_check_passed": true,
+    "new_public_library_built_in_this_phase": false,
+    "full_make_test_executed_in_this_phase": false,
+    "known_preexisting_failure": "Qwen3 stale if (used_hybrid_output || source-string assertion"
+  },
+  "model_decoder_compatibility": {
+    "z512_before_after_private_pixels_bit_exact": true,
+    "z1024_before_after_private_pixels_bit_exact": true,
+    "max_abs_u8": 0,
+    "qwen_new_library_full_request_not_yet_tested": true,
+    "formal_quality_qualified": false
+  },
+  "component_summary": "outputs/private-ane-dual-head-component-20261004/summary.json",
+  "component_summary_sha256": "93b69fa2d6c6726511af63241d46bdadf4ca89be18ccc9e84255e1ac3be586fb",
+  "component_scope": "synthetic only; combined specialization/typed-read ablation, not isolated typed-read gain or full-model speedup",
+  "component_cpu_observation_proves_gpu_exclusivity": false,
+  "components": {
+    "z_full_weight_stage": {
+      "generic_ms": 3.71298,
+      "specialized_ms": 2.27679,
+      "matched_comparison_valid": false,
+      "reason": "generic arm rejected by CPU load observer"
+    },
+    "qwen_full_weight_stage": {
+      "generic_ms": 4.75506,
+      "specialized_ms": 2.83175,
+      "matched_component_observation_complete": true,
+      "model_speedup_qualified": false
+    },
+    "z_gpu_head_fg6144": [
+      {"rows": 1056, "mpp32_ms": 10.2086, "dual128_ms": 10.2014, "source_relative_l2": 0},
+      {"rows": 4128, "mpp32_ms": 38.4808, "dual128_ms": 38.5074, "source_relative_l2": 0}
+    ]
+  },
+  "rejected_full_request_arms": [
+    {
+      "case": "private-ane-dense-load-z512-runtime-20261004",
+      "size": 512,
+      "generation_completed": true,
+      "summary_status": "incomplete",
+      "load_samples": 41,
+      "load_busy_samples": 1,
+      "summary_sha256": "23661121b4c13adf5629431b5e2e2212a3bcc885d5c9ffa8bb1df9e5310bd113",
+      "performance_qualified": false
+    },
+    {
+      "case": "private-ane-dense-load-z1024-runtime-20261004",
+      "size": 1024,
+      "generation_completed": true,
+      "summary_status": "incomplete",
+      "load_samples": 107,
+      "load_busy_samples": 3,
+      "summary_sha256": "819e6b218a70e4a48ff9f84d2dc5d3e3eb4273c0e771e3fc746d291eebe85cdc",
+      "performance_qualified": false
+    }
+  ],
+  "all_owned_inference_handles_terminal": true,
+  "external_processes_terminated": false,
+  "remaining": [
+    "same-library quiet-load forward/reverse four base cells at 512x512 and 1024x1024 >=1.2x",
+    "bandwidth-aware share and prefetch calibration, device overlap evidence",
+    "Qwen LoRA actual correction cost and profitable full-hidden down-LoRA path",
+    "Qwen new-library end-to-end, multiple prompts, latent/media/LoRA/memory qualification"
+  ]
+}

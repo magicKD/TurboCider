@@ -42,6 +42,8 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if(result.backend=="mlx_cpp_metal_dense_split_gpu_control")
+        return @"compiled_split_gpu_ffn_control";
     if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
         const auto &m = *result.hybrid;
         if (m.runtime_weight_backend.empty()) {
@@ -382,6 +384,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             [algorithm_approximations addObject:@(label.c_str())];
         }
     }
+    if (qwen21::lora_1024_generation(r))
+        [algorithm_approximations addObject:@"qwen21_lora_1024_generation_fp32_diagnostic"];
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
         if (fp16_lora && std::string_view(fp16_lora) == "1")
@@ -912,7 +916,9 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         if (!m.runtime_weight_backend.empty()) {
             const bool channels = m.runtime_weight_partition_axis == "intermediate_channels";
             const bool w8 = m.runtime_weight_data_path == "w8a8_hadamard";
-            [approximations addObject:w8 ?
+            const bool comfy = m.runtime_weight_data_path == "w8a8_convrot";
+            [approximations addObject:comfy ?
+                (channels ? @"runtime_weight_w8a8_convrot_channel_ffn" : @"runtime_weight_w8a8_convrot_token_row_ffn") : w8 ?
                 (channels ? @"runtime_weight_w8a8_hadamard_channel_ffn" : @"runtime_weight_w8a8_hadamard_token_row_ffn") :
                 (channels ? @"runtime_weight_fp16_channel_ffn" : @"runtime_weight_fp16_token_row_ffn")];
         }
@@ -957,18 +963,95 @@ NSDictionary *to_dictionary(const LoadResult &r) {
         @"mlx_active_bytes" : @(r.active_bytes)
     };
 }
+static id calibration_number(double value) {
+    return std::isfinite(value) ? (id)@(value) : (id)NSNull.null;
+}
+static NSArray *calibration_values(const std::vector<double> &values) {
+    NSMutableArray *result=[NSMutableArray arrayWithCapacity:values.size()];
+    for(double value:values)[result addObject:calibration_number(value)];
+    return result;
+}
+static NSDictionary *calibration_dictionary(const ane::ChannelCalibrationReport &r) {
+    id identity=NSNull.null,baseline=NSNull.null,trial=NSNull.null;
+    if(r.identity) {
+        const auto &k=*r.identity;
+        identity=@{@"model_sha256":@(k.model_sha256.c_str()),@"adapter":@(k.adapter.c_str()),
+            @"encoding":@(k.encoding.c_str()),@"precision":@(k.precision.c_str()),@"backend":@(k.backend.c_str()),
+            @"recipe":@(k.recipe.c_str()),@"soc":@(k.soc.c_str()),@"os_build":@(k.os_build.c_str()),
+            @"runtime_build":@(k.runtime_build.c_str()),@"metal_abi":@(k.metal_abi.c_str()),@"graph_abi":@(k.graph_abi.c_str()),
+            @"source_generation":@(k.source_generation.c_str()),@"rows":@(k.rows),@"hidden":@(k.hidden),
+            @"width":@(k.width),@"tile_k":@(k.tile_k),@"tile_n":@(k.tile_n),@"prefetch":@(k.prefetch)};
+    }
+    if(r.baseline)baseline=@{@"layer_seconds":calibration_number(r.baseline->layer_seconds),
+        @"raw_seconds":@[calibration_values(r.baseline->seconds[0]),calibration_values(r.baseline->seconds[1])]};
+    NSMutableArray *points=[NSMutableArray arrayWithCapacity:r.points.size()];
+    for(const auto &sample:r.points) {
+        NSMutableArray *raw=[NSMutableArray arrayWithCapacity:3];
+        for(const auto &part:sample.seconds)[raw addObject:@[calibration_values(part[0]),calibration_values(part[1])]];
+        [points addObject:@{@"share":calibration_number(sample.point.share),@"gpu":calibration_number(sample.point.gpu),
+            @"ane":calibration_number(sample.point.ane),@"both":calibration_number(sample.point.both),
+            @"prefetch":@(sample.prefetch),@"ane_calls":@(sample.ane_calls),@"raw_seconds":raw}];
+        NSMutableDictionary *point=[points.lastObject mutableCopy];
+        point[@"correction_computations"]=@(sample.correction_computations);
+        point[@"correction_uploads"]=@(sample.correction_uploads);
+        points[points.count-1]=point;
+    }
+    if(r.trial) {
+        const auto &t=*r.trial;
+        trial=@{@"gpu_seconds":calibration_values(t.gpu_seconds),@"candidate_seconds":calibration_values(t.candidate_seconds),
+            @"calls":@(t.calls),@"fallbacks":@(t.fallbacks),@"retries":@(t.retries),
+            @"relative_l2":calibration_number(t.relative_l2),@"cosine":calibration_number(t.cosine),
+            @"completed":@(t.completed),@"accepted":@(t.accepts())};
+    }
+    NSMutableArray *depth=[NSMutableArray arrayWithCapacity:r.sampled_depths.size()];
+    for(int value:r.sampled_depths)[depth addObject:@(value)];
+    NSMutableArray *admissions=[NSMutableArray arrayWithCapacity:r.memory_admissions.size()];
+    for(const auto &m:r.memory_admissions) [admissions addObject:@{
+        @"channels":@(m.channels),@"surface_bytes":@(m.surface_bytes),
+        @"gpu_scratch_upper_bytes":@(m.gpu_scratch_upper_bytes),@"gpu_restore_bytes":@(m.gpu_restore_bytes),
+        @"input_bytes":@(m.input_bytes),@"internal_allowance_bytes":@(m.internal_allowance_bytes),
+        @"estimated_bytes":@(m.estimated_bytes),@"optional_limit_bytes":@(m.optional_limit_bytes),
+        @"headroom_bytes":@(m.headroom_bytes),@"admitted":@(m.admitted),@"reason":@(m.reason.c_str())}];
+    return @{@"schema_version":@(r.schema_version),@"enabled":@(r.enabled),@"cache_hit":@(r.cache_hit),
+        @"gpu_retention_layers":@(r.gpu_retention_layers),@"memory_limited_points":@(r.memory_limited_points),
+        @"memory_admission_scope":@"complete calibration payload estimate; preflight observation; not physical RAM cap",
+        @"memory_admissions":admissions,
+        @"trial_passed":@(r.trial_passed),@"complete":@(r.complete),@"lora":@(r.lora),@"selected_channels":@(r.selected_channels),
+        @"proposed_channels":@(r.proposed_channels),@"bucket_rows":@(r.bucket_rows),@"actual_rows":@(r.actual_rows),
+        @"hidden":@(r.hidden),@"width":@(r.width),@"layer_count":@(r.layer_count),@"warmups":@(r.warmups),
+        @"repeats":@(r.repeats),@"status":@(r.status.c_str()),@"reason":@(r.reason.c_str()),@"scope":@(r.scope.c_str()),
+        @"input_recipe":@(r.input_recipe.c_str()),@"sampled_depths":depth,@"identity":identity,
+        @"baseline":baseline,@"points":points,@"trial":trial,@"predicted_layer_seconds":calibration_number(r.predicted_layer_seconds)};
+}
 NSDictionary *to_dictionary(const HybridMetrics &m) {
     // Runtime provenance/counters belong to the graph contract, not a
     // particular precision label. W8A8 and FP16 share the same receipt.
     const bool runtime_weight = m.mlp_output_kind == "runtime_weight_swiglu" ||
                                 m.mlp_output_kind == "runtime_weight_swiglu_lora_inputs";
+    NSMutableArray *overflow_events=[NSMutableArray arrayWithCapacity:m.runtime_weight_overflow_events.size];
+    NSMutableArray *gpu_layers=[NSMutableArray arrayWithCapacity:m.runtime_weight_gpu_layers.size()];
+    for(int layer:m.runtime_weight_gpu_layers)[gpu_layers addObject:@(layer)];
+    for(size_t i=0;i<m.runtime_weight_overflow_events.size;++i) {
+        const auto &e=m.runtime_weight_overflow_events.events[i];
+        [overflow_events addObject:@{@"layer":@(e.layer),@"rows":@(e.rows),
+            @"runtime_call_begin":@(e.runtime_call_begin),@"runtime_call_count":@(e.runtime_call_count),
+            @"retries":@(e.retries),@"headroom_before":calibration_number(e.headroom_before),
+            @"headroom_after":calibration_number(e.headroom_after),@"completed":@(e.completed)}];
+    }
     return @{
         @"runtime_weight" : runtime_weight ? @{
+            @"channel_calibration" : m.runtime_weight_calibration ? (id)calibration_dictionary(*m.runtime_weight_calibration) : (id)NSNull.null,
             @"executor_backend" : m.runtime_weight_backend.empty() ? [NSNull null] : @(m.runtime_weight_backend.c_str()),
             @"backend_fallback_reason" : @(m.runtime_weight_backend_fallback_reason.c_str()),
             @"io_path" : @(m.runtime_weight_io_path.c_str()),
             @"data_path" : @(m.runtime_weight_data_path.c_str()),
             @"partition_axis" : @(m.runtime_weight_partition_axis.c_str()),
+            @"row_placement" : @(m.runtime_weight_row_placement.c_str()),
+            @"row_suffix_blocks_session_total" : @(m.runtime_weight_row_suffix_blocks),
+            @"row_prefix_blocks_session_total" : @(m.runtime_weight_row_prefix_blocks),
+            @"row_image_tail_blocks_session_total" : @(m.runtime_weight_row_image_tail_blocks),
+            @"row_protected_rows_session_total" : @(m.runtime_weight_row_protected_rows),
+            @"row_pack_peak_logical_bytes" : @(m.runtime_weight_row_pack_peak_bytes),
             @"ane_channels" : @(m.runtime_weight_ane_channels),
             @"gpu_channels" : @(m.runtime_weight_gpu_channels),
             @"channel_blocks_session_total" : @(m.runtime_weight_channel_blocks),
@@ -983,6 +1066,9 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"stage_pipeline_variants" : @(m.runtime_weight_stage_pipeline_variants),
             @"launch_fence_enabled" : @(m.runtime_weight_launch_fence_enabled),
             @"a8_lookahead_enabled" : @(m.runtime_weight_a8_lookahead_enabled),
+            @"fp32_channel_join_enabled" : @(m.runtime_weight_fp32_channel_join_enabled),
+            @"a8_group_size" : @(m.runtime_weight_a8_group_size),
+            @"hidden_a8_group_size" : @(m.runtime_weight_hidden_a8_group_size),
             @"a8_prefetches_session_total" : @(m.runtime_weight_a8_prefetches),
             @"a8_wait_seconds_session_total" : @(m.runtime_weight_a8_wait_seconds),
             @"a8_single_pass_requested" : @(m.runtime_weight_a8_single_pass_requested),
@@ -996,6 +1082,8 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"scale_cache_bytes" : @(m.runtime_weight_scale_cache_bytes),
             @"scale_cache_evictions_session_total" : @(m.runtime_weight_scale_cache_evictions),
             @"device_io_calls_session_total" : @(m.runtime_weight_device_io_calls),
+            @"lora_channel_range_calls_session_total" : @(m.runtime_weight_lora_channel_range_calls),
+            @"lora_channel_full_calls_session_total" : @(m.runtime_weight_lora_channel_full_calls),
             @"slot_bytes" : @(m.runtime_weight_slot_bytes),
             @"estimated_bytes" : @(m.runtime_weight_estimated_bytes),
             @"session_released" : @(m.runtime_weight_session_released),
@@ -1008,10 +1096,20 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"scheduler_cache_hit" : @(m.runtime_weight_scheduler_cache_hit),
             @"scheduler_cache_entries" : @(m.runtime_weight_scheduler_cache_entries),
             @"async_hybrid_blocks_session_total" : @(m.runtime_weight_async_hybrid_blocks),
+            @"deferred_channel_join_enabled" : @(m.runtime_weight_deferred_join_enabled),
+            @"deferred_channel_join_blocks_session_total" : @(m.runtime_weight_deferred_join_blocks),
+            @"post_join_scope" : !m.runtime_weight_deferred_join_blocks ? @"evaluated_join_host_span"
+                : m.runtime_weight_deferred_join_blocks == m.runtime_weight_channel_blocks
+                    ? @"host_graph_construction_deferred_gpu_consumption" : @"mixed_evaluated_and_deferred_join_spans",
             @"full_gpu_probe_seconds_session_total" : @(m.runtime_weight_full_gpu_probe_seconds),
             @"fallback_blocks_session_total" : @(m.runtime_weight_fallback_blocks),
             @"ane_rows_session_total" : @(m.runtime_weight_ane_rows),
             @"overflow_retries_session_total" : @(m.runtime_weight_overflow_retries),
+            @"overflow_events" : overflow_events,
+            @"overflow_events_dropped_session_total" : @(m.runtime_weight_overflow_events.dropped),
+            @"overflow_event_scope" : @"aggregated per-FFN launch host telemetry; no chunk/physical-engine trace",
+            @"requested_gpu_layers" : gpu_layers,
+            @"forced_gpu_blocks_session_total" : @(m.runtime_weight_forced_gpu_blocks),
             @"headroom_scale" : @(m.runtime_weight_headroom),
             @"source_recipe" : @(m.runtime_weight_source_recipe.c_str()),
             @"s1_requested" : @(m.runtime_weight_s1_requested),

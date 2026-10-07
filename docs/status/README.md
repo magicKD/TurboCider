@@ -68,6 +68,30 @@ Qwen1024约1.187×，仍未达到要求的四格正式1.2×。
 W8 Metal format/dtype/block 专用化、逐位回归和连续负载观察见
 [staging 专用化](private-ane-stage-specialization-2026-10-04.md)。组件有正信号，
 三次完整请求比较被 competing CPU load 拒绝，未填新的有效端到端倍率。
+对齐读取、逐位回归、GPU dual-head 的近乎持平结果和新库512²/1024²
+兼容检查见 [dense-load 接续](private-ane-dense-load-2026-10-04.md)。新的
+整请求 arm 仍被 CPU load gate 拒绝，不更新四格正式倍率或默认路线。
+共用 channel LoRA 子范围 callback、实际执行 counters 和 Z/Qwen512
+新旧 LoRA 逐位兼容见 [LoRA range 接续](private-ane-lora-range-2026-10-04.md)。
+四个 arm 的 timing 仍被 load verifier 拒绝，不以输出缩小代替端到端收益。
+固定分区去测量fences的同库开关、row/channel异常所有权回归与Z512/1024
+数值兼容见 [fixed async](private-ane-fixed-async.md)。默认关闭；host async
+counters不证明device overlap，两个runtime arm仍无有效速度比较。
+负载触发PID的只读 argv 复核见 [load origin](private-ane-load-origin.md)：
+最近捕获到 `download_ltx25.py`，不能表述为已证明ComfyUI GPU推理争抢，
+也没有放宽原 gate 或追认历史速度。
+用户授权的临时安静窗口及同库对照见
+[quiet window](private-ane-quiet-window-2026-10-05.md)：Qwen512 base v1 两方向
+约1.263–1.265×；Z512 中位约1.20×但裕量窄，两个1024²格仍未达标。正式四格、
+LoRA/质量/内存/device trace资格未完成，不升级默认路线。
+1024²显式4224-row bucket、逐元素self-test与长行数physical MPP接续见
+[full bucket](private-ane-full-bucket-2026-10-05.md)：新库Z1024狐/灯塔约
+1.214×/1.209×，Qwen1024约1.258×；保守边界亦超过1.2，但同提示词
+反序、最新库512/LoRA、完整质量/内存/并发与带宽calibration仍待验收。
+1024² Qwen LoRA限定生成开关、FP32 rank门禁、request-local编译GPU
+channel head及实机兼容接续见 [LoRA1024](private-ane-lora1024-2026-10-05.md)：
+Qwen1024约1.055×、Z1024现有LoRA约1.131×，Qwen512仍稍慢于GPU；
+同进程strength切换返回base逐位一致，完整质量与原目标仍未验收。
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
 它统一维护默认/最快 base、完整 runtime LoRA、optional 和诊断边界。

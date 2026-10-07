@@ -1,4 +1,6 @@
 #include "ane_mil.hpp"
+#include "ane_mil_round.hpp"
+#include "ane_mil_round_compact.hpp"
 #include <algorithm>
 #include "../ane_w8a8_math.hpp"
 #include <cstring>
@@ -14,11 +16,13 @@ std::string buffer(int rows, int cols) {
         std::to_string(stride) + ", 1], interleave_factors=[1, 1, 1, 1]>";
 }
 }
-std::string fp16_program(const GraphShape &s) {
+std::string fp16_program(const GraphShape &s,bool bf16_value_boundaries) {
     if (s.rows <= 0 || s.rows > 32768 || s.hidden <= 0 || s.hidden > 32768 || s.width <= 0 || s.width > 32768 ||
         s.tile_k <= 0 || s.tile_k > 32768 || s.tile_n <= 0 || s.tile_n > 32768 ||
         (s.kind != Kind::Matmul && s.kind != Kind::SwiGLU) || (s.lora_inputs && s.kind != Kind::SwiGLU))
         throw CapabilityError("private ANE FP16 micrograph geometry/kind unsupported");
+    if(bf16_value_boundaries && s.kind!=Kind::SwiGLU)
+        throw CapabilityError("FP16 BF16 value policy requires SwiGLU");
     if (s.lora_inputs && s.hidden + s.width > 32768)
         throw CapabilityError("private ANE packed output exceeds surface height limit");
     // Prevent huge externally selected graph expansion before allocation.
@@ -36,6 +40,15 @@ std::string fp16_program(const GraphShape &s) {
     };
     auto value = [&](const std::string &name, int rows, const std::string &expr) {
         line(tensor(rows, s.rows) + " " + name + " = " + expr);
+    };
+    std::vector<std::string> carrier_checks;
+    auto round_boundary=[&](const std::string &input,const std::string &prefix,int rows) {
+        value(prefix+"_guard_abs",rows,"abs(x = "+input+")");
+        line("tensor<bool, "+shape(rows,s.rows)+"> "+prefix+"_guard_safe = less(x = "+prefix+"_guard_abs, y = fp16(0x1.ffp+15))");
+        value(prefix+"_guard_bad",rows,"select(cond = "+prefix+"_guard_safe, a = fp16(0), b = fp16(1))");
+        value(prefix+"_guard_token",1,"reduce_max(x = "+prefix+"_guard_bad, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        carrier_checks.push_back(prefix+"_guard_token");
+        return emit_bf16_value_round_compact(body,input,prefix,shape(rows,s.rows));
     };
     auto projection = [&](const std::string &name, const std::string &weight, const std::string &x, int n, int k) {
         std::vector<std::string> outputs;
@@ -88,17 +101,45 @@ std::string fp16_program(const GraphShape &s) {
         // Match the public runtime's tested exp lowering. The private ANE
         // sigmoid LUT fails the signed sparse A/B/A oracle on M4 Max; do not
         // hide that compiler error by widening the numerical tolerance.
+        if(bf16_value_boundaries) {
+            g=round_boundary(g,"gate_bf16",s.width);
+            u=round_boundary(u,"up_bf16",s.width);
+        }
         value("neg", s.width, "mul(x = " + g + ", y = fp16(-1))");
         value("eg", s.width, "exp(x = neg)");
         value("denom", s.width, "add(x = eg, y = fp16(1))");
-        value("silu", s.width, "real_div(x = " + g + ", y = denom)");
-        value("hidden", s.width, "mul(x = silu, y = " + u + ")");
-        const auto y = projection("d", "wd_t", "hidden", s.hidden, s.width);
+        std::string activation="hidden";
+        if(bf16_value_boundaries) {
+            value("sigmoid",s.width,"real_div(x = fp16(1), y = denom)");
+            const auto sigmoid=round_boundary("sigmoid","sigmoid_bf16",s.width);
+            value("silu",s.width,"mul(x = "+g+", y = "+sigmoid+")");
+            const auto silu=round_boundary("silu","silu_bf16",s.width);
+            value("hidden",s.width,"mul(x = "+silu+", y = "+u+")");
+            activation=round_boundary("hidden","hidden_bf16",s.width);
+        } else {
+            value("silu", s.width, "real_div(x = " + g + ", y = denom)");
+            value("hidden", s.width, "mul(x = silu, y = " + u + ")");
+        }
+        auto y = projection("d", "wd_t", activation, s.hidden, s.width);
+        if(bf16_value_boundaries) {
+            y=round_boundary(y,"down_bf16",s.hidden);
+            auto bad=carrier_checks.front();
+            for(size_t i=1;i<carrier_checks.size();++i) {
+                const auto name="carrier_bad_"+std::to_string(i);
+                value(name,1,"add(x = "+bad+", y = "+carrier_checks[i]+")");bad=name;
+            }
+            // The physical FP16 output stores Inf for any unsafe token, even
+            // if a compiler keeps an internal expression wider. Existing IO
+            // validators must reject it before publishing y or hidden.
+            value("carrier_large",1,"mul(x = "+bad+", y = fp16(65504))");
+            value("carrier_invalid",1,"add(x = carrier_large, y = carrier_large)");
+            value("checked_y",s.hidden,"add(x = "+y+", y = carrier_invalid)");y="checked_y";
+        }
         if (s.lora_inputs) {
             // One physical output symbol, so the ANE done event covers BOTH
             // down and corrected hidden. Do not race a second output using
             // a signal attached to only the first symbol.
-            value("packed_yh", s.hidden + s.width, "concat(values = (" + y + ", hidden), axis = int32(2), interleave = bool(false))");
+            value("packed_yh", s.hidden + s.width, "concat(values = (" + y + ", "+activation+"), axis = int32(2), interleave = bool(false))");
             output("y", "packed_yh", s.hidden + s.width);
         } else output("y", y, s.hidden);
     }
@@ -130,29 +171,44 @@ std::string w8_matmul_program(const GraphShape &s) {
     return "program(1.3)\n{\n    func main_ane<ios18>(" + input_buffer(s.hidden, s.rows) + " x, " + input_buffer(s.width, s.hidden) +
         " w) {\n" + body + "    } -> (y);\n}\n";
 }
-W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom) {
-    // 1024px channel workloads exceed 4096 logical rows. A 2112-row bucket
-    // covers them in two calls without padding an entire third 2048-row
-    // chunk. Actual IOSurface allocations and optional-tier memory admission
-    // remain checked by the executor; this is not a hardware-speed claim.
-    if (s.kind != Kind::SwiGLU || s.rows <= 0 || s.rows > 4096 || s.hidden <= 0 || s.hidden > 4096 || s.hidden % 128 ||
+W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,int activation_group_size,int hidden_group_size,bool bf16_value_boundaries) {
+    // An explicit 4224-row bucket can cover 1024px image tokens and up to
+    // 128 caption tokens in one request. Keep the existing smaller buckets
+    // available: fewer handoffs are not a model-speed/quality guarantee.
+    // IOSurface extents, memory admission and full fallback remain checked.
+    if (s.kind != Kind::SwiGLU || s.rows <= 0 || s.rows > 4224 || s.hidden <= 0 || s.hidden > 4096 || s.hidden % 128 ||
         s.width <= 0 || s.width > 16384 || s.width % 512 || !std::isfinite(headroom) || headroom < 1 || headroom > 4096 ||
         std::log2(headroom) != std::floor(std::log2(headroom)))
         throw CapabilityError("private W8A8 SwiGLU geometry/headroom unsupported");
+    const bool comfy=basis==W8Basis::ComfyH256;
+    if(bf16_value_boundaries && (!comfy || s.lora_inputs || activation_group_size || hidden_group_size>0 || headroom!=1.f))
+        throw CapabilityError("BF16 value boundaries require base-only row Comfy recipe");
+    const bool grouped=activation_group_size==256;
+    if(hidden_group_size==-1)hidden_group_size=activation_group_size;
+    const bool hidden_grouped=hidden_group_size==256;
+    if(activation_group_size!=0 && (!grouped || !comfy))
+        throw CapabilityError("group A8 MIL requires explicit Comfy group256 recipe");
+    if(hidden_group_size!=0 && (!hidden_grouped || !comfy))
+        throw CapabilityError("hidden group A8 MIL requires explicit Comfy group256 recipe");
+    if ((basis!=W8Basis::SylvesterDH && !comfy) || (comfy && (s.hidden%256 || seed!=0)))
+        throw CapabilityError("private W8A8 Comfy basis/seed/geometry unsupported");
+    const int rotation_block=comfy?256:512;
     W8FfnProgram result;
     result.headroom = headroom; result.packed_rows = s.hidden + 1 + (s.lora_inputs ? s.width : 0);
     if (result.packed_rows > 32768) throw CapabilityError("private W8A8 packed output too tall");
-    // A model-independent grouped H512 convolution blob, never checkpoint W.
-    const uint64_t count = uint64_t(s.width) * 512, bytes = count * 2;
+    // Model-independent grouped H, never checkpoint W. Comfy is a distinct
+    // direct-code basis, NOT a different seed of the Sylvester recipe.
+    const uint64_t count = uint64_t(s.width) * rotation_block, bytes = count * 2;
     result.constants.resize(128 + bytes);
     auto put = [&](size_t at, auto value) { std::memcpy(result.constants.data() + at, &value, sizeof(value)); };
     put(0, uint32_t(1)); put(4, uint32_t(2)); put(64, uint32_t(0xdeadbeef)); put(68, uint32_t(1));
     put(72, bytes); put(80, uint64_t(128));
-    const float norm = 1.f / std::sqrt(512.f);
-    for (int out = 0; out < s.width; ++out) for (int in = 0; in < 512; ++in) {
-        const int lane = out % 512;
-        const float h = (std::popcount(unsigned(lane & in)) & 1) ? -1.f : 1.f;
-        put(128 + (size_t(out) * 512 + in) * 2, std::bit_cast<uint16_t>(_Float16(float(rotation_sign(seed, in)) * h * norm)));
+    const float norm = 1.f / std::sqrt(float(rotation_block));
+    for (int out = 0; out < s.width; ++out) for (int in = 0; in < rotation_block; ++in) {
+        const int lane = out % rotation_block;
+        const float sign = comfy ? float(comfy_h256_sign(lane,in)) :
+            float(rotation_sign(seed,in))*((std::popcount(unsigned(lane&in))&1)?-1.f:1.f);
+        put(128 + (size_t(out) * rotation_block + in) * 2, std::bit_cast<uint16_t>(_Float16(sign * norm)));
     }
     const auto typed = [](const char *type, int r, int c) { return std::string("tensor<") + type + ", " + shape(r, c) + ">"; };
     const auto in_buffer = [](const char *type, int r, int c) {
@@ -168,8 +224,25 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         line(typed(type, r, c) + " " + name + "_t = tensor_buffer_to_tensor<ios17>(input = " + name + ")");
     };
     auto f = [&](const std::string &name, int r, const std::string &expression) { line(typed("fp16", r, s.rows) + " " + name + " = " + expression); };
-    auto projection = [&](const std::string &name, const std::string &w, const std::string &x, int n, int k) {
-        const int tile = s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
+    std::vector<std::string> carrier_checks;
+    auto round_boundary = [&](const std::string &input,const std::string &prefix) {
+        // Guard BEFORE quantize can turn an Inf/NaN intermediate into finite
+        // integer codes. 65408 is the first finite-half value that BF16-RNE
+        // maps to 65536, outside this recipe's FP16 carrier. A failed token
+        // gets an invalid hscale sentinel, checked by the existing GPU IO
+        // validator; it cannot publish a silently clipped/zero partial.
+        const auto magnitude=prefix+"_guard_abs",safe=prefix+"_guard_safe",bad=prefix+"_guard_bad",token=prefix+"_guard_token";
+        f(magnitude,s.width,"abs(x = "+input+")");
+        line(typed("bool",s.width,s.rows)+" "+safe+" = less(x = "+magnitude+", y = fp16(0x1.ffp+15))");
+        f(bad,s.width,"select(cond = "+safe+", a = fp16(0), b = fp16(1))");
+        f(token,1,"reduce_max(x = "+bad+", axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        carrier_checks.push_back(token);
+        return emit_bf16_value_round(body,input,prefix,shape(s.width,s.rows));
+    };
+    auto projection = [&](const std::string &name, const std::string &w, const std::string &x, int n, int k,
+                          const std::string &group_scales=std::string{},const std::string &row_scales=std::string{}) {
+        const bool group_projection=name=="d"?hidden_grouped:grouped;
+        const int tile = group_projection ? 256 : s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
         if (tile < 128) throw CapabilityError("private W8A8 K tile too small");
         std::string total;
         for (int begin = 0; begin < k; begin += tile) {
@@ -185,22 +258,44 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
             line(typed("int8", width, s.rows) + " " + xt + "q = slice_by_size(x = " + x + ", begin = tensor<int32, [4]>([0, 0, " + suffix + ", 0]), size = tensor<int32, [4]>(" + shape(width, s.rows) + "))");
             f(xt, width, "dequantize(input = " + xt + "q, scale = fp16(0x1p-7))");
             f(p, n, "matmul(transpose_x = bool(false), transpose_y = bool(false), x = " + wt + ", y = " + xt + ")");
-            if (total.empty()) total = p;
-            else { const auto sum = name + "s" + suffix; f(sum, n, "add(x = " + total + ", y = " + p + ")"); total = sum; }
+            std::string partial=p;
+            if(group_projection) {
+                const auto scale=name+"scale"+suffix;
+                f(scale,1,"slice_by_size(x = "+group_scales+", begin = tensor<int32, [4]>([0, 0, "+
+                    std::to_string(begin/256)+", 0]), size = tensor<int32, [4]>("+shape(1,s.rows)+"))");
+                if(!row_scales.empty()) {
+                    partial=name+"row"+suffix;f(partial,n,"mul(x = "+p+", y = "+row_scales+")");
+                }
+                const auto scaled=name+"scaled"+suffix;f(scaled,n,"mul(x = "+partial+", y = "+scale+")");partial=scaled;
+            }
+            if (total.empty()) total = partial;
+            else { const auto sum = name + "s" + suffix; f(sum, n, "add(x = " + total + ", y = " + partial + ")"); total = sum; }
         }
         return total;
     };
-    input("int8", "x", s.hidden, s.rows); input("fp16", "tx", 1, s.rows);
+    input("int8", "x", s.hidden, s.rows); input("fp16", "tx", grouped?s.hidden/256:1, s.rows);
     input("int8", "wg", s.width, s.hidden); input("fp16", "sg", s.width, 1);
     input("int8", "wu", s.width, s.hidden); input("fp16", "su", s.width, 1);
     input("int8", "wd", s.hidden, s.width);
-    const auto g = projection("g", "wg", "x_t", s.width, s.hidden), u = projection("u", "wu", "x_t", s.width, s.hidden);
+    if(grouped) {
+        // Keep all partial dots in the same bounded normalized domain as
+        // the row recipe. Restore W/token scales only ONCE after the sum.
+        f("tx_global",1,"reduce_max(x = tx_t, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        f("tx_ratio",s.hidden/256,"real_div(x = tx_t, y = tx_global)");
+    }
+    const auto g = projection("g", "wg", "x_t", s.width, s.hidden,grouped?"tx_ratio":""),
+        u = projection("u", "wu", "x_t", s.width, s.hidden,grouped?"tx_ratio":"");
+    const std::string tx=grouped?"tx_global":"tx_t";
     f("gs", s.width, "mul(x = " + g + ", y = sg_t)");
-    f("gt", s.width, "mul(x = gs, y = tx_t)");
+    f("gt", s.width, "mul(x = gs, y = "+tx+")");
     line(typed("fp16", s.width, 1) + " su_safe = real_div(x = su_t, y = fp16(" + std::to_string(headroom) + "))");
     f("us_norm", s.width, "mul(x = " + u + ", y = su_safe)");
-    f("us", s.width, "mul(x = us_norm, y = tx_t)");
+    f("us", s.width, "mul(x = us_norm, y = "+tx+")");
     std::string gate = "gt", up = "us";
+    if(bf16_value_boundaries) {
+        gate=round_boundary(gate,"gate_bf16_value");
+        up=round_boundary(up,"up_bf16_value");
+    }
     if (s.lora_inputs) {
         input("fp16", "dg", s.width, s.rows); input("fp16", "du", s.width, s.rows);
         f("gc", s.width, "add(x = gt, y = dg_t)");
@@ -209,19 +304,53 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     }
     f("neg", s.width, "mul(x = " + gate + ", y = fp16(-1))"); f("eg", s.width, "exp(x = neg)");
     f("denom", s.width, "add(x = eg, y = fp16(1))"); f("silu", s.width, "real_div(x = " + gate + ", y = denom)");
-    f("hsafe", s.width, "mul(x = silu, y = " + up + ")");
+    if(bf16_value_boundaries) {
+        const auto silu_value=round_boundary("silu","silu_bf16_value");
+        f("hsafe_raw", s.width, "mul(x = " + silu_value + ", y = " + up + ")");
+        const auto hsafe=round_boundary("hsafe_raw","hidden_bf16_value");
+        f("hsafe",s.width,"mul(x = "+hsafe+", y = fp16(1))");
+    } else f("hsafe", s.width, "mul(x = silu, y = " + up + ")");
     const auto c = std::to_string(s.width), m = std::to_string(s.rows);
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> h4 = reshape(x = hsafe, shape = tensor<int32, [4]>([1, " + c + ", 1, " + m + "]))");
-    line("tensor<fp16, [" + c + ", 512, 1, 1]> rotation = const()[name = string(\"rotation\"), val = tensor<fp16, [" + c + ", 512, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))]");
+    const auto rb=std::to_string(rotation_block);
+    line("tensor<fp16, [" + c + ", " + rb + ", 1, 1]> rotation = const()[name = string(\"rotation\"), val = tensor<fp16, [" + c + ", " + rb + ", 1, 1]>(BLOBFILE(path = string(\"@model_path/weights.bin\"), offset = uint64(64)))]");
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> hr4 = conv(dilations = tensor<int32, [2]>([1, 1]), groups = int32(" +
-        std::to_string(s.width / 512) + "), pad = tensor<int32, [4]>([0, 0, 0, 0]), pad_type = string(\"valid\"), strides = tensor<int32, [2]>([1, 1]), weight = rotation, x = h4)");
-    f("hr", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
-    f("habs", s.width, "abs(x = hr)"); f("peak", 1, "reduce_max(x = habs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
-    f("floor", 1, "maximum(x = peak, y = fp16(0x1p-12))");
-    f("ratio", s.width, "real_div(x = hr, y = floor)"); f("a8", s.width, "mul(x = ratio, y = fp16(127))");
-    line(typed("int8", s.width, s.rows) + " hq = quantize(input = a8, scale = fp16(1), output_dtype = string(\"int8\"))");
-    f("hscale", 1, "mul(x = floor, y = fp16(0x1.0204081020408p+0))");
-    const auto y = projection("d", "wd", "hq", s.hidden, s.width);
+        std::to_string(s.width / rotation_block) + "), pad = tensor<int32, [4]>([0, 0, 0, 0]), pad_type = string(\"valid\"), strides = tensor<int32, [2]>([1, 1]), weight = rotation, x = h4)");
+    if(bf16_value_boundaries) {
+        f("hr_raw", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
+        const auto hr=round_boundary("hr_raw","rotated_hidden_bf16_value");
+        f("hr",s.width,"mul(x = "+hr+", y = fp16(1))");
+    } else f("hr", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
+    if(hidden_grouped) {
+        const auto groups=std::to_string(s.width/256),gshape="[1, "+groups+", 256, "+m+"]",pshape="[1, "+groups+", 1, "+m+"]";
+        line("tensor<fp16, "+gshape+"> hg = reshape(x = hr, shape = tensor<int32, [4]>("+gshape+"))");
+        line("tensor<fp16, "+gshape+"> hgabs = abs(x = hg)");
+        line("tensor<fp16, "+pshape+"> hgpeak = reduce_max(x = hgabs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        line("tensor<fp16, "+pshape+"> hgfloor = maximum(x = hgpeak, y = fp16(0x1p-12))");
+        f("group_floor",s.width/256,"reshape(x = hgfloor, shape = tensor<int32, [4]>("+shape(s.width/256,s.rows)+"))");
+        f("floor",1,"reduce_max(x = group_floor, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        line("tensor<fp16, "+gshape+"> hgratio = real_div(x = hg, y = hgfloor)");
+        line("tensor<fp16, "+gshape+"> hga8 = mul(x = hgratio, y = fp16(127))");
+        line("tensor<int8, "+gshape+"> hgq = quantize(input = hga8, scale = fp16(1), output_dtype = string(\"int8\"))");
+        line(typed("int8",s.width,s.rows)+" hq = reshape(x = hgq, shape = tensor<int32, [4]>("+shape(s.width,s.rows)+"))");
+        f("hratio_group",s.width/256,"real_div(x = group_floor, y = floor)");
+    } else {
+        f("habs", s.width, "abs(x = hr)"); f("peak", 1, "reduce_max(x = habs, axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        f("floor", 1, "maximum(x = peak, y = fp16(0x1p-12))");
+        f("ratio", s.width, "real_div(x = hr, y = floor)"); f("a8", s.width, "mul(x = ratio, y = fp16(127))");
+        line(typed("int8", s.width, s.rows) + " hq = quantize(input = a8, scale = fp16(1), output_dtype = string(\"int8\"))");
+    }
+    if(bf16_value_boundaries) {
+        f("hscale_positive",1,"mul(x = floor, y = fp16(0x1.0204081020408p+0))");
+        std::string any=carrier_checks.front();
+        for(size_t i=1;i<carrier_checks.size();++i) {
+            const auto next="carrier_bad"+std::to_string(i);
+            f(next,1,"maximum(x = "+any+", y = "+carrier_checks[i]+")");any=next;
+        }
+        line(typed("bool",1,s.rows)+" carrier_ok = less(x = "+any+", y = fp16(0.5))");
+        f("hscale",1,"select(cond = carrier_ok, a = hscale_positive, b = fp16(-1))");
+    } else f("hscale", 1, "mul(x = floor, y = fp16(0x1.0204081020408p+0))");
+    const auto y = projection("d", "wd", "hq", s.hidden, s.width,hidden_grouped?"hratio_group":"");
     const std::string outputs = "(" + y + ", hscale" + (s.lora_inputs ? ", hsafe" : "") + ")";
     f("packed", result.packed_rows, "concat(values = " + outputs + ", axis = int32(2), interleave = bool(false))");
     const int pitch = (s.rows + 31) / 32 * 32; const auto plane = std::to_string(uint64_t(result.packed_rows) * pitch);

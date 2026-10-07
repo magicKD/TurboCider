@@ -15,7 +15,7 @@ inline bool requested_flag(const char *value) {
 inline bool eligible(const DeviceWeightView &source, const W8StageSpec &spec) {
     return source.encoding == DeviceWeightEncoding::Dense && !source.scales && !source.offsets &&
         (source.dense_dtype == DType::FP16 || source.dense_dtype == DType::BF16 || source.dense_dtype == DType::FP32) &&
-        spec.transpose && spec.rotation_block == 128 && (source.cols == 3840 || source.cols == 4096) &&
+        spec.transpose && spec.basis == W8Basis::SylvesterDH && spec.activation_group_size == 0 && spec.rotation_block == 128 && (source.cols == 3840 || source.cols == 4096) &&
         spec.column_begin == 0 && spec.columns == source.cols && spec.rows > 0 && spec.rows <= 32768 &&
         spec.row_begin >= 0 && spec.row_begin <= source.rows && spec.rows <= source.rows - spec.row_begin &&
         bool(spec.column_scale) == spec.inverse_column_scale;

@@ -18,10 +18,15 @@ import subprocess
 from runtime_ane_common import (
     benchmark_environment, check_load, chunk_policy, session_counter, sha256_file,
     system_memory, validate_edit_results, validate_results, wait_for_idle,
-    qwen_qk_environment, validate_qwen_qk_receipts,
+    qwen_qk_environment, validate_qwen_qk_receipts, validate_lora_channel_range, validate_fixed_async,
+    qwen_lora_1024_environment, validate_qwen_lora_1024_receipts,
+    validate_deferred_channel_join,
+    gpu_layer_policy, z_gpu_layer_environment, validate_requested_gpu_layers,
+    validate_fp32_channel_join,
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
+from runtime_ane_calibration import channel_policy
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -94,11 +99,11 @@ def main():
     p.add_argument("--runtime-manifest", type=Path)
     p.add_argument("--runtime-backend", choices=("public", "private", "auto"), default="public",
                    help="private/auto explicitly authorize experimental private API in a private-enabled build")
-    p.add_argument("--private-gpu-io", action="store_true", help="explicit private IOSurface GPU transfer experiment; verifies actual I/O receipt")
-    p.add_argument("--private-data-path", choices=("fp16", "w8a8"), default="fp16",
-                   help="private runtime representation; W8A8 requires private backend and GPU I/O")
-    p.add_argument("--private-channels", type=int, default=0,
-                   help="0: row split; positive 512-aligned ANE intermediate channels with W8A8; all tokens use that split")
+    p.add_argument("--private-gpu-io", "--runtime-gpu-io", action="store_true", help="explicit IOSurface GPU transfer; verifies actual executor/I/O recipe")
+    p.add_argument("--private-data-path", "--runtime-data-path", choices=("fp16", "w8a8"), default="fp16",
+                   help="runtime representation; W8A8 requires explicit Public/Private backend and matching GPU-I/O template")
+    p.add_argument("--private-channels", type=channel_policy, default=0,
+                   help="0: rows; positive aligned width: fixed channels; auto: native calibrated candidate with raw evidence")
     p.add_argument("--private-prefetch", choices=("0","1"), default="0",
                    help="private W8 future-bank staging ablation; source-matched activation/reuse fences remain checked")
     p.add_argument("--private-scale-cache",choices=("0","1"),default="1",
@@ -109,6 +114,16 @@ def main():
                    help="bounded two-slot A8 staging: prepare next row chunk while current ANE request runs")
     p.add_argument("--private-stage-specialize",choices=("0","1"),default="0",
                    help="format/dtype/H-block Metal function-constant specialization; same weights/recipe")
+    p.add_argument("--private-lora-channel-range",choices=("0","1"),default=None,
+                   help="explicit full-vs-ANE-only gate/up LoRA correction ablation; requires private channel LoRA")
+    p.add_argument("--fixed-async",choices=("0","1"),default=None,
+                   help="explicit fixed-partition untimed/async head ablation; requires positive fixed chunks and no profile")
+    p.add_argument("--defer-channel-join",choices=("0","1"),default=None,
+                   help="private channel fixed-async owned lazy-join ablation; request_wall remains the timing scope")
+    p.add_argument("--fp32-channel-join",action="store_true",
+                   help="Private W8 F32 GPU partial restore/join; original BF16 hidden and ONE down-LoRA retained")
+    p.add_argument("--z-runtime-gpu-blocks",type=gpu_layer_policy,
+                   help="explicit complete GPU blocks by FFN ordinal; Z BF16 runtime route only, never applied to GPU/frozen")
     p.add_argument("--qkv-manifest", type=Path,
                    help="Qwen base-only Q/K/V MatMul runtime graph; separate from FFN runtime")
     p.add_argument("--frozen-manifest", type=Path)
@@ -135,6 +150,8 @@ def main():
     p.add_argument("--lora-strength", type=float, default=1.0)
     p.add_argument("--qwen-lora-fp16", action="store_true",
                    help="explicit approximate FP16 LoRA rank matmuls on EVERY route; Qwen 512px/6-step LoRA only")
+    p.add_argument("--qwen-lora-1024", action="store_true",
+                   help="explicit 1024px six-step LoRA generation on EVERY GPU/runtime route; original FP32 rank only")
     p.add_argument("--qwen-qk-norm-rope", action="store_true",
                    help="explicit fused GPU Q/K norm-RoPE on EVERY route; Qwen 512px or 1024px base generation")
     p.add_argument("--reference", type=Path, action="append", default=[],
@@ -154,17 +171,46 @@ def main():
     routes = args.routes.split(",")
     if not routes or any(route not in ("gpu", "runtime", "qkv", "frozen") for route in routes):
         p.error("routes must be comma-separated gpu,runtime,qkv,frozen")
+    try:
+        z_gpu_layer_environment(args.model_id,"runtime",args.z_runtime_gpu_blocks,routes)
+    except ValueError as error:
+        p.error(str(error))
+    try:
+        lora_1024_environment = qwen_lora_1024_environment(
+            args.model_id, args.size, args.steps, args.qwen_lora_1024,
+            has_lora=args.lora is not None, references=bool(args.reference),
+            fp16=args.qwen_lora_fp16, routes=routes)
+    except ValueError as error:
+        p.error(str(error))
     if args.runtime_backend != "public" and "runtime" not in routes:
         p.error("runtime backend selection requires runtime route")
-    if args.private_gpu_io and (args.runtime_backend == "public" or "runtime" not in routes):
-        p.error("private GPU I/O requires an explicitly private/auto runtime route")
-    if args.private_data_path == "w8a8" and (args.runtime_backend != "private" or not args.private_gpu_io):
-        p.error("W8A8 requires --runtime-backend private --private-gpu-io")
+    public_w8=args.runtime_backend=="public" and args.private_data_path=="w8a8"
+    if args.private_gpu_io and ((args.runtime_backend == "public" and not public_w8) or "runtime" not in routes):
+        p.error("GPU I/O requires runtime and an explicitly authorized Private/Auto or Public W8 route")
+    if args.private_data_path == "w8a8" and (args.runtime_backend not in ("private","public") or not args.private_gpu_io):
+        p.error("W8A8 requires explicit Public/Private backend and --runtime-gpu-io")
+    if public_w8 and (args.private_channels or args.private_prefetch!="0" or args.private_scale_cache!="1" or
+            args.private_launch_fence!="1" or args.private_a8_lookahead!="0" or args.private_stage_specialize!="1"):
+        p.error("Public W8 requires its row ABI: channels0/prefetch0/cache1/fence1/lookahead0/specialize1")
     full_width = 12288 if args.model_id == "qwen-image-2.1" else 10240
-    if args.private_channels < 0 or (args.private_channels and
+    native_auto = args.private_channels == "auto"
+    if (native_auto and (args.runtime_backend != "private" or args.private_data_path != "w8a8" or
+                        args.chunks not in ("auto","1"))) or (not native_auto and (args.private_channels < 0 or (args.private_channels and
             (args.private_channels % 512 or args.private_channels >= full_width or args.private_data_path != "w8a8" or
-             args.chunks not in ("auto","0","1"))):
+             args.chunks not in ("auto","0","1"))))):
         p.error("private channels require W8A8, a positive 512 multiple below FFN width and chunks=auto,0,1")
+    if args.private_lora_channel_range is not None and (args.runtime_backend!="private" or
+            not args.private_channels or not args.lora or args.chunks=="0"):
+        p.error("LoRA channel range ablation requires private W8A8 channels, an adapter and nonzero chunks")
+    if args.fixed_async is not None and ("runtime" not in routes or args.chunks in ("auto","0") or args.profile):
+        p.error("fixed async ablation requires runtime, positive fixed chunks and profiling disabled")
+    if args.defer_channel_join is not None and (args.runtime_backend!="private" or
+            not args.private_channels or args.fixed_async!="1" or args.profile or "runtime" not in routes):
+        p.error("deferred channel join requires private channels, fixed-async=1 and no profile")
+    if args.fp32_channel_join and (args.runtime_backend!="private" or args.private_data_path!="w8a8" or
+            not args.private_gpu_io or not args.private_channels or args.chunks=="0" or "runtime" not in routes or
+            args.model_id not in ("z-image-turbo","qwen-image-2.1")):
+        p.error("F32 channel join screen requires BF16 Z/Qwen, Private W8 GPU I/O and active channels")
     if "qkv" in routes and (args.model_id != "qwen-image-2.1" or args.lora or args.reference or
                              args.qkv_chunks == "0"):
         p.error("qkv screen requires Qwen base generation and positive or auto QKV chunks")
@@ -208,6 +254,11 @@ def main():
                "private_launch_fence": args.private_launch_fence,
                "private_a8_lookahead": args.private_a8_lookahead,
                "private_stage_specialize": args.private_stage_specialize,
+               "private_lora_channel_range": args.private_lora_channel_range,
+               "fixed_async": args.fixed_async,
+               "defer_channel_join": args.defer_channel_join,
+               "fp32_channel_join":args.fp32_channel_join,
+               "z_runtime_gpu_blocks": args.z_runtime_gpu_blocks,
                "placement": "unknown",
                "profile": args.profile, "warm_repeats": args.warm_repeats,
                "continuous_load_observation": args.observe_load,
@@ -229,6 +280,9 @@ def main():
             summary["lora"]["rank_matmul_dtype"] = "fp16" if args.qwen_lora_fp16 else "fp32"
     env = benchmark_environment()
     env.update(qk_environment)
+    env.update(lora_1024_environment)
+    if args.qwen_lora_1024:
+        summary["qwen_lora_1024_diagnostic"] = True
     if args.qwen_qk_norm_rope:
         summary["qwen_qk_norm_rope"] = True
     if args.qwen_lora_fp16:
@@ -268,8 +322,14 @@ def main():
             requests.append(path.resolve())
         route_env = dict(env)
         route_env.update(reference_environment(route, edit, bool(args.lora)))
+        route_env.update(z_gpu_layer_environment(args.model_id,route,args.z_runtime_gpu_blocks,routes))
         if route == "runtime":
             route_env["TURBOCIDER_RUNTIME_ANE_CHUNKS"] = args.chunks
+            if args.fp32_channel_join:route_env["TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN"]="1"
+            if args.fixed_async is not None:
+                route_env["TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC"] = args.fixed_async
+            if args.defer_channel_join is not None:
+                route_env["TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN"] = args.defer_channel_join
             route_env["TURBOCIDER_ANE_BACKEND"] = args.runtime_backend
             if args.runtime_backend != "public":
                 route_env["TURBOCIDER_ALLOW_PRIVATE_ANE"] = "1"
@@ -280,6 +340,8 @@ def main():
                 route_env["TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE"] = args.private_launch_fence
                 route_env["TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD"] = args.private_a8_lookahead
                 route_env["TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE"] = args.private_stage_specialize
+                if args.private_lora_channel_range is not None:
+                    route_env["TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE"] = args.private_lora_channel_range
             if args.private_gpu_io:
                 route_env["TURBOCIDER_PRIVATE_ANE_GPU_IO"] = "1"
             if args.profile:
@@ -310,8 +372,19 @@ def main():
         load_receipt = observed_load.verify() if observed_load else None
         rows = [json.loads(line) for line in (args.output / f"{trial}-{route}.stdout.jsonl").read_text().splitlines()]
         validate_results(rows, route, len(requests), args.model_id, bool(args.lora), args.runtime_backend, args.private_gpu_io,
-                         "w8a8_hadamard" if args.private_data_path == "w8a8" else None)
-        if route == "runtime" and args.private_channels:
+                         "w8a8_hadamard" if args.private_data_path == "w8a8" else None,
+                         channel_auto=native_auto and route=="runtime")
+        active_runtime_rows = [row for row in rows if not native_auto or
+            ((row.get("hybrid") or {}).get("runtime_weight") or {}).get("executor_backend")=="private_ane"]
+        if route=="runtime":validate_requested_gpu_layers(rows,args.z_runtime_gpu_blocks,args.steps)
+        if route=="runtime":validate_fp32_channel_join(rows,args.fp32_channel_join,allow_gpu_decline=native_auto)
+        if route=="runtime" and args.private_lora_channel_range is not None:
+            validate_lora_channel_range(rows,args.private_lora_channel_range=="1")
+        if route=="runtime" and args.fixed_async is not None and active_runtime_rows:
+            validate_fixed_async(active_runtime_rows,args.fixed_async=="1")
+        if route=="runtime" and args.defer_channel_join is not None and active_runtime_rows:
+            validate_deferred_channel_join(active_runtime_rows,args.defer_channel_join=="1")
+        if route == "runtime" and args.private_channels and not native_auto:
             for row in rows:
                 receipt = row["hybrid"]["runtime_weight"]
                 if (receipt.get("partition_axis") != "intermediate_channels" or
@@ -319,7 +392,7 @@ def main():
                         receipt.get("gpu_channels") != full_width-args.private_channels):
                     raise ValueError("requested physical channel partition was not reported")
         if route == "runtime" and args.private_data_path=="w8a8":
-            for row in rows:
+            for row in active_runtime_rows:
                 receipt=row["hybrid"]["runtime_weight"]
                 if receipt.get("prefetch_enabled") is not (args.private_prefetch=="1"):
                     raise ValueError("requested W8 future-bank prefetch policy was not reported")
@@ -335,6 +408,7 @@ def main():
             validate_qwen_qk_receipts(rows, args.qwen_qk_norm_rope)
         if args.model_id == "qwen-image-2.1" and args.lora:
             validate_qwen_lora_precision(rows, args.qwen_lora_fp16)
+            validate_qwen_lora_1024_receipts(rows, args.qwen_lora_1024)
         reference_tokens = validate_edit_results(rows, edit)
         if edit:
             if summary.get("reference_tokens", reference_tokens) != reference_tokens:
@@ -354,6 +428,9 @@ def main():
             cumulative = [row["hybrid"]["runtime_calls_session_total"] for row in rows]
             record["runtime_calls_per_request"] = [current - prior for current, prior in
                                                    zip(cumulative, [0, *cumulative[:-1]])]
+            if native_auto:
+                record["native_channel_calibration"] = rows[-1]["hybrid"]["runtime_weight"]["channel_calibration"]
+                record["native_channel_auto_declined"] = record["native_channel_calibration"]["selected_channels"] == 0
         if sampled_memory is not None:
             record["sampled_memory"] = sampled_memory
         if load_receipt is not None:

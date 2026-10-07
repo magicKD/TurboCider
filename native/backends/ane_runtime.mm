@@ -257,7 +257,7 @@ bool matches_digest(NSData *bytes, NSString *digest) {
 }
 
 NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape &shape,
-                                 RuntimeArtifactKind *artifact = nullptr) {
+                                 RuntimeArtifactKind *artifact = nullptr, bool allow_w8 = false) {
     check(!std::filesystem::is_symlink(path), "runtime ANE manifest must not be a symlink");
     check(std::filesystem::is_regular_file(path) && std::filesystem::file_size(path) <= (1u << 20),
           "runtime ANE manifest must be a bounded regular file");
@@ -284,7 +284,8 @@ NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape 
                   ([manifest[@"graph_version"] isEqual:@1] || shape.lora_inputs) &&
                   (shape.lora_inputs ? [manifest[@"lora_inputs"] isEqual:@YES] :
                       (!manifest[@"lora_inputs"] || [manifest[@"lora_inputs"] isEqual:@NO])) &&
-                  [manifest[@"backend"] isEqual:@"runtime_weight_fp16"] &&
+                  ([manifest[@"backend"] isEqual:@"runtime_weight_fp16"] ||
+                   (allow_w8 && [manifest[@"backend"] isEqual:@"runtime_weight_w8a8"])) &&
                   [manifest[@"layout"] isEqual:@"out_in"] && [manifest[@"biases"] isEqual:@NO] &&
                   [manifest[@"compiled_model"] isEqual:@"graph.mlmodelc"], "unsupported runtime ANE graph ABI");
     }
@@ -302,9 +303,9 @@ NSDictionary *read_manifest_shape(const std::filesystem::path &path, GraphShape 
     return manifest;
 }
 std::filesystem::path verify_manifest(const std::filesystem::path &path, GraphShape &shape,
-                                      ArtifactLease &lease) {
+                                      ArtifactLease &lease, bool allow_w8 = false) {
     RuntimeArtifactKind artifact;
-    NSDictionary *manifest = read_manifest_shape(path, shape, &artifact);
+    NSDictionary *manifest = read_manifest_shape(path, shape, &artifact, allow_w8);
     check(artifact == RuntimeArtifactKind::PublicCoreML,
           "private runtime ANE shape descriptor has no Public Core ML artifact");
     NSDictionary *files = manifest[@"files"];
@@ -482,6 +483,24 @@ std::unique_ptr<RuntimeGraph::Prepared> RuntimeGraph::prepare(const std::filesys
         check_model_interface(p->model, s);
         p->model_load_time = seconds(model_start);
         return std::unique_ptr<Prepared>(new Prepared(std::move(p)));
+    }
+}
+bool runtime_template_w8a8(const std::filesystem::path &path) {
+    @autoreleasepool {GraphShape shape;auto manifest=read_manifest_shape(path,shape,nullptr,true);
+        return [manifest[@"backend"] isEqual:@"runtime_weight_w8a8"];}
+}
+RuntimeArtifactSnapshot snapshot_runtime_w8a8(const std::filesystem::path &path) {
+    @autoreleasepool {
+        RuntimeArtifactSnapshot result;
+        auto manifest=read_manifest_shape(path,result.shape,nullptr,true);
+        check([manifest[@"backend"] isEqual:@"runtime_weight_w8a8"] && result.shape.kind==Kind::SwiGLU &&
+            [manifest[@"headroom_input"] isEqual:@YES] && [manifest[@"normalization_scale"] isEqual:@(1.0/128)] &&
+            [manifest[@"a8_group_size"] isEqual:@0],"unsupported Public W8A8 recipe");
+        if([manifest[@"basis"] isEqual:@"comfy_h256"])result.basis=W8Basis::ComfyH256;
+        else check([manifest[@"basis"] isEqual:@"sylvester_dh"],"unsupported Public W8A8 basis");
+        auto lease=std::make_shared<ArtifactLease>();
+        result.compiled_model=verify_manifest(path,result.shape,*lease,true);result.lease=std::move(lease);
+        return result;
     }
 }
 
@@ -785,6 +804,7 @@ void RuntimeGraph::launch(MatrixView input, uint16_t *output, size_t output_elem
     p.result = {};
     p.result.stage_seconds = stage_time;
     p.worker.submit([&p, input, output, output_elements, output_dtype, adapter] {
+        p.result.headroom_start_scale = p.headroom;
         const auto start = Clock::now();
         try {
             check(p.verified && p.staged, "runtime ANE has no verified staged weights");

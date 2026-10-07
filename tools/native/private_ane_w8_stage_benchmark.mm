@@ -58,8 +58,11 @@ int main(int argc,char**argv) {
             <<banks[0].bytes()+banks[1].bytes()<<",\"median_stage_seconds\":"<<median<<",\"samples\":[";
         for(size_t i=0;i<samples.size();++i)std::cout<<(i?",":"")<<samples[i];
         auto cache=device.scale_cache_stats();
+        auto pipelines=device.stage_pipeline_stats();
         std::cout<<"],\"scale_cache_enabled\":"<<(cache.enabled?"true":"false")<<",\"scale_cache_hits\":"<<cache.hits
-                 <<",\"scale_cache_misses\":"<<cache.misses<<",\"scale_cache_bytes\":"<<cache.bytes<<"}\n";
+                 <<",\"scale_cache_misses\":"<<cache.misses<<",\"scale_cache_bytes\":"<<cache.bytes
+                 <<",\"stage_specialized\":"<<(pipelines.specialized?"true":"false")
+                 <<",\"stage_pipeline_variants\":"<<pipelines.variants<<"}\n";
       }catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}
     }
 }

@@ -3,11 +3,21 @@
 #include "ane_runtime.hpp"
 #include "ane_memory.hpp"
 #include "ane_scheduler.hpp"
+#include "ane_channel_selection.hpp"
+#include "ane_row_window.hpp"
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
 #include "../runtime/async_preparation.hpp"
+#include <cstdlib>
 
 namespace tc::ane {
+
+inline bool configured_fp32_channel_join() {
+    const char *raw=std::getenv("TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN");
+    require(!raw || std::string(raw)=="0" || std::string(raw)=="1",
+        "runtime ANE F32 channel join requires 0 or 1");
+    return raw && std::string(raw)=="1";
+}
 
 // Explicit representation, never inferred from checkpoint filenames. Packed
 // matrices use MLX affine uint32 codes; scales/offsets stay owned until drain.
@@ -26,6 +36,8 @@ class HybridFfn {
   public:
     using Gpu = std::function<Tensor(const Tensor &)>;
     // Base-down partial and corrected hidden for a logical channel range.
+    // Explicit fp32_channel_join() uses an F32 base partial; hidden retains
+    // the input dtype. Default callers preserve both original dtypes.
     // Do NOT apply down-LoRA here: it must consume joined hidden exactly once.
     using ChannelGpu = std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)>;
     using NextWeights = std::function<std::vector<FfnWeight>(int)>;
@@ -36,16 +48,34 @@ class HybridFfn {
         // graph fuse low-rank output handling without merging any weights.
         // Preserve the delta's existing rounding boundary, return base dtype.
         std::function<Tensor(const Tensor &, const Tensor &)> down_and_add;
-        // Optional channel-only correction. Project B over the ANE's output
-        // range directly; the GPU complement handles its disjoint range.
-        // This avoids computing the GPU channels twice and does not retain a
-        // full-size correction cache. Row executors keep gate_up above.
-        ChannelGpu channel_gate_up;
+        // Optional channel-only correction: exactly [first, first+count) of
+        // each logical gate/up half. Row executors keep the full callback;
+        // channel callers without this extension remain compatible.
+        std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> channel_gate_up = {};
+    };
+    struct CalibrationWorkload {
+        std::string model_sha256, adapter_identity, source_generation, encoding, gpu_configuration;
+        std::vector<std::weak_ptr<void>> source_owners;
+        int rows = 0, layers = 32;
+        mx::Dtype dtype = mx::bfloat16;
+        NextWeights weights;
+        std::function<Tensor(int, const Tensor &)> gpu;
+        std::function<std::pair<Tensor, Tensor>(int, const Tensor &, int, int)> channel_gpu;
+        // Reconstruct per candidate width before using any range captures.
+        std::function<Adapter(int)> adapter;
     };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false,
               std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared = std::nullopt,
-              std::string scheduler_identity = {});
+              std::string scheduler_identity = {},
+              const CalibrationWorkload *calibration = nullptr,
+              std::optional<int> calibrated_channels = std::nullopt);
+    HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
+              size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
+              const CalibrationWorkload *calibration,
+              std::optional<int> calibrated_channels = std::nullopt)
+        : HybridFfn(manifest, hidden, width, memory_budget, cancelled, require_lora_inputs,
+                    std::nullopt, {}, calibration, calibrated_channels) {}
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
@@ -56,6 +86,10 @@ class HybridFfn {
     // Empty scales clear a previous profile after all device work is drained.
     void set_smoothquant(const std::string &content_digest = {},
                         const std::function<std::vector<Tensor>()> &make_scales = {});
+    // Explicit family policy, not an error fallback or a precision change.
+    // Install only while idle; these blocks use the family's complete GPU
+    // path without staging or invoking any FFN/LoRA bridge callback.
+    void set_gpu_layers(std::vector<int>);
     // Optional early decision, before the family chooses its compiled block.
     // Hybrid/HybridUntimed/SplitProbe: stage/run once. HybridUntimed owns its
     // completed output and ends the plan in run(), with no observe callback.
@@ -63,7 +97,7 @@ class HybridFfn {
     // without the bridge. Gpu: ordinary unsplit GPU, no timing fence/sample.
     // For measured plans, exclude earlier GPU work BEFORE starting the block
     // clock, then observe_block after its residual output has been evaluated.
-    RowScheduler::Plan plan_block(int layer, int rows);
+    RowScheduler::Plan plan_block(int layer, int rows,RowPolicy row_policy={});
     void observe_block(int layer, int rows, double seconds);
     // Called BEFORE attention submission. Own references until staging joins.
     void stage(int layer, int rows, std::vector<Tensor> weights);
@@ -80,10 +114,12 @@ class HybridFfn {
     bool retains_resources() const {
         return graph_ || !weights_.empty() || !smoothquant_.empty() || output_.capacity() || hidden_.capacity();
     }
+    bool usable_configuration() const { return available() || calibration_declined_; }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
     bool channel_split() const { return axis_ == PartitionAxis::IntermediateChannels; }
     int gpu_channels() const { return metrics_.runtime_weight_gpu_channels; }
     int ane_channels() const { return metrics_.runtime_weight_ane_channels; }
+    bool fp32_channel_join() const { return fp32_channel_join_; }
     static std::string executor_configuration_identity();
     // Lightweight file identity for scheduling only, never model validation.
     static std::string scheduler_source_identity(const std::filesystem::path &);
@@ -94,16 +130,20 @@ class HybridFfn {
     }
     std::string precision_label(bool gguf = false) const {
         if (metrics_.runtime_weight_backend.empty()) return gguf ? "gguf_native_gpu" : "bf16";
-        const bool w8 = metrics_.runtime_weight_data_path == "w8a8_hadamard";
+        const bool comfy = metrics_.runtime_weight_data_path == "w8a8_convrot";
+        const bool w8 = metrics_.runtime_weight_data_path == "w8a8_hadamard" || comfy;
         return std::string(gguf ? "gguf_native_gpu+" : "bf16_gpu+") +
-            (w8 ? "runtime_w8a8_ffn" : "runtime_fp16_ffn") + (gguf ? "" : "_bf16_io");
+            (comfy ? "runtime_convrot_w8a8_ffn" : w8 ? "runtime_w8a8_ffn" : "runtime_fp16_ffn") + (gguf ? "" : "_bf16_io");
     }
     std::string selection_label() const {
+        const auto calibration = calibration_reason_.empty() ? std::string{} :
+            "; native channel auto: " + calibration_reason_;
         if (metrics_.runtime_weight_backend.empty())
-            return "gpu: runtime-weight executor unavailable; full GPU FFN fallback";
+            return (calibration_declined_ ? "gpu: native channel calibration declined hybrid" :
+                "gpu: runtime-weight executor unavailable; full GPU FFN fallback") + calibration;
         return std::string("gpu_ane runtime-weight ") +
             (channel_split() ? "intermediate-channel" : "token-row") + " FFN contract (" +
-            metrics_.runtime_weight_data_path + "); base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified";
+            metrics_.runtime_weight_data_path + "); base-only weight slots with optional GPU LoRA activation corrections; physical placement unverified" + calibration;
     }
     std::string resolve_selection(const std::string &requested) const {
         constexpr std::string_view end = "physical placement unverified";
@@ -114,6 +154,7 @@ class HybridFfn {
     std::unique_ptr<Executor> graph_;
     std::unique_ptr<RowScheduler> scheduler_;
     PartitionAxis axis_ = PartitionAxis::Rows;
+    RowPolicy row_policy_;
     std::vector<Tensor> weights_;
     std::vector<Tensor> smoothquant_;
     // Worker scratch only. Copy completed results into independently owned
@@ -121,6 +162,8 @@ class HybridFfn {
     std::vector<uint16_t> output_, hidden_;
     HybridMetrics metrics_;
     bool failed_ = false, pending_ = false;
+    bool calibration_declined_ = false;
+    std::string calibration_reason_;
     bool planned_ = false;
     std::optional<RowScheduler::Plan> block_plan_;
     bool block_sample_valid_ = false;
@@ -128,6 +171,10 @@ class HybridFfn {
     int layer_ = -1, rows_ = 0, chunks_ = 0;
     bool profile_ = false;
     bool prefetch_ = false;
+    bool fp32_channel_join_ = false;
+    bool lora_channel_range_ = true;
+    bool fixed_async_ = false;
+    bool defer_channel_join_ = false;
     int prefetched_layer_ = -1;
     size_t memory_budget_ = 0;
     std::string reason_;
@@ -145,6 +192,9 @@ class HybridFfn {
     void fill_activation_stage_metrics(HybridMetrics &) const;
     void maybe_prefetch(int, int, const NextWeights &);
     void save_scheduler();
+    static DeviceWeightView calibration_source(const FfnWeight &);
+    static ChannelSelection calibrate_channels(const std::filesystem::path &, int, int, size_t,
+        std::atomic<bool> &, bool, const CalibrationWorkload &);
 };
 
 } // namespace tc::ane

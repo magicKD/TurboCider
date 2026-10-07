@@ -114,6 +114,10 @@ class RuntimeHostTests(unittest.TestCase):
             self.assertFalse(compiled.exists())
             self.assertEqual(list(parent.iterdir()), [])
 
+    def test_bounded_allocation_free_overflow_event_prefix(self):
+        self.run_host_test("ane_overflow_report_test")
+    def test_canonical_gpu_layer_policy_and_invalid_ordinals(self):
+        self.run_host_test("ane_gpu_layer_policy_test")
     def run_host_test(self, name, sources=()):
         with tempfile.TemporaryDirectory(prefix="tc-ane-host-") as temporary:
             binary = Path(temporary) / name
@@ -127,6 +131,15 @@ class RuntimeHostTests(unittest.TestCase):
     def test_row_scheduler_alignment_disable_reprobe_and_isolation(self):
         self.run_host_test("ane_scheduler_test")
 
+    def test_channel_bandwidth_fit_and_memory_constrained_selection(self):
+        self.run_host_test("ane_cost_model_test")
+
+    def test_shared_gpu_calibration_order_samples_and_exception_drain(self):
+        self.run_host_test("ane_calibration_timing_test")
+
+    def test_native_channel_identity_trial_gate_and_weak_source_cache(self):
+        self.run_host_test("ane_channel_selection_test")
+
     def test_qkv_complete_block_controller_and_periodic_reprobe(self):
         self.run_host_test("ane_qkv_scheduler_test")
 
@@ -135,6 +148,8 @@ class RuntimeHostTests(unittest.TestCase):
 
     def test_private_artifact_locks_crash_recovery_and_safe_refusal(self):
         self.run_host_test("ane_artifact_lease_test")
+    def test_calibration_gpu_memory_layout_and_limits(self):
+        self.run_host_test("ane_calibration_memory_test")
 
     def test_simd_conversion_matches_scalar_including_overflow_and_tails(self):
         self.run_host_test("ane_runtime_convert_test")

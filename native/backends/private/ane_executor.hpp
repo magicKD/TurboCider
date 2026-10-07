@@ -23,6 +23,7 @@ class PrivateGraph final : public Executor {
                 std::optional<AdapterInput> adapter = std::nullopt) override;
     RunResult finish() override;
     bool supports_device_io() const override;
+    std::string weight_recipe() const override;
     void launch_device(DeviceMatrixView input, DeviceMatrixView output,
                        std::optional<DeviceAdapterInput> adapter = std::nullopt) override;
   private:

@@ -15,6 +15,7 @@
 #include "../../backends/ane_backend.hpp"
 #include "../../backends/ane_calibration_mlx.hpp"
 #include "../../backends/ane_smoothquant_mlx.hpp"
+#include "runtime_ffn_graphs.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
 #include <bit>
@@ -22,6 +23,8 @@
 #include <fstream>
 #include <iostream>
 #include <string_view>
+#include <map>
+#include <tuple>
 
 namespace tc::qwen21 {
 namespace {
@@ -322,7 +325,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (runtime_requested && staged &&
         option_enabled(std::getenv("TURBOCIDER_QWEN21_RUNTIME_PREPARE_EARLY")) &&
         ane::public_runtime_preparation_allowed(ane::configured_backend()) &&
-        ane::private_channel_count(12288) == 0) {
+        ane::private_channel_count(12288) == 0 && !ane::runtime_template_w8a8(r.ane_manifest)) {
         early_manifest = std::filesystem::canonical(r.ane_manifest);
         early_identity = early_manifest.string() + ":" + sha256_file(early_manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto") +
@@ -567,8 +570,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto") +
             ane::HybridFfn::executor_configuration_identity();
-        if (!runtime_ffn_ || !runtime_ffn_->available() || runtime_manifest_ != identity ||
-            (!r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
+        const bool native_channel_auto = ane::private_channel_count(12288) < 0;
+        const std::string request_identity = identity + (native_channel_auto ?
+            ":rows="+std::to_string((r.height/16)*(r.width/16))+":prefix="+std::to_string(text.shape(1))+
+            ":adapter="+active_lora_identity_ : "");
+        if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
+            (runtime_ffn_->available() && !r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
             std::optional<PreparationResult<ane::RuntimeGraph::Prepared>> prepared;
             if (early_runtime) {
@@ -578,11 +585,88 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             }
             const size_t budget = runtime_ane_budget(device_info().physical_memory,
                                                      mx::get_active_memory());
+            std::optional<ane::HybridFfn::CalibrationWorkload> calibration;
+            if(native_channel_auto) {
+                emit(event,"calibrate_native_ane_channels",0,1);
+                calibration.emplace();
+                calibration->model_sha256=sha256_file(root_/"diffusion_models/qwen_image_2.1_bf16.safetensors");
+                calibration->adapter_identity=r.loras.empty()?std::string{}:active_lora_identity_;
+                calibration->encoding="dense-bf16-fused-gate-up";
+                calibration->rows=(r.height/16)*(r.width/16);
+                for(int ordinal:{0,7,15,23,31})for(const auto *suffix:{"gate_up.weight","out.weight"}) {
+                    const auto &value=transformer_.at("transformer_blocks."+std::to_string(ordinal)+".img_mlp."+suffix);
+                    calibration->source_generation += ":"+std::to_string(value.id());
+                    calibration->source_owners.push_back(value.data_shared_ptr());
+                }
+                calibration->source_generation += ":prefix="+std::to_string(text.shape(1));
+                const char *rank_dtype=std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
+                calibration->gpu_configuration=std::string("qwen-lora-rank=")+(rank_dtype?rank_dtype:"<unset>")+
+                    (transformer_.has_runtime_loras()?";shared-compiled-qwen-ffn-v1":";base-channel-eager-v1");
+                calibration->weights=[&](int ordinal) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    auto gu=mx::split(transformer_.at(prefix+"gate_up.weight"),2,0);mx::eval(gu);
+                    return std::vector<ane::FfnWeight>{{gu[0],std::nullopt,std::nullopt},{gu[1],std::nullopt,std::nullopt},
+                        {transformer_.at(prefix+"out.weight"),std::nullopt,std::nullopt}};
+                };
+                using CalFunction=runtime_ffn::Function;
+                auto lora_gpu=std::make_shared<std::vector<CalFunction>>();
+                auto lora_down=std::make_shared<std::vector<CalFunction>>();
+                using RangeKey=std::tuple<int,int,int>;
+                auto lora_corrections=std::make_shared<std::map<RangeKey,CalFunction>>();
+                auto lora_channels=std::make_shared<std::map<RangeKey,CalFunction>>();
+                if(transformer_.has_runtime_loras())for(int ordinal=0;ordinal<32;++ordinal) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    lora_gpu->push_back(runtime_ffn::full(transformer_,prefix));
+                    lora_down->push_back(runtime_ffn::down_add(transformer_,prefix));
+                }
+                if(transformer_.has_runtime_loras())calibration->adapter=[this,lora_corrections,lora_down](int ordinal) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    auto delta=[this,ordinal,prefix,lora_corrections](const Tensor &x,int first,int count) {
+                        const RangeKey key{ordinal,first,count};
+                        auto at=lora_corrections->find(key);
+                        if(at==lora_corrections->end())at=lora_corrections->emplace(key,
+                            runtime_ffn::corrections(transformer_,prefix,first,count)).first;
+                        auto result=at->second({x});return std::make_pair(result[0],result[1]);
+                    };
+                    return ane::HybridFfn::Adapter{
+                        [delta](const Tensor &x) {return delta(x,0,12288);},
+                        [ordinal,lora_down](const Tensor &hidden,const Tensor &base) {
+                            return lora_down->at(ordinal)({hidden,base})[0];
+                        },
+                        delta};
+                };
+                calibration->gpu=[&,lora_gpu](int ordinal,const Tensor &input) {
+                    if(!lora_gpu->empty())return lora_gpu->at(ordinal)({input})[0];
+                    static auto compiled=mx::compile([](const std::vector<Tensor>&a) {
+                        auto gu=mx::split(mx::matmul(a[0],mx::transpose(a[1])),2,-1);
+                        return std::vector<Tensor>{mx::matmul(silu(gu[0])*gu[1],mx::transpose(a[2]))};
+                    });
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    return compiled({input,transformer_.at(prefix+"gate_up.weight"),transformer_.at(prefix+"out.weight")})[0];
+                };
+                calibration->channel_gpu=[this,lora_channels](int ordinal,const Tensor &input,int first,int count) {
+                    const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
+                    if(transformer_.has_runtime_loras()) {
+                        const RangeKey key{ordinal,first,count};
+                        auto at=lora_channels->find(key);
+                        if(at==lora_channels->end())at=lora_channels->emplace(key,
+                            runtime_ffn::channels(transformer_,prefix,first,count,4096,12288,ane::configured_fp32_channel_join())).first;
+                        auto result=at->second({input});return std::make_pair(result[0],result[1]);
+                    }
+                    auto gate=transformer_.project_slice(input,prefix+"gate_up",first,first+count,0,4096,false);
+                    auto up=transformer_.project_slice(input,prefix+"gate_up",12288+first,12288+first+count,0,4096,false);
+                    auto hidden=silu(gate)*up;
+                    auto base=ane::configured_fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,prefix+"out",0,4096,first,first+count) :
+                        transformer_.project_base_slice(hidden,prefix+"out",0,4096,first,first+count,false);
+                    return std::make_pair(base,hidden);
+                };
+            }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
                                                          !r.loras.empty(), std::move(prepared),
                 ane::HybridFfn::scheduler_source_identity(
-                    root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors"));
-            runtime_manifest_ = identity;
+                    root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors"),calibration?&*calibration:nullptr);
+            runtime_manifest_ = request_identity;
+            if(native_channel_auto)emit(event,"calibrate_native_ane_channels",1,1);
         }
         ane::smoothquant::bind_request(*runtime_ffn_,r,
             root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",active_lora_identity_,4096);
@@ -830,6 +914,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // do not label base-only requests as using a LoRA approximation.
     if (lora_fp16 && !r.loras.empty())
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
+    if (lora_1024_generation(r))
+        result.selection += "; experimental 1024px six-step runtime LoRA generation, FP32 rank; quality unqualified";
     if (norm_rope && std::string_view(norm_rope) == "1")
         result.selection += "; experimental fused Metal Q/K norm-RoPE";
     result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
@@ -950,6 +1036,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             using RuntimeFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
             RuntimeFunction gpu_qkv;
             std::vector<RuntimeFunction> runtime_lora_gpu, runtime_lora_gate_up, runtime_lora_down_add;
+            std::vector<RuntimeFunction> runtime_lora_gate_up_channels;
+            std::vector<RuntimeFunction> runtime_lora_channel_gpu;
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
@@ -962,30 +1050,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         // Preserve fusion across the new FFN boundary too.
                         // Closures are request-local: never reuse captures
                         // after a different adapter has rebound the weights.
-                        runtime_lora_gpu.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
-                            auto gu = transformer_.project(a[0], p + "gate_up");
-                            return std::vector<Tensor>{transformer_.project(runtime_ffn_activation(gu), p + "out")};
-                        }));
-                        runtime_lora_gate_up.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
-                            // Request each logical half directly. Separate
-                            // gate/up adapters otherwise pad both corrections
-                            // with zeros to the full fused width, add them,
-                            // then split again. Keep the same per-half FP32
-                            // accumulation and final rounding; fused/stacked
-                            // adapters still intersect both requested ranges.
-                            auto gate = transformer_.lora_delta_slice(a[0], p + "gate_up",
-                                0, 12288, 0, 4096);
-                            auto up = transformer_.lora_delta_slice(a[0], p + "gate_up",
-                                12288, 24576, 0, 4096);
-                            return std::vector<Tensor>{mx::contiguous(gate), mx::contiguous(up)};
-                        }));
-                        runtime_lora_down_add.push_back(mx::compile([this, p](const std::vector<Tensor> &a) {
-                            // Keep the existing BF16 delta rounding, FP32 add
-                            // and final cast; only enlarge the GPU graph.
-                            auto delta = transformer_.lora_delta_slice(a[0], p + "out", 0, 4096, 0, 12288);
-                            return std::vector<Tensor>{mx::astype(mx::astype(a[1], mx::float32) +
-                                mx::astype(delta, mx::float32), a[1].dtype())};
-                        }));
+                        runtime_lora_gpu.push_back(runtime_ffn::full(transformer_,p));
+                        runtime_lora_gate_up.push_back(runtime_ffn::corrections(transformer_,p,0,12288));
+                        if (runtime_ffn_->channel_split()) {
+                            const int first=runtime_ffn_->gpu_channels(),count=runtime_ffn_->ane_channels();
+                            runtime_lora_gate_up_channels.push_back(runtime_ffn::corrections(transformer_,p,first,count));
+                            // Same checkpoint-only down and per-projection
+                            // FP32 rank/BF16 rounding as the existing callback.
+                            // Request-local captures cannot outlive/reuse a
+                            // differently rebound adapter or channel share.
+                            runtime_lora_channel_gpu.push_back(runtime_ffn::channels(transformer_,p,0,first,4096,12288,runtime_ffn_->fp32_channel_join()));
+                        }
+                        runtime_lora_down_add.push_back(runtime_ffn::down_add(transformer_,p));
                     }
                 }
                 dit.set_plan_mlp([&](int block, int rows) {
@@ -1025,21 +1101,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         }
                         capture->observe(block,input,transformer_,{p + "gate_up"},std::move(point));
                     }
-                    Weights::LoRAWorkspace workspace;
-                    auto *lora_workspace = runtime_ffn_->channel_split() ? &workspace : nullptr;
                     ane::HybridFfn::Adapter adapter{
                         [&](const Tensor &x) {
-                            if (lora_workspace) {
-                                // The ANE correction and GPU head consume the
-                                // same x @ A. Reuse it across the correction
-                                // fence without retaining a previous block,
-                                // denoising step, or request's activations.
-                                return std::make_pair(
-                                    mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
-                                        0, 12288, 0, 4096, std::nullopt, lora_workspace)),
-                                    mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
-                                        12288, 24576, 0, 4096, std::nullopt, lora_workspace)));
-                            }
                             auto gu = runtime_lora_gate_up.at(block)({x});
                             return std::make_pair(gu[0], gu[1]);
                         },
@@ -1047,12 +1110,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             return runtime_lora_down_add.at(block)({h, base})[0];
                         },
                         [&](const Tensor &x, int first, int count) {
-                            return std::make_pair(
-                                mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
-                                    first, first + count, 0, 4096, std::nullopt, lora_workspace)),
-                                mx::contiguous(transformer_.lora_delta_slice(x, p + "gate_up",
-                                    12288 + first, 12288 + first + count, 0, 4096,
-                                    std::nullopt, lora_workspace)));
+                            require(first==runtime_ffn_->gpu_channels() && count==runtime_ffn_->ane_channels(),
+                                    "Qwen channel LoRA correction range changed within request");
+                            auto gu=runtime_lora_gate_up_channels.at(block)({x});
+                            return std::make_pair(gu[0],gu[1]);
                         }};
                     return runtime_ffn_->run(block, input, [&](const Tensor &x) {
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
@@ -1060,10 +1121,17 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                               transformer_.at(p + "out.weight")})[0];
                     }, cancelled, transformer_.has_runtime_loras() ? &adapter : nullptr,
                     [&](const Tensor &x,int first,int count) {
-                        auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false,lora_workspace);
-                        auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false,lora_workspace);
+                        if (transformer_.has_runtime_loras()) {
+                            require(first==0 && count==runtime_ffn_->gpu_channels(),
+                                    "Qwen GPU channel LoRA range changed within request");
+                            auto result=runtime_lora_channel_gpu.at(block)({x});
+                            return std::make_pair(result[0],result[1]);
+                        }
+                        auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
+                        auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false);
                         auto hidden=silu(g)*u;
-                        auto base=transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
+                        auto base=runtime_ffn_->fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,p+"out",0,4096,first,first+count) :
+                            transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
                         return std::make_pair(base,hidden);
                     },[&](int next) {
                         std::vector<ane::FfnWeight> sources;

@@ -1,5 +1,7 @@
 #pragma once
 #include "common.hpp"
+#include "../core/ane_calibration_report.hpp"
+#include "../core/ane_overflow_report.hpp"
 #include "memory_accounting.hpp"
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
@@ -35,10 +37,15 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    std::shared_ptr<const ane::ChannelCalibrationReport> runtime_weight_calibration;
     std::string runtime_weight_backend, runtime_weight_backend_fallback_reason;
     std::string runtime_weight_io_path;
     std::string runtime_weight_data_path;
     std::string runtime_weight_partition_axis = "rows";
+    std::string runtime_weight_row_placement = "suffix";
+    uint64_t runtime_weight_row_suffix_blocks=0,runtime_weight_row_prefix_blocks=0;
+    uint64_t runtime_weight_row_image_tail_blocks=0,runtime_weight_row_protected_rows=0;
+    uint64_t runtime_weight_row_pack_peak_bytes=0;
     int runtime_weight_ane_channels = 0, runtime_weight_gpu_channels = 0;
     uint64_t runtime_weight_channel_blocks = 0;
     bool runtime_weight_prefetch_enabled = false;
@@ -50,6 +57,9 @@ struct HybridMetrics {
     uint64_t runtime_weight_stage_pipeline_variants = 0;
     bool runtime_weight_launch_fence_enabled = false;
     bool runtime_weight_a8_lookahead_enabled = false;
+    bool runtime_weight_fp32_channel_join_enabled = false;
+    int runtime_weight_a8_group_size = 0;
+    int runtime_weight_hidden_a8_group_size = 0;
     uint64_t runtime_weight_a8_prefetches = 0;
     double runtime_weight_a8_wait_seconds = 0;
     bool runtime_weight_a8_single_pass_requested = false, runtime_weight_a8_single_pass_pipeline_compiled = false;
@@ -57,6 +67,7 @@ struct HybridMetrics {
     uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;
     uint64_t runtime_weight_scale_cache_entries = 0, runtime_weight_scale_cache_bytes = 0, runtime_weight_scale_cache_evictions = 0;
     uint64_t runtime_weight_device_io_calls = 0;
+    uint64_t runtime_weight_lora_channel_range_calls = 0, runtime_weight_lora_channel_full_calls = 0;
     // Runtime-weight route only; all times/counts are session cumulative.
     uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
     // Owner destroyed before returning from a phase-scoped request. Core ML
@@ -67,11 +78,16 @@ struct HybridMetrics {
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;
     uint64_t runtime_weight_untimed_hybrid_blocks = 0; // hybrid subset without whole-block timing fences
     uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
+    bool runtime_weight_deferred_join_enabled = false;
+    uint64_t runtime_weight_deferred_join_blocks = 0; // explicit channel/untimed subset; output remains owned
     uint64_t runtime_weight_unsplit_gpu_blocks = 0; // subset of GPU blocks; no FFN bridge
     uint64_t runtime_weight_full_gpu_probe_blocks = 0; // measured subset of unsplit GPU blocks
     double runtime_weight_full_gpu_probe_seconds = 0;
     uint64_t runtime_weight_fallback_blocks = 0, runtime_weight_ane_rows = 0;
     uint64_t runtime_weight_overflow_retries = 0;
+    ane::OverflowReport runtime_weight_overflow_events;
+    std::vector<int> runtime_weight_gpu_layers;
+    uint64_t runtime_weight_forced_gpu_blocks = 0;
     double runtime_weight_stage_seconds = 0, runtime_weight_stage_wait_seconds = 0;
     double runtime_weight_join_seconds = 0, runtime_weight_gpu_seconds = 0;
     // Async steady blocks are excluded from the two branch timers above.
@@ -81,6 +97,8 @@ struct HybridMetrics {
     // output restoration, optional down-LoRA and final concatenation/eval;
     // async post_join also includes any GPU-head work still outstanding at
     // the final output fence. None is a GPU kernel/physical overlap timer.
+    // For a deferred block this is only host graph construction;
+    // subsequent GPU consumption is charged to the complete request wall.
     double runtime_weight_lora_gate_up_seconds = 0, runtime_weight_post_join_seconds = 0;
     // Combined attention/input + LoRA correction readiness; subset of pre,
     // not a pure LoRA kernel timer or part of the parallel FFN window.

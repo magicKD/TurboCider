@@ -1,6 +1,7 @@
 #include "ane_executor.hpp"
 #include "ane_program.hpp"
 #include "ane_mil.hpp"
+#include "../ane_fp16_value_config.hpp"
 #include "../ane_memory.hpp"
 #include "../ane_runtime_packed.hpp"
 #import <Foundation/Foundation.h>
@@ -107,6 +108,7 @@ struct PrivateGraph::Impl {
     std::vector<std::pair<std::string, Surface>> inputs, outputs;
     bool verified = false, staged = false, disabled = false;
     bool device_io = false;
+    bool bf16_value_boundaries = false;
     uint64_t timeline = 0;
     float headroom = 1.f;
     RunResult result;
@@ -163,11 +165,16 @@ PrivateGraph::PrivateGraph(GraphShape shape, size_t budget, const std::filesyste
             check(std::string_view(value) == "0" || std::string_view(value) == "1", "TURBOCIDER_PRIVATE_ANE_GPU_IO requires 0 or 1");
             p.device_io = std::string_view(value) == "1";
         }
-        const auto mil = private_api::fp16_program(shape); // validate BEFORE multiplication/allocation
+        p.bf16_value_boundaries=configured_fp16_bf16_values();
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+        check(!p.bf16_value_boundaries,"qe_capability_unqualified: FP16 BF16 values require experimental build");
+#endif
+        const auto mil = private_api::fp16_program(shape,p.bf16_value_boundaries); // validate BEFORE allocation
         const auto &s = p.shape;
         const size_t weights = size_t(s.hidden) * s.width * 2 * (s.kind == Kind::Matmul ? 1 : 3);
         p.estimate = 2 * weights + size_t(s.rows) * (6ull * s.width + 8ull * s.hidden) + (64ull << 20) + 65536;
         if (s.lora_inputs) p.estimate += size_t(s.rows) * s.width * 16;
+        if(p.bf16_value_boundaries)p.estimate+=uint64_t(s.rows)*s.width*2*16+(64ull<<20);
         if (p.estimate > budget) throw MemoryBudgetError("private ANE memory budget exceeded");
         const auto observed = observe_runtime_memory(0);
         const auto admission = admit_memory(observed, {uint64_t(4) << 30, budget}, 0, p.estimate);
@@ -261,6 +268,10 @@ void PrivateGraph::stage_weights(std::vector<WeightView> weights) {
     p.worker.submit([&p, weights = std::move(weights)] {
         const auto start = Clock::now();
         try {
+            if(p.bf16_value_boundaries)for(const auto &source:weights) {
+                const auto *dense=std::get_if<MatrixView>(&source);
+                check(dense && dense->dtype==DType::BF16,"FP16 BF16 values require original dense BF16 weights");
+            }
             const std::vector<std::string> names = p.shape.kind == Kind::Matmul ? std::vector<std::string>{"w"} : std::vector<std::string>{"wg", "wu", "wd"};
             check(weights.size() == names.size(), "private ANE weight count mismatch");
             for (size_t i = 0; i < names.size(); ++i) fill_weight(p.input(names[i]), weights[i], names[i] == "wu" ? 1.f / p.headroom : 1.f);
@@ -274,9 +285,12 @@ void PrivateGraph::launch(MatrixView input, uint16_t *output, size_t elements, D
     auto &p = *impl_; p.worker.join(); const double stage_time = p.result.stage_seconds;
     p.result = {}; p.result.stage_seconds = stage_time;
     p.worker.submit([&p, input, output, elements, dtype, adapter] {
+        p.result.headroom_start_scale = p.headroom;
         const auto start = Clock::now();
         try {
             const auto &s = p.shape;
+            check(!p.bf16_value_boundaries || (!adapter && input.dtype==DType::BF16 && dtype==DType::BF16),
+                  "FP16 BF16 value host recipe requires base-only original BF16 input/output");
             check(p.verified && p.staged && !p.disabled, "private ANE no verified staged weights"); validate(input);
             check((dtype == DType::FP16 || dtype == DType::BF16) && output && input.cols == s.hidden && input.rows % s.rows == 0 &&
                 elements >= size_t(input.rows) * s.output_width(), "private ANE output/chunk geometry mismatch");
@@ -318,13 +332,19 @@ RunResult PrivateGraph::finish() {
     return p.result;
 }
 bool PrivateGraph::supports_device_io() const { return impl_->device_io; }
+std::string PrivateGraph::weight_recipe() const {
+    return impl_->bf16_value_boundaries?fp16_bf16_value_recipe:"";
+}
 void PrivateGraph::launch_device(DeviceMatrixView input, DeviceMatrixView output, std::optional<DeviceAdapterInput> adapter) {
     auto &p = *impl_; p.worker.join();
     const double stage_time = p.result.stage_seconds; p.result = {}; p.result.stage_seconds = stage_time;
     p.worker.submit([&p, input = std::move(input), output = std::move(output), adapter = std::move(adapter)] {
+        p.result.headroom_start_scale = p.headroom;
         const auto start = Clock::now();
         try {
             const auto &s = p.shape;
+            check(!p.bf16_value_boundaries || (!adapter && input.dtype==DType::BF16 && output.dtype==DType::BF16),
+                  "FP16 BF16 value device recipe requires base-only original BF16 input/output");
             check(p.device_io && p.verified && p.staged && !p.disabled, "private ANE device I/O unavailable/unverified/unstaged");
             check(input.rows > 0 && input.rows % s.rows == 0 && input.cols == s.hidden && output.rows == input.rows &&
                 output.cols == s.output_width() && (output.dtype == DType::FP16 || output.dtype == DType::BF16),
