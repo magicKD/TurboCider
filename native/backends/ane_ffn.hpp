@@ -22,7 +22,10 @@ inline bool configured_fp32_channel_join() {
 // bytes and MLX affine planes are distinct; all owners stay alive until drain.
 struct FfnWeight {
     enum class Transform { None, ComfyH256Inverse };
-    struct RawGguf { uint32_t type; int columns; };
+    struct RawGguf {
+        uint32_t type; int columns;
+        std::shared_ptr<void> logical_content_identity{};
+    };
     Tensor values;
     std::optional<Tensor> scales, offsets;
     int group_size = 32, bits = 4;
@@ -154,6 +157,7 @@ class HybridFfn {
     int layer_ = -1, rows_ = 0, chunks_ = 0;
     bool profile_ = false;
     bool prefetch_ = false;
+    bool prefetch_after_gpu_ = true;
     bool fp32_channel_join_ = false;
     bool lora_channel_range_ = true;
     bool fixed_async_ = false;

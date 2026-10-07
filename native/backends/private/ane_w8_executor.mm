@@ -4,6 +4,7 @@
 #include "../ane_memory.hpp"
 #include "../ane_w8a8_math.hpp"
 #include "../ane_backend.hpp"
+#include "../ane_weight_identity.hpp"
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include <array>
@@ -22,19 +23,6 @@ using private_api::Surface;
 using private_api::Element;
 double elapsed(Clock::time_point x) { return std::chrono::duration<double>(Clock::now() - x).count(); }
 void check(bool ok, const char *reason) { if (!ok) throw std::runtime_error(reason); }
-bool same_matrix(const DeviceMatrixView &a,const DeviceMatrixView &b) {
-    return std::tie(a.buffer,a.buffer_bytes,a.offset_bytes,a.rows,a.cols,a.row_stride_bytes,a.dtype)==
-           std::tie(b.buffer,b.buffer_bytes,b.offset_bytes,b.rows,b.cols,b.row_stride_bytes,b.dtype);
-}
-bool same_region(const DeviceWeightRegion &a,const DeviceWeightRegion &b) {
-    const auto &x=a.source,&y=b.source;const auto &p=a.selection,&q=b.selection;
-    const auto same_optional=[](const auto&a,const auto&b){return bool(a)==bool(b)&&(!a||same_matrix(*a,*b));};
-    return std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
-           std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
-        same_optional(x.scales,y.scales)&&same_optional(x.offsets,y.offsets)&&
-        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis,p.activation_group_size)==
-        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis,q.activation_group_size);
-}
 class Worker {
     std::mutex mutex_;
     std::condition_variable cv_;
@@ -359,7 +347,7 @@ void PrivateW8Graph::prefetch_device_weight_regions(std::vector<DeviceWeightRegi
 std::optional<RunResult> PrivateW8Graph::activate_prefetched_weights(std::span<const DeviceWeightRegion> expected) {
     auto &p=*impl_;
     if(!p.future_pending || expected.size()!=p.future_sources.size() ||
-       !std::equal(expected.begin(),expected.end(),p.future_sources.begin(),same_region))return std::nullopt;
+       !std::equal(expected.begin(),expected.end(),p.future_sources.begin(),same_weight_region))return std::nullopt;
     // Both reuse fences: current ANE/epilogue consumer and future GPU producer.
     p.worker.join();p.staging_worker.join();
     if(p.current>=0)p.banks[p.current]->ready=false;

@@ -747,8 +747,17 @@ void raw_gguf_tests(const char *manifest) {
     // untimed plans, retain failure evidence, and never publish stale scratch.
     const char *old=std::getenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
     const std::optional<std::string> previous=old?std::optional<std::string>(old):std::nullopt;
-    for(bool untimed:{false,true}) {
+    const char *order=std::getenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
+    const std::optional<std::string> previous_order=order?std::optional<std::string>(order):std::nullopt;
+    for(const char *invalid:{"", "2", "true"}) {
+        setenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",invalid,1);bool rejected=false;
+        try {ane::HybridFfn invalid_order(manifest,64,96,128ull<<20,cancelled);}
+        catch(const std::exception &error) {rejected=std::string(error.what()).find("prefetch placement")!=std::string::npos;}
+        assert(rejected);
+    }
+    for(bool untimed:{false,true})for(bool after_gpu:{false,true}) {
         setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",untimed?"1":"0",1);
+        setenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",after_gpu?"1":"0",1);
         ane::HybridFfn failed(manifest,64,96,128ull<<20,cancelled);
         const auto plan=failed.plan_block(0,97);assert(plan.split());
         failed.fail_staging(0,97,"owned raw source acquisition failure");
@@ -757,9 +766,12 @@ void raw_gguf_tests(const char *manifest) {
         const auto metrics=failed.metrics();
         assert(metrics.runtime_failed && metrics.runtime_calls==0 && metrics.runtime_failures==1 &&
             metrics.runtime_weight_fallback_blocks==1 && failed.reason()=="owned raw source acquisition failure");
+        assert(metrics.runtime_weight_prefetch_after_gpu==after_gpu);
     }
     if(previous)setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",previous->c_str(),1);
     else unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+    if(previous_order)setenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",previous_order->c_str(),1);
+    else unsetenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
     std::cout<<"PASS raw GGUF FFN source: host graph, immutable bytes, invalid geometry/full GPU fallback and measured/untimed acquisition failure\n";
 }
 

@@ -49,6 +49,7 @@ struct HybridMetrics {
     int runtime_weight_ane_channels = 0, runtime_weight_gpu_channels = 0;
     uint64_t runtime_weight_channel_blocks = 0;
     bool runtime_weight_prefetch_enabled = false;
+    bool runtime_weight_prefetch_after_gpu = true;
     uint64_t runtime_weight_prefetch_submissions = 0, runtime_weight_prefetch_hits = 0;
     uint64_t runtime_weight_prefetch_discards = 0, runtime_weight_prefetch_failures = 0;
     double runtime_weight_prefetch_wait_seconds = 0;

@@ -29,6 +29,9 @@ namespace {
 bool same_generation(const std::weak_ptr<void>&a,const std::weak_ptr<void>&b) {
     return !a.owner_before(b)&&!b.owner_before(a);
 }
+bool has_generation(const std::weak_ptr<void> &value) {
+    return !same_generation(value,{}); // distinguishes absent from expired
+}
 bool same_scale_matrix(const DeviceMatrixView&a,const DeviceMatrixView&b) {
     return same_generation(a.allocation_identity,b.allocation_identity)&&
         std::tie(a.buffer,a.buffer_bytes,a.offset_bytes,a.rows,a.cols,a.row_stride_bytes,a.dtype)==
@@ -37,14 +40,22 @@ bool same_scale_matrix(const DeviceMatrixView&a,const DeviceMatrixView&b) {
 bool same_scale_key(const DeviceWeightRegion&a,const DeviceWeightRegion&b) {
     const auto &x=a.source,&y=b.source;const auto &p=a.selection,&q=b.selection;
     const auto meta=[](const auto&a,const auto&b){return bool(a)==bool(b)&&(!a||same_scale_matrix(*a,*b));};
-    return same_generation(x.allocation_identity,y.allocation_identity)&&meta(x.scales,y.scales)&&meta(x.offsets,y.offsets)&&
-        std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes,x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
-        std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes,y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
+    const bool logical=has_generation(x.logical_content_identity);
+    if(logical!=has_generation(y.logical_content_identity))return false;
+    if(logical) {
+        if(!same_generation(x.logical_content_identity,y.logical_content_identity))return false;
+    } else if(!same_generation(x.allocation_identity,y.allocation_identity) ||
+        std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes)!=
+        std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes))return false;
+    return meta(x.scales,y.scales)&&meta(x.offsets,y.offsets)&&
+        std::tie(x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
+        std::tie(y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
         std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis,p.activation_group_size)==
         std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis,q.activation_group_size);
 }
 bool live_scale_key(const DeviceWeightRegion&key) {
-    return !key.source.allocation_identity.expired() &&
+    return (has_generation(key.source.logical_content_identity) ? !key.source.logical_content_identity.expired() :
+        !key.source.allocation_identity.expired()) &&
         (!key.source.scales||!key.source.scales->allocation_identity.expired()) &&
         (!key.source.offsets||!key.source.offsets->allocation_identity.expired());
 }
@@ -517,6 +528,10 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             "W8 target surface geometry/type mismatch");
         const bool packed_comfy = source.encoding==DeviceWeightEncoding::ConvrotQ8Packed;
         const bool affine = source.encoding == DeviceWeightEncoding::AffineQ4 || source.encoding == DeviceWeightEncoding::AffineQ8 || packed_comfy;
+        const bool raw=source.encoding==DeviceWeightEncoding::GgufQ4_0 || source.encoding==DeviceWeightEncoding::GgufQ4_K ||
+            source.encoding==DeviceWeightEncoding::GgufQ8_0 || source.encoding==DeviceWeightEncoding::GgufQ6_K;
+        require(!has_generation(source.logical_content_identity) || (raw && source.immutable_generation),
+                "W8 logical content identity requires immutable raw GGUF source");
         require(affine || direct || (!source.scales && !source.offsets), "W8 non-affine source cannot have affine metadata");
         if (affine) {
             require(source.scales && (source.group_size == 32 || source.group_size == 64 || source.group_size == 128 || source.group_size == 256) &&

@@ -1020,6 +1020,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"gpu_channels" : @(m.runtime_weight_gpu_channels),
             @"channel_blocks_session_total" : @(m.runtime_weight_channel_blocks),
             @"prefetch_enabled" : @(m.runtime_weight_prefetch_enabled),
+            @"prefetch_after_gpu" : @(m.runtime_weight_prefetch_after_gpu),
             @"prefetch_submissions_session_total" : @(m.runtime_weight_prefetch_submissions),
             @"prefetch_hits_session_total" : @(m.runtime_weight_prefetch_hits),
             @"prefetch_discards_session_total" : @(m.runtime_weight_prefetch_discards),

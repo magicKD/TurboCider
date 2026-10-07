@@ -109,6 +109,7 @@ int main(int argc,char **argv) {
             ensure(q8.type==8 && q8.columns==64 && q8.values.dtype()==mx::uint8 &&
                 q8.values.shape()==mx::Shape{512,68},"raw window returned affine/logical dense layout");
             const auto id=q8.values.data_shared_ptr();
+            const auto content_id=q8.logical_content_identity;ensure(bool(content_id),"verified raw source has no logical identity");
             ensure(raw_bank->raw_matrix("q8.weight").values.data_shared_ptr()==id,"raw cache hit changed generation");
             {auto q4=raw_bank->raw_matrix("q4.weight");ensure(q4.type==2 && q4.values.shape()==mx::Shape{512,36},"raw Q4 geometry changed");}
             auto m=raw_bank->metrics();
@@ -121,6 +122,12 @@ int main(int argc,char **argv) {
             std::thread intruder([&]{rejects([&]{raw_bank->raw_matrix("q8.weight");});});intruder.join();
             raw_bank->clear_raw_window();
             ensure(raw_bank->metrics().raw_window_live_bytes==49152,"raw eviction lost escaped owner's claim");
+            {
+                auto refill=raw_bank->raw_matrix("q8.weight");
+                ensure(refill.values.data_shared_ptr()!=id && refill.logical_content_identity==content_id,
+                    "raw refill changed immutable content identity or reused an escaped physical backing");
+            }
+            raw_bank->clear_raw_window();
             auto *data=q8.values.data<uint8_t>();ensure(data[0]==0 && data[1]==0x30,"raw source payload changed");
             raw_bank.reset();affine.clear();
             ensure(data[0]==0 && data[1]==0x30,"raw reader died with producer");
@@ -128,10 +135,12 @@ int main(int argc,char **argv) {
             // the cache is empty. Releasing it permits a clean refill.
             GgufPackedBank floor(source,"weights",budget,16384,true,49152,1);floor.load(affine);
             auto held=floor.raw_matrix("q8.weight");
+            ensure(held.logical_content_identity!=content_id,"new bank/source proof reused an old logical content identity");
             rejects([&]{floor.raw_matrix("q4.weight");});
             ensure(floor.metrics().raw_window_entries==0 && floor.metrics().raw_window_live_bytes==49152,
                 "raw floor published partial destination or forgot escaped claim");
             held.values=mx::zeros({1},mx::uint8);mx::synchronize();
+            ensure(!floor.metrics().raw_window_live_bytes,"content identity retained packed payload after reader release");
             ensure(floor.raw_matrix("q4.weight").type==2,"raw source clean refill failed");
             floor.clear_raw_window();ensure(!floor.metrics().raw_window_live_bytes,"raw refill leaked storage");
         }

@@ -8,6 +8,7 @@
 #include <set>
 #include <thread>
 #include <list>
+#include <map>
 
 namespace tc::streaming {
 namespace {
@@ -52,6 +53,14 @@ struct GgufPackedBank::State {
     std::unique_ptr<MemoryLedger> raw_ledger;
     struct RawEntry { std::string name; RawMatrix matrix; };
     std::list<RawEntry> raw_window;
+    // Small immutable tags only; no packed payload, ledger claim or source
+    // lease retained by a tag. A new bank/source proof creates new tags even
+    // if an allocator or a file path happens to be reused.
+    struct RawContent {
+        const uint64_t generation,offset,rows,columns;
+        const uint32_t type;
+    };
+    std::map<std::string,std::shared_ptr<void>> raw_content_ids;
     uint32_t raw_window_limit=0;
     std::thread::id owner = std::this_thread::get_id();
     State(std::shared_ptr<const SourceLease> source, MemoryLedger &memory, uint64_t bytes,bool fused)
@@ -198,7 +207,13 @@ GgufPackedBank::RawMatrix GgufPackedBank::raw_matrix(const std::string &name,con
         done+=uint64_t(n);s.metrics.raw_window_source_read_bytes+=uint64_t(n);
     }
     s.metrics.raw_window_read_seconds+=seconds(start);cancelled(cancel);check_unchanged();
-    RawMatrix result{std::move(values),tensor.type,int(tensor.columns())};
+    auto identity=s.raw_content_ids.find(name);
+    if(identity==s.raw_content_ids.end()) {
+        require(s.raw_content_ids.size()<s.directory.tensors.size(),"gguf_packed_bank: raw content identity bound exceeded");
+        identity=s.raw_content_ids.emplace(name,std::make_shared<State::RawContent>(State::RawContent{
+            s.lease->generation(),tensor.file_offset,tensor.rows(),tensor.columns(),tensor.type})).first;
+    }
+    RawMatrix result{std::move(values),tensor.type,int(tensor.columns()),identity->second};
     s.raw_window.push_back({name,result});return result;
 }
 

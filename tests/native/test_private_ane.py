@@ -96,6 +96,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertEqual(result.stdout.count("PASS GPU W8 source="), 9)
         self.assertIn("PASS W8 nonfinite/scale overflow rejection", result.stdout)
         self.assertIn("PASS W8 compact scale cache",result.stdout)
+        self.assertIn("PASS W8 raw content scale cache",result.stdout)
         self.assertIn("PASS W8 immutable sign metadata",result.stdout)
         self.assertIn("PASS W8 pipeline specialization",result.stdout)
         self.assertIn("PASS W8 dense typed loads",result.stdout)

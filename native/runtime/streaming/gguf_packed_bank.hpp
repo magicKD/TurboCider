@@ -24,7 +24,10 @@ class GgufPackedBank final {
     void load(Weights &, const std::atomic<bool> *cancel = nullptr, const Event & = {});
     void check_unchanged() const;
     GgufPackedBankMetrics metrics() const;
-    struct RawMatrix { Tensor values; uint32_t type; int columns; };
+    struct RawMatrix {
+        Tensor values; uint32_t type; int columns;
+        std::shared_ptr<void> logical_content_identity{};
+    };
     // Explicit bounded raw GGML source for ANE staging, NOT affine output.
     // CPU read is synchronous/owner-only; no pending buffer is published.
     // Array Data keeps its ledger claim even after window eviction/destruction.

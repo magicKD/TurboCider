@@ -1279,7 +1279,7 @@ std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string
             require(raw.columns==input_width && raw.values.shape(0)==weight.shape(0),
                     "raw GGUF source logical projection mismatch");
             ane::FfnWeight result{std::move(raw.values),std::nullopt,std::nullopt};
-            result.raw_gguf=ane::FfnWeight::RawGguf{raw.type,raw.columns};return result;
+            result.raw_gguf=ane::FfnWeight::RawGguf{raw.type,raw.columns,std::move(raw.logical_content_identity)};return result;
         }
         const auto &scales=w.at(name+".scales");const auto geometry=z_quantized_geometry(weight,scales,input_width);
         return {weight,scales,w.has(name+".biases")?std::optional<Tensor>(w.at(name+".biases")):std::nullopt,

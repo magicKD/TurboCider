@@ -71,6 +71,11 @@ struct DeviceWeightView {
     std::shared_ptr<void> owner;
     std::weak_ptr<void> allocation_identity{};
     bool immutable_generation = false; // opt-in promise: contents/metadata do not change while this generation lives
+    // Raw GGUF importer-only promise: complete logical matrix bytes identify
+    // one verified source generation/tensor across physical refills. This is
+    // NOT an allocation identity or permission to reuse mutable data. A scale
+    // cache may weakly retain the tag, never the packed matrix or source lease.
+    std::weak_ptr<void> logical_content_identity{};
 };
 struct W8StageSpec {
     int row_begin = 0, rows = 0, column_begin = 0, columns = 0;
