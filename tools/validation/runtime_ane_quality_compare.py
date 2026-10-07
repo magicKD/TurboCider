@@ -112,7 +112,7 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
         raise ValueError("unsupported quality execution backend/data path")
     if any(type(flag) is not bool for flag in (channel_auto,device_io,gpu_control,fp16_bf16_values)):
         raise ValueError("quality execution policy must be explicit booleans")
-    if (channel_auto and (runtime_backend!="private" or data_path!="w8a8")) or (device_io and runtime_backend!="private"):
+    if (channel_auto and (runtime_backend!="private" or data_path!="w8a8")) or (device_io and runtime_backend!="private" and data_path!="w8a8"):
         raise ValueError("unsupported quality execution channel/device policy")
     if gpu_control and (model_id!="z-image-turbo" or channel_auto or device_io):
         raise ValueError("GPU boundary control requires dense Z and no channel/device offload")

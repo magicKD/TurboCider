@@ -23,6 +23,30 @@ def write(path,values,dtype="F32"):
 
 
 class QualityTests(unittest.TestCase):
+    def test_public_w8_gpu_io_requires_actual_recipe_and_is_not_private_ane(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gpu,candidate=Path(folder)/"gpu.json",Path(folder)/"candidate.json"
+            common=dict(model="z-image-turbo",width=512,height=512,seed=42,steps=8,actual_denoise_steps=8,
+                lora_strategy="none",lora_applied_projections=0,timings_seconds=dict(request_wall=1.,denoise=.8))
+            baseline=dict(**common,runtime_backend="mlx_cpp_metal")
+            runtime=dict(executor_backend="public_coreml",data_path="w8a8_hadamard",partition_axis="rows",io_path="gpu_iosurface",
+                source_recipe="sylvester-dh-b128-b512-rne-norm-f16-v2+public-int8-io-v1",device_io_calls_session_total=1,
+                fallback_blocks_session_total=0,failure_reason="")
+            row=dict(**common,runtime_backend="mlx_cpp_metal+coreml_runtime_weight",hybrid=dict(runtime_failed=False,
+                runtime_failures_session_total=0,runtime_calls_session_total=1,runtime_weight=runtime))
+            def store(path,value):
+                path.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                    artifacts_unchanged=True,stdout=json.dumps(value))))
+            store(gpu,baseline);store(candidate,row)
+            policy=dict(runtime_backend="public",data_path="w8a8",channel_auto=False,device_io=True)
+            result=bind_execution(gpu,candidate,"z-image-turbo",**policy)
+            self.assertTrue(result["candidate_coreml_executed"])
+            self.assertFalse(result["candidate_ane_executed"])
+            for change in (dict(source_recipe=""),dict(data_path="fp16"),dict(device_io_calls_session_total=0)):
+                prior=dict(runtime);runtime.update(change);store(candidate,row)
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo",**policy)
+                runtime.clear();runtime.update(prior)
+
     def test_fp16_compact_values_require_explicit_policy_and_actual_recipe(self):
         from runtime_ane_common import FP16_BF16_VALUE_RECIPE
         with tempfile.TemporaryDirectory() as folder:

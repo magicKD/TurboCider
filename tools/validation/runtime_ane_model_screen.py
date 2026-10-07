@@ -99,8 +99,8 @@ def main():
     p.add_argument("--runtime-manifest", type=Path)
     p.add_argument("--runtime-backend", choices=("public", "private", "auto"), default="public",
                    help="private/auto explicitly authorize experimental private API in a private-enabled build")
-    p.add_argument("--private-gpu-io", action="store_true", help="explicit private IOSurface GPU transfer experiment; verifies actual I/O receipt")
-    p.add_argument("--private-data-path", choices=("fp16", "w8a8"), default="fp16",
+    p.add_argument("--private-gpu-io", "--runtime-gpu-io", action="store_true", help="explicit IOSurface GPU transfer; verifies actual executor/I/O recipe")
+    p.add_argument("--private-data-path", "--runtime-data-path", choices=("fp16", "w8a8"), default="fp16",
                    help="private runtime representation; W8A8 requires private backend and GPU I/O")
     p.add_argument("--private-channels", type=channel_policy, default=0,
                    help="0: rows; positive aligned width: fixed channels; auto: native calibrated candidate with raw evidence")
@@ -184,10 +184,14 @@ def main():
         p.error(str(error))
     if args.runtime_backend != "public" and "runtime" not in routes:
         p.error("runtime backend selection requires runtime route")
-    if args.private_gpu_io and (args.runtime_backend == "public" or "runtime" not in routes):
+    public_w8=args.runtime_backend=="public" and args.private_data_path=="w8a8"
+    if args.private_gpu_io and ((args.runtime_backend == "public" and not public_w8) or "runtime" not in routes):
         p.error("private GPU I/O requires an explicitly private/auto runtime route")
-    if args.private_data_path == "w8a8" and (args.runtime_backend != "private" or not args.private_gpu_io):
+    if args.private_data_path == "w8a8" and (args.runtime_backend not in ("private","public") or not args.private_gpu_io):
         p.error("W8A8 requires --runtime-backend private --private-gpu-io")
+    if public_w8 and (args.private_channels or args.private_prefetch!="0" or args.private_scale_cache!="1" or
+            args.private_launch_fence!="1" or args.private_a8_lookahead!="0" or args.private_stage_specialize!="1"):
+        p.error("Public W8 requires its row ABI: channels0/prefetch0/cache1/fence1/lookahead0/specialize1")
     full_width = 12288 if args.model_id == "qwen-image-2.1" else 10240
     native_auto = args.private_channels == "auto"
     if (native_auto and (args.runtime_backend != "private" or args.private_data_path != "w8a8" or

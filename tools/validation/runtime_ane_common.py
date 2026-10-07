@@ -448,9 +448,15 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
                     raise ValueError("invalid future-bank prefetch receipt")
             if expect_device_io:
                 device_calls = session_counter(runtime, "device_io_calls_session_total")
-                if (runtime.get("io_path") != "gpu_iosurface" or runtime.get("executor_backend") != "private_ane" or
+                expected_io_executor="private_ane" if actual_backend==private_backend else "public_coreml"
+                public_w8=expected_io_executor=="public_coreml"
+                if public_w8 and (runtime.get("data_path") not in ("w8a8_hadamard","w8a8_convrot") or
+                        not isinstance(runtime.get("source_recipe"),str) or
+                        not runtime["source_recipe"].endswith("+public-int8-io-v1")):
+                    raise ValueError("Public GPU I/O requires explicit compressed W8 recipe")
+                if (runtime.get("io_path") != "gpu_iosurface" or runtime.get("executor_backend") != expected_io_executor or
                         not previous_device_calls <= device_calls == calls):
-                    raise ValueError("private GPU I/O was not reported consistently for every prediction")
+                    raise ValueError("runtime GPU I/O was not reported consistently for every prediction")
                 previous_device_calls = device_calls
             if expected_data_path is not None and runtime.get("data_path") != expected_data_path:
                 raise ValueError("requested runtime data path was not reported")
