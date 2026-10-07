@@ -78,10 +78,10 @@ int main() {
                             {0, 1, 0, cols}, {{reinterpret_cast<std::byte *>(dense.data() + r * cols), size_t(cols) * 4}, tc::gguf::DecodeDType::f32, cols * 4, 4});
                     }
                 }
-                for (int block : {128, 512}) for (bool transpose : {false, true}) {
-                    const W8StageSpec spec{0, rows, block, block == 128 ? 384 : 512, block, 20260930, transpose};
-                    Surface codes(device, transpose ? spec.columns : rows, transpose ? rows : spec.columns, Element::I8);
-                    Surface scales(device, transpose ? 1 : rows, transpose ? rows : 1, Element::FP16);
+                for (int block : {128, 512}) for (bool transpose : {false, true}) for (int row_begin : {0, 1}) {
+                    const W8StageSpec spec{row_begin, rows-row_begin, block, block == 128 ? 384 : 512, block, 20260930, transpose};
+                    Surface codes(device, transpose ? spec.columns : spec.rows, transpose ? spec.rows : spec.columns, Element::I8);
+                    Surface scales(device, transpose ? 1 : spec.rows, transpose ? spec.rows : 1, Element::FP16);
                     std::memset(codes.data(), 0x5a, codes.rows() * codes.pitch()); std::memset(scales.data(), 0x5a, scales.rows() * scales.pitch());
                     const auto old_value = device.value();
                     auto job = device.stage_w8(view, spec, codes, scales);
@@ -95,7 +95,7 @@ int main() {
                        std::memcmp(codes.data(),fast_codes.data(),codes.rows()*codes.pitch()) ||
                        std::memcmp(scales.data(),fast_scales.data(),scales.rows()*scales.pitch()))
                         throw std::runtime_error("specialized stage differs from generic codes/scales/padding");
-                    if (encoding == DeviceWeightEncoding::Dense) {
+                    {
                         for (size_t extra_offset : {size_t(0),size_t(1)}) for (size_t extra_pitch : {size_t(0),size_t(1)}) {
                             const size_t shifted_offset=256+extra_offset,shifted_pitch=packed+32+extra_pitch;
                             Buffer shifted(gpu,shifted_offset+rows*shifted_pitch+256);
@@ -111,13 +111,13 @@ int main() {
                             if(!moved.finish().ok || moved.validation_flags()!=job.validation_flags() ||
                                std::memcmp(codes.data(),fast_codes.data(),codes.rows()*codes.pitch()) ||
                                std::memcmp(scales.data(),fast_scales.data(),scales.rows()*scales.pitch()))
-                                throw std::runtime_error("typed-load alignment fallback changed codes/scales/padding");
+                                throw std::runtime_error("unaligned dense/packed source changed codes/scales/padding");
                         }
                     }
                     if (device.value() != old_value || !job.ready_event() ||
                         ((__bridge id<MTLSharedEvent>)job.ready_event()).signaledValue != 1) throw std::runtime_error("weight staging advanced current ANE timeline");
-                    for (int r = 0; r < rows; ++r) {
-                        std::vector<float> rotated(dense.begin() + r * cols + spec.column_begin, dense.begin() + r * cols + spec.column_begin + spec.columns);
+                    for (int r = 0; r < spec.rows; ++r) {
+                        std::vector<float> rotated(dense.begin() + (spec.row_begin+r) * cols + spec.column_begin, dense.begin() + (spec.row_begin+r) * cols + spec.column_begin + spec.columns);
                         for (int c = 0; c < spec.columns; c += block) rotate_block({rotated.data() + c, size_t(block)}, spec.rotation_seed);
                         float peak = 0; for (float x : rotated) peak = std::max(peak, std::abs(x));
                         const auto expected = normalized_scale(peak);
@@ -149,11 +149,33 @@ int main() {
                             throw std::runtime_error("scale cache ignored rotation identity");
                     }
                     // Padding is not part of the representation and must not be overwritten.
-                    if (transpose) for (int c = 0; c < spec.columns; ++c) for (size_t i = rows; i < codes.pitch(); ++i)
+                    if (transpose) for (int c = 0; c < spec.columns; ++c) for (size_t i = spec.rows; i < codes.pitch(); ++i)
                         if (static_cast<const uint8_t *>(codes.data())[c * codes.pitch() + i] != 0x5a) throw std::runtime_error("A8 padding overwrite");
                     auto invalid = view; invalid.buffer_bytes = invalid.offset_bytes + 1;
                     try { device.stage_w8(invalid, spec, codes, scales); throw std::runtime_error("short buffer accepted"); }
                     catch (const CapabilityError &) {}
+                }
+                if(encoding!=DeviceWeightEncoding::Dense) {
+                    auto *bad_scale=affine?static_cast<uint8_t*>(meta.value.contents):
+                        static_cast<uint8_t*>(src.value.contents)+offset+(ggml==14?208:0);
+                    uint32_t saved=0;const size_t scale_bytes=affine?4:2;
+                    std::memcpy(&saved,bad_scale,scale_bytes);
+                    for(int block:{128,512}) {
+                        Surface bad_q(specialized,1,512,Element::I8),bad_s(specialized,1,1,Element::FP16);
+                        const uint32_t infinity=affine?0x7f800000u:0x7c00u;
+                        std::memcpy(bad_scale,&infinity,scale_bytes);
+                        auto invalid=specialized.stage_w8(view,{0,1,0,512,block},bad_q,bad_s);
+                        if(invalid.finish().ok || !(invalid.validation_flags()&1))
+                            throw std::runtime_error("packed register source hid nonfinite scale");
+                        const uint32_t huge=affine?std::bit_cast<uint32_t>(1e20f):0x7bffu;
+                        std::memcpy(bad_scale,&huge,scale_bytes);
+                        auto overflow=specialized.stage_w8(view,{0,1,0,512,block},bad_q,bad_s);
+                        if(overflow.finish().ok || !(overflow.validation_flags()&4))
+                            throw std::runtime_error("packed register source hid normalized scale overflow");
+                        std::memcpy(bad_scale,&saved,scale_bytes);
+                        auto refill=specialized.stage_w8(view,{0,1,0,512,block},bad_q,bad_s);
+                        if(!refill.finish().ok)throw std::runtime_error("packed register clean refill failed");
+                    }
                 }
                 std::cout << "PASS GPU W8 source=" << unsigned(encoding) << " dtype=" << unsigned(dtype) << " H128/H512 W/A layouts, physical stride/slice, zero/tiny rows\n";
             }
@@ -259,6 +281,7 @@ int main() {
         std::cout<<"PASS W8 immutable sign metadata: H128/H512 unsigned64 seed oracle and in-flight table replacement\n";
         std::cout<<"PASS W8 pipeline specialization: 9 encodings/dtypes H128/H512 W/A bit-exact, bounded 18 variants\n";
         std::cout<<"PASS W8 dense typed loads: FP16/BF16/FP32 aligned and independently unaligned offset/pitch, H128/H512 W/A bit-exact\n";
+        std::cout<<"PASS W8 packed register loads: raw Q4_0/Q4_K/Q8_0/Q6_K and affine Q4/Q8, unaligned source offset/pitch and nonzero row/column slices, independent CPU code/scale oracle, nonfinite/overflow rejection and clean refill\n";
         std::cout<<"PASS W8 compact scale cache: 9 encodings/dtypes H128/H512 bit-exact, recipe identity, weak generations/address reuse, mutable bypass, bounded metadata\n";
       } catch (const std::exception &error) { std::cerr << error.what() << "\n"; return 1; }
     }

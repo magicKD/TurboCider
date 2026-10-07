@@ -241,7 +241,10 @@ struct Device::Impl {
         // Dense H256 uniquely identifies validated Comfy A8 (not W or
         // Sylvester). Existing specialization opt-in keeps generic control.
         const bool register_comfy=specialize_staging && encoding==DeviceWeightEncoding::Dense && block==256;
-        const bool register_sylvester=specialize_staging && encoding==DeviceWeightEncoding::Dense && (block==128 || block==512);
+        // The validated affine/raw GGUF decoder feeds the same FP32
+        // butterfly directly; never expand a full dense matrix first.
+        // Direct ConvRot W is already rotated and must not enter this path.
+        const bool register_sylvester=specialize_staging && !direct && (block==128 || block==512);
         if(specialize_staging || direct)key={uint32_t(encoding),encoding==DeviceWeightEncoding::Dense?uint32_t(dtype):0u,uint32_t(block),uint32_t(grouped)};
         auto found=w8_pipelines.find(key);if(found!=w8_pipelines.end())return found->second;
         require(w8_pipelines.size()<26,"W8 pipeline variant bound exceeded");

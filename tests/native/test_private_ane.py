@@ -99,6 +99,7 @@ class PrivateAneHardwareTests(unittest.TestCase):
         self.assertIn("PASS W8 immutable sign metadata",result.stdout)
         self.assertIn("PASS W8 pipeline specialization",result.stdout)
         self.assertIn("PASS W8 dense typed loads",result.stdout)
+        self.assertIn("PASS W8 packed register loads",result.stdout)
         self.assertIn("PASS W8 shared generic pipeline",result.stdout)
         print(result.stdout.strip())
 

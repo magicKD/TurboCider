@@ -120,7 +120,7 @@ inline float w8_rotate(float value, threadgroup float *v, uint lane, constant W8
     }
     return value * p.norm;
 }
-// Dense Sylvester H128/H512: one SIMD owns the block. Preserve original
+// Dense/affine/raw-GGUF Sylvester H128/H512: one SIMD owns the block. Preserve original
 // butterfly FP32 add/sub order; high levels exchange private registers.
 inline void w8_sylvester_register_load(device const uchar *src,device const uchar *scales,
     device const uchar *offsets,device atomic_uint *status,constant W8Params &p,
