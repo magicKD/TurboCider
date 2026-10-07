@@ -16,14 +16,51 @@ import threading
 import time
 
 
-def artifact_identity(binary):
+def artifact_identity(binary, manifest=None):
     """Snapshot adjacent runtime bytes, not proof of dynamic-loader placement."""
     def digest(path):
         with path.open("rb") as source:
             return hashlib.file_digest(source,"sha256").hexdigest()
     library=binary.parent/"libturbocider.dylib"
-    return {"binary_sha256":digest(binary),
+    result={"binary_sha256":digest(binary),
             "adjacent_library_sha256":digest(library) if library.is_file() else None}
+    if manifest is not None:
+        manifest=Path(manifest)
+        if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size>(1<<20):
+            raise ValueError("need bounded real compiled artifact manifest")
+        before=digest(manifest)
+        document=json.loads(manifest.read_text())
+        if not isinstance(document,dict):raise ValueError("compiled artifact manifest must be an object")
+        files=document.get("files")
+        if not isinstance(files,dict) or not 1<=len(files)<=4096:
+            raise ValueError("compiled artifact manifest needs bounded complete files")
+        root=manifest.parent.resolve(strict=True)
+        observed={}
+        total=0
+        for name,expected in files.items():
+            path=Path(name)
+            if (not isinstance(expected,str) or len(expected)!=64 or
+                    any(c not in "0123456789abcdef" for c in expected) or path.is_absolute() or
+                    not path.parts or any(part in ("..",".") for part in path.parts)):
+                raise ValueError("invalid compiled artifact file identity")
+            source=root/path
+            for parent in (source,*source.parents):
+                if parent==root:break
+                if parent.is_symlink():raise ValueError("compiled artifact contains symlink")
+            if not source.is_file():raise ValueError("compiled artifact file missing/nonregular")
+            total+=source.stat().st_size
+            if total>(256<<20):raise ValueError("component compiled artifacts exceed 256MiB bound")
+            observed[name]=digest(source)
+            if observed[name]!=expected:raise ValueError("compiled artifact digest mismatch")
+        actual=set()
+        for path in root.rglob("*"):
+            if path.is_symlink():raise ValueError("compiled artifact contains symlink")
+            if path.is_file() and path!=manifest.resolve():actual.add(path.relative_to(root).as_posix())
+            elif not path.is_dir() and path!=manifest.resolve():raise ValueError("compiled artifact contains nonregular entry")
+        if actual!=set(files) or digest(manifest)!=before:
+            raise ValueError("compiled artifact manifest incomplete/changed")
+        result.update(compiled_artifact_manifest_sha256=before,compiled_artifact_files_sha256=observed)
+    return result
 
 
 def observe():
@@ -41,6 +78,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--interval", type=float, default=.5)
     parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument("--artifact-manifest",type=Path,
+                        help="optional bounded compiler file receipt; verifies complete unchanged graph files before/after")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -51,13 +90,15 @@ def main():
     binary = Path(command[0]).resolve(strict=True)
     if not binary.is_file():
         parser.error("command must name a binary file")
-    identity=artifact_identity(binary)
+    identity=artifact_identity(binary,args.artifact_manifest)
     receipt = {"schema": "tc-observed-gpu-component-screen-v1",
                "time_utc": datetime.now(timezone.utc).isoformat(),
                "command": command, **identity,
                "artifact_identity_scope":"binary and optional adjacent dylib before/after hashes; not loaded-image or physical-engine trace",
                "interval_seconds": args.interval, "observations": [], "observation_errors": [],
                "scope": "host-span component diagnostic, observer included; not E2E or physical GPU/ANE trace"}
+    if args.artifact_manifest is not None:
+        receipt["artifact_identity_scope"]+="; caller-supplied complete compiler file manifest before/after, not loaded-image verification"
     stop = threading.Event()
 
     def sample():
@@ -95,8 +136,8 @@ def main():
     receipt["maximum_observation_gap_seconds"] = max((b-a for a,b in zip(times,times[1:])), default=0)
     receipt["observation_thread_joined"] = not sampler.is_alive()
     try:
-        receipt["artifacts_unchanged"]=artifact_identity(binary)==identity
-    except OSError as error:
+        receipt["artifacts_unchanged"]=artifact_identity(binary,args.artifact_manifest)==identity
+    except (OSError,ValueError) as error:
         receipt["artifacts_unchanged"]=False
         receipt["artifact_identity_error"]=str(error)
     args.output.parent.mkdir(parents=True, exist_ok=True)

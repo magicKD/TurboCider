@@ -40,6 +40,45 @@ class ComponentObserverTests(unittest.TestCase):
         self.assertEqual(result["observation_seconds"], .25)
         self.assertEqual(run.call_args.args[0], ["ps", "-axo", "pid=,ppid=,%cpu=,comm="])
 
+    def test_compiler_files_are_complete_immutable_and_reject_escape_or_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);binary=root/"probe";binary.write_bytes(b"binary")
+            graph=root/"graph";source=graph/"graph.mlmodelc/core.bin"
+            source.parent.mkdir(parents=True);source.write_bytes(b"compiled")
+            manifest=graph/"manifest.json"
+            files={"graph.mlmodelc/core.bin":hashlib.sha256(b"compiled").hexdigest()}
+            manifest.write_text(json.dumps({"files":files}))
+            identity=SCREEN.artifact_identity(binary,manifest)
+            self.assertEqual(identity["compiled_artifact_files_sha256"],files)
+            source.write_bytes(b"changed!")
+            with self.assertRaisesRegex(ValueError,"digest mismatch"):SCREEN.artifact_identity(binary,manifest)
+            source.write_bytes(b"compiled")
+            extra=graph/"unlisted.bin";extra.write_bytes(b"extra")
+            with self.assertRaisesRegex(ValueError,"incomplete"):SCREEN.artifact_identity(binary,manifest)
+            extra.unlink()
+            for key in ("../probe","/absolute", "graph.mlmodelc/missing"):
+                manifest.write_text(json.dumps({"files":{key:"a"*64}}))
+                with self.assertRaises(ValueError):SCREEN.artifact_identity(binary,manifest)
+            manifest.write_text(json.dumps({"files":files}))
+            source.unlink();source.symlink_to(binary)
+            with self.assertRaisesRegex(ValueError,"symlink"):SCREEN.artifact_identity(binary,manifest)
+
+    def test_changed_compiled_artifact_preserves_failed_observation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/"receipt.json"
+            identity=dict(binary_sha256="a"*64,adjacent_library_sha256=None,
+                          compiled_artifact_manifest_sha256="b"*64,compiled_artifact_files_sha256={"model":"c"*64})
+            observation=dict(monotonic=1.,load_average=[0.,0.,0.],processes=[],observation_seconds=.01)
+            with mock.patch.object(sys,"argv",["screen","--output",str(output),"--artifact-manifest","graph.json","--","/usr/bin/true"]), \
+                 mock.patch.object(SCREEN,"artifact_identity",side_effect=[identity,ValueError("compiled artifact digest mismatch")]), \
+                 mock.patch.object(SCREEN,"observe",return_value=observation), mock.patch("builtins.print"):
+                with self.assertRaises(SystemExit) as raised:SCREEN.main()
+            self.assertEqual(raised.exception.code,1)
+            receipt=json.loads(output.read_text())
+            self.assertEqual(receipt["exit_code"],0)
+            self.assertFalse(receipt["artifacts_unchanged"])
+            self.assertIn("digest mismatch",receipt["artifact_identity_error"])
+
     def test_missing_observation_is_not_fabricated(self):
         with mock.patch.object(SCREEN.subprocess, "run", side_effect=subprocess.TimeoutExpired("ps", 5)):
             with self.assertRaises(subprocess.TimeoutExpired):
