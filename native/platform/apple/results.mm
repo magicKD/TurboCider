@@ -98,7 +98,16 @@ static id encoder_reuse_dictionary(const RunResult &result) {
     const auto &m=*result.encoder_runtime_reuse;
     return @{@"enabled":@(m.enabled),@"executor_reused":@(m.reused),@"executor_retained":@(m.retained),
         @"actual_calls_this_request":@(m.calls_this_request),@"retained_estimated_bytes":@(m.retained_estimated_bytes),
-        @"weight_residency":@"request_local",@"scope":@"request-local execution evidence; HybridMetrics remain cumulative; estimate is not a RAM cap"};
+        @"weight_residency":result.encoder_weight_residency && result.encoder_weight_residency->retained ? @"resident_source_arrays" : @"request_local",
+        @"scope":@"request-local execution evidence; HybridMetrics remain cumulative; estimate is not a RAM cap"};
+}
+static id encoder_weight_dictionary(const RunResult &result) {
+    if(!result.encoder_weight_residency)return NSNull.null;
+    const auto &m=*result.encoder_weight_residency;
+    return @{@"enabled":@(m.enabled),@"weights_reused":@(m.reused),@"weights_retained":@(m.retained),
+        @"source_bytes":@(m.source_bytes),@"retained_bytes":@(m.retained_bytes),@"loads_session_total":@(m.loads_session_total),
+        @"decline_reason":@(m.decline_reason.c_str()),@"logical_capacity_upper_bytes":@(uint64_t(20)<<30),
+        @"scope":@"admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures"};
 }
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
@@ -1427,6 +1436,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"encoder_runtime_precision"] = encoder_precision_label(result);
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
             copy[@"encoder_runtime_reuse"] = encoder_reuse_dictionary(result);
+            copy[@"encoder_weight_residency"] = encoder_weight_dictionary(result);
             copy[@"plan"] = runtime_plan(result);
         }
         if (result.streaming_runtime) {
@@ -1487,6 +1497,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"encoder_hybrid" : encoder_hybrid
         } mutableCopy];
         prepared[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
+        prepared[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
         if (result.memory_admission)
             prepared[@"memory_admission"] =
                 to_dictionary(*result.memory_admission);
@@ -1549,6 +1560,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
     value[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
+    value[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
     if (result.gguf_import) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{

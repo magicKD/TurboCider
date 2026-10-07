@@ -4,6 +4,7 @@
 #include "hybrid.hpp"
 #include "transformer.hpp"
 #include "conditioning_cache.hpp"
+#include "encoder_residency.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "../../backends/ane_qkv.hpp"
 
@@ -22,6 +23,9 @@ class Session final : public ModelSession {
     // weights in transformer_. Never retained on a route without opt-in.
     std::vector<Tensor> fused_qkv_weights_;
     ConditioningCache conditioning_cache_;
+    std::unique_ptr<Weights> encoder_weights_;
+    std::string encoder_weight_identity_;
+    uint64_t encoder_weight_loads_ = 0;
     // Optional one-entry executor only; never retains the complete encoder
     // weights. Drain before request-owned text sources die or identity changes.
     std::unique_ptr<ane::HybridFfn> encoder_runtime_;
@@ -44,6 +48,8 @@ class Session final : public ModelSession {
     // Destroy the Transformer before invalidating its weights or callback
     // owners, and discard the identity used to admit cross-request KV reuse.
     void clear_prefix_cache();
+    void prepare_transformer(const Request &, const Event &, std::atomic<bool> &,
+                             bool experimental_adapter, bool fused_qkv, bool lora_fp16);
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup, bool prepare_only);
 };
 } // namespace tc::qwen21

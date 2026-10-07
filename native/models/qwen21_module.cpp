@@ -1,5 +1,6 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "../backends/ane_backend.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <string_view>
@@ -15,6 +16,15 @@ ModelModule qwen21_module() {
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
+            const char *encoder_weights=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
+            require(qwen21::binary_option_or_unset(encoder_weights),"Qwen encoder weight retention requires 0 or 1");
+            if(qwen21::option_enabled(encoder_weights))
+                require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&
+                    !r.memory_constrained.enabled && !r.streaming.active() && !r.memory_budget_bytes,
+                    "Qwen encoder weight retention requires unconstrained resident 512px execution without prompt enhancement");
+            if(const char *channels=std::getenv("TURBOCIDER_QWEN21_ENCODER_ANE_CHANNELS"))
+                require(ane::parse_private_channel_count(12288,channels)>=0,
+                    "Qwen encoder channel override requires a fixed aligned width, not auto");
             const char *encoder_retain=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME");
             require(qwen21::binary_option_or_unset(encoder_retain),"Qwen encoder runtime retention requires 0 or 1");
             if(qwen21::option_enabled(encoder_retain) && !r.encoder_ane_manifest.empty())

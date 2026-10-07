@@ -175,6 +175,11 @@ struct EncoderRuntimeReuseMetrics {
     bool enabled = false, reused = false, retained = false;
     uint64_t calls_this_request = 0, retained_estimated_bytes = 0;
 };
+struct EncoderWeightResidencyMetrics {
+    bool enabled = false, reused = false, retained = false;
+    uint64_t source_bytes = 0, retained_bytes = 0, loads_session_total = 0;
+    std::string decline_reason;
+};
 struct Timings {
     double wall = 0, text = 0, image = 0, hybrid = 0, denoise = 0, decode = 0;
 };
@@ -299,6 +304,7 @@ struct RunResult {
     std::optional<QkvMetrics> qkv;
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<EncoderRuntimeReuseMetrics> encoder_runtime_reuse;
+    std::optional<EncoderWeightResidencyMetrics> encoder_weight_residency;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;

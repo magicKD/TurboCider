@@ -20,6 +20,8 @@ from runtime_ane_memory import run_owned, run_sampled
 
 ROOT=Path(__file__).resolve().parents[2]
 MODES=("gpu","encoder_local","encoder_retained")
+WEIGHT_MODES=("gpu","gpu_weights","encoder_retained","encoder_weights")
+COMBINED_MODES=("gpu_weights","dit_weights","dit_encoder_weights")
 
 
 def model_snapshot(model):
@@ -41,22 +43,34 @@ def model_snapshot(model):
     return result
 
 
-def make_request(prompt, image_paths, output, manifest=None, lora=None):
+def make_request(prompt, image_paths, output, manifest=None, lora=None,dit_manifest=None):
     request=dict(model="qwen-image-2.1",operation="image.edit",prompt=prompt,
         width=512,height=512,steps=6 if lora else 40,seed=29,audio=False,
         residency="resident",execution="gpu",allow_approximation=True,qwen21_reference_size=512,
         inputs=[dict(kind="image",role="reference",path=str(path)) for path in image_paths],output=str(output))
     if manifest:request["encoder_ane_manifest"]=str(manifest)
     if lora:request.update(lora_strategy="inference_time",loras=[dict(path=str(lora),role="transformer",strength=1.0)])
+    if dit_manifest:request.update(execution="gpu_ane",hybrid_mlp_mode="runtime",ane_manifest=str(dit_manifest))
     return request
 
 
-def validate_rows(rows, mode, count, private, channels=None):
+def validate_rows(rows, mode, count, private, channels=None,global_channels=None):
     if len(rows)!=count:raise ValueError("missing request receipts")
-    cumulative=0
+    cumulative=0;dit_cumulative=0
     for index,row in enumerate(rows):
-        if row.get("prompt_cache_hit") is not False or row.get("runtime_backend")!="mlx_cpp_metal":
+        with_dit=mode in ("dit_weights","dit_encoder_weights")
+        expected_backend="mlx_cpp_metal+private_ane_runtime_weight_experimental" if with_dit else "mlx_cpp_metal"
+        if row.get("prompt_cache_hit") is not False or row.get("runtime_backend")!=expected_backend:
             raise ValueError("need fresh conditioning and unchanged GPU DiT on every request")
+        if with_dit:
+            h=row.get("hybrid") or {};runtime=h.get("runtime_weight") or {}
+            calls=h.get("runtime_calls_session_total")
+            if type(calls) is not int or calls<=dit_cumulative or h.get("runtime_failed") is not False or \
+                runtime.get("executor_backend")!="private_ane" or runtime.get("data_path")!="w8a8_hadamard" or \
+                runtime.get("fallback_blocks_session_total")!=0 or \
+                (global_channels is not None and runtime.get("ane_channels")!=global_channels):
+                raise ValueError("combined DiT requires actual separate successful Private W8 execution")
+            dit_cumulative=calls
         if row.get("actual_denoise_steps")!=row.get("steps"):
             raise ValueError("requested/actual denoise steps mismatch")
         for field in ("request_wall","text_encode","denoise"):
@@ -65,11 +79,19 @@ def validate_rows(rows, mode, count, private, channels=None):
                 raise ValueError("missing/nonfinite/nonpositive request timing")
         evidence=row.get("encoder_runtime_reuse")
         metrics=row.get("encoder_hybrid") or {}
-        if mode=="gpu":
+        with_weights=mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights")
+        weights=row.get("encoder_weight_residency")
+        if with_weights:
+            if not isinstance(weights,dict) or weights.get("enabled") is not True or weights.get("weights_retained") is not True:
+                raise ValueError("admitted retained encoder source evidence missing")
+            if weights.get("weights_reused")!=(index>0) or weights.get("loads_session_total")!=1 or weights.get("decline_reason"):
+                raise ValueError("fresh-condition weight retention did not reuse the same admitted source")
+            if not 0<weights.get("retained_bytes",0)<=20<<30:raise ValueError("retained source exceeds its bound")
+        if mode in ("gpu","gpu_weights","dit_weights"):
             if evidence is not None or metrics or row.get("encoder_execution")!="gpu":
                 raise ValueError("GPU baseline unexpectedly used encoder executor")
             continue
-        retained=mode=="encoder_retained"
+        retained=mode in ("encoder_retained","encoder_weights","dit_encoder_weights")
         if not isinstance(evidence,dict) or evidence.get("enabled")!=retained:
             raise ValueError("retention policy receipt missing/mismatched")
         if evidence.get("executor_retained")!=retained or evidence.get("executor_reused")!=(retained and index>0):
@@ -98,49 +120,62 @@ def main():
     parser.add_argument("--cli",type=Path,required=True)
     parser.add_argument("--model",type=Path,required=True)
     parser.add_argument("--manifest",type=Path,required=True)
+    parser.add_argument("--dit-manifest",type=Path,help="explicit combined Private DiT/encoder screen; same source retention on every route")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
     parser.add_argument("--backend",choices=("private","public"),default="private")
     parser.add_argument("--channels",type=int,default=3072)
-    parser.add_argument("--order",default=",".join(MODES))
+    parser.add_argument("--global-channels",type=int,default=5120,
+        help="separate global/DiT share; encoder always gets the explicit --channels override")
+    parser.add_argument("--weights",action="store_true",help="fair GPU/ANE source-retention experiment; no disk cache")
+    parser.add_argument("--order")
     parser.add_argument("--sample-memory",action="store_true")
     parser.add_argument("--observe-load",action="store_true")
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--timeout",type=int,default=900)
     args=parser.parse_args()
-    order=args.order.split(",")
-    if len(order)!=3 or set(order)!=set(MODES):parser.error("order must include each of the three matched modes once")
+    modes=COMBINED_MODES if args.dit_manifest else WEIGHT_MODES if args.weights else MODES
+    order=args.order.split(",") if args.order else list(modes)
+    if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
     if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
         parser.error("need 1..2 references and 3..9 distinct fresh prompts")
     if any(not prompt.strip() for prompt in args.prompt):parser.error("empty prompt")
     if not 1<=args.timeout<=3600:parser.error("timeout must be 1..3600 seconds per serial mode")
     if args.backend=="private" and not (0<args.channels<12288 and args.channels%512==0):parser.error("Private channels require aligned partial width")
+    if not (0<=args.global_channels<12288 and args.global_channels%512==0):parser.error("invalid global channel share")
     if args.backend=="public" and args.channels!=0:parser.error("Public uses its row ABI, channels=0")
+    if args.dit_manifest and args.backend!="private":parser.error("combined screen requires explicit Private backend")
     if args.output.exists() or args.output.is_symlink():parser.error("choose a new output directory")
     cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
     if not library.is_file() or not os.access(cli,os.X_OK):parser.error("CLI and adjacent native library required")
     model=args.model.resolve(strict=True);manifest=args.manifest.resolve(strict=True)
     references=[p.resolve(strict=True) for p in args.reference]
     lora=args.lora.resolve(strict=True) if args.lora else None
-    before={str(path):sha256_file(path) for path in [cli,library,manifest,*references,*([lora] if lora else [])]}
+    dit_manifest=args.dit_manifest.resolve(strict=True) if args.dit_manifest else None
+    before={str(path):sha256_file(path) for path in [cli,library,manifest,*references,*([lora] if lora else []),*([dit_manifest] if dit_manifest else [])]}
     model_before=model_snapshot(model)
     args.output.mkdir(parents=True)
     summary=dict(schema="tc-qwen-encoder-residency-screen-v1",time_utc=datetime.now(timezone.utc).isoformat(),
         status="incomplete",qualification_passed=False,order=order,prompts=args.prompt,source_identities=before,
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
+    summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,combined_dit_encoder=bool(dit_manifest))
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode!="gpu":
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights"):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
+        uses_dit=mode in ("dit_weights","dit_encoder_weights")
+        if uses_encoder or uses_dit:
             env.update(TURBOCIDER_ANE_BACKEND=args.backend,TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
-                TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME="1" if mode=="encoder_retained" else "0")
+                TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_QWEN21_ENCODER_ANE_CHANNELS=str(args.channels),
+                TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME="1" if mode in ("encoder_retained","encoder_weights","dit_encoder_weights") else "0")
             if args.backend=="private":env.update(TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",
-                TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.channels),
+                TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.global_channels),
                 TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE="1",TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE="1",
                 TURBOCIDER_PRIVATE_ANE_PREFETCH="0",TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD="0",
                 TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN="1")
@@ -148,7 +183,7 @@ def main():
         for index,prompt in enumerate(args.prompt):
             path=args.output/f"{mode}-{index}.json"
             path.write_text(json.dumps(make_request(prompt,references,(args.output/f"{mode}-{index}.png").resolve(),
-                manifest if mode!="gpu" else None,lora),indent=2)+"\n")
+                manifest if uses_encoder else None,lora,dit_manifest if uses_dit else None),indent=2)+"\n")
             requests.append(str(path.resolve()))
         command=[str(cli),"batch",str(model),*requests]
         observer=LoadObservation(args.output/f"{mode}-load.jsonl") if args.observe_load else None
@@ -161,7 +196,7 @@ def main():
                 if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_rows(rows,mode,len(args.prompt),args.backend=="private",args.channels)
+        validate_rows(rows,mode,len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
         times=[row["timings_seconds"]["request_wall"] for row in rows]

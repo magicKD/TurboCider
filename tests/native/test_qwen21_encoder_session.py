@@ -28,6 +28,7 @@ class EncoderSessionTests(unittest.TestCase):
         lib.tc_engine_create_model.argtypes=[C.c_char_p,C.c_char_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
         lib.tc_engine_prepare.argtypes=[C.c_void_p,C.c_char_p,C.c_int,C.c_void_p,C.c_void_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
         lib.tc_engine_free.argtypes=[C.c_void_p];lib.tc_string_free.argtypes=[C.c_void_p]
+        lib.tc_engine_unload.argtypes=[C.c_void_p,C.POINTER(C.c_void_p),C.POINTER(C.c_void_p)]
         def message(pointer):return C.string_at(pointer).decode() if pointer.value else ""
         status=lib.tc_engine_create_model(b"qwen-image-2.1",str(model).encode(),C.byref(engine),C.byref(error))
         text=message(error)
@@ -62,6 +63,8 @@ class EncoderSessionTests(unittest.TestCase):
                     else:
                         self.assertGreater(calls,0);self.assertFalse(metrics["runtime_failed"])
                         self.assertEqual(metrics["session_released_after_encoding"],not retained)
+                        override=os.environ.get("TURBOCIDER_QWEN21_ENCODER_ANE_CHANNELS")
+                        if override is not None:self.assertEqual(metrics["runtime_weight"]["ane_channels"],int(override))
                     if reuse:
                         self.assertEqual(reuse["enabled"],retained)
                         self.assertEqual(reuse["executor_retained"],retained)
@@ -71,7 +74,14 @@ class EncoderSessionTests(unittest.TestCase):
                             self.assertLessEqual(reuse["retained_estimated_bytes"],1<<30)
                     evidence.append(dict(name=name,cache_hit=data["prompt_cache_hit"],actual_encoder_calls=calls,
                         execution=data["encoder_execution"],backend=data["encoder_runtime_backend"],reuse=reuse,
-                        cumulative_calls=metrics.get("runtime_calls_session_total",0)))
+                        cumulative_calls=metrics.get("runtime_calls_session_total",0),weights=data.get("encoder_weight_residency")))
+                    weights=data.get("encoder_weight_residency")
+                    if os.environ.get("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS")=="1":
+                        self.assertTrue(weights["enabled"]);self.assertTrue(weights["weights_retained"],weights)
+                        self.assertGreater(weights["retained_bytes"],0)
+                        self.assertLessEqual(weights["retained_bytes"],20<<30)
+                        self.assertEqual(weights["weights_reused"],not expected_hit and name not in
+                            ("gpu-edit","recover-after-invalid-template","after-unload"))
                     return request
                 run("gpu-edit",None,True,False)
                 run("ane-generation",manifests[0],False,False)
@@ -98,6 +108,19 @@ class EncoderSessionTests(unittest.TestCase):
                     os.environ["TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME"]="0"
                     try:run("retention-off",manifests[0],True,False)
                     finally:os.environ["TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME"]="1"
+                if os.environ.get("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS")=="1":
+                    os.environ["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="0"
+                    try:
+                        run("weights-off",manifests[0],True,False)
+                        self.assertFalse(evidence[-1]["weights"]["weights_retained"])
+                    finally:os.environ["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+                    result=C.c_void_p();failure=C.c_void_p()
+                    status=lib.tc_engine_unload(engine,C.byref(result),C.byref(failure));text=message(failure)
+                    if result.value:lib.tc_string_free(result)
+                    if failure.value:lib.tc_string_free(failure)
+                    self.assertEqual(status,0,text)
+                    run("after-unload",None,True,False)
+                    self.assertEqual(evidence[-1]["weights"]["loads_session_total"],1)
             print(json.dumps(dict(schema="tc-qwen-encoder-session-switch-v1",
                 library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),requests=evidence,
                 scope="actual prepare-only session/cache contract; not denoise/performance/visual qualification")))

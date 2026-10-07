@@ -11,8 +11,7 @@ inline bool configured_convrot_bf16_boundaries() {
         throw std::runtime_error("ConvRot BF16 value boundaries require 0 or 1");
     return raw && std::string(raw)=="1";
 }
-inline int private_channel_count(int full_width) {
-    const char *raw = std::getenv("TURBOCIDER_PRIVATE_ANE_CHANNELS");
+inline int parse_private_channel_count(int full_width, const char *raw) {
     if (!raw) return 0;
     const std::string value(raw);
     if (value == "auto") return -1; // must be resolved by native calibration, never a graph width
@@ -23,7 +22,16 @@ inline int private_channel_count(int full_width) {
         throw std::runtime_error("private ANE channels must be a positive 512 multiple smaller than the full FFN width");
     return channels;
 }
-inline int resolved_private_channel_count(int full_width, std::optional<int> calibrated = std::nullopt) {
+inline int private_channel_count(int full_width) {
+    return parse_private_channel_count(full_width,std::getenv("TURBOCIDER_PRIVATE_ANE_CHANNELS"));
+}
+inline int resolved_private_channel_count(int full_width, std::optional<int> calibrated = std::nullopt,
+                                         std::optional<int> explicit_override = std::nullopt) {
+    if(explicit_override) {
+        if(calibrated)throw std::runtime_error("explicit channel override cannot be combined with calibration");
+        const auto text=std::to_string(*explicit_override);
+        return parse_private_channel_count(full_width,text.c_str());
+    }
     const int configured = private_channel_count(full_width);
     if (!calibrated) {
         if (configured < 0) throw std::runtime_error("automatic ANE channels require a native calibration workload");
@@ -61,5 +69,6 @@ struct BuiltExecutor {
 };
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
                                     GraphGeometry expected, BackendPolicy policy,
-                                    std::optional<int> calibrated_channels = std::nullopt);
+                                    std::optional<int> calibrated_channels = std::nullopt,
+                                    std::optional<int> channel_override = std::nullopt);
 }

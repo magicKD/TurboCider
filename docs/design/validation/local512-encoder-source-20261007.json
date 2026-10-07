@@ -1,0 +1,1323 @@
+{
+  "schema": "tc-local512-encoder-source-evidence-v1",
+  "date_utc": "2026-10-07",
+  "artifact_date_basis": "20261008 is Asia/Singapore local date",
+  "qualification_passed": false,
+  "builds": {
+    "private": {
+      "root": "build/local512-encoder-source-v4-private",
+      "runtime_build_id": "tc-runtime-build-v1-d612e9bbf924c67d8716764bbd92e68a0f59a03dc69ace656ec48b89120ee9a3",
+      "sources": 489,
+      "source_mismatches": [],
+      "library_sha256": "eea37c749bf612ba37ea34ab8e60c2b5b54736ea66b7759800af4e14bb5cb610",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "9b397897127da2cd27f54d99e5b719968e4932cd398e04ef338939124e8568d3",
+      "includes_preserved_convrot_drafts": true
+    },
+    "public": {
+      "root": "build/local512-encoder-source-v4-public",
+      "runtime_build_id": "tc-runtime-build-v1-e2bde3556938e7d46492f722cbd99e7bb99cda2646d2936b5b7a0385b660b524",
+      "sources": 489,
+      "source_mismatches": [],
+      "library_sha256": "e76a2969ac80087df0ddd6aa439be62eb951096f7a9fdfeb01c1f33fc30f0ed7",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "e8616e484bab5640c759c50bdb2de531da5030a75f46c03a1b620a00fe3a76e7",
+      "includes_preserved_convrot_drafts": true
+    }
+  },
+  "screens": [
+    {
+      "summary": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/summary.json",
+      "summary_sha256": "3ee669344b1c9ac49f1c0930d2882a12f7f82271b3f2ed17bebade35b7c9564e",
+      "status": "complete_diagnostic",
+      "encoder_channels": 3072,
+      "global_dit_channels": 5120,
+      "combined": false,
+      "source_metadata_snapshot_recorded": true,
+      "arms": [
+        {
+          "mode": "gpu",
+          "cold_seconds": 11.593850792,
+          "warm_fresh_seconds": [
+            10.888186291,
+            10.636143958
+          ],
+          "warm_fresh_median_seconds": 10.762165124500001,
+          "text_seconds": [
+            0.828353334,
+            1.085190875,
+            0.879502416
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/gpu.stdout.jsonl",
+          "stdout_sha256": "9123fab6715d8a22e38f6a00e5e7b5c1fa76ebdd714303987204ac0d4707b571",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            2,
+            3
+          ],
+          "source_retained_bytes": [
+            0,
+            0,
+            0
+          ],
+          "source_reused": [
+            false,
+            false,
+            false
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79",
+            "2211a79e66037c54b8ff2e12a2602e8e4c1b183c3472042e29328220670d9ac5",
+            "bbcf5db84c9d2fa4ceb287c0632ef75b267bca02dd31684c972aa86bf7666bad"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/gpu-memory-report.json",
+          "memory_sha256": "f3e41a50a0e6b382cc14e7bbc22b970a6ec7a9cde432e278d3d01567b20b5928",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 30585935928,
+          "swap_in_bytes": 262144,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "gpu_weights",
+          "cold_seconds": 13.8732915,
+          "warm_fresh_seconds": [
+            10.930694958,
+            10.563411041
+          ],
+          "warm_fresh_median_seconds": 10.7470529995,
+          "text_seconds": [
+            0.9504905,
+            1.080522667,
+            0.730809708
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/gpu_weights.stdout.jsonl",
+          "stdout_sha256": "8b0309d00691f79c0a6f09b8a912a0d01f9246bfbf311eddb901f80626c729d9",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79",
+            "2211a79e66037c54b8ff2e12a2602e8e4c1b183c3472042e29328220670d9ac5",
+            "bbcf5db84c9d2fa4ceb287c0632ef75b267bca02dd31684c972aa86bf7666bad"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/gpu_weights-memory-report.json",
+          "memory_sha256": "d1ab51b17e94db2a826bbf3dda102a63e0a9299f1dc24264bd89582d44a5cc62",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 39945693728,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_retained",
+          "cold_seconds": 14.538721417,
+          "warm_fresh_seconds": [
+            11.440650208,
+            11.050676708
+          ],
+          "warm_fresh_median_seconds": 11.245663458,
+          "text_seconds": [
+            3.249976792,
+            1.622732791,
+            1.271970042
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/encoder_retained.stdout.jsonl",
+          "stdout_sha256": "cab0c03bdd2c6ef0761fdfc7aeb53b5527a3e37bd9e85d4e17fbd11065c9cad2",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            2,
+            3
+          ],
+          "source_retained_bytes": [
+            0,
+            0,
+            0
+          ],
+          "source_reused": [
+            false,
+            false,
+            false
+          ],
+          "encoder_calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "encoder_cumulative_calls": [
+            36,
+            72,
+            108
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            3072,
+            3072,
+            3072
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/encoder_retained-memory-report.json",
+          "memory_sha256": "5a439ac9118de69343cf1c8281adb65b232519f7cb97abe5a0b2d5a1c9aa613b",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31646751400,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_weights",
+          "cold_seconds": 13.871486167,
+          "warm_fresh_seconds": [
+            10.979296292,
+            10.728821667
+          ],
+          "warm_fresh_median_seconds": 10.8540589795,
+          "text_seconds": [
+            1.396325166,
+            1.065783084,
+            0.834596917
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/encoder_weights.stdout.jsonl",
+          "stdout_sha256": "d5fba4f25cb5dba86b752873992a21931101aaed9104511bc49c2876e8c34349",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "encoder_cumulative_calls": [
+            36,
+            72,
+            108
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            3072,
+            3072,
+            3072
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            108,
+            216
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v1-fresh-forward-20261008/encoder_weights-memory-report.json",
+          "memory_sha256": "3fc02d82c18e97a28d67dd1088e7b27a4b44cf485c6d90746267ed98496496d2",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 40613407384,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ],
+      "all_gpu_weight_retention_pngs_exact": true,
+      "all_encoder_weight_retention_pngs_exact": true
+    },
+    {
+      "summary": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/summary.json",
+      "summary_sha256": "8304d5d31e7cd2dea3bb79fd639aeb688acd4fa8988d855f5a100e8bf505a80e",
+      "status": "complete_diagnostic",
+      "encoder_channels": 3072,
+      "global_dit_channels": 5120,
+      "combined": false,
+      "source_metadata_snapshot_recorded": true,
+      "arms": [
+        {
+          "mode": "gpu",
+          "cold_seconds": 14.131320916,
+          "warm_fresh_seconds": [
+            10.999285125,
+            10.588195584
+          ],
+          "warm_fresh_median_seconds": 10.793740354499999,
+          "text_seconds": [
+            1.561183334,
+            1.211526916,
+            0.853452417
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/gpu.stdout.jsonl",
+          "stdout_sha256": "6f576f45a523e29e379f17dcdbaad94bdf942b7b8f185686f0e23491773d62c0",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            2,
+            3
+          ],
+          "source_retained_bytes": [
+            0,
+            0,
+            0
+          ],
+          "source_reused": [
+            false,
+            false,
+            false
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79",
+            "2211a79e66037c54b8ff2e12a2602e8e4c1b183c3472042e29328220670d9ac5",
+            "bbcf5db84c9d2fa4ceb287c0632ef75b267bca02dd31684c972aa86bf7666bad"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/gpu-memory-report.json",
+          "memory_sha256": "4c4c9fdc1b4ef08e001c7d37aa0f933889437a712dea091abe1a257738931d88",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31623863360,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "gpu_weights",
+          "cold_seconds": 14.885320584,
+          "warm_fresh_seconds": [
+            11.335890042,
+            10.613400166
+          ],
+          "warm_fresh_median_seconds": 10.974645104,
+          "text_seconds": [
+            2.5075845,
+            1.385552708,
+            0.674483459
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/gpu_weights.stdout.jsonl",
+          "stdout_sha256": "f18d7070ec6eabdd23fe5c617ea9f94a1ac690e284c72fbf8891cb6259630abb",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79",
+            "2211a79e66037c54b8ff2e12a2602e8e4c1b183c3472042e29328220670d9ac5",
+            "bbcf5db84c9d2fa4ceb287c0632ef75b267bca02dd31684c972aa86bf7666bad"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/gpu_weights-memory-report.json",
+          "memory_sha256": "5f3825792f3d6eed17f2f3f6514b3244b7004b4705667ec6e665c01b97d9bb44",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 40226646728,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_retained",
+          "cold_seconds": 14.701129417,
+          "warm_fresh_seconds": [
+            11.570658958,
+            11.09383975
+          ],
+          "warm_fresh_median_seconds": 11.332249354,
+          "text_seconds": [
+            2.040324834,
+            1.743871958,
+            1.291035375
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/encoder_retained.stdout.jsonl",
+          "stdout_sha256": "87a1106715d06e483c9e8c69712cf9666b6f9997aa48b0c0c361717ca3a006b5",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            2,
+            3
+          ],
+          "source_retained_bytes": [
+            0,
+            0,
+            0
+          ],
+          "source_reused": [
+            false,
+            false,
+            false
+          ],
+          "encoder_calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "encoder_cumulative_calls": [
+            36,
+            72,
+            108
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            3072,
+            3072,
+            3072
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/encoder_retained-memory-report.json",
+          "memory_sha256": "fd34e734a8bc879c48a8749ac3efa2612b072af020d957d2158ca92f2163d706",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31200074144,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_weights",
+          "cold_seconds": 15.552007208,
+          "warm_fresh_seconds": [
+            11.551786791,
+            10.73694575
+          ],
+          "warm_fresh_median_seconds": 11.1443662705,
+          "text_seconds": [
+            3.060531625,
+            1.574681667,
+            0.83231975
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/encoder_weights.stdout.jsonl",
+          "stdout_sha256": "eb88e551638c2601224d80448893a92cec31f85a25ce4aad6631ef0108cd414c",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "encoder_cumulative_calls": [
+            36,
+            72,
+            108
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            3072,
+            3072,
+            3072
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            108,
+            216
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-source-v3-fresh-forward-20261008/encoder_weights-memory-report.json",
+          "memory_sha256": "96f1f5ec6a13aa90b2e8b031abae79d21616c1eadb527c1a7c183c9e79e2f5a0",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 40257858080,
+          "swap_in_bytes": 65536,
+          "swap_out_bytes": 0
+        }
+      ],
+      "all_gpu_weight_retention_pngs_exact": true,
+      "all_encoder_weight_retention_pngs_exact": true
+    },
+    {
+      "summary": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/summary.json",
+      "summary_sha256": "4c4755e599e25217d36045dd539ad506158b7901b407139a7ba7f8de6e82899d",
+      "status": "complete_diagnostic",
+      "encoder_channels": 3072,
+      "global_dit_channels": 5120,
+      "combined": true,
+      "source_metadata_snapshot_recorded": true,
+      "arms": [
+        {
+          "mode": "gpu_weights",
+          "cold_seconds": 17.767596667,
+          "warm_fresh_seconds": [
+            13.473530542,
+            12.820119125
+          ],
+          "warm_fresh_median_seconds": 13.1468248335,
+          "text_seconds": [
+            3.168998041,
+            1.738647625,
+            1.1398715
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/gpu_weights.stdout.jsonl",
+          "stdout_sha256": "d3d833b12003c706b30ecc59d3759abca4ee896d2698b4648925688fa58e7193",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/gpu_weights-memory-report.json",
+          "memory_sha256": "1d8cba31f30e31dfda67cfeaaaee3e15acc132d081d80fc8d016aa86cc625acb",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 41058888320,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "dit_weights",
+          "cold_seconds": 18.714447292,
+          "warm_fresh_seconds": [
+            14.887718833,
+            14.496488416
+          ],
+          "warm_fresh_median_seconds": 14.6921036245,
+          "text_seconds": [
+            3.136985833,
+            1.7176005,
+            1.1715225
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/dit_weights.stdout.jsonl",
+          "stdout_sha256": "9a6717aeb639a47b18d05a2f9f192419ca60162faea8b6d860de13fea63accbc",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            256,
+            512,
+            768
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            5120,
+            5120,
+            5120
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/dit_weights-memory-report.json",
+          "memory_sha256": "c7edcde0f13a4baa64be8b8a29a06949efcf5086df4a73967d6bfba1b424bc07",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 39154789808,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "dit_encoder_weights",
+          "cold_seconds": 19.186416708,
+          "warm_fresh_seconds": [
+            15.04907275,
+            14.631693
+          ],
+          "warm_fresh_median_seconds": 14.840382875,
+          "text_seconds": [
+            3.9169425,
+            1.941660041,
+            1.467890959
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/dit_encoder_weights.stdout.jsonl",
+          "stdout_sha256": "b933bcf8478bbeb986ab18fd798a794707fa21f2f94af7da40b6101307b717ac",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            72,
+            72,
+            72
+          ],
+          "encoder_cumulative_calls": [
+            72,
+            144,
+            216
+          ],
+          "dit_cumulative_calls": [
+            256,
+            512,
+            768
+          ],
+          "encoder_actual_share": [
+            3072,
+            3072,
+            3072
+          ],
+          "dit_actual_share": [
+            5120,
+            5120,
+            5120
+          ],
+          "encoder_scale_hits": [
+            0,
+            108,
+            216
+          ],
+          "png_sha256": [
+            "94441706fe8ad8773284ab3c958dd1d039dba75f5e4bbeab65988f386e424f7a",
+            "af78b933e61da5ccabf43069d7b652768decc8ed6c6882f4cb0a7b59424c7fd6",
+            "5a28d812f02b49ef9bbae2041960bf245f2c7f4494ba73827dc80ee1b94679ca"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/dit_encoder_weights-memory-report.json",
+          "memory_sha256": "e52e9b73b07ec25c2c9515fd6ea116ba187ae0e0ae3d9ee83455b34ea8190448",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 39245803024,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ]
+    },
+    {
+      "summary": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/summary.json",
+      "summary_sha256": "705e4bba42a16fecd99e067540840b78757a5cfa82e5ebaa383a3e420e7806b2",
+      "status": "complete_diagnostic",
+      "encoder_channels": 3072,
+      "global_dit_channels": 1536,
+      "combined": true,
+      "source_metadata_snapshot_recorded": true,
+      "arms": [
+        {
+          "mode": "gpu_weights",
+          "cold_seconds": 17.822668,
+          "warm_fresh_seconds": [
+            13.447710584,
+            12.819760875
+          ],
+          "warm_fresh_median_seconds": 13.1337357295,
+          "text_seconds": [
+            3.170114042,
+            1.732473667,
+            1.170698792
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/gpu_weights.stdout.jsonl",
+          "stdout_sha256": "396b8132652139ae3d82132b69914ffbb8da62b3a7b375342fc743da4dab0b21",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/gpu_weights-memory-report.json",
+          "memory_sha256": "8ee7628c6b78e6a8d96bd62926917c65d426526b238ee344c1dc354ee7baee88",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 40337746536,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "dit_weights",
+          "cold_seconds": 20.624472833,
+          "warm_fresh_seconds": [
+            16.058985917,
+            15.548129333
+          ],
+          "warm_fresh_median_seconds": 15.803557625,
+          "text_seconds": [
+            3.142765542,
+            1.730145625,
+            1.157196375
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/dit_weights.stdout.jsonl",
+          "stdout_sha256": "ea25d7dd2d6305999192bac4fbf46862b851145588165a708a87677591f88457",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "encoder_cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "dit_cumulative_calls": [
+            256,
+            512,
+            768
+          ],
+          "encoder_actual_share": [
+            0,
+            0,
+            0
+          ],
+          "dit_actual_share": [
+            1536,
+            1536,
+            1536
+          ],
+          "encoder_scale_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "99de3e5456828056039a756c1bdc4eb32830e7eb3d727d88cfbc8b4a24aa8448",
+            "0b2c900ef266b658ddf82424a891f9bcb3ab1ebcd543d50c5af6d0d7af3c2b92",
+            "9c179bbeadcee2c4f1b2e29ffd3abe1facbd9055d43e12a8662817e9984e9967"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/dit_weights-memory-report.json",
+          "memory_sha256": "58d392622a20b06ee88d0b691906a64da60428b30bd075e1285df652baf8f962",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 39027830096,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "dit_encoder_weights",
+          "cold_seconds": 20.556472375,
+          "warm_fresh_seconds": [
+            16.114419458,
+            15.856117417
+          ],
+          "warm_fresh_median_seconds": 15.9852684375,
+          "text_seconds": [
+            3.922114917,
+            1.903506,
+            1.433151125
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/dit_encoder_weights.stdout.jsonl",
+          "stdout_sha256": "b3c0d4cfb1b7f4e1afd5f07f9313f137be133fca62710ee4b1e6c8a7920faad8",
+          "all_condition_cache_misses": true,
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "source_loads": [
+            1,
+            1,
+            1
+          ],
+          "source_retained_bytes": [
+            17534247392,
+            17534247392,
+            17534247392
+          ],
+          "source_reused": [
+            false,
+            true,
+            true
+          ],
+          "encoder_calls_this_request": [
+            72,
+            72,
+            72
+          ],
+          "encoder_cumulative_calls": [
+            72,
+            144,
+            216
+          ],
+          "dit_cumulative_calls": [
+            256,
+            512,
+            768
+          ],
+          "encoder_actual_share": [
+            3072,
+            3072,
+            3072
+          ],
+          "dit_actual_share": [
+            1536,
+            1536,
+            1536
+          ],
+          "encoder_scale_hits": [
+            0,
+            108,
+            216
+          ],
+          "png_sha256": [
+            "e7065f9b405fbcf249f67ea79a788a2be4cd805bbd40c64208f1998715279259",
+            "0088269a44c38c9e29c4b3b04f267554751a2e0a66447fa1a4b05fed267f1fe5",
+            "7e6fdce5838f5a92d9c49aad7e5e04ac42776acaa08ef63cd46cffec6150ea33"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/dit_encoder_weights-memory-report.json",
+          "memory_sha256": "ab5ac952a375bfccff1f3e929d8981744ce55f62c8127a7d877a47e4d0c88125",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 39099575728,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "passed": 24,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-source-v4-private-regression-20261008.log",
+      "log_sha256": "e8a9d25c197e0196a9a84eb1af1a0f54debb9091b2083b8ac72a1bca53e3a333"
+    },
+    {
+      "passed": 24,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-source-v4-public-regression-20261008.log",
+      "log_sha256": "c335383134cb4bdac3f376ad078cc108f41782eac2f884b2123a88a78eec8c81"
+    },
+    {
+      "passed": 1,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-source-v4-session-20261008.log",
+      "log_sha256": "8063a6f4eed9019d2328ab6d0c70ca198347da622b4b7107b2bec39542bf4b16"
+    },
+    {
+      "passed": 1,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-source-v4-factory-regression-20261008.log",
+      "log_sha256": "5af887c7734e13ef8aa06d7f8e2d300a3c554f987bbd133ffa01094308524b7f"
+    }
+  ],
+  "visual_reviews": [
+    {
+      "manifest": "outputs/local512-qwen-edit2-lora-source-v4-combined-forward-20261008/visual/manifest.json",
+      "sha256": "f8c3465fda066fcef561602adbb4acf8be830eae5a385fd0d87437d5ce115c8e",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited inspected pairs, not user approval",
+        "whole_image": "Two-reference LoRA, DiT5120/encoder3072: recognizable shapes, placement, lighting and framing remain very close; minor glaze/highlight differences. Blue teapot is opaque in both arms.",
+        "detail_crops": "Inspected unresized center, top-left and bottom-right pairs; texture/highlight changes and the noted shape differences remain visible.",
+        "artifact_checks": "No obvious tearing; do not turn execution success into numerical, timing or broader visual qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-qwen-edit2-lora-source-v4-dit1536-combined-forward-20261008/visual/manifest.json",
+      "sha256": "d0a2d31d9adffcf040c81937de0a3ad31aaf566e80dc609d89928ebec1a55c8c",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited inspected pairs, not user approval",
+        "whole_image": "Two-reference LoRA, DiT1536/encoder3072: scene stays recognizable, but blue-teapot body/lid/knob shape and size differ visibly. This slower candidate is not accepted as a close-fidelity improvement.",
+        "detail_crops": "Inspected unresized center, top-left and bottom-right pairs; texture/highlight changes and the noted shape differences remain visible.",
+        "artifact_checks": "No obvious tearing; do not turn execution success into numerical, timing or broader visual qualification.",
+        "visually_very_similar": false
+      },
+      "qualification_passed": false
+    }
+  ],
+  "failed_experiments": [
+    {
+      "file": "outputs/local512-encoder-source-v1-session-20261008.log",
+      "sha256": "d9dbb2163f7af7b8bb4c68b1241bc4acabfaa6b329d59ea05385512ef2de00ec",
+      "note": "source admission declined before upcoming cold DiT load; threshold not relaxed"
+    },
+    {
+      "file": "outputs/local512-encoder-source-v2-session-20261008.log",
+      "sha256": "9ac2d91a43ca7122654dbfee9390e73ca667ba3ffd9002b16f5a8e64d56ca252",
+      "note": "launch attempted before new dylib existed; no model execution; retry retained separately"
+    },
+    {
+      "file": "outputs/local512-qwen-edit1-lora-encoder-source-v2-fresh-forward-20261008/summary.json",
+      "sha256": "a2ff94dc6099b5e0a1a6fb8600e67b3d905ad1fc6464ac494c0b6a742fa48aac",
+      "note": "GPU-weight cold adapter growth admission declined; partial screen not accepted"
+    },
+    {
+      "file": "outputs/local512-qwen-edit2-lora-source-v3-combined-forward-20261008/summary.json",
+      "sha256": "708eb96544acfc03dc1c819c82d9250ea2f55e49f191e57b4d1cb3660deb8e1b",
+      "note": "cold source admission declined with 2GiB future arena forecast; partial screen not accepted"
+    }
+  ],
+  "cleanup": {
+    "objects_deleted": 1065,
+    "logical_bytes_deleted": 83319960,
+    "rebuildable": true,
+    "scope": "five validated completed source v1/v2/v3/v4 builds; binaries/manifests/logs/media/models retained"
+  },
+  "public_release_guard": "passed"
+}

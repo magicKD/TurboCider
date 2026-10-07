@@ -57,6 +57,36 @@ class EncoderResidencyScreenTests(unittest.TestCase):
         for mode in SCREEN.MODES:
             SCREEN.validate_rows([receipt(mode,i) for i in range(3)],mode,3,True,3072)
 
+    def test_gpu_and_ane_weight_retention_require_actual_reuse(self):
+        for mode in ("gpu_weights","encoder_weights"):
+            base="gpu" if mode=="gpu_weights" else "encoder_retained"
+            rows=[receipt(base,i) for i in range(3)]
+            for index,row in enumerate(rows):
+                row["encoder_weight_residency"]=dict(enabled=True,weights_retained=True,weights_reused=index>0,
+                    loads_session_total=1,retained_bytes=17<<30,decline_reason="")
+            SCREEN.validate_rows(rows,mode,3,True,3072)
+            rows[1]["encoder_weight_residency"]["loads_session_total"]=2
+            with self.assertRaises(ValueError):SCREEN.validate_rows(rows,mode,3,True,3072)
+
+    def test_combined_encoder_and_dit_shares_are_independent(self):
+        request=SCREEN.make_request("fresh",[Path("reference.png")],Path("output.png"),
+            Path("encoder.json"),Path("adapter.safetensors"),Path("dit.json"))
+        self.assertEqual(request["execution"],"gpu_ane")
+        self.assertEqual(request["hybrid_mlp_mode"],"runtime")
+        for mode in ("dit_weights","dit_encoder_weights"):
+            base="gpu" if mode=="dit_weights" else "encoder_retained"
+            rows=[receipt(base,i) for i in range(3)]
+            for index,row in enumerate(rows):
+                row["runtime_backend"]="mlx_cpp_metal+private_ane_runtime_weight_experimental"
+                row["encoder_weight_residency"]=dict(enabled=True,weights_retained=True,weights_reused=index>0,
+                    loads_session_total=1,retained_bytes=17<<30,decline_reason="")
+                row["hybrid"]=dict(runtime_failed=False,runtime_calls_session_total=192*(index+1),
+                    runtime_weight=dict(executor_backend="private_ane",data_path="w8a8_hadamard",
+                        fallback_blocks_session_total=0,ane_channels=5120))
+            SCREEN.validate_rows(rows,mode,3,True,3072,5120)
+            rows[1]["hybrid"]["runtime_weight"]["ane_channels"]=3072
+            with self.assertRaises(ValueError):SCREEN.validate_rows(rows,mode,3,True,3072,5120)
+
     def test_cache_hit_fallback_wrong_source_or_forged_reuse_rejected(self):
         mutations=[lambda r:r.update(prompt_cache_hit=True),
             lambda r:r.update(runtime_backend="mlx_cpp_metal+private_ane_runtime_weight_experimental"),

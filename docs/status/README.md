@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+encoder源数组的有界复用、独立DiT/encoder channel override与真实两
+reference/LoRA组合见 [源复用与独立分区](local512-encoder-source-2026-10-07.md)。
+source只load一次、scale-cache真实命中，但公平GPU对照仍较快；保留
+准入失败和分区负结果，不改默认或宣称完整目标完成。
+
 有界encoder executor复用、取消时staging/source drain与不同prompt配对见
 [复用与512²复测](local512-encoder-retention-2026-10-07.md)。复用少量改善
 但encoder仍慢于GPU；Z512同库双向diagnostic约1.23×，strict窗口仍被

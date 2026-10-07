@@ -139,7 +139,8 @@ int configured_chunks() {
 
 HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
                      size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
-                     const CalibrationWorkload *calibration, std::optional<int> calibrated_channels)
+                     const CalibrationWorkload *calibration, std::optional<int> calibrated_channels,
+                     std::optional<int> channel_override)
     : memory_budget_(budget) {
     checkpoint(cancelled);
     const char *prefetch_after=std::getenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
@@ -147,7 +148,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
             "runtime ANE prefetch placement requires 0 or 1");
     prefetch_after_gpu_=!prefetch_after || std::string(prefetch_after)=="1";
     metrics_.runtime_weight_prefetch_after_gpu=prefetch_after_gpu_;
-    if (private_channel_count(width) < 0 && !calibrated_channels) {
+    if (!channel_override && private_channel_count(width) < 0 && !calibrated_channels) {
         require(calibration != nullptr, "automatic ANE channels require a model-supplied calibration workload");
         const auto selection = calibrate_channels(manifest, hidden, width, budget, cancelled, require_lora_inputs, *calibration);
         calibrated_channels = selection.channels;
@@ -155,7 +156,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
         calibration_reason_ = selection.reason + (selection.cache_hit ? "; cache hit" : "; measured/not cached");
         calibration_declined_ = selection.channels == 0;
     }
-    const int selected_channels = resolved_private_channel_count(width, calibrated_channels);
+    const int selected_channels = resolved_private_channel_count(width, calibrated_channels,channel_override);
     const int chunks = configured_chunks();
     const char *lora_range = std::getenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE");
     require(!lora_range || std::string(lora_range)=="0" || std::string(lora_range)=="1",
@@ -193,7 +194,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     double verified_seconds = 0;
     try {
         auto built = build_runtime_executor(manifest, budget,
-            GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels);
+            GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels,channel_override);
         graph_ = std::move(built.executor); verified = built.self_test_passed;
         verified_seconds = built.self_test_seconds;
         metrics_.runtime_weight_backend_fallback_reason = std::move(built.fallback_reason);

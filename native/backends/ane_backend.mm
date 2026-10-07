@@ -10,7 +10,7 @@
 namespace tc::ane {
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
                                     GraphGeometry expected, BackendPolicy policy,
-                                    std::optional<int> calibrated_channels) {
+                                    std::optional<int> calibrated_channels,std::optional<int> channel_override) {
     BuiltExecutor result;
     const bool fp16_values=configured_fp16_bf16_values();
     if(fp16_values && (!policy.allow_private || policy.preferred!=BackendPreference::Private ||
@@ -34,7 +34,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         throw std::runtime_error("private ANE A8 group scope requires input, hidden or both");
     if(scope && !requested_group)throw std::runtime_error("A8 group scope requires explicit group size 256");
     if(requested_group && !try_private)throw std::runtime_error("group A8 requires an authorized private backend");
-    const int channels = resolved_private_channel_count(expected.width, calibrated_channels);
+    const int channels = resolved_private_channel_count(expected.width, calibrated_channels,channel_override);
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
     if(runtime_template_w8a8(manifest)) {
         if(policy.preferred!=BackendPreference::Public || channels || fp16_values || bf16_boundaries || requested_group)
