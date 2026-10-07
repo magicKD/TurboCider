@@ -168,6 +168,20 @@ int main() {
         auto huge = device.stage_w8(view, {0, 1, 0, 512, 128}, q, s); if (huge.finish().ok || !(huge.validation_flags() & 4)) throw std::runtime_error("scale overflow accepted");
         f[0] = 0;
         auto clean = device.stage_w8(view, {0, 1, 0, 512, 128}, q, s); if (!clean.finish().ok) throw std::runtime_error("fresh refill failed");
+        for(int block:{128,512}) {
+            Surface fast_q(specialized,1,512,Element::I8),fast_s(specialized,1,1,Element::FP16);
+            f[0]=std::numeric_limits<float>::infinity();
+            auto nonfinite=specialized.stage_w8(view,{0,1,0,512,block},fast_q,fast_s);
+            if(nonfinite.finish().ok || !(nonfinite.validation_flags()&1))
+                throw std::runtime_error("register Sylvester hid nonfinite source");
+            f[0]=1e20f;
+            auto overflow=specialized.stage_w8(view,{0,1,0,512,block},fast_q,fast_s);
+            if(overflow.finish().ok || !(overflow.validation_flags()&4))
+                throw std::runtime_error("register Sylvester hid scale overflow");
+            f[0]=0;
+            auto refill=specialized.stage_w8(view,{0,1,0,512,block},fast_q,fast_s);
+            if(!refill.finish().ok)throw std::runtime_error("register Sylvester clean refill failed");
+        }
         std::cout << "PASS W8 nonfinite/scale overflow rejection and fresh-slot refill\n";
         auto generation=std::make_shared<int>(1);std::weak_ptr<void> lifetime=generation;
         view.immutable_generation=true;view.allocation_identity=generation;view.owner=generation;f[0]=.25f;

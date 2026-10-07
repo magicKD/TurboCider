@@ -120,6 +120,63 @@ inline float w8_rotate(float value, threadgroup float *v, uint lane, constant W8
     }
     return value * p.norm;
 }
+// Dense Sylvester H128/H512: one SIMD owns the block. Preserve original
+// butterfly FP32 add/sub order; high levels exchange private registers.
+inline void w8_sylvester_register_load(device const uchar *src,device const uchar *scales,
+    device const uchar *offsets,device atomic_uint *status,constant W8Params &p,
+    constant float *signs,uint row,uint col,uint lane,thread float (&value)[16]) {
+    const uint count=tc_w8_block/32;
+    for(uint j=0;j<count;++j) {
+        float x=w8_decode(src,scales,offsets,p.row_begin+row,p.column_begin+col+lane+j*32,p);
+        if(!isfinite(x)){atomic_fetch_or_explicit(status,1u,memory_order_relaxed);x=0;}
+        value[j]=x*signs[lane+j*32];
+    }
+    for(uint span=1;span<32;span<<=1)for(uint j=0;j<count;++j) {
+        float other=simd_shuffle_xor(value[j],span);
+        value[j]=(lane&span)?other-value[j]:value[j]+other;
+    }
+    float next[16];
+    for(uint span=1;span<count;span<<=1) {
+        for(uint j=0;j<count;++j) {
+            float other=value[j^span];next[j]=(j&span)?other-value[j]:value[j]+other;
+        }
+        for(uint j=0;j<count;++j)value[j]=next[j];
+    }
+    for(uint j=0;j<count;++j) {
+        value[j]*=p.norm;
+        if(!isfinite(value[j]))atomic_fetch_or_explicit(status,2u,memory_order_relaxed);
+    }
+}
+kernel void tc_ane_sylvester_register_scales(device const uchar *src [[buffer(0)]],device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]],device ushort *dst [[buffer(3)]],device atomic_uint *status [[buffer(4)]],
+    constant W8Params &p [[buffer(5)]],constant float *signs [[buffer(6)]],
+    uint row [[threadgroup_position_in_grid]],uint lane [[thread_index_in_simdgroup]]) {
+    float peak=0;
+    for(uint col=0;col<p.columns;col+=tc_w8_block) {
+        float value[16];w8_sylvester_register_load(src,scales,offsets,status,p,signs,row,col,lane,value);
+        for(uint j=0;j<tc_w8_block/32;++j)peak=max(peak,abs(value[j]));
+    }
+    peak=simd_max(peak);
+    if(!lane) {
+        float norm=peak==0?128.f:max((peak/127.f)*128.f,0x1p-24f);
+        ushort out=to_half(norm);
+        if(!out || (out&0x7c00)==0x7c00){atomic_fetch_or_explicit(status,4u,memory_order_relaxed);out=0x5800;}
+        dst[ulong(row)*p.scale_pitch/2]=out;
+    }
+}
+kernel void tc_ane_sylvester_register_codes(device const uchar *src [[buffer(0)]],device const uchar *scales [[buffer(1)]],
+    device const uchar *offsets [[buffer(2)]],device const ushort *row_scales [[buffer(3)]],device char *dst [[buffer(4)]],
+    device atomic_uint *status [[buffer(5)]],constant W8Params &p [[buffer(6)]],constant float *signs [[buffer(7)]],
+    uint2 tile [[threadgroup_position_in_grid]],uint lane [[thread_index_in_simdgroup]]) {
+    float value[16];w8_sylvester_register_load(src,scales,offsets,status,p,signs,tile.x,tile.y*tc_w8_block,lane,value);
+    float scale=from_half(row_scales[ulong(tile.x)*p.scale_pitch/2]);
+    if(!(scale>0) || !isfinite(scale))atomic_fetch_or_explicit(status,4u,memory_order_relaxed);
+    for(uint j=0;j<tc_w8_block/32;++j) {
+        uint col=tile.y*tc_w8_block+lane+j*32;float q=clamp((value[j]/scale)*128.f,-127.f,127.f);
+        if(!isfinite(q)){atomic_fetch_or_explicit(status,8u,memory_order_relaxed);q=0;}
+        dst[p.transpose?ulong(col)*p.code_pitch+tile.x:ulong(tile.x)*p.code_pitch+col]=char(rint(q));
+    }
+}
 kernel void tc_ane_w8_scales(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
     device const uchar *offsets [[buffer(2)]], device ushort *dst [[buffer(3)]], device atomic_uint *status [[buffer(4)]],
     constant W8Params &p [[buffer(5)]], constant float *signs [[buffer(6)]],

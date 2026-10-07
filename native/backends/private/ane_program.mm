@@ -218,7 +218,7 @@ struct Device::Impl {
     id<MTLComputePipelineState> w8_scale_copy;
     id<MTLLibrary> w8_library;
     bool specialize_staging = false;
-    struct W8Pipelines { id<MTLComputePipelineState> scales, codes; bool register_comfy; };
+    struct W8Pipelines { id<MTLComputePipelineState> scales, codes; bool register_comfy,register_sylvester; };
     std::mutex pipelines_mutex;
     // At most 18 Sylvester + 3 Comfy row-A + 3 group-A + 2 direct W variants.
     // Keys retain no source allocation or model/adapter values.
@@ -241,6 +241,7 @@ struct Device::Impl {
         // Dense H256 uniquely identifies validated Comfy A8 (not W or
         // Sylvester). Existing specialization opt-in keeps generic control.
         const bool register_comfy=specialize_staging && encoding==DeviceWeightEncoding::Dense && block==256;
+        const bool register_sylvester=specialize_staging && encoding==DeviceWeightEncoding::Dense && (block==128 || block==512);
         if(specialize_staging || direct)key={uint32_t(encoding),encoding==DeviceWeightEncoding::Dense?uint32_t(dtype):0u,uint32_t(block),uint32_t(grouped)};
         auto found=w8_pipelines.find(key);if(found!=w8_pipelines.end())return found->second;
         require(w8_pipelines.size()<26,"W8 pipeline variant bound exceeded");
@@ -248,17 +249,17 @@ struct Device::Impl {
         const bool specialized=specialize_staging;
         [constants setConstantValue:&specialized type:MTLDataTypeBool atIndex:0];
         for(NSUInteger index=0;index<3;++index)[constants setConstantValue:&key[index] type:MTLDataTypeUInt atIndex:index+1];
-        W8Pipelines result;result.register_comfy=register_comfy;
+        W8Pipelines result;result.register_comfy=register_comfy;result.register_sylvester=register_sylvester;
         auto make=[&](NSString *name) {
             id<MTLFunction> function=[w8_library newFunctionWithName:name constantValues:constants error:&error];
             require(function!=nil,"W8 specialized function unavailable: "+description(error));
             id<MTLComputePipelineState> pipeline=[device newComputePipelineStateWithFunction:function error:&error];
-            require(pipeline!=nil && pipeline.threadExecutionWidth==32 && pipeline.maxTotalThreadsPerThreadgroup>=uint32_t(register_comfy?32:block),
+            require(pipeline!=nil && pipeline.threadExecutionWidth==32 && pipeline.maxTotalThreadsPerThreadgroup>=uint32_t(register_comfy||register_sylvester?32:block),
                     "W8 pipeline rotation/SIMD capacity unsupported");
             return pipeline;
         };
-        result.scales=make(direct?@"tc_ane_convrot_scales":register_comfy?@"tc_ane_comfy_register_scales":grouped?@"tc_ane_w8_group_scales":@"tc_ane_w8_scales");
-        result.codes=make(direct?@"tc_ane_convrot_codes":register_comfy?@"tc_ane_comfy_register_codes":@"tc_ane_w8_codes");
+        result.scales=make(direct?@"tc_ane_convrot_scales":register_comfy?@"tc_ane_comfy_register_scales":register_sylvester?@"tc_ane_sylvester_register_scales":grouped?@"tc_ane_w8_group_scales":@"tc_ane_w8_scales");
+        result.codes=make(direct?@"tc_ane_convrot_codes":register_comfy?@"tc_ane_comfy_register_codes":register_sylvester?@"tc_ane_sylvester_register_codes":@"tc_ane_w8_codes");
         w8_pipelines.emplace(key,result);return result;
     }
     std::mutex scale_cache_mutex;
@@ -752,7 +753,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             if (direct) [scale dispatchThreads:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];
             // Generic H128/H512/H256 share one pipeline. Its TG extent
             // belongs to THIS operation, never the first cached shape.
-            else [scale dispatchThreadgroups:MTLSizeMake(spec.rows, grouped?spec.columns/256:1, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy?32:spec.rotation_block, 1, 1)];
+            else [scale dispatchThreadgroups:MTLSizeMake(spec.rows, grouped?spec.columns/256:1, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy||pipelines.register_sylvester?32:spec.rotation_block, 1, 1)];
             [scale endEncoding];
             if(state->cached_scales)copy_scales(false);
         }
@@ -764,7 +765,7 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         [quant setBuffer:state->status offset:0 atIndex:5]; [quant setBytes:&p length:sizeof(p) atIndex:6];
         [quant setBuffer:state->signs offset:0 atIndex:7];
         if (direct) [quant dispatchThreads:MTLSizeMake(spec.columns,spec.rows,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];
-        else [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy?32:spec.rotation_block, 1, 1)];
+        else [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy||pipelines.register_sylvester?32:spec.rotation_block, 1, 1)];
         [quant endEncoding];
         [command encodeSignalEvent:state->event value:1];
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
