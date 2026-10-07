@@ -18,14 +18,16 @@ inline bool configured_fp32_channel_join() {
     return raw && std::string(raw)=="1";
 }
 
-// Explicit representation, never inferred from checkpoint filenames. Packed
-// matrices use MLX affine uint32 codes; scales/offsets stay owned until drain.
+// Explicit representation, never inferred from checkpoint filenames. Raw GGML
+// bytes and MLX affine planes are distinct; all owners stay alive until drain.
 struct FfnWeight {
     enum class Transform { None, ComfyH256Inverse };
+    struct RawGguf { uint32_t type; int columns; };
     Tensor values;
     std::optional<Tensor> scales, offsets;
     int group_size = 32, bits = 4;
     Transform transform = Transform::None;
+    std::optional<RawGguf> raw_gguf = std::nullopt;
 };
 
 // Explicit runtime-weight FFN route. The caller supplies its optimized GPU
@@ -88,6 +90,9 @@ class HybridFfn {
     // Called BEFORE attention submission. Own references until staging joins.
     void stage(int layer, int rows, std::vector<Tensor> weights);
     void stage_weights(int layer, int rows, std::vector<FfnWeight> weights);
+    // Model-supplied source acquisition failed before an executor could stage.
+    // Match stage_weights' sticky fallback/metrics and end the planned block.
+    void fail_staging(int layer,int rows,const std::string &reason);
     Tensor run(int layer, const Tensor &input, const Gpu &gpu,
                std::atomic<bool> &cancelled, const Adapter *adapter = nullptr,
                const ChannelGpu &channel_gpu = {}, const NextWeights &next_weights = {});

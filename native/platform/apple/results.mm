@@ -1538,6 +1538,13 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"affine_decode_seconds":@(m.affine_decode_seconds),@"float_decode_seconds":@(m.float_decode_seconds),
             @"request_load_seconds":@(m.reused_packed_bank ? 0 : m.load_seconds),
             @"request_source_read_bytes":@(m.reused_packed_bank ? 0 : m.source_read_bytes),
+            @"ane_weight_source":m.raw_window_budget_bytes ? @"bounded-raw-ggml-window-v1" : @"mlx-affine-import",
+            @"raw_window_budget_bytes":@(m.raw_window_budget_bytes),@"raw_window_live_bytes":@(m.raw_window_live_bytes),
+            @"raw_window_peak_bytes":@(m.raw_window_peak_bytes),@"raw_window_entries":@(m.raw_window_entries),
+            @"raw_window_hits_session_total":@(m.raw_window_hits),@"raw_window_misses_session_total":@(m.raw_window_misses),
+            @"raw_window_evictions_session_total":@(m.raw_window_evictions),
+            @"raw_window_source_read_bytes_session_total":@(m.raw_window_source_read_bytes),
+            @"raw_window_read_seconds_session_total":@(m.raw_window_read_seconds),
             @"scope":@"managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS"
         };
         NSMutableDictionary *private_plan=[value[@"plan"] mutableCopy];

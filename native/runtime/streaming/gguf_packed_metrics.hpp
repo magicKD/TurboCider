@@ -22,5 +22,10 @@ struct GgufPackedBankMetrics {
     bool ref_mpp_dynamic = false;
     uint64_t dense_weight_capacity_upper = 0;
     uint64_t allocator_cache_limit_bytes = 0;
+    uint64_t raw_window_budget_bytes=0,raw_window_live_bytes=0,raw_window_peak_bytes=0;
+    uint64_t raw_window_hits=0,raw_window_misses=0,raw_window_evictions=0;
+    uint64_t raw_window_source_read_bytes=0;
+    uint32_t raw_window_entries=0;
+    double raw_window_read_seconds=0;
 };
 } // namespace tc::streaming

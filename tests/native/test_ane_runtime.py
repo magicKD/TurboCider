@@ -128,6 +128,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("GPU tail fallback", result.stdout)
         self.assertIn("PASS Q4/Q8 staging vs MLX dequantize", result.stdout)
+        self.assertIn("PASS raw GGUF FFN source",result.stdout)
         self.assertIn("PASS runtime LoRA activation corrections", result.stdout)
         self.assertIn("PASS runtime LoRA readiness: lazy upstream input", result.stdout)
         self.assertIn("PASS runtime base v2: validation-only hidden", result.stdout)

@@ -709,6 +709,60 @@ void request_scheduler_tests(const char *manifest) {
     std::cout << "PASS request scheduler isolation: base/A/same-A/B/base on one v2 graph\n";
 }
 
+void raw_gguf_tests(const char *manifest) {
+    using namespace tc;
+    std::atomic<bool> cancelled{false};
+    std::vector<ane::FfnWeight> weights;std::vector<Tensor> dense;
+    for(int projection=0;projection<3;++projection) {
+        const int rows=projection==2?64:96,cols=projection==2?96:64;
+        std::vector<uint8_t> packed(size_t(rows)*size_t(cols)/32*34);
+        std::vector<mx::float16_t> values(size_t(rows)*size_t(cols));
+        for(int row=0;row<rows;++row)for(int block=0;block<cols/32;++block) {
+            auto *q=packed.data()+(size_t(row)*(cols/32)+block)*34;
+            q[0]=0;q[1]=0x20; // exact FP16 scale 1/128
+            for(int c=0;c<32;++c) {
+                const int8_t code=int8_t((row*7+(block*32+c)*11+projection*3)%15-7);
+                q[2+c]=uint8_t(code);values[size_t(row)*cols+block*32+c]=mx::float16_t(float(code)/128.f);
+            }
+        }
+        Tensor raw(packed.data(),{rows,cols/32*34},mx::uint8);
+        ane::FfnWeight source{raw,std::nullopt,std::nullopt};source.raw_gguf=ane::FfnWeight::RawGguf{8,cols};
+        weights.push_back(std::move(source));dense.emplace_back(values.data(),mx::Shape{rows,cols},mx::float16);
+    }
+    mx::eval(dense);
+    auto input=mx::full({1,97,64},.25f,mx::float16);
+    auto gpu=[&](const Tensor &x) {
+        auto gate=mx::matmul(x,mx::transpose(dense[0]));
+        return mx::matmul((gate*mx::sigmoid(gate))*mx::matmul(x,mx::transpose(dense[1])),mx::transpose(dense[2]));
+    };
+    ane::HybridFfn runtime(manifest,64,96,128ull<<20,cancelled);
+    runtime.stage_weights(0,97,weights);auto actual=runtime.run(0,input,gpu,cancelled);
+    auto expected=gpu(input);
+    assert(mx::max(mx::abs(actual-expected)).item<mx::float16_t>()<.0001f);
+    assert(runtime.metrics().runtime_calls==2 && !runtime.metrics().runtime_failed);
+    auto bad=weights;bad[0].raw_gguf->columns=65;
+    runtime.stage_weights(1,97,std::move(bad));actual=runtime.run(1,input,gpu,cancelled);
+    assert(mx::all(actual==expected).item<bool>() && runtime.metrics().runtime_failed);
+    // A model-side source acquisition error must end both measured and
+    // untimed plans, retain failure evidence, and never publish stale scratch.
+    const char *old=std::getenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+    const std::optional<std::string> previous=old?std::optional<std::string>(old):std::nullopt;
+    for(bool untimed:{false,true}) {
+        setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",untimed?"1":"0",1);
+        ane::HybridFfn failed(manifest,64,96,128ull<<20,cancelled);
+        const auto plan=failed.plan_block(0,97);assert(plan.split());
+        failed.fail_staging(0,97,"owned raw source acquisition failure");
+        if(plan.measured())failed.observe_block(0,97,.001);
+        const auto after=failed.plan_block(1,97);assert(!after.split());
+        const auto metrics=failed.metrics();
+        assert(metrics.runtime_failed && metrics.runtime_calls==0 && metrics.runtime_failures==1 &&
+            metrics.runtime_weight_fallback_blocks==1 && failed.reason()=="owned raw source acquisition failure");
+    }
+    if(previous)setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",previous->c_str(),1);
+    else unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+    std::cout<<"PASS raw GGUF FFN source: host graph, immutable bytes, invalid geometry/full GPU fallback and measured/untimed acquisition failure\n";
+}
+
 void quantized_tests(const char *manifest) {
     using namespace tc;
     auto matrix_view = [](const Tensor &a) {
@@ -1132,6 +1186,7 @@ int main(int argc, char **argv) {
     assert(fp32_runtime.metrics().runtime_calls >= 2 && !fp32_runtime.metrics().runtime_failed);
     assert(fp32_runtime.metrics().runtime_weight_overflow_retries > 0);
     quantized_tests(argv[1]);
+    raw_gguf_tests(argv[1]);
     output_lifetime_tests(argv[1]);
     if (argc == 3) {
         lora_alpha_tests(std::filesystem::path(argv[2]).parent_path());

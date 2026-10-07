@@ -109,14 +109,16 @@ def compare_generation(reference,candidate,model_id):
 
 def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data_path="w8a8",channel_auto=True,device_io=True,gpu_control=False,
                    fp16_bf16_values=False,row_placement="suffix"):
-    if runtime_backend not in ("private","public") or data_path not in ("fp16","w8a8","convrot_w8a8"):
+    if runtime_backend not in ("private","public") or data_path not in ("fp16","w8a8","convrot_w8a8","gguf_raw_w8a8"):
         raise ValueError("unsupported quality execution backend/data path")
     if any(type(flag) is not bool for flag in (channel_auto,device_io,gpu_control,fp16_bf16_values)):
         raise ValueError("quality execution policy must be explicit booleans")
-    if (channel_auto and (runtime_backend!="private" or data_path!="w8a8")) or (device_io and runtime_backend!="private" and data_path not in ("w8a8","convrot_w8a8")):
+    if (channel_auto and (runtime_backend!="private" or data_path not in ("w8a8","gguf_raw_w8a8"))) or (device_io and runtime_backend!="private" and data_path not in ("w8a8","convrot_w8a8","gguf_raw_w8a8")):
         raise ValueError("unsupported quality execution channel/device policy")
     if data_path=="convrot_w8a8" and model_id!="z-image-turbo":
         raise ValueError("ConvRot quality route requires explicit Z model, not ordinary GGUF/Qwen")
+    if data_path=="gguf_raw_w8a8" and model_id!="z-image-turbo-gguf":
+        raise ValueError("raw GGUF quality route requires explicit GGUF model")
     if gpu_control and (model_id!="z-image-turbo" or channel_auto or device_io):
         raise ValueError("GPU boundary control requires dense Z and no channel/device offload")
     if fp16_bf16_values and (runtime_backend!="private" or data_path!="fp16" or channel_auto or gpu_control):
@@ -152,6 +154,27 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
         if row["steps"]!=row["actual_denoise_steps"]:
             raise ValueError("native quality requested and actual steps differ")
         validation_rows=rows
+        if data_path=="gguf_raw_w8a8":
+            imported=row.get("gguf_import") or {}
+            keys=("raw_window_budget_bytes","raw_window_peak_bytes","raw_window_live_bytes","raw_window_entries",
+                "raw_window_misses_session_total","raw_window_source_read_bytes_session_total")
+            if (imported.get("recipe")!="gguf-mlx-compat-affine-packed-bank-v1" or
+                    imported.get("ane_weight_source")!="bounded-raw-ggml-window-v1" or
+                    not valid_digest(imported.get("source_sha256")) or
+                    any(type(imported.get(key)) is not int or imported[key]<0 for key in keys) or
+                    imported["raw_window_budget_bytes"]!=256<<20 or
+                    imported["raw_window_peak_bytes"]>imported["raw_window_budget_bytes"] or
+                    imported["raw_window_live_bytes"] or imported["raw_window_entries"]):
+                raise ValueError("raw GGUF quality source/window identity or completed-drain evidence missing")
+            if route=="gpu":
+                if (row.get("runtime_backend")!="mlx_cpp_metal_gguf_cpu_direct_packed" or
+                        row.get("runtime_precision")!="z-mlx-compat-affine-v1" or
+                        imported["raw_window_misses_session_total"] or imported["raw_window_source_read_bytes_session_total"]):
+                    raise ValueError("raw GGUF quality requires matched native-affine GPU control without raw ANE reads")
+                validation_rows=[dict(row,runtime_backend="mlx_cpp_metal_gguf")]
+            elif (not imported["raw_window_misses_session_total"] or not imported["raw_window_source_read_bytes_session_total"] or
+                    not imported["raw_window_peak_bytes"]):
+                raise ValueError("raw GGUF candidate never consumed raw source weights")
         if data_path=="convrot_w8a8":
             expected_label="mlx_cpp_metal_convrot_packed_q8" if route=="gpu" else (
                 "mlx_cpp_metal_convrot+coreml_runtime_weight_experimental" if runtime_backend=="public" else
@@ -182,7 +205,7 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
             # the shared GPU timing validator. Preserve the actual label below.
             validation_rows=[dict(row,runtime_backend="mlx_cpp_metal")]
         validate_results(validation_rows,"gpu" if route=="gpu_control" else route,1,model_id=model_id,runtime_backend=runtime_backend,expect_device_io=route=="runtime" and device_io,
-            expected_data_path={"w8a8":"w8a8_hadamard","convrot_w8a8":"w8a8_convrot","fp16":"fp16"}[data_path] if route=="runtime" else None,
+            expected_data_path={"w8a8":"w8a8_hadamard","gguf_raw_w8a8":"w8a8_hadamard","convrot_w8a8":"w8a8_convrot","fp16":"fp16"}[data_path] if route=="runtime" else None,
             channel_auto=route=="runtime" and channel_auto)
         if route=="runtime":
             validate_row_placement(rows,row_placement)
@@ -193,11 +216,16 @@ def bind_execution(reference,candidate,model_id,*,runtime_backend="private",data
         records.append(dict(receipt_sha256=digest,binary_sha256=raw.get("binary_sha256"),
             adjacent_library_sha256=library,artifacts_unchanged=raw.get("artifacts_unchanged"),
             runtime_backend=row["runtime_backend"],runtime_precision=row.get("runtime_precision"),checkpoint=row.get("checkpoint"),
+            gguf_import=row.get("gguf_import"),
             gpu_graph=row.get("gpu_graph"),hybrid=row.get("hybrid"),model=row["model"],
             width=row["width"],height=row["height"],seed=row["seed"],steps=row["steps"],actual_denoise_steps=row["actual_denoise_steps"],
             lora_strategy=row.get("lora_strategy"),lora_applied_projections=row.get("lora_applied_projections")))
     for key in ("binary_sha256","adjacent_library_sha256","model","checkpoint","width","height","seed","steps","actual_denoise_steps","lora_strategy","lora_applied_projections"):
         if records[0][key]!=records[1][key]:raise ValueError("unmatched quality execution field: "+key)
+    if data_path=="gguf_raw_w8a8":
+        for key in ("source_sha256","plan_digest","affine_packing_recipe","float_import_recipe"):
+            if not records[0]["gguf_import"].get(key) or records[0]["gguf_import"][key]!=records[1]["gguf_import"].get(key):
+                raise ValueError("unmatched raw GGUF source/import recipe: "+key)
     candidate_hybrid=records[1]["hybrid"] or {}
     executor=(candidate_hybrid.get("runtime_weight") or {}).get("executor_backend")
     calls=candidate_hybrid.get("runtime_calls_session_total",0)
@@ -222,7 +250,7 @@ def main():
     parser.add_argument("--reference-receipt",type=Path)
     parser.add_argument("--candidate-receipt",type=Path)
     parser.add_argument("--runtime-backend",choices=("private","public"),default="private")
-    parser.add_argument("--runtime-data-path",choices=("fp16","w8a8","convrot_w8a8"),default="w8a8")
+    parser.add_argument("--runtime-data-path",choices=("fp16","w8a8","convrot_w8a8","gguf_raw_w8a8"),default="w8a8")
     parser.add_argument("--channel-auto",choices=("0","1"),default="1")
     parser.add_argument("--device-io",choices=("0","1"),default="1")
     parser.add_argument("--gpu-only-control",action="store_true",

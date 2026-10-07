@@ -99,12 +99,51 @@ int main(int argc,char **argv) {
             auto metadata=SourceLease::capture({source->file("weights")});MemoryLedger budget(32ull<<20);
             rejects([&]{GgufPackedBank unverified(metadata,"weights",budget,16384);});
         }
+        // Raw source window is separate from affine GPU masters. One cache
+        // slot makes eviction deterministic; escaped readers stay charged.
+        {
+            MemoryLedger budget(32ull<<20);Weights affine;
+            auto raw_bank=std::make_unique<GgufPackedBank>(source,"weights",budget,16384,true,98304,1);
+            raw_bank->load(affine);
+            auto q8=raw_bank->raw_matrix("q8.weight");
+            ensure(q8.type==8 && q8.columns==64 && q8.values.dtype()==mx::uint8 &&
+                q8.values.shape()==mx::Shape{512,68},"raw window returned affine/logical dense layout");
+            const auto id=q8.values.data_shared_ptr();
+            ensure(raw_bank->raw_matrix("q8.weight").values.data_shared_ptr()==id,"raw cache hit changed generation");
+            {auto q4=raw_bank->raw_matrix("q4.weight");ensure(q4.type==2 && q4.values.shape()==mx::Shape{512,36},"raw Q4 geometry changed");}
+            auto m=raw_bank->metrics();
+            ensure(m.raw_window_entries==1 && m.raw_window_hits==1 && m.raw_window_misses==2 && m.raw_window_evictions==1 &&
+                m.raw_window_source_read_bytes==512*(68+36) && m.raw_window_live_bytes==81920 &&
+                m.raw_window_peak_bytes<=98304,"raw source traffic/cache/escaped accounting mismatch");
+            rejects([&]{raw_bank->raw_matrix("q41.weight");});
+            rejects([&]{raw_bank->raw_matrix("f32");});
+            std::atomic<bool> cancel{true};rejects([&]{raw_bank->raw_matrix("q4.weight",&cancel);});
+            std::thread intruder([&]{rejects([&]{raw_bank->raw_matrix("q8.weight");});});intruder.join();
+            raw_bank->clear_raw_window();
+            ensure(raw_bank->metrics().raw_window_live_bytes==49152,"raw eviction lost escaped owner's claim");
+            auto *data=q8.values.data<uint8_t>();ensure(data[0]==0 && data[1]==0x30,"raw source payload changed");
+            raw_bank.reset();affine.clear();
+            ensure(data[0]==0 && data[1]==0x30,"raw reader died with producer");
+            // Allocation admission includes a live evicted reader, even when
+            // the cache is empty. Releasing it permits a clean refill.
+            GgufPackedBank floor(source,"weights",budget,16384,true,49152,1);floor.load(affine);
+            auto held=floor.raw_matrix("q8.weight");
+            rejects([&]{floor.raw_matrix("q4.weight");});
+            ensure(floor.metrics().raw_window_entries==0 && floor.metrics().raw_window_live_bytes==49152,
+                "raw floor published partial destination or forgot escaped claim");
+            held.values=mx::zeros({1},mx::uint8);mx::synchronize();
+            ensure(floor.raw_matrix("q4.weight").type==2,"raw source clean refill failed");
+            floor.clear_raw_window();ensure(!floor.metrics().raw_window_live_bytes,"raw refill leaked storage");
+        }
         // Only the test-owned file is changed; model fixtures are never writable.
         const auto path=std::filesystem::canonical(argv[1]);
         ensure(path.filename()=="fixture.gguf" && path.parent_path().filename().string().starts_with("tc-gguf-bank-"),
                "refusing to mutate a non-owned source");
         {
             MemoryLedger budget(32ull<<20);Weights partial;GgufPackedBank changed(source,"weights",budget,16384);
+            MemoryLedger raw_budget(32ull<<20);Weights raw_affine;
+            GgufPackedBank raw_changed(source,"weights",raw_budget,16384,true,98304,1);
+            raw_changed.load(raw_affine);raw_changed.raw_matrix("q8.weight");
             rejects([&]{changed.load(partial,nullptr,[&](const std::string &,int current,int){
                 if (current!=1) return;
                 const int fd=::open(path.c_str(),O_WRONLY|O_CLOEXEC);ensure(fd>=0,"cannot open owned fault fixture");
@@ -112,6 +151,7 @@ int main(int argc,char **argv) {
             });});
             ensure(partial.sorted_keys().empty() && !budget.snapshot().storage_bytes,"source change published partial bank");
             rejects([&]{changed.check_unchanged();});
+            rejects([&]{raw_changed.raw_matrix("q8.weight");}); // even a cached hit revalidates generation
         }
         std::cout<<"PASS GGUF packed bank Metal: native field/projection exact, bounded chunks/claims, cancellation/floors/source change\n";
         return 0;

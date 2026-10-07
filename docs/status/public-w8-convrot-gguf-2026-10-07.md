@@ -99,7 +99,9 @@ backend、precision、checkpoint，拒绝普通 Z/GGUF/Qwen 冒充和来源变�
 86项 host tests通过：quality/model-screen/image/visual/component tools。
 不是全仓、真实 raw 模型或全部硬件回归。
 
-保留 Public v2 library SHA256
-`f7cdd3598ade93a4a4559093e9095cc07163aae8f70500f8f51a01dce3fca911`，
-build ID `tc-runtime-build-v1-f5eddbdae7423259af304faf6373b51ecd6554b32cd51405baa1cbc81169f4d0`。
+六格 observed receipts 的 adjacent library SHA256 是 opt-in Private-capable
+v2 构建 `290c8a1f07181eadea1b5c92fc7379d5e2a5e23b8fb3818846691d218a51df61`，
+build ID `tc-runtime-build-v1-010432fa7ae58d423bc2d163f6c896c3ad91ec704dac5cdc04b2dd6a93171b35`。
+其实际选择的 executor 为 Public，不能把这个库身份与 ordinary Public
+发行库 `f7cdd359…` 混淆。此处按原始 receipt 修正身份，生成结果不重写。
 本页记录/工具改动没有替换 native library，没有夹带原未提交草稿。

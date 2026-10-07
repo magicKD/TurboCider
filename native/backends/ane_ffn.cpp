@@ -45,6 +45,17 @@ Tensor device_output(int rows, int cols, DType dtype) {
     return Tensor(buffer, {1, rows, cols}, dtype == DType::FP32 ? mx::float32 : dtype == DType::FP16 ? mx::float16 : mx::bfloat16);
 }
 WeightView weight_view(const FfnWeight &w) {
+    if (w.raw_gguf) {
+        const auto &a=w.values;
+        require(!w.scales && !w.offsets && w.transform==FfnWeight::Transform::None &&
+                a.dtype()==mx::uint8 && a.ndim()==2 && a.flags().row_contiguous,
+                "runtime ANE raw GGUF cannot carry affine metadata/rotation");
+        GgufView source{a.data<uint8_t>(),a.nbytes(),a.shape(0),w.raw_gguf->columns,
+                        size_t(a.shape(1)),w.raw_gguf->type};
+        require(gguf_row_bytes(source)==size_t(a.shape(1)),"runtime ANE raw GGUF physical row mismatch");
+        validate_gguf_view(source);
+        return source;
+    }
     require(w.transform==FfnWeight::Transform::None || w.transform==FfnWeight::Transform::ComfyH256Inverse,
             "runtime ANE unknown FFN transform");
     if (!w.scales) {
@@ -74,6 +85,23 @@ DeviceWeightView device_weight_view(const FfnWeight &w) {
     source.buffer=const_cast<void*>(a.buffer().ptr());source.buffer_bytes=a.buffer_size();source.offset_bytes=size_t(a.offset());
     source.rows=a.shape(0);source.owner=std::make_shared<Tensor>(a);source.group_size=w.group_size;
     source.allocation_identity=a.data_shared_ptr();source.immutable_generation=true;
+    if (w.raw_gguf) {
+        require(!comfy && !w.scales && !w.offsets && a.dtype()==mx::uint8,
+                "W8 raw GGUF cannot carry affine metadata/rotation");
+        switch(w.raw_gguf->type) {
+            case 2:source.encoding=DeviceWeightEncoding::GgufQ4_0;break;
+            case 8:source.encoding=DeviceWeightEncoding::GgufQ8_0;break;
+            case 12:source.encoding=DeviceWeightEncoding::GgufQ4_K;break;
+            case 14:source.encoding=DeviceWeightEncoding::GgufQ6_K;break;
+            default:throw std::invalid_argument("W8 raw GGUF encoding unsupported");
+        }
+        source.cols=w.raw_gguf->columns;source.row_stride_bytes=size_t(a.shape(1));
+        const auto row_bytes=gguf_row_bytes({nullptr,0,source.rows,source.cols,0,w.raw_gguf->type});
+        require(row_bytes==source.row_stride_bytes && source.offset_bytes<=source.buffer_bytes &&
+                size_t(source.rows)<= (source.buffer_bytes-source.offset_bytes)/row_bytes,
+                "W8 raw GGUF physical storage mismatch");
+        return source;
+    }
     if (!w.scales) {
         require(!comfy,"W8 ConvRot requires explicit row scales");
         const auto view=device_view(a,a.shape(0),a.shape(1));source.cols=view.cols;source.row_stride_bytes=view.row_stride_bytes;source.dense_dtype=view.dtype;
@@ -483,6 +511,13 @@ std::vector<DeviceWeightRegion> HybridFfn::device_regions(const std::vector<FfnW
     return {{std::move(source[0]),{first,width,0,h,up,seed,false,basis}},
             {std::move(source[1]),{first,width,0,h,up,seed,false,basis}},
             {std::move(source[2]),{0,h,first,width,down,seed,false,basis}}};
+}
+void HybridFfn::fail_staging(int layer,int rows,const std::string &reason) {
+    require(planned_ && block_plan_ && layer==layer_ && rows==rows_ && !reason.empty(),
+            "runtime ANE source failure requires matching planned block/reason");
+    drain();planned_=false;block_sample_valid_=false;
+    if(!block_plan_->measured())block_plan_.reset();
+    degrade(reason,layer);chunks_=0;++metrics_.runtime_weight_fallback_blocks;
 }
 void HybridFfn::maybe_prefetch(int next,int rows,const NextWeights &provider) {
     if(!prefetch_ || !available() || !provider || prefetched_layer_>=0)return;

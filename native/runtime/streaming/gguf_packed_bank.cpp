@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <set>
 #include <thread>
+#include <list>
 
 namespace tc::streaming {
 namespace {
@@ -48,6 +49,10 @@ struct GgufPackedBank::State {
     uint64_t read_bytes;
     bool fused_affine;
     bool used = false, loaded = false;
+    std::unique_ptr<MemoryLedger> raw_ledger;
+    struct RawEntry { std::string name; RawMatrix matrix; };
+    std::list<RawEntry> raw_window;
+    uint32_t raw_window_limit=0;
     std::thread::id owner = std::this_thread::get_id();
     State(std::shared_ptr<const SourceLease> source, MemoryLedger &memory, uint64_t bytes,bool fused)
         : lease(std::move(source)), ledger(memory), read_bytes(bytes),fused_affine(fused) {}
@@ -57,10 +62,17 @@ struct GgufPackedBank::State {
 };
 
 GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::string logical,
-                              MemoryLedger &ledger, uint64_t read_bytes,bool fused_affine)
+                              MemoryLedger &ledger, uint64_t read_bytes,bool fused_affine,
+                              uint64_t raw_window_bytes,uint32_t raw_window_entries)
     : state_(std::make_unique<State>(std::move(lease), ledger, read_bytes,fused_affine)) {
     auto &s = *state_;
     require(s.lease && s.lease->has_verified_content(), "gguf_packed_bank: native content proof required");
+    require(raw_window_entries>0 && raw_window_entries<=6,"gguf_packed_bank: raw source window exceeds two three-matrix FFNs");
+    if(raw_window_bytes) {
+        require(raw_window_bytes%gguf_storage::alignment==0,"gguf_packed_bank: unaligned raw source budget");
+        s.raw_ledger=std::make_unique<MemoryLedger>(raw_window_bytes);s.raw_window_limit=raw_window_entries;
+        s.metrics.raw_window_budget_bytes=raw_window_bytes;
+    }
     require(read_bytes && read_bytes <= INT32_MAX && read_bytes % gguf_storage::alignment == 0,
             "gguf_packed_bank: invalid fixed read buffer");
     const auto &file = s.lease->file(logical);
@@ -85,6 +97,8 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::st
     encoding.string_field("source", file.content_digest);
     encoding.string_field("logical_id", logical);
     encoding.unsigned_field("read_bytes", read_bytes);
+    encoding.unsigned_field("raw_window_bytes",raw_window_bytes);
+    encoding.unsigned_field("raw_window_limit",s.raw_window_limit);
     encoding.begin_list("tensors", s.directory.tensors.size());
     std::set<std::string> keys;
     for (size_t index = 0; index < s.directory.tensors.size(); ++index) {
@@ -138,7 +152,55 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::st
 GgufPackedBank::~GgufPackedBank() = default;
 const gguf::Directory &GgufPackedBank::directory() const { state_->owner_check(); return state_->directory; }
 void GgufPackedBank::check_unchanged() const { state_->owner_check(); state_->lease->revalidate_after_drain(); }
-GgufPackedBankMetrics GgufPackedBank::metrics() const { state_->owner_check(); return state_->metrics; }
+GgufPackedBankMetrics GgufPackedBank::metrics() const {
+    auto &s=*state_;s.owner_check();auto result=s.metrics;
+    result.raw_window_entries=uint32_t(s.raw_window.size());
+    if(s.raw_ledger) {
+        const auto snapshot=s.raw_ledger->snapshot();
+        result.raw_window_live_bytes=snapshot.storage_bytes;result.raw_window_peak_bytes=snapshot.peak_committed_bytes;
+    }
+    return result;
+}
+void GgufPackedBank::clear_raw_window() { state_->owner_check();state_->raw_window.clear(); }
+GgufPackedBank::RawMatrix GgufPackedBank::raw_matrix(const std::string &name,const std::atomic<bool> *cancel) {
+    auto &s=*state_;s.owner_check();cancelled(cancel);check_unchanged();
+    require(s.loaded && s.raw_ledger,"gguf_packed_bank: raw source window not enabled/loaded");
+    for(auto entry=s.raw_window.begin();entry!=s.raw_window.end();++entry)if(entry->name==name) {
+        auto result=entry->matrix;s.raw_window.splice(s.raw_window.end(),s.raw_window,entry);
+        ++s.metrics.raw_window_hits;return result;
+    }
+    const auto &tensor=s.directory.tensor(name);
+    require(tensor.dimensions.size()==2 && (tensor.type==2 || tensor.type==8 || tensor.type==12 || tensor.type==14),
+            "gguf_packed_bank: raw W8 source requires Q4_0/Q8_0/Q4_K/Q6_K matrix");
+    const auto &type=gguf::type_info(tensor.type);
+    const uint64_t row_bytes=gguf::checked_mul(tensor.columns()/type.elements,type.bytes);
+    require(tensor.rows()<=INT32_MAX && tensor.columns()<=32768 && row_bytes<=INT32_MAX,
+            "gguf_packed_bank: raw W8 source extent exceeds consumer");
+    const auto upper=gguf_storage::capacity_upper(tensor.bytes);
+    require(upper<=s.metrics.raw_window_budget_bytes,"qe_budget_floor: raw matrix exceeds source window");
+    // Eviction removes only this owner's references. Escaped/staging readers
+    // keep their claims, and admission must still count them before allocation.
+    while(!s.raw_window.empty()) {
+        const auto snapshot=s.raw_ledger->snapshot();
+        if(s.raw_window.size()<s.raw_window_limit && snapshot.committed_bytes<=snapshot.budget_bytes-upper)break;
+        s.raw_window.pop_front();++s.metrics.raw_window_evictions;
+    }
+    auto values=gguf_storage::allocate(*s.raw_ledger,tensor.bytes,upper,{int(tensor.rows()),int(row_bytes)},
+        mx::uint8,MemoryClass::ConversionScratch,s.lease->generation());
+    ++s.metrics.raw_window_misses;
+    const auto start=Clock::now();uint64_t done=0;auto *data=values.data<uint8_t>();
+    while(done<tensor.bytes) {
+        cancelled(cancel);
+        const auto bytes=std::min(s.read_bytes,tensor.bytes-done);
+        const auto n=::pread(s.fd.get(),data+done,size_t(bytes),off_t(tensor.file_offset+done));
+        if(n<0 && errno==EINTR)continue;
+        require(n>0,"gguf_packed_bank: raw payload read failed or source changed");
+        done+=uint64_t(n);s.metrics.raw_window_source_read_bytes+=uint64_t(n);
+    }
+    s.metrics.raw_window_read_seconds+=seconds(start);cancelled(cancel);check_unchanged();
+    RawMatrix result{std::move(values),tensor.type,int(tensor.columns())};
+    s.raw_window.push_back({name,result});return result;
+}
 
 void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, const Event &event) {
     auto &s = *state_; s.owner_check();

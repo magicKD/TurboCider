@@ -23,6 +23,44 @@ def write(path,values,dtype="F32"):
 
 
 class QualityTests(unittest.TestCase):
+    def test_raw_gguf_binding_requires_reads_bounded_drained_source_and_matched_import(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gpu,candidate=Path(folder)/"gpu.json",Path(folder)/"candidate.json"
+            imported=dict(recipe="gguf-mlx-compat-affine-packed-bank-v1",ane_weight_source="bounded-raw-ggml-window-v1",
+                source_sha256="c"*64,plan_digest="d"*64,affine_packing_recipe="fused-affine-one-pass-v1",
+                float_import_recipe="direct-bf16-read-inplace-f16-v1",raw_window_budget_bytes=256<<20,
+                raw_window_peak_bytes=0,raw_window_live_bytes=0,raw_window_entries=0,
+                raw_window_misses_session_total=0,raw_window_source_read_bytes_session_total=0)
+            common=dict(model="z-image-turbo-gguf",checkpoint="fixture.gguf",width=512,height=512,seed=42,steps=8,
+                actual_denoise_steps=8,lora_strategy="none",lora_applied_projections=0,timings_seconds=dict(request_wall=1.,denoise=.8))
+            baseline=dict(**common,runtime_backend="mlx_cpp_metal_gguf_cpu_direct_packed",runtime_precision="z-mlx-compat-affine-v1",gguf_import=imported)
+            runtime=dict(executor_backend="public_coreml",data_path="w8a8_hadamard",partition_axis="rows",io_path="gpu_iosurface",
+                source_recipe="sylvester-dh-b128-b512-rne-norm-f16-v2+public-int8-io-v1",
+                device_io_calls_session_total=1,fallback_blocks_session_total=0,failure_reason="")
+            actual_import=dict(imported,raw_window_peak_bytes=65536,raw_window_misses_session_total=3,raw_window_source_read_bytes_session_total=60000)
+            row=dict(**common,runtime_backend="mlx_cpp_metal_gguf+coreml_runtime_weight",gguf_import=actual_import,
+                hybrid=dict(runtime_failed=False,runtime_failures_session_total=0,runtime_calls_session_total=1,runtime_weight=runtime))
+            def store(path,value):
+                path.write_text(json.dumps(dict(exit_code=0,binary_sha256="a"*64,adjacent_library_sha256="b"*64,
+                    artifacts_unchanged=True,stdout=json.dumps(value))))
+            store(gpu,baseline);store(candidate,row)
+            policy=dict(runtime_backend="public",data_path="gguf_raw_w8a8",channel_auto=False,device_io=True)
+            result=bind_execution(gpu,candidate,"z-image-turbo-gguf",**policy)
+            self.assertTrue(result["candidate_coreml_executed"])
+            self.assertEqual(result["reference"]["runtime_backend"],baseline["runtime_backend"])
+            self.assertEqual(result["candidate"]["gguf_import"],actual_import)
+            for bad in (dict(raw_window_misses_session_total=0),dict(raw_window_source_read_bytes_session_total=0),
+                    dict(raw_window_peak_bytes=0),dict(raw_window_peak_bytes=(256<<20)+1),dict(raw_window_live_bytes=16384),dict(raw_window_entries=1),
+                    dict(raw_window_budget_bytes=True),dict(source_sha256="f"*64),dict(plan_digest="f"*64),
+                    dict(ane_weight_source="mlx-affine-import")):
+                store(candidate,dict(row,gguf_import=dict(actual_import,**bad)))
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo-gguf",**policy)
+            store(candidate,row)
+            store(gpu,dict(baseline,gguf_import=dict(imported,raw_window_source_read_bytes_session_total=1)))
+            with self.assertRaises(ValueError):bind_execution(gpu,candidate,"z-image-turbo-gguf",**policy)
+            for model in ("z-image-turbo","qwen-image-2.1"):
+                with self.assertRaises(ValueError):bind_execution(gpu,candidate,model,**policy)
+
     def test_public_convrot_binding_preserves_specialized_labels_and_checkpoint(self):
         with tempfile.TemporaryDirectory() as folder:
             gpu,candidate=Path(folder)/"gpu.json",Path(folder)/"candidate.json"

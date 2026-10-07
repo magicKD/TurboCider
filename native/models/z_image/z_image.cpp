@@ -1266,12 +1266,21 @@ Tensor z_compiled_packed_block(const Tensor &x, const Weights &weights, const st
     return (*graph)(args)[0];
 }
 
-std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string &ffn) {
+std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string &ffn,
+        streaming::GgufPackedBank *raw_source=nullptr,const std::atomic<bool> *cancel=nullptr) {
     auto source=[&](const std::string &name,int input_width)->ane::FfnWeight {
         const bool rotated=w.convrot(name);
         require(!w.nvfp4(name)&&!w.has(name+".bias"),"runtime FFN requires bias-free projections: "+name);
         const auto &weight=w.at(name+".weight");
         if(!rotated&&!w.quantized(name))return {weight,std::nullopt,std::nullopt};
+        if(raw_source) {
+            require(!rotated,"raw GGUF source cannot replace ConvRot weights");
+            auto raw=raw_source->raw_matrix(name+".weight",cancel);
+            require(raw.columns==input_width && raw.values.shape(0)==weight.shape(0),
+                    "raw GGUF source logical projection mismatch");
+            ane::FfnWeight result{std::move(raw.values),std::nullopt,std::nullopt};
+            result.raw_gguf=ane::FfnWeight::RawGguf{raw.type,raw.columns};return result;
+        }
         const auto &scales=w.at(name+".scales");const auto geometry=z_quantized_geometry(weight,scales,input_width);
         return {weight,scales,w.has(name+".biases")?std::optional<Tensor>(w.at(name+".biases")):std::nullopt,
             geometry.group_size,geometry.bits,rotated?ane::FfnWeight::Transform::ComfyH256Inverse:ane::FfnWeight::Transform::None};
@@ -1328,7 +1337,8 @@ ane::RowPlacement z_runtime_row_placement() {
 }
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
-                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility,int caption_rows=0) {
+                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility,int caption_rows=0,
+                       streaming::GgufPackedBank *raw_source=nullptr) {
     const auto placement=caption_rows?z_runtime_row_placement():ane::RowPlacement::Suffix;
     const ane::RowPolicy policy{placement,placement==ane::RowPlacement::Suffix?0:caption_rows};
     const auto plan = runtime.plan_block(block, x.shape(1),policy);
@@ -1357,13 +1367,23 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
     ane::HybridFfn::NextWeights next_weights=[&](int next) {
         if(next>=32)return std::vector<ane::FfnWeight>{};
         const auto stem=next<2?"noise_refiner."+std::to_string(next):"layers."+std::to_string(next-2);
-        return z_runtime_sources(w,stem+".feed_forward");
+        return z_runtime_sources(w,stem+".feed_forward",raw_source,&cancelled);
     };
     if (gguf_compatibility || w.convrot(ffn+".w1") || w.has_runtime_loras()) {
         // GGUF can mix packed affine and floating projections, including
         // modulation/attention. Keep the baseline's native GPU projections
         // and dtype promotion; never feed packed uint32 into a dense graph.
-        runtime.stage_weights(block,x.shape(1),z_runtime_sources(w,ffn));
+        // An optional raw source read/admission failure is an ANE staging
+        // failure. Recompute the complete block on its original GPU path;
+        // do not abort generation or silently substitute affine ANE input.
+        std::vector<ane::FfnWeight> sources;
+        try { sources=z_runtime_sources(w,ffn,raw_source,&cancelled); }
+        catch(const Cancelled &) { throw; }
+        catch(const std::exception &error) {
+            runtime.fail_staging(block,x.shape(1),error.what());
+            return complete(z_block(x,w,prefix,freqs,temb,nullptr,block,nullptr,false,nullptr));
+        }
+        runtime.stage_weights(block,x.shape(1),std::move(sources));
         auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
         auto parts = mx::split(modulation, 4, -1);
         auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f) *
@@ -1833,7 +1853,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false,
                      ZImageGgufStream *gguf_stream = nullptr, bool serial_refiner_eval = false,
                      bool compile_packed = false, bool gpu_f16 = false, bool f16_mpp = false, bool qmm_f16 = false,
-                     bool f16_refiners = false,bool ref_mpp_dynamic=false,const ZImageBlockObserver &observe={}) {
+                     bool f16_refiners = false,bool ref_mpp_dynamic=false,const ZImageBlockObserver &observe={},
+                     streaming::GgufPackedBank *raw_source=nullptr) {
     require(!gguf_stream || (!weight_stream && !exact_stream && !hybrid_stream && !runtime && !hybrid),
             "GGUF bounded execution conflicts with another transformer backend");
     require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
@@ -1881,7 +1902,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         auto block_input = bf16_fallback ? mx::astype(image, mx::bfloat16) : image;
         image = f16_refiners ? z_compiled_f16_refiner(block_input,w,"noise_refiner."+std::to_string(i),image_freqs,temb,true,ref_mpp_dynamic)
             : runtime ? z_runtime_block(block_input, w, "noise_refiner." + std::to_string(i),
-                                          image_freqs, temb, *runtime, i, cancelled, runtime_gguf_compatibility)
+                                          image_freqs, temb, *runtime, i, cancelled, runtime_gguf_compatibility,0,raw_source)
             : hybrid_stream ? hybrid_stream->encode_noise(uint32_t(i), image, image_freqs, temb)
             : z_block(block_input, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
                         bf16_fallback ? nullptr : hybrid,
@@ -1911,7 +1932,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             const bool bf16_fallback = hybrid && z_hybrid_bf16_block(2 + i);
             auto block_input = bf16_fallback ? mx::astype(unified, mx::bfloat16) : unified;
             unified = runtime ? z_runtime_block(block_input, w, "layers." + std::to_string(i),
-                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility,caption_emb.shape(1))
+                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility,caption_emb.shape(1),raw_source)
                 : gpu_f16 ? z_compiled_packed_block(block_input,w,"layers."+std::to_string(i),unified_freqs,temb,true,f16_mpp,qmm_f16)
                 : z_block(block_input, weight_stream ? streamed : w,
                               "layers." + std::to_string(i), unified_freqs, temb,
@@ -2846,6 +2867,13 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                 "qe_config_conflict: affine packing control requires CPU-direct and legacy/fused");
         gguf_fused_affine_=std::string_view(raw)=="fused";
     }
+    if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_ANE_SOURCE")) {
+        require(std::string_view(raw)=="affine" || std::string_view(raw)=="raw",
+                "qe_config_conflict: GGUF ANE source requires affine or raw");
+        gguf_raw_ane_source_=std::string_view(raw)=="raw";
+        require(!gguf_raw_ane_source_ || gguf_direct_import_,
+                "qe_config_conflict: raw GGUF ANE source requires CPU-direct verified import");
+    }
     if (const char *raw = std::getenv("TURBOCIDER_Z_GGUF_COMPILE_PACKED")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1", "qe_config_conflict: packed compile requires 0 or 1");
         gguf_compile_packed_ = std::string_view(raw)=="1";
@@ -3244,7 +3272,8 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
             gguf_packed_ledger_=std::make_unique<MemoryLedger>(z_qwen3_gguf_integer(
                 "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",std::min<uint64_t>(10ull<<30,device_info().physical_memory/2),
                 device_info().physical_memory));
-            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_,1ull<<20,gguf_fused_affine_);
+            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_,1ull<<20,gguf_fused_affine_,
+                gguf_raw_ane_source_ ? 256ull<<20 : 0);
             z_image::validate_gguf_model_directory(gguf_packed_bank_->directory());
             gguf_packed_bank_->load(transformer_,&cancelled,event);
         } else if (gguf_transformer_)
@@ -3473,8 +3502,8 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
                                         std::atomic<bool> &cancelled) {
     if (r.hybrid_mlp_mode == "runtime") {
         require(!nvfp4_transformer_ && (!convrot_transformer_ || runtime_convrot_) && !diffusers_layout_ &&
-                    (active_loras_.empty() || (!gguf_transformer_ && active_lora_strategy_ == "inference_time")),
-                "runtime-weight Z-Image requires BF16 Comfy or base native GGUF; LoRA requires unmerged BF16 base weights");
+                    (active_loras_.empty() || active_lora_strategy_ == "inference_time"),
+                "runtime-weight Z-Image requires BF16 Comfy or native GGUF; LoRA requires unmerged base weights and GPU activation corrections");
         hybrid_.reset(); hybrid_gpu_graph_ = {}; hybrid_gpu_mlp_start_ = -1;
         return runtime_convrot_
             ? "gpu_ane experimental legacy ConvRot packed inverse-H256 FP16 FFN; source rounded scales retained; physical placement/arithmetic unverified"
@@ -3688,10 +3717,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 "qe_config_conflict: runtime ConvRot requires explicit resident GPU+ANE approximation without LoRA/guard/quantized execution");
     }
     if (gguf_direct_import_) {
+        const bool runtime_route=r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+            r.allow_approximation && !r.ane_manifest.empty();
         require(!quantized && !public_stream_lease_ && !r.memory_constrained.enabled &&
-                r.residency=="resident" && r.execution=="gpu" && r.loras.empty() &&
-                r.ane_manifest.empty() && r.encoder_ane_manifest.empty(),
-                "qe_config_conflict: experimental direct packed import supports only private resident GPU without LoRA/ANE/guard");
+                r.residency=="resident" && ((r.execution=="gpu" && r.ane_manifest.empty()) || runtime_route) &&
+                (r.loras.empty() || effective_lora_strategy(r)=="inference_time") && r.encoder_ane_manifest.empty(),
+                "qe_config_conflict: direct packed import requires resident GPU or explicit runtime ANE, inference-time LoRA and no guard/encoder ANE");
+        require(!runtime_route || (!gguf_gpu_f16_ && !gguf_compile_packed_ && !gguf_validate_blocks_),
+                "qe_config_conflict: direct packed runtime ANE conflicts with GPU-only compute/validation recipes");
         if (gguf_packed_bank_ && transformer_.bytes()) gguf_packed_bank_->check_unchanged();
         if (gguf_retain_packed_ && gguf_packed_ledger_)
             require(gguf_packed_ledger_->snapshot().budget_bytes == z_qwen3_gguf_integer(
@@ -4020,7 +4053,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto")+
             ane::HybridFfn::executor_configuration_identity()+
-            (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "");
+            (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "")+
+            (gguf_raw_ane_source_ ? ":raw-gguf-source-window-v1" : "");
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
@@ -4040,7 +4074,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 calibration->model_sha256 = sha256_file(transformer_checkpoint_);
                 calibration->adapter_identity = active_loras_.empty() ? std::string{} : cached_lora_identity_;
                 calibration->rows = image_rows+caption_rows;
-                calibration->encoding = gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
+                calibration->encoding = gguf_raw_ane_source_ ? "raw-gguf-source-window-v1" :
+                    gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
                 calibration->dtype = gguf_transformer_ ? mx::float16 : mx::bfloat16;
                 calibration->gpu_configuration="explicit-gpu-layers="+gpu_policy+";";
                 auto stem = [](int ordinal) {return (ordinal<2?"noise_refiner."+std::to_string(ordinal):
@@ -4058,7 +4093,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     const auto *value=std::getenv(key);
                     calibration->gpu_configuration += std::string(key)+"="+(value?value:"<unset>")+";";
                 }
-                calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal));};
+                calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal),
+                    gguf_raw_ane_source_ ? gguf_packed_bank_.get() : nullptr,&cancelled);};
                 if(transformer_.has_runtime_loras())calibration->adapter=[&,stem](int ordinal) {
                     const auto prefix=stem(ordinal);
                     return ane::HybridFfn::Adapter{
@@ -4262,6 +4298,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
     std::optional<streaming::GgufPackedBankMetrics> packed_import_metrics;
     if (gguf_direct_import_ && gguf_packed_bank_) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        gguf_packed_bank_->clear_raw_window();
         mx::synchronize();gguf_packed_bank_->check_unchanged();
         packed_import_metrics=gguf_packed_bank_->metrics();
         packed_import_metrics->session_packed_retention=gguf_retain_packed_;
@@ -4488,7 +4526,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         if (quantized_raw_gpu) result.backend="mlx_cpp_metal_gguf_raw_cpu_io_gpu_affine";
         result.precision = r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
     }
-    if (gguf_direct_import_) {
+    if (gguf_direct_import_ && !runtime_ffn_) {
         result.backend="mlx_cpp_metal_gguf_cpu_direct_packed";
         result.precision="z-mlx-compat-affine-v1";
         if (gguf_gpu_f16_) {
@@ -4597,7 +4635,8 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
                       nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, source_reference ? reference_stream : gguf_stream_.get(),gguf_direct_import_ || source_reference,gguf_compile_packed_,
                       !source_reference && gguf_gpu_f16_,!source_reference && gguf_gpu_f16_mpp_,!source_reference && gguf_qmm_f16_,
-                      !source_reference && gguf_f16_refiners_,!source_reference && gguf_ref_mpp_dynamic_,observe),
+                      !source_reference && gguf_f16_refiners_,!source_reference && gguf_ref_mpp_dynamic_,observe,
+                      !source_reference && gguf_raw_ane_source_ ? gguf_packed_bank_.get() : nullptr),
         mx::float32);
 }
 

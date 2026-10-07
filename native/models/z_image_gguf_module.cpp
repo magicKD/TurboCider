@@ -33,9 +33,9 @@ ModelModule z_image_gguf_module() {
                     "unsupported Z-Image GGUF hybrid_mlp_mode");
             if (r.hybrid_mlp_mode == "runtime")
                 require(r.execution == "gpu_ane" && r.allow_approximation &&
-                            !r.ane_manifest.empty() && r.loras.empty() &&
+                            !r.ane_manifest.empty() && (r.loras.empty() || r.lora_strategy=="inference_time") &&
                             r.encoder_ane_manifest.empty(),
-                        "Z-Image GGUF runtime-weight FFN requires explicit base-only GPU/ANE and no encoder ANE");
+                        "Z-Image GGUF runtime-weight FFN requires explicit GPU/ANE, inference-time LoRA and no encoder ANE");
             else if (r.hybrid_mlp_mode != "auto")
                 require(r.execution == "gpu_ane" && r.allow_approximation && !r.ane_manifest.empty() &&
                             (r.hybrid_mlp_mode == "base_fused" ? r.loras.empty() :
@@ -44,7 +44,7 @@ ModelModule z_image_gguf_module() {
             if (r.execution == "gpu_ane")
                 require(r.allow_approximation,
                         "Z-Image GGUF GPU+ANE requires allow_approximation=true");
-            if (r.execution == "gpu_ane" && !r.loras.empty())
+            if (r.execution == "gpu_ane" && !r.loras.empty() && r.hybrid_mlp_mode!="runtime")
                 require(r.lora_strategy == "in_memory_merge",
                         "Z-Image GGUF GPU+ANE LoRA requires lora_strategy=in_memory_merge");
             require(r.residency == "resident" && !r.streaming_offload,
@@ -90,7 +90,8 @@ ModelModule z_image_gguf_module() {
                 "inference_time uses the native packed low-rank branch",
                 "streaming residency is not yet supported by the native MLX GGUF executor",
                 "frozen GPU+ANE uses checkpoint-bound artifacts; runtime-weight FFN uses shape-bound artifacts",
-                "runtime-weight FFN is explicit, base-only, resident, without encoder ANE; packed GPU projections stay native",
+                "runtime-weight FFN is explicit, resident, without encoder ANE; inference-time LoRA uses GPU corrections/hidden output and packed GPU projections stay native",
+                "experimental raw GGUF ANE input uses an additional bounded six-matrix source window; CPU-direct GPU masters remain MLX affine, not a complete raw-resident model",
                 "Q4/Q8 runtime quality and speed require separate paired whole-model qualification"
             };
             return d;
