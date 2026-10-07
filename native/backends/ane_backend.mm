@@ -1,5 +1,6 @@
 #include "ane_backend.hpp"
 #include "ane_fp16_value_config.hpp"
+#include "ane_public_w8.hpp"
 #include <chrono>
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
 #include "private/ane_executor.hpp"
@@ -35,6 +36,12 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
     if(requested_group && !try_private)throw std::runtime_error("group A8 requires an authorized private backend");
     const int channels = resolved_private_channel_count(expected.width, calibrated_channels);
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
+    if(runtime_template_w8a8(manifest)) {
+        if(policy.preferred!=BackendPreference::Public || channels || fp16_values || bf16_boundaries || requested_group)
+            throw std::runtime_error("Public W8A8 template requires Public policy and its explicit row/basis ABI");
+        result.executor=std::make_unique<PublicW8Graph>(manifest,budget,expected);
+        return result;
+    }
     if (try_private) {
         // Malformed manifests/geometries remain configuration failures, not
         // capability fallback. Only the native graph consumes this shape.

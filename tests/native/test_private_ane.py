@@ -188,11 +188,11 @@ class PrivateAneHardwareTests(unittest.TestCase):
         directory = self.root / "factory-template"
         export.export(directory, export.geometry("swiglu", 33, 64, 96, 32, 48, lora_inputs=True))
         common = ["xcrun", "clang++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
-                  "-Wno-deprecated-declarations", "-fobjc-arc", "-mmacosx-version-min=15.0",
-                  "native/backends/ane_backend.mm", "native/backends/ane_runtime.mm",
+                  "-Wno-deprecated-declarations", "-fobjc-arc", "-mmacosx-version-min=26.2",
+                  "native/backends/ane_backend.mm", "native/backends/ane_runtime.mm", "native/backends/ane_public_w8.mm", "native/backends/ane_gpu.mm",
                   "native/backends/ane_memory.cpp", "native/core/gguf_decode.cpp",
                   "tests/native/ane_backend_factory_test.cpp", "-framework", "Foundation",
-                  "-framework", "CoreML", "-framework", "CoreVideo", "-framework", "IOSurface"]
+                  "-framework", "CoreML", "-framework", "CoreVideo", "-framework", "IOSurface", "-framework", "Metal"]
         for enabled in (False, True):
             binary = self.build / f"factory-{int(enabled)}"
             command = list(common)

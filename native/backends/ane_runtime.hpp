@@ -133,6 +133,14 @@ struct GraphShape {
 // Parse the runtime template's geometry/ABI only. Private executors emit their
 // own native MIL and do not load or claim validation of its Core ML artifact.
 GraphShape runtime_template_shape(const std::filesystem::path &manifest);
+bool runtime_template_w8a8(const std::filesystem::path &manifest);
+struct RuntimeArtifactSnapshot {
+    GraphShape shape;
+    W8Basis basis = W8Basis::SylvesterDH;
+    std::filesystem::path compiled_model;
+    std::shared_ptr<void> lease;
+};
+RuntimeArtifactSnapshot snapshot_runtime_w8a8(const std::filesystem::path &manifest);
 
 // Per-request activation corrections, NEVER merged into weight slots.
 // gate/up have the full launch row count and FFN width. The worker scales up
