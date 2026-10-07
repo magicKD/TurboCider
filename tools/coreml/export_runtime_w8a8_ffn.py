@@ -11,10 +11,14 @@ import numpy as np
 
 def geometry(rows, hidden, width, tile_k=1024, lora_inputs=False, basis="sylvester_dh"):
     if (any(type(v) is not int or v<=0 for v in (rows,hidden,width,tile_k)) or rows>4224 or
-            hidden>4096 or hidden%128 or width>16384 or width%512 or tile_k<128 or tile_k>2048 or
+            hidden>4096 or hidden%128 or width>16384 or width%512 or tile_k<128 or tile_k>16384 or
             type(lora_inputs) is not bool or basis not in ("sylvester_dh","comfy_h256") or
             (basis=="comfy_h256" and hidden%256)):
         raise ValueError("unsupported Public W8A8 FFN geometry/recipe")
+    # INT8 operands dequantize to [-1,1]; a full K<=16384 normalized dot
+    # stays below the finite FP16 limit. Up/hidden restoration keeps the
+    # existing dynamic headroom/finite guards. This is an explicit tiling
+    # experiment: changing reduction order is not a bit-exact recipe claim.
     inputs={"x":[hidden,rows],"tx":[1,rows],"wg":[width,hidden],"sg":[width,1],
             "wu":[width,hidden],"su":[width,1],"wd":[hidden,width],"headroom":[1,1]}
     if lora_inputs:inputs.update(dg=[width,rows],du=[width,rows])

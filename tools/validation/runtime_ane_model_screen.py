@@ -101,7 +101,7 @@ def main():
                    help="private/auto explicitly authorize experimental private API in a private-enabled build")
     p.add_argument("--private-gpu-io", "--runtime-gpu-io", action="store_true", help="explicit IOSurface GPU transfer; verifies actual executor/I/O recipe")
     p.add_argument("--private-data-path", "--runtime-data-path", choices=("fp16", "w8a8"), default="fp16",
-                   help="private runtime representation; W8A8 requires private backend and GPU I/O")
+                   help="runtime representation; W8A8 requires explicit Public/Private backend and matching GPU-I/O template")
     p.add_argument("--private-channels", type=channel_policy, default=0,
                    help="0: rows; positive aligned width: fixed channels; auto: native calibrated candidate with raw evidence")
     p.add_argument("--private-prefetch", choices=("0","1"), default="0",
@@ -186,9 +186,9 @@ def main():
         p.error("runtime backend selection requires runtime route")
     public_w8=args.runtime_backend=="public" and args.private_data_path=="w8a8"
     if args.private_gpu_io and ((args.runtime_backend == "public" and not public_w8) or "runtime" not in routes):
-        p.error("private GPU I/O requires an explicitly private/auto runtime route")
+        p.error("GPU I/O requires runtime and an explicitly authorized Private/Auto or Public W8 route")
     if args.private_data_path == "w8a8" and (args.runtime_backend not in ("private","public") or not args.private_gpu_io):
-        p.error("W8A8 requires --runtime-backend private --private-gpu-io")
+        p.error("W8A8 requires explicit Public/Private backend and --runtime-gpu-io")
     if public_w8 and (args.private_channels or args.private_prefetch!="0" or args.private_scale_cache!="1" or
             args.private_launch_fence!="1" or args.private_a8_lookahead!="0" or args.private_stage_specialize!="1"):
         p.error("Public W8 requires its row ABI: channels0/prefetch0/cache1/fence1/lookahead0/specialize1")

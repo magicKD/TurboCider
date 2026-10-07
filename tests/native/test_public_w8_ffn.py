@@ -26,6 +26,8 @@ class PublicW8HostTests(unittest.TestCase):
         for args in ((True,128,512),(33,127,512),(4225,4096,12288),(33,128,513)):
             with self.assertRaises(ValueError):E.geometry(*args)
         with self.assertRaises(ValueError):E.geometry(33,128,512,basis="comfy_h256")
+        self.assertEqual(E.geometry(33,4096,12288,16384)["tile_k"],16384)
+        with self.assertRaises(ValueError):E.geometry(33,4096,12288,16385)
 
     def test_sylvester_rotation_matches_independent_unsigned64_sign_recipe(self):
         value=E.rotation(512,"sylvester_dh").reshape(512,512)
@@ -54,6 +56,19 @@ class PublicW8HostTests(unittest.TestCase):
             self.assertEqual(set(f.inputs),set(spec["inputs"]))
             self.assertEqual(list(f.outputs)[0].shape,(129+(512 if lora else 0),33))
             self.assertEqual(sum(op.op_type=="quantize" for op in f.operations),1)
+
+    @unittest.skipUnless(CT26,"isolated coremltools>=9 required")
+    def test_full_k_is_explicit_three_projection_control_not_default(self):
+        default=E.geometry(33,128,512,128,True)
+        full=E.geometry(33,128,512,16384,True)
+        a=E.make_program(default).functions["main"]
+        b=E.make_program(full).functions["main"]
+        self.assertEqual(sum(op.op_type=="matmul" for op in a.operations),6)
+        self.assertEqual(sum(op.op_type=="matmul" for op in b.operations),3)
+        self.assertEqual(a.outputs[0].shape,b.outputs[0].shape)
+        self.assertEqual(set(a.inputs),set(b.inputs))
+        self.assertEqual(E.geometry(33,128,512)["tile_k"],1024)
+        self.assertFalse(full["production_qualified"])
 
 
 @unittest.skipUnless(CT26 and os.environ.get("TURBOCIDER_TEST_PUBLIC_W8_FFN")=="1",
