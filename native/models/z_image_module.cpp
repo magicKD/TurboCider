@@ -1,5 +1,6 @@
 #include "../runtime/session.hpp"
 #include "z_image/z_image.hpp"
+#include "z_image/convrot_partial_config.hpp"
 #include "../platform/apple/platform.hpp"
 
 namespace tc {
@@ -16,6 +17,7 @@ ModelModule z_image_module() {
                           true};
         },
         [](const Request &r) {
+            (void)z_image::configured_convrot_partial_mpp(r);
             require(r.operation == "image.generate",
                     "Z-Image-Turbo currently supports image.generate only");
             require(r.inputs.empty(), "Z-Image-Turbo does not accept image inputs");

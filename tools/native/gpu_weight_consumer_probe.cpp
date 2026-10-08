@@ -2,6 +2,8 @@
 // No model rewrite, persistent sidecar, default runtime route or E2E claim.
 #include "runtime/streaming/affine_dense_window.hpp"
 #include "backends/convrot_rotation.hpp"
+#include "backends/affine_gpu_fp32.hpp"
+#include "backends/affine_gpu_mpp.hpp"
 #include "backends/mlx_fd_reader.hpp"
 #include "core/gguf_affine.hpp"
 #include <CommonCrypto/CommonDigest.h>
@@ -362,24 +364,107 @@ void benchmark_reuse(const Packed &packed, int bits, int rows, int iterations,
         << ",\"qualification_passed\":false,\"excludes\":[\"source-read/packing\",\"input-rotation\","
         "\"full-layer-traversal/LoRA/media\",\"whole-process-memory\",\"asynchronous-prefetch\",\"ANE\"]}\n";
 }
+void benchmark_mpp(const Packed &packed,int bits,int rows,int iterations,bool convrot,
+                   const std::string &source_hash) {
+    const int n=packed[0].shape(0),k=packed[1].shape(1)*32;
+    const auto dtype=packed[1].dtype();
+    const uint64_t bytes=uint64_t(n)*k*2;
+    require(rows>=32 && bytes<=256ull<<20 && uint64_t(rows)*k*2<=256ull<<20,
+            "MPP screen requires M>=32, dense/input extent each <=256MiB");
+    auto x=mx::astype(mx::reshape(mx::sin(mx::arange(rows*k,mx::float32)*.017f),{1,rows,k}),dtype);
+    if(convrot)x=convrot_kernel::rotate(x,convrot_kernel::Rotation::Shared);
+    mx::eval({x,packed[0],packed[1],packed[2]});
+    const auto upper=streaming::gguf_storage::capacity_upper(bytes);
+    MemoryLedger ledger(upper);AffineDenseWindow window(ledger,upper);
+    // One bounded decode is a separate setup observation, NOT amortized away
+    // when recommending predecode. Its bank is used only by the control arm.
+    const auto start=Clock::now();
+    auto dense=window.prepare(packed,bits,32,source_hash,1);
+    const double decode_setup_ms=elapsed(start);
+    auto expected=mx::matmul(mx::astype(x,mx::float32),mx::transpose(mx::astype(dense,mx::float32)));
+    mx::eval(expected);
+    struct Recipe {const char *name;int bk,sn,sm;};
+    const std::vector<Recipe> recipes{{"packed_qmm",0,0,0},{"prepared_dense_gemm",0,0,0},
+        {"original_f32_decode",0,0,0},{"mpp_register_32x32",32,32,16},
+        {"mpp_register_32x64",32,64,16},{"mpp_register_64x32",64,32,16},
+        {"mpp_register_m32_32x32",32,32,32},{"mpp_register_m64_32x32",32,32,64}};
+    auto project=[&](size_t index) {
+        if(index==0)return mx::quantized_matmul(x,packed[0],packed[1],packed[2],true,32,bits,"affine");
+        if(index==1)return mx::matmul(x,mx::transpose(dense));
+        auto value=index==2 ? affine_gpu::projection_fp32(x,packed[0],packed[1],packed[2],bits,0,n,0,k) :
+            affine_gpu::projection_mpp_fp32(x,packed[0],packed[1],packed[2],bits,0,n,0,k,recipes[index].bk,recipes[index].sn,recipes[index].sm);
+        return mx::astype(value,dtype); // explicitly include original output cast
+    };
+    std::vector<double> f32_rel(recipes.size(),0),narrow_rel,maximum_abs;
+    std::vector<bool> exact;
+    auto reference=project(0);mx::eval(reference);
+    for(size_t index=0;index<recipes.size();++index) {
+        if(index>=2) {
+            auto value=index==2 ? affine_gpu::projection_fp32(x,packed[0],packed[1],packed[2],bits,0,n,0,k) :
+                affine_gpu::projection_mpp_fp32(x,packed[0],packed[1],packed[2],bits,0,n,0,k,recipes[index].bk,recipes[index].sn,recipes[index].sm);
+            const double error=mx::sqrt(mx::sum(mx::square(value-expected))/mx::sum(mx::square(expected))).item<float>();
+            require(std::isfinite(error) && error<=3e-6,"real-weight typed F32 projection gate failed: "+
+                std::string(recipes[index].name)+" error="+std::to_string(error));
+            f32_rel[index]=error;
+        }
+        auto value=project(index);mx::eval(value);
+        auto vf=mx::astype(value,mx::float32),rf=mx::astype(reference,mx::float32);
+        const double error=mx::sqrt(mx::sum(mx::square(vf-rf))/mx::sum(mx::square(rf))).item<float>();
+        require(mx::all(mx::isfinite(value)).item<bool>() && std::isfinite(error),"nonfinite real-weight MPP output");
+        narrow_rel.push_back(error);maximum_abs.push_back(mx::max(mx::abs(vf-rf)).item<float>());
+        exact.push_back(same_bits(value,reference));
+        for(int warm=0;warm<3;++warm)mx::eval(project(index));
+    }
+    std::vector<std::vector<double>> times(recipes.size());
+    for(int iteration=0;iteration<iterations;++iteration)for(size_t visit=0;visit<recipes.size();++visit) {
+        const size_t index=(visit+iteration)%recipes.size();const auto started=Clock::now();
+        auto value=project(index);mx::eval(value);times[index].push_back(elapsed(started));
+    }
+    std::cout<<std::setprecision(12)<<"{\"schema\":\"tc-affine-register-mpp-screen-v1\","
+        "\"scope\":\"serial full operator host span with original final dtype cast; real weights/synthetic prepared input; not full-model or GPU timestamps\","
+        "\"basis\":\""<<(convrot?"Comfy-H256-rotated-legacy-BF16-scale":"GGUF-native-affine-FP16")
+        <<"\",\"source_payload_or_codes_sha256\":\""<<source_hash
+        <<"\",\"stored_scales_sha256\":\""<<sha256(packed[1].data<void>(),packed[1].nbytes())
+        <<"\",\"bits\":"<<bits<<",\"M\":"<<rows<<",\"N\":"<<n<<",\"K\":"<<k
+        <<",\"warmups_per_recipe\":3,\"samples_per_recipe\":"<<iterations
+        <<",\"control_dense_setup_ms\":"<<decode_setup_ms<<",\"control_dense_bytes\":"<<bytes
+        <<",\"mpp_global_dense_bank_bytes\":0,\"recipes\":[";
+    for(size_t index=0;index<recipes.size();++index) {
+        std::cout<<(index?",":"")<<"{\"name\":\""<<recipes[index].name<<"\",\"median_ms\":"<<median(times[index])
+            <<",\"fp32_rel_l2_vs_independent_typed_coefficients\":";
+        if(index<2)std::cout<<"null";else std::cout<<f32_rel[index];
+        std::cout<<",\"narrow_rel_l2_vs_packed\":"<<narrow_rel[index]
+            <<",\"max_abs_vs_packed\":"<<maximum_abs[index]<<",\"output_byte_exact_vs_packed\":"<<(exact[index]?"true":"false")
+            <<",\"samples_ms\":";samples(times[index]);std::cout<<'}';
+    }
+    dense=Tensor(0.f);window.clear();mx::synchronize();
+    require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"MPP control leaked dense bank claim");
+    std::cout<<"],\"dense_control_claim_bytes_after_cleanup\":"<<ledger.snapshot().storage_bytes
+        <<",\"qualification_passed\":false,\"default_route_changed\":false,"
+        "\"excludes\":[\"source-read/packing\",\"input-rotation\",\"LoRA/full-model/media\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
+}
 } // namespace
 int main(int argc, char **argv) {
     try {
         configure_streams();
         mx::set_cache_limit(256ull << 20);
         if (argc == 1) { self_test(); return 0; }
-        require((argc == 6 || argc == 7) && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot"),
-                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]]");
+        require((argc == 6 || argc == 7) && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot" ||
+                std::string(argv[1]) == "gguf-mpp" || std::string(argv[1]) == "convrot-mpp"),
+                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations]");
+        const bool mpp=std::string(argv[1]).ends_with("-mpp");
         const int rows = std::stoi(argv[4]), iterations = std::stoi(argv[5]);
         const int reuses = argc == 7 ? std::stoi(argv[6]) : 0;
         require(rows >= 1 && rows <= 4224 && iterations >= 9 && iterations <= 99 && iterations % 2,
                 "component requires M=1..4224, odd iterations=9..99");
         require(argc != 7 || (reuses >= 1 && reuses <= 16),"actual-reuses must be 1..16");
+        require(!mpp || (argc==6 && rows>=32),"MPP screen requires M>=32 and no actual-reuses option");
         int bits = 8;
         std::string hash;
-        const bool convrot = std::string(argv[1]) == "convrot";
+        const bool convrot = std::string(argv[1]).starts_with("convrot");
         auto source = convrot ? load_convrot(argv[2], argv[3], hash) : load_gguf(argv[2], argv[3], bits, hash);
-        if (reuses) benchmark_reuse(source,bits,rows,iterations,reuses,convrot,hash);
+        if(mpp)benchmark_mpp(source,bits,rows,iterations,convrot,hash);
+        else if (reuses) benchmark_reuse(source,bits,rows,iterations,reuses,convrot,hash);
         else benchmark(source, bits, rows, iterations, convrot, hash);
     } catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
 }

@@ -30,6 +30,7 @@ class Weights {
     // descriptors alive until every array owned by this weight set is gone.
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
     bool metal_convrot_ = false;
+    bool affine_fp32_mpp_ = false;
     bool runtime_lora_fp16_ = false;
     Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
                                   const std::vector<Tensor> *) const;
@@ -51,6 +52,10 @@ class Weights {
     void cast_unquantized_float32(mx::Dtype);
     void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
     bool metal_convrot() const { return metal_convrot_; }
+    // Owner-thread request snapshot; never mutate while a compiled closure or
+    // submitted projection is reading this Weights generation. Default off.
+    void set_affine_fp32_mpp(bool enabled) { affine_fp32_mpp_=enabled; }
+    bool affine_fp32_mpp() const { return affine_fp32_mpp_; }
     // Experimental Qwen21 student only: narrow LoRA matmuls while retaining
     // FP32 accumulation with the BF16 base projection.
     void set_runtime_lora_fp16(bool enabled) { runtime_lora_fp16_ = enabled; }

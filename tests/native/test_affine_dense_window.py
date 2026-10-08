@@ -25,6 +25,15 @@ class AffineDenseWindowTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode,0)
                 self.assertIn("actual-reuses must be 1..16",result.stderr)
                 self.assertNotIn("cannot open GGUF",result.stderr)
+            for mode in ("gguf-mpp","convrot-mpp"):
+                for rows,extra in (("31",[]),("33",["1"])):
+                    result=subprocess.run([str(Path(temporary)/"gpu-weight-consumer-probe"),
+                        mode,"never-read.gguf","unused",rows,"9",*extra],cwd=ROOT,
+                        capture_output=True,text=True,timeout=30)
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertIn("MPP screen requires M>=32 and no actual-reuses option",result.stderr)
+                    self.assertNotIn("cannot open GGUF",result.stderr)
+                    self.assertNotIn("cannot open ConvRot",result.stderr)
 
 
 if __name__ == "__main__":

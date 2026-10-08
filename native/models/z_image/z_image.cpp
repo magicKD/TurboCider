@@ -5,6 +5,7 @@
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
 #include "ffn.hpp"
+#include "convrot_partial_config.hpp"
 #include "padding.hpp"
 #include "hybrid_stream.hpp"
 #include "vae.hpp"
@@ -3659,6 +3660,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(runtime_gpu_layers.empty() || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" && !load_only),
             "explicit Z runtime GPU blocks require a gpu_ane runtime generation request");
     auto plan = make_plan(r);
+    const bool convrot_mpp_partial=z_image::configured_convrot_partial_mpp(r);
+    require(!convrot_mpp_partial || (convrot_transformer_ && runtime_convrot_ && !load_only),
+            "ConvRot MPP partial requires the explicit loaded ConvRot runtime source");
+    if(transformer_.affine_fp32_mpp()!=convrot_mpp_partial) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        mx::synchronize();
+        transformer_.set_affine_fp32_mpp(convrot_mpp_partial);
+    }
     require(!r.prompt.empty() && (warmup || load_only || !r.output.empty()),
             "prompt and output are required");
     require(warmup || load_only || std::filesystem::path(r.output).extension() == ".png",
@@ -4054,7 +4063,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto")+
             ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "")+
-            (gguf_raw_ane_source_ ? ":raw-gguf-source-window-v1" : "");
+            (gguf_raw_ane_source_ ? ":raw-gguf-source-window-v1" : "")+
+            (convrot_mpp_partial ? ":convrot-gpu-f32-mpp-register-m64-k32-n32-v1" : "");
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
@@ -4518,6 +4528,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     "convrot-legacy-packed-scale-inverse-h256-f16-v1";
             }
             result.selection=runtime_ffn_->resolve_selection(result.selection);
+            if(convrot_mpp_partial)result.selection+="; experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)";
         }
     }
     if (quantized) {
