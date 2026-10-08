@@ -574,6 +574,13 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
             dense = mx::reshape(dense, {dense.shape(0), int(dense.size() / dense.shape(0))});
         output = mx::matmul(x, mx::transpose(dense));
     }
+    output=add_runtime_projection_loras(x,std::move(output),prefix);
+    if (has(prefix + ".bias"))
+        output = output + mx::astype(at(prefix + ".bias"), output.dtype());
+    return output;
+}
+
+Tensor Weights::add_runtime_projection_loras(const Tensor &x,Tensor output,const std::string &prefix) const {
     auto runtime = runtime_loras_.find(prefix);
     if (runtime != runtime_loras_.end()) {
         for (const auto &adapter : runtime->second) {
@@ -612,8 +619,6 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
             }
         }
     }
-    if (has(prefix + ".bias"))
-        output = output + mx::astype(at(prefix + ".bias"), output.dtype());
     return output;
 }
 
@@ -622,7 +627,7 @@ std::vector<Tensor> Weights::project_many(
     require(!prefixes.empty(), "cannot project an empty prefix list");
     bool shared_convrot = true;
     for (const auto &prefix : prefixes) {
-        if (!convrot(prefix) || runtime_loras_.count(prefix)) {
+        if (!convrot(prefix)) {
             shared_convrot = false;
             break;
         }
@@ -669,6 +674,10 @@ std::vector<Tensor> Weights::project_many(
                            mx::transpose(dense)),
                 x.dtype());
         }
+        // LoRA consumes the ORIGINAL unrotated activation. Preserve each
+        // adapter's FP32 rank/delta and sequential output rounding, then the
+        // original projection bias. Only the frozen base shares H256.
+        output=add_runtime_projection_loras(x,std::move(output),prefix);
         if (has(prefix + ".bias"))
             output = output + mx::astype(at(prefix + ".bias"), output.dtype());
         outputs.push_back(std::move(output));

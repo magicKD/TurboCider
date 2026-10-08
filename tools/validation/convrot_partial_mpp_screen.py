@@ -12,12 +12,13 @@ import math
 from pathlib import Path
 import statistics
 
-from runtime_ane_common import benchmark_environment, sha256_file, validate_overflow_events
+from runtime_ane_common import benchmark_environment, sha256_file, validate_overflow_events, gpu_layer_policy
 from runtime_ane_memory import run_sampled
 
 ROOT=Path(__file__).resolve().parents[2]
 MODES=("gpu","original","mpp")
 MARKER="experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)"
+LORA_MARKER="experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down"
 
 
 def source_snapshot(path):
@@ -34,9 +35,9 @@ def source_snapshot(path):
         ctime_ns=after.st_ctime_ns,header_sha256=hashlib.sha256(header).hexdigest())
 
 
-def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0):
+def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_layers=()):
     if mode not in MODES or len(rows)!=count:raise ValueError("missing matched ConvRot requests")
-    previous=0;previous_calls=0;previous_retries=0;first_headroom=None
+    previous=0;previous_calls=0;previous_retries=0;first_headroom=None;previous_forced=0;previous_lora=0
     for index,row in enumerate(rows):
         if row.get("actual_denoise_steps")!=steps or row.get("steps")!=steps:
             raise ValueError("requested/actual ConvRot steps differ")
@@ -45,20 +46,24 @@ def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0):
             raise ValueError("missing valid ConvRot request time")
         if (MARKER in (row.get("acceleration_selection") or ""))!=(mode=="mpp"):
             raise ValueError("ConvRot GPU partial selection differs from requested arm")
+        if has_lora and (row.get("lora_strategy")!="inference_time" or type(row.get("lora_applied_projections")) is not int or row.get("lora_applied_projections")!=238):
+            raise ValueError("need actual complete unmerged local Z distill LoRA bindings")
         if mode=="gpu":
-            if row.get("runtime_backend")!="mlx_cpp_metal_convrot_compiled_experimental" or row.get("hybrid"):
+            expected="mlx_cpp_metal_convrot_packed_q8" if has_lora else "mlx_cpp_metal_convrot_compiled_experimental"
+            if row.get("runtime_backend")!=expected or row.get("hybrid"):
                 raise ValueError("GPU control must use complete compiled ConvRot GPU, not a split/ANE route")
             continue
         h=row.get("hybrid") or {};r=h.get("runtime_weight") or {}
         blocks=r.get("channel_blocks_session_total");calls=h.get("runtime_calls_session_total")
         retries=r.get("overflow_retries_session_total")
+        expected_blocks=steps*(32-len(gpu_layers))
         if row.get("runtime_backend")!="mlx_cpp_metal_convrot+private_ane_runtime_weight_experimental" or \
             h.get("runtime_failed") is not False or r.get("executor_backend")!="private_ane" or \
             r.get("data_path")!="w8a8_convrot" or r.get("partition_axis")!="intermediate_channels" or \
             r.get("ane_channels")!=4096 or r.get("fp32_channel_join_enabled") is not True or \
             r.get("fallback_blocks_session_total")!=0 or type(retries) is not int or retries<0 or \
             (retries>cold_retry_cap if index==0 else retries!=previous_retries) or \
-            type(blocks) is not int or blocks-previous!=steps*32 or type(calls) is not int or calls-previous_calls<steps*32:
+            type(blocks) is not int or blocks-previous!=expected_blocks or type(calls) is not int or calls-previous_calls<expected_blocks:
             raise ValueError("need actual successful fixed ConvRot F32 channel work, not just a selection marker")
         if cold_retry_cap:
             headroom=r.get("headroom_scale")
@@ -66,6 +71,17 @@ def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0):
                 (index and headroom!=first_headroom) or validate_overflow_events(r,calls) is None:
                 raise ValueError("cold retry diagnostic needs complete overflow/headroom evidence and no warm recipe changes")
             if not index:first_headroom=headroom
+        if gpu_layers:
+            forced=r.get("forced_gpu_blocks_session_total")
+            if r.get("requested_gpu_layers")!=list(gpu_layers) or type(forced) is not int or forced-previous_forced!=steps*len(gpu_layers):
+                raise ValueError("missing actual complete-GPU sensitive layer policy")
+            previous_forced=forced
+        if has_lora:
+            corrections=r.get("lora_channel_range_calls_session_total")
+            if LORA_MARKER not in (row.get("acceleration_selection") or "") or type(corrections) is not int or \
+                corrections-previous_lora!=expected_blocks or r.get("lora_channel_full_calls_session_total")!=0:
+                raise ValueError("need full successful ConvRot LoRA channel corrections, not label/binding alone")
+            previous_lora=corrections
         previous=blocks;previous_calls=calls;previous_retries=retries
 
 
@@ -76,18 +92,23 @@ def main():
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--timeout",type=int,default=600)
+    parser.add_argument("--lora",type=Path,help="explicit local Z distill-patch adapter; complete LoRA, never merge into codes")
+    parser.add_argument("--lora-strength",type=float,default=1.0)
+    parser.add_argument("--gpu-ffn-blocks",type=gpu_layer_policy,default=(),help="same complete-GPU sensitive ordinals on both hybrid arms, not an error fallback")
     parser.add_argument("--cold-retry-cap",type=int,default=0,
         help="explicit additional diagnostic policy0..8; only cold retries, complete events, unchanged warm headroom and matched original/MPP final headroom; never strict qualification")
     parser.add_argument("--prompt",default="A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.")
     args=parser.parse_args();order=args.order.split(",")
     if len(order)!=3 or set(order)!=set(MODES) or not 1<=args.steps<=8 or not 30<=args.timeout<=1800 or \
-        not 0<=args.cold_retry_cap<=8 or not args.prompt.strip():
+        not 0<=args.cold_retry_cap<=8 or not args.prompt.strip() or not math.isfinite(args.lora_strength) or not -8<=args.lora_strength<=8:
         parser.error("need each matched mode once, steps1..8, timeout30..1800 and a nonempty prompt")
     if args.output.exists() or args.output.is_symlink():parser.error("choose a new output directory")
     cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
     model=args.model.resolve(strict=True);checkpoint=args.checkpoint.resolve(strict=True);manifest=args.manifest.resolve(strict=True)
     if not library.is_file() or not model.is_dir():parser.error("CLI, adjacent library and local model directory required")
     bindings={str(p):sha256_file(p) for p in (cli,library,manifest)}
+    lora=args.lora.resolve(strict=True) if args.lora else None
+    if lora:bindings[str(lora)]=sha256_file(lora)
     sources=[checkpoint,model/"split_files/text_encoders/qwen_3_4b.safetensors",model/"split_files/vae/ae.safetensors"]
     snapshot={str(p):source_snapshot(p) for p in sources}
     args.output.mkdir(parents=True)
@@ -96,14 +117,17 @@ def main():
         source_identities=bindings,source_snapshots=snapshot,
         source_identity_scope="file generation stamps and bounded headers, not complete payload hashes/immutable source leases",
         scope="same-library resident512 base, first request separate then two same-prompt hot requests; optimized compiled-dense GPU with explicit retained3GiB allocator hint; process-tree memory, no strict-load/physical-overlap qualification",
-        cold_retry_cap=args.cold_retry_cap,trials=[])
+        cold_retry_cap=args.cold_retry_cap,lora=str(lora) if lora else None,lora_strength=args.lora_strength if lora else None,
+        gpu_ffn_blocks=list(args.gpu_ffn_blocks),trials=[])
+    if lora:summary["scope"]="same-library resident512 real unmerged Z distill LoRA, shared-rotation complete GPU; first then two same-prompt hot requests; process-tree memory, no strict-load/physical-overlap qualification"
     target=args.output/"summary.json";target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         env=benchmark_environment();env["TURBOCIDER_Z_IMAGE_TRANSFORMER"]=str(checkpoint)
-        if mode=="gpu":
+        if lora:env["TURBOCIDER_Z_CONVROT_SHARED_GATE_UP"]="1"
+        if mode=="gpu" and not lora:
             env.update(TURBOCIDER_Z_CONVROT_GPU_RECIPE="compiled_dense",TURBOCIDER_Z_CONVROT_CACHE_BYTES=str(3<<30),
                 TURBOCIDER_Z_CONVROT_CACHE_RETAIN="1")
-        else:
+        elif mode!="gpu":
             env.update(TURBOCIDER_Z_RUNTIME_CONVROT="1",TURBOCIDER_Z_CONVROT_FP32_MPP="1" if mode=="mpp" else "0",
                 TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_GPU_IO="1",
                 TURBOCIDER_PRIVATE_ANE_DATA_PATH="convrot_w8a8",TURBOCIDER_PRIVATE_ANE_CHANNELS="4096",
@@ -111,12 +135,15 @@ def main():
                 TURBOCIDER_PRIVATE_ANE_PREFETCH="0",TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD="0",
                 TURBOCIDER_RUNTIME_ANE_CHUNKS="1",TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",
                 TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN="1")
+            if lora:env["TURBOCIDER_Z_RUNTIME_CONVROT_LORA"]="1"
+            if args.gpu_ffn_blocks:env["TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS"]=",".join(map(str,args.gpu_ffn_blocks))
         requests=[]
         for index in range(3):
             request=dict(model="z-image-turbo",operation="image.generate",prompt=args.prompt,width=512,height=512,
                 steps=args.steps,seed=args.seed,audio=False,residency="resident",execution="gpu" if mode=="gpu" else "gpu_ane",
                 allow_approximation=True,output=str((args.output/f"{mode}-{index}.png").resolve()))
-            if mode=="gpu":request["compile_gpu"]=True
+            if lora:request.update(lora_strategy="inference_time",loras=[dict(path=str(lora),role="transformer",strength=args.lora_strength)])
+            if mode=="gpu":request["compile_gpu"]=not bool(lora)
             else:request.update(hybrid_mlp_mode="runtime",ane_manifest=str(manifest))
             path=args.output/f"{mode}-{index}.json";path.write_text(json.dumps(request,indent=2)+"\n");requests.append(str(path.resolve()))
         print(json.dumps(dict(starting=mode)),flush=True)
@@ -124,7 +151,7 @@ def main():
             memory=run_sampled([str(cli),"batch",str(model),*requests],repo=ROOT,output=args.output,stem=mode,
                 env=env,stdout=stdout,stderr=stderr,timeout=args.timeout,interval_ms=100,max_gap_ms=500)
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_rows(rows,mode,args.steps,cold_retry_cap=args.cold_retry_cap)
+        validate_rows(rows,mode,args.steps,cold_retry_cap=args.cold_retry_cap,has_lora=bool(lora),gpu_layers=args.gpu_ffn_blocks)
         if any(sha256_file(Path(p))!=value for p,value in bindings.items()) or \
             any(source_snapshot(Path(p))!=value for p,value in snapshot.items()):raise ValueError("runtime/source identity changed")
         times=[row["timings_seconds"]["request_wall"] for row in rows]

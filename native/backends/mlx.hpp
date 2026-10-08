@@ -32,6 +32,7 @@ class Weights {
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
     bool runtime_lora_fp16_ = false;
+    Tensor add_runtime_projection_loras(const Tensor &,Tensor,const std::string &) const;
     Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
                                   const std::vector<Tensor> *) const;
     Tensor lora_delta_slice_rank_impl(const Tensor *,const mx::Shape &,mx::Dtype,const std::string &,int,int,int,int,

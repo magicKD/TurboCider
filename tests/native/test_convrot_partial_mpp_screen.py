@@ -8,6 +8,8 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/validation"))
 SPEC=importlib.util.spec_from_file_location("convrot_mpp_screen",ROOT/"tools/validation/convrot_partial_mpp_screen.py")
 SCREEN=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(SCREEN)
+STATE_SPEC=importlib.util.spec_from_file_location("convrot_lora_switch",ROOT/"tools/validation/convrot_lora_state_switch.py")
+STATE=importlib.util.module_from_spec(STATE_SPEC);STATE_SPEC.loader.exec_module(STATE)
 
 
 class ConvRotPartialScreenTests(unittest.TestCase):
@@ -56,6 +58,43 @@ class ConvRotPartialScreenTests(unittest.TestCase):
         for field,value in (("headroom_scale",4),("overflow_retries_session_total",3),("overflow_events",[])):
             bad=copy.deepcopy(rows);bad[1]["hybrid"]["runtime_weight"][field]=value
             with self.subTest(field=field),self.assertRaises(ValueError):SCREEN.validate_rows(bad,"mpp",4,cold_retry_cap=2)
+
+    def test_real_lora_and_sensitive_policy_cannot_be_forged(self):
+        rows=self.rows()
+        for index,row in enumerate(rows):
+            row.update(lora_strategy="inference_time",lora_applied_projections=238)
+            row["acceleration_selection"]+="; "+SCREEN.LORA_MARKER
+            r=row["hybrid"]["runtime_weight"]
+            r.update(channel_blocks_session_total=124*(index+1),requested_gpu_layers=[2],
+                forced_gpu_blocks_session_total=4*(index+1),lora_channel_range_calls_session_total=124*(index+1),
+                lora_channel_full_calls_session_total=0)
+        SCREEN.validate_rows(rows,"mpp",4,has_lora=True,gpu_layers=(2,))
+        for field,value in (("lora_channel_range_calls_session_total",0),("forced_gpu_blocks_session_total",0),
+                ("requested_gpu_layers",[]),("lora_channel_full_calls_session_total",1)):
+            bad=copy.deepcopy(rows);bad[1]["hybrid"]["runtime_weight"][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):SCREEN.validate_rows(bad,"mpp",4,has_lora=True,gpu_layers=(2,))
+        bad=copy.deepcopy(rows);bad[0]["lora_strategy"]="in_memory_merge"
+        with self.assertRaises(ValueError):SCREEN.validate_rows(bad,"mpp",4,has_lora=True,gpu_layers=(2,))
+
+    def test_same_executor_base_adapter_strength_base_state(self):
+        rows=[]
+        for index,adapter in enumerate((False,True,True,False)):
+            row=self.rows()[0]
+            row.update(steps=8,actual_denoise_steps=8,lora_strategy="inference_time" if adapter else "none",lora_applied_projections=238 if adapter else 0)
+            if adapter:row["acceleration_selection"]+="; "+SCREEN.LORA_MARKER
+            row["hybrid"].update(load_seconds=1.5,runtime_calls_session_total=248*(index+1))
+            row["hybrid"]["runtime_weight"].update(channel_blocks_session_total=248*(index+1),requested_gpu_layers=[2],
+                forced_gpu_blocks_session_total=8*(index+1),headroom_scale=1,lora_channel_full_calls_session_total=0,
+                lora_channel_range_calls_session_total=(0,248,496,496)[index])
+            rows.append(row)
+        hashes=["base","adapter1","adapter_half","base"]
+        STATE.verify(rows,hashes)
+        for field,value in (("lora_channel_range_calls_session_total",0),("overflow_retries_session_total",1)):
+            bad=copy.deepcopy(rows);bad[2]["hybrid"]["runtime_weight"][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):STATE.verify(bad,hashes)
+        bad=copy.deepcopy(rows);bad[3]["hybrid"]["load_seconds"]=2.0
+        with self.assertRaises(ValueError):STATE.verify(bad,hashes)
+        with self.assertRaises(ValueError):STATE.verify(rows,["base","adapter1","adapter_half","changed_base"])
 
 
 if __name__=="__main__":unittest.main()

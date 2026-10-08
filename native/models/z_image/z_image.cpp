@@ -3299,9 +3299,10 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
             transformer_.apply_loras(active_loras_, "transformer", event, cancelled,
                                      active_lora_strategy_ == "inference_time");
     if (transformer_cold && convrot_transformer_) {
-        // Apply LoRA against the original ConvRot representation first. The
-        // touched projections are deliberately materialized as dense BF16;
-        // only untouched projections take the packed affine-Q8 fast path.
+        // Apply LoRA against the original ConvRot representation before packing.
+        // A load-time merge materializes touched projections as dense BF16.
+        // Inference-time adapters remain separate; every original ConvRot
+        // base can still be packed without writing LoRA into its codes/scales.
         const auto packed = transformer_.pack_convrot_q8();
         if (active_loras_.empty())
             require(packed > 0, "ConvRot checkpoint contains no packable INT8 projections");
@@ -3660,6 +3661,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(runtime_gpu_layers.empty() || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" && !load_only),
             "explicit Z runtime GPU blocks require a gpu_ane runtime generation request");
     auto plan = make_plan(r);
+    const bool convrot_runtime_lora=z_image::configured_convrot_runtime_lora(r);
     const bool convrot_mpp_partial=z_image::configured_convrot_partial_mpp(r);
     require(!convrot_mpp_partial || (convrot_transformer_ && runtime_convrot_ && !load_only),
             "ConvRot MPP partial requires the explicit loaded ConvRot runtime source");
@@ -3721,9 +3723,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             "qe_config_conflict: dense BF16 compiled profile conflicts with eager/capture overrides");
     if (runtime_convrot_) {
         require(convrot_transformer_ && r.hybrid_mlp_mode=="runtime" && r.execution=="gpu_ane" &&
-                r.allow_approximation && r.loras.empty() && !quantized && !public_stream_lease_ &&
+                r.allow_approximation && (r.loras.empty() || convrot_runtime_lora) && !quantized && !public_stream_lease_ &&
                 !r.memory_constrained.enabled && r.residency=="resident",
-                "qe_config_conflict: runtime ConvRot requires explicit resident GPU+ANE approximation without LoRA/guard/quantized execution");
+                "qe_config_conflict: runtime ConvRot requires explicit resident GPU+ANE approximation, separate full-LoRA opt-in, no guard/quantized execution");
     }
     if (gguf_direct_import_) {
         const bool runtime_route=r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
@@ -4528,6 +4530,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     "convrot-legacy-packed-scale-inverse-h256-f16-v1";
             }
             result.selection=runtime_ffn_->resolve_selection(result.selection);
+            if(convrot_runtime_lora)result.selection+="; experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down";
             if(convrot_mpp_partial)result.selection+="; experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)";
         }
     }

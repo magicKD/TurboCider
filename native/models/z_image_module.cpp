@@ -17,6 +17,7 @@ ModelModule z_image_module() {
                           true};
         },
         [](const Request &r) {
+            (void)z_image::configured_convrot_runtime_lora(r);
             (void)z_image::configured_convrot_partial_mpp(r);
             require(r.operation == "image.generate",
                     "Z-Image-Turbo currently supports image.generate only");
