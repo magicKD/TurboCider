@@ -140,6 +140,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    const auto *bf16_rank_flag=std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS");
+    require(binary_option_or_unset(bf16_rank_flag),"Qwen BF16 operand/F32 ranks require 0 or 1");
+    const bool bf16_operand_ranks=option_enabled(bf16_rank_flag) && !r.loras.empty();
+    if(transformer_.runtime_lora_bf16_fp32_ranks()!=bf16_operand_ranks) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        mx::synchronize();transformer_.set_runtime_lora_bf16_fp32_ranks(bf16_operand_ranks);
+    }
     const char *share_rank_flag=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
     require(binary_option_or_unset(share_rank_flag),"Qwen shared LoRA ranks require 0 or 1");
     const bool share_lora_ranks=option_enabled(share_rank_flag) && runtime_requested && !r.loras.empty();
@@ -271,7 +278,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         // real arena before retaining the source; do not guess a 2GiB payload.
         // Automatic calibration still waits for its model-supplied workload.
         auto manifest=std::filesystem::canonical(r.ane_manifest);
-        const auto identity=runtime_ffn_identity(manifest);
+        const auto identity=runtime_ffn_identity(manifest)+
+            (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"");
         if(!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_!=identity ||
             (runtime_ffn_->available() && !r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
@@ -545,7 +553,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     auto hybrid_start = Clock::now();
     if (runtime_requested) {
         auto manifest = std::filesystem::canonical(r.ane_manifest);
-        const std::string identity=runtime_ffn_identity(manifest);
+        const std::string identity=runtime_ffn_identity(manifest)+
+            (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"");
         const bool native_channel_auto = ane::private_channel_count(12288) < 0;
         const std::string request_identity = identity + (native_channel_auto ?
             ":rows="+std::to_string((r.height/16)*(r.width/16))+":prefix="+std::to_string(text.shape(1))+
@@ -572,7 +581,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 calibration->source_generation += ":prefix="+std::to_string(text.shape(1));
                 const char *rank_dtype=std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
                 calibration->gpu_configuration=std::string("qwen-lora-rank=")+(rank_dtype?rank_dtype:"<unset>")+
-                    (transformer_.has_runtime_loras()?";shared-compiled-qwen-ffn-v1":";base-channel-eager-v1");
+                    (transformer_.has_runtime_loras()?";shared-compiled-qwen-ffn-v1":";base-channel-eager-v1")+
+                    (bf16_operand_ranks?";bf16-operands-f32-ranks-v1":"");
                 calibration->weights=[&](int ordinal) {
                     const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
                     auto gu=mx::split(transformer_.at(prefix+"gate_up.weight"),2,0);mx::eval(gu);
@@ -866,6 +876,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(retain_encoder_runtime)result.selection+="; explicit bounded encoder executor retention";
     if(retain_encoder_weights)result.selection+="; explicit admitted encoder source retention; no weight copy/precision change";
     if(share_lora_ranks)result.selection+="; experimental operation-local shared gate/up LoRA input ranks";
+    if(bf16_operand_ranks)result.selection+="; experimental original BF16 LoRA A operands with FP32 ranks and B/delta arithmetic";
     if(split_down_ranks)result.selection+="; experimental FP32 split down-LoRA input ranks, ONE joined B/delta rounding";
     if (runtime_requested && !r.loras.empty())
         result.shared_lora_ranks = SharedLoraRankMetrics{share_lora_ranks};
@@ -909,7 +920,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         const float first_sigma = schedule.data<float>()[0];
         const std::string prefix_runtime = std::to_string(r.steps) + ":" +
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
-            active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") + ":" +
+            active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") +
+            (bf16_operand_ranks ? ":bf16-operands-f32-ranks-v1:" : ":") +
             (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ :
              runtime_requested ? runtime_manifest_ : qkv_requested ? qkv_manifest_ : "gpu") + ":" +
             (fused_qkv ? "fused-qkv" : "ordinary-qkv") + ":" +

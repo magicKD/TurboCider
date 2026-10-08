@@ -32,6 +32,8 @@ class Weights {
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
     bool runtime_lora_fp16_ = false;
+    bool runtime_lora_bf16_fp32_ranks_ = false;
+    Tensor runtime_lora_rank(const Tensor &,const Tensor &,int,int) const;
     Tensor add_runtime_projection_loras(const Tensor &,Tensor,const std::string &) const;
     Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
                                   const std::vector<Tensor> *) const;
@@ -60,6 +62,10 @@ class Weights {
     // Experimental Qwen21 student only: narrow LoRA matmuls while retaining
     // FP32 accumulation with the BF16 base projection.
     void set_runtime_lora_fp16(bool enabled) { runtime_lora_fp16_ = enabled; }
+    // Request-owner snapshot. Original BF16 operands, F32 rank output and
+    // unchanged F32 B/delta arithmetic; never an FP16-rank substitution.
+    void set_runtime_lora_bf16_fp32_ranks(bool enabled) { runtime_lora_bf16_fp32_ranks_=enabled; }
+    bool runtime_lora_bf16_fp32_ranks() const { return runtime_lora_bf16_fp32_ranks_; }
     std::vector<std::string> sorted_keys() const;
     void bind_arrays(const std::vector<std::string> &,
                      const std::vector<Tensor> &, size_t offset = 0);

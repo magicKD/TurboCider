@@ -18,6 +18,14 @@ ModelModule qwen21_module() {
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
             const char *encoder_weights=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
             const char *shared_ranks=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
+            const char *bf16_ranks=std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS");
+            require(qwen21::binary_option_or_unset(bf16_ranks),"Qwen BF16 operand/F32 ranks require 0 or 1");
+            if(qwen21::option_enabled(bf16_ranks) && !r.loras.empty())
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 && r.steps==6 &&
+                    !r.prompt_enhance && !r.streaming.active() && !r.memory_constrained.enabled &&
+                    (r.execution=="gpu" || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime")) &&
+                    !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16")),
+                    "Qwen BF16 operand/F32 ranks require explicit resident512 six-step LoRA GPU/runtime with original FP32 ranks");
             const char *down_ranks=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SPLIT_DOWN_RANKS");
             require(qwen21::binary_option_or_unset(down_ranks),"Qwen split down ranks require 0 or 1");
             if(qwen21::option_enabled(down_ranks) && r.hybrid_mlp_mode=="runtime" && !r.loras.empty())

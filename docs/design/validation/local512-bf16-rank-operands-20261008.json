@@ -1,0 +1,1263 @@
+{
+  "schema": "tc-local512-bf16-rank-operands-20261008-v1",
+  "date": "2026-10-08",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "default_promoted": false,
+  "scope": "Local original BF16 LoRA A operands with F32 rank/B/delta arithmetic and an unintegrated paired physical-row GPU prototype; component and fresh-condition native request host spans, not physical overlap, INT8 MAC or production qualification",
+  "delta_policy": {
+    "relative_l2_component_budget": 0.05,
+    "finite_required": true,
+    "measured_synthetic_maximum": 0.000016809,
+    "not_a_target_error": true,
+    "not_whole_model_acceptance": true,
+    "original_exact_api_regressions_unchanged": true,
+    "source_load_memory_and_full_gpu_fallback_checks_unchanged": true
+  },
+  "flags": {
+    "bf16_operand_ranks": "TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS=1",
+    "default": "off",
+    "eligibility": "BF16 X/A, batch1 rank3 X, rows>=32, rank>=64, row-contiguous original A; otherwise original F32 route",
+    "rank_narrowing": false,
+    "down_split": false,
+    "weight_code_cache": false
+  },
+  "components": [
+    {
+      "receipt": "outputs/local512-qwen-gate-up-pair-v2-component-20261008.json",
+      "sha256": "aa21f79e7439c5200780a341382f1bb7e4af370a99d5ffff493861e9e659a9d5",
+      "binary": "build/local512-qwen-gate-up-pair-v2/qwen-gate-up-pair-probe",
+      "binary_sha256": "33ed9e558bc2371119d1a0c4434cd15ea6f018bc62fa21bb1d3da664b0703d9e",
+      "adjacent_library_sha256": null,
+      "configured_rpath_library": "build/local512-convrot-lora-v1-private/libturbocider.dylib",
+      "configured_library_sha256_observed_post_run": "8eedfe6b13d6dce4f6682aabb1293fa8beb1c16e03967d7d62628ce840d09182",
+      "library_observation_scope": "Post-run LC_RPATH and retained library hash, not continuous run-time library binding or loaded-image trace",
+      "loaded_image_trace": false,
+      "exit_code": 0,
+      "observation_errors": [],
+      "maximum_observation_gap_seconds": 0.16727095795795321,
+      "artifacts_unchanged": true,
+      "scope": "real layer0 BF16 weights, synthetic input, same physical source, serial two-output operator host span, no artificial control concat, not FFN/request/GPU timestamp/LoRA qualification",
+      "cases": [
+        {
+          "M": 1056,
+          "count_per_half": 3072,
+          "K": 4096,
+          "source_rows": 24576,
+          "recipes": [
+            {
+              "recipe": "original_mlx_two_matmuls",
+              "median_seconds": 0.003906708,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "mpp_two_ranges",
+              "median_seconds": 0.003785292,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "pair_m32n128",
+              "median_seconds": 0.003787041,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 7
+        },
+        {
+          "M": 1056,
+          "count_per_half": 7168,
+          "K": 4096,
+          "source_rows": 24576,
+          "recipes": [
+            {
+              "recipe": "original_mlx_two_matmuls",
+              "median_seconds": 0.008755083,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "mpp_two_ranges",
+              "median_seconds": 0.008492625,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "pair_m32n128",
+              "median_seconds": 0.008437084,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 7
+        },
+        {
+          "M": 1056,
+          "count_per_half": 10752,
+          "K": 4096,
+          "source_rows": 24576,
+          "recipes": [
+            {
+              "recipe": "original_mlx_two_matmuls",
+              "median_seconds": 0.012979375,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "mpp_two_ranges",
+              "median_seconds": 0.01251675,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "pair_m32n128",
+              "median_seconds": 0.012468417,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 7
+        },
+        {
+          "M": 3137,
+          "count_per_half": 3072,
+          "K": 4096,
+          "source_rows": 24576,
+          "recipes": [
+            {
+              "recipe": "original_mlx_two_matmuls",
+              "median_seconds": 0.01087025,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "mpp_two_ranges",
+              "median_seconds": 0.010804542,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "pair_m32n128",
+              "median_seconds": 0.010712042,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 7
+        },
+        {
+          "M": 3137,
+          "count_per_half": 7168,
+          "K": 4096,
+          "source_rows": 24576,
+          "recipes": [
+            {
+              "recipe": "original_mlx_two_matmuls",
+              "median_seconds": 0.024979708,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "mpp_two_ranges",
+              "median_seconds": 0.024683667,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "pair_m32n128",
+              "median_seconds": 0.024623708,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 7
+        },
+        {
+          "M": 3137,
+          "count_per_half": 10752,
+          "K": 4096,
+          "source_rows": 24576,
+          "recipes": [
+            {
+              "recipe": "original_mlx_two_matmuls",
+              "median_seconds": 0.0373205,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "mpp_two_ranges",
+              "median_seconds": 0.036854417,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "pair_m32n128",
+              "median_seconds": 0.036765208,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 7
+        }
+      ]
+    },
+    {
+      "receipt": "outputs/local512-qwen-rank-operands-v2-component-20261008.json",
+      "sha256": "80f12d90c6a5136d67f7ee8bc4a5e4601c5382d870bbb44aaf13e3839d99ef95",
+      "binary": "build/local512-qwen-rank-operands-v2/qwen-lora-rank-operand-probe",
+      "binary_sha256": "10561acdc38c37b630a39e120a38461f344c5fb39c07c022ef61e57d8577da17",
+      "adjacent_library_sha256": null,
+      "configured_rpath_library": "build/local512-convrot-lora-v1-private/libturbocider.dylib",
+      "configured_library_sha256_observed_post_run": "8eedfe6b13d6dce4f6682aabb1293fa8beb1c16e03967d7d62628ce840d09182",
+      "library_observation_scope": "Post-run LC_RPATH and retained library hash, not continuous run-time library binding or loaded-image trace",
+      "loaded_image_trace": false,
+      "exit_code": 0,
+      "observation_errors": [],
+      "maximum_observation_gap_seconds": 0.1647618330316618,
+      "artifacts_unchanged": true,
+      "scope": "original local BF16 adapter A, synthetic BF16 activation, original FP32 ranks vs direct BF16 operands/F32 accumulator; serial operator host spans, not B/delta/model/visual/GPU timestamp qualification",
+      "cases": [
+        {
+          "M": 1056,
+          "K": 4096,
+          "rank": 256,
+          "physical_pitch": 4096,
+          "recipes": [
+            {
+              "recipe": "m0n0",
+              "median_seconds": 0.000431958,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "m16n64",
+              "median_seconds": 0.000329583,
+              "relative_l2": 4.42363699449e-7,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 4.42363699449e-7,
+          "recipe_count": 6
+        },
+        {
+          "M": 1056,
+          "K": 7168,
+          "rank": 256,
+          "physical_pitch": 12288,
+          "recipes": [
+            {
+              "recipe": "m0n0",
+              "median_seconds": 0.00060575,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "m16n64",
+              "median_seconds": 0.000461417,
+              "relative_l2": 6.53574886655e-7,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 6.53574886655e-7,
+          "recipe_count": 6
+        },
+        {
+          "M": 1056,
+          "K": 12288,
+          "rank": 256,
+          "physical_pitch": 12288,
+          "recipes": [
+            {
+              "recipe": "m0n0",
+              "median_seconds": 0.001013458,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "m16n64",
+              "median_seconds": 0.000748417,
+              "relative_l2": 9.34594311275e-7,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 9.34594311275e-7,
+          "recipe_count": 6
+        },
+        {
+          "M": 3137,
+          "K": 4096,
+          "rank": 256,
+          "physical_pitch": 4096,
+          "recipes": [
+            {
+              "recipe": "m0n0",
+              "median_seconds": 0.000991167,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "m16n64",
+              "median_seconds": 0.000757083,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 6
+        },
+        {
+          "M": 3137,
+          "K": 7168,
+          "rank": 256,
+          "physical_pitch": 12288,
+          "recipes": [
+            {
+              "recipe": "m0n0",
+              "median_seconds": 0.001639084,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "m16n64",
+              "median_seconds": 0.001078,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 6
+        },
+        {
+          "M": 3137,
+          "K": 12288,
+          "rank": 256,
+          "physical_pitch": 12288,
+          "recipes": [
+            {
+              "recipe": "m0n0",
+              "median_seconds": 0.002661333,
+              "relative_l2": 0,
+              "sample_count": 15
+            },
+            {
+              "recipe": "m16n64",
+              "median_seconds": 0.001689667,
+              "relative_l2": 0,
+              "sample_count": 15
+            }
+          ],
+          "maximum_relative_l2_all_recipes": 0,
+          "recipe_count": 6
+        }
+      ]
+    }
+  ],
+  "model_screens": [
+    {
+      "reference_count": 1,
+      "summary": "outputs/local512-qwen-edit1-rank-operands-v2-diagnostic-20261008/summary.json",
+      "sha256": "4e30b62905d0b02fe00aed504fb03e77166d2c4b6a7b0dfac9294e30a76c8e44",
+      "order": [
+        "hybrid_operand_on",
+        "hybrid_operand_off",
+        "gpu_operand_on",
+        "gpu_operand_off"
+      ],
+      "prompts": [
+        "Create a product-style still life on a warm wooden table: place the beige ceramic teapot from <image1> in natural sunlight. Preserve its shape and recognizable details.",
+        "Create a product-style still life on a warm wooden table: place the beige ceramic teapot from <image1> in gentle sunlight. Preserve its shape and recognizable details.",
+        "Create a product-style still life on a warm wooden table: place the beige ceramic teapot from <image1> in golden sunlight. Preserve its shape and recognizable details."
+      ],
+      "source_identities": {
+        "build/local512-qwen-rank-operands-v2-private/turbocider": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+        "build/local512-qwen-rank-operands-v2-private/libturbocider.dylib": "1a9a1b4af05f5c0c17268ffc19766db08e600723a904f144c495b884ee06ab42",
+        "outputs/runtime-ane/qwen-encoder-c320-h4096-f12288-v1-20261008/manifest.json": "5cdc658f390d9f6972e26b97f7b9ebe3e5649fb6457195bc3efc54afd20ea678",
+        "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+        "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v2/manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4"
+      },
+      "backend": "private",
+      "dit_channels": 5120,
+      "encoder_execution": "gpu",
+      "same_encoder_source_retention": true,
+      "load_qualification_requested": false,
+      "qualification_passed": false,
+      "trials": [
+        {
+          "mode": "hybrid_operand_on",
+          "cold_request_seconds": 17.467147875,
+          "warm_fresh_request_seconds": [
+            12.644675083,
+            12.088694666
+          ],
+          "warm_fresh_median_seconds": 12.366684874499999,
+          "denoise_seconds": [
+            10.41168125,
+            9.814247166,
+            9.9969925
+          ],
+          "text_encode_seconds": [
+            3.072447292,
+            1.398129625,
+            0.672711
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "successful_channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            192,
+            192,
+            192
+          ],
+          "png_sha256": [
+            "0fdfc7f134b78131953bb7a37d663eede4730ce4668706896ea6f0b3fcdd49a5",
+            "9b7f995b69535bfbe29635ccaeee33274fae2a5b475d09563e4ce58d0755e133",
+            "3f19533543e7e5fdd7505728a42d02bbff1805e3af42acefe15aeb76b61d68de"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-rank-operands-v2-diagnostic-20261008/hybrid_operand_on-memory-report.json",
+            "sha256": "2c8e1cd7bd7e40bc89f71f9095d5784708e978ec31632a703df50e23912b6311",
+            "complete": true,
+            "maximum_gap_ns": 110190375,
+            "peak_phys_footprint_bytes": 38177418288,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        },
+        {
+          "mode": "hybrid_operand_off",
+          "cold_request_seconds": 16.284861875,
+          "warm_fresh_request_seconds": [
+            12.325606083,
+            11.60568475
+          ],
+          "warm_fresh_median_seconds": 11.9656454165,
+          "denoise_seconds": [
+            9.353706083,
+            9.53784725,
+            9.513032
+          ],
+          "text_encode_seconds": [
+            3.017134709,
+            1.369712042,
+            0.661403583
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "successful_channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            192,
+            192,
+            192
+          ],
+          "png_sha256": [
+            "9c2adf7209740a6e06a9dbed6c3e157343cfda31c2fb1fb92886a99bc7202315",
+            "0fe5ddaf8a2d86f4a63299105be625ebcac5289d0837c0d59f53a7810d5b5cec",
+            "e8aa27274a0678ed68e51ad9aa4a4fb87b789c81a0262668255b5b6a7bdf9dc4"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-rank-operands-v2-diagnostic-20261008/hybrid_operand_off-memory-report.json",
+            "sha256": "d6d67e9e5833ce0231ebe768e3d5cc63e5105c6494d907e134ae5a80275f652d",
+            "complete": true,
+            "maximum_gap_ns": 109902958,
+            "peak_phys_footprint_bytes": 38308506696,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        },
+        {
+          "mode": "gpu_operand_on",
+          "cold_request_seconds": 15.819968125,
+          "warm_fresh_request_seconds": [
+            11.322378792,
+            10.544378417
+          ],
+          "warm_fresh_median_seconds": 10.9333786045,
+          "denoise_seconds": [
+            8.89878675,
+            8.925918541,
+            8.918797458
+          ],
+          "text_encode_seconds": [
+            3.003180166,
+            1.48990925,
+            0.68443075
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "successful_channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "a99bfd1902860ab6b3d8f232a30ea5bae40a49e81b05962bf30b73ea4542cef6",
+            "a37630c9098ef2c1dfe73a5551e42378fc1f5b1278be5fb972e994f7e6a0ec85",
+            "01c3f6d959a9a97bc23221264f796c93ae1bb2c94e70f66ffd469a37b2ca0128"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-rank-operands-v2-diagnostic-20261008/gpu_operand_on-memory-report.json",
+            "sha256": "b872958a723b7e2e509e9000a6ca26164f144bd23d9e52c46ce1ec890b5d0eb4",
+            "complete": true,
+            "maximum_gap_ns": 109995292,
+            "peak_phys_footprint_bytes": 40164944392,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        },
+        {
+          "mode": "gpu_operand_off",
+          "cold_request_seconds": 15.819303417,
+          "warm_fresh_request_seconds": [
+            11.331342333,
+            10.652599042
+          ],
+          "warm_fresh_median_seconds": 10.9919706875,
+          "denoise_seconds": [
+            8.979635791,
+            8.995576791,
+            9.118595541
+          ],
+          "text_encode_seconds": [
+            3.019198125,
+            1.433190583,
+            0.667924167
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "successful_channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "ed074a436c6c4230909da4121ce6781963f88cf3e0ba1e372b1c4036c700c533",
+            "474b39937ae92741970088691f79638ad7801b2f36be5a7e55a2a7074678cbfb",
+            "6c1bb6ee17810a0d411819b6f4bbaa5c190ce0aaee2ebca3935f168779932c18"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-rank-operands-v2-diagnostic-20261008/gpu_operand_off-memory-report.json",
+            "sha256": "6c9a567c770ebac081e4c114c60646973b4a4add5462003f48b3dfc0b1221334",
+            "complete": true,
+            "maximum_gap_ns": 110019667,
+            "peak_phys_footprint_bytes": 40014866952,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        }
+      ],
+      "png_diagnostics": [
+        {
+          "left": "gpu_operand_off",
+          "right": "gpu_operand_on",
+          "prompt_indices": [
+            0,
+            1,
+            2
+          ],
+          "pixel_exact": [
+            false,
+            false,
+            false
+          ],
+          "rmse_u8": [
+            1.627082468473015,
+            1.154310644834676,
+            1.6061790361573662
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.994179958248809,
+            0.995888407671596,
+            0.9935098509248318
+          ],
+          "max_abs_u8": [
+            114,
+            35,
+            44
+          ],
+          "alpha_max_abs_u8": [
+            1,
+            1,
+            2
+          ],
+          "scope": "Numerical PNG diagnostics only, no perceptual acceptance; source hashes in trials, original comparison sheets under the summary's output directory"
+        },
+        {
+          "left": "hybrid_operand_off",
+          "right": "hybrid_operand_on",
+          "prompt_indices": [
+            0,
+            1,
+            2
+          ],
+          "pixel_exact": [
+            false,
+            false,
+            false
+          ],
+          "rmse_u8": [
+            1.3709022265034663,
+            4.200324618192427,
+            1.0275993077659034
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9952037808754113,
+            0.9804657830744046,
+            0.995831107544786
+          ],
+          "max_abs_u8": [
+            42,
+            117,
+            27
+          ],
+          "alpha_max_abs_u8": [
+            1,
+            1,
+            1
+          ],
+          "scope": "Numerical PNG diagnostics only, no perceptual acceptance; source hashes in trials, original comparison sheets under the summary's output directory"
+        },
+        {
+          "left": "gpu_operand_on",
+          "right": "hybrid_operand_on",
+          "prompt_indices": [
+            0,
+            1,
+            2
+          ],
+          "pixel_exact": [
+            false,
+            false,
+            false
+          ],
+          "rmse_u8": [
+            3.429330817396191,
+            5.101448217477928,
+            1.5054375321101627
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9796514767971057,
+            0.9683560589905452,
+            0.9938448503335081
+          ],
+          "max_abs_u8": [
+            112,
+            119,
+            61
+          ],
+          "alpha_max_abs_u8": [
+            1,
+            1,
+            1
+          ],
+          "scope": "Numerical PNG diagnostics only, no perceptual acceptance; source hashes in trials, original comparison sheets under the summary's output directory"
+        }
+      ],
+      "gpu_candidate_wall_reduction_percent": 0.533044389088766,
+      "hybrid_candidate_slowdown_percent": 3.351590691856776,
+      "visual_review": {
+        "status": "agent_limited_observation",
+        "whole_pairs_inspected": 9,
+        "detail_pairs_inspected": 9,
+        "detail_scope": "GPU off/on case0; hybrid off/on case1; GPU on/hybrid on case1",
+        "observations": "Very close teapot outlines, lids, handles, placement and shadows; small highlight/texture differences; two-reference GPU-vs-hybrid case1 has a visible brightness difference. No new obvious breakage or color blocks in inspected images.",
+        "user_approval": false,
+        "multiple_seeds": false,
+        "automatic_visual_manifests_remain_pending": true
+      }
+    },
+    {
+      "reference_count": 2,
+      "summary": "outputs/local512-qwen-edit2-rank-operands-v2-diagnostic-20261008/summary.json",
+      "sha256": "351fe017119953d7d2eeb7ed3bd60cb887996c78843fedd214de95d50afcd096",
+      "order": [
+        "gpu_operand_off",
+        "gpu_operand_on",
+        "hybrid_operand_off",
+        "hybrid_operand_on"
+      ],
+      "prompts": [
+        "Create a product-style still life on a warm wooden table: place the beige ceramic teapot from <image1> on the left and the cobalt-blue teapot from <image2> on the right. Preserve their shapes and recognizable details in natural sunlight.",
+        "Create a product-style still life on a warm wooden table: place the beige ceramic teapot from <image1> on the left and the cobalt-blue teapot from <image2> on the right. Preserve their shapes and recognizable details in gentle sunlight.",
+        "Create a product-style still life on a warm wooden table: place the beige ceramic teapot from <image1> on the left and the cobalt-blue teapot from <image2> on the right. Preserve their shapes and recognizable details in golden sunlight."
+      ],
+      "source_identities": {
+        "build/local512-qwen-rank-operands-v2-private/turbocider": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+        "build/local512-qwen-rank-operands-v2-private/libturbocider.dylib": "1a9a1b4af05f5c0c17268ffc19766db08e600723a904f144c495b884ee06ab42",
+        "outputs/runtime-ane/qwen-encoder-c320-h4096-f12288-v1-20261008/manifest.json": "5cdc658f390d9f6972e26b97f7b9ebe3e5649fb6457195bc3efc54afd20ea678",
+        "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+        "results/qwen21/teapot-rgba-blue-native-1024.png": "2240ab7e7d67df1776fdae38b853dc57fea2e077cb259a7926c25fe640212192",
+        "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v2/manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4"
+      },
+      "backend": "private",
+      "dit_channels": 5120,
+      "encoder_execution": "gpu",
+      "same_encoder_source_retention": true,
+      "load_qualification_requested": false,
+      "qualification_passed": false,
+      "trials": [
+        {
+          "mode": "gpu_operand_off",
+          "cold_request_seconds": 17.907360833,
+          "warm_fresh_request_seconds": [
+            13.40441025,
+            12.821768375
+          ],
+          "warm_fresh_median_seconds": 13.1130893125,
+          "denoise_seconds": [
+            10.538101791,
+            10.598099416,
+            10.565806416
+          ],
+          "text_encode_seconds": [
+            3.199694708,
+            1.692247541,
+            1.1601995
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "successful_channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-rank-operands-v2-diagnostic-20261008/gpu_operand_off-memory-report.json",
+            "sha256": "962523fdcc02737716d777fa0d68c29d25f615d8a7f523aed6331566a523a32d",
+            "complete": true,
+            "maximum_gap_ns": 110017000,
+            "peak_phys_footprint_bytes": 40788339280,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        },
+        {
+          "mode": "gpu_operand_on",
+          "cold_request_seconds": 17.922027583,
+          "warm_fresh_request_seconds": [
+            13.36908925,
+            12.784545792
+          ],
+          "warm_fresh_median_seconds": 13.076817520999999,
+          "denoise_seconds": [
+            10.669795417,
+            10.495074625,
+            10.496575375
+          ],
+          "text_encode_seconds": [
+            3.1951665,
+            1.738776083,
+            1.187758167
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "successful_channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "75e3f187dd9ec062388e6dfddc97bf0f5c97bf53128af3b7f358b7933343efbb",
+            "23d8ed3ee8ffff48547e0696db8398e5f6066a693283f1b09868e99ce0f8caa4",
+            "1c84d89ba3ef2bb180044db00345d86dd53449c6742f64d736f93edebf0442e5"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-rank-operands-v2-diagnostic-20261008/gpu_operand_on-memory-report.json",
+            "sha256": "def5de9e2ecd1044a69c51647c9775604ca51de109370cf7ef21cf87a0600579",
+            "complete": true,
+            "maximum_gap_ns": 110017166,
+            "peak_phys_footprint_bytes": 41024989608,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        },
+        {
+          "mode": "hybrid_operand_off",
+          "cold_request_seconds": 18.452813458,
+          "warm_fresh_request_seconds": [
+            14.753503833,
+            14.183081416
+          ],
+          "warm_fresh_median_seconds": 14.4682926245,
+          "denoise_seconds": [
+            11.173832833,
+            11.403306917,
+            11.385961
+          ],
+          "text_encode_seconds": [
+            3.163961625,
+            1.727575083,
+            1.18754775
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "successful_channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            192,
+            192,
+            192
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-rank-operands-v2-diagnostic-20261008/hybrid_operand_off-memory-report.json",
+            "sha256": "368fe9913c54c08c941c3d58f82226150b749282acb08021f35c9858237af0fe",
+            "complete": true,
+            "maximum_gap_ns": 110016625,
+            "peak_phys_footprint_bytes": 38893169856,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        },
+        {
+          "mode": "hybrid_operand_on",
+          "cold_request_seconds": 18.782794375,
+          "warm_fresh_request_seconds": [
+            15.191468708,
+            14.518479792
+          ],
+          "warm_fresh_median_seconds": 14.854974250000001,
+          "denoise_seconds": [
+            11.517735959,
+            11.837984375,
+            11.728098
+          ],
+          "text_encode_seconds": [
+            3.137462584,
+            1.738483458,
+            1.164456458
+          ],
+          "prompt_cache_hit": false,
+          "actual_denoise_steps": 6,
+          "applied_adapter_projections": 227,
+          "encoder_source_loads": 1,
+          "runtime_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "successful_channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallback_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries_session_total": [
+            0,
+            0,
+            0
+          ],
+          "shared_ranks_completed_this_request": [
+            192,
+            192,
+            192
+          ],
+          "png_sha256": [
+            "2608c34ded7943379a555e5a166c83026b84c84dc9f68ab4e790a60186b37778",
+            "721903b5c1a33ba07e03b90b8981b379359fd627b25029adb47d3a4a35668a73",
+            "d8a29aae6bd9e3fda19bf990544d934ebf7a55eff88ed391888734cdc1c6139e"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-rank-operands-v2-diagnostic-20261008/hybrid_operand_on-memory-report.json",
+            "sha256": "ab75b79b68657502b841f632254aec25226437135e4787684f9d044501932e14",
+            "complete": true,
+            "maximum_gap_ns": 110016917,
+            "peak_phys_footprint_bytes": 38749449576,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "physical_a_kernel_count_verified": false
+        }
+      ],
+      "png_diagnostics": [
+        {
+          "left": "gpu_operand_off",
+          "right": "gpu_operand_on",
+          "prompt_indices": [
+            0,
+            1,
+            2
+          ],
+          "pixel_exact": [
+            false,
+            false,
+            false
+          ],
+          "rmse_u8": [
+            1.7342690558623666,
+            1.2760205740709958,
+            1.1132395597091547
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9936344765886683,
+            0.9963462860608053,
+            0.9966766423609446
+          ],
+          "max_abs_u8": [
+            61,
+            45,
+            50
+          ],
+          "alpha_max_abs_u8": [
+            1,
+            2,
+            1
+          ],
+          "scope": "Numerical PNG diagnostics only, no perceptual acceptance; source hashes in trials, original comparison sheets under the summary's output directory"
+        },
+        {
+          "left": "hybrid_operand_off",
+          "right": "hybrid_operand_on",
+          "prompt_indices": [
+            0,
+            1,
+            2
+          ],
+          "pixel_exact": [
+            false,
+            false,
+            false
+          ],
+          "rmse_u8": [
+            1.528398206714389,
+            1.511741460585223,
+            2.971021566183678
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9949546078537945,
+            0.9943392293317386,
+            0.9909865246293968
+          ],
+          "max_abs_u8": [
+            58,
+            57,
+            130
+          ],
+          "alpha_max_abs_u8": [
+            1,
+            2,
+            2
+          ],
+          "scope": "Numerical PNG diagnostics only, no perceptual acceptance; source hashes in trials, original comparison sheets under the summary's output directory"
+        },
+        {
+          "left": "gpu_operand_on",
+          "right": "hybrid_operand_on",
+          "prompt_indices": [
+            0,
+            1,
+            2
+          ],
+          "pixel_exact": [
+            false,
+            false,
+            false
+          ],
+          "rmse_u8": [
+            4.241186840045423,
+            9.461587847305818,
+            3.695786814663876
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9761396631234254,
+            0.9754626907220415,
+            0.9837768375466488
+          ],
+          "max_abs_u8": [
+            155,
+            111,
+            134
+          ],
+          "alpha_max_abs_u8": [
+            2,
+            2,
+            2
+          ],
+          "scope": "Numerical PNG diagnostics only, no perceptual acceptance; source hashes in trials, original comparison sheets under the summary's output directory"
+        }
+      ],
+      "gpu_candidate_wall_reduction_percent": 0.27660752272482547,
+      "hybrid_candidate_slowdown_percent": 2.672614077802171,
+      "visual_review": {
+        "status": "agent_limited_observation",
+        "whole_pairs_inspected": 9,
+        "detail_pairs_inspected": 9,
+        "detail_scope": "GPU off/on case0; hybrid off/on case2; GPU on/hybrid on case1",
+        "observations": "Very close teapot outlines, lids, handles, placement and shadows; small highlight/texture differences; two-reference GPU-vs-hybrid case1 has a visible brightness difference. No new obvious breakage or color blocks in inspected images.",
+        "user_approval": false,
+        "multiple_seeds": false,
+        "automatic_visual_manifests_remain_pending": true
+      }
+    }
+  ],
+  "builds": [
+    {
+      "kind": "private",
+      "manifest": "build/local512-qwen-rank-operands-v2-private/runtime-build/runtime-build-manifest.json",
+      "manifest_sha256": "73780e6185229626d4a7ad3c218c211178689f46c6cdde643d5e14b39577e81b",
+      "source_inputs": 494,
+      "source_mismatches": [],
+      "library": "build/local512-qwen-rank-operands-v2-private/libturbocider.dylib",
+      "library_sha256": "1a9a1b4af05f5c0c17268ffc19766db08e600723a904f144c495b884ee06ab42",
+      "cli": "build/local512-qwen-rank-operands-v2-private/turbocider",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "scope": "Working-tree native snapshot including pre-existing uncommitted ConvRot drafts, not staged-only provenance",
+      "library_build_exit_code": 0,
+      "test_hooks": "0",
+      "audit_counters": "0",
+      "experimental_probes": "0",
+      "public_actual_release_binary_guard_passed": false
+    },
+    {
+      "kind": "public",
+      "manifest": "build/local512-qwen-rank-operands-v2-public/runtime-build/runtime-build-manifest.json",
+      "manifest_sha256": "44e2b8d1ce023f37bef3d862e1b088e8fa044be046618ab219edaf466c5ae268",
+      "source_inputs": 494,
+      "source_mismatches": [],
+      "library": "build/local512-qwen-rank-operands-v2-public/libturbocider.dylib",
+      "library_sha256": "7a407c89a48a3a010aee2cd63438bf7b17a10c7defadb4f8e166d1d054adf9aa",
+      "cli": "build/local512-qwen-rank-operands-v2-public/turbocider",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "scope": "Working-tree native snapshot including pre-existing uncommitted ConvRot drafts, not staged-only provenance",
+      "library_build_exit_code": 0,
+      "test_hooks": "0",
+      "audit_counters": "0",
+      "experimental_probes": "0",
+      "public_actual_release_binary_guard_passed": true
+    }
+  ],
+  "regressions": [
+    {
+      "log": "outputs/local512-qwen-rank-operands-v4-private-regression-20261008.log",
+      "sha256": "4e525cc960ed8ae827643bf25109355ad86ff0b7216d2d16cb737d5d916b7169",
+      "passed": 38,
+      "skipped": 0,
+      "scope": "Selected regressions, not whole repository or complete actual-model Public matrix"
+    },
+    {
+      "log": "outputs/local512-qwen-rank-operands-v4-public-regression-20261008.log",
+      "sha256": "1389febab0c0997f455287389fca250fabe5211a0be21b381757bb2926a4aaaa",
+      "passed": 40,
+      "skipped": 0,
+      "scope": "Selected regressions, not whole repository or complete actual-model Public matrix"
+    }
+  ],
+  "failures_preserved": [
+    {
+      "log": "outputs/local512-qwen-gate-up-pair-v1-test-20261008.log",
+      "sha256": "6e093882fcb011daba0891f3107a768b4fbd20f2decd639a11bf93ebf1908a61",
+      "scope": "Original compile/fixture/strict-delta evidence or intermediate1e-4 diagnostic; not rewritten as final5% acceptance"
+    },
+    {
+      "log": "outputs/local512-qwen-rank-operands-v1-private-test-20261008.log",
+      "sha256": "d09b3b21c9ac0477f8b6bb4da914128ded5b18d441e83b4154ce82e2990b8e84",
+      "scope": "Original compile/fixture/strict-delta evidence or intermediate1e-4 diagnostic; not rewritten as final5% acceptance"
+    },
+    {
+      "log": "outputs/local512-qwen-rank-operands-v2-private-math-test-20261008.log",
+      "sha256": "1a03db3b8a57ed668d19a35a0404fee241dd355b5e9428f4552a7a71e2de8e6e",
+      "scope": "Original compile/fixture/strict-delta evidence or intermediate1e-4 diagnostic; not rewritten as final5% acceptance"
+    },
+    {
+      "log": "outputs/local512-qwen-rank-operands-v2-private-test-20261008.log",
+      "sha256": "ddcfe489c7bfa264f4bb09fe671a1f79d93f80136740b67ceedb3c0d88472859",
+      "scope": "Original compile/fixture/strict-delta evidence or intermediate1e-4 diagnostic; not rewritten as final5% acceptance"
+    },
+    {
+      "log": "outputs/local512-qwen-rank-operands-v3-approx-diagnostic-test-20261008.log",
+      "sha256": "fe777d242ca1ec6e66cc5b7989738bedf356500d210227ca52e4770b2baa6ba2",
+      "scope": "Original compile/fixture/strict-delta evidence or intermediate1e-4 diagnostic; not rewritten as final5% acceptance"
+    }
+  ],
+  "cleanup": {
+    "build_directories": [
+      "build/local512-qwen-rank-operands-v1-private",
+      "build/local512-qwen-rank-operands-v2-private",
+      "build/local512-qwen-rank-operands-v2-public"
+    ],
+    "removed_objects": 637,
+    "removed_object_logical_bytes": 50095536,
+    "removed_empty_module_cache_directories": 3,
+    "scope": "Completed owned build objects only, recoverable by rebuild; libraries/CLI/probes/manifests/logs/PNG/model/adapter retained"
+  }
+}

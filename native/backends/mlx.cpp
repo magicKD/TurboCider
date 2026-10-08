@@ -591,10 +591,8 @@ Tensor Weights::add_runtime_projection_loras(const Tensor &x,Tensor output,const
             // stored in its compact source dtype; only this rank-sized branch
             // is promoted for the projection.
             const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto input = mx::astype(x, rank_dtype);
-            auto down = mx::astype(adapter.down, rank_dtype);
             auto up = mx::astype(adapter.up, rank_dtype);
-            auto low = mx::matmul(input, mx::transpose(down));
+            auto low = runtime_lora_rank(x,adapter.down,0,x.shape(-1));
             auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
                          Tensor(adapter.scale, mx::float32);
             if (adapter.output_start == 0 && adapter.output_end == output.shape(-1))
@@ -750,16 +748,24 @@ Tensor Weights::project_slice_with_ranks(const Tensor &x,const std::string &pref
     int rs,int re,int cs,int ce,bool bias) const {
     return project_slice_rank_impl(x,prefix,rs,re,cs,ce,bias,&ranks);
 }
+Tensor Weights::runtime_lora_rank(const Tensor &x,const Tensor &down,int cs,int ce) const {
+    require(!runtime_lora_bf16_fp32_ranks_ || !runtime_lora_fp16_,"BF16 operand/F32 ranks cannot use FP16 rank arithmetic");
+    require(down.ndim()==2 && cs>=0 && ce>cs && ce<=down.shape(1) && x.shape(-1)==ce-cs,
+            "runtime LoRA rank column/input geometry mismatch");
+    if(runtime_lora_bf16_fp32_ranks_ && x.dtype()==mx::bfloat16 && down.dtype()==mx::bfloat16 &&
+        x.ndim()==3 && x.shape(0)==1 && x.shape(1)>=32 && down.shape(0)>=64 && down.flags().row_contiguous)
+        return dense_gpu::projection_range(x,down,0,down.shape(0),cs,ce,16,true,64);
+    const auto dtype=runtime_lora_fp16_?mx::float16:mx::float32;
+    return mx::matmul(mx::astype(x,dtype),mx::transpose(mx::astype(slice_axis(down,1,cs,ce),dtype)));
+}
 std::vector<Tensor> Weights::lora_input_ranks(const Tensor &x,const std::string &prefix,int cs,int ce) const {
     require(cs>=0 && ce>cs && x.shape(-1)==ce-cs,"invalid shared LoRA rank input geometry: "+prefix);
     std::vector<Tensor> result;
     auto found=runtime_loras_.find(prefix);
     if(found==runtime_loras_.end())return result;
-    const auto dtype=runtime_lora_fp16_ ? mx::float16 : mx::float32;
     for(const auto &adapter:found->second) {
         require(ce<=adapter.down.shape(1),"shared LoRA rank column range mismatch");
-        result.push_back(mx::matmul(mx::astype(x,dtype),
-            mx::transpose(mx::astype(slice_axis(adapter.down,1,cs,ce),dtype))));
+        result.push_back(runtime_lora_rank(x,adapter.down,cs,ce));
     }
     return result;
 }
@@ -779,10 +785,9 @@ Tensor Weights::project_slice_rank_impl(const Tensor &x,const std::string &prefi
             // fused gate/up adapter, intersect its global output row range
             // before selecting the corresponding low-rank B rows.
             const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
             auto up = mx::astype(slice_axis(adapter.up, 0,
                 first - adapter.output_start, last - adapter.output_start), rank_dtype);
-            auto low = ranks ? ranks->at(index) : mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
+            auto low = ranks ? ranks->at(index) : runtime_lora_rank(x,adapter.down,col_start,col_end);
             auto expected=x.shape();expected.back()=adapter.down.shape(0);
             require(low.shape()==expected && low.dtype()==rank_dtype,"shared projection rank shape/dtype mismatch");
             auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
@@ -848,10 +853,9 @@ Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &inpu
         if (first >= last) continue;
         const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
         require(col_end<=adapter.down.shape(1),"shared delta rank column range mismatch");
-        auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
         auto up = mx::astype(slice_axis(adapter.up, 0,
             first - adapter.output_start, last - adapter.output_start), rank_dtype);
-        auto low = ranks ? ranks->at(index) : mx::matmul(mx::astype(*x, rank_dtype), mx::transpose(down));
+        auto low = ranks ? ranks->at(index) : runtime_lora_rank(*x,adapter.down,col_start,col_end);
         auto expected=input_shape;expected.back()=adapter.down.shape(0);
         require(low.shape()==expected && low.dtype()==rank_dtype,"shared delta rank shape/dtype mismatch");
         auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *

@@ -29,6 +29,17 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_bf16_operand_screen_keeps_original_rank_and_adapter_policy(self):
+        row=dict(acceleration_selection=SCREEN.BF16_RANK_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
+        SCREEN.validate_bf16_rank_operands([row],True)
+        off={**row,"acceleration_selection":"GPU"};SCREEN.validate_bf16_rank_operands([off],False)
+        for bad in ({**row,"lora_strategy":"in_memory_merge"},{**row,"lora_applied_projections":0},
+            {**row,"lora_applied_projections":227.0},
+            {**row,"acceleration_selection":SCREEN.BF16_RANK_MARKER+"; experimental FP16 low-rank LoRA matmuls"},off):
+            with self.assertRaises(ValueError):SCREEN.validate_bf16_rank_operands([bad],True)
+        for enabled in (False,True):
+            with self.assertRaises(ValueError):SCREEN.validate_bf16_rank_operands([],enabled)
+
     def test_split_down_rank_screen_requires_actual_progress(self):
         def row(blocks,arrays):return dict(hybrid=dict(runtime_weight=dict(
             split_down_rank_blocks_session_total=blocks,split_down_rank_arrays_session_total=arrays)))
@@ -69,7 +80,10 @@ class EncoderResidencyScreenTests(unittest.TestCase):
                 "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
                 "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
             for flags in (["--lora-ranks-gpu-control"],["--lora-ranks-screen"],
-                ["--lora-ranks-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"]):
+                ["--lora-ranks-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
+                ["--bf16-rank-operands-screen"],["--bf16-rank-operands-screen","--lora","unused"],
+                ["--bf16-rank-operands-screen","--lora","unused","--dit-manifest","unused","--down-ranks-screen"],
+                ["--bf16-rank-operands-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"]):
                 result=subprocess.run([*base,*flags],capture_output=True,text=True,timeout=10)
                 with self.subTest(flags=flags):
                     self.assertEqual(result.returncode,2,result.stdout+result.stderr)
