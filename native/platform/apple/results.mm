@@ -120,6 +120,15 @@ static id shared_lora_rank_dictionary(const RunResult &result) {
         @"scope" : @"operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
     };
 }
+static id student_ffn_reuse_dictionary(const RunResult &result) {
+    return @{@"enabled":@(result.student_ffn_reuse_enabled),
+        @"requested_final_layers":@(result.student_ffn_requested_layers),
+        @"captured_blocks_this_request":@(result.student_ffn_captured_blocks),
+        @"reused_blocks_this_request":@(result.student_ffn_reused_blocks),
+        @"peak_logical_cache_bytes":@(result.student_ffn_peak_logical_bytes),
+        @"released_before_vae":@YES,
+        @"scope":@"successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"};
+}
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
         !result.encoder_hybrid->runtime_weight_backend.empty())
@@ -370,6 +379,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     const char *prefix_target_only = std::getenv("TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && prefix_target_only && std::string_view(prefix_target_only) == "1")
         [algorithm_approximations addObject:@"qwen21_tiled_prefix_target_only_diagnostic"];
+    if(qwen21::student_final_ffn_reuse(r))
+        [algorithm_approximations addObject:@"qwen21_student_final_ffn_reuse"];
     const char *hybrid_reuse = std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && hybrid_reuse && std::string_view(hybrid_reuse) == "1")
         [algorithm_approximations addObject:@"qwen21_hybrid_reuse_final_ffn_diagnostic"];
@@ -1599,6 +1610,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
     } mutableCopy];
     value[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
     value[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+    if(result.student_ffn_reuse_enabled)
+        value[@"student_ffn_reuse"]=student_ffn_reuse_dictionary(result);
     if (result.shared_lora_ranks)
         value[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
     if (result.gguf_import) {

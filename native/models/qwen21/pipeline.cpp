@@ -140,6 +140,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    const int student_reuse_layers=student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"));
+    require(student_reuse_layers>=0,"Qwen student final FFN reuse requires 0,1,16 or32");
+    const bool student_ffn_reuse=student_final_ffn_reuse(r);
     const auto *bf16_rank_flag=std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS");
     require(binary_option_or_unset(bf16_rank_flag),"Qwen BF16 operand/F32 ranks require 0 or 1");
     const bool bf16_operand_ranks=option_enabled(bf16_rank_flag) && !r.loras.empty();
@@ -876,6 +879,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(retain_encoder_runtime)result.selection+="; explicit bounded encoder executor retention";
     if(retain_encoder_weights)result.selection+="; explicit admitted encoder source retention; no weight copy/precision change";
     if(share_lora_ranks)result.selection+="; experimental operation-local shared gate/up LoRA input ranks";
+    result.student_ffn_reuse_enabled=student_ffn_reuse;
+    result.student_ffn_requested_layers=student_ffn_reuse?student_reuse_layers:0;
+    if(student_ffn_reuse)result.selection+="; experimental six-step student final FFN reuse, includes full LoRA FFN output; layers="+std::to_string(student_reuse_layers);
     if(bf16_operand_ranks)result.selection+="; experimental original BF16 LoRA A operands with FP32 ranks and B/delta arithmetic";
     if(split_down_ranks)result.selection+="; experimental FP32 split down-LoRA input ranks, ONE joined B/delta rounding";
     if (runtime_requested && !r.loras.empty())
@@ -922,6 +928,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
             active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") +
             (bf16_operand_ranks ? ":bf16-operands-f32-ranks-v1:" : ":") +
+            (student_ffn_reuse ? "student-final-ffn-reuse-v1-layers="+std::to_string(student_reuse_layers)+":" : "") +
             (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ :
              runtime_requested ? runtime_manifest_ : qkv_requested ? qkv_manifest_ : "gpu") + ":" +
             (fused_qkv ? "fused-qkv" : "ordinary-qkv") + ":" +
@@ -1168,11 +1175,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 const auto step_started = profile_steps ? Clock::now() : Clock::time_point{};
                 const auto prediction_before = profile_steps && hybrid_requested
                     ? hybrid_->metrics().prediction_seconds : 0.;
-                if (reuse_final_ffn || hybrid_reuse_ffn || hybrid_reuse_last16)
+                if(student_ffn_reuse && step==r.steps-2) {
+                    const uint64_t extra=uint64_t(32)*uint64_t(r.height/16)*uint64_t(r.width/16)*4096*2;
+                    const uint64_t reserve=uint64_t(8)<<30,physical=device_info().physical_memory;
+                    const auto active=mx::get_active_memory();
+                    require(physical>reserve && extra<=physical-reserve && active<=physical-reserve-extra,
+                        "student FFN cache lacks admitted allocator headroom plus8GiB reserve");
+                }
+                if (reuse_final_ffn || hybrid_reuse_ffn || hybrid_reuse_last16 || student_ffn_reuse)
                     dit.set_ffn_cache_mode(half_reuse_ffn && step == r.steps - 3 ? Transformer::FFNCacheMode::Capture :
                                            half_reuse_ffn && step == r.steps - 2 ? Transformer::FFNCacheMode::ReuseEvenAndCapture :
                                            !half_reuse_ffn && step == r.steps - 2 ? Transformer::FFNCacheMode::Capture :
-                                           step == r.steps - 1 ? (hybrid_reuse_last16 ? Transformer::FFNCacheMode::ReuseLast16 :
+                                           step == r.steps - 1 ? ((hybrid_reuse_last16 || (student_ffn_reuse && student_reuse_layers==16)) ? Transformer::FFNCacheMode::ReuseLast16 :
                                                                   Transformer::FFNCacheMode::Reuse) :
                                            Transformer::FFNCacheMode::Off);
                 auto noise = dit.forward(latents, text, schedule.data<float>()[step], r.height / 16, r.width / 16,
@@ -1180,6 +1194,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
                 mx::eval(latents);
                 require(mx::all(mx::isfinite(latents)).item<bool>(), "nonfinite Qwen21 latent");
+                if(student_ffn_reuse) {
+                    const auto bytes=dit.ffn_cache_logical_bytes();
+                    require(bytes<=(uint64_t(256)<<20),"student FFN cache exceeded logical256MiB bound");
+                    result.student_ffn_peak_logical_bytes=std::max(result.student_ffn_peak_logical_bytes,bytes);
+                    result.student_ffn_captured_blocks+=dit.last_ffn_captured_blocks();
+                    result.student_ffn_reused_blocks+=dit.last_ffn_reused_blocks();
+                }
                 if (profile_steps) {
                     const auto elapsed = seconds(step_started);
                     const auto prediction = hybrid_requested
@@ -1211,6 +1232,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 cached_prefix_runtime_ = prefix_runtime;
                 cached_prefix_sigma_ = first_sigma;
             }
+        }
+        if(student_ffn_reuse) {
+            require(result.student_ffn_captured_blocks==32 && result.student_ffn_reused_blocks==student_reuse_layers,
+                "student FFN reuse did not complete one captured and one reused decode step");
+            dit.clear_step_cache(); // request-owned activation bank released before VAE
         }
         result.db_cache_steps = dit.db_cached_steps();
         result.timings.denoise = seconds(dit_start); result.actual_steps = r.steps;

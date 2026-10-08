@@ -82,8 +82,14 @@ class Transformer {
     // immediately following denoise step. Never enabled by default.
     enum class FFNCacheMode { Off, Capture, Reuse, ReuseLast16, ReuseEvenAndCapture };
     void set_ffn_cache_mode(FFNCacheMode mode) { ffn_cache_mode_ = mode; }
+    int last_ffn_captured_blocks() const { return last_ffn_captured_blocks_; }
+    int last_ffn_reused_blocks() const { return last_ffn_reused_blocks_; }
+    uint64_t ffn_cache_logical_bytes() const {
+        uint64_t bytes=0;for(const auto &value:cached_ffn_)bytes+=value.nbytes();return bytes;
+    }
     void clear_step_cache() {
         cached_ffn_.clear(); ffn_cache_mode_ = FFNCacheMode::Off;
+        last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
         db_prev_front_residual_.reset(); db_middle_residual_.reset();
         db_cached_steps_ = db_consecutive_steps_ = 0; db_step_ = -1;
     }
@@ -117,6 +123,7 @@ class Transformer {
     std::vector<KV> prefix_;
     FFNCacheMode ffn_cache_mode_ = FFNCacheMode::Off;
     std::vector<Tensor> cached_ffn_;
+    int last_ffn_captured_blocks_=0,last_ffn_reused_blocks_=0;
     bool db_cache_enabled_ = false;
     float db_threshold_ = 0.08f;
     int db_max_consecutive_ = 2;

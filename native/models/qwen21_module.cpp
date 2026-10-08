@@ -16,6 +16,24 @@ ModelModule qwen21_module() {
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
+            require(qwen21::student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"))>=0,
+                "Qwen student final FFN reuse requires 0,1,16 or32");
+            if(qwen21::student_final_ffn_reuse(r)) {
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 && r.steps==6 &&
+                    r.loras.size()==1 && r.lora_strategy=="inference_time" && !r.prompt_enhance &&
+                    !r.streaming.active() && !r.memory_constrained.enabled && !r.memory_budget_bytes &&
+                    (r.execution=="gpu" || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+                        ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0)) &&
+                    (r.operation=="image.generate" || (r.operation=="image.edit" && r.qwen21_reference_size==512 &&
+                        !r.inputs.empty() && r.inputs.size()<=2)),
+                    "Qwen student FFN reuse requires approximate resident512 six-step unmerged LoRA GPU/fixed Private runtime and at most two resized512 references");
+                for(const char *name:{"TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN","TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN",
+                        "TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC","TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC","TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC",
+                        "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV","TURBOCIDER_QWEN21_VIGGLE_LORA_FP16",
+                        "TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS","TURBOCIDER_QWEN21_RUNTIME_SPLIT_DOWN_RANKS"})
+                    require(!qwen21::option_enabled(std::getenv(name)),"student FFN reuse excludes another temporal/LoRA arithmetic experiment");
+            }
             const char *encoder_weights=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
             const char *shared_ranks=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
             const char *bf16_ranks=std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS");

@@ -17,6 +17,17 @@ inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
 }
 
+inline int student_ffn_reuse_layers(const char *value) {
+    if(!value || std::string_view(value)=="0")return 0;
+    if(std::string_view(value)=="1" || std::string_view(value)=="32")return 32;
+    if(std::string_view(value)=="16")return 16;
+    return -1;
+}
+inline bool student_final_ffn_reuse(const Request &request) {
+    return request.model=="qwen-image-2.1" && !request.loras.empty() &&
+        student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"))>0;
+}
+
 inline bool lora_base_ane(const Request &request) {
     if (request.hybrid_mlp_mode != "auto")
         return request.hybrid_mlp_mode == "lora_suffix" ||

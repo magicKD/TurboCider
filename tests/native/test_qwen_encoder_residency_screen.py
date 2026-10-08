@@ -29,6 +29,21 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_student_reuse_requires_successful_full_cache_not_marker_only(self):
+        row=dict(acceleration_selection=SCREEN.STUDENT_REUSE_MARKER,lora_strategy="inference_time",lora_applied_projections=227,
+            student_ffn_reuse=dict(enabled=True,captured_blocks_this_request=32,reused_blocks_this_request=32,
+                peak_logical_cache_bytes=256<<20,released_before_vae=True))
+        SCREEN.validate_student_reuse([row],True)
+        half=copy.deepcopy(row);half["student_ffn_reuse"]["reused_blocks_this_request"]=16
+        SCREEN.validate_student_reuse([half],True,16)
+        with self.assertRaises(ValueError):SCREEN.validate_student_reuse([half],True,32)
+        SCREEN.validate_student_reuse([dict(acceleration_selection="GPU",lora_strategy="inference_time",lora_applied_projections=227)],False)
+        for key,value in (("enabled",False),("reused_blocks_this_request",0),("reused_blocks_this_request",True),
+            ("captured_blocks_this_request",31),("peak_logical_cache_bytes",(256<<20)+1),("released_before_vae",False)):
+            bad=copy.deepcopy(row);bad["student_ffn_reuse"][key]=value
+            with self.assertRaises(ValueError):SCREEN.validate_student_reuse([bad],True)
+        with self.assertRaises(ValueError):SCREEN.validate_student_reuse([row],False)
+        with self.assertRaises(ValueError):SCREEN.validate_student_reuse([],True)
     def test_bf16_operand_screen_keeps_original_rank_and_adapter_policy(self):
         row=dict(acceleration_selection=SCREEN.BF16_RANK_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
         SCREEN.validate_bf16_rank_operands([row],True)

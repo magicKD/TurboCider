@@ -307,6 +307,10 @@ struct RunResult {
     bool db_cache_enabled = false;
     float db_cache_threshold = 0.f;
     int db_cache_steps = 0, db_cache_max_consecutive = 0;
+    bool student_ffn_reuse_enabled=false;
+    int student_ffn_requested_layers=0;
+    int student_ffn_captured_blocks=0,student_ffn_reused_blocks=0;
+    uint64_t student_ffn_peak_logical_bytes=0;
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;

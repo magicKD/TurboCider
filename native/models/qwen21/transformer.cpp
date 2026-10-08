@@ -167,6 +167,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     // synchronization/hash of a many-megabyte conditioning tensor each step.
     if (!cache_prefix || !cached_text_ || cached_text_->id() != text.id() || !same_references) reset();
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
+    last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
     require(bool(stage_qkv_) == bool(project_qkv_),
             "Qwen21 QKV stage and projection callbacks must be paired");
@@ -476,8 +477,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             args.push_back(prefix_[i].key);
             args.push_back(prefix_[i].value);
         }
-        if (reuse_ffn_block)
+        if (reuse_ffn_block) {
             args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
+            ++last_ffn_reused_blocks_;
+        }
         // Probe complete blocks from the same materialized upstream inputs,
         // including staging, QKV join, attention and GPU FFN. The GPU probe
         // uses the ordinary fused/lazy block rather than an external QKV ABI.
@@ -585,7 +588,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         cached_text_ = text;
         for (const auto &r : references) cached_references_.push_back(r.latents);
     }
-    if (capture_ffn) mx::eval(cached_ffn_);
+    if (capture_ffn) {
+        mx::eval(cached_ffn_);
+        last_ffn_captured_blocks_=int(cached_ffn_.size());
+    }
     if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
                  reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear(); }
     return result;
