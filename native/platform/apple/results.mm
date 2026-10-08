@@ -109,6 +109,17 @@ static id encoder_weight_dictionary(const RunResult &result) {
         @"decline_reason":@(m.decline_reason.c_str()),@"logical_capacity_upper_bytes":@(uint64_t(20)<<30),
         @"scope":@"admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures"};
 }
+static id shared_lora_rank_dictionary(const RunResult &result) {
+    if (!result.shared_lora_ranks) return NSNull.null;
+    const auto &m = *result.shared_lora_ranks;
+    return @{
+        @"enabled" : @(m.enabled),
+        @"prepared_sets_this_request" : @(m.prepared_sets),
+        @"completed_hybrid_blocks_this_request" : @(m.completed_hybrid_blocks),
+        @"completed_adapter_rank_arrays_this_request" : @(m.completed_adapter_rank_arrays),
+        @"scope" : @"operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+    };
+}
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
         !result.encoder_hybrid->runtime_weight_backend.empty())
@@ -1455,6 +1466,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"public_streaming"] = public_streaming_result(
                 *result.public_streaming);
         attach_streaming_details(copy, result);
+        if (result.shared_lora_ranks)
+            copy[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
         return copy;
     }
     const auto &r = result.request;
@@ -1498,6 +1511,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         } mutableCopy];
         prepared[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
         prepared[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+        if (result.shared_lora_ranks)
+            prepared[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
         if (result.memory_admission)
             prepared[@"memory_admission"] =
                 to_dictionary(*result.memory_admission);
@@ -1561,6 +1576,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
     } mutableCopy];
     value[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
     value[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+    if (result.shared_lora_ranks)
+        value[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
     if (result.gguf_import) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{

@@ -18,6 +18,13 @@ class AffineDenseWindowTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS 12 typed affine dense window cases", result.stdout)
+            for reuses in ("0","17"):
+                result = subprocess.run([str(Path(temporary) / "gpu-weight-consumer-probe"),
+                    "gguf","never-read.gguf","unused", "33","9",reuses], cwd=ROOT,
+                    capture_output=True,text=True,timeout=30)
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn("actual-reuses must be 1..16",result.stderr)
+                self.assertNotIn("cannot open GGUF",result.stderr)
 
 
 if __name__ == "__main__":

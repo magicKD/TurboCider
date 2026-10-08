@@ -1,6 +1,7 @@
 """Numerical parity for the real MLX runtime-LoRA projection slice path."""
 
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ProjectSliceTests(unittest.TestCase):
     def test_fused_gate_up_runtime_lora_slices(self):
         mlx_root = Path(sysconfig.get_paths()["purelib"]) / "mlx"
-        native = ROOT / "build/native"
+        native = (ROOT / os.environ.get("TURBOCIDER_NATIVE_LIBRARY_DIR", "build/native")).resolve()
         self.assertTrue((native / "libturbocider.dylib").is_file(),
                         "build the native library before running the numerical test")
         with tempfile.TemporaryDirectory(prefix="turbocider-project-slice-") as directory:

@@ -22,6 +22,26 @@ ROOT=Path(__file__).resolve().parents[2]
 MODES=("gpu","encoder_local","encoder_retained")
 WEIGHT_MODES=("gpu","gpu_weights","encoder_retained","encoder_weights")
 COMBINED_MODES=("gpu_weights","dit_weights","dit_encoder_weights")
+LORA_RANK_MODES=("ranks_off","ranks_on")
+
+
+def validate_shared_ranks(rows, enabled):
+    """Require completed dual-consumer work, not a selection-label claim."""
+    for row in rows:
+        metrics=row.get("shared_lora_ranks")
+        if not isinstance(metrics,dict) or metrics.get("enabled") is not enabled:
+            raise ValueError("shared rank policy receipt missing/mismatched")
+        keys=("prepared_sets_this_request","completed_hybrid_blocks_this_request",
+              "completed_adapter_rank_arrays_this_request")
+        counts=[metrics.get(key) for key in keys]
+        if any(type(value) is not int or value<0 for value in counts):
+            raise ValueError("invalid shared rank execution counters")
+        prepared,completed,arrays=counts
+        if enabled:
+            if not 0<completed<=prepared or arrays<completed:
+                raise ValueError("shared ranks were not consumed by successful hybrid blocks")
+        elif any(counts):
+            raise ValueError("disabled rank-sharing arm executed shared work")
 
 
 def model_snapshot(model):
@@ -121,6 +141,10 @@ def main():
     parser.add_argument("--model",type=Path,required=True)
     parser.add_argument("--manifest",type=Path,required=True)
     parser.add_argument("--dit-manifest",type=Path,help="explicit combined Private DiT/encoder screen; same source retention on every route")
+    parser.add_argument("--lora-ranks-screen",action="store_true",
+        help="same-library shared rank off/on; identical DiT share and retained encoder sources, GPU encoder on both arms")
+    parser.add_argument("--lora-ranks-gpu-control",action="store_true",
+        help="also include the same-library complete GPU baseline in a shared ranks screen")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
@@ -135,7 +159,10 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--timeout",type=int,default=900)
     args=parser.parse_args()
-    modes=COMBINED_MODES if args.dit_manifest else WEIGHT_MODES if args.weights else MODES
+    modes=LORA_RANK_MODES if args.lora_ranks_screen else COMBINED_MODES if args.dit_manifest else WEIGHT_MODES if args.weights else MODES
+    if args.lora_ranks_gpu_control:
+        if not args.lora_ranks_screen:parser.error("GPU rank control requires --lora-ranks-screen")
+        modes=("gpu_weights",*LORA_RANK_MODES)
     order=args.order.split(",") if args.order else list(modes)
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
     if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
@@ -146,6 +173,8 @@ def main():
     if not (0<=args.global_channels<12288 and args.global_channels%512==0):parser.error("invalid global channel share")
     if args.backend=="public" and args.channels!=0:parser.error("Public uses its row ABI, channels=0")
     if args.dit_manifest and args.backend!="private":parser.error("combined screen requires explicit Private backend")
+    if args.lora_ranks_screen and (not args.dit_manifest or not args.lora or args.global_channels==0):
+        parser.error("shared ranks screen requires real LoRA and a fixed partial Private DiT channel share")
     if args.output.exists() or args.output.is_symlink():parser.error("choose a new output directory")
     cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
     if not library.is_file() or not os.access(cli,os.X_OK):parser.error("CLI and adjacent native library required")
@@ -160,16 +189,20 @@ def main():
         status="incomplete",qualification_passed=False,order=order,prompts=args.prompt,source_identities=before,
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
-    summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,combined_dit_encoder=bool(dit_manifest))
+    summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
+        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen,lora_ranks_screen=args.lora_ranks_screen)
+    summary["lora_ranks_gpu_control"]=args.lora_ranks_gpu_control
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights"):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
         uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
-        uses_dit=mode in ("dit_weights","dit_encoder_weights")
+        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES)
+        if mode in LORA_RANK_MODES:
+            env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1" if mode=="ranks_on" else "0"
         if uses_encoder or uses_dit:
             env.update(TURBOCIDER_ANE_BACKEND=args.backend,TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
                 TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_QWEN21_ENCODER_ANE_CHANNELS=str(args.channels),
@@ -196,7 +229,9 @@ def main():
                 if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_rows(rows,mode,len(args.prompt),args.backend=="private",args.channels,args.global_channels)
+        validate_rows(rows,"dit_weights" if mode in LORA_RANK_MODES else mode,
+            len(args.prompt),args.backend=="private",args.channels,args.global_channels)
+        if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
         times=[row["timings_seconds"]["request_wall"] for row in rows]

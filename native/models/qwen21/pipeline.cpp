@@ -140,6 +140,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    const char *share_rank_flag=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
+    require(binary_option_or_unset(share_rank_flag),"Qwen shared LoRA ranks require 0 or 1");
+    const bool share_lora_ranks=option_enabled(share_rank_flag) && runtime_requested && !r.loras.empty();
     const bool qkv_requested = r.hybrid_mlp_mode == "runtime_qkv";
     const bool hybrid_requested = r.execution == "gpu_ane" && !runtime_requested && !qkv_requested;
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
@@ -859,6 +862,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             "; explicit encoder runtime attempted; no model ANE call; complete GPU language FFN";
     if(retain_encoder_runtime)result.selection+="; explicit bounded encoder executor retention";
     if(retain_encoder_weights)result.selection+="; explicit admitted encoder source retention; no weight copy/precision change";
+    if(share_lora_ranks)result.selection+="; experimental operation-local shared gate/up LoRA input ranks";
+    if (runtime_requested && !r.loras.empty())
+        result.shared_lora_ranks = SharedLoraRankMetrics{share_lora_ranks};
     if (lora_fp16 && !r.loras.empty())
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
     if (lora_1024_generation(r))
@@ -948,6 +954,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::vector<RuntimeFunction> runtime_lora_gpu, runtime_lora_gate_up, runtime_lora_down_add;
             std::vector<RuntimeFunction> runtime_lora_gate_up_channels;
             std::vector<RuntimeFunction> runtime_lora_channel_gpu;
+            std::vector<RuntimeFunction> runtime_lora_input_ranks;
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
@@ -964,12 +971,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         runtime_lora_gate_up.push_back(runtime_ffn::corrections(transformer_,p,0,12288));
                         if (runtime_ffn_->channel_split()) {
                             const int first=runtime_ffn_->gpu_channels(),count=runtime_ffn_->ane_channels();
-                            runtime_lora_gate_up_channels.push_back(runtime_ffn::corrections(transformer_,p,first,count));
+                            const bool block_shared=share_lora_ranks && transformer_.lora_rank_count(p+"gate_up")>0;
+                            runtime_lora_gate_up_channels.push_back(block_shared ?
+                                runtime_ffn::corrections_shared_ranks(transformer_,p,first,count) : runtime_ffn::corrections(transformer_,p,first,count));
                             // Same checkpoint-only down and per-projection
                             // FP32 rank/BF16 rounding as the existing callback.
                             // Request-local captures cannot outlive/reuse a
                             // differently rebound adapter or channel share.
-                            runtime_lora_channel_gpu.push_back(runtime_ffn::channels(transformer_,p,0,first,4096,12288,runtime_ffn_->fp32_channel_join()));
+                            runtime_lora_channel_gpu.push_back(runtime_ffn::channels(transformer_,p,0,first,4096,12288,runtime_ffn_->fp32_channel_join(),block_shared));
+                            runtime_lora_input_ranks.push_back(block_shared ? runtime_ffn::input_ranks(transformer_,p) : RuntimeFunction{});
                         }
                         runtime_lora_down_add.push_back(runtime_ffn::down_add(transformer_,p));
                     }
@@ -992,6 +1002,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 });
                 auto run_ffn = [&](int block, const Tensor &input) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+                    std::vector<Tensor> shared_inputs{input};
+                    const bool block_shared=share_lora_ranks && runtime_ffn_->channel_split() && bool(runtime_lora_input_ranks.at(block));
+                    if(block_shared) {
+                        const auto ranks=runtime_lora_input_ranks.at(block)({input});
+                        shared_inputs.insert(shared_inputs.end(),ranks.begin(),ranks.end());
+                        ++result.shared_lora_ranks->prepared_sets;
+                    }
+                    bool shared_correction = false, shared_gpu = false, used_fallback = false;
                     ane::HybridFfn::Adapter adapter{
                         [&](const Tensor &x) {
                             auto gu = runtime_lora_gate_up.at(block)({x});
@@ -1003,10 +1021,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         [&](const Tensor &x, int first, int count) {
                             require(first==runtime_ffn_->gpu_channels() && count==runtime_ffn_->ane_channels(),
                                     "Qwen channel LoRA correction range changed within request");
-                            auto gu=runtime_lora_gate_up_channels.at(block)({x});
+                            auto gu=runtime_lora_gate_up_channels.at(block)(block_shared ? shared_inputs : std::vector<Tensor>{x});
+                            shared_correction = block_shared;
                             return std::make_pair(gu[0],gu[1]);
                         }};
-                    return runtime_ffn_->run(block, input, [&](const Tensor &x) {
+                    auto output = runtime_ffn_->run(block, input, [&](const Tensor &x) {
+                        used_fallback = true;
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
                         return runtime_gpu({x, transformer_.at(p + "gate_up.weight"),
                                               transformer_.at(p + "out.weight")})[0];
@@ -1015,7 +1035,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         if (transformer_.has_runtime_loras()) {
                             require(first==0 && count==runtime_ffn_->gpu_channels(),
                                     "Qwen GPU channel LoRA range changed within request");
-                            auto result=runtime_lora_channel_gpu.at(block)({x});
+                            auto result=runtime_lora_channel_gpu.at(block)(block_shared ? shared_inputs : std::vector<Tensor>{x});
+                            shared_gpu = block_shared;
                             return std::make_pair(result[0],result[1]);
                         }
                         auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
@@ -1029,6 +1050,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         if(next<32)for(const auto &weight:runtime_weights.at(next))sources.push_back({weight,std::nullopt,std::nullopt});
                         return sources;
                     });
+                    if (shared_correction && shared_gpu && !used_fallback) {
+                        ++result.shared_lora_ranks->completed_hybrid_blocks;
+                        result.shared_lora_ranks->completed_adapter_rank_arrays += shared_inputs.size()-1;
+                    }
+                    return output;
                 };
                 dit.set_prefill_mlp(run_ffn);
                 dit.set_decode_mlp(run_ffn);

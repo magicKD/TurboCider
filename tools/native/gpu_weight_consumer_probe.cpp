@@ -251,21 +251,135 @@ void benchmark(const Packed &packed, int bits, int rows, int iterations, bool co
         << ",\"output_relative_l2\":" << rel << ",\"output_max_abs\":" << abs
         << ",\"excludes\":[\"source-read/packing\",\"input-rotation\",\"full-model/LoRA/quality\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
 }
+
+// Measure the whole decode + R actual consumers, rather than inferring it
+// from separately measured medians. Every consumer gets a different prepared
+// activation; one immutable weight generation is reused only within a trial.
+// This is NOT a claim that a one/two-matrix LRU survives a full DiT traversal.
+void benchmark_reuse(const Packed &packed, int bits, int rows, int iterations,
+                     int reuses, bool convrot, const std::string &source_hash) {
+    const int n = packed[0].shape(0), k = packed[1].shape(1)*32;
+    const auto dtype = packed[1].dtype();
+    require(uint64_t(rows)*k*2*reuses <= uint64_t(256)<<20,
+            "prepared activation set exceeds 256MiB component limit");
+    std::vector<Tensor> inputs;
+    for (int i = 0; i < reuses; ++i) {
+        auto x = mx::astype(mx::reshape(mx::sin(mx::arange(rows*k,mx::float32)*.017f +
+            Tensor(float(i)*.123f)), {1,rows,k}), dtype);
+        if (convrot) x = convrot_kernel::rotate(x,convrot_kernel::Rotation::Shared);
+        inputs.push_back(x);
+    }
+    mx::eval(inputs);
+    mx::eval({packed[0],packed[1],packed[2]});
+    const uint64_t bytes = uint64_t(n)*k*2, upper = streaming::gguf_storage::capacity_upper(bytes);
+    MemoryLedger ledger(upper);
+    AffineDenseWindow window(ledger,upper,1);
+    uint64_t generation = 1;
+    bool exact = true;
+    float maximum_relative_l2 = 0;
+    for (const auto &input : inputs) {
+        auto dense = window.prepare(packed,bits,32,source_hash,generation);
+        auto a = mx::quantized_matmul(input,packed[0],packed[1],packed[2],true,32,bits,"affine");
+        auto b = mx::matmul(input,mx::transpose(dense));
+        mx::eval({a,b});
+        require(mx::all(mx::isfinite(a)).item<bool>() && mx::all(mx::isfinite(b)).item<bool>(),
+                "nonfinite complete reuse window output");
+        exact = exact && same_bits(a,b);
+        auto af = mx::astype(a,mx::float32), bf = mx::astype(b,mx::float32);
+        const float error = mx::sqrt(mx::sum(mx::square(af-bf)) /
+            mx::maximum(mx::sum(mx::square(af)),Tensor(1e-20f))).item<float>();
+        maximum_relative_l2 = std::max(maximum_relative_l2,error);
+    }
+    window.clear();
+    mx::synchronize();
+    require(!ledger.snapshot().storage_bytes,"parity reader escaped before complete-window timing");
+
+    struct Sample { double ms; uint64_t hits, misses, decoded_bytes; };
+    auto run = [&](bool predecoded) {
+        window.clear();
+        mx::synchronize();
+        require(!ledger.snapshot().storage_bytes,"previous reuse trial retained an escaped reader");
+        ++generation;
+        const auto before = window.stats();
+        const auto start = Clock::now();
+        for (const auto &input : inputs) {
+            if (predecoded) {
+                auto dense = window.prepare(packed,bits,32,source_hash,generation);
+                auto y = mx::matmul(input,mx::transpose(dense));
+                mx::eval(y);
+            } else {
+                auto y = mx::quantized_matmul(input,packed[0],packed[1],packed[2],true,32,bits,"affine");
+                mx::eval(y);
+            }
+        }
+        const double ms = elapsed(start);
+        const auto &after = window.stats();
+        Sample sample{ms,after.hits-before.hits,after.misses-before.misses,
+                      after.decoded_bytes-before.decoded_bytes};
+        require(sample.hits == (predecoded ? uint64_t(reuses-1) : 0) &&
+                    sample.misses == uint64_t(predecoded) &&
+                    sample.decoded_bytes == (predecoded ? bytes : 0),
+                "reuse trial did not follow one-decode/R-consumer policy");
+        return sample;
+    };
+    for (int i = 0; i < 3; ++i) { run(false); run(true); }
+    std::vector<Sample> dense_samples;
+    std::vector<double> packed_ms, dense_ms;
+    for (int i = 0; i < iterations; ++i) {
+        if (i & 1) {
+            auto s = run(true); dense_samples.push_back(s); dense_ms.push_back(s.ms);
+            packed_ms.push_back(run(false).ms);
+        } else {
+            packed_ms.push_back(run(false).ms);
+            auto s = run(true); dense_samples.push_back(s); dense_ms.push_back(s.ms);
+        }
+    }
+    window.clear();
+    mx::synchronize();
+    require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,
+            "complete reuse screen leaked dense claim");
+    std::cout << std::setprecision(12) << "{\"schema\":\"tc-real-weight-reuse-window-v1\","
+        "\"scope\":\"serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification\","
+        "\"basis\":\"" << (convrot ? "Comfy-H256-rotated-legacy-BF16-scale" : "GGUF-native-affine-FP16")
+        << "\",\"source_payload_or_codes_sha256\":\"" << source_hash
+        << "\",\"stored_scales_sha256\":\"" << sha256(packed[1].data<void>(),packed[1].nbytes())
+        << "\",\"bits\":" << bits << ",\"M\":" << rows << ",\"N\":" << n << ",\"K\":" << k
+        << ",\"actual_consumers_per_trial\":" << reuses << ",\"dense_bytes\":" << bytes
+        << ",\"dense_capacity_upper_bytes\":" << upper << ",\"prepared_input_bytes\":" << uint64_t(rows)*k*2*reuses
+        << ",\"warmups_per_arm\":3,\"cleared_every_trial\":true,\"packed_samples_ms\":";
+    samples(packed_ms); std::cout << ",\"decode_plus_reuse_samples_ms\":"; samples(dense_ms);
+    std::cout << ",\"dense_trial_counters\":[";
+    for (size_t i = 0; i < dense_samples.size(); ++i) {
+        const auto &s = dense_samples[i];
+        std::cout << (i ? "," : "") << "{\"hits\":" << s.hits << ",\"misses\":" << s.misses
+            << ",\"decoded_bytes\":" << s.decoded_bytes << '}';
+    }
+    std::cout << "],\"packed_median_ms\":" << median(packed_ms)
+        << ",\"decode_plus_reuse_median_ms\":" << median(dense_ms)
+        << ",\"all_inputs_output_bit_exact\":" << (exact ? "true" : "false")
+        << ",\"maximum_output_relative_l2\":" << maximum_relative_l2
+        << ",\"dense_claim_bytes_after_cleanup\":" << ledger.snapshot().storage_bytes
+        << ",\"qualification_passed\":false,\"excludes\":[\"source-read/packing\",\"input-rotation\","
+        "\"full-layer-traversal/LoRA/media\",\"whole-process-memory\",\"asynchronous-prefetch\",\"ANE\"]}\n";
+}
 } // namespace
 int main(int argc, char **argv) {
     try {
         configure_streams();
         mx::set_cache_limit(256ull << 20);
         if (argc == 1) { self_test(); return 0; }
-        require(argc == 6 && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot"),
-                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations]");
+        require((argc == 6 || argc == 7) && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot"),
+                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]]");
         const int rows = std::stoi(argv[4]), iterations = std::stoi(argv[5]);
+        const int reuses = argc == 7 ? std::stoi(argv[6]) : 0;
         require(rows >= 1 && rows <= 4224 && iterations >= 9 && iterations <= 99 && iterations % 2,
                 "component requires M=1..4224, odd iterations=9..99");
+        require(argc != 7 || (reuses >= 1 && reuses <= 16),"actual-reuses must be 1..16");
         int bits = 8;
         std::string hash;
         const bool convrot = std::string(argv[1]) == "convrot";
         auto source = convrot ? load_convrot(argv[2], argv[3], hash) : load_gguf(argv[2], argv[3], bits, hash);
-        benchmark(source, bits, rows, iterations, convrot, hash);
+        if (reuses) benchmark_reuse(source,bits,rows,iterations,reuses,convrot,hash);
+        else benchmark(source, bits, rows, iterations, convrot, hash);
     } catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
 }

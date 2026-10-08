@@ -2,6 +2,7 @@ import copy
 import importlib.util
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 
@@ -28,6 +29,37 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_rank_screen_argument_errors_precede_fixture_or_output_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/"never-created"
+            base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_encoder_residency_screen.py"),
+                "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
+                "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
+            for flags in (["--lora-ranks-gpu-control"],["--lora-ranks-screen"],
+                ["--lora-ranks-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"]):
+                result=subprocess.run([*base,*flags],capture_output=True,text=True,timeout=10)
+                with self.subTest(flags=flags):
+                    self.assertEqual(result.returncode,2,result.stdout+result.stderr)
+                    self.assertNotIn("Traceback",result.stderr)
+                    self.assertFalse(output.exists())
+
+    def test_shared_ranks_requires_real_completed_dual_consumer_work(self):
+        metrics=dict(enabled=True,prepared_sets_this_request=192,
+            completed_hybrid_blocks_this_request=192,completed_adapter_rank_arrays_this_request=384)
+        SCREEN.validate_shared_ranks([dict(shared_lora_ranks=metrics)],True)
+        for field,value in (("enabled",False),("prepared_sets_this_request",True),
+                            ("completed_hybrid_blocks_this_request",0),
+                            ("completed_hybrid_blocks_this_request",193),
+                            ("completed_adapter_rank_arrays_this_request",191)):
+            invalid=dict(metrics);invalid[field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):
+                SCREEN.validate_shared_ranks([dict(shared_lora_ranks=invalid)],True)
+        off=dict.fromkeys(tuple(metrics)[1:],0);off["enabled"]=False
+        SCREEN.validate_shared_ranks([dict(shared_lora_ranks=off)],False)
+        off["prepared_sets_this_request"]=1
+        with self.assertRaises(ValueError):SCREEN.validate_shared_ranks([dict(shared_lora_ranks=off)],False)
+        with self.assertRaises(ValueError):SCREEN.validate_shared_ranks([{}],True)
+
     def test_model_snapshot_is_bounded_and_generation_bound(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

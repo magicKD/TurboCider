@@ -17,6 +17,12 @@ ModelModule qwen21_module() {
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
             const char *encoder_weights=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
+            const char *shared_ranks=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
+            require(qwen21::binary_option_or_unset(shared_ranks),"Qwen shared LoRA ranks require 0 or 1");
+            if(qwen21::option_enabled(shared_ranks) && r.hybrid_mlp_mode=="runtime" && !r.loras.empty())
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 &&
+                    ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0,
+                    "Qwen shared LoRA ranks require explicit resident 512px Private fixed-channel runtime");
             require(qwen21::binary_option_or_unset(encoder_weights),"Qwen encoder weight retention requires 0 or 1");
             if(qwen21::option_enabled(encoder_weights))
                 require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&

@@ -31,6 +31,10 @@ class Weights {
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
     bool metal_convrot_ = false;
     bool runtime_lora_fp16_ = false;
+    Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
+                                  const std::vector<Tensor> *) const;
+    Tensor lora_delta_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,
+                                     std::optional<mx::Dtype>,const std::vector<Tensor> *) const;
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
@@ -108,6 +112,16 @@ class Weights {
     Tensor lora_delta_slice(const Tensor &, const std::string &, int row_start,
                             int row_end, int col_start, int col_end,
                             std::optional<mx::Dtype> output_dtype = std::nullopt) const;
+    // Request/operation-local ranks over the SAME bound adapter generation.
+    // Do not retain across adapter rebinds or input/column-range changes.
+    std::vector<Tensor> lora_input_ranks(const Tensor &,const std::string &,int col_start,int col_end) const;
+    size_t lora_rank_count(const std::string &prefix) const {
+        auto found=runtime_loras_.find(prefix);return found==runtime_loras_.end()?0:found->second.size();
+    }
+    Tensor project_slice_with_ranks(const Tensor &,const std::string &,const std::vector<Tensor> &,
+        int row_start,int row_end,int col_start,int col_end,bool add_bias=false) const;
+    Tensor lora_delta_slice_with_ranks(const Tensor &,const std::string &,const std::vector<Tensor> &,
+        int row_start,int row_end,int col_start,int col_end,std::optional<mx::Dtype> output_dtype=std::nullopt) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
     Tensor project_range_fp32(const Tensor &, const std::string &, int row_start, int row_end,

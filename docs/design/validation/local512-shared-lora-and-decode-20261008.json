@@ -1,0 +1,1557 @@
+{
+  "schema": "tc-local512-shared-lora-and-decode-v1",
+  "time_utc": "2026-10-08T00:26:29.186916+00:00",
+  "date_local": "2026-10-08",
+  "timezone": "Asia/Singapore",
+  "hardware": "M4 Max 64GB / macOS26.6.2",
+  "overall_goal_status": "active; whole-model optimized GPU profitability and broader quality matrix not complete",
+  "qualification_passed": false,
+  "new_defaults_enabled": false,
+  "models_downloaded": false,
+  "model_files_modified": false,
+  "scope": "local component and native fresh-condition request diagnostics; not physical-engine trace or production qualification",
+  "builds": {
+    "private": {
+      "directory": "build/local512-lora-ranks-v3-private",
+      "library_sha256": "915a2abdd852783168e6825f69be7e25487c9bff4740ded96302d3fb736b746c",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "8a4096bf80217c90d8442abce1d9c0f488a401add70a5517d93eb55c60a67e8b",
+      "runtime_build_id": "tc-runtime-build-v1-2f773f4208ccfe4fad473c5af4e3461c24cba7fe3b71d2d07bce45c000ffd135",
+      "source_inputs": 489,
+      "source_input_mismatches": [],
+      "working_tree_snapshot_includes_preexisting_convrot_drafts": true,
+      "selected_regression_count": 21,
+      "selected_regression_skips": 0,
+      "regression_log": "outputs/local512-lora-ranks-v3-private-final-regression-20261008.log"
+    },
+    "public": {
+      "directory": "build/local512-lora-ranks-v3-public",
+      "library_sha256": "3c740cb2f1bf35726dcf858cdeffcf0796d1b323a7e27030b4837716db91f086",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "3b30da3b6dfe96928f9737de0a53414d681049ef876c528566162734f180bb40",
+      "runtime_build_id": "tc-runtime-build-v1-82450de3d912d652f979c349b35293ac97c2a82b8b03f0e527db8fcbe2736d31",
+      "source_inputs": 489,
+      "source_input_mismatches": [],
+      "working_tree_snapshot_includes_preexisting_convrot_drafts": true,
+      "selected_regression_count": 18,
+      "selected_regression_skips": 0,
+      "regression_log": "outputs/local512-lora-ranks-v3-public-regression-20261008.log",
+      "actual_release_binary_guard_passed": true
+    }
+  },
+  "rank_screens": [
+    {
+      "directory": "outputs/local512-qwen-edit2-lora-ranks-v3-diagnostic-forward-20261008",
+      "summary_sha256": "d0cb96fd0ebce29fc35d1fa47ff3fda0e268930a8361d0ceab2fee8c73149761",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "order": [
+        "ranks_off",
+        "ranks_on"
+      ],
+      "trials": [
+        {
+          "mode": "ranks_off",
+          "cold_request_seconds": 18.446990708,
+          "warm_fresh_request_seconds": [
+            15.080673791,
+            14.509400292
+          ],
+          "warm_fresh_median_seconds": 14.7950370415,
+          "denoise_seconds": [
+            11.19798925,
+            11.72877225,
+            11.730066542
+          ],
+          "text_seconds": [
+            3.129196167,
+            1.722612125,
+            1.16630275
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "shared_rank_counters": [
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            }
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "5cd4119072c07131373c08ed9190aeee5f633d258730c04eee2f3a14596116d5",
+          "memory": {
+            "complete": true,
+            "sample_count": 485,
+            "max_gap_ns": 109813833,
+            "tree_peak_phys_footprint_bytes": 39155969504,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "76ba60279cc5e3312cc88f098442968aa33b324cf058cb8b4a6d655edc7ee8b2",
+          "load_qualification_requested": false
+        },
+        {
+          "mode": "ranks_on",
+          "cold_request_seconds": 18.360290542,
+          "warm_fresh_request_seconds": [
+            14.699466375,
+            14.080653875
+          ],
+          "warm_fresh_median_seconds": 14.390060125,
+          "denoise_seconds": [
+            11.095668042,
+            11.407389416,
+            11.348591041
+          ],
+          "text_seconds": [
+            3.156231167,
+            1.688704917,
+            1.149211459
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "shared_rank_counters": [
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            }
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "e778871cb0f83be69effcfafe907f77f09a01ce51576c52520ced0c2e5936226",
+          "memory": {
+            "complete": true,
+            "sample_count": 476,
+            "max_gap_ns": 109966625,
+            "tree_peak_phys_footprint_bytes": 38886009952,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "6d13c5aa87f9080c5283eb1f28d2917636f050e05166cd03d110e0fefeeacb63",
+          "load_qualification_requested": false
+        }
+      ]
+    },
+    {
+      "directory": "outputs/local512-qwen-edit2-lora-ranks-v3-diagnostic-reverse-20261008",
+      "summary_sha256": "ebc8b900f27f0750f30f37e012b98a875796e6401f689ea9ae7dfa2db6ca20c0",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "order": [
+        "ranks_on",
+        "ranks_off"
+      ],
+      "trials": [
+        {
+          "mode": "ranks_on",
+          "cold_request_seconds": 18.495288792,
+          "warm_fresh_request_seconds": [
+            14.621265834,
+            14.149951083
+          ],
+          "warm_fresh_median_seconds": 14.3856084585,
+          "denoise_seconds": [
+            11.200297167,
+            11.310780166,
+            11.380068875
+          ],
+          "text_seconds": [
+            3.178371125,
+            1.689516834,
+            1.157144625
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "shared_rank_counters": [
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            }
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "f1a85c845d0c94aaaee57293eacd6d217748bf82b4e1e7d5ffe6d69aed9eb8c3",
+          "memory": {
+            "complete": true,
+            "sample_count": 477,
+            "max_gap_ns": 109957958,
+            "tree_peak_phys_footprint_bytes": 38885535152,
+            "swap_in_bytes": 65536,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "0d828dd171320c73db223d3f3276790e4c24ddfad978ae7af5ca5eb6707b21f5",
+          "load_qualification_requested": false
+        },
+        {
+          "mode": "ranks_off",
+          "cold_request_seconds": 18.556607375,
+          "warm_fresh_request_seconds": [
+            15.018356,
+            14.150225959
+          ],
+          "warm_fresh_median_seconds": 14.5842909795,
+          "denoise_seconds": [
+            11.258714541,
+            11.682192041,
+            11.398360292
+          ],
+          "text_seconds": [
+            3.165222292,
+            1.711725208,
+            1.159429541
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "shared_rank_counters": [
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            }
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "f4fcc445944a4e1fd9e6097170bd8b22522372e4fd2c88a663fd8678ab56a75f",
+          "memory": {
+            "complete": true,
+            "sample_count": 482,
+            "max_gap_ns": 109990834,
+            "tree_peak_phys_footprint_bytes": 39155330648,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "51ac8a03c2a38cd5a795c595d27e432d7aa5c62d936e1c830f10e3a380863654",
+          "load_qualification_requested": false
+        }
+      ]
+    },
+    {
+      "directory": "outputs/local512-qwen-edit1-lora-ranks-v3-gpu-control-20261008",
+      "summary_sha256": "4548fabc742c8d5f113852657c6d1c5d27736e03401fe5d9d3e8b53f9ffa981f",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "order": [
+        "ranks_on",
+        "ranks_off",
+        "gpu_weights"
+      ],
+      "trials": [
+        {
+          "mode": "ranks_on",
+          "cold_request_seconds": 16.14915825,
+          "warm_fresh_request_seconds": [
+            12.304930625,
+            11.620260708
+          ],
+          "warm_fresh_median_seconds": 11.9625956665,
+          "denoise_seconds": [
+            9.286239375,
+            9.571368833,
+            9.544659708
+          ],
+          "text_seconds": [
+            2.967461417,
+            1.357350625,
+            0.660737125
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "shared_rank_counters": [
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 384,
+              "completed_hybrid_blocks_this_request": 192,
+              "enabled": true,
+              "prepared_sets_this_request": 192
+            }
+          ],
+          "png_sha256": [
+            "4e2f5cf7c3e37536e195fff371fb94881ff902236e8dfc0b49e30bcc690475b8",
+            "bb139b4eb5409890a9e9d3fbf586017d814ff4ce7146265b6726dc78e5a48151",
+            "3c967a6b6e4da168663746183d3dc11e4df28418d9b2a969a4ddca4d49718b2d"
+          ],
+          "stdout_sha256": "cf928910134db0c4c252cf86130db50f046e71fac7aed000e9d52d21d4c228e5",
+          "memory": {
+            "complete": true,
+            "sample_count": 405,
+            "max_gap_ns": 109836959,
+            "tree_peak_phys_footprint_bytes": 38298201088,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "50771bf0a13be381e8bf43ccbfcc19919b1447d930fac8c863ca92f6776ecf09",
+          "load_qualification_requested": false
+        },
+        {
+          "mode": "ranks_off",
+          "cold_request_seconds": 16.306966375,
+          "warm_fresh_request_seconds": [
+            12.339540791,
+            11.686007583
+          ],
+          "warm_fresh_median_seconds": 12.012774187,
+          "denoise_seconds": [
+            9.4567705,
+            9.556041042,
+            9.629581667
+          ],
+          "text_seconds": [
+            3.00116475,
+            1.379683875,
+            0.656537875
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "shared_rank_counters": [
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            },
+            {
+              "completed_adapter_rank_arrays_this_request": 0,
+              "completed_hybrid_blocks_this_request": 0,
+              "enabled": false,
+              "prepared_sets_this_request": 0
+            }
+          ],
+          "png_sha256": [
+            "4e2f5cf7c3e37536e195fff371fb94881ff902236e8dfc0b49e30bcc690475b8",
+            "bb139b4eb5409890a9e9d3fbf586017d814ff4ce7146265b6726dc78e5a48151",
+            "3c967a6b6e4da168663746183d3dc11e4df28418d9b2a969a4ddca4d49718b2d"
+          ],
+          "stdout_sha256": "023e4fdfcfb40d0791845e577d75f6a667ee7d2f6bf7eca196841200e78635f4",
+          "memory": {
+            "complete": true,
+            "sample_count": 408,
+            "max_gap_ns": 110014250,
+            "tree_peak_phys_footprint_bytes": 38581939560,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "6e232a7b1ff03673dc81a44585ebb0dd74bd1853936c3dc0df0983e2f60689bf",
+          "load_qualification_requested": false
+        },
+        {
+          "mode": "gpu_weights",
+          "cold_request_seconds": 15.838547167,
+          "warm_fresh_request_seconds": [
+            11.332419416,
+            10.594730625
+          ],
+          "warm_fresh_median_seconds": 10.9635750205,
+          "denoise_seconds": [
+            9.011911375,
+            9.008557625,
+            9.036989666
+          ],
+          "text_seconds": [
+            3.006007042,
+            1.4406085,
+            0.677205666
+          ],
+          "actual_steps": [
+            6,
+            6,
+            6
+          ],
+          "lora_applied_projections": [
+            227,
+            227,
+            227
+          ],
+          "condition_cache_hits": [
+            false,
+            false,
+            false
+          ],
+          "encoder_source_loads_session_total": [
+            1,
+            1,
+            1
+          ],
+          "ane_calls_session_total": [
+            null,
+            null,
+            null
+          ],
+          "shared_rank_counters": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "11801263ca6ef0bf8402bfe1121169726ecebeeba4989c9366a84cb9148d1179",
+            "9d8cde134b05849e76aa76b2cc69c8c8a360da010d832b7496d35833c24ba1d0",
+            "15f83afd561844b662f414d99b9eee01bf6c7d4882ee1eda06d40659a125a6c7"
+          ],
+          "stdout_sha256": "afc1199ec281978ba77028ea9636d988f0a620aa23f4f25613021e98390185fc",
+          "memory": {
+            "complete": true,
+            "sample_count": 382,
+            "max_gap_ns": 110021041,
+            "tree_peak_phys_footprint_bytes": 40175512144,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "0b1819b8c65a46a92d92edc99f5a5bbfa28b3160ff6366f5964d5cec2c1b4f14",
+          "load_qualification_requested": false
+        }
+      ]
+    }
+  ],
+  "rejected_load_window": {
+    "directory": "outputs/local512-qwen-edit2-lora-ranks-v3-forward-20261008",
+    "summary_sha256": "dda971cae6a047be3f6f8092a14becb5900f24fb6e98e03738c3d08b0552fa02",
+    "status": "incomplete",
+    "accepted_comparison_trials": 0,
+    "completed_off_requests": 3,
+    "on_started": false,
+    "load_samples": 83,
+    "busy_samples": 3,
+    "reason": "external inference CPU load; original gate preserved and external processes not signalled",
+    "log": "outputs/local512-qwen-edit2-lora-ranks-v3-forward-20261008.log"
+  },
+  "gpu_down_kernel": {
+    "evidence": "outputs/local512-qwen-down-kernel-v3-component-20261008.json",
+    "evidence_sha256": "fae135eb5843f3c1a789f90761bae0862661aa2f0b176781c2e878422230e57c",
+    "binary_sha256": "02ac1b0a3f4b98636324b8065e894ad584102cf5f654229a00b1e6427d7d53fc",
+    "adjacent_library_sha256": null,
+    "absolute_rpath_library": "build/local512-encoder-source-v4-private/libturbocider.dylib",
+    "rpath_library_sha256": "eea37c749bf612ba37ea34ab8e60c2b5b54736ea66b7759800af4e14bb5cb610",
+    "library_identity_scope": "separate-folder probe; observed absolute rpath and retained library digest, not a loaded-image trace",
+    "matrix_cases": 9,
+    "recipe_cases": 72,
+    "maximum_relative_l2": 0,
+    "warmups_per_recipe": 3,
+    "samples_per_recipe": 9,
+    "default_tile_changed": false,
+    "independent_small_geometry_regression_cases": 144,
+    "invalid_configurations_rejected": 16,
+    "selected_k7168": [
+      {
+        "rows": 1024,
+        "recipes": [
+          {
+            "bm": 32,
+            "bn": 128,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.281833
+          },
+          {
+            "bm": 16,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.321125
+          },
+          {
+            "bm": 32,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.29725
+          },
+          {
+            "bm": 64,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.295792
+          },
+          {
+            "bm": 64,
+            "bn": 128,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.772625
+          },
+          {
+            "bm": 32,
+            "bn": 128,
+            "static_requested": true,
+            "static_selected": true,
+            "median_ms": 4.277042
+          },
+          {
+            "bm": 64,
+            "bn": 64,
+            "static_requested": true,
+            "static_selected": true,
+            "median_ms": 4.285749999999999
+          },
+          {
+            "bm": 64,
+            "bn": 128,
+            "static_requested": true,
+            "static_selected": true,
+            "median_ms": 4.773084000000001
+          }
+        ]
+      },
+      {
+        "rows": 1056,
+        "recipes": [
+          {
+            "bm": 32,
+            "bn": 128,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.434208
+          },
+          {
+            "bm": 16,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.442083
+          },
+          {
+            "bm": 32,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.382083
+          },
+          {
+            "bm": 64,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 4.625375
+          },
+          {
+            "bm": 64,
+            "bn": 128,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 5.257667
+          },
+          {
+            "bm": 32,
+            "bn": 128,
+            "static_requested": true,
+            "static_selected": true,
+            "median_ms": 4.436125
+          },
+          {
+            "bm": 64,
+            "bn": 64,
+            "static_requested": true,
+            "static_selected": false,
+            "median_ms": 4.630583
+          },
+          {
+            "bm": 64,
+            "bn": 128,
+            "static_requested": true,
+            "static_selected": false,
+            "median_ms": 5.27225
+          }
+        ]
+      },
+      {
+        "rows": 3137,
+        "recipes": [
+          {
+            "bm": 32,
+            "bn": 128,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 12.577917
+          },
+          {
+            "bm": 16,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 12.777417
+          },
+          {
+            "bm": 32,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 12.677209
+          },
+          {
+            "bm": 64,
+            "bn": 64,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 12.625709
+          },
+          {
+            "bm": 64,
+            "bn": 128,
+            "static_requested": false,
+            "static_selected": false,
+            "median_ms": 14.17125
+          },
+          {
+            "bm": 32,
+            "bn": 128,
+            "static_requested": true,
+            "static_selected": false,
+            "median_ms": 12.582917
+          },
+          {
+            "bm": 64,
+            "bn": 64,
+            "static_requested": true,
+            "static_selected": false,
+            "median_ms": 12.620334
+          },
+          {
+            "bm": 64,
+            "bn": 128,
+            "static_requested": true,
+            "static_selected": false,
+            "median_ms": 14.158666
+          }
+        ]
+      }
+    ]
+  },
+  "actual_decode_reuse_screens": [
+    {
+      "kind": "gguf-q4",
+      "evidence": "outputs/local512-gguf-q4-gate-reuse1-20261008.json",
+      "evidence_sha256": "1c6c830f626b43f00b82b5cb3b4fe5863e33ed004033e631e1fc09ab7ee0a725",
+      "binary_sha256": "8b5ececbabd5490df2f37cbbb59fe076f7d83e29e79d0c0d461d6ecfb7ab1f6d",
+      "adjacent_library_sha256": null,
+      "absolute_rpath_library": "build/local512-lora-ranks-v3-private/libturbocider.dylib",
+      "artifacts_unchanged": true,
+      "exit_code": 0,
+      "observation_max_gap_seconds": 0.14852283394429833,
+      "scope": "one decode plus actual distinct-input consumers, not whole-model traversal or asynchronous prefetch",
+      "result": {
+        "schema": "tc-real-weight-reuse-window-v1",
+        "scope": "serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification",
+        "basis": "GGUF-native-affine-FP16",
+        "source_payload_or_codes_sha256": "79dcaebad7d53a6310d296e7158572ffffb7548ca1074b283720009b58aa5881",
+        "stored_scales_sha256": "77257956cc649b254a593fdea7c3fb19a9afac966180705d3f6762f87a5c02c3",
+        "bits": 4,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "actual_consumers_per_trial": 1,
+        "dense_bytes": 78643200,
+        "dense_capacity_upper_bytes": 78643200,
+        "prepared_input_bytes": 8110080,
+        "warmups_per_arm": 3,
+        "cleared_every_trial": true,
+        "packed_samples_ms": [
+          6.067458,
+          6.046208,
+          6.087084,
+          6.017709,
+          6.039458,
+          6.039459,
+          6.041166,
+          6.053125,
+          6.048708
+        ],
+        "decode_plus_reuse_samples_ms": [
+          10.857458,
+          11.339584,
+          11.40925,
+          11.266333,
+          10.886,
+          10.712417,
+          11.113708,
+          11.109667,
+          11.543709
+        ],
+        "dense_trial_counters": [
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          }
+        ],
+        "packed_median_ms": 6.046208,
+        "decode_plus_reuse_median_ms": 11.113708,
+        "all_inputs_output_bit_exact": true,
+        "maximum_output_relative_l2": 0,
+        "dense_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "full-layer-traversal/LoRA/media",
+          "whole-process-memory",
+          "asynchronous-prefetch",
+          "ANE"
+        ]
+      }
+    },
+    {
+      "kind": "gguf-q4",
+      "evidence": "outputs/local512-gguf-q4-gate-reuse8-20261008.json",
+      "evidence_sha256": "49e546f6aae3e94b67965c8c7290f01344d6fcb0af1b5820ce4b52fc295ee65c",
+      "binary_sha256": "8b5ececbabd5490df2f37cbbb59fe076f7d83e29e79d0c0d461d6ecfb7ab1f6d",
+      "adjacent_library_sha256": null,
+      "absolute_rpath_library": "build/local512-lora-ranks-v3-private/libturbocider.dylib",
+      "artifacts_unchanged": true,
+      "exit_code": 0,
+      "observation_max_gap_seconds": 0.13080304209142923,
+      "scope": "one decode plus actual distinct-input consumers, not whole-model traversal or asynchronous prefetch",
+      "result": {
+        "schema": "tc-real-weight-reuse-window-v1",
+        "scope": "serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification",
+        "basis": "GGUF-native-affine-FP16",
+        "source_payload_or_codes_sha256": "79dcaebad7d53a6310d296e7158572ffffb7548ca1074b283720009b58aa5881",
+        "stored_scales_sha256": "77257956cc649b254a593fdea7c3fb19a9afac966180705d3f6762f87a5c02c3",
+        "bits": 4,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "actual_consumers_per_trial": 8,
+        "dense_bytes": 78643200,
+        "dense_capacity_upper_bytes": 78643200,
+        "prepared_input_bytes": 64880640,
+        "warmups_per_arm": 3,
+        "cleared_every_trial": true,
+        "packed_samples_ms": [
+          48.615041,
+          48.387333,
+          48.585292,
+          48.767583,
+          48.407834,
+          48.338709,
+          48.484958,
+          48.588625,
+          48.510042
+        ],
+        "decode_plus_reuse_samples_ms": [
+          52.651959,
+          52.401125,
+          52.23375,
+          52.420542,
+          52.681958,
+          52.26875,
+          52.405292,
+          52.785125,
+          52.193917
+        ],
+        "dense_trial_counters": [
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          }
+        ],
+        "packed_median_ms": 48.510042,
+        "decode_plus_reuse_median_ms": 52.405292,
+        "all_inputs_output_bit_exact": true,
+        "maximum_output_relative_l2": 0,
+        "dense_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "full-layer-traversal/LoRA/media",
+          "whole-process-memory",
+          "asynchronous-prefetch",
+          "ANE"
+        ]
+      }
+    },
+    {
+      "kind": "gguf-q8",
+      "evidence": "outputs/local512-gguf-q8-gate-reuse1-20261008.json",
+      "evidence_sha256": "f07701ed8cd7ec6395265d671cbe32cd468bb3ce8955a073268fc596c0f77eec",
+      "binary_sha256": "8b5ececbabd5490df2f37cbbb59fe076f7d83e29e79d0c0d461d6ecfb7ab1f6d",
+      "adjacent_library_sha256": null,
+      "absolute_rpath_library": "build/local512-lora-ranks-v3-private/libturbocider.dylib",
+      "artifacts_unchanged": true,
+      "exit_code": 0,
+      "observation_max_gap_seconds": 0.12884854106232524,
+      "scope": "one decode plus actual distinct-input consumers, not whole-model traversal or asynchronous prefetch",
+      "result": {
+        "schema": "tc-real-weight-reuse-window-v1",
+        "scope": "serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification",
+        "basis": "GGUF-native-affine-FP16",
+        "source_payload_or_codes_sha256": "d5cfaf91149595f37396ed09ab16a7d2bdc799c49b244723088671444bd5baa1",
+        "stored_scales_sha256": "bdc0a4b37a2a0b2ff76c1da40e717a38750a17c9bdd74d44a1756d52a6720aea",
+        "bits": 8,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "actual_consumers_per_trial": 1,
+        "dense_bytes": 78643200,
+        "dense_capacity_upper_bytes": 78643200,
+        "prepared_input_bytes": 8110080,
+        "warmups_per_arm": 3,
+        "cleared_every_trial": true,
+        "packed_samples_ms": [
+          6.140625,
+          6.1775,
+          6.093375,
+          6.175125,
+          6.099917,
+          6.098791,
+          6.104958,
+          6.136417,
+          6.098875
+        ],
+        "decode_plus_reuse_samples_ms": [
+          10.721625,
+          10.508416,
+          10.837125,
+          10.779666,
+          10.334583,
+          10.286708,
+          10.3805,
+          10.413792,
+          10.661209
+        ],
+        "dense_trial_counters": [
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          }
+        ],
+        "packed_median_ms": 6.104958,
+        "decode_plus_reuse_median_ms": 10.508416,
+        "all_inputs_output_bit_exact": true,
+        "maximum_output_relative_l2": 0,
+        "dense_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "full-layer-traversal/LoRA/media",
+          "whole-process-memory",
+          "asynchronous-prefetch",
+          "ANE"
+        ]
+      }
+    },
+    {
+      "kind": "gguf-q8",
+      "evidence": "outputs/local512-gguf-q8-gate-reuse8-20261008.json",
+      "evidence_sha256": "e0f7050b85d450b2c2c73a924571796c9f0d1292a73a16fc94a175b6790b6de4",
+      "binary_sha256": "8b5ececbabd5490df2f37cbbb59fe076f7d83e29e79d0c0d461d6ecfb7ab1f6d",
+      "adjacent_library_sha256": null,
+      "absolute_rpath_library": "build/local512-lora-ranks-v3-private/libturbocider.dylib",
+      "artifacts_unchanged": true,
+      "exit_code": 0,
+      "observation_max_gap_seconds": 0.12987362500280142,
+      "scope": "one decode plus actual distinct-input consumers, not whole-model traversal or asynchronous prefetch",
+      "result": {
+        "schema": "tc-real-weight-reuse-window-v1",
+        "scope": "serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification",
+        "basis": "GGUF-native-affine-FP16",
+        "source_payload_or_codes_sha256": "d5cfaf91149595f37396ed09ab16a7d2bdc799c49b244723088671444bd5baa1",
+        "stored_scales_sha256": "bdc0a4b37a2a0b2ff76c1da40e717a38750a17c9bdd74d44a1756d52a6720aea",
+        "bits": 8,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "actual_consumers_per_trial": 8,
+        "dense_bytes": 78643200,
+        "dense_capacity_upper_bytes": 78643200,
+        "prepared_input_bytes": 64880640,
+        "warmups_per_arm": 3,
+        "cleared_every_trial": true,
+        "packed_samples_ms": [
+          48.729125,
+          48.837875,
+          48.829125,
+          48.923,
+          48.856292,
+          49.001041,
+          48.903416,
+          48.721042,
+          48.857458
+        ],
+        "decode_plus_reuse_samples_ms": [
+          52.458666,
+          52.365625,
+          52.068459,
+          52.748042,
+          52.722709,
+          51.983708,
+          51.8875,
+          52.55075,
+          53.89675
+        ],
+        "dense_trial_counters": [
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          }
+        ],
+        "packed_median_ms": 48.856292,
+        "decode_plus_reuse_median_ms": 52.458666,
+        "all_inputs_output_bit_exact": true,
+        "maximum_output_relative_l2": 0,
+        "dense_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "full-layer-traversal/LoRA/media",
+          "whole-process-memory",
+          "asynchronous-prefetch",
+          "ANE"
+        ]
+      }
+    },
+    {
+      "kind": "convrot",
+      "evidence": "outputs/local512-convrot-gate-reuse1-20261008.json",
+      "evidence_sha256": "afc1841066b88f17c2ae54dc052baf5b88e6addc1b2923391b93e6fb321c2b05",
+      "binary_sha256": "8b5ececbabd5490df2f37cbbb59fe076f7d83e29e79d0c0d461d6ecfb7ab1f6d",
+      "adjacent_library_sha256": null,
+      "absolute_rpath_library": "build/local512-lora-ranks-v3-private/libturbocider.dylib",
+      "artifacts_unchanged": true,
+      "exit_code": 0,
+      "observation_max_gap_seconds": 0.13186650001443923,
+      "scope": "one decode plus actual distinct-input consumers, not whole-model traversal or asynchronous prefetch",
+      "result": {
+        "schema": "tc-real-weight-reuse-window-v1",
+        "scope": "serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification",
+        "basis": "Comfy-H256-rotated-legacy-BF16-scale",
+        "source_payload_or_codes_sha256": "7719089bde309d54523d1c8a888a869967175639c4071cc3fdd4d3213a523aac",
+        "stored_scales_sha256": "8232d8a71484ee21a4829bdd97a63d944236318cada45f3347562b2aa68d492b",
+        "bits": 8,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "actual_consumers_per_trial": 1,
+        "dense_bytes": 78643200,
+        "dense_capacity_upper_bytes": 78643200,
+        "prepared_input_bytes": 8110080,
+        "warmups_per_arm": 3,
+        "cleared_every_trial": true,
+        "packed_samples_ms": [
+          6.552583,
+          6.56575,
+          6.568917,
+          6.567042,
+          6.531833,
+          6.552542,
+          6.552833,
+          6.622083,
+          6.558708
+        ],
+        "decode_plus_reuse_samples_ms": [
+          10.167959,
+          10.320375,
+          10.174791,
+          10.104209,
+          10.332916,
+          10.343292,
+          10.635833,
+          10.247375,
+          10.258709
+        ],
+        "dense_trial_counters": [
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 0,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          }
+        ],
+        "packed_median_ms": 6.558708,
+        "decode_plus_reuse_median_ms": 10.258709,
+        "all_inputs_output_bit_exact": true,
+        "maximum_output_relative_l2": 0,
+        "dense_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "full-layer-traversal/LoRA/media",
+          "whole-process-memory",
+          "asynchronous-prefetch",
+          "ANE"
+        ]
+      }
+    },
+    {
+      "kind": "convrot",
+      "evidence": "outputs/local512-convrot-gate-reuse8-20261008.json",
+      "evidence_sha256": "b7b3e3c6f5a9cfac038f980458d25758ed095f86247486f8acb4c5b1754722ca",
+      "binary_sha256": "8b5ececbabd5490df2f37cbbb59fe076f7d83e29e79d0c0d461d6ecfb7ab1f6d",
+      "adjacent_library_sha256": null,
+      "absolute_rpath_library": "build/local512-lora-ranks-v3-private/libturbocider.dylib",
+      "artifacts_unchanged": true,
+      "exit_code": 0,
+      "observation_max_gap_seconds": 0.1298809580039233,
+      "scope": "one decode plus actual distinct-input consumers, not whole-model traversal or asynchronous prefetch",
+      "result": {
+        "schema": "tc-real-weight-reuse-window-v1",
+        "scope": "serial complete operator host span; one decode plus actual distinct-input consumers; not model/prefetch/physical overlap qualification",
+        "basis": "Comfy-H256-rotated-legacy-BF16-scale",
+        "source_payload_or_codes_sha256": "7719089bde309d54523d1c8a888a869967175639c4071cc3fdd4d3213a523aac",
+        "stored_scales_sha256": "8232d8a71484ee21a4829bdd97a63d944236318cada45f3347562b2aa68d492b",
+        "bits": 8,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "actual_consumers_per_trial": 8,
+        "dense_bytes": 78643200,
+        "dense_capacity_upper_bytes": 78643200,
+        "prepared_input_bytes": 64880640,
+        "warmups_per_arm": 3,
+        "cleared_every_trial": true,
+        "packed_samples_ms": [
+          52.417417,
+          52.647083,
+          52.554292,
+          52.522708,
+          52.728166,
+          52.639292,
+          52.455666,
+          52.589292,
+          52.64625
+        ],
+        "decode_plus_reuse_samples_ms": [
+          52.457708,
+          51.856875,
+          52.370541,
+          52.318,
+          52.043042,
+          52.57325,
+          52.187208,
+          51.605916,
+          52.026125
+        ],
+        "dense_trial_counters": [
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          },
+          {
+            "hits": 7,
+            "misses": 1,
+            "decoded_bytes": 78643200
+          }
+        ],
+        "packed_median_ms": 52.589292,
+        "decode_plus_reuse_median_ms": 52.187208,
+        "all_inputs_output_bit_exact": true,
+        "maximum_output_relative_l2": 0,
+        "dense_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "full-layer-traversal/LoRA/media",
+          "whole-process-memory",
+          "asynchronous-prefetch",
+          "ANE"
+        ]
+      }
+    }
+  ],
+  "visual_review": {
+    "reviewer": "Codex agent; limited nonblind visual inspection; no user approval",
+    "directory": "outputs/local512-qwen-edit1-lora-ranks-v3-gpu-control-20261008",
+    "whole_pairs_inspected": [
+      0,
+      1,
+      2
+    ],
+    "detail_crops_inspected": {
+      "0": [
+        "center",
+        "top-left",
+        "bottom-right"
+      ]
+    },
+    "visually_very_similar_for_inspected_evidence": true,
+    "observations": "teapot silhouette/lid/knob/handle, composition and shadow close; small glaze/highlight/texture differences; no new visible breaks or colour blocks",
+    "scope": "three prompts of one scene/seed; other generated detail crops not reviewed; no general quality guarantee",
+    "automatic_visual_manifests_remain_pending": true,
+    "qualification_passed": false
+  },
+  "cleanup": {
+    "build_directories": [
+      "build/local512-lora-ranks-v1-private",
+      "build/local512-lora-ranks-v2-private",
+      "build/local512-lora-ranks-v3-private",
+      "build/local512-lora-ranks-v3-public"
+    ],
+    "object_files_removed": 773,
+    "logical_object_bytes_removed": 61249000,
+    "empty_module_cache_directories_removed": 4,
+    "retained": [
+      "libraries",
+      "CLIs",
+      "probes",
+      "manifests",
+      "logs",
+      "PNGs",
+      "models",
+      "adapters"
+    ],
+    "recoverable_by_rebuilding": true
+  }
+}

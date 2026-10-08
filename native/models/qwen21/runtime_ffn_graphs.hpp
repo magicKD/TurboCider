@@ -4,6 +4,15 @@
 
 namespace tc::qwen21::runtime_ffn {
 using Function = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
+inline Function input_ranks(const Weights &weights,const std::string &prefix,int hidden=4096) {
+    return mx::compile([&weights,prefix,hidden](const std::vector<Tensor> &a) {
+        return weights.lora_input_ranks(a[0],prefix+"gate_up",0,hidden);
+    });
+}
+inline std::vector<Tensor> rank_inputs(const std::vector<Tensor> &a) {
+    require(a.size()>1,"shared Qwen LoRA rank inputs missing");
+    return {a.begin()+1,a.end()};
+}
 
 // Request/calibration-local factories. Capture the SAME resident Weights;
 // never retain these closures after an adapter rebind or use a global cache.
@@ -28,15 +37,28 @@ inline Function corrections(const Weights &weights, const std::string &prefix,
         return std::vector<Tensor>{mx::contiguous(gate), mx::contiguous(up)};
     });
 }
+inline Function corrections_shared_ranks(const Weights &weights,const std::string &prefix,
+                                        int first,int count,int hidden=4096,int width=12288) {
+    require(first>=0 && count>0 && first<=width-count,"invalid shared Qwen correction range");
+    return mx::compile([&weights,prefix,first,count,hidden,width](const std::vector<Tensor> &a) {
+        const auto ranks=rank_inputs(a);
+        auto gate=weights.lora_delta_slice_with_ranks(a[0],prefix+"gate_up",ranks,first,first+count,0,hidden);
+        auto up=weights.lora_delta_slice_with_ranks(a[0],prefix+"gate_up",ranks,width+first,width+first+count,0,hidden);
+        return std::vector<Tensor>{mx::contiguous(gate),mx::contiguous(up)};
+    });
+}
 
 inline Function channels(const Weights &weights, const std::string &prefix,
                          int first, int count, int hidden = 4096, int width = 12288,
-                         bool fp32_partial = false) {
+                         bool fp32_partial = false,bool shared_ranks = false) {
     require(first >= 0 && count > 0 && first <= width-count && hidden > 0,
             "invalid Qwen FFN channel graph range");
-    return mx::compile([&weights, prefix, first, count, hidden, width, fp32_partial](const std::vector<Tensor> &a) {
-        auto gate = weights.project_slice(a[0], prefix+"gate_up", first, first+count, 0, hidden, false);
-        auto up = weights.project_slice(a[0], prefix+"gate_up", width+first, width+first+count, 0, hidden, false);
+    return mx::compile([&weights, prefix, first, count, hidden, width, fp32_partial,shared_ranks](const std::vector<Tensor> &a) {
+        const auto ranks=shared_ranks ? rank_inputs(a) : std::vector<Tensor>{};
+        auto gate = shared_ranks ? weights.project_slice_with_ranks(a[0],prefix+"gate_up",ranks,first,first+count,0,hidden,false) :
+            weights.project_slice(a[0], prefix+"gate_up", first, first+count, 0, hidden, false);
+        auto up = shared_ranks ? weights.project_slice_with_ranks(a[0],prefix+"gate_up",ranks,width+first,width+first+count,0,hidden,false) :
+            weights.project_slice(a[0], prefix+"gate_up", width+first, width+first+count, 0, hidden, false);
         auto intermediate = silu(gate)*up;
         auto base = fp32_partial ? weights.project_base_slice_fp32(intermediate,prefix+"out",0,hidden,first,first+count) :
             weights.project_base_slice(intermediate, prefix+"out", 0, hidden, first, first+count, false);

@@ -282,6 +282,12 @@ struct QuantizedSourceComparison {
     Float32Comparison metrics;
     bool final_latent=false;
 };
+struct SharedLoraRankMetrics {
+    bool enabled = false;
+    uint64_t prepared_sets = 0;
+    uint64_t completed_hybrid_blocks = 0;
+    uint64_t completed_adapter_rank_arrays = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -305,6 +311,7 @@ struct RunResult {
     std::optional<HybridMetrics> encoder_hybrid;
     std::optional<EncoderRuntimeReuseMetrics> encoder_runtime_reuse;
     std::optional<EncoderWeightResidencyMetrics> encoder_weight_residency;
+    std::optional<SharedLoraRankMetrics> shared_lora_ranks;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;
