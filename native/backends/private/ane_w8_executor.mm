@@ -265,7 +265,8 @@ PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesys
         check(!lookahead || std::string(lookahead)=="0" || std::string(lookahead)=="1", "private ANE A8 lookahead requires 0 or 1");
         p.a8_lookahead=lookahead && std::string(lookahead)=="1";
         auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size,p.hidden_group_size,p.bf16_value_boundaries);
-        p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes;
+        p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes+
+            p.device.weight_code_cache_budget_bytes();
         // Extra compiler/pointwise workspace allowance, not a physical ANE
         // scratch-size observation. End-to-end footprint still needs audit.
         if(p.bf16_value_boundaries)p.estimate+=uint64_t(shape.rows)*shape.width*2*16+(64ull<<20);
@@ -307,6 +308,7 @@ std::string PrivateW8Graph::weight_recipe() const {
 std::string PrivateW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
+WeightCodeCacheReport PrivateW8Graph::weight_code_cache_stats() const{return impl_->device.weight_code_cache_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
 bool PrivateW8Graph::supports_fp32_device_output() const{return true;}

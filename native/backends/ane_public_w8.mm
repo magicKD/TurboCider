@@ -381,7 +381,8 @@ PublicW8Graph::PublicW8Graph(const std::filesystem::path &manifest,size_t budget
                           (!expected->require_lora_inputs || shape.lora_inputs),"Public W8 model geometry/LoRA ABI mismatch");
         const int rotation_block=p.basis==W8Basis::ComfyH256?256:512;
         p.estimate=uint64_t(shape.hidden)*shape.width*6+uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden)+
-                   uint64_t(shape.width)*rotation_block*4+(128ull<<20)+gpu::scale_cache_budget_bytes;
+                   uint64_t(shape.width)*rotation_block*4+(128ull<<20)+gpu::scale_cache_budget_bytes+
+                   p.device.weight_code_cache_budget_bytes();
         if(p.estimate>budget || !admit_memory(observe_runtime_memory(0),{uint64_t(4)<<30,budget},0,p.estimate).allowed())
             throw MemoryBudgetError("Public W8 graph/banks/system memory admission denied");
         for(auto &bank:p.banks){bank=std::make_unique<Impl::Bank>(p.device,shape);p.allocated+=bank->bytes();}
@@ -410,6 +411,7 @@ std::string PublicW8Graph::weight_recipe() const {
 }
 std::string PublicW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PublicW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
+WeightCodeCacheReport PublicW8Graph::weight_code_cache_stats() const{return impl_->device.weight_code_cache_stats();}
 StagePipelineStats PublicW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 bool PublicW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PublicW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}

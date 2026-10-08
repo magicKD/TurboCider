@@ -13,6 +13,7 @@ class Device;
 class Transfer;
 class QuantStage;
 inline constexpr size_t scale_cache_budget_bytes = 4u << 20;
+uint64_t configured_weight_code_cache_bytes();
 
 class Surface {
   public:
@@ -53,6 +54,7 @@ class Device {
   public:
     Device(); // legacy Private staging flags, no private client API
     Device(bool scale_cache, bool specialize);
+    Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes);
     void *shared_event() const;
     void release_after_failure(uint64_t value) const;
     std::string name() const;
@@ -78,6 +80,9 @@ class Device {
     // the current layer's activation/ANE-done timeline.
     QuantStage stage_w8(DeviceWeightView, W8StageSpec, Surface codes, Surface scales);
     WeightCacheStats scale_cache_stats() const;
+    WeightCodeCacheReport weight_code_cache_stats() const;
+    uint64_t weight_code_cache_budget_bytes() const;
+    void clear_weight_code_cache(); // producer tickets retain their own capacity leases
     StagePipelineStats stage_pipeline_stats() const;
   private:
     struct Impl;

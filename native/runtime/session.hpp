@@ -2,6 +2,7 @@
 #include "common.hpp"
 #include "../core/ane_calibration_report.hpp"
 #include "../core/ane_overflow_report.hpp"
+#include "../core/ane_weight_code_cache_report.hpp"
 #include "memory_accounting.hpp"
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
@@ -54,6 +55,7 @@ struct HybridMetrics {
     uint64_t runtime_weight_prefetch_discards = 0, runtime_weight_prefetch_failures = 0;
     double runtime_weight_prefetch_wait_seconds = 0;
     bool runtime_weight_scale_cache_enabled = false;
+    ane::WeightCodeCacheReport runtime_weight_code_cache;
     bool runtime_weight_stage_specialized = false;
     uint64_t runtime_weight_stage_pipeline_variants = 0;
     bool runtime_weight_launch_fence_enabled = false;

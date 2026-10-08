@@ -259,6 +259,7 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",
                            "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN",
                            "TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",
+                           "TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES",
                            "TURBOCIDER_RUNTIME_ANE_CHUNKS","TURBOCIDER_RUNTIME_ANE_PROFILE",
                            "TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE","TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE",
                            "TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES",
@@ -980,6 +981,7 @@ HybridMetrics HybridFfn::metrics() const {
         metrics.runtime_weight_scale_cache_hits=cache.hits;metrics.runtime_weight_scale_cache_misses=cache.misses;
         metrics.runtime_weight_scale_cache_entries=cache.entries;metrics.runtime_weight_scale_cache_bytes=cache.bytes;
         metrics.runtime_weight_scale_cache_evictions=cache.evictions;
+        metrics.runtime_weight_code_cache=graph_->weight_code_cache_stats();
     }
     metrics.prefill_plan_reason = reason_;
     return metrics;

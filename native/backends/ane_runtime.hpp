@@ -10,6 +10,7 @@
 #include <vector>
 #include <variant>
 #include <span>
+#include "../core/ane_weight_code_cache_report.hpp"
 
 namespace tc::ane {
 
@@ -204,6 +205,7 @@ class Executor {
     virtual std::string data_path() const { return "fp16"; }
     virtual std::string weight_recipe() const { return {}; }
     virtual WeightCacheStats weight_cache_stats() const { return {}; }
+    virtual WeightCodeCacheReport weight_code_cache_stats() const { return {}; }
     virtual StagePipelineStats stage_pipeline_stats() const { return {}; }
     virtual bool device_submission_fence_enabled() const { return false; }
     virtual bool activation_lookahead_enabled() const { return false; }

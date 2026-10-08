@@ -92,6 +92,23 @@ int main(int argc, char **argv) {
         for(bool adapter:{false,true,false}) { fill_weights(.125f,-.25f,.25f); stage(); run(adapter,.125f,-.25f,.25f); }
         fill_weights(-.25f,.125f,-.5f); stage(); run(true,-.25f,.125f,-.5f);
         fill_weights(.125f,-.25f,.25f); stage(); run(false,.125f,-.25f,.25f);
+        if(graph.weight_code_cache_stats().enabled) {
+            auto epoch=std::make_shared<int>(1);
+            std::vector<DeviceWeightView> immutable{g.weight(),u.weight(),d.weight()};
+            for(auto &source:immutable){source.allocation_identity=epoch;source.immutable_generation=true;}
+            const auto before=graph.weight_code_cache_stats();
+            for(int repeat=0;repeat<2;++repeat) {
+                graph.stage_device_weights(immutable);check(graph.wait_stage().ok,"Public cached weight stage failed");
+                run(repeat!=0,.125f,-.25f,.25f);
+            }
+            const auto cached=graph.weight_code_cache_stats();
+            check(cached.fills>=before.fills+3 && cached.hits>=before.hits+3 && cached.ready_entries>=3 &&
+                  cached.live_capacity_bytes<=cached.budget_bytes && cached.peak_capacity_bytes<=cached.budget_bytes,
+                  "Public full executor lacks real bounded converted-code reuse");
+            std::cout<<"PASS Public converted weight cache: completed hits, base/real corrections, unchanged output oracle, bounded capacity\n";
+            // The epoch dies before mutable fixture weights are changed.
+            // Subsequent staging must purge these weak generation entries.
+        }
         Storage fp32_partial(gpu,rows,h,DType::FP32),wrong_hidden(gpu,rows,f,DType::FP32);
         check(graph.supports_fp32_device_output(),"Sylvester F32 partial capability missing");
         for(bool adapter:{false,true,false}) {

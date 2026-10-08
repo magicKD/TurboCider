@@ -29,6 +29,25 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_weight_code_cache_requires_completed_hits_and_bounded_leases(self):
+        cache=dict(enabled=True,budget_bytes=1024,hits_session_total=10,misses_session_total=3,
+            fills_session_total=3,failed_fills_session_total=0,entries=3,ready_entries=3,
+            retained_bytes=900,live_capacity_bytes=900,peak_capacity_bytes=1024,
+            evictions_session_total=0,declines_session_total=0,ineligible_session_total=0)
+        def row(value):return dict(hybrid=dict(runtime_weight=dict(weight_code_cache=value)))
+        SCREEN.validate_weight_code_cache([row(cache),row({**cache,"hits_session_total":20})],1024)
+        for field,value in (("enabled",False),("budget_bytes",True),("hits_session_total",True),
+            ("hits_session_total",0),("peak_capacity_bytes",1025),("live_capacity_bytes",899),
+            ("ready_entries",4),("failed_fills_session_total",1),("fills_session_total",4)):
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                SCREEN.validate_weight_code_cache([row({**cache,field:value})],1024)
+        with self.assertRaises(ValueError):SCREEN.validate_weight_code_cache([row(cache),row(cache)],1024)
+        off={name:0 for name in cache};off["enabled"]=False
+        SCREEN.validate_weight_code_cache([row(off)],0)
+        off["retained_bytes"]=1
+        with self.assertRaises(ValueError):SCREEN.validate_weight_code_cache([row(off)],0)
+        with self.assertRaises(ValueError):SCREEN.validate_weight_code_cache([{}],1024)
+
     def test_rank_screen_argument_errors_precede_fixture_or_output_access(self):
         with tempfile.TemporaryDirectory() as directory:
             output=Path(directory)/"never-created"
