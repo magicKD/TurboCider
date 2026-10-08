@@ -26,13 +26,15 @@ LORA_RANK_MODES=("ranks_off","ranks_on")
 WEIGHT_CODE_MODES=("code_cache_off","code_cache_on")
 
 
-def validate_weight_code_cache(rows, budget):
+def validate_weight_code_cache(rows, budget, storage="copy"):
     previous_hits=0
     for row in rows:
         cache=((row.get("hybrid") or {}).get("runtime_weight") or {}).get("weight_code_cache")
         if not isinstance(cache,dict) or cache.get("enabled") is not (budget>0) or \
             type(cache.get("budget_bytes")) is not int or cache.get("budget_bytes")!=budget:
             raise ValueError("converted weight code cache policy receipt missing/mismatched")
+        if cache.get("native_surface_storage") is not (storage=="surface"):
+            raise ValueError("converted weight cache storage receipt mismatched")
         names=("hits_session_total","misses_session_total","fills_session_total","failed_fills_session_total",
                "entries","ready_entries","retained_bytes","live_capacity_bytes","peak_capacity_bytes",
                "evictions_session_total","declines_session_total","ineligible_session_total")
@@ -44,6 +46,10 @@ def validate_weight_code_cache(rows, budget):
                 raise ValueError("need real successful converted-code reuse within admitted capacity")
         elif any(values):raise ValueError("disabled converted-code cache executed/retained work")
         previous_hits=hits
+        copy_hits=cache.get("copy_hits_session_total");bind_hits=cache.get("surface_bind_hits_session_total")
+        if any(type(v) is not int or v<0 for v in (copy_hits,bind_hits)) or copy_hits+bind_hits!=hits or \
+            (storage=="surface" and budget and (bind_hits<=0 or copy_hits)) or (storage=="copy" and bind_hits):
+            raise ValueError("need actual separately counted copy/surface reuse, not storage intent")
 
 
 def validate_shared_ranks(rows, enabled):
@@ -168,6 +174,8 @@ def main():
         help="also include the same-library complete GPU baseline in a shared ranks screen")
     parser.add_argument("--weight-code-cache-bytes",type=int,
         help="matched GPU / code cache off / code cache on; fixed Private DiT, identical source retention and shared LoRA ranks")
+    parser.add_argument("--weight-code-cache-mode",choices=("copy","surface"),default="copy",
+        help="on arm: compact copy control or direct immutable native surface binding")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
@@ -182,6 +190,8 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--timeout",type=int,default=900)
     args=parser.parse_args()
+    if args.weight_code_cache_mode!="copy" and args.weight_code_cache_bytes is None:
+        parser.error("surface mode requires an explicit weight code cache budget")
     modes=LORA_RANK_MODES if args.lora_ranks_screen else COMBINED_MODES if args.dit_manifest else WEIGHT_MODES if args.weights else MODES
     if args.lora_ranks_gpu_control:
         if not args.lora_ranks_screen:parser.error("GPU rank control requires --lora-ranks-screen")
@@ -219,7 +229,8 @@ def main():
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
     summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
         combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and args.weight_code_cache_bytes is None,
-        lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes)
+        lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes,
+        weight_code_cache_mode=args.weight_code_cache_mode)
     summary["lora_ranks_gpu_control"]=args.lora_ranks_gpu_control
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
@@ -234,6 +245,7 @@ def main():
             env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1" if mode=="ranks_on" else "0"
         if mode in WEIGHT_CODE_MODES:
             env["TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES"]=str(args.weight_code_cache_bytes if mode=="code_cache_on" else 0)
+            env["TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_MODE"]=args.weight_code_cache_mode if mode=="code_cache_on" else "copy"
             if lora:env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
         if uses_encoder or uses_dit:
             env.update(TURBOCIDER_ANE_BACKEND=args.backend,TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
@@ -265,7 +277,8 @@ def main():
             len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
         if mode in WEIGHT_CODE_MODES:
-            validate_weight_code_cache(rows,args.weight_code_cache_bytes if mode=="code_cache_on" else 0)
+            validate_weight_code_cache(rows,args.weight_code_cache_bytes if mode=="code_cache_on" else 0,
+                args.weight_code_cache_mode if mode=="code_cache_on" else "copy")
             if lora:validate_shared_ranks(rows,True)
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")

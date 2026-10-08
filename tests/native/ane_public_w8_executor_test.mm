@@ -105,6 +105,9 @@ int main(int argc, char **argv) {
             check(cached.fills>=before.fills+3 && cached.hits>=before.hits+3 && cached.ready_entries>=3 &&
                   cached.live_capacity_bytes<=cached.budget_bytes && cached.peak_capacity_bytes<=cached.budget_bytes,
                   "Public full executor lacks real bounded converted-code reuse");
+            if(cached.native_surface_storage)
+                check(cached.surface_bind_hits>=before.surface_bind_hits+3 && cached.copy_hits==0,
+                      "Public native weight hit still copied the cache");
             std::cout<<"PASS Public converted weight cache: completed hits, base/real corrections, unchanged output oracle, bounded capacity\n";
             // The epoch dies before mutable fixture weights are changed.
             // Subsequent staging must purge these weak generation entries.

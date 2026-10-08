@@ -1097,8 +1097,11 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
             @"scale_cache_evictions_session_total" : @(m.runtime_weight_scale_cache_evictions),
             @"weight_code_cache" : @{
                 @"enabled" : @(m.runtime_weight_code_cache.enabled),
+                @"native_surface_storage" : @(m.runtime_weight_code_cache.native_surface_storage),
                 @"budget_bytes" : @(m.runtime_weight_code_cache.budget_bytes),
                 @"hits_session_total" : @(m.runtime_weight_code_cache.hits),
+                @"copy_hits_session_total" : @(m.runtime_weight_code_cache.copy_hits),
+                @"surface_bind_hits_session_total" : @(m.runtime_weight_code_cache.surface_bind_hits),
                 @"misses_session_total" : @(m.runtime_weight_code_cache.misses),
                 @"fills_session_total" : @(m.runtime_weight_code_cache.fills),
                 @"failed_fills_session_total" : @(m.runtime_weight_code_cache.failed_fills),
@@ -1111,7 +1114,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
                 @"declines_session_total" : @(m.runtime_weight_code_cache.declines),
                 @"ineligible_session_total" : @(m.runtime_weight_code_cache.ineligible),
                 @"policy" : @"first-admitted-live-generations-v1",
-                @"scope" : @"successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+                @"scope" : @"completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM"
             },
             @"device_io_calls_session_total" : @(m.runtime_weight_device_io_calls),
             @"lora_channel_range_calls_session_total" : @(m.runtime_weight_lora_channel_range_calls),

@@ -31,18 +31,23 @@ def receipt(mode,index):
 class EncoderResidencyScreenTests(unittest.TestCase):
     def test_weight_code_cache_requires_completed_hits_and_bounded_leases(self):
         cache=dict(enabled=True,budget_bytes=1024,hits_session_total=10,misses_session_total=3,
+            native_surface_storage=False,copy_hits_session_total=10,surface_bind_hits_session_total=0,
             fills_session_total=3,failed_fills_session_total=0,entries=3,ready_entries=3,
             retained_bytes=900,live_capacity_bytes=900,peak_capacity_bytes=1024,
             evictions_session_total=0,declines_session_total=0,ineligible_session_total=0)
         def row(value):return dict(hybrid=dict(runtime_weight=dict(weight_code_cache=value)))
-        SCREEN.validate_weight_code_cache([row(cache),row({**cache,"hits_session_total":20})],1024)
+        SCREEN.validate_weight_code_cache([row(cache),row({**cache,"hits_session_total":20,"copy_hits_session_total":20})],1024)
+        surface={**cache,"native_surface_storage":True,"copy_hits_session_total":0,"surface_bind_hits_session_total":10}
+        SCREEN.validate_weight_code_cache([row(surface)],1024,"surface")
+        for change in (dict(native_surface_storage=False),dict(surface_bind_hits_session_total=0),dict(copy_hits_session_total=1)):
+            with self.assertRaises(ValueError):SCREEN.validate_weight_code_cache([row({**surface,**change})],1024,"surface")
         for field,value in (("enabled",False),("budget_bytes",True),("hits_session_total",True),
             ("hits_session_total",0),("peak_capacity_bytes",1025),("live_capacity_bytes",899),
             ("ready_entries",4),("failed_fills_session_total",1),("fills_session_total",4)):
             with self.subTest(field=field),self.assertRaises(ValueError):
                 SCREEN.validate_weight_code_cache([row({**cache,field:value})],1024)
         with self.assertRaises(ValueError):SCREEN.validate_weight_code_cache([row(cache),row(cache)],1024)
-        off={name:0 for name in cache};off["enabled"]=False
+        off={name:0 for name in cache};off.update(enabled=False,native_surface_storage=False)
         SCREEN.validate_weight_code_cache([row(off)],0)
         off["retained_bytes"]=1
         with self.assertRaises(ValueError):SCREEN.validate_weight_code_cache([row(off)],0)

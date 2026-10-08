@@ -235,6 +235,13 @@ int main(int argc,char**argv) {
         auto metrics=runtime.metrics();check(metrics.runtime_weight_channel_blocks==12&&metrics.runtime_weight_device_io_calls>=12,"channel execution counters missing");
         check(metrics.runtime_weight_lora_channel_range_calls==4&&metrics.runtime_weight_lora_channel_full_calls==4,
               "actual narrow/full LoRA correction receipts missing");
+        if(metrics.runtime_weight_code_cache.enabled && metrics.runtime_weight_code_cache.native_surface_storage) {
+            const auto &cache=metrics.runtime_weight_code_cache;
+            check(cache.surface_bind_hits>0 && cache.copy_hits==0 && cache.ready_entries>0 &&
+                  cache.live_capacity_bytes<=cache.budget_bytes && cache.peak_capacity_bytes<=cache.budget_bytes,
+                  "Private channel lacks real native-surface binding/capacity evidence");
+            std::cout<<"PASS Private native cached bindings: base/A/B/base, no cache copies and bounded readers\n";
+        }
         std::cout<<"PASS channel LoRA range callback: base/A/B/base, exact legacy parity, all-row tails and ONE full-hidden down correction\n";
         // Model-level producer/consumer path: first block prefetches layer 1,
         // then stage(1) must consume that source-matched bank rather than refill.

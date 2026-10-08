@@ -1,10 +1,12 @@
 #include "../../native/backends/ane_gpu.hpp"
 #include "../../native/backends/ane_w8a8_math.hpp"
+#include "../../native/backends/ane_weight_code_cache.hpp"
 #import <Metal/Metal.h>
 #include <chrono>
 #include <cstring>
 #include <iostream>
 #include <thread>
+#include <vector>
 
 using namespace tc::ane;
 using namespace tc::ane::gpu;
@@ -32,6 +34,7 @@ int main() {
     @autoreleasepool {try {
         id<MTLDevice> metal=MTLCreateSystemDefaultDevice();
         int cases=0;
+        for(auto storage:{WeightCodeCacheStorage::CompactCopy,WeightCodeCacheStorage::NativeSurface})
         for(auto encoding:{DeviceWeightEncoding::Dense,DeviceWeightEncoding::AffineQ4,DeviceWeightEncoding::AffineQ8,
             DeviceWeightEncoding::GgufQ4_0,DeviceWeightEncoding::GgufQ4_K,DeviceWeightEncoding::GgufQ8_0,
             DeviceWeightEncoding::GgufQ6_K,DeviceWeightEncoding::ConvrotQ8Signed,DeviceWeightEncoding::ConvrotQ8Packed}) {
@@ -92,7 +95,7 @@ int main() {
             if(encoding==DeviceWeightEncoding::ConvrotQ8Packed) {
                 view.offsets->dtype=DType::FP32;view.offsets->row_stride_bytes=128;
             }
-            Device control(false,true,0),cached(false,true,1<<20);
+            Device control(false,true,0),cached(false,true,1<<20,storage);
             W8StageSpec spec{1,3,comfy?256:128,comfy?512:384,comfy?256:128,comfy?0u:20260930u,false,
                 comfy?W8Basis::ComfyH256:W8Basis::SylvesterDH};
             Surface reference(control,5,spec.columns,Element::I8),rs(control,5,1,Element::FP16),
@@ -182,6 +185,42 @@ int main() {
         {auto job=leased.stage_w8(view,spec,codes,scales);check(job.finish().ok,"expired generation ordinary staging failed");}
         check(leased.weight_code_cache_stats().evictions>evictions,"expired source generation retained by code cache");
         leased.clear_weight_code_cache();wait_live(leased,0);
+        // Zero-copy reader ownership and immutable bank isolation.
+        Device native(false,true,32768,WeightCodeCacheStorage::NativeSurface);
+        Surface scratch_codes(native,5,512,Element::I8),scratch_scales(native,5,1,Element::FP16);
+        std::optional<Surface> held_codes,held_scales,held_view;
+        {
+            Surface bc=scratch_codes,bs=scratch_scales;
+            auto ticket=native.bind_w8(view,spec,bc,bs);check(ticket.finish().ok,"native binding fill failed");
+            check(bc.native_iosurface()!=scratch_codes.native_iosurface(),"cache miss was copied instead of produced into native surface");
+            held_codes=bc;held_scales=bs;held_view=bc.slice_rows(1,3);
+            Surface hc=scratch_codes,hs=scratch_scales;
+            auto hit=native.bind_w8(view,spec,hc,hs);check(hit.finish().ok,"native binding hit failed");
+            check(hc.native_iosurface()==bc.native_iosurface() && hs.native_iosurface()==bs.native_iosurface(),"native hit allocated/copied another surface");
+            check(native.weight_code_cache_stats().surface_bind_hits==1 && native.weight_code_cache_stats().copy_hits==0,"copy/bind counters mixed");
+            bool rejected=false;
+            try{native.bind_w8(view,spec,hc,hs);}catch(const CapabilityError&){rejected=true;}
+            check(rejected,"cached immutable surface accepted as writable fallback");
+            auto malformed=view;malformed.buffer_bytes=1;
+            rejected=false;try{native.bind_w8(malformed,spec,scratch_codes,scratch_scales);}catch(const CapabilityError&){rejected=true;}
+            check(rejected,"cache hit skipped physical source validation");
+        }
+        const auto native_held=native.weight_code_cache_stats().live_capacity_bytes;
+        native.clear_weight_code_cache();
+        check(native_held>0 && native.weight_code_cache_stats().live_capacity_bytes==native_held,"eviction lost escaped surface claim");
+        std::vector<uint8_t> saved(held_codes->rows()*held_codes->pitch());std::memcpy(saved.data(),held_codes->data(),saved.size());
+        auto new_epoch=std::make_shared<int>(6);view.allocation_identity=new_epoch;
+        values[0]=.25f;
+        {
+            Surface bc=scratch_codes,bs=scratch_scales;
+            auto miss=native.bind_w8(view,spec,bc,bs);check(miss.finish().ok,"leased capacity decline failed original staging");
+            check(bc.native_iosurface()==scratch_codes.native_iosurface() && native.weight_code_cache_stats().declines>0,"reader lease exceeded cache budget");
+            check(!std::memcmp(saved.data(),held_codes->data(),saved.size()),"next bank overwrote cached reader");
+        }
+        held_codes.reset();held_scales.reset();
+        check(native.weight_code_cache_stats().live_capacity_bytes>0,"row view lost backing claim");
+        held_view.reset();wait_live(native,0);
+        std::cout<<"PASS native surface bindings: direct production/hit, immutable aliases, physical validation, eviction/view leases and independent scratch\n";
         std::cout<<"PASS weight code cache GPU cases="<<cases<<"; dense/affine/raw/ConvRot exact, generation, refill, padding, leased budget, finite/failure recovery\n";
     }catch(const std::exception &error){std::cerr<<error.what()<<'\n';return 1;}}
 }

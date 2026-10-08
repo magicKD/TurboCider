@@ -1,0 +1,1216 @@
+{
+  "schema": "tc-local512-native-weight-surfaces-v1",
+  "time_utc": "2026-10-08T03:28:45.991492+00:00",
+  "date_local": "2026-10-08",
+  "hardware": "M4 Max 64GB / macOS26.6.2",
+  "overall_goal_status": "active",
+  "qualification_passed": false,
+  "default_cache_bytes": 0,
+  "default_storage": "copy",
+  "model_downloads": 0,
+  "model_mutations": false,
+  "scope": "native ready-surface bindings and operator lifetimes; limited actual model diagnostics, not physical-engine or production qualification",
+  "builds": {
+    "private": {
+      "directory": "build/local512-weight-surface-v1-private",
+      "library_sha256": "cf02da5367f74e0c5d1bb795b2e13046aa70e0417dc616f1de584da71f81ce54",
+      "manifest_sha256": "508ba1d4ecf9f0be5c560f9d413d6818b81daada6c7d742e2689362c24fcee52",
+      "runtime_build_id": "tc-runtime-build-v1-9d4b627136f9d1ccdb0cc06d643235e1dd7b99a4f37fc625717bc60428b2dd99",
+      "source_count": 491,
+      "source_mismatches": [],
+      "contains_preexisting_convrot_drafts": true,
+      "selected_regression_count": 19,
+      "selected_regression_skips": 0,
+      "regression_log": "outputs/local512-weight-surface-v1-private-regression-20261008.log"
+    },
+    "public": {
+      "directory": "build/local512-weight-surface-v1-public",
+      "library_sha256": "26419067a4ada38f3023075202f42d3887c99730625444e6c9fb57b9a8aac94c",
+      "manifest_sha256": "992f1476bb17e471defdd44d7f7501bc33a5ee1461c3b8c59db249a92af89c08",
+      "runtime_build_id": "tc-runtime-build-v1-de7824093721e644f32ce630df57d16fcd1262e90689a4931ed02fb89303bb1f",
+      "source_count": 491,
+      "source_mismatches": [],
+      "contains_preexisting_convrot_drafts": true,
+      "selected_regression_count": 18,
+      "selected_regression_skips": 0,
+      "regression_log": "outputs/local512-weight-surface-v1-public-regression-20261008.log",
+      "release_binary_guard_passed": true
+    }
+  },
+  "tests": {
+    "shared_gpu_format_storage_cases": 22,
+    "native_alias_view_capacity_and_immutable_write_guard_passed": true,
+    "private_native_cache_test": {
+      "count": 1,
+      "log": "outputs/local512-weight-surface-v1-private-native-retry-20261008.log"
+    },
+    "public_actual_coreml26": {
+      "count": 5,
+      "log": "outputs/local512-weight-surface-v1-public-coreml26-20261008.log"
+    },
+    "tool_contracts": {
+      "count": 73,
+      "log": "outputs/local512-weight-surface-v1-screen-tests-20261008.log"
+    },
+    "full_repository_suite": false
+  },
+  "qwen_edit_screens": [
+    {
+      "directory": "outputs/local512-qwen-edit1-weight-surface-v1-diagnostic-20261008",
+      "summary_sha256": "aeeaedf12bef51c380048060dd043ee245cb27e4cc7531b263e360fc542fb925",
+      "order": [
+        "code_cache_on",
+        "code_cache_off",
+        "gpu_weights"
+      ],
+      "references": 1,
+      "storage": "surface",
+      "budget": 1342177280,
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "trials": [
+        {
+          "mode": "code_cache_on",
+          "cold": 16.992650833,
+          "warm": [
+            12.476679583,
+            11.880388709
+          ],
+          "warm_median": 12.178534146,
+          "png_sha256": [
+            "4e2f5cf7c3e37536e195fff371fb94881ff902236e8dfc0b49e30bcc690475b8",
+            "bb139b4eb5409890a9e9d3fbf586017d814ff4ce7146265b6726dc78e5a48151",
+            "3c967a6b6e4da168663746183d3dc11e4df28418d9b2a969a4ddca4d49718b2d"
+          ],
+          "stdout_sha256": "2e8bf38a4686cdf6f38ed5f7f12ae45da5535bb861b9d5bc48a01f57d5a12e30",
+          "memory": {
+            "complete": true,
+            "sample_count": 418,
+            "max_gap_ns": 110019458,
+            "tree_peak_phys_footprint_bytes": 39636872888,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 10.044457291,
+                "hybrid_setup": 0.000147125,
+                "image_encode": 0.197878042,
+                "request_wall": 16.992650833,
+                "text_encode": 2.982222083,
+                "vae_decode": 0.71280675
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 224,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 198,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 315,
+                "ineligible_session_total": 236,
+                "live_capacity_bytes": 1340473344,
+                "misses_session_total": 261,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1340473344,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1340473344,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 315
+              }
+            },
+            {
+              "timings": {
+                "denoise": 9.715603583,
+                "hybrid_setup": 0.000095208,
+                "image_encode": 0.167312,
+                "request_wall": 12.476679583,
+                "text_encode": 1.367581166,
+                "vae_decode": 0.622308667
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 448,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 396,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 693,
+                "ineligible_session_total": 460,
+                "live_capacity_bytes": 1340473344,
+                "misses_session_total": 459,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1340473344,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1340473344,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 693
+              }
+            },
+            {
+              "timings": {
+                "denoise": 9.810107583,
+                "hybrid_setup": 0.000092875,
+                "image_encode": 0.164774084,
+                "request_wall": 11.880388709,
+                "text_encode": 0.673921625,
+                "vae_decode": 0.6406005
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 672,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 594,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 1071,
+                "ineligible_session_total": 684,
+                "live_capacity_bytes": 1340473344,
+                "misses_session_total": 657,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1340473344,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1340473344,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 1071
+              }
+            }
+          ]
+        },
+        {
+          "mode": "code_cache_off",
+          "cold": 16.015051333,
+          "warm": [
+            12.1338295,
+            11.517821625
+          ],
+          "warm_median": 11.8258255625,
+          "png_sha256": [
+            "4e2f5cf7c3e37536e195fff371fb94881ff902236e8dfc0b49e30bcc690475b8",
+            "bb139b4eb5409890a9e9d3fbf586017d814ff4ce7146265b6726dc78e5a48151",
+            "3c967a6b6e4da168663746183d3dc11e4df28418d9b2a969a4ddca4d49718b2d"
+          ],
+          "stdout_sha256": "0fab9e6ac80948a0c3df94ed49ded8f10db965e43755a49dfed8bc447af15373",
+          "memory": {
+            "complete": true,
+            "sample_count": 401,
+            "max_gap_ns": 110011708,
+            "tree_peak_phys_footprint_bytes": 38309178248,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 9.150969833,
+                "hybrid_setup": 0.000102833,
+                "image_encode": 0.19561925,
+                "request_wall": 16.015051333,
+                "text_encode": 2.968533666,
+                "vae_decode": 0.681995875
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 224,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            },
+            {
+              "timings": {
+                "denoise": 9.3966355,
+                "hybrid_setup": 0.000090167,
+                "image_encode": 0.161809125,
+                "request_wall": 12.1338295,
+                "text_encode": 1.346674209,
+                "vae_decode": 0.6290485
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 448,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            },
+            {
+              "timings": {
+                "denoise": 9.452449833,
+                "hybrid_setup": 0.000088792,
+                "image_encode": 0.159940167,
+                "request_wall": 11.517821625,
+                "text_encode": 0.650605542,
+                "vae_decode": 0.656072125
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 672,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            }
+          ]
+        },
+        {
+          "mode": "gpu_weights",
+          "cold": 15.897985625,
+          "warm": [
+            11.325257375,
+            10.629635666
+          ],
+          "warm_median": 10.9774465205,
+          "png_sha256": [
+            "11801263ca6ef0bf8402bfe1121169726ecebeeba4989c9366a84cb9148d1179",
+            "9d8cde134b05849e76aa76b2cc69c8c8a360da010d832b7496d35833c24ba1d0",
+            "15f83afd561844b662f414d99b9eee01bf6c7d4882ee1eda06d40659a125a6c7"
+          ],
+          "stdout_sha256": "8a0c0b5612515f01f14f161be3c0251f07f31f3a709d3785e03b6a0812cb7769",
+          "memory": {
+            "complete": true,
+            "sample_count": 383,
+            "max_gap_ns": 110018208,
+            "tree_peak_phys_footprint_bytes": 40333732360,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 9.025623667,
+                "hybrid_setup": 0,
+                "image_encode": 0.19522575,
+                "request_wall": 15.897985625,
+                "text_encode": 2.976841292,
+                "vae_decode": 0.850902208
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 8.988423791,
+                "hybrid_setup": 0,
+                "image_encode": 0.157321167,
+                "request_wall": 11.325257375,
+                "text_encode": 1.416078667,
+                "vae_decode": 0.701064042
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 9.043018708,
+                "hybrid_setup": 0,
+                "image_encode": 0.15930825,
+                "request_wall": 10.629635666,
+                "text_encode": 0.664739666,
+                "vae_decode": 0.69088125
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "directory": "outputs/local512-qwen-edit2-weight-surface-v1-diagnostic-20261008",
+      "summary_sha256": "e007de13bd6f433c08ee4831ea3ea8f0231e3564e657987bff62c54c24b88e7b",
+      "order": [
+        "gpu_weights",
+        "code_cache_off",
+        "code_cache_on"
+      ],
+      "references": 2,
+      "storage": "surface",
+      "budget": 1342177280,
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "trials": [
+        {
+          "mode": "gpu_weights",
+          "cold": 17.820382625,
+          "warm": [
+            13.388171666,
+            12.900765292
+          ],
+          "warm_median": 13.144468479,
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "stdout_sha256": "4f92c4ae66783db0fbe3616c7c225c87f7c5fd14aa9bfdc6297bc9355cdcf5a9",
+          "memory": {
+            "complete": true,
+            "sample_count": 445,
+            "max_gap_ns": 109994042,
+            "tree_peak_phys_footprint_bytes": 40757439080,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 10.557389292,
+                "hybrid_setup": 0,
+                "image_encode": 0.375554625,
+                "request_wall": 17.820382625,
+                "text_encode": 3.200199875,
+                "vae_decode": 0.793131959
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 10.528103875,
+                "hybrid_setup": 0,
+                "image_encode": 0.332255542,
+                "request_wall": 13.388171666,
+                "text_encode": 1.745183791,
+                "vae_decode": 0.679882791
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 10.598414041,
+                "hybrid_setup": 0,
+                "image_encode": 0.322056667,
+                "request_wall": 12.900765292,
+                "text_encode": 1.161583792,
+                "vae_decode": 0.715565792
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            }
+          ]
+        },
+        {
+          "mode": "code_cache_off",
+          "cold": 18.431646792,
+          "warm": [
+            14.695401584,
+            14.126873667
+          ],
+          "warm_median": 14.4111376255,
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "6679dadf31a1a905ab8429e629bbb3236b0ca6723fcf69d4725c41be40722b5d",
+          "memory": {
+            "complete": true,
+            "sample_count": 477,
+            "max_gap_ns": 110012833,
+            "tree_peak_phys_footprint_bytes": 38886681888,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 11.131027125,
+                "hybrid_setup": 0.000099916,
+                "image_encode": 0.362623459,
+                "request_wall": 18.431646792,
+                "text_encode": 3.198301625,
+                "vae_decode": 0.678465709
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 256,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            },
+            {
+              "timings": {
+                "denoise": 11.380746875,
+                "hybrid_setup": 0.000082417,
+                "image_encode": 0.348598083,
+                "request_wall": 14.695401584,
+                "text_encode": 1.683239958,
+                "vae_decode": 0.641840334
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 512,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            },
+            {
+              "timings": {
+                "denoise": 11.369708667,
+                "hybrid_setup": 0.000078,
+                "image_encode": 0.328992792,
+                "request_wall": 14.126873667,
+                "text_encode": 1.159422417,
+                "vae_decode": 0.619600709
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 768,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            }
+          ]
+        },
+        {
+          "mode": "code_cache_on",
+          "cold": 19.072983125,
+          "warm": [
+            14.841503833,
+            14.415570334
+          ],
+          "warm_median": 14.6285370835,
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "0b7d3b4fd8ab736e7bdcefb5faaa5d2ec91e350e472c91b0162eb463bdd4665f",
+          "memory": {
+            "complete": true,
+            "sample_count": 488,
+            "max_gap_ns": 110017250,
+            "tree_peak_phys_footprint_bytes": 40244129368,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 11.759783458,
+                "hybrid_setup": 0.000107208,
+                "image_encode": 0.385198125,
+                "request_wall": 19.072983125,
+                "text_encode": 3.143374542,
+                "vae_decode": 0.726443125
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 256,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 198,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 315,
+                "ineligible_session_total": 268,
+                "live_capacity_bytes": 1340473344,
+                "misses_session_total": 261,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1340473344,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1340473344,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 315
+              }
+            },
+            {
+              "timings": {
+                "denoise": 11.446356208,
+                "hybrid_setup": 0.000092917,
+                "image_encode": 0.368223,
+                "request_wall": 14.841503833,
+                "text_encode": 1.707153,
+                "vae_decode": 0.659294417
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 512,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 396,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 693,
+                "ineligible_session_total": 524,
+                "live_capacity_bytes": 1340473344,
+                "misses_session_total": 459,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1340473344,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1340473344,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 693
+              }
+            },
+            {
+              "timings": {
+                "denoise": 11.646144709,
+                "hybrid_setup": 0.000085208,
+                "image_encode": 0.332137792,
+                "request_wall": 14.415570334,
+                "text_encode": 1.159896292,
+                "vae_decode": 0.629483459
+              },
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "runtime_calls": 768,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 594,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 1071,
+                "ineligible_session_total": 780,
+                "live_capacity_bytes": 1340473344,
+                "misses_session_total": 657,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1340473344,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1340473344,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 1071
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "z_base_screens": [
+    {
+      "directory": "outputs/local512-z-base-weight-surface-v1-diagnostic-20261008",
+      "summary_sha256": "0ba622225964b2c46e4f3bccba000558b3e9ff825c26b044478fe2118ded28e8",
+      "status": "complete",
+      "routes": [
+        "gpu",
+        "runtime"
+      ],
+      "cache_budget": 1342177280,
+      "cache_storage": "surface",
+      "qualification_passed": false,
+      "trials": [
+        {
+          "route": "gpu",
+          "cold": 10.231187417,
+          "warm": [
+            6.998625708,
+            6.993195875
+          ],
+          "warm_median": 6.9959107915,
+          "png_sha256": [
+            "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18",
+            "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18",
+            "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18"
+          ],
+          "stdout_sha256": "904d6ede5f6a977d1bf65a68249b410098f4371aa3f0fc388df80bfa82e77982",
+          "memory": {
+            "complete": true,
+            "sample_count": 246,
+            "max_gap_ns": 110019667,
+            "tree_peak_phys_footprint_bytes": 22946686624,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 6.770482834,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 10.231187417,
+                "text_encode": 1.240507375,
+                "vae_decode": 0.284169708
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 6.756511459,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.998625708,
+                "text_encode": 0.000017375,
+                "vae_decode": 0.222107208
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 6.751808,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.993195875,
+                "text_encode": 0.000018375,
+                "vae_decode": 0.222411209
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            }
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold": 6.870191083,
+          "warm": [
+            5.657424333,
+            5.673115792
+          ],
+          "warm_median": 5.665270062499999,
+          "png_sha256": [
+            "ceea95253bcffed44c9182cc0353207de9aab84a2ffdffd0b583eeb579ce9540",
+            "ceea95253bcffed44c9182cc0353207de9aab84a2ffdffd0b583eeb579ce9540",
+            "ceea95253bcffed44c9182cc0353207de9aab84a2ffdffd0b583eeb579ce9540"
+          ],
+          "stdout_sha256": "26137f25eeb616f75d7aa2c2373d12a1ad02483164bd078c2c3e0b1eba270db6",
+          "memory": {
+            "complete": true,
+            "sample_count": 186,
+            "max_gap_ns": 110013750,
+            "tree_peak_phys_footprint_bytes": 24073004848,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 5.8187495,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.870191083,
+                "text_encode": 0.294425167,
+                "vae_decode": 0.274759875
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": 256,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 104,
+                "enabled": true,
+                "entries": 83,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 83,
+                "hits_session_total": 581,
+                "ineligible_session_total": 268,
+                "live_capacity_bytes": 1326792704,
+                "misses_session_total": 187,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1326792704,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 83,
+                "retained_bytes": 1326792704,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 581
+              }
+            },
+            {
+              "timings": {
+                "denoise": 5.419323083,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.657424333,
+                "text_encode": 0.000013708,
+                "vae_decode": 0.218630792
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": 512,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 208,
+                "enabled": true,
+                "entries": 83,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 83,
+                "hits_session_total": 1245,
+                "ineligible_session_total": 524,
+                "live_capacity_bytes": 1326792704,
+                "misses_session_total": 291,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1326792704,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 83,
+                "retained_bytes": 1326792704,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 1245
+              }
+            },
+            {
+              "timings": {
+                "denoise": 5.43533375,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.673115792,
+                "text_encode": 0.000010125,
+                "vae_decode": 0.219180208
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": 768,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 1342177280,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 312,
+                "enabled": true,
+                "entries": 83,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 83,
+                "hits_session_total": 1909,
+                "ineligible_session_total": 780,
+                "live_capacity_bytes": 1326792704,
+                "misses_session_total": 395,
+                "native_surface_storage": true,
+                "peak_capacity_bytes": 1326792704,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 83,
+                "retained_bytes": 1326792704,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 1909
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "directory": "outputs/local512-z-base-weight-surface-v1-off-diagnostic-20261008",
+      "summary_sha256": "c918fd1eda5bb06e2ebb47e487567c721add00cab78f47417a497ac9e29f7312",
+      "status": "complete",
+      "routes": [
+        "runtime",
+        "gpu"
+      ],
+      "cache_budget": 0,
+      "cache_storage": "copy",
+      "qualification_passed": false,
+      "trials": [
+        {
+          "route": "runtime",
+          "cold": 6.555851333,
+          "warm": [
+            5.68704525,
+            5.6834785
+          ],
+          "warm_median": 5.685261875,
+          "png_sha256": [
+            "ceea95253bcffed44c9182cc0353207de9aab84a2ffdffd0b583eeb579ce9540",
+            "ceea95253bcffed44c9182cc0353207de9aab84a2ffdffd0b583eeb579ce9540",
+            "ceea95253bcffed44c9182cc0353207de9aab84a2ffdffd0b583eeb579ce9540"
+          ],
+          "stdout_sha256": "d74854e0fc68a8253377c428d23664a35a90cc8c6522e442364cbb4974947501",
+          "memory": {
+            "complete": true,
+            "sample_count": 183,
+            "max_gap_ns": 110010542,
+            "tree_peak_phys_footprint_bytes": 22744409856,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 5.537228083,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.555851333,
+                "text_encode": 0.29555925,
+                "vae_decode": 0.270181625
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": 256,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            },
+            {
+              "timings": {
+                "denoise": 5.445121334,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.68704525,
+                "text_encode": 0.000011459,
+                "vae_decode": 0.221152583
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": 512,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            },
+            {
+              "timings": {
+                "denoise": 5.447400041,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.6834785,
+                "text_encode": 0.000019708,
+                "vae_decode": 0.216940958
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": 768,
+              "runtime_failed": false,
+              "code_cache": {
+                "budget_bytes": 0,
+                "copy_hits_session_total": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "native_surface_storage": false,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM",
+                "surface_bind_hits_session_total": 0
+              }
+            }
+          ]
+        },
+        {
+          "route": "gpu",
+          "cold": 7.57686775,
+          "warm": [
+            6.990036917,
+            6.989032625
+          ],
+          "warm_median": 6.989534771000001,
+          "png_sha256": [
+            "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18",
+            "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18",
+            "f872c1ad9beb5cea4e4a6d5fd691e65b07799d40700ecb0f71658f7223f14e18"
+          ],
+          "stdout_sha256": "20c1f9e70b89a24b93cc476897b145dce8cb496bf61ea5df1637021786c5d345",
+          "memory": {
+            "complete": true,
+            "sample_count": 219,
+            "max_gap_ns": 110014167,
+            "tree_peak_phys_footprint_bytes": 22946850536,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "requests": [
+            {
+              "timings": {
+                "denoise": 6.764639625,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.57686775,
+                "text_encode": 0.271866209,
+                "vae_decode": 0.267824209
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 6.754528291,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.990036917,
+                "text_encode": 0.000011084,
+                "vae_decode": 0.2170835
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            },
+            {
+              "timings": {
+                "denoise": 6.752832792,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.989032625,
+                "text_encode": 0.00001125,
+                "vae_decode": 0.217494541
+              },
+              "actual_steps": 8,
+              "lora_projections": null,
+              "runtime_calls": null,
+              "runtime_failed": null,
+              "code_cache": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "strict_window": {
+    "directory": "outputs/local512-z-base-weight-surface-v1-strict-20261008",
+    "summary_sha256": "e4109a636ac1518d14fbf5485e2deb1d3b76ee54c165ec20d1f24c7309809721",
+    "status": "incomplete",
+    "accepted_trials": 0,
+    "completed_gpu_requests": 4,
+    "private_started": false,
+    "load_samples": 54,
+    "busy_samples": 2,
+    "external_processes_signalled": false,
+    "gates_relaxed": false
+  },
+  "visual": {
+    "directory": "outputs/local512-z-base-weight-surface-v1-diagnostic-20261008/visual",
+    "reviewer": "Codex agent, limited nonblind inspection",
+    "inspected": [
+      "whole",
+      "center",
+      "top-left",
+      "bottom-right"
+    ],
+    "visually_very_similar": true,
+    "observations": "fox silhouette/pose/ears/eyes/nose/tail and composition close; small fur/snow/background differences; no new visible breaks or colour blocks",
+    "user_approval": false,
+    "multiple_seeds": false,
+    "automatic_manifest_pending": true,
+    "qualification_passed": false
+  },
+  "cleanup": {
+    "objects_removed": 423,
+    "logical_bytes_removed": 32964424,
+    "empty_module_cache_directories_removed": 2,
+    "binaries_logs_models_pngs_manifests_retained": true,
+    "rebuildable": true
+  }
+}

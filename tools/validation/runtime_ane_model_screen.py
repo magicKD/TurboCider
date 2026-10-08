@@ -29,6 +29,7 @@ from runtime_ane_common import (
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
 from runtime_ane_calibration import channel_policy
+from qwen_encoder_residency_screen import validate_weight_code_cache
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,6 +119,9 @@ def main():
                    help="explicit 0...1GiB compute-cache hint on BOTH CPU-direct routes; not retained bins or a RAM cap")
     p.add_argument("--private-scale-cache",choices=("0","1"),default="1",
                    help="private W8 compact immutable-generation row-scale cache ablation")
+    p.add_argument("--weight-code-cache-bytes",type=int,default=0,
+                   help="explicit 0..2GiB converted W8 cache on runtime route only; unchanged complete GPU baseline")
+    p.add_argument("--weight-code-cache-mode",choices=("copy","surface"),default="copy")
     p.add_argument("--private-launch-fence",choices=("0","1"),default="0",
                    help="wait for first ANE request/ready-producer submission before the GPU branch, not completed ANE output")
     p.add_argument("--private-a8-lookahead",choices=("0","1"),default="0",
@@ -198,6 +202,11 @@ def main():
     if args.runtime_backend != "public" and "runtime" not in routes:
         p.error("runtime backend selection requires runtime route")
     public_w8=args.runtime_backend=="public" and args.private_data_path=="w8a8"
+    if not 0<=args.weight_code_cache_bytes<=2<<30 or \
+        ((args.weight_code_cache_bytes or args.weight_code_cache_mode!="copy") and
+         ("runtime" not in routes or args.private_data_path!="w8a8" or not args.private_gpu_io)) or \
+        (args.weight_code_cache_mode=="surface" and not args.weight_code_cache_bytes):
+        p.error("converted weight cache requires explicit W8 runtime GPU I/O and bytes0..2147483648")
     if args.private_gpu_io and ((args.runtime_backend == "public" and not public_w8) or "runtime" not in routes):
         p.error("GPU I/O requires runtime and an explicitly authorized Private/Auto or Public W8 route")
     if args.private_data_path == "w8a8" and (args.runtime_backend not in ("private","public") or not args.private_gpu_io):
@@ -272,6 +281,8 @@ def main():
                "gguf_retain_packed":args.gguf_retain_packed,
                "gguf_allocator_cache_bytes":args.gguf_allocator_cache_bytes,
                "private_scale_cache": args.private_scale_cache,
+               "weight_code_cache_bytes":args.weight_code_cache_bytes,
+               "weight_code_cache_mode":args.weight_code_cache_mode,
                "private_launch_fence": args.private_launch_fence,
                "private_a8_lookahead": args.private_a8_lookahead,
                "private_stage_specialize": args.private_stage_specialize,
@@ -346,6 +357,8 @@ def main():
         route_env.update(reference_environment(route, edit, bool(args.lora)))
         route_env.update(z_gpu_layer_environment(args.model_id,route,args.z_runtime_gpu_blocks,routes))
         if route == "runtime":
+            route_env["TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES"]=str(args.weight_code_cache_bytes)
+            route_env["TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_MODE"]=args.weight_code_cache_mode
             route_env["TURBOCIDER_RUNTIME_ANE_CHUNKS"] = args.chunks
             if args.fp32_channel_join:route_env["TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN"]="1"
             if args.fixed_async is not None:
@@ -408,6 +421,8 @@ def main():
         active_runtime_rows = [row for row in rows if not native_auto or
             ((row.get("hybrid") or {}).get("runtime_weight") or {}).get("executor_backend")=="private_ane"]
         if route=="runtime":validate_requested_gpu_layers(rows,args.z_runtime_gpu_blocks,args.steps)
+        if route=="runtime" and args.private_data_path=="w8a8" and args.weight_code_cache_bytes:
+            validate_weight_code_cache(rows,args.weight_code_cache_bytes,args.weight_code_cache_mode)
         if route=="runtime":validate_fp32_channel_join(rows,args.fp32_channel_join,allow_gpu_decline=native_auto)
         if route=="runtime" and args.private_lora_channel_range is not None:
             validate_lora_channel_range(rows,args.private_lora_channel_range=="1")

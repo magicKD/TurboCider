@@ -12,6 +12,8 @@ enum class Element { FP16, I8 };
 class Device;
 class Transfer;
 class QuantStage;
+class WeightCodeCacheClaim;
+enum class WeightCodeCacheStorage;
 inline constexpr size_t scale_cache_budget_bytes = 4u << 20;
 uint64_t configured_weight_code_cache_bytes();
 
@@ -31,6 +33,8 @@ class Surface {
     struct Impl;
     std::shared_ptr<Impl> impl_;
     uint32_t row_begin_ = 0, row_count_ = 0;
+    void retain_cache_claim(std::shared_ptr<WeightCodeCacheClaim>);
+    size_t cache_capacity_bytes() const;
     friend class Transfer;
     friend class Device;
 };
@@ -55,6 +59,7 @@ class Device {
     Device(); // legacy Private staging flags, no private client API
     Device(bool scale_cache, bool specialize);
     Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes);
+    Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes, WeightCodeCacheStorage);
     void *shared_event() const;
     void release_after_failure(uint64_t value) const;
     std::string name() const;
@@ -79,6 +84,10 @@ class Device {
     // A separate staging queue/event: next-layer readiness MUST NOT advance
     // the current layer's activation/ANE-done timeline.
     QuantStage stage_w8(DeviceWeightView, W8StageSpec, Surface codes, Surface scales);
+    // Bank-owned references start at their fixed scratch surfaces on EACH
+    // refill. Only ready immutable native-cache hits bypass all GPU copies.
+    // Returned cached Surface aliases carry capacity until their last reader.
+    QuantStage bind_w8(DeviceWeightView, W8StageSpec, Surface &codes, Surface &scales);
     WeightCacheStats scale_cache_stats() const;
     WeightCodeCacheReport weight_code_cache_stats() const;
     uint64_t weight_code_cache_budget_bytes() const;
@@ -89,6 +98,7 @@ class Device {
     std::shared_ptr<Impl> impl_;
     Transfer prepare_transfer_impl(std::vector<Upload>, std::vector<Download>,
                                   std::optional<std::pair<uint64_t, uint64_t>>, bool upload_only = false);
+    QuantStage stage_w8_impl(DeviceWeightView,W8StageSpec,Surface,Surface,Surface *,Surface *);
     friend class Surface;
     friend class Transfer;
     friend class QuantStage;

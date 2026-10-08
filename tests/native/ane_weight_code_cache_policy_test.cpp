@@ -17,6 +17,13 @@ int main() {
         auto plan=weight_code_cache_plan(5120,4096,16384);
         check(plan && plan->codes_bytes==20971520 && plan->scales_bytes==10240 &&
               plan->allocation_upper==20987904,"normalized code/scale allocation upper");
+        auto native=weight_code_cache_plan(5120,4096,16384,true);
+        check(native && native->scales_bytes==327680 && native->allocation_upper==21299200,
+              "native surface allocation/pitch upper");
+        check(parse_weight_code_cache_storage(nullptr)==WeightCodeCacheStorage::CompactCopy &&
+              parse_weight_code_cache_storage("surface")==WeightCodeCacheStorage::NativeSurface,"cache storage policy");
+        bool bad_storage=false;try{parse_weight_code_cache_storage("auto");}catch(const std::invalid_argument&){bad_storage=true;}
+        check(bad_storage,"invalid cache storage policy admitted");
         check(!weight_code_cache_plan(0,4096,16384) && !weight_code_cache_plan(32769,4096,16384) &&
               !weight_code_cache_plan(5120,4096,1000),"invalid allocation plan admitted");
         WeightCodeCacheLedger ledger(1024);

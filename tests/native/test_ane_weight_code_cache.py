@@ -31,7 +31,8 @@ class WeightCodeCacheTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             result=subprocess.run([str(probe)],cwd=ROOT,capture_output=True,text=True,timeout=90)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn("PASS weight code cache GPU cases=11",result.stdout);print(result.stdout)
+            self.assertIn("PASS weight code cache GPU cases=22",result.stdout)
+            self.assertIn("PASS native surface bindings",result.stdout);print(result.stdout)
 
 
 if __name__=="__main__":unittest.main()
