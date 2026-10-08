@@ -33,7 +33,7 @@ class Weights {
     bool runtime_lora_fp16_ = false;
     Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
                                   const std::vector<Tensor> *) const;
-    Tensor lora_delta_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,
+    Tensor lora_delta_slice_rank_impl(const Tensor *,const mx::Shape &,mx::Dtype,const std::string &,int,int,int,int,
                                      std::optional<mx::Dtype>,const std::vector<Tensor> *) const;
 
   public:
@@ -118,9 +118,18 @@ class Weights {
     size_t lora_rank_count(const std::string &prefix) const {
         auto found=runtime_loras_.find(prefix);return found==runtime_loras_.end()?0:found->second.size();
     }
+    size_t lora_rank_width(const std::string &prefix) const {
+        size_t width=0;auto found=runtime_loras_.find(prefix);
+        if(found!=runtime_loras_.end())for(const auto &adapter:found->second)width+=adapter.down.shape(0);
+        return width;
+    }
     Tensor project_slice_with_ranks(const Tensor &,const std::string &,const std::vector<Tensor> &,
         int row_start,int row_end,int col_start,int col_end,bool add_bias=false) const;
     Tensor lora_delta_slice_with_ranks(const Tensor &,const std::string &,const std::vector<Tensor> &,
+        int row_start,int row_end,int col_start,int col_end,std::optional<mx::Dtype> output_dtype=std::nullopt) const;
+    // Metadata-only logical input: no concatenated full-hidden allocation.
+    // Same operation/adapter generation and full column interval as the ranks.
+    Tensor lora_delta_from_ranks(const mx::Shape &,mx::Dtype,const std::string &,const std::vector<Tensor> &,
         int row_start,int row_end,int col_start,int col_end,std::optional<mx::Dtype> output_dtype=std::nullopt) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;

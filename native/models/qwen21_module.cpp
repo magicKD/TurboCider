@@ -18,6 +18,13 @@ ModelModule qwen21_module() {
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
             const char *encoder_weights=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
             const char *shared_ranks=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
+            const char *down_ranks=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SPLIT_DOWN_RANKS");
+            require(qwen21::binary_option_or_unset(down_ranks),"Qwen split down ranks require 0 or 1");
+            if(qwen21::option_enabled(down_ranks) && r.hybrid_mlp_mode=="runtime" && !r.loras.empty())
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 &&
+                    ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0 &&
+                    !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16")),
+                    "Qwen split down ranks require explicit resident512 Private fixed-channel FP32-rank runtime");
             require(qwen21::binary_option_or_unset(shared_ranks),"Qwen shared LoRA ranks require 0 or 1");
             if(qwen21::option_enabled(shared_ranks) && r.hybrid_mlp_mode=="runtime" && !r.loras.empty())
                 require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 &&

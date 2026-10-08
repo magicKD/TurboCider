@@ -143,6 +143,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const char *share_rank_flag=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS");
     require(binary_option_or_unset(share_rank_flag),"Qwen shared LoRA ranks require 0 or 1");
     const bool share_lora_ranks=option_enabled(share_rank_flag) && runtime_requested && !r.loras.empty();
+    const char *down_rank_flag=std::getenv("TURBOCIDER_QWEN21_RUNTIME_SPLIT_DOWN_RANKS");
+    require(binary_option_or_unset(down_rank_flag),"Qwen split down ranks require 0 or 1");
+    const bool split_down_ranks=option_enabled(down_rank_flag) && runtime_requested && !r.loras.empty();
     const bool qkv_requested = r.hybrid_mlp_mode == "runtime_qkv";
     const bool hybrid_requested = r.execution == "gpu_ane" && !runtime_requested && !qkv_requested;
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
@@ -863,6 +866,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(retain_encoder_runtime)result.selection+="; explicit bounded encoder executor retention";
     if(retain_encoder_weights)result.selection+="; explicit admitted encoder source retention; no weight copy/precision change";
     if(share_lora_ranks)result.selection+="; experimental operation-local shared gate/up LoRA input ranks";
+    if(split_down_ranks)result.selection+="; experimental FP32 split down-LoRA input ranks, ONE joined B/delta rounding";
     if (runtime_requested && !r.loras.empty())
         result.shared_lora_ranks = SharedLoraRankMetrics{share_lora_ranks};
     if (lora_fp16 && !r.loras.empty())
@@ -955,6 +959,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::vector<RuntimeFunction> runtime_lora_gate_up_channels;
             std::vector<RuntimeFunction> runtime_lora_channel_gpu;
             std::vector<RuntimeFunction> runtime_lora_input_ranks;
+            std::vector<RuntimeFunction> runtime_lora_down_gpu_ranks,runtime_lora_down_split_add;
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
@@ -980,6 +985,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             // differently rebound adapter or channel share.
                             runtime_lora_channel_gpu.push_back(runtime_ffn::channels(transformer_,p,0,first,4096,12288,runtime_ffn_->fp32_channel_join(),block_shared));
                             runtime_lora_input_ranks.push_back(block_shared ? runtime_ffn::input_ranks(transformer_,p) : RuntimeFunction{});
+                            const bool block_down=split_down_ranks && transformer_.lora_rank_count(p+"out")>0;
+                            runtime_lora_down_gpu_ranks.push_back(block_down ? runtime_ffn::down_gpu_ranks(transformer_,p,first) : RuntimeFunction{});
+                            runtime_lora_down_split_add.push_back(block_down ? runtime_ffn::down_add_split_ranks(transformer_,p,first) : RuntimeFunction{});
                         }
                         runtime_lora_down_add.push_back(runtime_ffn::down_add(transformer_,p));
                     }
@@ -1025,6 +1033,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             shared_correction = block_shared;
                             return std::make_pair(gu[0],gu[1]);
                         }};
+                    if(split_down_ranks && runtime_ffn_->channel_split() && bool(runtime_lora_down_gpu_ranks.at(block))) {
+                        adapter.channel_down_ranks=ane::HybridFfn::Adapter::ChannelDownRanks{
+                            uint64_t(transformer_.lora_rank_width(p+"out"))*3*sizeof(float),
+                            [&](const Tensor &h){return runtime_lora_down_gpu_ranks.at(block)({h});},
+                            [&](const Tensor &h,const std::vector<Tensor> &ranks,const Tensor &base) {
+                                std::vector<Tensor> args{h,base};args.insert(args.end(),ranks.begin(),ranks.end());
+                                return runtime_lora_down_split_add.at(block)(args)[0];
+                            }};
+                    }
                     auto output = runtime_ffn_->run(block, input, [&](const Tensor &x) {
                         used_fallback = true;
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];

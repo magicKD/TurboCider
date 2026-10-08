@@ -29,6 +29,15 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_split_down_rank_screen_requires_actual_progress(self):
+        def row(blocks,arrays):return dict(hybrid=dict(runtime_weight=dict(
+            split_down_rank_blocks_session_total=blocks,split_down_rank_arrays_session_total=arrays)))
+        SCREEN.validate_down_ranks([row(192,192),row(384,384)],True)
+        SCREEN.validate_down_ranks([row(0,0),row(0,0)],False)
+        for rows in ([{}],[row(True,1)],[row(0,0)],[row(1,0)],[row(192,192),row(192,192)]):
+            with self.assertRaises(ValueError):SCREEN.validate_down_ranks(rows,True)
+        with self.assertRaises(ValueError):SCREEN.validate_down_ranks([row(1,1)],False)
+
     def test_weight_code_cache_requires_completed_hits_and_bounded_leases(self):
         cache=dict(enabled=True,budget_bytes=1024,hits_session_total=10,misses_session_total=3,
             native_surface_storage=False,copy_hits_session_total=10,surface_bind_hits_session_total=0,

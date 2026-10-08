@@ -24,6 +24,21 @@ WEIGHT_MODES=("gpu","gpu_weights","encoder_retained","encoder_weights")
 COMBINED_MODES=("gpu_weights","dit_weights","dit_encoder_weights")
 LORA_RANK_MODES=("ranks_off","ranks_on")
 WEIGHT_CODE_MODES=("code_cache_off","code_cache_on")
+DOWN_RANK_MODES=("down_ranks_off","down_ranks_on")
+
+
+def validate_down_ranks(rows, enabled):
+    previous_blocks=0;previous_arrays=0
+    for row in rows:
+        runtime=(row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks=runtime.get("split_down_rank_blocks_session_total")
+        arrays=runtime.get("split_down_rank_arrays_session_total")
+        if any(type(v) is not int or v<0 for v in (blocks,arrays)):raise ValueError("missing split down-rank execution counters")
+        if enabled:
+            if blocks<=previous_blocks or arrays<=previous_arrays or arrays<blocks:
+                raise ValueError("need actual successful split down-rank blocks, not selection intent")
+        elif blocks or arrays:raise ValueError("disabled split down-rank arm executed sharded corrections")
+        previous_blocks=blocks;previous_arrays=arrays
 
 
 def validate_weight_code_cache(rows, budget, storage="copy"):
@@ -176,6 +191,8 @@ def main():
         help="matched GPU / code cache off / code cache on; fixed Private DiT, identical source retention and shared LoRA ranks")
     parser.add_argument("--weight-code-cache-mode",choices=("copy","surface"),default="copy",
         help="on arm: compact copy control or direct immutable native surface binding")
+    parser.add_argument("--down-ranks-screen",action="store_true",
+        help="GPU / original joined-hidden down / split FP32 input ranks; no weight code cache, shared gate/up ranks on both hybrid arms")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
@@ -201,6 +218,11 @@ def main():
             args.backend!="private" or not 0<args.weight_code_cache_bytes<=2<<30 or args.global_channels==0:
             parser.error("weight code cache screen requires fixed Private DiT, bytes1..2147483648 and no separate ranks screen")
         modes=("gpu_weights",*WEIGHT_CODE_MODES)
+    if args.down_ranks_screen:
+        if args.lora_ranks_screen or args.lora_ranks_gpu_control or args.weight_code_cache_bytes is not None or \
+            not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
+            parser.error("down rank screen requires real LoRA, fixed Private DiT and no unrelated rank/cache screen")
+        modes=("gpu_weights",*DOWN_RANK_MODES)
     order=args.order.split(",") if args.order else list(modes)
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
     if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
@@ -228,25 +250,29 @@ def main():
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
     summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
-        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and args.weight_code_cache_bytes is None,
+        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and args.weight_code_cache_bytes is None,
         lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes,
         weight_code_cache_mode=args.weight_code_cache_mode)
     summary["lora_ranks_gpu_control"]=args.lora_ranks_gpu_control
+    summary["down_ranks_screen"]=args.down_ranks_screen
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
         uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
-        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES)
+        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES)
         if mode in LORA_RANK_MODES:
             env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1" if mode=="ranks_on" else "0"
         if mode in WEIGHT_CODE_MODES:
             env["TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES"]=str(args.weight_code_cache_bytes if mode=="code_cache_on" else 0)
             env["TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_MODE"]=args.weight_code_cache_mode if mode=="code_cache_on" else "copy"
             if lora:env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
+        if mode in DOWN_RANK_MODES:
+            env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
+            env["TURBOCIDER_QWEN21_RUNTIME_SPLIT_DOWN_RANKS"]="1" if mode=="down_ranks_on" else "0"
         if uses_encoder or uses_dit:
             env.update(TURBOCIDER_ANE_BACKEND=args.backend,TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
                 TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_QWEN21_ENCODER_ANE_CHANNELS=str(args.channels),
@@ -273,13 +299,15 @@ def main():
                 if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_rows(rows,"dit_weights" if mode in (*LORA_RANK_MODES,*WEIGHT_CODE_MODES) else mode,
+        validate_rows(rows,"dit_weights" if mode in (*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES) else mode,
             len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
         if mode in WEIGHT_CODE_MODES:
             validate_weight_code_cache(rows,args.weight_code_cache_bytes if mode=="code_cache_on" else 0,
                 args.weight_code_cache_mode if mode=="code_cache_on" else "copy")
             if lora:validate_shared_ranks(rows,True)
+        if mode in DOWN_RANK_MODES:
+            validate_down_ranks(rows,mode=="down_ranks_on");validate_shared_ranks(rows,True)
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
         times=[row["timings_seconds"]["request_wall"] for row in rows]

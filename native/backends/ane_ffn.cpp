@@ -841,12 +841,20 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     const uint64_t padded64 = (uint64_t(rows_) + chunk - 1) / chunk * chunk;
     require(padded64 <= INT_MAX && padded64 / chunk <= 128, "channel split row bucket extent too large");
     const int padded = int(padded64);
+    const auto *down_ranks=adapter && adapter->channel_down_ranks ? &*adapter->channel_down_ranks : nullptr;
+    uint64_t rank_scratch=0;
+    if(down_ranks) {
+        require(down_ranks->prepare_gpu && down_ranks->finish && down_ranks->scratch_bytes_per_row>0 &&
+                down_ranks->scratch_bytes_per_row<=memory_budget_/uint64_t(rows_),
+                "invalid channel down-rank callbacks/scratch upper");
+        rank_scratch=uint64_t(rows_)*down_ranks->scratch_bytes_per_row;
+    }
     // Optional-tier allocations, including temporary padding/corrections and
     // the complete hidden needed for ONE down-LoRA. No checkpoint W copies.
     const uint64_t scratch = padded64 * (uint64_t(h) * (fp32_channel_join_?4:2) + (adapter ? uint64_t(fa) * 10 : 0)) +
         (padded != rows_ ? padded64 * h * input.itemsize() : 0) +
         (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4 +
-        (fp32_channel_join_?uint64_t(rows_)*h*2:0); // extra GPU head partial bytes, not just restored tail
+        (fp32_channel_join_?uint64_t(rows_)*h*2:0)+rank_scratch; // keep original conservative full-hidden allowance too
     if (graph_->estimated_bytes() > memory_budget_ || scratch > memory_budget_ - graph_->estimated_bytes() ||
         !admit_memory(observe_runtime_memory(mx::get_active_memory()), {uint64_t(4)<<30,memory_budget_},
                       graph_->estimated_bytes(), scratch).allowed()) {
@@ -901,12 +909,26 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     if(!prefetch_after_gpu_)maybe_prefetch(layer+1,rows_,next_weights);
     const bool async_head = !profile_ && block_plan_ && block_plan_->mode == RowScheduler::Mode::HybridUntimed;
     std::optional<std::pair<Tensor,Tensor>> head;
+    std::vector<Tensor> gpu_values,gpu_ranks;
     try {
         const auto gpu_start = Clock::now(); head = channel_gpu(input,0,fg);
         require(head->first.shape() == input.shape() && head->second.shape() == mx::Shape({1,rows_,fg}) &&
                 head->first.dtype() == (fp32_channel_join_?mx::float32:input.dtype()) && head->second.dtype() == input.dtype(),
                 "channel GPU base-down/hidden contract mismatch");
-        if (async_head) mx::async_eval({head->first,head->second}); else mx::eval({head->first,head->second});
+        gpu_values={head->first,head->second};
+        if(down_ranks) {
+            gpu_ranks=down_ranks->prepare_gpu(head->second);
+            require(!gpu_ranks.empty(),"channel down-rank GPU partials missing");
+            uint64_t bytes=0;
+            for(const auto &rank:gpu_ranks) {
+                require(rank.ndim()==3 && rank.shape(0)==1 && rank.shape(1)==rows_ && rank.shape(2)>0 &&
+                        rank.dtype()==mx::float32 && rank.nbytes()<=rank_scratch-bytes,
+                        "channel down-rank partial geometry/dtype/capacity mismatch");
+                bytes+=rank.nbytes();
+            }
+            gpu_values.insert(gpu_values.end(),gpu_ranks.begin(),gpu_ranks.end());
+        }
+        if (async_head) mx::async_eval(gpu_values); else mx::eval(gpu_values);
         const double gpu_seconds = async_head ? 0 : elapsed(gpu_start);
         if(prefetch_after_gpu_)maybe_prefetch(layer+1,rows_,next_weights);
         const auto join_start = Clock::now(); const auto result = graph_->finish(); pending_ = false;
@@ -927,7 +949,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         if (!async_head) metrics_.runtime_weight_join_seconds += join;
         if (!result.ok) {
             degrade(result.error,layer); ++metrics_.runtime_weight_fallback_blocks;
-            if (async_head) mx::eval({head->first,head->second});
+            if (async_head) mx::eval(gpu_values);
             // A late chunk may have written scratch. Recompute the COMPLETE
             // FFN (including full hidden/down-LoRA), never publish that scratch.
             return fallback();
@@ -937,8 +959,11 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         auto merged = mx::astype(mx::astype(head->first,mx::float32)+mx::astype(tail,mx::float32),input.dtype());
         if (adapter) {
             auto ane_hidden = mx::astype(slice_axis(*hidden,1,0,rows_),input.dtype());
-            auto full_hidden = mx::concatenate({head->second,ane_hidden},-1);
-            merged = adapter->down_and_add(full_hidden,merged);
+            if(down_ranks)merged=down_ranks->finish(ane_hidden,gpu_ranks,merged);
+            else {
+                auto full_hidden = mx::concatenate({head->second,ane_hidden},-1);
+                merged = adapter->down_and_add(full_hidden,merged);
+            }
             require(merged.shape() == input.shape() && merged.dtype() == input.dtype(), "channel down-LoRA output contract mismatch");
         }
         // ANE and its GPU restoration are already complete. Each output and
@@ -956,6 +981,10 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             block_gpu_seconds_ = gpu_seconds; block_ane_seconds_ = result.total_seconds;
         } else if (!result.overflow_retries) scheduler_->observe(layer,rows_,1,pre_seconds+wall);
         ++metrics_.runtime_weight_hybrid_blocks; ++metrics_.runtime_weight_channel_blocks;
+        if(down_ranks) {
+            ++metrics_.runtime_weight_down_rank_blocks;
+            metrics_.runtime_weight_down_rank_arrays+=gpu_ranks.size();
+        }
         metrics_.runtime_weight_ane_rows += rows_;
         metrics_.runtime_weight_wall_seconds += wall;
         if (block_plan_ && block_plan_->mode == RowScheduler::Mode::HybridUntimed) ++metrics_.runtime_weight_untimed_hybrid_blocks;
@@ -967,7 +996,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         return merged;
     } catch (...) {
         graph_->finish(); pending_ = false;
-        if (head) { try { mx::eval({head->first,head->second}); } catch (...) {} }
+        if (head) { try { mx::eval(gpu_values.empty()?std::vector<Tensor>{head->first,head->second}:gpu_values); } catch (...) {} }
         throw;
     }
 }

@@ -60,6 +60,15 @@ class HybridFfn {
     using ChannelGpu = std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)>;
     using NextWeights = std::function<std::vector<FfnWeight>(int)>;
     struct Adapter {
+        struct ChannelDownRanks {
+            uint64_t scratch_bytes_per_row = 0;
+            // Return lazy GPU-head rank partials only; the wrapper owns their
+            // submission/drain. No adapter mutation or hidden-dtype change.
+            std::function<std::vector<Tensor>(const Tensor &)> prepare_gpu;
+            // Restore the ANE hidden shard, sum rank partials in FP32, then
+            // ONE B projection/delta rounding/base add. No full concatenation.
+            std::function<Tensor(const Tensor &,const std::vector<Tensor> &,const Tensor &)> finish;
+        };
         std::function<std::pair<Tensor, Tensor>(const Tensor &)> gate_up;
         // Complete the ANE tail from corrected/restored hidden and base-down
         // output. Keeping the add inside the callback lets a family's GPU
@@ -70,6 +79,7 @@ class HybridFfn {
         // each logical gate/up half. Row executors keep the full callback;
         // channel callers without this extension remain compatible.
         std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> gate_up_channels = {};
+        std::optional<ChannelDownRanks> channel_down_ranks = std::nullopt;
     };
     struct CalibrationWorkload {
         std::string model_sha256, adapter_identity, source_generation, encoding, gpu_configuration;

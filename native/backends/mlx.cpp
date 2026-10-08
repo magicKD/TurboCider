@@ -802,22 +802,27 @@ Tensor Weights::lora_delta_slice(const Tensor &x, const std::string &prefix,
                                  int row_start, int row_end,
                                  int col_start, int col_end,
                                  std::optional<mx::Dtype> output_dtype) const {
-    return lora_delta_slice_rank_impl(x,prefix,row_start,row_end,col_start,col_end,output_dtype,nullptr);
+    return lora_delta_slice_rank_impl(&x,x.shape(),x.dtype(),prefix,row_start,row_end,col_start,col_end,output_dtype,nullptr);
 }
 Tensor Weights::lora_delta_slice_with_ranks(const Tensor &x,const std::string &prefix,const std::vector<Tensor> &ranks,
     int rs,int re,int cs,int ce,std::optional<mx::Dtype> dtype) const {
-    return lora_delta_slice_rank_impl(x,prefix,rs,re,cs,ce,dtype,&ranks);
+    return lora_delta_slice_rank_impl(&x,x.shape(),x.dtype(),prefix,rs,re,cs,ce,dtype,&ranks);
 }
-Tensor Weights::lora_delta_slice_rank_impl(const Tensor &x,const std::string &prefix,int row_start,int row_end,
+Tensor Weights::lora_delta_from_ranks(const mx::Shape &shape,mx::Dtype input_dtype,const std::string &prefix,
+    const std::vector<Tensor> &ranks,int rs,int re,int cs,int ce,std::optional<mx::Dtype> dtype) const {
+    return lora_delta_slice_rank_impl(nullptr,shape,input_dtype,prefix,rs,re,cs,ce,dtype,&ranks);
+}
+Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &input_shape,mx::Dtype input_dtype,
+    const std::string &prefix,int row_start,int row_end,
     int col_start,int col_end,std::optional<mx::Dtype> output_dtype,const std::vector<Tensor> *ranks) const {
     const auto &weight = at(prefix + ".weight");
     require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
                 row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
-                x.shape(-1) == col_end - col_start,
+                !input_shape.empty() && input_shape.back() == col_end - col_start && (x || ranks),
             "invalid runtime LoRA delta slice geometry: " + prefix);
-    auto result_shape = x.shape();
+    auto result_shape = input_shape;
     result_shape.back() = row_end - row_start;
-    const auto destination_dtype = output_dtype.value_or(x.dtype());
+    const auto destination_dtype = output_dtype.value_or(input_dtype);
     // Most runtime adapters cover the full requested projection slice. Avoid
     // materializing and adding a full-sized FP32 zero tensor before their
     // low-rank result (notably the gate/up Core ML correction each block).
@@ -832,11 +837,12 @@ Tensor Weights::lora_delta_slice_rank_impl(const Tensor &x,const std::string &pr
         const int last = std::min(row_end, adapter.output_end);
         if (first >= last) continue;
         const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+        require(col_end<=adapter.down.shape(1),"shared delta rank column range mismatch");
         auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
         auto up = mx::astype(slice_axis(adapter.up, 0,
             first - adapter.output_start, last - adapter.output_start), rank_dtype);
-        auto low = ranks ? ranks->at(index) : mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
-        auto expected=x.shape();expected.back()=adapter.down.shape(0);
+        auto low = ranks ? ranks->at(index) : mx::matmul(mx::astype(*x, rank_dtype), mx::transpose(down));
+        auto expected=input_shape;expected.back()=adapter.down.shape(0);
         require(low.shape()==expected && low.dtype()==rank_dtype,"shared delta rank shape/dtype mismatch");
         auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
             Tensor(adapter.scale, mx::float32);
