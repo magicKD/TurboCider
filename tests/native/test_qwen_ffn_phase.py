@@ -22,7 +22,37 @@ class FfnPhaseTests(unittest.TestCase):
                 cwd=ROOT,capture_output=True,text=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             result=subprocess.run([str(probe),str(root/"adapter.safetensors")],cwd=ROOT,capture_output=True,text=True,timeout=90)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr);self.assertIn("PASS Qwen FFN phase cases=24",result.stdout);print(result.stdout)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr);self.assertIn("PASS Qwen FFN phase cases=24",result.stdout)
+            self.assertIn("PASS Qwen prefill GPU layer cases=18",result.stdout);print(result.stdout)
+
+    def test_prefill_gpu_layer_policy_plan_and_gpu_inert_control(self):
+        env={k:v for k,v in os.environ.items() if not k.startswith("TURBOCIDER_")}
+        env.update(TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS="31,0",TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="prefill",
+            TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_CHANNELS="5120",
+            TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",TURBOCIDER_RUNTIME_ANE_CHUNKS="1",TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1")
+        with tempfile.TemporaryDirectory(prefix="tc-prefill-gpu-layers-plan-") as folder:
+            root=Path(folder);request=root/"request.json"
+            base=dict(model="qwen-image-2.1",operation="image.edit",prompt="A teapot",output=str(root/"out.png"),width=512,height=512,
+                steps=40,execution="gpu_ane",hybrid_mlp_mode="runtime",ane_manifest="unused.json",residency="resident",audio=False,
+                allow_approximation=True,qwen21_reference_size=512,inputs=[dict(kind="image",role="reference",path="unused.png")])
+            def plan(change=None):
+                request.write_text(json.dumps({**base,**(change or {})}))
+                return subprocess.run([str(LIB/"turbocider"),"plan",str(request)],cwd=ROOT,env=env,capture_output=True,text=True,timeout=30)
+            result=plan();self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            for change in (dict(width=1024),dict(allow_approximation=False),dict(residency="component_staged"),
+                dict(memory_budget_bytes=1<<30),dict(encoder_ane_manifest="unused.json"),dict(inputs=base["inputs"]*3),
+                dict(operation="image.generate",inputs=[]),dict(hybrid_mlp_mode="auto")):
+                self.assertNotEqual(plan(change).returncode,0)
+            for key,value in (("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE","all"),("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE","decode"),
+                ("TURBOCIDER_ANE_BACKEND","public"),("TURBOCIDER_ALLOW_PRIVATE_ANE","0"),("TURBOCIDER_PRIVATE_ANE_CHANNELS","auto"),
+                ("TURBOCIDER_PRIVATE_ANE_DATA_PATH","fp16"),("TURBOCIDER_RUNTIME_ANE_CHUNKS","auto"),
+                ("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","0"),("TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS",",".join(map(str,range(32))))):
+                old=env[key];env[key]=value;self.assertNotEqual(plan().returncode,0);env[key]=old
+            gpu=dict(execution="gpu",hybrid_mlp_mode="auto",ane_manifest="")
+            self.assertEqual(plan(gpu).returncode,0)
+            for bad in ("","-1","0,0","32","0,"," 0","0;1"):
+                env["TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS"]=bad;self.assertNotEqual(plan(gpu).returncode,0)
+            self.assertFalse((root/"out.png").exists())
 
     def test_explicit_phase_scope_and_plan_identity(self):
         env={k:v for k,v in os.environ.items() if not k.startswith("TURBOCIDER_")}

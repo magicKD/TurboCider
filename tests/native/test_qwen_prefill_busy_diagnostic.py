@@ -20,7 +20,8 @@ class BusyDiagnosticTests(unittest.TestCase):
             ["--sample-memory",*args,"--gpu-first-prefill-screen"])
         self.assertEqual(DIAGNOSTIC.screen_arguments([*args,"--compiled-encoder-screen"]),
             ["--sample-memory",*args,"--compiled-encoder-screen"])
-        for bad in ([],["--"],[*args,"--observe-load"],[*args,"--defer-prefill-screen"],[*args,"--sample-memory"]):
+        self.assertEqual(DIAGNOSTIC.screen_arguments(args,True),["--prefill-layer-screen","--sample-memory",*args])
+        for bad in ([],["--"],[*args,"--observe-load"],[*args,"--defer-prefill-screen"],[*args,"--prefill-layer-screen"],[*args,"--sample-memory"]):
             with self.assertRaises(ValueError):DIAGNOSTIC.screen_arguments(bad)
 
     def test_strict_flag_rejected_before_subprocess_or_evidence(self):

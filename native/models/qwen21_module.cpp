@@ -1,5 +1,6 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "qwen21/runtime_gpu_layer_config.hpp"
 #include "../backends/ane_backend.hpp"
 #include <cmath>
 #include <cstdlib>
@@ -11,6 +12,7 @@ ModelModule qwen21_module() {
         [] { return Recipe{"qwen-image-2.1", {{"text_encode", {}}, {"denoise", {"text_encode"}, 40},
                                             {"vae_decode", {"denoise"}}, {"export", {"vae_decode"}}}, true}; },
         [](const Request &r) {
+            (void)qwen21::configured_prefill_gpu_layers(r);
             require(r.operation == "image.generate" || r.operation == "image.edit", "unsupported Qwen21 operation");
             require(r.frames == 1 && !r.audio, "Qwen21 produces one RGBA image without audio");
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,

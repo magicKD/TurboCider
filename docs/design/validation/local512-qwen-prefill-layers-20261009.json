@@ -1,0 +1,1042 @@
+{
+  "schema": "tc-local512-qwen-prefill-layers-v1",
+  "date_local": "2026-10-09",
+  "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_busy_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "default_changed": false,
+  "private_build": {
+    "directory": "build/local512-qwen-prefill-layers-v2-private",
+    "library_sha256": "83c9484f9e4a6ff9a99d20e0e427c2ea3e89745dde9eb2bc66378f59f7c81768",
+    "cli_sha256": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+    "manifest_sha256": "15473d43cac1b011053624ba1f9519c2c4d9bae0235412d1e05a078721714e8e",
+    "runtime_build_id": "tc-runtime-build-v1-6ed8bd73204556dd93aaa609fd5081d13e5ec5c41a3b7d93eefe09442635783b",
+    "source_inputs_matched": 501
+  },
+  "experiments": [
+    {
+      "references": 1,
+      "summary": "outputs/local512-qwen-edit1-prefill-layers-v1-diagnostic-20261009/summary.json",
+      "summary_sha256": "fdda341ea64f66ac43ddb4d594061b2ae9d0f8960b02447f1d44960e885c9215",
+      "order": [
+        "gpu",
+        "prefill",
+        "prefill_first8",
+        "prefill_last8"
+      ],
+      "bucket": 2112,
+      "actual_prefill_rows": 2096,
+      "channels": 5120,
+      "join": "eager",
+      "load_report": "outputs/local512-qwen-edit1-prefill-layers-v1-busy-load-report-20261009.json",
+      "load_report_sha256": "1e1a0353764d768097affc6ee6f5737ef87233879e17a93bac6b474fc9d3d995",
+      "load_check_passed": false,
+      "load_error": "competing inference CPU load observed; comparison is not qualified",
+      "trials": [
+        {
+          "mode": "gpu",
+          "gpu_layers": [],
+          "cold_request_seconds": 16.044138292,
+          "warm_request_seconds": [
+            10.850017458,
+            10.056794541
+          ],
+          "warm_request_median_seconds": 10.4534059995,
+          "warm_prefill_median_seconds": 2.4390157085000004,
+          "warm_decode_total_median_seconds": 6.105758333,
+          "request_reduction_vs_own_gpu_pct": 0,
+          "prefill_reduction_vs_own_gpu_pct": 0,
+          "request_increase_vs_all32_parallel_pct": 2.001005285223778,
+          "prefill_increase_vs_all32_parallel_pct": 8.388110080882004,
+          "stdout": "outputs/local512-qwen-edit1-prefill-layers-v1-diagnostic-20261009/gpu.stdout.jsonl",
+          "stdout_sha256": "225a9d83aed36ea92790852773d850cddf3ac8f379bea5de5dd9ec7ddab38ff1",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.398979624,
+                "steps_this_request": 5
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 2.730107625,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.090930041,
+                "steps_this_request": 5
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 2.451188333,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.120586625,
+                "steps_this_request": 5
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 2.426843084,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "forced_gpu_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "ea7c7fc467c7d0407f12d3f22d692790db41da06746433a683bc3df5c6b86342",
+          "phys_footprint_peak_bytes": 40325622280,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "0e3044705ddbadd03235357bac26e4290dff41f3746aee387d87bd0f187dbed5",
+            "9918ca9762c4f8f8e221368a3a1b0015dafb486745430320e538562d6953b8cc",
+            "0dee769f8c56a291cf4571eb8267e9ae68007ff920143e186804490531a6a78d"
+          ]
+        },
+        {
+          "mode": "prefill",
+          "gpu_layers": [],
+          "cold_request_seconds": 15.592468791,
+          "warm_request_seconds": [
+            10.542372708,
+            9.954299791
+          ],
+          "warm_request_median_seconds": 10.2483362495,
+          "warm_prefill_median_seconds": 2.2502613125,
+          "warm_decode_total_median_seconds": 6.0863654794999995,
+          "request_reduction_vs_own_gpu_pct": 1.9617505529758272,
+          "prefill_reduction_vs_own_gpu_pct": 7.738957782936318,
+          "request_increase_vs_all32_parallel_pct": 0,
+          "prefill_increase_vs_all32_parallel_pct": 0,
+          "stdout": "outputs/local512-qwen-edit1-prefill-layers-v1-diagnostic-20261009/prefill.stdout.jsonl",
+          "stdout_sha256": "ce72996316eb4eff6fad34fb2af5b69ed334b527605bbbdb2706c7c53d869782",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.064647334,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 2.354068541,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.0874377079999995,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 2.234230125,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.085293251,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 2.2662925,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            32,
+            64,
+            96
+          ],
+          "forced_gpu_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "34cb890cb1870d391e5e1ab807b371986656218e4a4bf8f1d8037a68e33e65c0",
+          "phys_footprint_peak_bytes": 39101686768,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "53403142f6c48dd82adca4b43b9203baa795fbe4da087601b76887b7cdc37598",
+            "a5f4432e56a5ac91d3a13a6cca7e7533f479514c99d9964a055e3e11b7c4d84c",
+            "419df81a6882cad0ae761ba6e9f1610863d0dff449eba420707961c1dbd82829"
+          ]
+        },
+        {
+          "mode": "prefill_first8",
+          "gpu_layers": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "cold_request_seconds": 15.451787292,
+          "warm_request_seconds": [
+            10.722848791,
+            9.908997958
+          ],
+          "warm_request_median_seconds": 10.3159233745,
+          "warm_prefill_median_seconds": 2.3257944999999998,
+          "warm_decode_total_median_seconds": 6.075677270000001,
+          "request_reduction_vs_own_gpu_pct": 1.3151945404834997,
+          "prefill_reduction_vs_own_gpu_pct": 4.642086072075024,
+          "request_increase_vs_all32_parallel_pct": 0.6594936324742395,
+          "prefill_increase_vs_all32_parallel_pct": 3.3566407190320335,
+          "stdout": "outputs/local512-qwen-edit1-prefill-layers-v1-diagnostic-20261009/prefill_first8.stdout.jsonl",
+          "stdout_sha256": "3e52bd259ff5aded3803b01852912fd49b4bff2935cffab8aa7a1c82e6c494f0",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.091662707,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 2.1820995,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.077818166,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 2.382752708,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.0735363740000015,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 2.268836292,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            24,
+            48,
+            72
+          ],
+          "forced_gpu_blocks_cumulative": [
+            8,
+            16,
+            24
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "e9858f1af19b1d49935636eaea0fe547e77b2f5dfc3bb722cedca7f011d85f53",
+          "phys_footprint_peak_bytes": 39403168776,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "81b791dc00bb63a87ef817994fa6310a16e354ef52dba9d67729a1402c7cb882",
+            "026816874173d5202fac765a1faa8091fbd8702e406e743accca1e8f3df07574",
+            "42a002c5da0fee9d050871aad9e84dbf111f70f2b0a7cb4376bd0ea51bf605ce"
+          ]
+        },
+        {
+          "mode": "prefill_last8",
+          "gpu_layers": [
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31
+          ],
+          "cold_request_seconds": 15.490861208,
+          "warm_request_seconds": [
+            10.705649583,
+            9.953585667
+          ],
+          "warm_request_median_seconds": 10.329617625000001,
+          "warm_prefill_median_seconds": 2.320911729,
+          "warm_decode_total_median_seconds": 6.1126378135,
+          "request_reduction_vs_own_gpu_pct": 1.184191779271937,
+          "prefill_reduction_vs_own_gpu_pct": 4.842280395669718,
+          "request_increase_vs_all32_parallel_pct": 0.7931177658614397,
+          "prefill_increase_vs_all32_parallel_pct": 3.1396538751985448,
+          "stdout": "outputs/local512-qwen-edit1-prefill-layers-v1-diagnostic-20261009/prefill_last8.stdout.jsonl",
+          "stdout_sha256": "ab9b8cd4095c61baf13222c4cfd834498d37f3d8c9445776b9105868071b42db",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.111581457,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 2.219799459,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.096691001000001,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 2.363714833,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.128584625999999,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 2096,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 2.278108625,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            24,
+            48,
+            72
+          ],
+          "forced_gpu_blocks_cumulative": [
+            8,
+            16,
+            24
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "17388daa79bd57b6516a6068b865398de5572fca047f095f5766f2da68162137",
+          "phys_footprint_peak_bytes": 38988997592,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "210fa38f86253dcfe36ae629dca93e18a5d588fb723b4159d6253324b4335e10",
+            "59634997fed22d5b990c3dd4babd26cd00155efce741c5056185ffd201a181e0",
+            "c06266333c8db0dbd879bec4ca88089f9b729b4b02070b1afa8374ebe3d695c0"
+          ]
+        }
+      ],
+      "new_gpu_three_pngs_exact_prior_matched_gpu": true,
+      "new_all32_three_pngs_exact_prior_matched_hybrid": true
+    },
+    {
+      "references": 2,
+      "summary": "outputs/local512-qwen-edit2-prefill-layers-v1-diagnostic-20261009/summary.json",
+      "summary_sha256": "32bc54c2929a09dbbe2b30c37ddfcfd2f55c01b54f94d4ba209ba41a4314677a",
+      "order": [
+        "prefill_last8",
+        "prefill_first8",
+        "prefill",
+        "gpu"
+      ],
+      "bucket": 3168,
+      "actual_prefill_rows": 3144,
+      "channels": 5120,
+      "join": "deferred",
+      "load_report": "outputs/local512-qwen-edit2-prefill-layers-v1-busy-load-report-20261009.json",
+      "load_report_sha256": "8c2d3d8265bdfac19498bcb67905ec34e4a2e675e4f3226d185f6ba8ad81e8b3",
+      "load_check_passed": false,
+      "load_error": "competing inference CPU load observed; comparison is not qualified",
+      "trials": [
+        {
+          "mode": "prefill_last8",
+          "gpu_layers": [
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31
+          ],
+          "cold_request_seconds": 17.812919458,
+          "warm_request_seconds": [
+            12.609067833,
+            12.114082167
+          ],
+          "warm_request_median_seconds": 12.361574999999998,
+          "warm_prefill_median_seconds": 3.4861641665,
+          "warm_decode_total_median_seconds": 6.336349584000001,
+          "request_reduction_vs_own_gpu_pct": 2.4300813934258647,
+          "prefill_reduction_vs_own_gpu_pct": 6.9268849063027,
+          "request_increase_vs_all32_parallel_pct": 1.3339906948795832,
+          "prefill_increase_vs_all32_parallel_pct": 5.743468272314578,
+          "stdout": "outputs/local512-qwen-edit2-prefill-layers-v1-diagnostic-20261009/prefill_last8.stdout.jsonl",
+          "stdout_sha256": "9b90cabb4fbcdd176625144c94ca5624ae7baedeee297afbc22358cf4b041132",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.353842500000001,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 3.842627583,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.296814542000001,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 3.500959583,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.3758846259999995,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 3.47136875,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            24,
+            48,
+            72
+          ],
+          "forced_gpu_blocks_cumulative": [
+            8,
+            16,
+            24
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "fbabdfef6047c3f086e13c4602a6dd38f452b1225993ad04ecf09f8674effecd",
+          "phys_footprint_peak_bytes": 39687136360,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "19717545f243f277e8569d6f61627608365587088b9b11649e9e311672b37a18",
+            "279ca8578e0803a60e1ac4fc53d5f7446d8b4c9975b09576531d5a3f925ded7a",
+            "92b90d5ed3fc95b459f3e5ca66d47841e1ec8e2aee00e12eddc34a887a49f62b"
+          ]
+        },
+        {
+          "mode": "prefill_first8",
+          "gpu_layers": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "cold_request_seconds": 17.3429385,
+          "warm_request_seconds": [
+            12.506731667,
+            12.117766875
+          ],
+          "warm_request_median_seconds": 12.312249270999999,
+          "warm_prefill_median_seconds": 3.4241722709999998,
+          "warm_decode_total_median_seconds": 6.337870229,
+          "request_reduction_vs_own_gpu_pct": 2.8194094008796022,
+          "prefill_reduction_vs_own_gpu_pct": 8.581935715496414,
+          "request_increase_vs_all32_parallel_pct": 0.9296431126739169,
+          "prefill_increase_vs_all32_parallel_pct": 3.8631098835912647,
+          "stdout": "outputs/local512-qwen-edit2-prefill-layers-v1-diagnostic-20261009/prefill_first8.stdout.jsonl",
+          "stdout_sha256": "59c52e640eaad087dac6c092845b03fc9adf448c58a0c7503a0c95e70fda494a",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.352946416999999,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 3.360744917,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.329796958,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 3.380465667,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.3459435,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 24,
+                "runtime_calls_this_request": 24,
+                "step_seconds": 3.467878875,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            24,
+            48,
+            72
+          ],
+          "forced_gpu_blocks_cumulative": [
+            8,
+            16,
+            24
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "092d87085818b6210640d54ee473111939f150d93ad74d7e841e8c81746ec572",
+          "phys_footprint_peak_bytes": 39988634776,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "a53ba2bbf397f13dfe1246c4a7154808995c210be579878f5093d4afde536b10",
+            "fd31b27a27ab828ec0b757f36c62d6622d7aac20cdc19ec973465dd56f9c537b",
+            "3a23982747f9612caa0e4b5a7a9cbbbe7f31cd24af8c225fc40d3318bd5b6a64"
+          ]
+        },
+        {
+          "mode": "prefill",
+          "gpu_layers": [],
+          "cold_request_seconds": 17.333361625,
+          "warm_request_seconds": [
+            12.495647333,
+            11.902039791
+          ],
+          "warm_request_median_seconds": 12.198843562,
+          "warm_prefill_median_seconds": 3.296812771,
+          "warm_decode_total_median_seconds": 6.3487311665,
+          "request_reduction_vs_own_gpu_pct": 3.7145207274420056,
+          "prefill_reduction_vs_own_gpu_pct": 11.982161532651936,
+          "request_increase_vs_all32_parallel_pct": 0,
+          "prefill_increase_vs_all32_parallel_pct": 0,
+          "stdout": "outputs/local512-qwen-edit2-prefill-layers-v1-diagnostic-20261009/prefill.stdout.jsonl",
+          "stdout_sha256": "3ad00ee16f32a7db96825d0f37e9bb133660af8222b7b3f5e2228d1611f575e6",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.343832416,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 3.363190625,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.3606152069999995,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 3.287684167,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.336847126,
+                "steps_this_request": 5
+              },
+              "policy": "prefill",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 3.305941375,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            32,
+            64,
+            96
+          ],
+          "forced_gpu_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "554ceb9927e493e72577ce255f9bc49323e12b6318adf31188d34c4a5ef31caa",
+          "phys_footprint_peak_bytes": 39685121152,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "09e05b649c37c53b5fc0b42c57170c8afc4edf98e6c06a8e901cfc64294ca1eb",
+            "a976927911fab26ff556690b45b42ec4553ffa998cd6319411540c7ba5b81578",
+            "4cc73b8fc7b72fa60d9170a867ad1524564dfe29ac8c8cc80a7c9d45d3f18103"
+          ]
+        },
+        {
+          "mode": "gpu",
+          "gpu_layers": [],
+          "cold_request_seconds": 17.357838167,
+          "warm_request_seconds": [
+            12.934201875,
+            12.404704166
+          ],
+          "warm_request_median_seconds": 12.6694530205,
+          "warm_prefill_median_seconds": 3.745618875,
+          "warm_decode_total_median_seconds": 6.3418068944999995,
+          "request_reduction_vs_own_gpu_pct": 0,
+          "prefill_reduction_vs_own_gpu_pct": 0,
+          "request_increase_vs_all32_parallel_pct": 3.8578202606513567,
+          "prefill_increase_vs_all32_parallel_pct": 13.613333093946567,
+          "stdout": "outputs/local512-qwen-edit2-prefill-layers-v1-diagnostic-20261009/gpu.stdout.jsonl",
+          "stdout_sha256": "a539697e5da49521a64fafe773cc8b3c2282300b390505d6435650848186ffea",
+          "phase_receipts": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.328614543,
+                "steps_this_request": 5
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 3.760122541,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.329304958,
+                "steps_this_request": 5
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 3.750937875,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 6.354308831,
+                "steps_this_request": 5
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 3144,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 3.740299875,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "forced_gpu_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            227,
+            227,
+            227
+          ],
+          "memory_report_sha256": "423a595baa73fe9081ba8d246ce3b51ccf3b061dd9206271efd7c08368a53021",
+          "phys_footprint_peak_bytes": 40746068416,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "png_sha256": [
+            "d229e8ffc635997b9932d3782f5e1754ba3056e9889df5c72fe175fc4075da0d",
+            "b07b93ae5c8f80eb6a5bf81a73b4b4cfb834b9bd46c071dcb507f202b222c113",
+            "822aa6f1f1310e9329c17e527c8332535889f4c71f54730df31a7f0469033906"
+          ]
+        }
+      ],
+      "new_gpu_three_pngs_exact_prior_matched_gpu": true,
+      "new_all32_three_pngs_exact_prior_matched_hybrid": true
+    }
+  ],
+  "memory": {
+    "complete_reports": 8,
+    "maximum_phys_footprint_bytes": 40746068416,
+    "sum_system_swap_in_bytes": 0,
+    "sum_system_swap_out_bytes": 0,
+    "scope": "100ms process-tree load+cold+warm+exit; not device trace/driver attribution/whole-system budget"
+  },
+  "public_build": {
+    "directory": "build/local512-qwen-prefill-layers-v2-public",
+    "library_sha256": "c7008bbab5d64508406dc149081311dfe9587856780ed9c79c3cb776bf81eeef",
+    "cli_sha256": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+    "manifest_sha256": "01bfe7e48622587925a9706af7b56749cba2fae6d71717d8566690240d77bd2e",
+    "runtime_build_id": "tc-runtime-build-v1-95a3b6e01cc044588481ffa7e91b7b0d81f3dec1badee1f14285bb45d0f322bf",
+    "source_inputs_matched": 501
+  },
+  "log_sha256": {
+    "outputs/local512-qwen-prefill-layers-v1-private-build-20261009.log": "fb744383be58e769cbd31aa25b42f99fadcb6e54000ad2b3b9c848e99cb09a6c",
+    "outputs/local512-qwen-prefill-layers-v2-private-build-20261009.log": "e420e2d4af31c625487c3c5fab1f2fc576d68882ac5f22dd89298b6636a7a5fd",
+    "outputs/local512-qwen-prefill-layers-v2-public-build-20261009.log": "ff8f721806b9261e807ebe3d056ddf620f67e2f2a492a2a514d516ea65aee64c",
+    "outputs/local512-qwen-prefill-layers-v1-host-test-20261009.log": "788fae96123797a0f6c91bd597ba8e719a10738eff0fcc94b51cdf65403f4cd8",
+    "outputs/local512-qwen-prefill-layers-v2-host-test-20261009.log": "f544b6325822a511d018489827a83c0445f97ccbc419f4ec1e11f121308830b2",
+    "outputs/local512-qwen-prefill-layers-v3-host-test-20261009.log": "db8510e2a16ef6d2f2431bc7b465b8e300e5bab0d5e48c782887cafe47e0b9ab",
+    "outputs/local512-qwen-prefill-layers-v4-host-test-20261009.log": "3b9b44fe8dd477cfa8e6e2e02b79fbe96e9a1102141cebd4123a279a415c6e05",
+    "outputs/local512-qwen-prefill-layers-v5-host-test-20261009.log": "138676fdc7079b56fc1e07e59b26846d235b70516f6ebfa64a73c10b1d2e4d82",
+    "outputs/local512-qwen-prefill-layers-v2-private-test-20261009.log": "fed37fcf2778de54ecb00e7c8a77bfc5b0758e7e0cf08f6659f9ad70ec96a3ab",
+    "outputs/local512-qwen-prefill-layers-v2-public-test-20261009.log": "e954fb3664beab0e07ed4884f198b556708467ac64cbf59a015fea0609337574",
+    "outputs/local512-qwen-prefill-layers-v2-public-release-guard-final-20261009.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "outputs/local512-qwen-edit1-prefill-layers-v1-runner-20261009.log": "caf4eb34dbe613a62e9f4e6c50f5e3ef2e46de492b0d594769302d962e1ad32a",
+    "outputs/local512-qwen-edit2-prefill-layers-v1-runner-20261009.log": "2717c6e3722bca8dacd6150b7aa4485940dc0c9e3727eafc639c370c3a48a0cd"
+  },
+  "decision": "Keep all32 prefill FFNs GPU/ANE parallel as the faster tested hybrid recipe; fixed first8/last8 full-GPU policies did not improve it. Keep opt-in per-layer mechanism and actual-work tests, no default/auto promotion.",
+  "implementation": {
+    "flag": "TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS; unset off; canonical comma-separated ordinals0..31; nonempty fewer than32",
+    "scope": "approximate unconstrained resident512 editing, one/two ref512, prefill-only, explicit authorized fixed-positive Private W8 channels/chunks1/fixed async1, GPU encoder; excludes streaming/budgets/PE and other phase/temporal modes",
+    "snapshot": "request-start canonical policy; appended prefill-gpu-ffn-layers-v1=<list> to both early and late executor identities and existing prefix namespace; no per-step environment mutation",
+    "execution": "existing HybridFfn::set_gpu_layers/plan_block selects original complete lazy/compiled GPU block, no zero-channel split, ANE staging or timing probe on forced blocks; every remaining eligible prefill FFN is dual-branch; all5 decode steps complete GPU",
+    "abi": "no GraphGeometry or class data-layout changes; existing shared executor source/finite/shape/memory and late complete-GPU fallback unchanged",
+    "gpu_control": "valid policy inert on ordinary GPU, malformed syntax still rejects",
+    "new_gpu_kernel_wired": false,
+    "automatic_profitability_calibration": false,
+    "tool": "qwen_ffn_phase_screen --prefill-layer-screen --joint-ab, optional --defer-prefill-join; diagnostic wrapper --phase-layers preserves strict --observe-load behavior"
+  },
+  "model_recipe": {
+    "model": "Original local Qwen Image2.1 BF16",
+    "adapter": "Original Viggle v0.2.1 r256/strength1, inference-time,227 applied projections; no rewrite/merge",
+    "size": [
+      512,
+      512
+    ],
+    "steps": 6,
+    "seed": 29,
+    "prompts_each_arm": 3,
+    "cold_each_arm": 1,
+    "fresh_warm_each_arm": 2,
+    "conditioning_hits": 0,
+    "encoder": "GPU, same admitted retained original source arrays on every route",
+    "precision": "joint BF16 A/B operands, F32 ranks; Private W8A8 with F32 partial join; shared gate/up ranks on actual hybrid blocks",
+    "share": "Fa5120/Fg7168",
+    "disabled": [
+      "temporal FFN reuse",
+      "split down-ranks",
+      "weight-code cache",
+      "weight prefetch",
+      "A8 lookahead"
+    ],
+    "no_models_downloaded_or_original_models_adapters_references_written": true
+  },
+  "reference_read": {
+    "repository": "../splash",
+    "branch": "feat/ane",
+    "commit": "be83e8f895bc8d9036ace8348c7ddc2098dc5ebc",
+    "file": "runtime/ane/Prefill.hpp",
+    "scope": "explicit layer list and frozen workload identity, read-only; no checkout/fetch"
+  },
+  "verification": {
+    "host_tests": 31,
+    "host_skips": 0,
+    "host_log": "outputs/local512-qwen-prefill-layers-v5-host-test-20261009.log",
+    "private_selected_tests": 12,
+    "private_skips": 0,
+    "private_log": "outputs/local512-qwen-prefill-layers-v2-private-test-20261009.log",
+    "public_selected_tests": 11,
+    "public_skips": 0,
+    "public_log": "outputs/local512-qwen-prefill-layers-v2-public-test-20261009.log",
+    "new_compiled_prefill_layer_cases": 18,
+    "existing_compiled_phase_cases": 24,
+    "scope": "base/real-LoRA first/last/mixed complete-GPU blocks, no selected staging/probe, actual prefix hit/change; scope/plan gates, joint24/source lease/runtime source/lifetime/memory/actual Private late full-GPU fallback, Z/ConvRot regressions; not full repository/model matrix",
+    "public_actual_release_guard_exit_code": 0,
+    "public_guard_log": "outputs/local512-qwen-prefill-layers-v2-public-release-guard-final-20261009.log",
+    "native_only_builds_exit_zero": true,
+    "build_contains_pre_existing_user_convrot_drafts": true,
+    "clean_staged_only_or_app_release": false,
+    "source_inventory_excludes": "tests/docs/validation scripts/Swift frontend"
+  },
+  "retained_failures": {
+    "initial_host_logs": [
+      "outputs/local512-qwen-prefill-layers-v1-host-test-20261009.log",
+      "outputs/local512-qwen-prefill-layers-v2-host-test-20261009.log",
+      "outputs/local512-qwen-prefill-layers-v3-host-test-20261009.log"
+    ],
+    "cause": "new policy header was not standalone; require declaration needed common.hpp BEFORE diagnostic_options.hpp",
+    "resolution": "fixed include order; final host31 and both final501-source native builds passed",
+    "old_v1_private_binary_final_source_sealed": false,
+    "old_v1_private_scope": "built before final header self-contained fix; kept but not used for model numbers",
+    "busy_load_failure_scope": "both complete screens have outer CPU-load failure; qualification_passed remains false; no external process signals and no threshold weakening",
+    "naive_first8_last8_default_promoted": false
+  },
+  "visual_review": {
+    "scope": "agent whole512 case1 inspection of GPU/all32/first8/last8 for both reference workloads; not all scenes/seeds/details or user acceptance",
+    "observation": "teapot shapes/lids/handles, single/two-teapot layout, beige/blue colors, warm sunlight and shadows very close; minor glaze/highlight/texture changes, no obvious new checkerboard/fracture/color blocks",
+    "gpu_and_all32_control_pngs_exact_prior": "both workloads, all three corresponding PNGs; does not claim first8/last8 equal to all32/GPU",
+    "new_policy_pairs": [
+      {
+        "references": 1,
+        "directory": "outputs/local512-qwen-edit1-prefill-layers-v1-diagnostic-20261009",
+        "files": [
+          "gpu-1.png",
+          "prefill-1.png",
+          "prefill_first8-1.png",
+          "prefill_last8-1.png"
+        ]
+      },
+      {
+        "references": 2,
+        "directory": "outputs/local512-qwen-edit2-prefill-layers-v1-diagnostic-20261009",
+        "files": [
+          "gpu-1.png",
+          "prefill-1.png",
+          "prefill_first8-1.png",
+          "prefill_last8-1.png"
+        ]
+      }
+    ],
+    "no_strict_latent_gate_used_as_image_acceptance": true
+  },
+  "cleanup": {
+    "owned_jobs_terminal": true,
+    "directories": [
+      "build/local512-qwen-prefill-layers-v1-private",
+      "build/local512-qwen-prefill-layers-v2-private",
+      "build/local512-qwen-prefill-layers-v2-public"
+    ],
+    "removed_rebuildable_objects": 647,
+    "removed_object_logical_bytes": 50670696,
+    "removed_empty_module_cache_directories": 3,
+    "remaining_owned_objects": 0,
+    "kept": "all libraries/CLIs/probes, logs/failed diagnostics, PNGs and manifests; original models/adapters/references and user caches untouched",
+    "recoverability": "objects regenerate from original build commands; no external processes signaled"
+  },
+  "remaining_full_goal": [
+    "actual shape/layer/share/adapter/phase profitability, not fixed first8/last8 heuristics",
+    "GPU partial/down and LoRA/ANE handoff costs; no new profitable fused GPU consumer established this turn",
+    "Qwen generation/base and wider LoRA/edit/encoder matrix; this model screen only original6-step LoRA editing",
+    "Public/Private operation choice and real bounded GGUF ahead-decode/fused packed consumer",
+    "more scenes/seeds and matched quiet-window confirmation; keep overall goal active"
+  ]
+}

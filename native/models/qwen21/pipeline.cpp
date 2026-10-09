@@ -6,6 +6,7 @@
 #include "scheduler.hpp"
 #include "pe_generation.hpp"
 #include "runtime_ffn_graphs.hpp"
+#include "runtime_gpu_layer_config.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
@@ -165,7 +166,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool joint_ab=joint_bf16_lora_ab(r);
     const auto ffn_phase=runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
     require(ffn_phase!=RuntimeFfnPhase::Invalid,"Qwen runtime FFN phase requires all, prefill or decode");
-    const auto ffn_phase_identity=runtime_ffn_phase_identity(ffn_phase);
+    const auto prefill_gpu_layers=configured_prefill_gpu_layers(r);
+    const auto ffn_phase_identity=runtime_ffn_phase_identity(ffn_phase)+prefill_gpu_layer_identity(prefill_gpu_layers);
     const int student_reuse_layers=student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"));
     require(student_reuse_layers>=0,"Qwen student final FFN reuse requires 0,1,16 or32");
     const bool student_ffn_reuse=student_final_ffn_reuse(r);
@@ -325,6 +327,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             runtime_ffn_=std::make_unique<ane::HybridFfn>(manifest,4096,12288,budget,cancelled,!r.loras.empty());
             runtime_manifest_=identity;
         }
+        runtime_ffn_->set_gpu_layers(prefill_gpu_layers);
     }
     double prompt_enhance_seconds = 0.;
     int prompt_enhance_tokens = 0;
@@ -688,6 +691,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         runtime_ffn_->begin_request(active_lora_identity_);
     }
+    if (runtime_requested)runtime_ffn_->set_gpu_layers(prefill_gpu_layers);
     if (qkv_requested) {
         for (int block = 0; block < 32; ++block) {
             const auto stem = "transformer_blocks." + std::to_string(block) + ".attn.to_";
@@ -926,6 +930,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     if(runtime_requested && ffn_phase!=RuntimeFfnPhase::All)
         result.selection+=std::string("; experimental runtime FFN phase=")+runtime_ffn_phase_name(ffn_phase)+"; other phase uses complete unsplit GPU blocks";
+    if(runtime_requested && !prefill_gpu_layers.empty())
+        result.selection+="; experimental runtime prefill complete-GPU FFN blocks="+prefill_gpu_layer_list(prefill_gpu_layers);
     if(runtime_requested || profile_steps) {
         result.qwen_ffn_phases.emplace();
         result.qwen_ffn_phases->policy=runtime_requested ? runtime_ffn_phase_name(ffn_phase) : "gpu";

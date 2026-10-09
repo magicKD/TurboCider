@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+2026-10-09 Qwen首步按层GPU/ANE选路接续见
+[固定前/后八层GPU的完整模型对照](local512-qwen-prefill-layers-2026-10-09.md)。
+新安全机制已接入；两种24层并行策略均未超过全32层首步并行，不改默认。
+单/双参考图与原LoRA的实际phase/call/source/视觉及竞争负载边界均保留。
+
 2026-10-09 Z512 的请求匹配 Private FFN bucket 接续见
 [长caption调用台阶与BF16/ConvRot/GGUF整请求](local512-z-matched-bucket-2026-10-09.md)。
 原桶够用时保持，越界才扩展；长caption有热请求收益，冷启动/可见颜色

@@ -1,6 +1,7 @@
 #include "../../native/models/qwen21/transformer.hpp"
 #include "../../native/models/qwen21/diagnostic_options.hpp"
 #include <iostream>
+#include <algorithm>
 
 using namespace tc;
 int main(int argc,char **argv) { try {
@@ -60,6 +61,34 @@ int main(int argc,char **argv) { try {
             mx::eval(candidate.forward(x,changed,.1f,2,2,true,nullptr,{ref}));
             require(prefill_calls==2*expected_prefill && decode_calls==expected_decode,"phase routing used step index instead of actual prefix reuse");
         }
+        int layer_cases=0;
+        for(const auto &forced:std::vector<std::vector<int>>{{0},{2},{0,2}}) {
+            qwen21::Transformer candidate(w,c),original(w,c);int plans=0,stages=0,calls=0;
+            auto selected=[&](int i){return std::find(forced.begin(),forced.end(),i)!=forced.end();};
+            candidate.set_plan_mlp([&](int i,int) {
+                ++plans;return selected(i)?qwen21::Transformer::MLPPlan::Gpu:qwen21::Transformer::MLPPlan::SplitUntimed;
+            });
+            candidate.set_stage_mlp([&](int i,int){require(!selected(i),"forced GPU layer staged ANE weights");++stages;});
+            candidate.set_observe_mlp([](int,int,double){throw std::runtime_error("fixed prefill layer policy inserted a timing fence");});
+            candidate.set_prefill_mlp([&](int i,const Tensor &input) {
+                require(!selected(i) && input.shape(1)==10,"forced/disabled layer entered split callback");++calls;
+                const auto p="transformer_blocks."+std::to_string(i)+".img_mlp.";
+                auto halves=mx::split(w.project(input,p+"gate_up"),2,-1);
+                auto output=w.project(silu(halves[0])*halves[1],p+"out");mx::eval(output);return output;
+            });
+            for(int step=0;step<3;++step) {
+                auto expected=original.forward(x,text,.8f-step*.2f,2,2,true,nullptr,{ref});
+                auto actual=candidate.forward(x,text,.8f-step*.2f,2,2,true,nullptr,{ref});mx::eval({expected,actual});
+                require(error(actual,expected)<1e-5f,"selected full-GPU layers changed complete base/LoRA FFN");++layer_cases;
+            }
+            require(plans==3 && calls==3-int(forced.size()) && stages==calls,
+                "forced layer/decode still planned, staged or ran split work");
+            auto changed=text+Tensor(.01f);mx::eval(candidate.forward(x,changed,.1f,2,2,true,nullptr,{ref}));
+            require(plans==6 && calls==2*(3-int(forced.size())) && stages==calls,
+                "changed condition lost prefill GPU layer routing");
+        }
+        require(layer_cases==9,"missing complete per-layer phase cases");
     }
     std::cout<<"PASS Qwen FFN phase cases="<<cases<<": compiled base/real-LoRA, prefill/decode/all switches, full-GPU no-stage/no-probe, prefix hits and changed-condition prefill\n";
+    std::cout<<"PASS Qwen prefill GPU layer cases=18: base/real-LoRA, first/last/mixed full-GPU blocks, no split staging/probe, unchanged decode and changed-condition prefill\n";
 } catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;} }
