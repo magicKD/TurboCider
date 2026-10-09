@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+2026-10-10 同任务正反序的当前库base三路比较见
+[Qwen frozen / Private / GPU完整对照](local512-qwen-frozen-base-2026-10-10.md)。
+同一request-local GPU encoder生命周期：frozen热请求33.00–33.31s，
+Private34.52–34.60s，GPU43.35–43.46s；保留frozen更重冷启动、系统
+compression/swap-out与竞争负载，不追认两个失败窗口或升级默认。
+
 2026-10-10 Qwen512生图base/原LoRA的最新分阶段对照见
 [生图phase选择与完整请求](local512-qwen-generation-phases-2026-10-10.md)。
 base40全阶段并行有约20%名义GPU-relative收益；LoRA6不显著，生成/编辑/

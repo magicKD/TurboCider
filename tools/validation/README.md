@@ -14,6 +14,13 @@
 | `runtime_lora_shared_graph_switch.py` | 同进程base → A → 合成B → base，检查图复用、实际调用和状态隔离 | 合成B不是第二个训练LoRA的质量资格 |
 | `runtime_ane_memory.py` | 采样进程编排、证据绑定、超时处理；复用 `tools/native/` 的采样器 | 进程footprint不是ANE独占或完整driver内存 |
 | `qwen21_ane_placement.py` | 冻结/runtime manifest的离线设备计划、嵌套算子与artifact身份 | preferred设备不等于实际硬件执行或重叠 |
+| `qwen_ffn_phase_screen.py` | 同库生成/编辑GPU、prefill/decode/all与已有frozen-base对照；验证实际phase/calls及统一encoder source生命周期 | frozen仅base生成；Private callback计数不等于Core ML prediction计数，busy诊断不等于正式性能资格 |
+
+Qwen base三路对照可用 `--generation --frozen-manifest <existing compiled
+manifest> --request-local-encoder --modes gpu,all,frozen`；以显式disabled
+native source record检查每请求loads1/2/3、retained0，不改写raw retention
+metadata。反序须另起fresh output；完整条件和保留的失败见
+[当前base对照](../../docs/status/local512-qwen-frozen-base-2026-10-10.md)。
 
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
 screen现有helper重导出和switch兼容接口保留，避免破坏已保存的复核脚本。

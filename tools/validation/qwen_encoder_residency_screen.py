@@ -219,7 +219,15 @@ def make_request(prompt, image_paths, output, manifest=None, lora=None,dit_manif
     return request
 
 
-def validate_rows(rows, mode, count, private, channels=None,global_channels=None):
+def validate_request_local_source(record,request_index):
+    if not isinstance(record,dict) or record.get("enabled") is not False or record.get("weights_retained") is not False or \
+        record.get("weights_reused") is not False or type(record.get("retained_bytes")) is not int or record["retained_bytes"]!=0 or \
+        type(record.get("loads_session_total")) is not int or record["loads_session_total"]!=request_index+1 or \
+        record.get("decline_reason")!="" or type(record.get("source_bytes")) is not int or not 0<record["source_bytes"]<=20<<30:
+        raise ValueError("need actual disabled retention, zero retained bytes and one original source load per fresh request")
+
+
+def validate_rows(rows, mode, count, private, channels=None,global_channels=None,request_local_source=False):
     if len(rows)!=count:raise ValueError("missing request receipts")
     cumulative=0;dit_cumulative=0
     for index,row in enumerate(rows):
@@ -244,8 +252,9 @@ def validate_rows(rows, mode, count, private, channels=None,global_channels=None
                 raise ValueError("missing/nonfinite/nonpositive request timing")
         evidence=row.get("encoder_runtime_reuse")
         metrics=row.get("encoder_hybrid") or {}
-        with_weights=mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights")
+        with_weights=mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights") and not request_local_source
         weights=row.get("encoder_weight_residency")
+        if request_local_source:validate_request_local_source(weights,index)
         if with_weights:
             if not isinstance(weights,dict) or weights.get("enabled") is not True or weights.get("weights_retained") is not True:
                 raise ValueError("admitted retained encoder source evidence missing")

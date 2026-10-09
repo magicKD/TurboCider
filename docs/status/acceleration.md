@@ -12,6 +12,13 @@
 
 ## 当前进度摘要
 
+2026-10-10 的512²接续以[状态索引](README.md)和各专项证据为准。
+[当前库同任务正反序base三路对照](local512-qwen-frozen-base-2026-10-10.md)
+中，GPU/Private/frozen四热中位43.353/34.542/33.121s；两个CPU load
+checks失败，frozen有系统compression/swap-out，保持显式诊断/默认不变。
+六步LoRA生成仍优先GPU；1–2ref编辑可独立筛选首步FFN通道并行、
+KV-hit完整GPU，不把base冻结图收益套给LoRA或encoder。
+
 2026-09-30 接续更新；本页是决策入口，逐轮经过留在专项报告。
 
 - **Qwen 1024² base-only v1 在最新同库对照中更快。** 875b 库的狐狸

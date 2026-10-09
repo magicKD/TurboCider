@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serial same-library Qwen edits: GPU, prefill-only, decode-only, all-phase FFN.
+"""Serial same-library Qwen generation/edit FFN phase and frozen-base screens.
 
 Local models/real adapters only. Every request misses conditioning; preserve
 cold and fresh warm samples, actual phase calls, memory/load and all PNGs.
@@ -14,7 +14,7 @@ from pathlib import Path
 import statistics
 
 from qwen_encoder_residency_screen import (make_request, model_snapshot, validate_rows,
-    validate_shared_ranks, validate_b_epilogue, validate_joint_ab)
+    validate_shared_ranks, validate_b_epilogue, validate_joint_ab,validate_request_local_source)
 from runtime_ane_common import benchmark_environment, sha256_file, validate_deferred_channel_join
 from qwen_lora_source_proof import validate_source_proof
 from runtime_ane_load import LoadObservation
@@ -27,6 +27,55 @@ LAYER_POLICIES={"prefill_first8":tuple(range(8)),"prefill_last8":tuple(range(24,
 
 def reference_resize_flags(references,lora):
     return {"TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC":"1"} if references and lora else {}
+
+
+def validate_frozen_base(rows,retain_encoder=True):
+    if not rows:raise ValueError("need actual frozen base generation receipts")
+    previous=0
+    for index,row in enumerate(rows):
+        h=row.get("hybrid") or {};weight=row.get("encoder_weight_residency") or {}
+        steps=count(row,"actual_denoise_steps");calls=(steps-1)*32
+        # Native base receipts omit this optional LoRA-only field. Absence is
+        # valid, but a present counter must be an actual integer zero.
+        lora_projections=row.get("lora_applied_projections",0)
+        if row.get("operation")!="image.generate" or row.get("model")!="qwen-image-2.1" or \
+            steps!=40 or count(row,"steps")!=steps or count(row,"width")!=512 or count(row,"height")!=512 or count(row,"reference_tokens") or \
+            type(lora_projections) is not int or lora_projections or row.get("prompt_cache_hit") is not False or row.get("student_ffn_reuse") is not None or \
+            row.get("runtime_backend")!="mlx_cpp_metal+coreml" or row.get("encoder_execution")!="gpu" or \
+            row.get("encoder_runtime_reuse") is not None or row.get("encoder_hybrid") or \
+            count(h,"bucket")!=1024 or count(h,"hidden")!=4096 or count(h,"mlp_width")!=12288 or \
+            count(h,"block_count")!=32 or count(h,"output_channels")!=4096 or \
+            h.get("ane_mlp_range")!=[0,6144] or h.get("weight_variant")!="int8_pc" or \
+            h.get("checkpoint_sha256_verified") is not True or h.get("runtime_failed") is not False or \
+            h.get("runtime_weight") is not None or h.get("compute_units")!="cpuAndNeuralEngine" or \
+            count(h,"runtime_failures_session_total") or count(h,"runtime_calls_session_total")!=previous+calls or \
+            count(h,"warmup_calls_session_total")!=32 or count(h,"calls_session_total")!=previous+calls+32:
+            raise ValueError("frozen control needs actual checkpoint-bound all32 cached-step work, not Private labels")
+        if retain_encoder:
+            if weight.get("enabled") is not True or weight.get("weights_retained") is not True or count(weight,"loads_session_total")!=1 or \
+                weight.get("weights_reused") is not (index>0) or weight.get("decline_reason")!="" or not 0<count(weight,"retained_bytes")<=20<<30:
+                raise ValueError("frozen control did not retain the same admitted GPU encoder source")
+        else:validate_request_local_source(weight,index)
+        timings=row.get("timings_seconds") or {}
+        for field in ("request_wall","text_encode","denoise"):
+            value=timings.get(field)
+            if type(value) not in (float,int) or not math.isfinite(value) or value<=0:
+                raise ValueError("missing/nonfinite/nonpositive frozen request timing")
+        phases=row.get("qwen_ffn_phases") or {}
+        if phases.get("policy")!="gpu":raise ValueError("frozen is not a runtime-weight phase policy")
+        elapsed=0
+        for name,nsteps,nrows in (("prefill",1,1024+count(row,"text_tokens")),("decode",steps-1,1024)):
+            p=phases.get(name) or {}
+            if count(p,"steps_this_request")!=nsteps or count(p,"actual_rows")!=nrows or \
+                count(p,"runtime_calls_this_request") or count(p,"completed_channel_blocks_this_request"):
+                raise ValueError("frozen phase receipt must not relabel Core ML predictions as runtime-weight callbacks")
+            seconds=p.get("step_seconds")
+            if type(seconds) not in (float,int) or not math.isfinite(seconds) or seconds<=0:
+                raise ValueError("missing/nonfinite/nonpositive frozen phase timing")
+            elapsed+=seconds
+        if elapsed>timings["denoise"]+.05:
+            raise ValueError("frozen phase timings cannot exceed their enclosing denoise span")
+        previous+=calls
 
 
 def count(data,key):
@@ -105,6 +154,8 @@ def main():
     parser.add_argument("--cli",type=Path,required=True)
     parser.add_argument("--model",type=Path,required=True)
     parser.add_argument("--dit-manifest",type=Path,required=True)
+    parser.add_argument("--frozen-manifest",type=Path,help="existing compiled checkpoint-bound base graph; generation-only, no LoRA or layer screen")
+    parser.add_argument("--request-local-encoder",action="store_true",help="same original request-local GPU encoder source lifecycle on every arm; no retention admission bypass")
     parser.add_argument("--reference",type=Path,action="append",default=[])
     parser.add_argument("--generation",action="store_true",help="original base/LoRA generation with no reference inputs; compare actual prefill and KV-hit phases")
     parser.add_argument("--prompt",action="append",required=True)
@@ -121,7 +172,9 @@ def main():
     parser.add_argument("--timeout",type=int,default=900)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
-    allowed=LAYER_MODES if args.prefill_layer_screen else MODES
+    if args.frozen_manifest and (not args.generation or args.lora or args.prefill_layer_screen):
+        parser.error("frozen comparison requires original generation base without LoRA/layer policy")
+    allowed=LAYER_MODES if args.prefill_layer_screen else (*MODES,"frozen") if args.frozen_manifest else MODES
     modes=args.modes.split(",") if args.modes else list(allowed);order=args.order.split(",") if args.order else modes
     if len(modes)<2 or len(set(modes))!=len(modes) or "gpu" not in modes or not set(modes)<=set(allowed):
         parser.error("need complete GPU plus distinct known phase arms")
@@ -138,28 +191,30 @@ def main():
     cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
     if not library.is_file() or not os.access(cli,os.X_OK):parser.error("executable CLI and adjacent dylib required")
     model=args.model.resolve(strict=True);manifest=args.dit_manifest.resolve(strict=True)
+    frozen=args.frozen_manifest.resolve(strict=True) if args.frozen_manifest else None
     refs=[p.resolve(strict=True) for p in args.reference];lora=args.lora.resolve(strict=True) if args.lora else None
-    before={str(p):sha256_file(p) for p in (cli,library,manifest,*refs,*([lora] if lora else []))}
+    before={str(p):sha256_file(p) for p in (cli,library,manifest,*refs,*([lora] if lora else []),*([frozen] if frozen else []))}
     model_before=model_snapshot(model);args.output.mkdir(parents=True)
     summary=dict(schema="tc-qwen-ffn-phase-screen-v1",time_utc=datetime.now(timezone.utc).isoformat(),status="incomplete",
         qualification_passed=False,order=order,channels=args.channels,fused_b=args.fused_b,joint_ab=args.joint_ab,
         prefill_layer_screen=args.prefill_layer_screen,defer_prefill_join=args.defer_prefill_join,generation=args.generation,
-        operation="image.generate" if args.generation else "image.edit",prompts=args.prompt,
+        operation="image.generate" if args.generation else "image.edit",frozen_manifest=str(frozen) if frozen else None,
+        request_local_encoder=args.request_local_encoder,prompts=args.prompt,
         source_identities=before,model_snapshot=model_before,
         model_identity_scope="file-generation stamps and bounded headers, not immutable full-payload signatures",
         scope="serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",trials=[])
     target=args.output/"summary.json";target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
-        policy="gpu" if mode=="gpu" else "prefill" if mode in LAYER_MODES else mode
+        policy="gpu" if mode in ("gpu","frozen") else "prefill" if mode in LAYER_MODES else mode
         gpu_layers=LAYER_POLICIES.get(mode,())
         if model_snapshot(model)!=model_before:raise ValueError("model generation changed between arms")
-        env=benchmark_environment();env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1",TURBOCIDER_QWEN21_PROFILE_STEPS="1",
-            TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="all" if mode=="gpu" else policy,
+        env=benchmark_environment();env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="0" if args.request_local_encoder else "1",TURBOCIDER_QWEN21_PROFILE_STEPS="1",
+            TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="all" if mode in ("gpu","frozen") else policy,
             TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE="1" if args.fused_b else "0",
             TURBOCIDER_QWEN21_LORA_BF16_AB="1" if args.joint_ab else "0")
         if gpu_layers:env["TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS"]=",".join(map(str,gpu_layers))
         env.update(reference_resize_flags(refs,lora))
-        if mode!="gpu":
+        if mode not in ("gpu","frozen"):
             env.update(TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.channels),
                 TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
                 TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE="1",TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE="1",
@@ -169,8 +224,10 @@ def main():
         requests=[]
         for i,prompt in enumerate(args.prompt):
             path=args.output/f"{mode}-{i}.json"
-            path.write_text(json.dumps(make_request(prompt,refs,(args.output/f"{mode}-{i}.png").resolve(),lora=lora,
-                dit_manifest=manifest if mode!="gpu" else None),indent=2)+"\n");requests.append(str(path.resolve()))
+            request=make_request(prompt,refs,(args.output/f"{mode}-{i}.png").resolve(),lora=lora,
+                dit_manifest=manifest if mode not in ("gpu","frozen") else None)
+            if mode=="frozen":request.update(execution="gpu_ane",ane_manifest=str(frozen),qwen21_w8a8=True)
+            path.write_text(json.dumps(request,indent=2)+"\n");requests.append(str(path.resolve()))
         command=[str(cli),"batch",str(model),*requests]
         observer=LoadObservation(args.output/f"{mode}-load.jsonl") if args.observe_load else None
         print(json.dumps(dict(starting=mode)),flush=True)
@@ -182,8 +239,11 @@ def main():
                 if result.returncode:raise RuntimeError("phase request failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_rows(rows,"gpu_weights" if mode=="gpu" else "dit_weights",len(args.prompt),True,None,args.channels)
-        validate_phases(rows,policy,bool(lora),gpu_layers)
+        if mode=="frozen":validate_frozen_base(rows,not args.request_local_encoder)
+        else:
+            validate_rows(rows,"gpu_weights" if mode=="gpu" else "dit_weights",len(args.prompt),True,None,args.channels,
+                request_local_source=args.request_local_encoder)
+            validate_phases(rows,policy,bool(lora),gpu_layers)
         if lora:
             if args.joint_ab:validate_joint_ab(rows,True)
             else:validate_b_epilogue(rows,args.fused_b)

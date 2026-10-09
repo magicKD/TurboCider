@@ -30,6 +30,23 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_request_local_source_requires_typed_actual_disabled_retention(self):
+        rows=[receipt("gpu",index) for index in range(3)]
+        for index,row in enumerate(rows):row["encoder_weight_residency"]=dict(enabled=False,weights_retained=False,
+            weights_reused=False,retained_bytes=0,loads_session_total=index+1,source_bytes=17534247392,decline_reason="")
+        SCREEN.validate_rows(rows,"gpu_weights",3,True,request_local_source=True)
+        for key,value in (("enabled",True),("weights_retained",True),("weights_reused",True),("retained_bytes",False),
+                          ("retained_bytes",1),("loads_session_total",True),("loads_session_total",1),
+                          ("source_bytes",True),("source_bytes",1.0),("source_bytes","1"),("source_bytes",0),
+                          ("source_bytes",(20<<30)+1),("decline_reason","growth_limit"),("decline_reason",None)):
+            bad=copy.deepcopy(rows);bad[1]["encoder_weight_residency"][key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):
+                SCREEN.validate_rows(bad,"gpu_weights",3,True,request_local_source=True)
+        for value in (None,{},True):
+            bad=copy.deepcopy(rows);bad[0]["encoder_weight_residency"]=value
+            with self.assertRaises(ValueError):SCREEN.validate_rows(bad,"gpu_weights",3,True,request_local_source=True)
+        with self.assertRaises(ValueError):SCREEN.validate_rows(rows,"gpu_weights",3,True)
+
     def test_compiled_encoder_generation_request_is_not_empty_edit(self):
         request=SCREEN.make_request("A teapot",[],Path("out.png"))
         self.assertEqual(request["operation"],"image.generate")
