@@ -32,14 +32,15 @@ int main(int argc,char **argv) {
         setenv("TURBOCIDER_RUNTIME_ANE_PROFILE","1",1);
         require(identity!=ane::HybridFfn::executor_configuration_identity(),"encoder profiling missing from execution identity");
         unsetenv("TURBOCIDER_RUNTIME_ANE_PROFILE");
-        for(int rows:{1,33,34,67})for(bool visual:{false,true}) {
+        for(bool compiled:{false,true})for(int rows:{1,33,34,67})for(bool visual:{false,true}) {
             auto input=mx::astype(mx::random::normal({1,rows,128},mx::float32,mx::random::key(34))*.2f,mx::bfloat16);
             auto positions=mx::broadcast_to(mx::reshape(mx::arange(rows,mx::int32),{1,rows}),{3,rows});
             std::vector<Tensor> deltas=visual?std::vector<Tensor>{mx::full({1,rows,128},.03125f,mx::bfloat16)}:std::vector<Tensor>{};
             const int valid=std::max(1,rows-1);
             auto expected=gpu.encode_embeddings(input,positions,valid,{},cancelled,deltas);mx::eval(expected);
             ane::HybridFfn runtime(argv[1],128,512,128ull<<20,cancelled);runtime.begin_request();
-            qwen21::TextEncoder hybrid(weights,config,&runtime);
+            auto candidate_config=config;candidate_config.compiled_gpu_blocks=compiled;
+            qwen21::TextEncoder hybrid(weights,candidate_config,&runtime);
             auto actual=hybrid.encode_embeddings(input,positions,valid,{},cancelled,deltas);mx::eval(actual);runtime.drain();
             const float error=mx::sqrt(mx::sum(mx::square(mx::astype(actual,mx::float32)-mx::astype(expected,mx::float32)))/
                 mx::sum(mx::square(mx::astype(expected,mx::float32)))).item<float>();
@@ -47,7 +48,7 @@ int main(int argc,char **argv) {
                 <<" failed="<<runtime.metrics().runtime_failed<<" reason="<<runtime.reason()<<'\n';
             const bool split=rows>33;
             require(error<.02f && !runtime.metrics().runtime_failed &&
-                (split ? runtime.metrics().runtime_calls==2 : runtime.metrics().runtime_calls==0 && error==0),
+                (split ? runtime.metrics().runtime_calls==2 : runtime.metrics().runtime_calls==0 && (compiled || error==0)),
                 "Qwen encoder shared runtime/causal/deepstack fixture failed");
             std::cout<<"PASS encoder rows="<<rows<<" visual="<<visual<<" relL2="<<error<<" calls="<<runtime.metrics().runtime_calls<<'\n';
         }
@@ -75,5 +76,25 @@ int main(int argc,char **argv) {
         require(retained.metrics().runtime_calls==2 && !retained.metrics().runtime_failed && mx::all(mx::isfinite(output)).item<bool>(),
             "retained runtime did not recover after staged-source unwind");
         std::cout<<"PASS retained encoder source scope: staged-only drain, attention failure and recovery\n";
+        // A finite BF16 post-norm exceeds the ANE FP16 bridge's range, while
+        // the original BF16 full FFN remains finite. Exercise the REAL compiled
+        // full callback on conversion failure, not a constant sentinel result.
+        auto large=arrays;
+        for(size_t i=0;i<keys.size();++i)if(keys[i].find("post_attention_layernorm.weight")!=std::string::npos)
+            large[i]=mx::full(large[i].shape(),1000000.f,mx::bfloat16);
+        weights.bind_arrays(keys,large);weights.materialize();
+        auto failure_input=mx::full({1,67,128},.125f,mx::bfloat16);
+        auto failure_positions=mx::broadcast_to(mx::reshape(mx::arange(67,mx::int32),{1,67}),{3,67});
+        auto expected=gpu.encode_embeddings(failure_input,failure_positions,67,{},cancelled);mx::eval(expected);
+        ane::HybridFfn failed(argv[1],128,512,128ull<<20,cancelled);failed.begin_request();
+        auto compiled_config=config;compiled_config.compiled_gpu_blocks=true;
+        qwen21::TextEncoder recovered(weights,compiled_config,&failed);
+        auto actual=recovered.encode_embeddings(failure_input,failure_positions,67,{},cancelled);mx::eval(actual);failed.drain();
+        const float error=mx::sqrt(mx::sum(mx::square(mx::astype(actual,mx::float32)-mx::astype(expected,mx::float32)))/
+            mx::sum(mx::square(mx::astype(expected,mx::float32)))).item<float>();
+        require(failed.metrics().runtime_failed && failed.metrics().runtime_weight_fallback_blocks>0 &&
+            mx::all(mx::isfinite(actual)).item<bool>() && std::isfinite(error) && error<.05f,
+            "compiled encoder did not recover the failed ANE span with the original complete GPU FFN");
+        std::cout<<"PASS compiled encoder GPU fallback: finite original BF16 source, actual FP16 bridge failure, complete compiled FFN and finite5% recovery\n";
     } catch(const std::exception &error) {std::cerr<<error.what()<<'\n';return 1;}
 }

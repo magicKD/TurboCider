@@ -16,6 +16,7 @@ ModelModule qwen21_module() {
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
+            (void)qwen21::compiled_encoder_gpu(r);
             require(qwen21::binary_option_or_unset(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_AB")),
                 "Qwen joint BF16 A/B requires0 or1");
             if(qwen21::joint_bf16_lora_ab(r)) {

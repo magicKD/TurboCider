@@ -89,6 +89,22 @@ class EncoderSessionTests(unittest.TestCase):
                 run("ane-edit-cache-hit",manifests[0],True,True)
                 run("gpu-edit-after-ane",None,True,False)
                 run("gpu-edit-cache-hit",None,True,True)
+                # Same native session and unchanged original source. A compile
+                # policy switch must invalidate BOTH conditioning namespaces;
+                # repeat requests may then use only their own cached result.
+                previous_compile=os.environ.get("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU")
+                try:
+                    os.environ["TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU"]="1"
+                    run("compiled-gpu-edit",None,True,False)
+                    run("compiled-gpu-edit-cache-hit",None,True,True)
+                    run("compiled-gpu-generation",None,False,False)
+                    run("compiled-gpu-generation-cache-hit",None,False,True)
+                    os.environ["TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU"]="0"
+                    run("eager-gpu-generation",None,False,False)
+                    run("eager-gpu-generation-cache-hit",None,False,True)
+                finally:
+                    if previous_compile is None:os.environ.pop("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU",None)
+                    else:os.environ["TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU"]=previous_compile
                 run("changed-manifest",manifests[1],True,False)
                 last=run("restored-manifest",manifests[0],True,False)
                 for name,contents in (("malformed","{not-json"),

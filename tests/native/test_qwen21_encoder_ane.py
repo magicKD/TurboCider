@@ -78,8 +78,9 @@ class EncoderAneTests(unittest.TestCase):
             result=subprocess.run([str(probe),str(graph/"manifest.json")],cwd=ROOT,env=env,
                 capture_output=True,text=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertEqual(result.stdout.count("PASS encoder"),8);print(result.stdout)
+            self.assertEqual(result.stdout.count("PASS encoder"),16);print(result.stdout)
             self.assertIn("PASS retained encoder source scope",result.stdout)
+            self.assertIn("PASS compiled encoder GPU fallback",result.stdout)
 
 
 if __name__=="__main__":unittest.main()

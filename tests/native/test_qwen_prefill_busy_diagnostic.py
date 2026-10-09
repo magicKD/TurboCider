@@ -18,6 +18,8 @@ class BusyDiagnosticTests(unittest.TestCase):
         self.assertEqual(args,["--cli","unused","--output","unused"])
         self.assertEqual(DIAGNOSTIC.screen_arguments([*args,"--gpu-first-prefill-screen"]),
             ["--sample-memory",*args,"--gpu-first-prefill-screen"])
+        self.assertEqual(DIAGNOSTIC.screen_arguments([*args,"--compiled-encoder-screen"]),
+            ["--sample-memory",*args,"--compiled-encoder-screen"])
         for bad in ([],["--"],[*args,"--observe-load"],[*args,"--defer-prefill-screen"],[*args,"--sample-memory"]):
             with self.assertRaises(ValueError):DIAGNOSTIC.screen_arguments(bad)
 

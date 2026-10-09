@@ -37,6 +37,30 @@ PRECISION_MODES=("gpu_joint","gpu_fp16","hybrid_joint","hybrid_fp16")
 FP16_RANK_MARKER="experimental FP16 low-rank LoRA matmuls"
 DEFER_PREFILL_MODES=("gpu_defer_control","hybrid_defer_off","hybrid_defer_on")
 GPU_FIRST_MODES=("gpu_launch_control","hybrid_launch_ane_first","hybrid_launch_gpu_first")
+COMPILED_ENCODER_MODES=("gpu_encoder_eager","gpu_encoder_compiled","encoder_eager","encoder_compiled")
+COMPILED_ENCODER_MARKER="experimental compiled Qwen3-VL GPU blocks with dynamic original source arrays"
+
+
+def validate_compiled_encoder(rows,lines,enabled,with_ane,require_graph_reuse=False):
+    if not rows or type(enabled) is not bool or type(with_ane) is not bool:
+        raise ValueError("need explicit compiled encoder policy and actual requests")
+    records=[json.loads(line)["qwen_encoder_compiled_gpu"] for line in lines if "qwen_encoder_compiled_gpu" in line]
+    if len(records)!=(len(rows) if enabled else 0):raise ValueError("missing/duplicate compiled encoder execution records")
+    for row in rows:
+        if (COMPILED_ENCODER_MARKER in (row.get("acceleration_selection") or ""))!=enabled:
+            raise ValueError("compiled encoder selection differs from actual profile")
+    for record in records:
+        if not isinstance(record,dict):raise ValueError("malformed compiled encoder execution record")
+        keys=("rows","layers","full_blocks","attention_segments","channel_ffn_segments","full_ffn_segments")
+        if any(type(record.get(k)) is not int or record[k]<0 for k in keys) or record["rows"]<=0 or record["layers"]!=36 or \
+            record["full_blocks"]!=(0 if with_ane else 36) or record["attention_segments"]!=(36 if with_ane else 0) or \
+            record["channel_ffn_segments"]!=(36 if with_ane else 0) or record["full_ffn_segments"]!=0 or \
+            record.get("scope")!="evaluated language hidden; dynamic original array arguments; graph invocations, not physical kernels":
+            raise ValueError("compiled encoder needs successful whole GPU blocks or Private channel segments, not policy-only/fallback telemetry")
+        if require_graph_reuse and (type(record.get("block_graphs")) is not int or record["block_graphs"]!=1 or
+                type(record.get("ffn_graphs")) is not int or record["ffn_graphs"]!=(2 if with_ane else 0) or
+                record.get("native_gqa_attention") is not True):
+            raise ValueError("canonical encoder screen requires one declared block body and bounded request-local FFN bodies")
 
 
 def validate_precision_policy(rows,policy):
@@ -185,9 +209,9 @@ def model_snapshot(model):
 
 
 def make_request(prompt, image_paths, output, manifest=None, lora=None,dit_manifest=None):
-    request=dict(model="qwen-image-2.1",operation="image.edit",prompt=prompt,
+    request=dict(model="qwen-image-2.1",operation="image.edit" if image_paths else "image.generate",prompt=prompt,
         width=512,height=512,steps=6 if lora else 40,seed=29,audio=False,
-        residency="resident",execution="gpu",allow_approximation=True,qwen21_reference_size=512,
+        residency="resident",execution="gpu",allow_approximation=True,qwen21_reference_size=512 if image_paths else 1024,
         inputs=[dict(kind="image",role="reference",path=str(path)) for path in image_paths],output=str(output))
     if manifest:request["encoder_ane_manifest"]=str(manifest)
     if lora:request.update(lora_strategy="inference_time",loras=[dict(path=str(lora),role="transformer",strength=1.0)])
@@ -283,7 +307,8 @@ def main():
     parser.add_argument("--defer-prefill-screen",action="store_true",help="complete joint GPU / prefill-only eager / prefill-only owned deferred join; actual deferred counters required")
     parser.add_argument("--gpu-first-prefill-screen",action="store_true",help="joint GPU / prefill ANE-first / prefill GPU-first; same share, precision and join policy, GPU decode")
     parser.add_argument("--gpu-first-deferred",action="store_true",help="use the same owned deferred join on BOTH launch-order hybrid arms")
-    parser.add_argument("--reference",type=Path,action="append",required=True)
+    parser.add_argument("--compiled-encoder-screen",action="store_true",help="same-library GPU/Private encoder eager/compiled, GPU DiT, same original source/executor retention")
+    parser.add_argument("--reference",type=Path,action="append",default=[])
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
     parser.add_argument("--backend",choices=("private","public"),default="private")
@@ -350,10 +375,14 @@ def main():
             not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
             parser.error("GPU-first prefill screen requires original LoRA/fixed Private DiT without another screen")
         modes=GPU_FIRST_MODES
+    if args.compiled_encoder_screen:
+        if args.lora_ranks_screen or args.lora_ranks_gpu_control or args.down_ranks_screen or args.bf16_rank_operands_screen or args.student_final_ffn_reuse_screen or args.b_epilogue_screen or args.joint_ab_screen or args.lora_precision_screen or args.defer_prefill_screen or args.gpu_first_prefill_screen or args.weight_code_cache_bytes is not None or args.dit_manifest or args.backend!="private":
+            parser.error("compiled encoder screen requires separate fixed Private encoder with GPU DiT and no other screen")
+        modes=COMPILED_ENCODER_MODES
     order=args.order.split(",") if args.order else list(modes)
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
-    if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
-        parser.error("need 1..2 references and 3..9 distinct fresh prompts")
+    if not (0 if args.compiled_encoder_screen else 1)<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
+        parser.error("need 1..2 references (compiled encoder also supports generation) and 3..9 distinct fresh prompts")
     if any(not prompt.strip() for prompt in args.prompt):parser.error("empty prompt")
     if not 1<=args.timeout<=3600:parser.error("timeout must be 1..3600 seconds per serial mode")
     if args.backend=="private" and not (0<args.channels<12288 and args.channels%512==0):parser.error("Private channels require aligned partial width")
@@ -376,7 +405,7 @@ def main():
         status="incomplete",qualification_passed=False,order=order,prompts=args.prompt,source_identities=before,
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
-    summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
+    summary.update(weight_retention_screen=args.weights or bool(dit_manifest) or args.compiled_encoder_screen,global_channels=args.global_channels,
         combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and not args.b_epilogue_screen and not args.joint_ab_screen and not args.lora_precision_screen and not args.defer_prefill_screen and not args.gpu_first_prefill_screen and args.weight_code_cache_bytes is None,
         lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes,
         weight_code_cache_mode=args.weight_code_cache_mode)
@@ -391,15 +420,19 @@ def main():
     summary["defer_prefill_screen"]=args.defer_prefill_screen
     summary["gpu_first_prefill_screen"]=args.gpu_first_prefill_screen
     summary["gpu_first_deferred"]=args.gpu_first_deferred
+    summary["compiled_encoder_screen"]=args.compiled_encoder_screen
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES,*JOINT_AB_MODES,*PRECISION_MODES,*DEFER_PREFILL_MODES,*GPU_FIRST_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES,*JOINT_AB_MODES,*PRECISION_MODES,*DEFER_PREFILL_MODES,*GPU_FIRST_MODES,*COMPILED_ENCODER_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
         uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
         uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on","hybrid_b_off","hybrid_b_on","hybrid_joint_off","hybrid_joint_on","hybrid_joint","hybrid_fp16","hybrid_defer_off","hybrid_defer_on","hybrid_launch_ane_first","hybrid_launch_gpu_first")
+        if mode in COMPILED_ENCODER_MODES:
+            env["TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU"]="1" if mode.endswith("_compiled") else "0"
+            if lora:env["TURBOCIDER_QWEN21_LORA_BF16_AB"]="1"
         if mode in GPU_FIRST_MODES:
             env.update(TURBOCIDER_QWEN21_LORA_BF16_AB="1",TURBOCIDER_QWEN21_PROFILE_STEPS="1",
                 TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="prefill",
@@ -442,7 +475,7 @@ def main():
         if uses_encoder or uses_dit:
             env.update(TURBOCIDER_ANE_BACKEND=args.backend,TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
                 TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",TURBOCIDER_QWEN21_ENCODER_ANE_CHANNELS=str(args.channels),
-                TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME="1" if mode in ("encoder_retained","encoder_weights","dit_encoder_weights") else "0")
+                TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME="1" if mode in ("encoder_retained","encoder_weights","dit_encoder_weights","encoder_eager","encoder_compiled") else "0")
             if args.backend=="private":env.update(TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",
                 TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.global_channels),
                 TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE="1",TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE="1",
@@ -466,6 +499,7 @@ def main():
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
         baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_","gpu_b_","gpu_joint_","gpu_defer_","gpu_launch_")) or mode in ("gpu_joint","gpu_fp16") else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_","hybrid_b_","hybrid_joint_","hybrid_defer_","hybrid_launch_")) or mode in ("hybrid_joint","hybrid_fp16") else mode
+        if mode in COMPILED_ENCODER_MODES:baseline_mode="encoder_weights" if uses_encoder else "gpu_weights"
         validate_rows(rows,"dit_weights" if mode in (*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES) else baseline_mode,
             len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
@@ -505,6 +539,9 @@ def main():
                 validate_shared_ranks(rows,True)
                 validate_deferred_channel_join(rows,args.gpu_first_deferred)
                 validate_channel_gpu_first(rows,mode=="hybrid_launch_gpu_first")
+        if mode in COMPILED_ENCODER_MODES:
+            validate_compiled_encoder(rows,(args.output/f"{mode}.stderr.txt").read_text().splitlines(),mode.endswith("_compiled"),uses_encoder,True)
+            if lora:validate_joint_ab(rows,True)
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
         times=[row["timings_seconds"]["request_wall"] for row in rows]

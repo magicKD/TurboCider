@@ -1,4 +1,5 @@
 import copy
+import json
 import importlib.util
 from pathlib import Path
 import sys
@@ -29,6 +30,26 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_compiled_encoder_generation_request_is_not_empty_edit(self):
+        request=SCREEN.make_request("A teapot",[],Path("out.png"))
+        self.assertEqual(request["operation"],"image.generate")
+        self.assertEqual(request["inputs"],[])
+        self.assertEqual(request["qwen21_reference_size"],1024)
+        self.assertEqual(request["steps"],40)
+    def test_compiled_encoder_needs_actual_evaluated_blocks_and_no_fallback(self):
+        row=dict(acceleration_selection=SCREEN.COMPILED_ENCODER_MARKER)
+        record=dict(rows=318,layers=36,full_blocks=36,attention_segments=0,channel_ffn_segments=0,full_ffn_segments=0,
+            scope="evaluated language hidden; dynamic original array arguments; graph invocations, not physical kernels")
+        def line(data):return json.dumps(dict(qwen_encoder_compiled_gpu=data))
+        SCREEN.validate_compiled_encoder([row],[line(record)],True,False)
+        hybrid={**record,"full_blocks":0,"attention_segments":36,"channel_ffn_segments":36}
+        SCREEN.validate_compiled_encoder([row],[line(hybrid)],True,True)
+        SCREEN.validate_compiled_encoder([row],[line({**record,"block_graphs":1,"ffn_graphs":0,"native_gqa_attention":True})],True,False,True)
+        with self.assertRaises(ValueError):SCREEN.validate_compiled_encoder([row],[line(record)],True,False,True)
+        SCREEN.validate_compiled_encoder([{}],[],False,False)
+        for records in ([],[line(record),line(record)],[line({**record,"full_blocks":0})],
+                [line({**record,"layers":True})],[line({**hybrid,"full_ffn_segments":1})]):
+            with self.assertRaises(ValueError):SCREEN.validate_compiled_encoder([row],records,True,False)
     def test_gpu_first_requires_actual_successful_async_channel_blocks(self):
         def row(enabled,count=32,first=None):return dict(hybrid=dict(runtime_weight=dict(
             executor_backend="private_ane",partition_axis="intermediate_channels",channel_blocks_session_total=count,
@@ -140,7 +161,10 @@ class EncoderResidencyScreenTests(unittest.TestCase):
             base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_encoder_residency_screen.py"),
                 "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
                 "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
-            for flags in (["--gpu-first-deferred"],["--gpu-first-prefill-screen"],
+            for flags in (["--compiled-encoder-screen","--backend","public"],
+                ["--compiled-encoder-screen","--dit-manifest","unused"],
+                ["--compiled-encoder-screen","--gpu-first-prefill-screen"],
+                ["--gpu-first-deferred"],["--gpu-first-prefill-screen"],
                 ["--gpu-first-prefill-screen","--lora","unused","--dit-manifest","unused","--defer-prefill-screen"],
                 ["--gpu-first-prefill-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
                 ["--gpu-first-prefill-screen","--lora","unused","--dit-manifest","unused","--backend","public"],

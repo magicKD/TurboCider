@@ -1,0 +1,207 @@
+{
+  "schema": "tc-local512-encoder-compiled-gqa-v1",
+  "date_local": "2026-10-09",
+  "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_diagnostic_no_default_promotion",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "automatic_default_changed": false,
+  "decision": "Keep explicit default-off compiled encoder research profile and original fastest GPU default. Native attention improved synthetically; real language components only small wins and no stable significant complete-request benefit. Do not wire weak Qwen BF16 partial-down.",
+  "implementation": {
+    "flag": "TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU=1",
+    "scope": "Approximate unconstrained resident512, generation or1..2ref512 editing, no prompt enhancement",
+    "source": "Dynamic original arrays for every norm/projection/bias/metadata; no captured checkpoint constants, widened W bank, adapter merge or disk sidecar",
+    "graphs": "Whole GPU block, or GPU attention plus complete/partial FFN callbacks; canonical layer names and request-local graph-function cache, max128layers; no global retained source/graph cache",
+    "v3_attention": "Original Q/K/V dtype, native32/8-head GQA without pre-repeat/F32 QKV copies; exact0/-Inf mask cast; F32 softmax, original F32 norm/mRoPE/DeepStack order",
+    "default_attention": "Unchanged repeated K/V and F32 attention",
+    "identity": "Encoder recipe snapshot/version namespace invalidates both conditioning caches and retained executor on switch",
+    "telemetry": "Finite evaluated language hidden, actual graph invocation counts and declared request-local bodies; not physical kernels/device overlap or internal JIT trace counts",
+    "guards": "Original source/memory/shape/finite/causal rules and complete GPU recovery preserved; encoder runtime LoRA explicitly excluded, original DiT LoRA supported independently"
+  },
+  "references": {
+    "read_only_splash_commit": "be83e8f895bc8d9036ace8348c7ddc2098dc5ebc",
+    "file": "runtime/metal/CommandGraph.hpp",
+    "api": "Official MLX fast.scaled_dot_product_attention documentation: native GQA, do not pre-tile, F32 softmax",
+    "source_or_models_downloaded_modified": false
+  },
+  "components": {
+    "partial_down": {
+      "receipt": "outputs/local512-qwen-bf16-partial-v1-component-20261009.json",
+      "source": "Original Qwen layer0 BF16 down4096x12288, synthetic hidden; prefix-only source load",
+      "geometries": 18,
+      "warmups": 3,
+      "cyclic_hot_samples": 15,
+      "M2096_K7168_medians_ms": {"mpp_fp32": 8.400875, "mpp_bf16_widen": 8.503333, "mlx_bf16_widen": 8.637416},
+      "M3144_K7168_medians_ms": {"mpp_fp32": 12.534666, "mpp_bf16_widen": 12.665875, "mlx_bf16_widen": 12.852667},
+      "extra_rounding_rel_l2_approx": 0.00167,
+      "wired_model_consumer": false,
+      "library": "build/local512-channel-gpu-first-v1-private/libturbocider.dylib",
+      "scope": "Standalone matching old headers/library; not complete FFN/ANE/model profit"
+    },
+    "attention": {
+      "receipt": "outputs/local512-encoder-attention-v1-component-20261009.json",
+      "dtype_rows_cases": 8,
+      "recipes_each": 4,
+      "source": "Synthetic post-norm BF16/FP16 Q/K/V; heads32/kv8/d128; causal/padded keys",
+      "warmups": 3,
+      "cyclic_hot_samples": 15,
+      "BF16_rows318_medians_ms": {"fp32_repeat": 0.77125, "fp32_gqa": 0.704834, "native_repeat": 0.540084, "native_gqa": 0.4555},
+      "BF16_rows574_medians_ms": {"fp32_repeat": 1.036792, "fp32_gqa": 0.957458, "native_repeat": 0.720417, "native_gqa": 0.673834},
+      "listed_bf16_cases_rel_l2": 0,
+      "scope": "Complete compiled attention/repeat/cast/eval but not original weights/language/model or device trace"
+    },
+    "language_v3": {
+      "receipt": "outputs/local512-encoder-compiled-v3-single-component-20261009.json",
+      "rows": 318,
+      "references": 1,
+      "ane_channels": 3072,
+      "bucket": 320,
+      "cyclic_hot_samples": 5,
+      "medians_seconds": {"gpu_eager": 0.351160542, "gpu_compiled": 0.343814084, "hybrid_eager": 0.335671417, "hybrid_compiled": 0.329562375},
+      "conditioning_relative_l2": {"gpu_compiled": 0.0263537559658, "hybrid_compiled": 0.0333049856126},
+      "actual_ane_calls": 432,
+      "scope": "Original language/vision/source with prepared embeddings, retained source/executor; excludes DiT/media/production load/cache lifecycle"
+    }
+  },
+  "historical_versions": {
+    "v1_library": "build/local512-encoder-compiled-v1-private/libturbocider.dylib",
+    "v1_sha256": "8d3217a3c381d55357aff0c533b32144f7590f3b63280e37c2e7a4c333fa197d",
+    "v2_library": "build/local512-encoder-compiled-v2-private/libturbocider.dylib",
+    "v2_sha256": "797d968fe8bdb5f3529b29f544216846b5ece077cf6a20eec140422ad4e8ce04",
+    "full_screens": [
+      "outputs/local512-encoder-compiled-edit1-v1-diagnostic-20261009/summary.json",
+      "outputs/local512-encoder-compiled-edit2-v1-diagnostic-20261009/summary.json",
+      "outputs/local512-encoder-compiled-edit1-v2-diagnostic-20261009/summary.json",
+      "outputs/local512-encoder-compiled-edit2-v2-diagnostic-20261009/summary.json"
+    ],
+    "scope": "Separate generation-specific binaries, source snapshots and own GPU controls; not current-source builds or cross-version causal speedup"
+  },
+  "model_recipe_v3": {
+    "source": "Original local Qwen Image2.1 BF16/Qwen3-VL; GPU DiT and identical admitted encoder original-source retention on all arms",
+    "edit_adapter": "Original Viggle v0.2.1 r256/strength1, joint BF16 A/B/F32 ranks, no merge",
+    "shape": [512, 512],
+    "seed": 29,
+    "fresh_prompts": 3,
+    "each_arm": "Independent process, one cold plus two distinct fresh-condition warm requests; all conditioning miss",
+    "encoder_ane_policy": "Explicit Private W8A8/F32 join, channels3072/c320, fixed async, retained executor; prefetch/lookahead off",
+    "memory": "100ms complete process-tree load+cold+warm+exit observation",
+    "load": "Enclosing continuous CPU-load diagnostic, all three checks failed; no external process signals, never qualified"
+  },
+  "experiments_v3": [
+    {
+      "operation": "image.edit",
+      "references": 1,
+      "steps": 6,
+      "adapter": true,
+      "summary": "outputs/local512-encoder-compiled-edit1-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "33b5a7a1d2aa46f80bf5c8ea94c678da085a1716dbf187185a68314d81cef525",
+      "load_report": "outputs/local512-encoder-compiled-edit1-v3-load-report-20261009.json",
+      "order": ["gpu_encoder_eager", "gpu_encoder_compiled", "encoder_eager", "encoder_compiled"],
+      "warm_request_seconds": {"gpu_encoder_eager": 10.4902133125, "gpu_encoder_compiled": 10.5139790415, "encoder_eager": 10.6446215835, "encoder_compiled": 10.6494408535},
+      "encoder_calls_each_hybrid_request": 36,
+      "actual_adapter_bindings_each_request": 227,
+      "load_check_passed": false
+    },
+    {
+      "operation": "image.edit",
+      "references": 2,
+      "steps": 6,
+      "adapter": true,
+      "summary": "outputs/local512-encoder-compiled-edit2-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "066e07f7d93c5cb638621f6345bc62da4325ae620b32a57673d7130a06e5a73e",
+      "load_report": "outputs/local512-encoder-compiled-edit2-v3-load-report-20261009.json",
+      "order": ["encoder_compiled", "encoder_eager", "gpu_encoder_compiled", "gpu_encoder_eager"],
+      "warm_request_seconds": {"gpu_encoder_eager": 12.6783651045, "gpu_encoder_compiled": 12.6690161455, "encoder_eager": 12.9376608745, "encoder_compiled": 12.8807902705},
+      "encoder_calls_each_hybrid_request": 72,
+      "actual_adapter_bindings_each_request": 227,
+      "load_check_passed": false
+    },
+    {
+      "operation": "image.generate",
+      "references": 0,
+      "steps": 40,
+      "adapter": false,
+      "summary": "outputs/local512-encoder-compiled-basegen-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "eca8bbfae1c7e5100a47247f0e7c9677ed18aa805a06a64b6b91151006456b8f",
+      "load_report": "outputs/local512-encoder-compiled-basegen-v3-load-report-20261009.json",
+      "order": ["gpu_encoder_eager", "gpu_encoder_compiled", "encoder_eager", "encoder_compiled"],
+      "warm_request_seconds": {"gpu_encoder_eager": 43.369143167, "gpu_encoder_compiled": 43.3737261875, "encoder_eager": 43.611365354, "encoder_compiled": 43.5516242915},
+      "encoder_calls_each_hybrid_request": 36,
+      "actual_adapter_bindings_each_request": null,
+      "load_check_passed": false
+    }
+  ],
+  "execution_checks": {
+    "complete_model_requests_all_versions": 84,
+    "complete_model_requests_v3": 36,
+    "compiled_language_layers_each_selected_request": 36,
+    "declared_block_bodies_each_encode": 1,
+    "declared_ffn_bodies_gpu_hybrid": [0, 2],
+    "compiled_full_ffn_invocations_healthy_private_channel": 0,
+    "runtime_failures_fallbacks": 0,
+    "source_retention_loads_each_process": 1,
+    "conditioning_hits": 0,
+    "memory_reports_complete_v3": 12,
+    "swap_in_out_bytes": 0,
+    "phys_footprint_peak_bytes_range": [36813528488, 41150097904],
+    "default_single_ref_gpu_pngs_exact_92466cb_three_cases": true,
+    "scope": "Healthy complete-request diagnostics; source generation/header stamps plus pre/post fixture/runtime/adapter hashes, not immutable encoder payload proof or physical trace"
+  },
+  "verification": {
+    "private_distinct_selected": 15,
+    "public_distinct_selected": 14,
+    "private_actual_prepare_only_session": 1,
+    "updated_actual_bridge_fallback_same_group_rerun_each_library": 1,
+    "host_contracts": 27,
+    "skips": 0,
+    "compiled_language_cases_each_library": 48,
+    "public_coreml_encoder_cases_each_library": 16,
+    "actual_recovery": "Finite original BF16 post-norm, failed FP16 ANE bridge, original full compiled GPU FFN finite/5% recovery; common Private late-chunk/full GPU recovery unchanged",
+    "cache_session": "Same original source, eager/compiled/eager generation+edit cache miss/hit isolation; manifest invalid/recovery, source/runtime off and unload",
+    "public_actual_release_guard": true,
+    "whole_suite_or_complete_model_matrix": false,
+    "retained_failed_host_log": "outputs/local512-encoder-compiled-v1-host-test-20261009.log",
+    "failure_scope": "New host fixture lacked json import; fixed and host v2/v3/v4 passed, no erased log or changed native math to satisfy it"
+  },
+  "verification_logs": [
+    "outputs/local512-encoder-compiled-v3-private-build-20261009.log",
+    "outputs/local512-encoder-compiled-v3-public-build-20261009.log",
+    "outputs/local512-encoder-compiled-v3-private-test-20261009.log",
+    "outputs/local512-encoder-compiled-v3-private-extra-test-20261009.log",
+    "outputs/local512-encoder-compiled-v3-private-fallback-test-20261009.log",
+    "outputs/local512-encoder-compiled-v3-private-session-test-20261009.log",
+    "outputs/local512-encoder-compiled-v3-public-test-20261009.log",
+    "outputs/local512-encoder-compiled-v3-public-fallback-test-20261009.log",
+    "outputs/local512-encoder-compiled-v3-public-release-guard-20261009.log",
+    "outputs/local512-encoder-compiled-v4-host-test-20261009.log"
+  ],
+  "build_v3": {
+    "private": "build/local512-encoder-compiled-v3-private/libturbocider.dylib",
+    "private_sha256": "dfa0d946eba2eb1913fd5498a26b95bd138a0b649c95aefe7ced03dce0ce213c",
+    "public": "build/local512-encoder-compiled-v3-public/libturbocider.dylib",
+    "public_sha256": "779db61f6773bab800aea38c46f7361831c73ebafb966e1289cd6535b5a567f4",
+    "source_inputs_each": 499,
+    "rechecked_source_mismatches": 0,
+    "private_experimental_probes": true,
+    "public_private_and_experimental_probes": false,
+    "scope": "Native-only working-tree builds with original user ConvRot drafts, not clean staged-only or App distribution"
+  },
+  "visual": {
+    "inspected": "v3 case1 single/dual original-LoRA GPU eager/GPU compiled/hybrid compiled whole; base generation GPU/hybrid compiled whole",
+    "observation": "Close shapes/handles/spouts/lids, dual placement/colors, warm light/shadows; minor glaze/texture/highlights, no obvious new block/fracture artifacts",
+    "status": "limited_agent_review_user_acceptance_pending",
+    "scope": "Not all cases/detail/seeds or strict trajectory equivalence; allowed approximate fidelity, no automatic N1 promotion"
+  },
+  "cleanup": {
+    "all_owned_jobs_terminal": true,
+    "objects_removed": 865,
+    "logical_bytes_removed": 67710792,
+    "empty_module_caches_removed": 4,
+    "builds": ["build/local512-encoder-compiled-v1-private", "build/local512-encoder-compiled-v2-private", "build/local512-encoder-compiled-v3-private", "build/local512-encoder-compiled-v3-public"],
+    "retained": ["libraries", "CLI", "probes", "all logs including failures", "PNGs", "raw memory/load observations", "manifests", "original models/adapters/references"],
+    "recovery": "Rebuild these isolated native outputs with recorded feature flags and matching source/header generations",
+    "external_process_signals_user_cache_or_model_deletions": false
+  },
+  "remaining_goal_scope": ["Stable profitable encoder/operation route, not only compatibility/component wins", "Full Z/Qwen base/original-LoRA generation and edit workload matrix", "GGUF reusable ahead-decode/ConvRot and GPU kernel profitability", "Public/Private per-operation profitability and physical evidence", "More scenes/seeds and broader visual/source/memory validation"]
+}

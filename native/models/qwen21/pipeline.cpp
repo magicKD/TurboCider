@@ -194,6 +194,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
     require(binary_option_or_unset(encoder_weights_flag),"Qwen encoder weight retention requires 0 or 1");
     const bool retain_encoder_weights=option_enabled(encoder_weights_flag);
+    const bool compile_encoder_gpu=compiled_encoder_gpu(r);
     if(retain_encoder_weights)
         require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&
             !r.memory_constrained.enabled && !r.streaming.active() && !r.memory_budget_bytes,
@@ -399,6 +400,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         ane::HybridFfn::executor_configuration_identity()+(retain_encoder_runtime ? ":retained-encoder-executor-v1" : ":request-encoder-executor-v1");
     if(encoder_channels)encoder_identity+=":encoder-channels-"+std::to_string(*encoder_channels);
     if(encoder_source)encoder_identity+=":retained-source-"+encoder_source->identity;
+    if(compile_encoder_gpu)encoder_identity+=":compiled-gpu-blocks-v3-canonical-native-gqa";
     if(encoder_runtime_identity_!=encoder_identity) {encoder_runtime_.reset();encoder_runtime_identity_.clear();}
     conditioning_cache_.select_encoder(encoder_identity);
     const bool edit_hit = !r.inputs.empty() && conditioning_cache_.edit_hit(
@@ -458,6 +460,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         auto assembled = assemble_prompt(tokens, weights.at("model.embed_tokens.weight"), refs);
         TextConfig config;
+        config.compiled_gpu_blocks=compile_encoder_gpu;
         config.final_norm = false; // official checkpoint's pre-final-RMSNorm hidden state
         std::unique_ptr<ane::HybridFfn> request_encoder_runtime;
         ane::HybridFfn *encoder_runtime=nullptr;
@@ -911,6 +914,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             "; explicit encoder runtime attempted; no model ANE call; complete GPU language FFN";
     if(retain_encoder_runtime)result.selection+="; explicit bounded encoder executor retention";
     if(retain_encoder_weights)result.selection+="; explicit admitted encoder source retention; no weight copy/precision change";
+    if(compile_encoder_gpu)result.selection+="; experimental compiled Qwen3-VL GPU blocks with dynamic original source arrays, FP32 norm and unchanged mRoPE/DeepStack order; original-dtype native GQA attention";
     if(share_lora_ranks)result.selection+="; experimental operation-local shared gate/up LoRA input ranks";
     result.student_ffn_reuse_enabled=student_ffn_reuse;
     result.student_ffn_requested_layers=student_ffn_reuse?student_reuse_layers:0;
