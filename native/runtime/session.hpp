@@ -77,6 +77,8 @@ struct HybridMetrics {
     uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
     bool runtime_weight_deferred_join_enabled = false;
     uint64_t runtime_weight_deferred_join_blocks = 0; // explicit channel/untimed subset; output remains owned
+    bool runtime_weight_channel_gpu_first_enabled = false;
+    uint64_t runtime_weight_channel_gpu_first_blocks = 0; // successful async channel subset, not physical overlap
     uint64_t runtime_weight_unsplit_gpu_blocks = 0; // subset of GPU blocks; no FFN bridge
     uint64_t runtime_weight_full_gpu_probe_blocks = 0; // measured subset of unsplit GPU blocks
     double runtime_weight_full_gpu_probe_seconds = 0;

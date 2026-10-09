@@ -29,6 +29,20 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_gpu_first_requires_actual_successful_async_channel_blocks(self):
+        def row(enabled,count=32,first=None):return dict(hybrid=dict(runtime_weight=dict(
+            executor_backend="private_ane",partition_axis="intermediate_channels",channel_blocks_session_total=count,
+            async_hybrid_blocks_session_total=count,channel_gpu_first_enabled=enabled,
+            channel_gpu_first_blocks_session_total=(count if enabled else 0) if first is None else first)))
+        SCREEN.validate_channel_gpu_first([row(True),row(True,64)],True)
+        SCREEN.validate_channel_gpu_first([row(False),row(False,64)],False)
+        for bad in ([row(True,first=0)],[row(False)],[row(True,0)],[row(True,first=True)],
+                [row(True),row(True)],[{}],[]):
+            with self.assertRaises(ValueError):SCREEN.validate_channel_gpu_first(bad,True)
+        for key,value in (("executor_backend","public_coreml"),("partition_axis","rows"),
+                ("async_hybrid_blocks_session_total",31),("channel_gpu_first_enabled",1)):
+            bad=row(True);bad["hybrid"]["runtime_weight"][key]=value
+            with self.assertRaises(ValueError):SCREEN.validate_channel_gpu_first([bad],True)
     def test_deferred_prefill_requires_actual_owned_deferred_blocks(self):
         def row(enabled,blocks=32,deferred=32):return dict(hybrid=dict(runtime_weight=dict(
             executor_backend="private_ane",partition_axis="intermediate_channels",channel_blocks_session_total=blocks,
@@ -126,7 +140,11 @@ class EncoderResidencyScreenTests(unittest.TestCase):
             base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_encoder_residency_screen.py"),
                 "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
                 "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
-            for flags in (["--defer-prefill-screen"],["--defer-prefill-screen","--lora","unused","--dit-manifest","unused","--lora-precision-screen"],
+            for flags in (["--gpu-first-deferred"],["--gpu-first-prefill-screen"],
+                ["--gpu-first-prefill-screen","--lora","unused","--dit-manifest","unused","--defer-prefill-screen"],
+                ["--gpu-first-prefill-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
+                ["--gpu-first-prefill-screen","--lora","unused","--dit-manifest","unused","--backend","public"],
+                ["--defer-prefill-screen"],["--defer-prefill-screen","--lora","unused","--dit-manifest","unused","--lora-precision-screen"],
                 ["--lora-precision-screen"],["--lora-precision-screen","--lora","unused","--dit-manifest","unused","--joint-ab-screen"],
                 ["--joint-ab-screen"],["--joint-ab-screen","--lora","unused"],
                 ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--b-epilogue-screen"],

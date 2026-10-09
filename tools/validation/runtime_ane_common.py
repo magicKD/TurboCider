@@ -650,6 +650,24 @@ def validate_fixed_async(rows, enabled):
             raise ValueError("requested fixed async head policy was not executed")
 
 
+def validate_channel_gpu_first(rows, enabled):
+    """Successful async channel submission order, never physical overlap."""
+    if type(enabled) is not bool or not rows:
+        raise ValueError("need explicit channel launch order and actual request receipts")
+    previous = 0
+    for row in rows:
+        runtime = (row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks = session_counter(runtime, "channel_blocks_session_total")
+        first = session_counter(runtime, "channel_gpu_first_blocks_session_total")
+        asynchronous = session_counter(runtime, "async_hybrid_blocks_session_total")
+        if (runtime.get("channel_gpu_first_enabled") is not enabled or
+                runtime.get("executor_backend") != "private_ane" or
+                runtime.get("partition_axis") != "intermediate_channels" or
+                blocks <= previous or asynchronous != blocks or first != (blocks if enabled else 0)):
+            raise ValueError("channel launch order lacks actual successful async blocks")
+        previous = blocks
+
+
 def validate_deferred_channel_join(rows, enabled):
     """Actual owned channel joins, not flag intent or a component self-test."""
     if not rows:

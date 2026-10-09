@@ -25,7 +25,8 @@ def screen_arguments(arguments):
     if not args or any(flag in args for flag in
             ("--observe-load","--defer-prefill-screen","--sample-memory")):
         raise ValueError("provide plain screen arguments; wrapper owns diagnostic/phase/memory policy")
-    return ["--defer-prefill-screen","--sample-memory",*args]
+    phase=[] if "--gpu-first-prefill-screen" in args else ["--defer-prefill-screen"]
+    return [*phase,"--sample-memory",*args]
 
 
 def main():

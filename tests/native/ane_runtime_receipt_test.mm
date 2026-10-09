@@ -61,6 +61,8 @@ int main() {
                 metrics.runtime_weight_deferred_join_enabled=true;
                 metrics.runtime_weight_channel_blocks=2;
                 metrics.runtime_weight_deferred_join_blocks=2;
+                metrics.runtime_weight_channel_gpu_first_enabled=true;
+                metrics.runtime_weight_channel_gpu_first_blocks=2;
                 auto serialized = tc::to_dictionary(metrics);
                 id runtime = serialized[@"runtime_weight"];
                 if (![runtime isKindOfClass:[NSDictionary class]] ||
@@ -78,6 +80,8 @@ int main() {
                     [runtime[@"stage_pipeline_variants"] unsignedLongLongValue] != 4 ||
                     ![runtime[@"deferred_channel_join_enabled"] boolValue] ||
                     [runtime[@"deferred_channel_join_blocks_session_total"] unsignedLongLongValue] != 2 ||
+                    ![runtime[@"channel_gpu_first_enabled"] boolValue] ||
+                    [runtime[@"channel_gpu_first_blocks_session_total"] unsignedLongLongValue] != 2 ||
                     ![runtime[@"post_join_scope"] isEqual:@"host_graph_construction_deferred_gpu_consumption"] ||
                     ![serialized[@"provenance"] hasPrefix:@"checkpoint-independent"])
                     return 1;

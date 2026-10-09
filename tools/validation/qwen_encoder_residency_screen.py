@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import statistics
 
-from runtime_ane_common import benchmark_environment, sha256_file, validate_deferred_channel_join
+from runtime_ane_common import benchmark_environment, sha256_file, validate_deferred_channel_join, validate_channel_gpu_first
 from runtime_ane_load import LoadObservation
 from runtime_ane_memory import run_owned, run_sampled
 
@@ -36,6 +36,7 @@ JOINT_AB_MARKER="experimental joint BF16 LoRA A/B operands, F32 ranks and fused 
 PRECISION_MODES=("gpu_joint","gpu_fp16","hybrid_joint","hybrid_fp16")
 FP16_RANK_MARKER="experimental FP16 low-rank LoRA matmuls"
 DEFER_PREFILL_MODES=("gpu_defer_control","hybrid_defer_off","hybrid_defer_on")
+GPU_FIRST_MODES=("gpu_launch_control","hybrid_launch_ane_first","hybrid_launch_gpu_first")
 
 
 def validate_precision_policy(rows,policy):
@@ -280,6 +281,8 @@ def main():
     parser.add_argument("--joint-ab-screen",action="store_true",help="GPU and prefill-parallel B-only vs joint BF16 A/B; complete GPU decode on both hybrid arms")
     parser.add_argument("--lora-precision-screen",action="store_true",help="matched best joint BF16/F32 ranks vs existing FP16 ranks on GPU and prefill-parallel runtime")
     parser.add_argument("--defer-prefill-screen",action="store_true",help="complete joint GPU / prefill-only eager / prefill-only owned deferred join; actual deferred counters required")
+    parser.add_argument("--gpu-first-prefill-screen",action="store_true",help="joint GPU / prefill ANE-first / prefill GPU-first; same share, precision and join policy, GPU decode")
+    parser.add_argument("--gpu-first-deferred",action="store_true",help="use the same owned deferred join on BOTH launch-order hybrid arms")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
@@ -294,6 +297,8 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--timeout",type=int,default=900)
     args=parser.parse_args()
+    if args.gpu_first_deferred and not args.gpu_first_prefill_screen:
+        parser.error("GPU-first deferred policy requires --gpu-first-prefill-screen")
     if args.weight_code_cache_mode!="copy" and args.weight_code_cache_bytes is None:
         parser.error("surface mode requires an explicit weight code cache budget")
     modes=LORA_RANK_MODES if args.lora_ranks_screen else COMBINED_MODES if args.dit_manifest else WEIGHT_MODES if args.weights else MODES
@@ -340,6 +345,11 @@ def main():
             not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
             parser.error("deferred prefill screen requires real LoRA/fixed Private DiT without another cache/precision screen")
         modes=DEFER_PREFILL_MODES
+    if args.gpu_first_prefill_screen:
+        if args.lora_ranks_screen or args.lora_ranks_gpu_control or args.down_ranks_screen or args.bf16_rank_operands_screen or args.student_final_ffn_reuse_screen or args.b_epilogue_screen or args.joint_ab_screen or args.lora_precision_screen or args.defer_prefill_screen or args.weight_code_cache_bytes is not None or \
+            not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
+            parser.error("GPU-first prefill screen requires original LoRA/fixed Private DiT without another screen")
+        modes=GPU_FIRST_MODES
     order=args.order.split(",") if args.order else list(modes)
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
     if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
@@ -367,7 +377,7 @@ def main():
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
     summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
-        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and not args.b_epilogue_screen and not args.joint_ab_screen and not args.lora_precision_screen and not args.defer_prefill_screen and args.weight_code_cache_bytes is None,
+        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and not args.b_epilogue_screen and not args.joint_ab_screen and not args.lora_precision_screen and not args.defer_prefill_screen and not args.gpu_first_prefill_screen and args.weight_code_cache_bytes is None,
         lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes,
         weight_code_cache_mode=args.weight_code_cache_mode)
     summary["lora_ranks_gpu_control"]=args.lora_ranks_gpu_control
@@ -379,15 +389,24 @@ def main():
     summary["joint_ab_screen"]=args.joint_ab_screen
     summary["lora_precision_screen"]=args.lora_precision_screen
     summary["defer_prefill_screen"]=args.defer_prefill_screen
+    summary["gpu_first_prefill_screen"]=args.gpu_first_prefill_screen
+    summary["gpu_first_deferred"]=args.gpu_first_deferred
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES,*JOINT_AB_MODES,*PRECISION_MODES,*DEFER_PREFILL_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES,*JOINT_AB_MODES,*PRECISION_MODES,*DEFER_PREFILL_MODES,*GPU_FIRST_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
         uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
-        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on","hybrid_b_off","hybrid_b_on","hybrid_joint_off","hybrid_joint_on","hybrid_joint","hybrid_fp16","hybrid_defer_off","hybrid_defer_on")
+        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on","hybrid_b_off","hybrid_b_on","hybrid_joint_off","hybrid_joint_on","hybrid_joint","hybrid_fp16","hybrid_defer_off","hybrid_defer_on","hybrid_launch_ane_first","hybrid_launch_gpu_first")
+        if mode in GPU_FIRST_MODES:
+            env.update(TURBOCIDER_QWEN21_LORA_BF16_AB="1",TURBOCIDER_QWEN21_PROFILE_STEPS="1",
+                TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="prefill",
+                TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN="1" if uses_dit and args.gpu_first_deferred else "0")
+            if uses_dit:
+                env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
+                env["TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST"]="1" if mode=="hybrid_launch_gpu_first" else "0"
         if mode in DEFER_PREFILL_MODES:
             env.update(TURBOCIDER_QWEN21_LORA_BF16_AB="1",TURBOCIDER_QWEN21_PROFILE_STEPS="1",TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="prefill",
                 TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN="1" if mode=="hybrid_defer_on" else "0")
@@ -446,7 +465,7 @@ def main():
                 if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_","gpu_b_","gpu_joint_","gpu_defer_")) or mode in ("gpu_joint","gpu_fp16") else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_","hybrid_b_","hybrid_joint_","hybrid_defer_")) or mode in ("hybrid_joint","hybrid_fp16") else mode
+        baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_","gpu_b_","gpu_joint_","gpu_defer_","gpu_launch_")) or mode in ("gpu_joint","gpu_fp16") else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_","hybrid_b_","hybrid_joint_","hybrid_defer_","hybrid_launch_")) or mode in ("hybrid_joint","hybrid_fp16") else mode
         validate_rows(rows,"dit_weights" if mode in (*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES) else baseline_mode,
             len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
@@ -479,13 +498,20 @@ def main():
             validate_joint_ab(rows,True);validate_phases(rows,"prefill" if uses_dit else "gpu",True)
             if uses_dit:
                 validate_shared_ranks(rows,True);validate_deferred_channel_join(rows,mode=="hybrid_defer_on")
+        if mode in GPU_FIRST_MODES:
+            from qwen_ffn_phase_screen import validate_phases
+            validate_joint_ab(rows,True);validate_phases(rows,"prefill" if uses_dit else "gpu",True)
+            if uses_dit:
+                validate_shared_ranks(rows,True)
+                validate_deferred_channel_join(rows,args.gpu_first_deferred)
+                validate_channel_gpu_first(rows,mode=="hybrid_launch_gpu_first")
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
         times=[row["timings_seconds"]["request_wall"] for row in rows]
         trial=dict(mode=mode,cold_request_seconds=times[0],warm_fresh_request_seconds=times[1:],
             warm_fresh_median_seconds=statistics.median(times[1:]),text_seconds=[row["timings_seconds"]["text_encode"] for row in rows],
             memory=memory,load=load,png_sha256=[sha256_file(args.output/f"{mode}-{i}.png") for i in range(len(rows))])
-        if mode in (*JOINT_AB_MODES,*PRECISION_MODES,*DEFER_PREFILL_MODES):
+        if mode in (*JOINT_AB_MODES,*PRECISION_MODES,*DEFER_PREFILL_MODES,*GPU_FIRST_MODES):
             trial.update(phase_receipts=[row["qwen_ffn_phases"] for row in rows],
                 warm_prefill_median_seconds=statistics.median(row["qwen_ffn_phases"]["prefill"]["step_seconds"] for row in rows[1:]),
                 warm_decode_total_median_seconds=statistics.median(row["qwen_ffn_phases"]["decode"]["step_seconds"] for row in rows[1:]))
