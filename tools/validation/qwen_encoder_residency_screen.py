@@ -33,6 +33,22 @@ B_EPILOGUE_MODES=("gpu_b_off","gpu_b_on","hybrid_b_off","hybrid_b_on")
 B_EPILOGUE_MARKER="experimental BF16 LoRA B operands with fused F32 scale/base epilogue, original F32 A ranks"
 JOINT_AB_MODES=("gpu_joint_off","gpu_joint_on","hybrid_joint_off","hybrid_joint_on")
 JOINT_AB_MARKER="experimental joint BF16 LoRA A/B operands, F32 ranks and fused B epilogue"
+PRECISION_MODES=("gpu_joint","gpu_fp16","hybrid_joint","hybrid_fp16")
+FP16_RANK_MARKER="experimental FP16 low-rank LoRA matmuls"
+
+
+def validate_precision_policy(rows,policy):
+    if policy=="joint":
+        validate_joint_ab(rows,True)
+        return
+    if policy!="fp16" or not rows:raise ValueError("missing/unknown rank precision policy")
+    for row in rows:
+        selection=row.get("acceleration_selection") or ""
+        if (FP16_RANK_MARKER not in selection or any(marker in selection for marker in
+                (JOINT_AB_MARKER,B_EPILOGUE_MARKER,BF16_RANK_MARKER,STUDENT_REUSE_MARKER)) or
+            row.get("student_ffn_reuse") is not None or row.get("lora_strategy")!="inference_time" or
+            type(row.get("lora_applied_projections")) is not int or row["lora_applied_projections"]!=227):
+            raise ValueError("FP16 screen needs the existing complete FP16-rank route, not joint/F32 policies")
 
 
 def validate_joint_ab(rows,enabled):
@@ -261,6 +277,7 @@ def main():
     parser.add_argument("--student-reuse-layers",type=int,choices=(16,32),default=32)
     parser.add_argument("--b-epilogue-screen",action="store_true",help="matched GPU/hybrid off/on for BF16 B operands and fused epilogue, original F32 A ranks")
     parser.add_argument("--joint-ab-screen",action="store_true",help="GPU and prefill-parallel B-only vs joint BF16 A/B; complete GPU decode on both hybrid arms")
+    parser.add_argument("--lora-precision-screen",action="store_true",help="matched best joint BF16/F32 ranks vs existing FP16 ranks on GPU and prefill-parallel runtime")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
@@ -311,6 +328,11 @@ def main():
             not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
             parser.error("joint A/B screen requires real LoRA/fixed Private DiT and no other precision/cache screen")
         modes=JOINT_AB_MODES
+    if args.lora_precision_screen:
+        if args.lora_ranks_screen or args.lora_ranks_gpu_control or args.down_ranks_screen or args.bf16_rank_operands_screen or args.student_final_ffn_reuse_screen or args.b_epilogue_screen or args.joint_ab_screen or args.weight_code_cache_bytes is not None or \
+            not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
+            parser.error("precision screen requires real LoRA/fixed Private DiT without another precision/cache screen")
+        modes=PRECISION_MODES
     order=args.order.split(",") if args.order else list(modes)
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
     if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
@@ -338,7 +360,7 @@ def main():
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
     summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
-        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and not args.b_epilogue_screen and not args.joint_ab_screen and args.weight_code_cache_bytes is None,
+        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and not args.b_epilogue_screen and not args.joint_ab_screen and not args.lora_precision_screen and args.weight_code_cache_bytes is None,
         lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes,
         weight_code_cache_mode=args.weight_code_cache_mode)
     summary["lora_ranks_gpu_control"]=args.lora_ranks_gpu_control
@@ -348,15 +370,21 @@ def main():
     summary["student_reuse_layers"]=args.student_reuse_layers if args.student_final_ffn_reuse_screen else 0
     summary["b_epilogue_screen"]=args.b_epilogue_screen
     summary["joint_ab_screen"]=args.joint_ab_screen
+    summary["lora_precision_screen"]=args.lora_precision_screen
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES,*JOINT_AB_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES,*JOINT_AB_MODES,*PRECISION_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
         uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
-        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on","hybrid_b_off","hybrid_b_on","hybrid_joint_off","hybrid_joint_on")
+        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on","hybrid_b_off","hybrid_b_on","hybrid_joint_off","hybrid_joint_on","hybrid_joint","hybrid_fp16")
+        if mode in PRECISION_MODES:
+            env.update(TURBOCIDER_QWEN21_LORA_BF16_AB="1" if mode.endswith("_joint") else "0",
+                TURBOCIDER_QWEN21_VIGGLE_LORA_FP16="1" if mode.endswith("_fp16") else "0",
+                TURBOCIDER_QWEN21_PROFILE_STEPS="1",TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE="prefill")
+            if uses_dit:env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
         if mode in JOINT_AB_MODES:
             env.update(TURBOCIDER_QWEN21_LORA_BF16_AB="1" if mode.endswith("_on") else "0",
                 TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE="0" if mode.endswith("_on") else "1",
@@ -406,7 +434,7 @@ def main():
                 if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_","gpu_b_","gpu_joint_")) else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_","hybrid_b_","hybrid_joint_")) else mode
+        baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_","gpu_b_","gpu_joint_")) or mode in ("gpu_joint","gpu_fp16") else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_","hybrid_b_","hybrid_joint_")) or mode in ("hybrid_joint","hybrid_fp16") else mode
         validate_rows(rows,"dit_weights" if mode in (*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES) else baseline_mode,
             len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
@@ -429,13 +457,18 @@ def main():
             from qwen_ffn_phase_screen import validate_phases
             validate_joint_ab(rows,mode.endswith("_on"));validate_phases(rows,"prefill" if uses_dit else "gpu",True)
             if uses_dit:validate_shared_ranks(rows,True)
+        if mode in PRECISION_MODES:
+            from qwen_ffn_phase_screen import validate_phases
+            validate_precision_policy(rows,"joint" if mode.endswith("_joint") else "fp16")
+            validate_phases(rows,"prefill" if uses_dit else "gpu",True)
+            if uses_dit:validate_shared_ranks(rows,True)
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
         times=[row["timings_seconds"]["request_wall"] for row in rows]
         trial=dict(mode=mode,cold_request_seconds=times[0],warm_fresh_request_seconds=times[1:],
             warm_fresh_median_seconds=statistics.median(times[1:]),text_seconds=[row["timings_seconds"]["text_encode"] for row in rows],
             memory=memory,load=load,png_sha256=[sha256_file(args.output/f"{mode}-{i}.png") for i in range(len(rows))])
-        if mode in JOINT_AB_MODES:
+        if mode in (*JOINT_AB_MODES,*PRECISION_MODES):
             trial.update(phase_receipts=[row["qwen_ffn_phases"] for row in rows],
                 warm_prefill_median_seconds=statistics.median(row["qwen_ffn_phases"]["prefill"]["step_seconds"] for row in rows[1:]),
                 warm_decode_total_median_seconds=statistics.median(row["qwen_ffn_phases"]["decode"]["step_seconds"] for row in rows[1:]))

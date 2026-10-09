@@ -29,6 +29,13 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_precision_screen_does_not_relabel_joint_as_fp16(self):
+        joint=dict(acceleration_selection=SCREEN.JOINT_AB_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
+        half={**joint,"acceleration_selection":SCREEN.FP16_RANK_MARKER}
+        SCREEN.validate_precision_policy([joint],"joint");SCREEN.validate_precision_policy([half],"fp16")
+        for row in (joint,{**half,"lora_applied_projections":0},{**half,"acceleration_selection":SCREEN.FP16_RANK_MARKER+SCREEN.JOINT_AB_MARKER}):
+            with self.assertRaises(ValueError):SCREEN.validate_precision_policy([row],"fp16")
+        with self.assertRaises(ValueError):SCREEN.validate_precision_policy([],"fp16")
     def test_joint_ab_separates_combination_from_b_only_control(self):
         original=dict(acceleration_selection=SCREEN.B_EPILOGUE_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
         joint={**original,"acceleration_selection":SCREEN.JOINT_AB_MARKER}
@@ -111,7 +118,8 @@ class EncoderResidencyScreenTests(unittest.TestCase):
             base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_encoder_residency_screen.py"),
                 "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
                 "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
-            for flags in (["--joint-ab-screen"],["--joint-ab-screen","--lora","unused"],
+            for flags in (["--lora-precision-screen"],["--lora-precision-screen","--lora","unused","--dit-manifest","unused","--joint-ab-screen"],
+                ["--joint-ab-screen"],["--joint-ab-screen","--lora","unused"],
                 ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--b-epilogue-screen"],
                 ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
                 ["--lora-ranks-gpu-control"],["--lora-ranks-screen"],
