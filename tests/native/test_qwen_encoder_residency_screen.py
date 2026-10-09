@@ -29,6 +29,14 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_deferred_prefill_requires_actual_owned_deferred_blocks(self):
+        def row(enabled,blocks=32,deferred=32):return dict(hybrid=dict(runtime_weight=dict(
+            executor_backend="private_ane",partition_axis="intermediate_channels",channel_blocks_session_total=blocks,
+            async_hybrid_blocks_session_total=blocks,deferred_channel_join_enabled=enabled,
+            deferred_channel_join_blocks_session_total=deferred,post_join_scope="host_graph_construction_deferred_gpu_consumption" if enabled else "evaluated_join_host_span")))
+        SCREEN.validate_deferred_channel_join([row(True)],True);SCREEN.validate_deferred_channel_join([row(False,deferred=0)],False)
+        for bad in (row(True,deferred=0),row(True,blocks=0,deferred=0),row(False,deferred=32)):
+            with self.assertRaises(ValueError):SCREEN.validate_deferred_channel_join([bad],True)
     def test_precision_screen_does_not_relabel_joint_as_fp16(self):
         joint=dict(acceleration_selection=SCREEN.JOINT_AB_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
         half={**joint,"acceleration_selection":SCREEN.FP16_RANK_MARKER}
@@ -118,7 +126,8 @@ class EncoderResidencyScreenTests(unittest.TestCase):
             base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_encoder_residency_screen.py"),
                 "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
                 "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
-            for flags in (["--lora-precision-screen"],["--lora-precision-screen","--lora","unused","--dit-manifest","unused","--joint-ab-screen"],
+            for flags in (["--defer-prefill-screen"],["--defer-prefill-screen","--lora","unused","--dit-manifest","unused","--lora-precision-screen"],
+                ["--lora-precision-screen"],["--lora-precision-screen","--lora","unused","--dit-manifest","unused","--joint-ab-screen"],
                 ["--joint-ab-screen"],["--joint-ab-screen","--lora","unused"],
                 ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--b-epilogue-screen"],
                 ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
