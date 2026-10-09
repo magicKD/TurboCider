@@ -1,0 +1,69 @@
+{
+  "schema": "tc-local512-affine-ahead-v1",
+  "date_local": "2026-10-10", "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_component_diagnostic",
+  "qualification_passed": false, "goal_complete": false, "default_route_changed": false,
+  "production_native_sources_or_libraries_changed": false,
+  "software_layer_ahead_implemented": true, "physical_overlap_proven": false,
+  "identity": {
+    "probe": "build/local512-affine-ahead-v9/gpu-weight-consumer-probe",
+    "probe_sha256": "00c61c894a14a8554896e86a3250bf0d83437a6818c20b5aafa12c9fea5f327f",
+    "candidate_cpp_sha256": "9c8487cd7149fe83e08c76b7bcd3edd3e11113e1f4e59e3cdc70c84aadfd5bd8",
+    "candidate_header_sha256": "68da8161a8dbbe319b664607a2f987bbfd873017f9cdb7d06ceec8a9d66b6370",
+    "probe_source_sha256": "29a572931e741af9779423561e94c1796eb618a3610b963dc833ec2294d35654",
+    "build_script_sha256": "727b5a964a6ff472721b7b34723891e0afe976170af00fc57250b807884bc6ed",
+    "linked_retained_library_sha256": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+    "absolute_rpath": true, "adjacent_dylib_or_loaded_image_proof": false,
+    "production_input_inventories_matched_per_library": 502,
+    "contains_original_user_drafts": true, "new_app_release": false
+  },
+  "scope": "four real Z FFN layers / 12 distinct original gate/up/down projections; dependent tanh-stabilized synthetic M1056 chain; serial cyclic host timing, not attention/DiT/model/LoRA/media/ANE",
+  "sampling": {"warmups_per_arm": 3, "samples_per_arm": 9, "layers": 4, "distinct_projections": 12, "all_samples_retained_in_raw_receipts": true, "source_read_packing_compile_timed": false},
+  "execution": {
+    "logical_pending_jobs": 2, "dense_arm_submitted_published_per_trial": 12,
+    "immediate_peak_pending": 1, "ahead_peak_pending": 2,
+    "failures_during_valid_trials": 0, "drains_during_valid_trials": 0,
+    "physical_budget": "current three dense readers + next two targets + two status uppers; not two complete FFN slots",
+    "inflight_storage_claimed_before_async": true,
+    "fresh_allocation_epoch_independent_of_source_generation": true,
+    "ready_finite_before_publish": true,
+    "failed_and_cancelled_jobs_retire_command_buffers": true,
+    "compute_stream_retirement_each_layer_and_producer_retirement_at_chain_end": true,
+    "claims_after_each_complete_chain": 0
+  },
+  "experiments": [
+    {"version": "v8", "case": "gguf-q4", "evidence": "outputs/local512-gguf-q4-ffn-chain-ahead-v8-component-20261010.json", "sha256": "1d56a09494dfc06e68c1c470ba5b1faa0c419854cc9d45ce0a84d41b6c70387e", "packed_ms": 73.90025, "immediate_ms": 90.520083, "ahead_ms": 77.47975, "ahead_reduction_vs_immediate_pct": 14.40601087385216, "ahead_reduction_vs_own_packed_pct": -4.843691327160582, "ledger_budget": 393543680},
+    {"version": "v8", "case": "gguf-q8", "evidence": "outputs/local512-gguf-q8-ffn-chain-ahead-v8-component-20261010.json", "sha256": "661be882e2f413c1694deec1e3e0f19b1f5a8ac1c1d4811f3bef8175073cdbe5", "packed_ms": 73.908583, "immediate_ms": 92.602667, "ahead_ms": 78.050375, "ahead_reduction_vs_immediate_pct": 15.714765536936415, "ahead_reduction_vs_own_packed_pct": -5.603939125716972, "ledger_budget": 393838592},
+    {"version": "v8", "case": "convrot", "evidence": "outputs/local512-convrot-ffn-chain-ahead-v8-component-20261010.json", "sha256": "c8477cf5b3c2cacb25ddefc6ef613f4f902aa7a1529687f9c06b55d0cbf152c4", "packed_ms": 81.128583, "immediate_ms": 93.528333, "ahead_ms": 80.379417, "ahead_reduction_vs_immediate_pct": 14.05875158707255, "ahead_reduction_vs_own_packed_pct": 0.9234304018350792, "ledger_budget": 393838592},
+    {"version": "v9", "case": "gguf-q4", "evidence": "outputs/local512-gguf-q4-ffn-chain-ahead-v9-component-20261010.json", "sha256": "f7b5d3b3aa6460e088e072da6ae7a69efc028018426722cdc0bb1b95eecc5146", "packed_ms": 73.532667, "immediate_ms": 95.219291, "ahead_ms": 76.1405, "ahead_reduction_vs_immediate_pct": 20.036686683583895, "ahead_reduction_vs_own_packed_pct": -3.546495872371924, "ledger_budget": 393543680},
+    {"version": "v9", "case": "gguf-q8", "evidence": "outputs/local512-gguf-q8-ffn-chain-ahead-v9-component-20261010.json", "sha256": "dcb94a33db13ee7ede71ee8731b83ee2e59c1d7511ff3186f9d1e42b4156dff2", "packed_ms": 74.010791, "immediate_ms": 92.788875, "ahead_ms": 76.817583, "ahead_reduction_vs_immediate_pct": 17.212507426132717, "ahead_reduction_vs_own_packed_pct": -3.792409136662256, "ledger_budget": 393838592},
+    {"version": "v9", "case": "convrot", "evidence": "outputs/local512-convrot-ffn-chain-ahead-v9-component-20261010.json", "sha256": "bcbc3fb4d5067063c8c846fee6e48e52172c05e27038147b4c2acf39b6fdc708", "packed_ms": 81.078917, "immediate_ms": 94.836125, "ahead_ms": 80.042542, "ahead_reduction_vs_immediate_pct": 15.599101080943578, "ahead_reduction_vs_own_packed_pct": 1.2782299497167804, "ledger_budget": 393838592}
+  ],
+  "source_identity_scope": "12 distinct original projection payload/codes hashes per case, included in raw receipts; no full-checkpoint signature or source rewrite",
+  "numeric": {"all_six_chain_outputs_byte_exact_vs_own_packed": true, "relative_l2": 0, "component_budget": 0.05, "full_latent_or_visual_qualification": false},
+  "observation": {"all_six_binary_unchanged": true, "errors": 0, "threads_joined": true, "v9_max_gap_seconds": [0.15132191695738584, 0.150582917034626, 0.152031583013013], "quiet_window_or_device_occupancy_claimed": false},
+  "tests": {
+    "final_opt_in_real_gpu_unit_passed": 1, "skips": 0,
+    "old_window_and_attribution_cases": 24,
+    "fused_numeric_boundary_cases": 192, "fused_malformed_contracts": 252, "fused_last_group_nonfinite_overflow_rejections": 240,
+    "new_ahead_typed_group_cases": 12, "unchanged_source_generation_different_target_size_stress_submissions": 288,
+    "scope": "A/B out-of-order and immutable source owners, original typed coefficients, owner-thread guard, escaped/lazy admission, late finite failure/refill, cancellation drain/destructor, unique target allocation epochs",
+    "cli_scope_errors_before_source_access": 20,
+    "log": "outputs/local512-affine-ahead-v9-native-test-20261010.log", "log_sha256": "4145d70b89657f01c55d39206dc9b0d8d18ece46793f2c8c0f55ef957812e49e",
+    "measured_binary_ahead_selftest": "outputs/local512-affine-ahead-v9-selftest-20261010.log", "measured_binary_ahead_selftest_sha256": "1192d22ef194a50c19a15d8046f1932d8634aed8a5d39746a1c82b5468a1d398",
+    "repeated_cases_counted_twice_or_full_model_suite": false,
+    "real_gpu_timeout_fault_injected_or_model_fallback_newly_verified": false
+  },
+  "retained_failures": [
+    {"log": "outputs/local512-affine-ahead-v1-build-20261010.log", "reason": "Metal-cpp headers missing from standalone include path"},
+    {"log": "outputs/local512-affine-ahead-v2-selftest-20261010.log", "reason": "Metal rejects program-scope constexpr; precompile moved before async submit"},
+    {"log": "outputs/local512-affine-ahead-v4-build-20261010.log", "reason": "strict misleading-indentation compile failure"},
+    {"log": "outputs/local512-affine-ahead-v5-selftest-20261010.log", "reason": "failed finite rollback did not retire command-buffer owners after event-only wait"},
+    {"log": "outputs/local512-affine-ahead-v6-selftest-20261010.log", "reason": "aliased storage capacity guard; fresh allocation epoch must not reuse source generation"},
+    {"evidence": "outputs/local512-gguf-q4-ffn-chain-ahead-v7-component-20261010.json", "reason": "old compute/producer captured dense claims survived array-ready chain end; no valid performance ratio"}
+  ],
+  "cleanup": {"all_owned_jobs_terminal": true, "temporary_test_directory_removed": true, "objects_or_module_cache_in_nine_probe_builds": 0, "small_binaries_logs_failures_receipts_and_original_sources_preserved": true, "model_download_rewrite_compiled_artifact_deletion_external_signal_or_user_driver_cache_cleanup": false},
+  "decision": "software ahead is implemented; Q4/Q8 still use faster packed, ConvRot sub-1.3% component signal insufficient for default/model integration",
+  "remaining": ["actual full-model lifecycle and profitability", "Z/Qwen base and original LoRA", "Qwen 1-2 reference edit first-step GPU/ANE FFN and encoder", "Public/Private runtime operation selection", "longer layer/range/shape and source IO lifecycle", "visual/scene/seed, memory and quiet-window/device evidence"]
+}

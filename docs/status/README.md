@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+2026-10-10 [实际独立stream有界ahead与四层真实FFN链](local512-affine-ahead-2026-10-10.md)
+已实现producer/ready消费、in-flight/escaped claims与独立target epoch，
+不是同步window重新贴标签。12个不同原source的链对immediate更快，
+但Q4/Q8仍输packed，ConvRot仅约.9–1.3%组件信号；不默认接入、不当完整
+模型/LoRA/图像验收，保留GPU库、失败及retirement成本。
+
 2026-10-10 [GPU融合typed解码与finite status](local512-affine-fused-finite-2026-10-10.md)
 已实现并实测：75MiB准备约3.9→1.7–1.8ms，actual R1 decode+GEMM
 约10.3–10.5→8.0ms，仍慢于packed约6.1–6.6ms。不接默认每层dense重解码；

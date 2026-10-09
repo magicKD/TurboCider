@@ -21,6 +21,7 @@ class AffineDenseWindowTests(unittest.TestCase):
             self.assertIn("PASS 12 typed prepare attribution cases", result.stdout)
             self.assertIn("PASS 144 fused affine finite numeric/lifetime cases and 252 malformed contracts",result.stdout)
             self.assertIn("PASS 48 fused boundary coefficient cases and 240 last-group nonfinite/overflow rejections",result.stdout)
+            self.assertIn("PASS 12 actual two-slot ahead cases",result.stdout)
             for reuses in ("0","17"):
                 result = subprocess.run([str(Path(temporary) / "gpu-weight-consumer-probe"),
                     "gguf","never-read.gguf","unused", "33","9",reuses], cwd=ROOT,
@@ -44,6 +45,14 @@ class AffineDenseWindowTests(unittest.TestCase):
                 self.assertIn("fused finite screen requires no reuse option",result.stderr)
                 self.assertNotIn("cannot open GGUF",result.stderr)
                 self.assertNotIn("cannot open ConvRot",result.stderr)
+            for mode in ("gguf-ahead","convrot-ahead"):
+                for prefix,extra in (("layers",[]),("layers",["1"]),("layers",["5"]),("unused",["2"])):
+                    result=subprocess.run([str(Path(temporary)/"gpu-weight-consumer-probe"),mode,"never-read.gguf",prefix,"1056","9",*extra],
+                        cwd=ROOT,capture_output=True,text=True,timeout=30)
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertIn("ahead chain needs layers prefix and explicit2..4 distinct layers",result.stderr)
+                    self.assertNotIn("cannot open GGUF",result.stderr)
+                    self.assertNotIn("cannot open ConvRot",result.stderr)
             for mode in ("gguf-prepare","convrot-prepare"):
                 for rows,extra in (("33",[]),("1",["1"])):
                     result=subprocess.run([str(Path(temporary)/"gpu-weight-consumer-probe"),
