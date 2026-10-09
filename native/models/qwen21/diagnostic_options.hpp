@@ -16,6 +16,10 @@ inline bool option_enabled(const char *value) {
 inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
 }
+inline bool joint_bf16_lora_ab(const Request &request) {
+    return request.model=="qwen-image-2.1" && !request.loras.empty() &&
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_AB"));
+}
 
 enum class RuntimeFfnPhase { Invalid, All, Prefill, Decode };
 inline RuntimeFfnPhase runtime_ffn_phase(const char *value) {

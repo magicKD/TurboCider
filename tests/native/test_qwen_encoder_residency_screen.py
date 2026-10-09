@@ -29,6 +29,15 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_joint_ab_separates_combination_from_b_only_control(self):
+        original=dict(acceleration_selection=SCREEN.B_EPILOGUE_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
+        joint={**original,"acceleration_selection":SCREEN.JOINT_AB_MARKER}
+        SCREEN.validate_joint_ab([original],False);SCREEN.validate_joint_ab([joint],True)
+        for row in (original,{**joint,"lora_applied_projections":0},{**joint,"student_ffn_reuse":{}},
+            {**joint,"acceleration_selection":SCREEN.JOINT_AB_MARKER+SCREEN.BF16_RANK_MARKER},
+            {**joint,"acceleration_selection":SCREEN.JOINT_AB_MARKER+SCREEN.B_EPILOGUE_MARKER}):
+            with self.assertRaises(ValueError):SCREEN.validate_joint_ab([row],True)
+        with self.assertRaises(ValueError):SCREEN.validate_joint_ab([],True)
     def test_fused_b_screen_is_not_another_rank_or_temporal_policy(self):
         row=dict(acceleration_selection=SCREEN.B_EPILOGUE_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
         SCREEN.validate_b_epilogue([row],True)
@@ -102,7 +111,10 @@ class EncoderResidencyScreenTests(unittest.TestCase):
             base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_encoder_residency_screen.py"),
                 "--cli","unused","--model","unused","--manifest","unused","--reference","unused",
                 "--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
-            for flags in (["--lora-ranks-gpu-control"],["--lora-ranks-screen"],
+            for flags in (["--joint-ab-screen"],["--joint-ab-screen","--lora","unused"],
+                ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--b-epilogue-screen"],
+                ["--joint-ab-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
+                ["--lora-ranks-gpu-control"],["--lora-ranks-screen"],
                 ["--lora-ranks-screen","--lora","unused","--dit-manifest","unused","--global-channels","0"],
                 ["--bf16-rank-operands-screen"],["--bf16-rank-operands-screen","--lora","unused"],
                 ["--bf16-rank-operands-screen","--lora","unused","--dit-manifest","unused","--down-ranks-screen"],

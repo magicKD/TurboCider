@@ -140,6 +140,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    require(binary_option_or_unset(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_AB")),"Qwen joint BF16 A/B requires0 or1");
+    const bool joint_ab=joint_bf16_lora_ab(r);
     const auto ffn_phase=runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
     require(ffn_phase!=RuntimeFfnPhase::Invalid,"Qwen runtime FFN phase requires all, prefill or decode");
     const auto ffn_phase_identity=runtime_ffn_phase_identity(ffn_phase);
@@ -148,14 +150,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool student_ffn_reuse=student_final_ffn_reuse(r);
     const char *b_epilogue_flag=std::getenv("TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE");
     require(binary_option_or_unset(b_epilogue_flag),"Qwen fused B epilogue requires0 or1");
-    const bool b_epilogue=option_enabled(b_epilogue_flag) && !r.loras.empty();
+    const bool b_epilogue=(option_enabled(b_epilogue_flag) || joint_ab) && !r.loras.empty();
     if(transformer_.runtime_lora_b_epilogue()!=b_epilogue) {
         if(runtime_ffn_)runtime_ffn_->drain();
         mx::synchronize();transformer_.set_runtime_lora_b_epilogue(b_epilogue);
     }
     const auto *bf16_rank_flag=std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS");
     require(binary_option_or_unset(bf16_rank_flag),"Qwen BF16 operand/F32 ranks require 0 or 1");
-    const bool bf16_operand_ranks=option_enabled(bf16_rank_flag) && !r.loras.empty();
+    const bool bf16_operand_ranks=(option_enabled(bf16_rank_flag) || joint_ab) && !r.loras.empty();
     if(transformer_.runtime_lora_bf16_fp32_ranks()!=bf16_operand_ranks) {
         if(runtime_ffn_)runtime_ffn_->drain();
         mx::synchronize();transformer_.set_runtime_lora_bf16_fp32_ranks(bf16_operand_ranks);
@@ -892,8 +894,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.student_ffn_reuse_enabled=student_ffn_reuse;
     result.student_ffn_requested_layers=student_ffn_reuse?student_reuse_layers:0;
     if(student_ffn_reuse)result.selection+="; experimental six-step student final FFN reuse, includes full LoRA FFN output; layers="+std::to_string(student_reuse_layers);
-    if(bf16_operand_ranks)result.selection+="; experimental original BF16 LoRA A operands with FP32 ranks and B/delta arithmetic";
-    if(b_epilogue)result.selection+="; experimental BF16 LoRA B operands with fused F32 scale/base epilogue, original F32 A ranks";
+    if(joint_ab)result.selection+="; experimental joint BF16 LoRA A/B operands, F32 ranks and fused B epilogue; all eligible adapter projections, not FFN-only";
+    else {
+        if(bf16_operand_ranks)result.selection+="; experimental original BF16 LoRA A operands with FP32 ranks and B/delta arithmetic";
+        if(b_epilogue)result.selection+="; experimental BF16 LoRA B operands with fused F32 scale/base epilogue, original F32 A ranks";
+    }
     if(runtime_requested && ffn_phase!=RuntimeFfnPhase::All)
         result.selection+=std::string("; experimental runtime FFN phase=")+runtime_ffn_phase_name(ffn_phase)+"; other phase uses complete unsplit GPU blocks";
     if(runtime_requested || profile_steps) {

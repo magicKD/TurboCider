@@ -16,6 +16,19 @@ ModelModule qwen21_module() {
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
+            require(qwen21::binary_option_or_unset(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_AB")),
+                "Qwen joint BF16 A/B requires0 or1");
+            if(qwen21::joint_bf16_lora_ab(r)) {
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 && r.steps==6 &&
+                    r.loras.size()==1 && !r.prompt_enhance && !r.streaming.active() && !r.memory_constrained.enabled && !r.memory_budget_bytes &&
+                    (r.execution=="gpu" || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+                        ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0)) &&
+                    !qwen21::student_final_ffn_reuse(r),
+                    "Qwen joint BF16 A/B requires approximate resident512 six-step unmerged LoRA GPU/fixed Private runtime without temporal reuse");
+                for(const char *name:{"TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE","TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS",
+                    "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"})
+                    require(!qwen21::option_enabled(std::getenv(name)),"joint BF16 A/B excludes separate A/B flags and FP16 ranks");
+            }
             const auto ffn_phase=qwen21::runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
             require(ffn_phase!=qwen21::RuntimeFfnPhase::Invalid,"Qwen runtime FFN phase requires all, prefill or decode");
             if(ffn_phase!=qwen21::RuntimeFfnPhase::All && r.execution=="gpu_ane") {

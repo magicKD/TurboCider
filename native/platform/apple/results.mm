@@ -345,6 +345,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         }];
     }
     NSMutableArray *algorithm_approximations = [NSMutableArray array];
+    if(qwen21::joint_bf16_lora_ab(r))
+        [algorithm_approximations addObject:@"qwen21_joint_bf16_lora_ab_operands"];
     if(r.model=="qwen-image-2.1" && r.hybrid_mlp_mode=="runtime") {
         const auto phase=qwen21::runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
         if(phase!=qwen21::RuntimeFfnPhase::All)
