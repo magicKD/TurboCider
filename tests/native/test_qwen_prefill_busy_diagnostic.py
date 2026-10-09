@@ -21,6 +21,8 @@ class BusyDiagnosticTests(unittest.TestCase):
         self.assertEqual(DIAGNOSTIC.screen_arguments([*args,"--compiled-encoder-screen"]),
             ["--sample-memory",*args,"--compiled-encoder-screen"])
         self.assertEqual(DIAGNOSTIC.screen_arguments(args,True),["--prefill-layer-screen","--sample-memory",*args])
+        self.assertEqual(DIAGNOSTIC.screen_arguments(args,phases=True),["--sample-memory",*args])
+        with self.assertRaises(ValueError):DIAGNOSTIC.screen_arguments(args,True,True)
         for bad in ([],["--"],[*args,"--observe-load"],[*args,"--defer-prefill-screen"],[*args,"--prefill-layer-screen"],[*args,"--sample-memory"]):
             with self.assertRaises(ValueError):DIAGNOSTIC.screen_arguments(bad)
 

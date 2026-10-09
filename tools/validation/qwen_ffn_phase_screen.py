@@ -25,6 +25,9 @@ MODES=("gpu","prefill","decode","all")
 LAYER_MODES=("gpu","prefill","prefill_first8","prefill_last8")
 LAYER_POLICIES={"prefill_first8":tuple(range(8)),"prefill_last8":tuple(range(24,32))}
 
+def reference_resize_flags(references,lora):
+    return {"TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC":"1"} if references and lora else {}
+
 
 def count(data,key):
     value=data.get(key)
@@ -102,7 +105,8 @@ def main():
     parser.add_argument("--cli",type=Path,required=True)
     parser.add_argument("--model",type=Path,required=True)
     parser.add_argument("--dit-manifest",type=Path,required=True)
-    parser.add_argument("--reference",type=Path,action="append",required=True)
+    parser.add_argument("--reference",type=Path,action="append",default=[])
+    parser.add_argument("--generation",action="store_true",help="original base/LoRA generation with no reference inputs; compare actual prefill and KV-hit phases")
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
     parser.add_argument("--fused-b",action="store_true",help="same fused B precision on every arm; requires the real six-step adapter")
@@ -122,8 +126,9 @@ def main():
     if len(modes)<2 or len(set(modes))!=len(modes) or "gpu" not in modes or not set(modes)<=set(allowed):
         parser.error("need complete GPU plus distinct known phase arms")
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each selected mode exactly once")
-    if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt) or any(not p.strip() for p in args.prompt):
-        parser.error("need one/two references and three..nine distinct fresh prompts")
+    if (bool(args.reference)==args.generation or len(args.reference)>2 or (args.generation and args.prefill_layer_screen) or
+        not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt) or any(not p.strip() for p in args.prompt)):
+        parser.error("need generation without references or one/two edit references, and three..nine distinct fresh prompts; layer screen is edit-only")
     if not 0<args.channels<12288 or args.channels%512:parser.error("fixed Private channels must be aligned and partial")
     if args.fused_b and not args.lora:parser.error("fused B requires a real unmerged adapter")
     if args.joint_ab and (not args.lora or args.fused_b):parser.error("joint A/B requires a real adapter and excludes B-only")
@@ -138,7 +143,8 @@ def main():
     model_before=model_snapshot(model);args.output.mkdir(parents=True)
     summary=dict(schema="tc-qwen-ffn-phase-screen-v1",time_utc=datetime.now(timezone.utc).isoformat(),status="incomplete",
         qualification_passed=False,order=order,channels=args.channels,fused_b=args.fused_b,joint_ab=args.joint_ab,
-        prefill_layer_screen=args.prefill_layer_screen,defer_prefill_join=args.defer_prefill_join,prompts=args.prompt,
+        prefill_layer_screen=args.prefill_layer_screen,defer_prefill_join=args.defer_prefill_join,generation=args.generation,
+        operation="image.generate" if args.generation else "image.edit",prompts=args.prompt,
         source_identities=before,model_snapshot=model_before,
         model_identity_scope="file-generation stamps and bounded headers, not immutable full-payload signatures",
         scope="serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",trials=[])
@@ -152,7 +158,7 @@ def main():
             TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE="1" if args.fused_b else "0",
             TURBOCIDER_QWEN21_LORA_BF16_AB="1" if args.joint_ab else "0")
         if gpu_layers:env["TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS"]=",".join(map(str,gpu_layers))
-        if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
+        env.update(reference_resize_flags(refs,lora))
         if mode!="gpu":
             env.update(TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.channels),
                 TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_RUNTIME_ANE_CHUNKS="1",

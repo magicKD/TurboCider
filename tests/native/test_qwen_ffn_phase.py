@@ -22,7 +22,7 @@ class FfnPhaseTests(unittest.TestCase):
                 cwd=ROOT,capture_output=True,text=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             result=subprocess.run([str(probe),str(root/"adapter.safetensors")],cwd=ROOT,capture_output=True,text=True,timeout=90)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr);self.assertIn("PASS Qwen FFN phase cases=24",result.stdout)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr);self.assertIn("PASS Qwen FFN phase cases=48",result.stdout)
             self.assertIn("PASS Qwen prefill GPU layer cases=18",result.stdout);print(result.stdout)
 
     def test_prefill_gpu_layer_policy_plan_and_gpu_inert_control(self):
@@ -70,9 +70,13 @@ class FfnPhaseTests(unittest.TestCase):
                 result=plan();self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 marker="qwen21_runtime_ffn_phase_"+phase
                 self.assertEqual(marker in json.loads(result.stdout)["algorithm_approximations"],phase!="all")
+            for phase in ("prefill","decode","all"):
+                env["TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"]=phase
+                result=plan(dict(operation="image.generate",inputs=[],qwen21_reference_size=1024));self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            env["TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"]="decode"
             for change in (dict(width=1024),dict(allow_approximation=False),dict(residency="component_staged"),
                 dict(memory_budget_bytes=1<<30),dict(encoder_ane_manifest="unused.json"),dict(inputs=base["inputs"]*3),
-                dict(operation="image.generate",inputs=[])):
+                dict(operation="image.generate",inputs=base["inputs"])):
                 self.assertNotEqual(plan(change).returncode,0)
             env["TURBOCIDER_ANE_BACKEND"]="public";self.assertNotEqual(plan().returncode,0);env["TURBOCIDER_ANE_BACKEND"]="private"
             env["TURBOCIDER_PRIVATE_ANE_CHANNELS"]="auto";self.assertNotEqual(plan().returncode,0);env["TURBOCIDER_PRIVATE_ANE_CHANNELS"]="5120"

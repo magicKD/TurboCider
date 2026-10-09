@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+2026-10-10 Qwen512生图base/原LoRA的最新分阶段对照见
+[生图phase选择与完整请求](local512-qwen-generation-phases-2026-10-10.md)。
+base40全阶段并行有约20%名义GPU-relative收益；LoRA6不显著，生成/编辑/
+encoder不共用未经验证的最快假设。竞争负载与少量swap-in均如实保留。
+
 2026-10-10 的实际GPU kernel接续见
 [共享packed-word解码与完整ConvRot base/LoRA](local512-affine-shared-word-2026-10-10.md)。
 新核加速既有opt-in F32 partial到接近BF16路线；同库完整请求已有验证，

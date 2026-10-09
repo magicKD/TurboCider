@@ -29,6 +29,33 @@ def receipt(policy,index=0,bucket=1056):
 
 
 class PhaseScreenTests(unittest.TestCase):
+    def test_generation_never_inherits_edit_reference_opt_in(self):
+        self.assertEqual(SCREEN.reference_resize_flags([],True),{})
+        self.assertEqual(SCREEN.reference_resize_flags([],False),{})
+        self.assertEqual(SCREEN.reference_resize_flags(["ref"],False),{})
+        self.assertEqual(SCREEN.reference_resize_flags(["ref"],True),{"TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC":"1"})
+
+    def test_generation_rows_and_exact_phase_work(self):
+        for steps in (6,40):
+            for policy in SCREEN.MODES:
+                rows=[]
+                for index in range(3):
+                    row=receipt(policy,index);row.update(steps=steps,actual_denoise_steps=steps,reference_tokens=0)
+                    active_prefill=policy in ("prefill","all");active_decode=policy in ("decode","all")
+                    prefill_calls=64 if active_prefill else 0;decode_blocks=(steps-1)*32 if active_decode else 0
+                    blocks=32*active_prefill+decode_blocks;calls=prefill_calls+decode_blocks
+                    row["timings_seconds"]["denoise"]=steps*2
+                    row["qwen_ffn_phases"]["prefill"].update(actual_rows=1096,runtime_calls_this_request=prefill_calls,
+                        completed_channel_blocks_this_request=32*active_prefill)
+                    row["qwen_ffn_phases"]["decode"].update(steps_this_request=steps-1,step_seconds=steps,
+                        runtime_calls_this_request=decode_blocks,completed_channel_blocks_this_request=decode_blocks)
+                    row["shared_lora_ranks"]["completed_hybrid_blocks_this_request"]=blocks
+                    if policy!="gpu":
+                        row["hybrid"]["runtime_calls_session_total"]=calls*(index+1)
+                        row["hybrid"]["runtime_weight"].update(channel_blocks_session_total=blocks*(index+1),async_hybrid_blocks_session_total=blocks*(index+1))
+                    rows.append(row)
+                SCREEN.validate_phases(rows,policy,True)
+
     def test_actual_phase_counts_and_cumulative_progress(self):
         for policy in SCREEN.MODES:SCREEN.validate_phases([receipt(policy,i) for i in range(3)],policy,True)
 
@@ -71,7 +98,7 @@ class PhaseScreenTests(unittest.TestCase):
             base=[sys.executable,"-S",str(ROOT/"tools/validation/qwen_ffn_phase_screen.py"),"--cli","unused","--model","unused",
                 "--dit-manifest","unused","--reference","unused","--prompt","one","--prompt","two","--prompt","three","--output",str(output)]
             for flags in (["--modes","prefill,decode"],["--modes","gpu,gpu"],["--order","all,prefill,decode,gpu,gpu"],
-                ["--channels","0"],["--fused-b"]):
+                ["--channels","0"],["--fused-b"],["--generation"],["--generation","--prefill-layer-screen"]):
                 result=subprocess.run([*base,*flags],capture_output=True,text=True,timeout=10)
                 self.assertEqual(result.returncode,2,result.stdout+result.stderr);self.assertNotIn("Traceback",result.stderr);self.assertFalse(output.exists())
 

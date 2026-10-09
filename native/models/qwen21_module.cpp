@@ -36,11 +36,12 @@ ModelModule qwen21_module() {
             require(ffn_phase!=qwen21::RuntimeFfnPhase::Invalid,"Qwen runtime FFN phase requires all, prefill or decode");
             if(ffn_phase!=qwen21::RuntimeFfnPhase::All && r.execution=="gpu_ane") {
                 require(r.hybrid_mlp_mode=="runtime" && r.allow_approximation && r.residency=="resident" &&
-                    r.width==512 && r.height==512 && r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2 &&
-                    r.qwen21_reference_size==512 && !r.prompt_enhance && !r.streaming.active() &&
+                    r.width==512 && r.height==512 && ((r.operation=="image.generate" && r.inputs.empty()) ||
+                        (r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2 && r.qwen21_reference_size==512)) &&
+                    !r.prompt_enhance && !r.streaming.active() &&
                     !r.memory_constrained.enabled && !r.memory_budget_bytes && r.encoder_ane_manifest.empty() &&
                     ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0,
-                    "Qwen phase-specific FFN requires approximate resident512 editing, one/two ref512, fixed Private channels and GPU encoder");
+                    "Qwen phase-specific FFN requires approximate resident512 generation or one/two-ref512 editing, fixed Private channels and GPU encoder");
                 require(!qwen21::student_final_ffn_reuse(r),"Qwen FFN phase screen excludes temporal FFN reuse");
                 for(const char *name:{"TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC","TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
                     "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN","TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC",
