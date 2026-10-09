@@ -11,15 +11,17 @@ SPEC=importlib.util.spec_from_file_location("qwen_ffn_phase_screen",ROOT/"tools/
 SCREEN=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(SCREEN)
 
 
-def receipt(policy,index=0):
+def receipt(policy,index=0,bucket=1056):
     row=dict(width=512,height=512,steps=6,actual_denoise_steps=6,text_tokens=72,reference_tokens=2048,timings_seconds=dict(denoise=12))
     prefill=policy in ("prefill","all");decode=policy in ("decode","all")
-    calls=96*prefill+160*decode;blocks=32*prefill+160*decode
+    prefill_calls=32*((3144+bucket-1)//bucket)
+    decode_calls=160*((1024+bucket-1)//bucket)
+    calls=prefill_calls*prefill+decode_calls*decode;blocks=32*prefill+160*decode
     row["qwen_ffn_phases"]=dict(policy=policy,
-        prefill=dict(steps_this_request=1,actual_rows=3144,step_seconds=4,runtime_calls_this_request=96*prefill,completed_channel_blocks_this_request=32*prefill),
-        decode=dict(steps_this_request=5,actual_rows=1024,step_seconds=7,runtime_calls_this_request=160*decode,completed_channel_blocks_this_request=160*decode))
+        prefill=dict(steps_this_request=1,actual_rows=3144,step_seconds=4,runtime_calls_this_request=prefill_calls*prefill,completed_channel_blocks_this_request=32*prefill),
+        decode=dict(steps_this_request=5,actual_rows=1024,step_seconds=7,runtime_calls_this_request=decode_calls*decode,completed_channel_blocks_this_request=160*decode))
     row["shared_lora_ranks"]=dict(completed_hybrid_blocks_this_request=blocks)
-    if policy!="gpu":row["hybrid"]=dict(bucket=1056,runtime_failed=False,runtime_failures_session_total=0,runtime_calls_session_total=calls*(index+1),
+    if policy!="gpu":row["hybrid"]=dict(bucket=bucket,runtime_failed=False,runtime_failures_session_total=0,runtime_calls_session_total=calls*(index+1),
         runtime_weight=dict(fallback_blocks_session_total=0,overflow_retries_session_total=0,headroom_scale=1,executor_backend="private_ane",
             partition_axis="intermediate_channels",data_path="w8a8_hadamard",forced_gpu_blocks_session_total=0,
             channel_blocks_session_total=blocks*(index+1),async_hybrid_blocks_session_total=blocks*(index+1)))
@@ -29,6 +31,17 @@ def receipt(policy,index=0):
 class PhaseScreenTests(unittest.TestCase):
     def test_actual_phase_counts_and_cumulative_progress(self):
         for policy in SCREEN.MODES:SCREEN.validate_phases([receipt(policy,i) for i in range(3)],policy,True)
+
+    def test_single_bucket_requires_actual_reduced_calls_not_relabelled_geometry(self):
+        for bucket,calls in ((1056,96),(2112,64),(3168,32)):
+            rows=[receipt("prefill",i,bucket) for i in range(3)]
+            SCREEN.validate_phases(rows,"prefill",True)
+            self.assertEqual(rows[-1]["hybrid"]["runtime_calls_session_total"],3*calls)
+            self.assertEqual(rows[-1]["qwen_ffn_phases"]["decode"]["runtime_calls_this_request"],0)
+        stale=receipt("prefill");stale["hybrid"]["bucket"]=3168
+        with self.assertRaises(ValueError):SCREEN.validate_phases([stale],"prefill",True)
+        stale=receipt("prefill",bucket=3168);stale["hybrid"]["bucket"]=1056
+        with self.assertRaises(ValueError):SCREEN.validate_phases([stale],"prefill",True)
 
     def test_disabled_phase_cannot_hide_runtime_calls(self):
         for policy,name in (("prefill","decode"),("decode","prefill"),("gpu","prefill")):

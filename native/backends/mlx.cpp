@@ -1064,14 +1064,39 @@ void Weights::materialize() {
 }
 size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::string &role,
                             const Event &event, std::atomic<bool> &cancelled,
-                            bool inference_time) try {
+                            bool inference_time) {
+    return apply_loras_impl(adapters,role,event,cancelled,inference_time,{},{});
+}
+size_t Weights::apply_loras_leased(const std::vector<LoRAAsset> &adapters,const std::string &role,
+    const Event &event,std::atomic<bool> &cancelled,bool inference_time,
+    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids) {
+    require(lease && lease->has_verified_content(),"LoRA lease requires native verified content");
+    return apply_loras_impl(adapters,role,event,cancelled,inference_time,lease,ids);
+}
+size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const std::string &role,
+    const Event &event,std::atomic<bool> &cancelled,bool inference_time,
+    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids) try {
+    require(!lease || ids.size()==adapters.size(),"LoRA lease logical ids must match adapters");
+    if(lease)lease->revalidate_after_drain();
     size_t applied = 0;
     for (size_t index = 0; index < adapters.size(); ++index) {
         const auto &adapter = adapters[index];
         if (adapter.role != role) continue;
         require(std::filesystem::is_regular_file(adapter.path), "LoRA file missing: " + adapter.path);
         checkpoint(cancelled); event("load_lora", int(index), int(adapters.size()));
-        auto data = mx::load_safetensors(adapter.path);
+        std::shared_ptr<mlx::core::io::Reader> reader;
+        if(lease) {
+            require(lease->file(ids.at(index)).canonical_target_path==std::filesystem::canonical(adapter.path),
+                    "LoRA lease does not bind the requested adapter");
+            auto duplicate=lease->duplicate_fd(ids.at(index));
+            reader=std::make_shared<MlxLeaseFdReader>(MlxOwnedFd(duplicate.release()),ids.at(index));
+            // dup shares the header cursor with the lease and earlier readers.
+            // Header parsing is owner-thread serial; lazy tensor reads use
+            // this reader's pread overload and do not share cursor state.
+            reader->seek(0,std::ios_base::beg);
+        }
+        auto data=reader?mx::load_safetensors(reader):mx::load_safetensors(adapter.path);
+        if(reader)lease_readers_.push_back(reader);
         std::map<std::string, LoRAPair> pairs;
         for (auto &[raw, value] : data.first) {
             auto stem = raw;
@@ -1233,6 +1258,15 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
         }
         require(adapter_applied > 0, "LoRA did not match any " + role + " weights: " + adapter.path);
         applied += adapter_applied; event("load_lora", int(index + 1), int(adapters.size()));
+    }
+    if(lease) {
+        // Ensure no path-based/lazy adapter read can escape the verification
+        // scope. Only A/B sources are materialized, never dense merged weights.
+        std::vector<Tensor> sources;
+        if(inference_time)for(const auto &[prefix,entries]:runtime_loras_)
+            for(const auto &entry:entries){sources.push_back(entry.down);sources.push_back(entry.up);}
+        if(!sources.empty())mx::eval(sources);
+        lease->revalidate_after_drain();checkpoint(cancelled);
     }
     return applied;
 } catch (...) {

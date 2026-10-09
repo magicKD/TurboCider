@@ -8,6 +8,7 @@
 #include "runtime_ffn_graphs.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
+#include "../../runtime/streaming/source_lease.hpp"
 #include "../../backends/ane_backend.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <mlx/random.h>
@@ -81,13 +82,24 @@ void Session::clear_prefix_cache() {
 void Session::prepare_transformer(const Request &r,const Event &event,std::atomic<bool> &cancelled,
                                  bool experimental_adapter,bool fused_qkv,bool lora_fp16) {
     std::string identity;
+    std::shared_ptr<const streaming::SourceLease> adapter_lease;
     if(!r.loras.empty()) {
         auto path=std::filesystem::canonical(r.loras[0].path);
         require(std::filesystem::is_regular_file(path),"Qwen21 LoRA is not a regular file");
         identity=path.string()+":"+std::to_string(std::filesystem::file_size(path))+":"+
             std::to_string(static_cast<long long>(std::filesystem::last_write_time(path).time_since_epoch().count()))+":"+
             std::to_string(std::bit_cast<uint32_t>(r.loras[0].strength));
-        if(experimental_adapter)identity+=":"+sha256_file(path);
+        if(experimental_adapter) {
+            streaming::SourceFileIdentity source;source.logical_id="qwen21-adapter";source.path=r.loras[0].path;
+            // Full hash on the first capture; subsequent requests may consume
+            // ONLY native process proofs for the same dev/ino/size/mtime/ctime.
+            // Caller digests/metadata are never imported as proof. The same
+            // held descriptors feed the first actual low-rank source binding.
+            adapter_lease=streaming::SourceLease::capture_verified({source},&cancelled);
+            require(adapter_lease->file("qwen21-adapter").canonical_target_path==path,
+                    "Qwen21 adapter alias changed during identity capture");
+            identity+=":"+adapter_lease->file("qwen21-adapter").content_digest;
+        }
     }
     const bool bind=!r.loras.empty() && (active_lora_identity_!=identity || !transformer_.bytes());
     if(active_lora_identity_!=identity) {
@@ -103,10 +115,19 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
         "Viggle v0.2.1 r256 LoRA hash does not match the pinned adapter");
     load(event,cancelled);transformer_.set_runtime_lora_fp16(lora_fp16);
     if(bind) {
-        lora_applied_projections_=transformer_.apply_loras(r.loras,"transformer",event,cancelled,true);
+        lora_applied_projections_=adapter_lease ? transformer_.apply_loras_leased(r.loras,"transformer",event,cancelled,true,
+            adapter_lease,{"qwen21-adapter"}) : transformer_.apply_loras(r.loras,"transformer",event,cancelled,true);
         require(experimental_adapter ? lora_applied_projections_>0 : lora_applied_projections_==227,
             "Qwen21 LoRA did not bind transformer projections");
         active_lora_identity_=std::move(identity);
+    }
+    if(adapter_lease) {
+        adapter_lease->revalidate_after_drain();
+        if(option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_STEPS")))
+            std::cerr<<"{\"qwen_lora_source_verification\":{\"bytes_read\":"<<adapter_lease->verification_bytes_read()
+                <<",\"native_cache_hits\":"<<adapter_lease->verification_cache_hits()<<",\"source_files\":"<<adapter_lease->file_count()
+                <<",\"bound_this_request\":"<<(bind?"true":"false")
+                <<",\"scope\":\"native generation-bound full SHA256; held-fd/path revalidation; bound A/B materialized before successful leased bind\"}}\n";
     }
 }
 void Session::unload() {

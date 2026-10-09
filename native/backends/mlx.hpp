@@ -43,6 +43,9 @@ class Weights {
                                   const std::vector<Tensor> *) const;
     Tensor lora_delta_slice_rank_impl(const Tensor *,const mx::Shape &,mx::Dtype,const std::string &,int,int,int,int,
                                      std::optional<mx::Dtype>,const std::vector<Tensor> *) const;
+    size_t apply_loras_impl(const std::vector<LoRAAsset> &,const std::string &,const Event &,
+        std::atomic<bool> &,bool,const std::shared_ptr<const streaming::SourceLease> &,
+        const std::vector<std::string> &);
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
@@ -158,6 +161,12 @@ class Weights {
     void materialize();
     size_t apply_loras(const std::vector<LoRAAsset> &, const std::string &, const Event &,
                       std::atomic<bool> &, bool inference_time = false);
+    // Content-verified, held-fd adapter inputs. Logical ids match adapters in
+    // order; readers never reopen a mutable path. Materialize bound low-rank
+    // sources and revalidate the lease before publishing a successful bind.
+    size_t apply_loras_leased(const std::vector<LoRAAsset> &,const std::string &,const Event &,
+        std::atomic<bool> &,bool,const std::shared_ptr<const streaming::SourceLease> &,
+        const std::vector<std::string> &);
 };
 Tensor linear(const Tensor &, const Weights &, const std::string &);
 Tensor silu(const Tensor &);
