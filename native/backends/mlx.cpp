@@ -2,6 +2,7 @@
 #include "convrot_rotation.hpp"
 #include "affine_gpu_fp32.hpp"
 #include "affine_gpu_mpp.hpp"
+#include "affine_gpu_shared.hpp"
 #include "dense_gpu_projection.hpp"
 #include "dense_gpu_lora_b.hpp"
 #include "mlx_fd_reader.hpp"
@@ -944,8 +945,8 @@ Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int
                 at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");
         return mx::astype(project_range(x,prefix,rb,re,cb,ce),mx::float32);
     }
-    if(affine_fp32_mpp_)return affine_gpu::projection_mpp_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
-        at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,32,32,64);
+    if(affine_fp32_mpp_)return affine_gpu::projection_shared(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
+        at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,64,64,64,mx::float32);
     return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
         at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
 }
@@ -959,8 +960,8 @@ Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefi
                     at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");
             return mx::astype(project_base_slice(x,prefix,rb,re,cb,ce,false),mx::float32);
         }
-        if(affine_fp32_mpp_)return affine_gpu::projection_mpp_fp32(convrot_rotate(x,metal_convrot_),weight,
-            at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,32,32,64);
+        if(affine_fp32_mpp_)return affine_gpu::projection_shared(convrot_rotate(x,metal_convrot_),weight,
+            at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,64,64,64,mx::float32);
         return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),weight,
             at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
     }

@@ -4,6 +4,7 @@
 #include "backends/convrot_rotation.hpp"
 #include "backends/affine_gpu_fp32.hpp"
 #include "backends/affine_gpu_mpp.hpp"
+#include "backends/affine_gpu_shared.hpp"
 #include "backends/mlx_fd_reader.hpp"
 #include "core/gguf_affine.hpp"
 #include <CommonCrypto/CommonDigest.h>
@@ -443,6 +444,64 @@ void benchmark_mpp(const Packed &packed,int bits,int rows,int iterations,bool co
         <<",\"qualification_passed\":false,\"default_route_changed\":false,"
         "\"excludes\":[\"source-read/packing\",\"input-rotation\",\"LoRA/full-model/media\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
 }
+void benchmark_shared(const Packed &packed,int bits,int rows,int iterations,bool convrot,
+                      const std::string &source_hash,int requested_columns) {
+    const int n=packed[0].shape(0),physical=packed[1].shape(1)*32,k=requested_columns?requested_columns:physical;
+    require(rows>=32 && k>0 && k<=physical && k%32==0 && (!convrot || k%256==0),"shared screen requires bounded aligned original columns");
+    const auto dtype=packed[1].dtype();
+    auto full=mx::astype(mx::reshape(mx::sin(mx::arange(rows*physical,mx::float32)*.017f),{1,rows,physical}),dtype);
+    if(convrot)full=convrot_kernel::rotate(full,convrot_kernel::Rotation::Shared);
+    auto x=mx::contiguous(mx::slice(full,{0,0,0},{1,rows,k}));mx::eval({x,packed[0],packed[1],packed[2]});
+    const uint64_t bytes=uint64_t(n)*physical*2;require(bytes<=uint64_t(256)<<20,"shared dense oracle exceeds component bound");
+    MemoryLedger ledger(streaming::gguf_storage::capacity_upper(bytes));
+    AffineDenseWindow window(ledger,streaming::gguf_storage::capacity_upper(bytes),1);
+    const auto start=Clock::now();auto dense=window.prepare(packed,bits,32,source_hash,1);const double setup=elapsed(start);
+    auto selected=mx::slice(dense,{0,0},{n,k});
+    auto expected=mx::matmul(mx::astype(x,mx::float32),mx::transpose(mx::astype(selected,mx::float32)));mx::eval(expected);
+    struct Recipe {std::string name;int bm,bn,bk;bool narrow;};
+    std::vector<Recipe> recipes{{"packed_qmm",0,0,0,true},{"original_mpp_m64",0,0,0,false}};
+    for(const auto &[bm,bn,bk]:std::vector<std::tuple<int,int,int>>{{32,64,32},{64,64,64},{128,64,64},{64,128,64},{64,64,128},{64,128,128}})
+        for(bool narrow:{false,true})recipes.push_back({"shared_"+std::to_string(bm)+"x"+std::to_string(bn)+"k"+std::to_string(bk)+(narrow?"_narrow":"_f32_cast"),bm,bn,bk,narrow});
+    auto raw=[&](size_t index) {
+        if(index==0)return mx::quantized_matmul(x,mx::slice(packed[0],{0,0},{n,k/(32/bits)}),
+            mx::slice(packed[1],{0,0},{n,k/32}),mx::slice(packed[2],{0,0},{n,k/32}),true,32,bits,"affine");
+        if(index==1)return affine_gpu::projection_mpp_fp32(x,packed[0],packed[1],packed[2],bits,0,n,0,k,32,32,64);
+        const auto &r=recipes[index];return affine_gpu::projection_shared(x,packed[0],packed[1],packed[2],bits,0,n,0,k,
+            r.bm,r.bn,r.bk,r.narrow?dtype:mx::float32);
+    };
+    auto project=[&](size_t index){return mx::astype(raw(index),dtype);};
+    auto reference=project(0);mx::eval(reference);std::vector<double> rel,fp32_rel;std::vector<bool> exact;
+    for(size_t i=0;i<recipes.size();++i) {
+        auto value=raw(i);mx::eval(value);auto vf=mx::astype(value,mx::float32);
+        const double f32=mx::sqrt(mx::sum(mx::square(vf-expected))/mx::maximum(mx::sum(mx::square(expected)),Tensor(1e-20f))).item<float>();
+        require(mx::all(mx::isfinite(value)).item<bool>() && std::isfinite(f32) && f32<=(value.dtype()==mx::float32?3e-6:.003),"shared real-source numerical gate failed: "+recipes[i].name);
+        auto output=mx::astype(value,dtype);auto of=mx::astype(output,mx::float32),rf=mx::astype(reference,mx::float32);
+        rel.push_back(mx::sqrt(mx::sum(mx::square(of-rf))/mx::maximum(mx::sum(mx::square(rf)),Tensor(1e-20f))).item<float>());
+        fp32_rel.push_back(f32);exact.push_back(same_bits(output,reference));
+        for(int warm=0;warm<3;++warm)mx::eval(project(i));
+    }
+    std::vector<std::vector<double>> times(recipes.size());
+    for(int iteration=0;iteration<iterations;++iteration)for(size_t visit=0;visit<recipes.size();++visit) {
+        const size_t i=(visit+iteration)%recipes.size();const auto tick=Clock::now();mx::eval(project(i));times[i].push_back(elapsed(tick));
+    }
+    std::cout<<std::setprecision(12)<<"{\"schema\":\"tc-affine-shared-word-screen-v1\",\"scope\":\"real original weight/synthetic prepared input, full operator host span including final output cast; not model/device trace\","
+        "\"basis\":\""<<(convrot?"Comfy-H256-legacy-BF16-scale":"GGUF-native-affine-FP16")<<"\",\"source_payload_or_codes_sha256\":\""<<source_hash
+        <<"\",\"stored_scales_sha256\":\""<<sha256(packed[1].data<void>(),packed[1].nbytes())<<"\",\"bits\":"<<bits
+        <<",\"M\":"<<rows<<",\"N\":"<<n<<",\"K\":"<<k<<",\"physical_W_pitch\":"<<physical<<",\"warmups_per_recipe\":3,\"samples_per_recipe\":"<<iterations
+        <<",\"control_dense_setup_ms\":"<<setup<<",\"control_dense_bytes\":"<<bytes<<",\"candidate_global_dense_bytes\":0,\"recipes\":[";
+    for(size_t i=0;i<recipes.size();++i) {
+        const auto &r=recipes[i];std::cout<<(i?",":"")<<"{\"name\":\""<<r.name<<"\",\"median_ms\":"<<median(times[i])
+            <<",\"requested_BM\":"<<r.bm<<",\"requested_BN\":"<<r.bn<<",\"requested_BK\":"<<r.bk
+            <<",\"effective_BK\":"<<(i>=2?affine_gpu::shared_effective_k_tile(k,r.bk):0)
+            <<",\"explicit_threadgroup_weight_bytes\":"<<(i>=2?r.bn*affine_gpu::shared_effective_k_tile(k,r.bk)*2:0)
+            <<",\"output_relative_l2_vs_typed_f32\":"<<fp32_rel[i]<<",\"narrow_relative_l2_vs_packed\":"<<rel[i]
+            <<",\"output_byte_exact_vs_packed\":"<<(exact[i]?"true":"false")<<",\"samples_ms\":";samples(times[i]);std::cout<<'}';
+    }
+    expected=Tensor(0.f);selected=Tensor(0.f);dense=Tensor(0.f);window.clear();mx::synchronize();
+    require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"shared oracle dense claim leaked");
+    std::cout<<"],\"dense_control_claim_bytes_after_cleanup\":0,\"qualification_passed\":false,\"default_route_changed\":false,"
+        "\"asynchronous_layer_ahead_decode_implemented\":false,\"excludes\":[\"source-read/packing\",\"input-rotation\",\"LoRA/full-model/media\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
+}
 } // namespace
 int main(int argc, char **argv) {
     try {
@@ -450,20 +509,23 @@ int main(int argc, char **argv) {
         mx::set_cache_limit(256ull << 20);
         if (argc == 1) { self_test(); return 0; }
         require((argc == 6 || argc == 7) && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot" ||
-                std::string(argv[1]) == "gguf-mpp" || std::string(argv[1]) == "convrot-mpp"),
-                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations]");
+                std::string(argv[1]) == "gguf-mpp" || std::string(argv[1]) == "convrot-mpp" ||
+                std::string(argv[1]) == "gguf-shared" || std::string(argv[1]) == "convrot-shared"),
+                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations] or [gguf-shared|convrot-shared checkpoint tensor/prefix M iterations [selected-columns]]");
         const bool mpp=std::string(argv[1]).ends_with("-mpp");
+        const bool shared=std::string(argv[1]).ends_with("-shared");
         const int rows = std::stoi(argv[4]), iterations = std::stoi(argv[5]);
         const int reuses = argc == 7 ? std::stoi(argv[6]) : 0;
         require(rows >= 1 && rows <= 4224 && iterations >= 9 && iterations <= 99 && iterations % 2,
                 "component requires M=1..4224, odd iterations=9..99");
-        require(argc != 7 || (reuses >= 1 && reuses <= 16),"actual-reuses must be 1..16");
+        require(argc != 7 || shared || (reuses >= 1 && reuses <= 16),"actual-reuses must be 1..16");
         require(!mpp || (argc==6 && rows>=32),"MPP screen requires M>=32 and no actual-reuses option");
         int bits = 8;
         std::string hash;
         const bool convrot = std::string(argv[1]).starts_with("convrot");
         auto source = convrot ? load_convrot(argv[2], argv[3], hash) : load_gguf(argv[2], argv[3], bits, hash);
-        if(mpp)benchmark_mpp(source,bits,rows,iterations,convrot,hash);
+        if(shared)benchmark_shared(source,bits,rows,iterations,convrot,hash,reuses);
+        else if(mpp)benchmark_mpp(source,bits,rows,iterations,convrot,hash);
         else if (reuses) benchmark_reuse(source,bits,rows,iterations,reuses,convrot,hash);
         else benchmark(source, bits, rows, iterations, convrot, hash);
     } catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }

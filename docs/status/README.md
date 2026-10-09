@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+2026-10-10 的实际GPU kernel接续见
+[共享packed-word解码与完整ConvRot base/LoRA](local512-affine-shared-word-2026-10-10.md)。
+新核加速既有opt-in F32 partial到接近BF16路线；同库完整请求已有验证，
+但未超过更快BF16选择，不改普通packed QMM/default，真正跨层ahead-decode
+及Qwen/encoder完整目标仍待推进。
+
 2026-10-09 Qwen首步按层GPU/ANE选路接续见
 [固定前/后八层GPU的完整模型对照](local512-qwen-prefill-layers-2026-10-09.md)。
 新安全机制已接入；两种24层并行策略均未超过全32层首步并行，不改默认。

@@ -13,6 +13,21 @@ STATE=importlib.util.module_from_spec(STATE_SPEC);STATE_SPEC.loader.exec_module(
 
 
 class ConvRotPartialScreenTests(unittest.TestCase):
+    def test_shared_mpp_and_bf16_require_same_actual_matched_geometry(self):
+        rows=self.rows()
+        for row in rows:
+            row["text_tokens"]=37;row["hybrid"]["bucket"]=1152
+            row["acceleration_selection"]+="; experimental request-matched Private FFN rows=1152"
+        SCREEN.validate_rows(rows,"mpp",4,template_rows=1056,matched_rows=True)
+        narrow=copy.deepcopy(rows)
+        for row in narrow:row["acceleration_selection"]=row["acceleration_selection"].replace(SCREEN.MARKER,SCREEN.BF16_MARKER)
+        SCREEN.validate_rows(narrow,"bf16",4,template_rows=1056,matched_rows=True)
+        for changes in (("bucket",1056),("runtime_calls_session_total",248)):
+            bad=copy.deepcopy(rows);bad[0]["hybrid"][changes[0]]=changes[1]
+            with self.assertRaises(ValueError):SCREEN.validate_rows(bad,"mpp",4,template_rows=1056,matched_rows=True)
+        bad=copy.deepcopy(rows);bad[0]["acceleration_selection"]=SCREEN.MARKER
+        with self.assertRaises(ValueError):SCREEN.validate_rows(bad,"mpp",4,template_rows=1056,matched_rows=True)
+
     def test_matched_bucket_requires_selected_grid_and_actual_calls(self):
         rows=self.rows("original")
         for row in rows:

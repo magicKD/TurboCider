@@ -4075,7 +4075,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "")+
             (gguf_raw_ane_source_ ? ":raw-gguf-source-window-v1" : "")+
-            (convrot_mpp_partial ? ":convrot-gpu-f32-mpp-register-m64-k32-n32-v1" : "")+
+            (convrot_mpp_partial ? ":convrot-gpu-f32-mpp-shared-word-m64-n64-k64-tail32-v2" : "")+
             (convrot_bf16_partial ? ":convrot-gpu-bf16-qmm-f32-widen-partial-v1" : "");
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
@@ -4543,7 +4543,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             }
             result.selection=runtime_ffn_->resolve_selection(result.selection);
             if(convrot_runtime_lora)result.selection+="; experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down";
-            if(convrot_mpp_partial)result.selection+="; experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)";
+            if(convrot_mpp_partial)result.selection+="; experimental MPP shared-word ConvRot GPU F32 partial (m64/n64/k64; tail-k32)";
             if(convrot_bf16_partial)result.selection+="; experimental BF16-rounded packed ConvRot GPU base-down partial widened to F32; ONE joined-hidden down-LoRA";
         }
         if(runtime_bucket)result.selection+="; experimental request-matched Private FFN rows="+std::to_string(*runtime_bucket)+
