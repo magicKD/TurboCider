@@ -18,6 +18,7 @@ class AffineDenseWindowTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS 12 typed affine dense window cases", result.stdout)
+            self.assertIn("PASS 12 typed prepare attribution cases", result.stdout)
             for reuses in ("0","17"):
                 result = subprocess.run([str(Path(temporary) / "gpu-weight-consumer-probe"),
                     "gguf","never-read.gguf","unused", "33","9",reuses], cwd=ROOT,
@@ -32,6 +33,15 @@ class AffineDenseWindowTests(unittest.TestCase):
                         capture_output=True,text=True,timeout=30)
                     self.assertNotEqual(result.returncode,0)
                     self.assertIn("MPP screen requires M>=32 and no actual-reuses option",result.stderr)
+                    self.assertNotIn("cannot open GGUF",result.stderr)
+                    self.assertNotIn("cannot open ConvRot",result.stderr)
+            for mode in ("gguf-prepare","convrot-prepare"):
+                for rows,extra in (("33",[]),("1",["1"])):
+                    result=subprocess.run([str(Path(temporary)/"gpu-weight-consumer-probe"),
+                        mode,"never-read.gguf","unused",rows,"9",*extra],cwd=ROOT,
+                        capture_output=True,text=True,timeout=30)
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertIn("prepare attribution requires M=1 and no reuse option",result.stderr)
                     self.assertNotIn("cannot open GGUF",result.stderr)
                     self.assertNotIn("cannot open ConvRot",result.stderr)
 

@@ -46,6 +46,45 @@ bool same_bits(const Tensor &a, const Tensor &b) {
     return a.dtype() == b.dtype() && a.shape() == b.shape() &&
         mx::all(mx::view(a, mx::uint8) == mx::view(b, mx::uint8)).item<bool>();
 }
+// Attribution-only mirror of the guarded synchronous prepare recipe. The
+// added eval boundaries deliberately perturb scheduling; this is NOT a new
+// faster window, an asynchronous decoder, or a production replacement.
+struct PrepareParts { double cache, decode, finite, synchronize, publication, total; };
+std::pair<Tensor,PrepareParts> prepare_parts(const Packed &packed,int bits,int group,
+                                          MemoryLedger &ledger,uint64_t generation) {
+    const auto total_start=Clock::now();
+    const auto &[words,scales,biases]=packed;
+    require(generation && (bits==4 || bits==8) && (group==32 || group==64 || group==128) &&
+        words.ndim()==2 && words.dtype()==mx::uint32 && words.shape(0)>0 && words.shape(1)>0 &&
+        (scales.dtype()==mx::float16 || scales.dtype()==mx::bfloat16) && biases.dtype()==scales.dtype() &&
+        scales.ndim()==2 && biases.shape()==scales.shape() && scales.shape(0)==words.shape(0) &&
+        uint64_t(words.shape(1))*(32/bits)==uint64_t(scales.shape(1))*group,
+        "prepare attribution needs original typed affine geometry");
+    const uint64_t bytes=gguf::checked_mul(gguf::checked_mul(uint64_t(words.shape(0)),
+        uint64_t(words.shape(1))*(32/bits)),2);
+    require(bytes<=uint64_t(256)<<20,"prepare attribution exceeds bounded component target");
+    const uint64_t upper=streaming::gguf_storage::capacity_upper(bytes);
+    auto reservation=ledger.try_reserve(MemoryClass::ConversionScratch,upper,"affine-prepare-attribution-v1");
+    require(reservation.has_value(),"prepare attribution admission denied including escaped readers");
+    PrepareParts parts{};
+    auto tick=Clock::now();
+    std::optional<streaming::gguf_storage::ExactCapacityCacheScope> exact;exact.emplace();
+    parts.cache=elapsed(tick);tick=Clock::now();
+    auto dense=mx::dequantize(words,scales,biases,group,bits,"affine",std::nullopt,scales.dtype());
+    mx::eval(dense);parts.decode=elapsed(tick);tick=Clock::now();
+    auto finite=mx::all(mx::isfinite(dense));mx::eval(finite);
+    parts.finite=elapsed(tick);tick=Clock::now();
+    mx::synchronize();parts.synchronize=elapsed(tick);tick=Clock::now();
+    require(finite.item<bool>(),"prepare attribution rejects nonfinite decoded coefficients");
+    dense.detach();dense.set_siblings({},0);
+    auto data=dense.data_shared_ptr();const uint64_t actual=mx::allocator::allocator().size(data->buffer);
+    require(actual>=bytes && actual<=upper,"prepare attribution allocation exceeds admitted upper");
+    auto claim=std::make_shared<StorageLease>(reservation->commit({0x54435041525453ull,
+        uint64_t(reinterpret_cast<uintptr_t>(data->buffer.ptr())),actual,generation}));
+    auto prior=data->d;data->d=[prior,claim](mx::allocator::Buffer buffer){prior(buffer);};
+    exact.reset();parts.publication=elapsed(tick);parts.total=elapsed(total_start);
+    return {dense,parts};
+}
 Packed fixture(int bits, int group, mx::Dtype dtype, int seed) {
     auto weight = mx::astype(mx::random::normal({65, 512}, mx::float32, mx::random::key(seed)) * .03f, dtype);
     auto arrays = mx::quantize(weight, group, bits);
@@ -118,10 +157,30 @@ void self_test() {
         require(budget_rejected, "oversized matrix admitted by window");
         require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,
                 "oversized matrix failure leaked live claims");
+        {
+            auto measured=prepare_parts(a,bits,group,ledger,8);
+            auto expected=mx::dequantize(a[0],a[1],a[2],group,bits,"affine",std::nullopt,dtype);
+            require(same_bits(measured.first,expected),"attribution changed typed affine coefficients");
+            auto reader=mx::sum(mx::astype(measured.first,mx::float32));
+            measured.first=Tensor(0.f);
+            require(ledger.snapshot().storage_count==1,"attribution lost lazy reader claim");
+            mx::eval(reader);
+        }
+        mx::synchronize();
+        require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"attribution leaked backing claim");
+        bool bad_parts=false;
+        try {(void)prepare_parts(bad,bits,group,ledger,9);}catch(const std::exception &){bad_parts=true;}
+        require(bad_parts && !ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,
+                "nonfinite attribution published/leaked backing");
+        MemoryLedger denied_ledger(upper-1);bool denied_parts=false;
+        try {(void)prepare_parts(a,bits,group,denied_ledger,10);}catch(const std::exception &){denied_parts=true;}
+        require(denied_parts && !denied_ledger.snapshot().storage_bytes && !denied_ledger.snapshot().reserved_bytes,
+                "attribution bypassed admission or leaked reservation");
         ++cases;
     }
     std::cout << "PASS 12 typed affine dense window cases: Q4/Q8, FP16/BF16, g32/64/128, exact coefficients, reuse/generation, escaped/lazy claims, finite gate, budget/failure/refill\n";
     require(cases == 12, "unexpected window case count");
+    std::cout << "PASS 12 typed prepare attribution cases: exact coefficients, lazy claims, finite failure and admission rollback\n";
 }
 Packed load_gguf(const char *path, const char *name, int &bits, std::string &payload_hash) {
     struct File { int fd; ~File() { if (fd >= 0) ::close(fd); } } file{::open(path, O_RDONLY | O_CLOEXEC)};
@@ -191,6 +250,54 @@ Packed load_convrot(const char *path, const char *prefix, std::string &codes_has
             before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec && before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec,
             "ConvRot component source changed during read/packing");
     return {words, scales, biases};
+}
+void benchmark_prepare(const Packed &packed,int bits,int iterations,bool convrot,const std::string &source_hash) {
+    mx::eval({packed[0],packed[1],packed[2]});
+    const int n=packed[0].shape(0),k=packed[1].shape(1)*32;
+    const uint64_t bytes=uint64_t(n)*k*2,upper=streaming::gguf_storage::capacity_upper(bytes);
+    require(bytes<=uint64_t(256)<<20,"prepare control exceeds component target bound");
+    MemoryLedger ledger(2*upper);AffineDenseWindow window(ledger,upper,1);
+    {
+        auto control=window.prepare(packed,bits,32,source_hash,1);
+        auto instrumented=prepare_parts(packed,bits,32,ledger,2);
+        require(same_bits(control,instrumented.first),"real-source attribution changed typed coefficients");
+    }
+    window.clear();mx::synchronize();
+    std::vector<double> controls,cache,decode,finite,synchronize,publication,totals;
+    uint64_t generation=3;
+    auto run_control=[&] {
+        window.clear();mx::synchronize();require(!ledger.snapshot().storage_bytes,"prepare previous reader escaped");
+        const auto start=Clock::now();
+        {auto dense=window.prepare(packed,bits,32,source_hash,generation++);controls.push_back(elapsed(start));}
+        window.clear();mx::synchronize();
+    };
+    auto run_parts=[&] {
+        require(!ledger.snapshot().storage_bytes,"prepare attribution reader escaped");
+        {
+            auto result=prepare_parts(packed,bits,32,ledger,generation++);const auto &p=result.second;
+            cache.push_back(p.cache);decode.push_back(p.decode);finite.push_back(p.finite);
+            synchronize.push_back(p.synchronize);publication.push_back(p.publication);totals.push_back(p.total);
+        }
+        mx::synchronize();
+    };
+    for(int i=0;i<3;++i){run_control();run_parts();}
+    controls.clear();cache.clear();decode.clear();finite.clear();synchronize.clear();publication.clear();totals.clear();
+    for(int i=0;i<iterations;++i)if(i&1){run_parts();run_control();}else{run_control();run_parts();}
+    require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"prepare attribution final claim leaked");
+    std::cout<<std::setprecision(12)<<"{\"schema\":\"tc-affine-prepare-attribution-v1\",\"basis\":\""
+        <<(convrot?"Comfy-H256-legacy-BF16-scale":"GGUF-native-affine-FP16")<<"\",\"source_payload_or_codes_sha256\":\""<<source_hash
+        <<"\",\"bits\":"<<bits<<",\"N\":"<<n<<",\"K\":"<<k<<",\"dense_bytes\":"<<bytes
+        <<",\"two_dense_capacity_upper\":"<<2*upper<<",\"warmups_per_arm\":3,\"samples_per_arm\":"<<iterations
+        <<",\"original_prepare_median_ms\":"<<median(controls)<<",\"attributed_prepare_median_ms\":"<<median(totals)
+        <<",\"extra_eval_boundaries\":true,\"typed_weight_coefficients_exact\":true,\"parts\":[";
+    const std::array<std::pair<const char *,const std::vector<double> *>,7> values{{
+        {"original_prepare",&controls},{"attributed_total",&totals},{"cache_hint_and_clear",&cache},
+        {"dequantize_and_eval",&decode},{"finite_graph_and_eval",&finite},{"synchronize",&synchronize},{"publication_and_restore_cache",&publication}}};
+    for(size_t i=0;i<values.size();++i){const auto &[name,times]=values[i];
+        std::cout<<(i?",":"")<<"{\"name\":\""<<name<<"\",\"median_ms\":"<<median(*times)<<",\"samples_ms\":";samples(*times);std::cout<<'}';}
+    std::cout<<"],\"dense_claim_bytes_after_cleanup\":0,\"qualification_passed\":false,\"default_route_changed\":false,"
+        "\"asynchronous_layer_ahead_decode_implemented\":false,\"scope\":\"guarded synchronous prepare attribution with perturbing eval boundaries; host spans, not device timestamps or a faster consumer\","
+        "\"excludes\":[\"source-read/packing\",\"GEMM/complete-consumer-window\",\"full-model/LoRA/media\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
 }
 void benchmark(const Packed &packed, int bits, int rows, int iterations, bool convrot,
                const std::string &source_hash) {
@@ -510,21 +617,25 @@ int main(int argc, char **argv) {
         if (argc == 1) { self_test(); return 0; }
         require((argc == 6 || argc == 7) && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot" ||
                 std::string(argv[1]) == "gguf-mpp" || std::string(argv[1]) == "convrot-mpp" ||
-                std::string(argv[1]) == "gguf-shared" || std::string(argv[1]) == "convrot-shared"),
-                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations] or [gguf-shared|convrot-shared checkpoint tensor/prefix M iterations [selected-columns]]");
+                std::string(argv[1]) == "gguf-shared" || std::string(argv[1]) == "convrot-shared" ||
+                std::string(argv[1]) == "gguf-prepare" || std::string(argv[1]) == "convrot-prepare"),
+                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations] or [gguf-shared|convrot-shared checkpoint tensor/prefix M iterations [selected-columns]] or [gguf-prepare|convrot-prepare checkpoint tensor/prefix 1 iterations]");
         const bool mpp=std::string(argv[1]).ends_with("-mpp");
         const bool shared=std::string(argv[1]).ends_with("-shared");
+        const bool prepare=std::string(argv[1]).ends_with("-prepare");
         const int rows = std::stoi(argv[4]), iterations = std::stoi(argv[5]);
         const int reuses = argc == 7 ? std::stoi(argv[6]) : 0;
         require(rows >= 1 && rows <= 4224 && iterations >= 9 && iterations <= 99 && iterations % 2,
                 "component requires M=1..4224, odd iterations=9..99");
         require(argc != 7 || shared || (reuses >= 1 && reuses <= 16),"actual-reuses must be 1..16");
         require(!mpp || (argc==6 && rows>=32),"MPP screen requires M>=32 and no actual-reuses option");
+        require(!prepare || (argc==6 && rows==1),"prepare attribution requires M=1 and no reuse option");
         int bits = 8;
         std::string hash;
         const bool convrot = std::string(argv[1]).starts_with("convrot");
         auto source = convrot ? load_convrot(argv[2], argv[3], hash) : load_gguf(argv[2], argv[3], bits, hash);
-        if(shared)benchmark_shared(source,bits,rows,iterations,convrot,hash,reuses);
+        if(prepare)benchmark_prepare(source,bits,iterations,convrot,hash);
+        else if(shared)benchmark_shared(source,bits,rows,iterations,convrot,hash,reuses);
         else if(mpp)benchmark_mpp(source,bits,rows,iterations,convrot,hash);
         else if (reuses) benchmark_reuse(source,bits,rows,iterations,reuses,convrot,hash);
         else benchmark(source, bits, rows, iterations, convrot, hash);

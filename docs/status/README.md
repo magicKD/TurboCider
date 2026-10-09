@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+2026-10-10 GGUF/ConvRot准备路径接续见
+[typed解码与finite scan的实际成本](local512-gguf-prepare-parts-2026-10-10.md)。
+三个真实75MiB权重的归因中finite graph+eval约2.6ms，解码约1.9ms；
+额外eval会扰动调度，不相减宣称盈利。下一步研究融合finite status，
+保留所有guard；真正异步ahead-decode和完整消费者收益仍未实现/资格化。
+
 2026-10-10 同任务正反序的当前库base三路比较见
 [Qwen frozen / Private / GPU完整对照](local512-qwen-frozen-base-2026-10-10.md)。
 同一request-local GPU encoder生命周期：frozen热请求33.00–33.31s，
