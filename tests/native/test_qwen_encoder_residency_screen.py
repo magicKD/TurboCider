@@ -29,6 +29,14 @@ def receipt(mode,index):
 
 
 class EncoderResidencyScreenTests(unittest.TestCase):
+    def test_fused_b_screen_is_not_another_rank_or_temporal_policy(self):
+        row=dict(acceleration_selection=SCREEN.B_EPILOGUE_MARKER,lora_strategy="inference_time",lora_applied_projections=227)
+        SCREEN.validate_b_epilogue([row],True)
+        SCREEN.validate_b_epilogue([{**row,"acceleration_selection":"GPU"}],False)
+        for change in (dict(lora_applied_projections=0),dict(lora_applied_projections=227.0),dict(student_ffn_reuse={}),
+            dict(acceleration_selection=SCREEN.B_EPILOGUE_MARKER+SCREEN.BF16_RANK_MARKER)):
+            with self.assertRaises(ValueError):SCREEN.validate_b_epilogue([{**row,**change}],True)
+        with self.assertRaises(ValueError):SCREEN.validate_b_epilogue([],True)
     def test_student_reuse_requires_successful_full_cache_not_marker_only(self):
         row=dict(acceleration_selection=SCREEN.STUDENT_REUSE_MARKER,lora_strategy="inference_time",lora_applied_projections=227,
             student_ffn_reuse=dict(enabled=True,captured_blocks_this_request=32,reused_blocks_this_request=32,

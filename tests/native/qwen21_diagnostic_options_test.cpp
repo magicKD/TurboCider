@@ -15,6 +15,18 @@ int main() {
     assert(binary_option_or_unset("0"));
     assert(binary_option_or_unset("1"));
     assert(!binary_option_or_unset("true"));
+    assert(runtime_ffn_phase(nullptr)==RuntimeFfnPhase::All);
+    assert(runtime_ffn_phase("all")==RuntimeFfnPhase::All);
+    assert(runtime_ffn_phase("prefill")==RuntimeFfnPhase::Prefill);
+    assert(runtime_ffn_phase("decode")==RuntimeFfnPhase::Decode);
+    for(const char *bad:{"","0","1","ALL","gpu","prefill,decode"})
+        assert(runtime_ffn_phase(bad)==RuntimeFfnPhase::Invalid);
+    assert(runtime_ffn_phase_identity(RuntimeFfnPhase::All).empty());
+    assert(runtime_ffn_phase_identity(RuntimeFfnPhase::Prefill)!=runtime_ffn_phase_identity(RuntimeFfnPhase::Decode));
+    for(auto phase:{RuntimeFfnPhase::All,RuntimeFfnPhase::Prefill,RuntimeFfnPhase::Decode}) {
+        assert(runtime_ffn_phase_runs(phase,false)==(phase!=RuntimeFfnPhase::Decode));
+        assert(runtime_ffn_phase_runs(phase,true)==(phase!=RuntimeFfnPhase::Prefill));
+    }
     assert(tiled_prefill_layer_count("0") == 0);
     assert(tiled_prefill_layer_count("1") == 32);
     assert(tiled_prefill_layer_count("16") == 16);

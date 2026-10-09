@@ -1,0 +1,536 @@
+{
+  "schema": "tc-local512-qwen-prefill-parallel-v1",
+  "date_local": "2026-10-09",
+  "timezone": "Asia/Singapore",
+  "hardware": "Apple M4 Max 64GB, macOS26.6.2",
+  "goal_complete": false,
+  "qualification_passed": false,
+  "default_policy_changed": false,
+  "implementation": {
+    "phase_option": "TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE=all|prefill|decode",
+    "default": "all; existing all-phase channel split unchanged",
+    "selection": "request snapshot; Transformer actual prefix-reuse selects independent prefill/decode callbacks; disabled phase uses ordinary lazy/compiled GPU block, no staging/probe",
+    "counter_scope": "request-local successful finite steps and driver calls/channel blocks; host timers, not physical device trace",
+    "nondefault_scope": "approximate resident512 edits with 1-2 ref512; GPU encoder; fixed Private channels; base or inference-time LoRA; no temporal reuse/memory guard",
+    "source_safety": "local original model/adapter/reference files unchanged; no downloads, merge/requantize, dense sidecar or memory/finite/fallback relaxation"
+  },
+  "experiments": [
+    {
+      "summary": "outputs/local512-qwen-edit1-ffn-phase-v1-diagnostic-20261009/summary.json",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "channels": 5120,
+      "fused_b": true,
+      "order": [
+        "gpu",
+        "prefill",
+        "decode",
+        "all"
+      ],
+      "scope": "serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",
+      "trials": [
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 16.062234917,
+          "warm_fresh_request_seconds": [
+            11.220451667,
+            10.398535167
+          ],
+          "warm_fresh_median_seconds": 10.809493417,
+          "warm_prefill_median_seconds": 2.5234857085,
+          "warm_decode_total_median_seconds": 6.272519646,
+          "png_sha256": [
+            "0fa1aca00eb6cdfbfb7e82f9b0fee089a43ae177aeceb9c7592908f1a7812ae2",
+            "8d1dad8bee44b86346549dbd8f5dd3f4ba85d194faf3c6527d34ba5fabdf04b3",
+            "e16236c92e8b0cc7db9e8abee1fc9834073caae10f5f32edc5789cd0f73c8b7a"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 40176626280,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110015875
+          }
+        },
+        {
+          "mode": "prefill",
+          "cold_request_seconds": 16.225275833,
+          "warm_fresh_request_seconds": [
+            11.937256708,
+            11.219635375
+          ],
+          "warm_fresh_median_seconds": 11.5784460415,
+          "warm_prefill_median_seconds": 2.8236786665,
+          "warm_decode_total_median_seconds": 6.2395860425,
+          "png_sha256": [
+            "87cfbcffda01be5fbd31b793c4b07cb2bb0cff7827bbf2b99fb8433f32e48696",
+            "b0d14936e154344d0d72e72b45f5d876c68aeec8d474bf52fcfb27cbab74586d",
+            "6bbd708fe6019cfee7d930b4fb795926c09679cecd4967f9c74b4387de5fdc23"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 38453472016,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110017166
+          }
+        },
+        {
+          "mode": "decode",
+          "cold_request_seconds": 15.767173542,
+          "warm_fresh_request_seconds": [
+            11.791708542,
+            10.79617
+          ],
+          "warm_fresh_median_seconds": 11.293939271,
+          "warm_prefill_median_seconds": 2.521055187,
+          "warm_decode_total_median_seconds": 6.168204499,
+          "png_sha256": [
+            "d4602db7bd1600e0af3f167017f86fddc818d61e05456354d56213049f009e8b",
+            "565f8ed73ed496a59d344d11e55864cfe8727bf24205ab7190b3fcab9af5cd0d",
+            "2b964a247217fe6f3a0851406302c85f69fd713a3e914ac25ccee39eb9fb2c58"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 37994373072,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110015708
+          }
+        },
+        {
+          "mode": "all",
+          "cold_request_seconds": 15.592304209,
+          "warm_fresh_request_seconds": [
+            11.777758583,
+            11.166076875
+          ],
+          "warm_fresh_median_seconds": 11.471917729000001,
+          "warm_prefill_median_seconds": 2.8443750835,
+          "warm_decode_total_median_seconds": 6.134867292000001,
+          "png_sha256": [
+            "a7eb0b6cbfc9d4f24d6e533932c33682d164190bc845eab3c99a479fc043fc96",
+            "da3bd2eb025ebdc3663e5f6e20450573dcc8cc1596a84bec07f6845e53a9d4eb",
+            "5b8a43740113bdd721aa413ac62601e7c90591f8f1b50628131f16dda8faa339"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 38193753040,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 109869666
+          }
+        }
+      ]
+    },
+    {
+      "summary": "outputs/local512-qwen-edit2-ffn-phase-v1-diagnostic-20261009/summary.json",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "channels": 5120,
+      "fused_b": true,
+      "order": [
+        "all",
+        "decode",
+        "prefill",
+        "gpu"
+      ],
+      "scope": "serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",
+      "trials": [
+        {
+          "mode": "all",
+          "cold_request_seconds": 18.556824542,
+          "warm_fresh_request_seconds": [
+            14.518076042,
+            14.052756625
+          ],
+          "warm_fresh_median_seconds": 14.2854163335,
+          "warm_prefill_median_seconds": 4.4262062085,
+          "warm_decode_total_median_seconds": 6.6925082915,
+          "png_sha256": [
+            "9cb3e9c3d60bf903b80cf4799e4346af9b3908b35409ef485d115d8f2992a713",
+            "65aee05e141397895ef79fd1923587da1c375baf2c8006f418160187bd30da6a",
+            "14d4ba930c9956d318e5cfff95e54e27a8ba72bc4ed6244508c081535431eac1"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 38752758856,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110019083
+          }
+        },
+        {
+          "mode": "decode",
+          "cold_request_seconds": 18.093637459,
+          "warm_fresh_request_seconds": [
+            14.097814167,
+            13.493165
+          ],
+          "warm_fresh_median_seconds": 13.7954895835,
+          "warm_prefill_median_seconds": 3.8356277705,
+          "warm_decode_total_median_seconds": 6.7975898955,
+          "png_sha256": [
+            "b39da7c25289d0d6fbaa95d6069bc4c156a0f4971b6a30c08415d9b1f2240651",
+            "a360671a51070088cc2415b8ed78452a15688ca9303eb813e317f782dadff4bc",
+            "f7d3bafdf9630863545276896b70dd7088b789f9a9f66a408d35ca9d041e7573"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 38353824696,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 109966209
+          }
+        },
+        {
+          "mode": "prefill",
+          "cold_request_seconds": 18.070644333,
+          "warm_fresh_request_seconds": [
+            14.488543958,
+            13.929550667
+          ],
+          "warm_fresh_median_seconds": 14.209047312500001,
+          "warm_prefill_median_seconds": 4.4814828335,
+          "warm_decode_total_median_seconds": 6.5495701445,
+          "png_sha256": [
+            "a649fca0f677ec05897258f3a5d404d5cd711a76f289849370131a30f0e3e012",
+            "d2a8db78b002b8b91dc0dd6902468a12236e53ce7eec46363043bf50375b2ed2",
+            "3461a8af9ad606dec96d94f8d915b72359d9b4f579d1e4dbb5a518c4f9650fc6"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 39046032048,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 109973083
+          }
+        },
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 17.560838875,
+          "warm_fresh_request_seconds": [
+            13.2436855,
+            12.636088
+          ],
+          "warm_fresh_median_seconds": 12.93988675,
+          "warm_prefill_median_seconds": 3.834177229,
+          "warm_decode_total_median_seconds": 6.499942709499999,
+          "png_sha256": [
+            "58003b6eb193801f2f0511e811d51bad90e12b5f2fba05551b2f9dd786068f7a",
+            "fcce51417e8adbf5c380e36a3ed8d4e9ec924339df3d6cf95ff1f71902b18c7d",
+            "9a2f6c5a499f3d4b56bf72d0f7203bf0691e984b5e69c89d470936ad04aff944"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 40746265144,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110015250
+          }
+        }
+      ]
+    },
+    {
+      "summary": "outputs/local512-qwen-edit1-prefill-c2112-a7168-v1-diagnostic-20261009/summary.json",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "channels": 7168,
+      "fused_b": true,
+      "order": [
+        "prefill",
+        "gpu"
+      ],
+      "scope": "serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",
+      "trials": [
+        {
+          "mode": "prefill",
+          "cold_request_seconds": 20.742748,
+          "warm_fresh_request_seconds": [
+            11.891132667,
+            11.156504041
+          ],
+          "warm_fresh_median_seconds": 11.523818354,
+          "warm_prefill_median_seconds": 2.774278583,
+          "warm_decode_total_median_seconds": 6.234097854,
+          "png_sha256": [
+            "966c165f1d5494ad465e9c7d3bacb0f0034584166d1176e1a22f894e6b21980d",
+            "5552683363c6ef81764107f8cb8ae21bc6bcbf1e968fb3550c67eeb7634f8d0c",
+            "5b4c02eaa539368077041275af40ab3e2309220b35a2d0f67fc4e12f3e6f3061"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 38564260696,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110018667
+          }
+        },
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 15.6402865,
+          "warm_fresh_request_seconds": [
+            11.292511291,
+            10.494499875
+          ],
+          "warm_fresh_median_seconds": 10.893505583,
+          "warm_prefill_median_seconds": 2.54914125,
+          "warm_decode_total_median_seconds": 6.2818565825,
+          "png_sha256": [
+            "0fa1aca00eb6cdfbfb7e82f9b0fee089a43ae177aeceb9c7592908f1a7812ae2",
+            "8d1dad8bee44b86346549dbd8f5dd3f4ba85d194faf3c6527d34ba5fabdf04b3",
+            "e16236c92e8b0cc7db9e8abee1fc9834073caae10f5f32edc5789cd0f73c8b7a"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 39870687704,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110018375
+          }
+        }
+      ]
+    },
+    {
+      "summary": "outputs/local512-qwen-edit1-base-prefill-c2112-a7168-v1-diagnostic-20261009/summary.json",
+      "status": "complete_diagnostic",
+      "qualification_passed": false,
+      "channels": 7168,
+      "fused_b": false,
+      "order": [
+        "gpu",
+        "prefill"
+      ],
+      "scope": "serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",
+      "trials": [
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 51.16527775,
+          "warm_fresh_request_seconds": [
+            47.193866292,
+            46.545435083
+          ],
+          "warm_fresh_median_seconds": 46.8696506875,
+          "warm_prefill_median_seconds": 2.1959661665,
+          "warm_decode_total_median_seconds": 42.77432204099999,
+          "png_sha256": [
+            "29a62d0442c9fc074689662135be191d2fe47dd9ac5ef38f01f1d34cdc3b93bd",
+            "601d7efcd6b734922bbf884739609679c13d01c1ceba3023d0bdc3554f1601a5",
+            "92c3443dfbc3eb75a150fb0cb124c9a90f1e26676adecedfeaa4f800fea43bb1"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 37518778248,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 109919209
+          }
+        },
+        {
+          "mode": "prefill",
+          "cold_request_seconds": 51.244608458,
+          "warm_fresh_request_seconds": [
+            47.0077755,
+            46.423952958
+          ],
+          "warm_fresh_median_seconds": 46.715864229000005,
+          "warm_prefill_median_seconds": 2.0069506255,
+          "warm_decode_total_median_seconds": 42.773365251,
+          "png_sha256": [
+            "1fdec256fe682c51b28bc400c2787a4038e4ae71958303c11a1cf42d91219893",
+            "ef81a4649dfe2a37a4bc04681971c701db562ed8ee7d56a40c21f10100c95cde",
+            "cb86a93026bd3af760323160edff4d0154e2c137318b5497cbe5f897a74de755"
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 37957378024,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "max_gap_ns": 110001709
+          }
+        }
+      ]
+    }
+  ],
+  "builds": [
+    {
+      "runtime_build_id": "tc-runtime-build-v1-6a00c1cbb907d46f96c5d7615dcdbb84749b0ae693e0229e41b24f380a0c2121",
+      "sources_count": 495,
+      "policy": {
+        "experimental_probes": "1",
+        "test_hooks": "0",
+        "audit_counters": "0"
+      },
+      "directory": "build/local512-qwen-ffn-phase-v1-private",
+      "library_sha256": "cb4a5dcd236fdb825bafc52915c4a2ac29f0fec5577fb1df714127a047424520"
+    },
+    {
+      "runtime_build_id": "tc-runtime-build-v1-cdbae306b00af9cb0d86e54b3c98c7bf7b2fced0102906ef4d41103f1a85ea81",
+      "sources_count": 495,
+      "policy": {
+        "experimental_probes": "0",
+        "test_hooks": "0",
+        "audit_counters": "0"
+      },
+      "directory": "build/local512-qwen-ffn-phase-v1-public",
+      "library_sha256": "db1870ed0d8721ccb3afc4075a6f5a4e0de21ca2fcd701a99218664b6f2d7a51"
+    }
+  ],
+  "build_verification": {
+    "native_only_exit_codes": [
+      0,
+      0
+    ],
+    "thin_cli_built": true,
+    "source_hashes_matched": [
+      495,
+      495
+    ],
+    "public_actual_release_guard_passed": true,
+    "source_checks": [
+      "outputs/local512-qwen-ffn-phase-v1-private-source-check-20261009.log",
+      "outputs/local512-qwen-ffn-phase-v1-public-source-check-final-20261009.log"
+    ],
+    "provenance": "working-tree builds include original user ConvRot drafts; selective commit excludes those drafts, not clean staged-only/App release"
+  },
+  "tests": {
+    "private_selected": 41,
+    "public_selected": 50,
+    "skips": 0,
+    "logs": [
+      "outputs/local512-qwen-ffn-phase-v1-final-private-test-20261009.log",
+      "outputs/local512-qwen-ffn-phase-v1-final-public-test-20261009.log"
+    ],
+    "host_screen_selected": 18,
+    "host_parser_extra": 1,
+    "host_logs": [
+      "outputs/local512-qwen-ffn-phase-v1-host-test-20261009.log",
+      "outputs/local512-qwen-ffn-phase-v1-final-host-test-20261009.log"
+    ],
+    "phase_gpu_cases": 24,
+    "b_epilogue_gpu_cases": 432,
+    "b_runtime_cases": 108,
+    "scope": "selected actual Metal/MLX/CoreML/Private regressions and host contracts, not all-repo/full-model matrix"
+  },
+  "b_epilogue": {
+    "flag": "TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE=1",
+    "default": false,
+    "component_delta_budget_relative_l2": 0.05,
+    "component_receipt": "outputs/local512-qwen-b-epilogue-v1-component-20261008.json",
+    "component_receipt_linkage": "standalone probe, absolute rpath to retained student-reuse Private library, no adjacent dylib; not final phase library",
+    "model_summaries": [
+      "outputs/local512-qwen-edit1-b-epilogue-v1-diagnostic-20261008/summary.json",
+      "outputs/local512-qwen-edit2-b-epilogue-v1-diagnostic-20261008/summary.json"
+    ],
+    "gpu_warm_seconds_off_on": [
+      [
+        10.941355188,
+        10.8318536875
+      ],
+      [
+        13.1732940835,
+        12.925056625
+      ]
+    ],
+    "hybrid_warm_seconds_off_on": [
+      [
+        11.809791479,
+        11.569649104
+      ],
+      [
+        14.4777816875,
+        14.3418175415
+      ]
+    ],
+    "all_three_matched_gpu_and_all_phase_pngs_equal_prior_b_on_in_both_workloads": true,
+    "notes": "rank narrowing/B/scale/base-add/cast measured; original F32 A ranks; stacked rounding preserved; component budget is not final-image acceptance"
+  },
+  "visual_review": {
+    "status": "agent_reviewed_limited_user_acceptance_pending",
+    "case_index": 1,
+    "scopes": [
+      {
+        "directory": "outputs/local512-qwen-edit1-ffn-phase-v1-diagnostic-20261009/visual-gpu-vs-prefill-1",
+        "inspected": [
+          "whole",
+          "center"
+        ]
+      },
+      {
+        "directory": "outputs/local512-qwen-edit2-ffn-phase-v1-diagnostic-20261009/visual-gpu-vs-prefill-1",
+        "inspected": [
+          "whole",
+          "center",
+          "top-left",
+          "bottom-right"
+        ]
+      },
+      {
+        "directory": "outputs/local512-qwen-edit1-prefill-c2112-a7168-v1-diagnostic-20261009/visual-gpu-vs-prefill-1",
+        "inspected": [
+          "whole",
+          "center"
+        ]
+      },
+      {
+        "directory": "outputs/local512-qwen-edit1-base-prefill-c2112-a7168-v1-diagnostic-20261009/visual-gpu-vs-prefill-1",
+        "inspected": [
+          "whole",
+          "center"
+        ]
+      }
+    ],
+    "observation": "teapot bodies/lids/handles/layout/shadows very close, minor glaze/highlight/texture changes; no obvious new grid/fracture/color-block artifacts in inspected scope",
+    "automatic_visual_manifests_remain_pending": true,
+    "other_cases_or_crops_not_claimed_reviewed": true,
+    "old_n1_failures_not_rewritten": true
+  },
+  "cleanup": {
+    "terminal_owned_jobs_checked": true,
+    "removed_rebuildable_objects": 639,
+    "logical_bytes": 50215064,
+    "removed_empty_module_cache_directories": 3,
+    "directories": [
+      "build/local512-qwen-b-epilogue-v1-private",
+      "build/local512-qwen-ffn-phase-v1-private",
+      "build/local512-qwen-ffn-phase-v1-public"
+    ],
+    "retained": "dylibs/CLIs/probes, logs, PNGs, manifests and all original models/adapters; only owned rebuildable caches removed"
+  },
+  "decision": {
+    "base_prefill_local_gain": "2.1959661665 -> 2.0069506255 s (~1.094x);40-step whole request only46.8696506875 ->46.715864229s",
+    "lora_prefill_current_negative": true,
+    "next": "optimize actual prefill LoRA readiness/GPU partial-down/staging/restore/join; calibrate phase/shape/share independently; retain fastest complete GPU decode",
+    "not_achieved": [
+      "profitable Qwen LoRA prefill/whole request",
+      "more scenes/seeds and strict paired/reverse windows",
+      "Public actual model phase profitability and immutable per-operation mixed backend selection",
+      "full Z/Qwen base/LoRA/1-2refs/encoder/GGUF/ConvRot acceleration matrix",
+      "physical GPU/ANE overlap or native INT8 MAC trace"
+    ]
+  },
+  "artifact_sha256": {
+    "outputs/local512-qwen-edit1-ffn-phase-v1-diagnostic-20261009/summary.json": "a64c93f94041400c9dcf154300f490855174666da461da4f67570ab07a6c9527",
+    "outputs/local512-qwen-edit2-ffn-phase-v1-diagnostic-20261009/summary.json": "f22971f031b4c4d636ed81124fd60ca4cd48c96fcf69db105598173ea0d78902",
+    "outputs/local512-qwen-edit1-prefill-c2112-a7168-v1-diagnostic-20261009/summary.json": "202c9848c30b2eb9b5452cb1f6668a5b300ca6910be01ab7ce311304eec7a742",
+    "outputs/local512-qwen-edit1-base-prefill-c2112-a7168-v1-diagnostic-20261009/summary.json": "7a33c337c93e51e95961883dbacba50b20090dc61a40163a248862ab9de95357",
+    "outputs/local512-qwen-edit1-b-epilogue-v1-diagnostic-20261008/summary.json": "5ed51cca2bde1a981e85e92963ccd57074150a12870b75cc1c21c93a077d9786",
+    "outputs/local512-qwen-edit2-b-epilogue-v1-diagnostic-20261008/summary.json": "e9f42f2a5498f1571e476cbbb56ffd0cc2e17d6f9620e772cb08efb946cdaa55",
+    "outputs/local512-qwen-b-epilogue-v1-component-20261008.json": "9a4186feba9c0b2c3120d91c6e3b9d57866373796dce5693dbb9a4f201b0e9c0",
+    "outputs/local512-qwen-ffn-phase-v1-final-private-test-20261009.log": "a7b0d132a627f6d542c16cfbdf78286514c211e1d8a5141d582387a563eb8f58",
+    "outputs/local512-qwen-ffn-phase-v1-final-public-test-20261009.log": "254096d3f418c9c836bdbe0f8a9d8f73814ff7bdcf7cc9a89e9eeb18b8b53524",
+    "outputs/local512-qwen-ffn-phase-v1-host-test-20261009.log": "62711031d6beeb54b413ab6ddd502428fa355007368fbf760d57cb8046e958c9",
+    "outputs/local512-qwen-ffn-phase-v1-final-host-test-20261009.log": "1c356e814eefdd437977482590da128800e1390d9126ee2b180f057a9b33f4c0",
+    "outputs/local512-qwen-ffn-phase-v1-private-source-check-20261009.log": "b82e15eed11056f92e7656a0b2cbeec8307824f1164dd1139e374a7ac488a4c8",
+    "outputs/local512-qwen-ffn-phase-v1-public-source-check-final-20261009.log": "b82e15eed11056f92e7656a0b2cbeec8307824f1164dd1139e374a7ac488a4c8",
+    "outputs/local512-qwen-ffn-phase-v1-public-release-20261009.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "outputs/local512-qwen-ffn-phase-v1-private-build-20261009.log": "465cc14cf205ec834d82f80656f68faf9781e68cc7cd287e1434b5bb7d67e107",
+    "outputs/local512-qwen-ffn-phase-v1-public-build-20261009.log": "4a3679a6c685aa2626ebb7620a55b050a1bc207845dc3eeb558917f17495c469",
+    "outputs/local512-qwen-edit1-ffn-phase-v1-diagnostic-20261009/visual-gpu-vs-prefill-1/manifest.json": "ee11205ef2af096b1b7f5e19bdb972e069ab5bd6876e1566e19df82b72ebabbf",
+    "outputs/local512-qwen-edit2-ffn-phase-v1-diagnostic-20261009/visual-gpu-vs-prefill-1/manifest.json": "98f8ba0a54ab06e2f2444eb39760801b53c2ca06927e40679d3d9893e1ee1fc3",
+    "outputs/local512-qwen-edit1-prefill-c2112-a7168-v1-diagnostic-20261009/visual-gpu-vs-prefill-1/manifest.json": "c7dca2d19e4dd6b1344187e321c32192587758768205fea1911bc77d13a60f17",
+    "outputs/local512-qwen-edit1-base-prefill-c2112-a7168-v1-diagnostic-20261009/visual-gpu-vs-prefill-1/manifest.json": "ecaf8ccebcf4f0b2a1e4f89c771c5dd892ba5aa50c8f1c8e0442c6ec8cc76de7",
+    "tools/validation/qwen_ffn_phase_screen.py": "96b4aceff8c4a58831372a181122c8be2ed3a5f3561c4f9bef7e1f1653231f60",
+    "tests/native/test_qwen_ffn_phase_screen.py": "f0a0372020b4672cbfce35171477b5c4e479e8add7f4ce109db002bacbbdedc8"
+  }
+}

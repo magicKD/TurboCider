@@ -291,6 +291,14 @@ struct SharedLoraRankMetrics {
     uint64_t completed_hybrid_blocks = 0;
     uint64_t completed_adapter_rank_arrays = 0;
 };
+struct QwenFfnPhaseCounters {
+    uint64_t steps = 0, rows = 0, runtime_calls = 0, completed_channel_blocks = 0;
+    double step_seconds = 0;
+};
+struct QwenFfnPhaseMetrics {
+    std::string policy;
+    QwenFfnPhaseCounters prefill, decode;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -319,6 +327,7 @@ struct RunResult {
     std::optional<EncoderRuntimeReuseMetrics> encoder_runtime_reuse;
     std::optional<EncoderWeightResidencyMetrics> encoder_weight_residency;
     std::optional<SharedLoraRankMetrics> shared_lora_ranks;
+    std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;

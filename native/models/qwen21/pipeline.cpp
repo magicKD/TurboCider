@@ -140,9 +140,19 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    const auto ffn_phase=runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
+    require(ffn_phase!=RuntimeFfnPhase::Invalid,"Qwen runtime FFN phase requires all, prefill or decode");
+    const auto ffn_phase_identity=runtime_ffn_phase_identity(ffn_phase);
     const int student_reuse_layers=student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"));
     require(student_reuse_layers>=0,"Qwen student final FFN reuse requires 0,1,16 or32");
     const bool student_ffn_reuse=student_final_ffn_reuse(r);
+    const char *b_epilogue_flag=std::getenv("TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE");
+    require(binary_option_or_unset(b_epilogue_flag),"Qwen fused B epilogue requires0 or1");
+    const bool b_epilogue=option_enabled(b_epilogue_flag) && !r.loras.empty();
+    if(transformer_.runtime_lora_b_epilogue()!=b_epilogue) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        mx::synchronize();transformer_.set_runtime_lora_b_epilogue(b_epilogue);
+    }
     const auto *bf16_rank_flag=std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS");
     require(binary_option_or_unset(bf16_rank_flag),"Qwen BF16 operand/F32 ranks require 0 or 1");
     const bool bf16_operand_ranks=option_enabled(bf16_rank_flag) && !r.loras.empty();
@@ -282,7 +292,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         // Automatic calibration still waits for its model-supplied workload.
         auto manifest=std::filesystem::canonical(r.ane_manifest);
         const auto identity=runtime_ffn_identity(manifest)+
-            (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"");
+            (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"")+(b_epilogue?":bf16-b-fused-epilogue-v1":"")+ffn_phase_identity;
         if(!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_!=identity ||
             (runtime_ffn_->available() && !r.loras.empty() && !runtime_ffn_->supports_lora_inputs())) {
             runtime_ffn_.reset();
@@ -557,7 +567,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (runtime_requested) {
         auto manifest = std::filesystem::canonical(r.ane_manifest);
         const std::string identity=runtime_ffn_identity(manifest)+
-            (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"");
+            (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"")+(b_epilogue?":bf16-b-fused-epilogue-v1":"")+ffn_phase_identity;
         const bool native_channel_auto = ane::private_channel_count(12288) < 0;
         const std::string request_identity = identity + (native_channel_auto ?
             ":rows="+std::to_string((r.height/16)*(r.width/16))+":prefix="+std::to_string(text.shape(1))+
@@ -585,7 +595,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 const char *rank_dtype=std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
                 calibration->gpu_configuration=std::string("qwen-lora-rank=")+(rank_dtype?rank_dtype:"<unset>")+
                     (transformer_.has_runtime_loras()?";shared-compiled-qwen-ffn-v1":";base-channel-eager-v1")+
-                    (bf16_operand_ranks?";bf16-operands-f32-ranks-v1":"");
+                    (bf16_operand_ranks?";bf16-operands-f32-ranks-v1":"")+(b_epilogue?";bf16-b-fused-epilogue-v1":"");
                 calibration->weights=[&](int ordinal) {
                     const auto prefix="transformer_blocks."+std::to_string(ordinal)+".img_mlp.";
                     auto gu=mx::split(transformer_.at(prefix+"gate_up.weight"),2,0);mx::eval(gu);
@@ -883,6 +893,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.student_ffn_requested_layers=student_ffn_reuse?student_reuse_layers:0;
     if(student_ffn_reuse)result.selection+="; experimental six-step student final FFN reuse, includes full LoRA FFN output; layers="+std::to_string(student_reuse_layers);
     if(bf16_operand_ranks)result.selection+="; experimental original BF16 LoRA A operands with FP32 ranks and B/delta arithmetic";
+    if(b_epilogue)result.selection+="; experimental BF16 LoRA B operands with fused F32 scale/base epilogue, original F32 A ranks";
+    if(runtime_requested && ffn_phase!=RuntimeFfnPhase::All)
+        result.selection+=std::string("; experimental runtime FFN phase=")+runtime_ffn_phase_name(ffn_phase)+"; other phase uses complete unsplit GPU blocks";
+    if(runtime_requested || profile_steps) {
+        result.qwen_ffn_phases.emplace();
+        result.qwen_ffn_phases->policy=runtime_requested ? runtime_ffn_phase_name(ffn_phase) : "gpu";
+    }
     if(split_down_ranks)result.selection+="; experimental FP32 split down-LoRA input ranks, ONE joined B/delta rounding";
     if (runtime_requested && !r.loras.empty())
         result.shared_lora_ranks = SharedLoraRankMetrics{share_lora_ranks};
@@ -928,6 +945,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
             active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") +
             (bf16_operand_ranks ? ":bf16-operands-f32-ranks-v1:" : ":") +
+            (b_epilogue ? "bf16-b-fused-epilogue-v1:" : "") +
             (student_ffn_reuse ? "student-final-ffn-reuse-v1-layers="+std::to_string(student_reuse_layers)+":" : "") +
             (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ :
              runtime_requested ? runtime_manifest_ : qkv_requested ? qkv_manifest_ : "gpu") + ":" +
@@ -1092,8 +1110,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     }
                     return output;
                 };
-                dit.set_prefill_mlp(run_ffn);
-                dit.set_decode_mlp(run_ffn);
+                // Select by the Transformer's actual prefix-reuse state, not
+                // by a denoise step index. Clearing a callback preserves the
+                // original lazy/compiled GPU block: no split or timing fence.
+                dit.set_prefill_mlp(runtime_ffn_phase_runs(ffn_phase,false) ? Transformer::DecodeMLP(run_ffn) : Transformer::DecodeMLP{});
+                dit.set_decode_mlp(runtime_ffn_phase_runs(ffn_phase,true) ? Transformer::DecodeMLP(run_ffn) : Transformer::DecodeMLP{});
             }
             if (qkv_requested) {
                 // Keep three checkpoint matrices separate on the GPU and in
@@ -1172,7 +1193,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             ? hybrid_mlp_->tiled_sequence(block, input)
                             : (*hybrid_mlp_)(block, input);
                     });
-                const auto step_started = profile_steps ? Clock::now() : Clock::time_point{};
+                const bool prefix_reused=dit.prefix_matches(text,r.height/16,r.width/16,references);
+                const auto phase_before=runtime_requested ? runtime_ffn_->metrics() : HybridMetrics{};
+                const auto step_started = result.qwen_ffn_phases || profile_steps ? Clock::now() : Clock::time_point{};
                 const auto prediction_before = profile_steps && hybrid_requested
                     ? hybrid_->metrics().prediction_seconds : 0.;
                 if(student_ffn_reuse && step==r.steps-2) {
@@ -1194,6 +1217,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
                 mx::eval(latents);
                 require(mx::all(mx::isfinite(latents)).item<bool>(), "nonfinite Qwen21 latent");
+                const double step_seconds=result.qwen_ffn_phases || profile_steps ? seconds(step_started) : 0.;
+                if(result.qwen_ffn_phases) {
+                    const auto after=runtime_requested ? runtime_ffn_->metrics() : HybridMetrics{};
+                    require(after.runtime_calls>=phase_before.runtime_calls &&
+                        after.runtime_weight_channel_blocks>=phase_before.runtime_weight_channel_blocks,
+                        "Qwen FFN phase counters regressed during a completed step");
+                    auto &phase=prefix_reused ? result.qwen_ffn_phases->decode : result.qwen_ffn_phases->prefill;
+                    ++phase.steps;phase.rows=prefix_reused ? uint64_t(r.height/16)*(r.width/16) : uint64_t(result.total_tokens);
+                    phase.step_seconds+=step_seconds;
+                    phase.runtime_calls+=after.runtime_calls-phase_before.runtime_calls;
+                    phase.completed_channel_blocks+=after.runtime_weight_channel_blocks-phase_before.runtime_weight_channel_blocks;
+                }
                 if(student_ffn_reuse) {
                     const auto bytes=dit.ffn_cache_logical_bytes();
                     require(bytes<=(uint64_t(256)<<20),"student FFN cache exceeded logical256MiB bound");
@@ -1202,12 +1237,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     result.student_ffn_reused_blocks+=dit.last_ffn_reused_blocks();
                 }
                 if (profile_steps) {
-                    const auto elapsed = seconds(step_started);
                     const auto prediction = hybrid_requested
                         ? hybrid_->metrics().prediction_seconds - prediction_before : 0.;
                     std::cerr << "{\"qwen21_step\":" << step
-                              << ",\"phase\":\"" << (step == 0 ? "prefill" : "decode")
-                              << "\",\"seconds\":" << elapsed
+                              << ",\"phase\":\"" << (prefix_reused ? "decode" : "prefill")
+                              << "\",\"seconds\":" << step_seconds
                               << ",\"coreml_prediction_api_seconds\":" << prediction
                               << ",\"reference_tokens\":" << result.reference_tokens
                               << ",\"hybrid\":" << (hybrid_requested ? "true" : "false")

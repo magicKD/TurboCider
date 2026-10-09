@@ -16,6 +16,32 @@ ModelModule qwen21_module() {
             require(r.width % 32 == 0 && r.height % 32 == 0 && int64_t(r.width) * r.height <= 8388608,
                     "Qwen21 dimensions must be multiples of 32 within 8 megapixels");
             require(r.model_variant == "auto" || r.model_variant == "qwen-image-2.1", "incorrect Qwen21 variant");
+            const auto ffn_phase=qwen21::runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
+            require(ffn_phase!=qwen21::RuntimeFfnPhase::Invalid,"Qwen runtime FFN phase requires all, prefill or decode");
+            if(ffn_phase!=qwen21::RuntimeFfnPhase::All && r.execution=="gpu_ane") {
+                require(r.hybrid_mlp_mode=="runtime" && r.allow_approximation && r.residency=="resident" &&
+                    r.width==512 && r.height==512 && r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2 &&
+                    r.qwen21_reference_size==512 && !r.prompt_enhance && !r.streaming.active() &&
+                    !r.memory_constrained.enabled && !r.memory_budget_bytes && r.encoder_ane_manifest.empty() &&
+                    ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0,
+                    "Qwen phase-specific FFN requires approximate resident512 editing, one/two ref512, fixed Private channels and GPU encoder");
+                require(!qwen21::student_final_ffn_reuse(r),"Qwen FFN phase screen excludes temporal FFN reuse");
+                for(const char *name:{"TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC","TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
+                    "TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN","TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC",
+                    "TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC"})
+                    require(!qwen21::option_enabled(std::getenv(name)),"Qwen FFN phase screen excludes another temporal/prefill experiment");
+            }
+            const char *b_epilogue=std::getenv("TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE");
+            require(qwen21::binary_option_or_unset(b_epilogue),"Qwen fused B epilogue requires 0 or1");
+            if(qwen21::option_enabled(b_epilogue) && !r.loras.empty())
+                require(r.allow_approximation && r.residency=="resident" && r.width==512 && r.height==512 && r.steps==6 &&
+                    !r.prompt_enhance && !r.streaming.active() && !r.memory_constrained.enabled &&
+                    (r.execution=="gpu" || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+                        ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0)) &&
+                    !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16")) &&
+                    !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_OPERANDS_FP32_RANKS")) &&
+                    !qwen21::student_final_ffn_reuse(r),
+                    "Qwen fused B epilogue requires approximate resident512 six-step LoRA GPU/fixed Private runtime with original F32 A ranks and no temporal reuse");
             require(qwen21::student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"))>=0,
                 "Qwen student final FFN reuse requires 0,1,16 or32");
             if(qwen21::student_final_ffn_reuse(r)) {

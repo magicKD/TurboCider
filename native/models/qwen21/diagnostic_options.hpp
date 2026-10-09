@@ -17,6 +17,29 @@ inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
 }
 
+enum class RuntimeFfnPhase { Invalid, All, Prefill, Decode };
+inline RuntimeFfnPhase runtime_ffn_phase(const char *value) {
+    if (!value || std::string_view(value) == "all") return RuntimeFfnPhase::All;
+    if (std::string_view(value) == "prefill") return RuntimeFfnPhase::Prefill;
+    if (std::string_view(value) == "decode") return RuntimeFfnPhase::Decode;
+    return RuntimeFfnPhase::Invalid;
+}
+inline const char *runtime_ffn_phase_name(RuntimeFfnPhase phase) {
+    return phase == RuntimeFfnPhase::Prefill ? "prefill" :
+           phase == RuntimeFfnPhase::Decode ? "decode" :
+           phase == RuntimeFfnPhase::All ? "all" : "invalid";
+}
+inline bool runtime_ffn_phase_runs(RuntimeFfnPhase phase, bool prefix_reused) {
+    return phase == RuntimeFfnPhase::All ||
+           (prefix_reused ? phase == RuntimeFfnPhase::Decode : phase == RuntimeFfnPhase::Prefill);
+}
+inline std::string runtime_ffn_phase_identity(RuntimeFfnPhase phase) {
+    // Preserve the unflagged executor identity. Nondefault request snapshots
+    // must not borrow an executor/calibration/prefix bank from another policy.
+    return phase == RuntimeFfnPhase::All ? "" :
+        std::string(":ffn-phase-v1=") + runtime_ffn_phase_name(phase);
+}
+
 inline int student_ffn_reuse_layers(const char *value) {
     if(!value || std::string_view(value)=="0")return 0;
     if(std::string_view(value)=="1" || std::string_view(value)=="32")return 32;

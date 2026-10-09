@@ -129,6 +129,16 @@ static id student_ffn_reuse_dictionary(const RunResult &result) {
         @"released_before_vae":@YES,
         @"scope":@"successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"};
 }
+static id qwen_ffn_phase_dictionary(const RunResult &result) {
+    const auto &m=*result.qwen_ffn_phases;
+    auto phase=[](const QwenFfnPhaseCounters &p) {
+        return @{@"steps_this_request":@(p.steps),@"actual_rows":@(p.rows),
+            @"step_seconds":@(p.step_seconds),@"runtime_calls_this_request":@(p.runtime_calls),
+            @"completed_channel_blocks_this_request":@(p.completed_channel_blocks)};
+    };
+    return @{@"policy":@(m.policy.c_str()),@"prefill":phase(m.prefill),@"decode":phase(m.decode),
+        @"scope":@"completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"};
+}
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
         !result.encoder_hybrid->runtime_weight_backend.empty())
@@ -335,6 +345,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         }];
     }
     NSMutableArray *algorithm_approximations = [NSMutableArray array];
+    if(r.model=="qwen-image-2.1" && r.hybrid_mlp_mode=="runtime") {
+        const auto phase=qwen21::runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
+        if(phase!=qwen21::RuntimeFfnPhase::All)
+            [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_runtime_ffn_phase_%s",qwen21::runtime_ffn_phase_name(phase)]];
+    }
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_decode_dbcache_diagnostic"];
@@ -1614,6 +1629,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"student_ffn_reuse"]=student_ffn_reuse_dictionary(result);
     if (result.shared_lora_ranks)
         value[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
+    if (result.qwen_ffn_phases)
+        value[@"qwen_ffn_phases"] = qwen_ffn_phase_dictionary(result);
     if (result.gguf_import) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{

@@ -33,6 +33,10 @@ class Weights {
     bool affine_fp32_mpp_ = false;
     bool runtime_lora_fp16_ = false;
     bool runtime_lora_bf16_fp32_ranks_ = false;
+    bool runtime_lora_b_epilogue_ = false;
+    bool runtime_lora_b_eligible(const Tensor &,const Tensor &) const;
+    Tensor runtime_lora_scaled_b(const Tensor &,const Tensor &,int,int,float) const;
+    Tensor runtime_lora_add_b(const Tensor &,const Tensor &,int,int,float,const Tensor &,int) const;
     Tensor runtime_lora_rank(const Tensor &,const Tensor &,int,int) const;
     Tensor add_runtime_projection_loras(const Tensor &,Tensor,const std::string &) const;
     Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
@@ -66,6 +70,8 @@ class Weights {
     // unchanged F32 B/delta arithmetic; never an FP16-rank substitution.
     void set_runtime_lora_bf16_fp32_ranks(bool enabled) { runtime_lora_bf16_fp32_ranks_=enabled; }
     bool runtime_lora_bf16_fp32_ranks() const { return runtime_lora_bf16_fp32_ranks_; }
+    void set_runtime_lora_b_epilogue(bool enabled) { runtime_lora_b_epilogue_=enabled; }
+    bool runtime_lora_b_epilogue() const { return runtime_lora_b_epilogue_; }
     std::vector<std::string> sorted_keys() const;
     void bind_arrays(const std::vector<std::string> &,
                      const std::vector<Tensor> &, size_t offset = 0);

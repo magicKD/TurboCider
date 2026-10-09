@@ -3,6 +3,7 @@
 #include "affine_gpu_fp32.hpp"
 #include "affine_gpu_mpp.hpp"
 #include "dense_gpu_projection.hpp"
+#include "dense_gpu_lora_b.hpp"
 #include "mlx_fd_reader.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
@@ -590,22 +591,14 @@ Tensor Weights::add_runtime_projection_loras(const Tensor &x,Tensor output,const
             // across hundreds of adapter projections.  The adapter remains
             // stored in its compact source dtype; only this rank-sized branch
             // is promoted for the projection.
-            const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto up = mx::astype(adapter.up, rank_dtype);
             auto low = runtime_lora_rank(x,adapter.down,0,x.shape(-1));
-            auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
-                         Tensor(adapter.scale, mx::float32);
             if (adapter.output_start == 0 && adapter.output_end == output.shape(-1))
-                output = mx::astype(mx::astype(output, mx::float32) + delta,
-                                    output.dtype());
+                output = runtime_lora_add_b(low,adapter.up,0,adapter.up.shape(0),adapter.scale,output,0);
             else {
                 require(adapter.output_start >= 0 && adapter.output_end <= output.shape(-1) &&
                             adapter.output_start < adapter.output_end,
                         "invalid runtime LoRA output range: " + prefix);
-                auto middle = mx::astype(
-                    mx::astype(slice_axis(output, -1, adapter.output_start,
-                                          adapter.output_end), mx::float32) + delta,
-                    output.dtype());
+                auto middle = runtime_lora_add_b(low,adapter.up,0,adapter.up.shape(0),adapter.scale,output,adapter.output_start);
                 std::vector<Tensor> pieces;
                 if (adapter.output_start)
                     pieces.push_back(slice_axis(output, -1, 0, adapter.output_start));
@@ -758,6 +751,24 @@ Tensor Weights::runtime_lora_rank(const Tensor &x,const Tensor &down,int cs,int 
     const auto dtype=runtime_lora_fp16_?mx::float16:mx::float32;
     return mx::matmul(mx::astype(x,dtype),mx::transpose(mx::astype(slice_axis(down,1,cs,ce),dtype)));
 }
+bool Weights::runtime_lora_b_eligible(const Tensor &low,const Tensor &up) const {
+    require(!runtime_lora_b_epilogue_ || !runtime_lora_fp16_,"fused BF16 B epilogue cannot use FP16 A-ranks");
+    return runtime_lora_b_epilogue_ && low.ndim()==3 && low.shape(0)==1 && low.shape(1)>=128 &&
+        low.dtype()==mx::float32 && low.shape(2)>=64 && up.ndim()==2 && up.dtype()==mx::bfloat16 && up.flags().row_contiguous;
+}
+Tensor Weights::runtime_lora_scaled_b(const Tensor &low,const Tensor &up,int first,int last,float scale) const {
+    if(runtime_lora_b_eligible(low,up))
+        return dense_gpu::lora_b_epilogue(low,up,first,last,scale,mx::float32);
+    const auto dtype=runtime_lora_fp16_?mx::float16:mx::float32;
+    return mx::astype(mx::matmul(low,mx::transpose(mx::astype(slice_axis(up,0,first,last),dtype))),mx::float32)*Tensor(scale,mx::float32);
+}
+Tensor Weights::runtime_lora_add_b(const Tensor &low,const Tensor &up,int first,int last,float scale,const Tensor &base,int begin) const {
+    if(runtime_lora_b_eligible(low,up) && base.ndim()==3 && base.shape(0)==1 &&
+        base.shape(1)==low.shape(1) && base.flags().row_contiguous)
+        return dense_gpu::lora_b_epilogue(low,up,first,last,scale,base.dtype(),base,begin);
+    auto delta=runtime_lora_scaled_b(low,up,first,last,scale);
+    return mx::astype(mx::astype(slice_axis(base,-1,begin,begin+last-first),mx::float32)+delta,base.dtype());
+}
 std::vector<Tensor> Weights::lora_input_ranks(const Tensor &x,const std::string &prefix,int cs,int ce) const {
     require(cs>=0 && ce>cs && x.shape(-1)==ce-cs,"invalid shared LoRA rank input geometry: "+prefix);
     std::vector<Tensor> result;
@@ -785,16 +796,12 @@ Tensor Weights::project_slice_rank_impl(const Tensor &x,const std::string &prefi
             // fused gate/up adapter, intersect its global output row range
             // before selecting the corresponding low-rank B rows.
             const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto up = mx::astype(slice_axis(adapter.up, 0,
-                first - adapter.output_start, last - adapter.output_start), rank_dtype);
             auto low = ranks ? ranks->at(index) : runtime_lora_rank(x,adapter.down,col_start,col_end);
             auto expected=x.shape();expected.back()=adapter.down.shape(0);
             require(low.shape()==expected && low.dtype()==rank_dtype,"shared projection rank shape/dtype mismatch");
-            auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
-                Tensor(adapter.scale, mx::float32);
             const int begin = first - row_start, end = last - row_start;
-            auto middle = mx::astype(mx::astype(slice_axis(output, -1, begin, end), mx::float32) + delta,
-                                     output.dtype());
+            auto middle = runtime_lora_add_b(low,adapter.up,first-adapter.output_start,last-adapter.output_start,
+                adapter.scale,output,begin);
             if (begin == 0 && end == row_end - row_start) output = std::move(middle);
             else {
                 std::vector<Tensor> pieces;
@@ -845,6 +852,9 @@ Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &inpu
     auto runtime = runtime_loras_.find(prefix);
     if(ranks)require(ranks->size()==(runtime==runtime_loras_.end()?0:runtime->second.size()),"shared delta rank adapter count mismatch");
     if (runtime == runtime_loras_.end()) return mx::zeros(result_shape, destination_dtype);
+    size_t contributors=0;
+    for(const auto &adapter:runtime->second)
+        if(std::max(row_start,adapter.output_start)<std::min(row_end,adapter.output_end))++contributors;
     size_t rank_index=0;
     for (const auto &adapter : runtime->second) {
         const size_t index=rank_index++;
@@ -853,14 +863,16 @@ Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &inpu
         if (first >= last) continue;
         const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
         require(col_end<=adapter.down.shape(1),"shared delta rank column range mismatch");
-        auto up = mx::astype(slice_axis(adapter.up, 0,
-            first - adapter.output_start, last - adapter.output_start), rank_dtype);
         auto low = ranks ? ranks->at(index) : runtime_lora_rank(*x,adapter.down,col_start,col_end);
         auto expected=input_shape;expected.back()=adapter.down.shape(0);
         require(low.shape()==expected && low.dtype()==rank_dtype,"shared delta rank shape/dtype mismatch");
-        auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
-            Tensor(adapter.scale, mx::float32);
         const int begin = first - row_start, end = last - row_start;
+        // Exactly one intersecting adapter can scale/cast directly. Stacked
+        // deltas still aggregate in F32 and round ONCE after the sum.
+        if(contributors==1 && begin==0 && end==row_end-row_start && runtime_lora_b_eligible(low,adapter.up))
+            return dense_gpu::lora_b_epilogue(low,adapter.up,first-adapter.output_start,last-adapter.output_start,
+                adapter.scale,destination_dtype);
+        auto delta=runtime_lora_scaled_b(low,adapter.up,first-adapter.output_start,last-adapter.output_start,adapter.scale);
         if (begin || end != row_end - row_start) {
             std::vector<Tensor> pieces;
             if (begin) {

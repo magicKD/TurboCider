@@ -29,6 +29,19 @@ BF16_RANK_MODES=("gpu_operand_off","gpu_operand_on","hybrid_operand_off","hybrid
 BF16_RANK_MARKER="experimental original BF16 LoRA A operands with FP32 ranks and B/delta arithmetic"
 STUDENT_REUSE_MODES=("gpu_student_off","gpu_student_on","hybrid_student_off","hybrid_student_on")
 STUDENT_REUSE_MARKER="experimental six-step student final FFN reuse, includes full LoRA FFN output"
+B_EPILOGUE_MODES=("gpu_b_off","gpu_b_on","hybrid_b_off","hybrid_b_on")
+B_EPILOGUE_MARKER="experimental BF16 LoRA B operands with fused F32 scale/base epilogue, original F32 A ranks"
+
+
+def validate_b_epilogue(rows,enabled):
+    """Actual adapter bindings and policy selection, not physical B kernel counts."""
+    if not rows:raise ValueError("missing fused B request receipts")
+    for row in rows:
+        selection=row.get("acceleration_selection") or ""
+        if (B_EPILOGUE_MARKER in selection)!=enabled or BF16_RANK_MARKER in selection or STUDENT_REUSE_MARKER in selection or \
+            "experimental FP16 low-rank LoRA matmuls" in selection or row.get("student_ffn_reuse") is not None or \
+            row.get("lora_strategy")!="inference_time" or type(row.get("lora_applied_projections")) is not int or row["lora_applied_projections"]!=227:
+            raise ValueError("fused B screen requires original F32 A ranks/full adapter, not another arithmetic/temporal policy")
 
 
 def validate_student_reuse(rows,enabled,layers=32):
@@ -232,6 +245,7 @@ def main():
     parser.add_argument("--student-final-ffn-reuse-screen",action="store_true",
         help="matched GPU/hybrid off/on; full LoRA FFN outputs reused on final step, not exact arithmetic or a faster kernel")
     parser.add_argument("--student-reuse-layers",type=int,choices=(16,32),default=32)
+    parser.add_argument("--b-epilogue-screen",action="store_true",help="matched GPU/hybrid off/on for BF16 B operands and fused epilogue, original F32 A ranks")
     parser.add_argument("--reference",type=Path,action="append",required=True)
     parser.add_argument("--prompt",action="append",required=True)
     parser.add_argument("--lora",type=Path)
@@ -272,6 +286,11 @@ def main():
             not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
             parser.error("student reuse screen requires real LoRA/fixed Private DiT and no unrelated rank/cache screen")
         modes=STUDENT_REUSE_MODES
+    if args.b_epilogue_screen:
+        if args.lora_ranks_screen or args.lora_ranks_gpu_control or args.down_ranks_screen or args.bf16_rank_operands_screen or args.student_final_ffn_reuse_screen or args.weight_code_cache_bytes is not None or \
+            not args.lora or not args.dit_manifest or args.backend!="private" or args.global_channels==0:
+            parser.error("fused B screen requires real LoRA/fixed Private DiT and no unrelated rank/cache screen")
+        modes=B_EPILOGUE_MODES
     order=args.order.split(",") if args.order else list(modes)
     if len(order)!=len(modes) or set(order)!=set(modes):parser.error("order must include each matched mode once")
     if not 1<=len(args.reference)<=2 or not 3<=len(args.prompt)<=9 or len(set(args.prompt))!=len(args.prompt):
@@ -299,7 +318,7 @@ def main():
         model_snapshot=model_before,model_identity_scope="regular-file generation stamps and bounded safetensors header hashes; not full payload hashes or immutable leases",
         backend=args.backend,channels=args.channels,scope="native fresh-condition request wall; first request separate; host/process-tree diagnostics, not physical overlap proof",trials=[])
     summary.update(weight_retention_screen=args.weights or bool(dit_manifest),global_channels=args.global_channels,
-        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and args.weight_code_cache_bytes is None,
+        combined_dit_encoder=bool(dit_manifest) and not args.lora_ranks_screen and not args.down_ranks_screen and not args.bf16_rank_operands_screen and not args.student_final_ffn_reuse_screen and not args.b_epilogue_screen and args.weight_code_cache_bytes is None,
         lora_ranks_screen=args.lora_ranks_screen,weight_code_cache_bytes=args.weight_code_cache_bytes,
         weight_code_cache_mode=args.weight_code_cache_mode)
     summary["lora_ranks_gpu_control"]=args.lora_ranks_gpu_control
@@ -307,15 +326,19 @@ def main():
     summary["bf16_rank_operands_screen"]=args.bf16_rank_operands_screen
     summary["student_final_ffn_reuse_screen"]=args.student_final_ffn_reuse_screen
     summary["student_reuse_layers"]=args.student_reuse_layers if args.student_final_ffn_reuse_screen else 0
+    summary["b_epilogue_screen"]=args.b_epilogue_screen
     target=args.output/"summary.json"
     target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed between modes")
         env=benchmark_environment()
         if lora:env["TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC"]="1"
-        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
+        if mode in ("gpu_weights","encoder_weights","dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,*BF16_RANK_MODES,*STUDENT_REUSE_MODES,*B_EPILOGUE_MODES):env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"]="1"
         uses_encoder=mode.startswith("encoder_") or mode=="dit_encoder_weights"
-        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on")
+        uses_dit=mode in ("dit_weights","dit_encoder_weights",*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES,"hybrid_operand_off","hybrid_operand_on","hybrid_student_off","hybrid_student_on","hybrid_b_off","hybrid_b_on")
+        if mode in B_EPILOGUE_MODES:
+            env["TURBOCIDER_QWEN21_LORA_B_FUSED_EPILOGUE"]="1" if mode.endswith("_on") else "0"
+            if uses_dit:env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
         if mode in STUDENT_REUSE_MODES:
             env["TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"]=str(args.student_reuse_layers) if mode.endswith("_on") else "0"
             if uses_dit:env["TURBOCIDER_QWEN21_RUNTIME_SHARE_LORA_RANKS"]="1"
@@ -357,7 +380,7 @@ def main():
                 if result.returncode:raise RuntimeError("request process failed; raw evidence retained")
         load=observer.verify() if observer else None
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_")) else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_")) else mode
+        baseline_mode="gpu_weights" if mode.startswith(("gpu_operand_","gpu_student_","gpu_b_")) else "dit_weights" if mode.startswith(("hybrid_operand_","hybrid_student_","hybrid_b_")) else mode
         validate_rows(rows,"dit_weights" if mode in (*LORA_RANK_MODES,*WEIGHT_CODE_MODES,*DOWN_RANK_MODES) else baseline_mode,
             len(args.prompt),args.backend=="private",args.channels,args.global_channels)
         if mode in LORA_RANK_MODES:validate_shared_ranks(rows,mode=="ranks_on")
@@ -372,6 +395,9 @@ def main():
             if uses_dit:validate_shared_ranks(rows,True)
         if mode in STUDENT_REUSE_MODES:
             validate_student_reuse(rows,mode.endswith("_on"),args.student_reuse_layers)
+            if uses_dit:validate_shared_ranks(rows,True)
+        if mode in B_EPILOGUE_MODES:
+            validate_b_epilogue(rows,mode.endswith("_on"))
             if uses_dit:validate_shared_ranks(rows,True)
         if any(sha256_file(Path(path))!=digest for path,digest in before.items()):raise ValueError("input/runtime bytes changed")
         if model_snapshot(model)!=model_before:raise ValueError("model file generation/layout changed during mode")
