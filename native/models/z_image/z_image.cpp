@@ -3663,12 +3663,17 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     auto plan = make_plan(r);
     const bool convrot_runtime_lora=z_image::configured_convrot_runtime_lora(r);
     const bool convrot_mpp_partial=z_image::configured_convrot_partial_mpp(r);
+    const bool convrot_bf16_partial=z_image::configured_convrot_partial_bf16(r);
     require(!convrot_mpp_partial || (convrot_transformer_ && runtime_convrot_ && !load_only),
             "ConvRot MPP partial requires the explicit loaded ConvRot runtime source");
-    if(transformer_.affine_fp32_mpp()!=convrot_mpp_partial) {
+    require(!convrot_bf16_partial || (convrot_transformer_ && runtime_convrot_ && !load_only),
+            "ConvRot BF16 partial requires the explicit loaded ConvRot runtime source");
+    if(transformer_.affine_fp32_mpp()!=convrot_mpp_partial || transformer_.affine_bf16_fp32_partial()!=convrot_bf16_partial) {
         if(runtime_ffn_)runtime_ffn_->drain();
         mx::synchronize();
+        transformer_.set_affine_fp32_mpp(false);transformer_.set_affine_bf16_fp32_partial(false);
         transformer_.set_affine_fp32_mpp(convrot_mpp_partial);
+        transformer_.set_affine_bf16_fp32_partial(convrot_bf16_partial);
     }
     require(!r.prompt.empty() && (warmup || load_only || !r.output.empty()),
             "prompt and output are required");
@@ -4066,7 +4071,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             ane::HybridFfn::executor_configuration_identity()+
             (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "")+
             (gguf_raw_ane_source_ ? ":raw-gguf-source-window-v1" : "")+
-            (convrot_mpp_partial ? ":convrot-gpu-f32-mpp-register-m64-k32-n32-v1" : "");
+            (convrot_mpp_partial ? ":convrot-gpu-f32-mpp-register-m64-k32-n32-v1" : "")+
+            (convrot_bf16_partial ? ":convrot-gpu-bf16-qmm-f32-widen-partial-v1" : "");
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
@@ -4532,6 +4538,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             result.selection=runtime_ffn_->resolve_selection(result.selection);
             if(convrot_runtime_lora)result.selection+="; experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down";
             if(convrot_mpp_partial)result.selection+="; experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)";
+            if(convrot_bf16_partial)result.selection+="; experimental BF16-rounded packed ConvRot GPU base-down partial widened to F32; ONE joined-hidden down-LoRA";
         }
     }
     if (quantized) {

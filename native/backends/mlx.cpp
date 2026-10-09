@@ -939,6 +939,11 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
 Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
     require(convrot(prefix) && at(prefix+".weight").dtype()==mx::uint32 && !has_runtime_loras(),
             "F32 ConvRot partial requires packed base-only source: "+prefix);
+    if(affine_bf16_fp32_partial_) {
+        require(x.dtype()==mx::bfloat16 && at(prefix+".scales").dtype()==mx::bfloat16 &&
+                at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");
+        return mx::astype(project_range(x,prefix,rb,re,cb,ce),mx::float32);
+    }
     if(affine_fp32_mpp_)return affine_gpu::projection_mpp_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
         at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,32,32,64);
     return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
@@ -949,6 +954,11 @@ Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefi
     const auto &weight=at(prefix+".weight");
     if(convrot(prefix)) {
         require(weight.dtype()==mx::uint32,"F32 ConvRot partial requires original packed source: "+prefix);
+        if(affine_bf16_fp32_partial_) {
+            require(x.dtype()==mx::bfloat16 && at(prefix+".scales").dtype()==mx::bfloat16 &&
+                    at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");
+            return mx::astype(project_base_slice(x,prefix,rb,re,cb,ce,false),mx::float32);
+        }
         if(affine_fp32_mpp_)return affine_gpu::projection_mpp_fp32(convrot_rotate(x,metal_convrot_),weight,
             at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,32,32,64);
         return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),weight,

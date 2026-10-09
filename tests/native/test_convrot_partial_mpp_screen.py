@@ -14,10 +14,10 @@ STATE=importlib.util.module_from_spec(STATE_SPEC);STATE_SPEC.loader.exec_module(
 
 class ConvRotPartialScreenTests(unittest.TestCase):
     def rows(self,mode="mpp"):
-        return [dict(steps=4,actual_denoise_steps=4,timings_seconds=dict(request_wall=7.0),
+        return [dict(steps=4,actual_denoise_steps=4,width=512,height=512,text_tokens=31,timings_seconds=dict(request_wall=7.0),
             acceleration_selection=SCREEN.MARKER if mode=="mpp" else "original",
             runtime_backend="mlx_cpp_metal_convrot+private_ane_runtime_weight_experimental",
-            hybrid=dict(runtime_failed=False,runtime_calls_session_total=128*(index+1),runtime_weight=dict(
+            hybrid=dict(bucket=1056,runtime_failed=False,runtime_calls_session_total=128*(index+1),runtime_weight=dict(
                 executor_backend="private_ane",data_path="w8a8_convrot",partition_axis="intermediate_channels",
                 ane_channels=4096,fp32_channel_join_enabled=True,fallback_blocks_session_total=0,
                 overflow_retries_session_total=0,channel_blocks_session_total=128*(index+1)))) for index in range(3)]
@@ -35,6 +35,28 @@ class ConvRotPartialScreenTests(unittest.TestCase):
         with self.assertRaises(ValueError):SCREEN.validate_rows(rows,"mpp",4)
         with self.assertRaises(ValueError):SCREEN.validate_rows(self.rows("original"),"mpp",4)
         with self.assertRaises(ValueError):SCREEN.validate_rows(self.rows(),"original",4)
+
+    def test_bf16_rounding_is_explicit_and_cannot_relabel_exact_or_gpu(self):
+        rows=self.rows("original")
+        for row in rows:row["acceleration_selection"]=SCREEN.BF16_MARKER
+        SCREEN.validate_rows(rows,"bf16",4)
+        for mode in ("original","mpp","gpu"):
+            with self.assertRaises(ValueError):SCREEN.validate_rows(rows,mode,4)
+        with self.assertRaises(ValueError):SCREEN.validate_rows(self.rows(),"bf16",4)
+        mixed=copy.deepcopy(rows);mixed[0]["acceleration_selection"]+="; "+SCREEN.MARKER
+        with self.assertRaises(ValueError):SCREEN.validate_rows(mixed,"bf16",4)
+
+    def test_caption_bucket_cliff_requires_real_calls_not_only_successful_blocks(self):
+        rows=self.rows("original")
+        for index,row in enumerate(rows):
+            row.update(text_tokens=37,acceleration_selection=SCREEN.BF16_MARKER)
+            row["hybrid"]["runtime_calls_session_total"]=248*(index+1)
+        SCREEN.validate_rows(rows,"bf16",4)
+        wrong=copy.deepcopy(rows)
+        for row in wrong:row["hybrid"]["bucket"]=1152
+        with self.assertRaises(ValueError):SCREEN.validate_rows(wrong,"bf16",4)
+        for index,row in enumerate(wrong):row["hybrid"]["runtime_calls_session_total"]=128*(index+1)
+        SCREEN.validate_rows(wrong,"bf16",4)
 
     def test_gpu_control_cannot_be_split_or_missing_steps(self):
         row=dict(steps=4,actual_denoise_steps=4,timings_seconds=dict(request_wall=4.0),acceleration_selection="gpu",
@@ -89,6 +111,11 @@ class ConvRotPartialScreenTests(unittest.TestCase):
             rows.append(row)
         hashes=["base","adapter1","adapter_half","base"]
         STATE.verify(rows,hashes)
+        narrow=copy.deepcopy(rows)
+        for row in narrow:row["acceleration_selection"]=row["acceleration_selection"].replace(SCREEN.MARKER,SCREEN.BF16_MARKER)
+        STATE.verify(narrow,hashes,True)
+        with self.assertRaises(ValueError):STATE.verify(narrow,hashes)
+        with self.assertRaises(ValueError):STATE.verify(rows,hashes,True)
         for field,value in (("lora_channel_range_calls_session_total",0),("overflow_retries_session_total",1)):
             bad=copy.deepcopy(rows);bad[2]["hybrid"]["runtime_weight"][field]=value
             with self.subTest(field=field),self.assertRaises(ValueError):STATE.verify(bad,hashes)

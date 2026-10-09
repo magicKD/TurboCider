@@ -19,6 +19,7 @@ ModelModule z_image_module() {
         [](const Request &r) {
             (void)z_image::configured_convrot_runtime_lora(r);
             (void)z_image::configured_convrot_partial_mpp(r);
+            (void)z_image::configured_convrot_partial_bf16(r);
             require(r.operation == "image.generate",
                     "Z-Image-Turbo currently supports image.generate only");
             require(r.inputs.empty(), "Z-Image-Turbo does not accept image inputs");

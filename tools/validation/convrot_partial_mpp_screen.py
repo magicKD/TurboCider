@@ -17,7 +17,9 @@ from runtime_ane_memory import run_sampled
 
 ROOT=Path(__file__).resolve().parents[2]
 MODES=("gpu","original","mpp")
+NARROW_MODES=("gpu","mpp","bf16")
 MARKER="experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)"
+BF16_MARKER="experimental BF16-rounded packed ConvRot GPU base-down partial widened to F32; ONE joined-hidden down-LoRA"
 LORA_MARKER="experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down"
 
 
@@ -36,7 +38,7 @@ def source_snapshot(path):
 
 
 def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_layers=()):
-    if mode not in MODES or len(rows)!=count:raise ValueError("missing matched ConvRot requests")
+    if mode not in (*MODES,"bf16") or len(rows)!=count:raise ValueError("missing matched ConvRot requests")
     previous=0;previous_calls=0;previous_retries=0;first_headroom=None;previous_forced=0;previous_lora=0
     for index,row in enumerate(rows):
         if row.get("actual_denoise_steps")!=steps or row.get("steps")!=steps:
@@ -46,6 +48,8 @@ def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_la
             raise ValueError("missing valid ConvRot request time")
         if (MARKER in (row.get("acceleration_selection") or ""))!=(mode=="mpp"):
             raise ValueError("ConvRot GPU partial selection differs from requested arm")
+        if (BF16_MARKER in (row.get("acceleration_selection") or ""))!=(mode=="bf16"):
+            raise ValueError("BF16-rounded partial must be distinct from exact F32/GPU controls")
         if has_lora and (row.get("lora_strategy")!="inference_time" or type(row.get("lora_applied_projections")) is not int or row.get("lora_applied_projections")!=238):
             raise ValueError("need actual complete unmerged local Z distill LoRA bindings")
         if mode=="gpu":
@@ -65,6 +69,20 @@ def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_la
             (retries>cold_retry_cap if index==0 else retries!=previous_retries) or \
             type(blocks) is not int or blocks-previous!=expected_blocks or type(calls) is not int or calls-previous_calls<expected_blocks:
             raise ValueError("need actual successful fixed ConvRot F32 channel work, not just a selection marker")
+        if mode=="bf16":
+            bucket=h.get("bucket");tokens=row.get("text_tokens")
+            if type(bucket) is not int or bucket<=0 or type(tokens) is not int or tokens<=0 or \
+                row.get("height")!=512 or row.get("width")!=512:
+                raise ValueError("narrow partial requires actual bucket/token/512 geometry")
+            # Two noise-refiner layers have no caption rows. Main layers have
+            # the original 32-row caption padding; a single extra group can
+            # double calls when it crosses a fixed bucket's capacity.
+            main_rows=1024+((tokens+31)//32)*32
+            noise_blocks=2-sum(layer<2 for layer in gpu_layers)
+            main_blocks=30-sum(layer>=2 for layer in gpu_layers)
+            expected_calls=steps*(noise_blocks*((1024+bucket-1)//bucket)+main_blocks*((main_rows+bucket-1)//bucket))
+            if calls-previous_calls!=expected_calls+retries-previous_retries:
+                raise ValueError("actual driver calls disagree with bucket/padding/retry geometry")
         if cold_retry_cap:
             headroom=r.get("headroom_scale")
             if type(headroom) not in (int,float) or not math.isfinite(headroom) or headroom<1 or \
@@ -88,7 +106,8 @@ def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_la
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ("cli","model","checkpoint","manifest","output"):parser.add_argument("--"+name,type=Path,required=True)
-    parser.add_argument("--order",default=",".join(MODES))
+    parser.add_argument("--order")
+    parser.add_argument("--bf16-partial-screen",action="store_true",help="matched optimized GPU / exact MPP F32 / approximate BF16 QMM partial widened to F32; same ANE/math/LoRA")
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--timeout",type=int,default=600)
@@ -98,8 +117,9 @@ def main():
     parser.add_argument("--cold-retry-cap",type=int,default=0,
         help="explicit additional diagnostic policy0..8; only cold retries, complete events, unchanged warm headroom and matched original/MPP final headroom; never strict qualification")
     parser.add_argument("--prompt",default="A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.")
-    args=parser.parse_args();order=args.order.split(",")
-    if len(order)!=3 or set(order)!=set(MODES) or not 1<=args.steps<=8 or not 30<=args.timeout<=1800 or \
+    args=parser.parse_args();modes=NARROW_MODES if args.bf16_partial_screen else MODES
+    order=args.order.split(",") if args.order else list(modes)
+    if len(order)!=3 or set(order)!=set(modes) or not 1<=args.steps<=8 or not 30<=args.timeout<=1800 or \
         not 0<=args.cold_retry_cap<=8 or not args.prompt.strip() or not math.isfinite(args.lora_strength) or not -8<=args.lora_strength<=8:
         parser.error("need each matched mode once, steps1..8, timeout30..1800 and a nonempty prompt")
     if args.output.exists() or args.output.is_symlink():parser.error("choose a new output directory")
@@ -117,7 +137,7 @@ def main():
         source_identities=bindings,source_snapshots=snapshot,
         source_identity_scope="file generation stamps and bounded headers, not complete payload hashes/immutable source leases",
         scope="same-library resident512 base, first request separate then two same-prompt hot requests; optimized compiled-dense GPU with explicit retained3GiB allocator hint; process-tree memory, no strict-load/physical-overlap qualification",
-        cold_retry_cap=args.cold_retry_cap,lora=str(lora) if lora else None,lora_strength=args.lora_strength if lora else None,
+        cold_retry_cap=args.cold_retry_cap,bf16_partial_screen=args.bf16_partial_screen,lora=str(lora) if lora else None,lora_strength=args.lora_strength if lora else None,
         gpu_ffn_blocks=list(args.gpu_ffn_blocks),trials=[])
     if lora:summary["scope"]="same-library resident512 real unmerged Z distill LoRA, shared-rotation complete GPU; first then two same-prompt hot requests; process-tree memory, no strict-load/physical-overlap qualification"
     target=args.output/"summary.json";target.write_text(json.dumps(summary,indent=2)+"\n")
@@ -129,6 +149,7 @@ def main():
                 TURBOCIDER_Z_CONVROT_CACHE_RETAIN="1")
         elif mode!="gpu":
             env.update(TURBOCIDER_Z_RUNTIME_CONVROT="1",TURBOCIDER_Z_CONVROT_FP32_MPP="1" if mode=="mpp" else "0",
+                TURBOCIDER_Z_CONVROT_BF16_PARTIAL="1" if mode=="bf16" else "0",
                 TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_GPU_IO="1",
                 TURBOCIDER_PRIVATE_ANE_DATA_PATH="convrot_w8a8",TURBOCIDER_PRIVATE_ANE_CHANNELS="4096",
                 TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE="1",TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE="1",
@@ -163,8 +184,8 @@ def main():
             png_sha256=[sha256_file(args.output/f"{mode}-{i}.png") for i in range(3)]))
         target.write_text(json.dumps(summary,indent=2)+"\n")
     hybrid={trial["mode"]:trial for trial in summary["trials"] if trial["mode"]!="gpu"}
-    if args.cold_retry_cap and hybrid["original"]["resolved_headroom"]!=hybrid["mpp"]["resolved_headroom"]:
-        raise ValueError("original/MPP headroom recipes differ; cannot compare this diagnostic")
+    if args.cold_retry_cap and len({tuple(t["resolved_headroom"]) for t in hybrid.values()})!=1:
+        raise ValueError("hybrid headroom recipes differ; cannot compare this diagnostic")
     summary["status"]="complete_diagnostic";target.write_text(json.dumps(summary,indent=2)+"\n");print(json.dumps(summary,indent=2))
 
 

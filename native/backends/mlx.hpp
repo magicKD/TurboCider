@@ -31,6 +31,7 @@ class Weights {
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
+    bool affine_bf16_fp32_partial_ = false;
     bool runtime_lora_fp16_ = false;
     bool runtime_lora_bf16_fp32_ranks_ = false;
     bool runtime_lora_b_epilogue_ = false;
@@ -64,8 +65,19 @@ class Weights {
     bool metal_convrot() const { return metal_convrot_; }
     // Owner-thread request snapshot; never mutate while a compiled closure or
     // submitted projection is reading this Weights generation. Default off.
-    void set_affine_fp32_mpp(bool enabled) { affine_fp32_mpp_=enabled; }
+    void set_affine_fp32_mpp(bool enabled) {
+        require(!enabled || !affine_bf16_fp32_partial_,"affine partial recipes are mutually exclusive");
+        affine_fp32_mpp_=enabled;
+    }
     bool affine_fp32_mpp() const { return affine_fp32_mpp_; }
+    // Explicit approximate ConvRot base-down only: preserve original BF16
+    // packed QMM, then widen its rounded output to F32 for the channel join.
+    // No widened metadata/weights or per-shard down-LoRA is introduced.
+    void set_affine_bf16_fp32_partial(bool enabled) {
+        require(!enabled || !affine_fp32_mpp_,"affine partial recipes are mutually exclusive");
+        affine_bf16_fp32_partial_=enabled;
+    }
+    bool affine_bf16_fp32_partial() const { return affine_bf16_fp32_partial_; }
     // Experimental Qwen21 student only: narrow LoRA matmuls while retaining
     // FP32 accumulation with the BF16 base projection.
     void set_runtime_lora_fp16(bool enabled) { runtime_lora_fp16_ = enabled; }
