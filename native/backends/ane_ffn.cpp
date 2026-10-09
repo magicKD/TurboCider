@@ -141,6 +141,12 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
                      size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
                      const CalibrationWorkload *calibration, std::optional<int> calibrated_channels,
                      std::optional<int> channel_override)
+    : HybridFfn(manifest,hidden,width,budget,cancelled,require_lora_inputs,calibration,
+                calibrated_channels,channel_override,std::nullopt) {}
+HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
+                     size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
+                     const CalibrationWorkload *calibration, std::optional<int> calibrated_channels,
+                     std::optional<int> channel_override,std::optional<int> bucket_override)
     : memory_budget_(budget) {
     checkpoint(cancelled);
     const char *prefetch_after=std::getenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
@@ -201,7 +207,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     double verified_seconds = 0;
     try {
         auto built = build_runtime_executor(manifest, budget,
-            GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels,channel_override);
+            GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels,channel_override,bucket_override);
         graph_ = std::move(built.executor); verified = built.self_test_passed;
         verified_seconds = built.self_test_seconds;
         metrics_.runtime_weight_backend_fallback_reason = std::move(built.fallback_reason);

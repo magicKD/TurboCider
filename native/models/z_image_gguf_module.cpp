@@ -1,4 +1,5 @@
 #include "../runtime/session.hpp"
+#include "z_image/runtime_bucket_config.hpp"
 
 namespace tc {
 
@@ -16,6 +17,7 @@ ModelModule z_image_gguf_module() {
                           true};
         },
         [](const Request &r) {
+            (void)z_image::configured_runtime_match_rows(r);
             require(r.operation == "image.generate",
                     "Z-Image GGUF currently supports image.generate only");
             require(r.inputs.empty(), "Z-Image GGUF does not accept image inputs");

@@ -1,0 +1,1244 @@
+{
+  "schema": "tc-local512-z-matched-bucket-v1",
+  "date_local": "2026-10-09",
+  "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "automatic_route_default_changed": false,
+  "builds": [
+    {
+      "backend": "private",
+      "directory": "build/local512-z-matched-bucket-v3-private",
+      "library_sha256": "7ac38bb2af3fe88f36b20974c22c656a3b0e01e7b23c1cca4526f18a2176a296",
+      "cli_sha256": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+      "manifest_sha256": "745fefbe6cf8c15965f6da1c1ce42aa071e23acf18910fa4f5f60684babdc928",
+      "runtime_build_id": "tc-runtime-build-v1-f5b4cba515abd6e175ab496b1d146a1d90883fa047511dfa77150a74c94764ef",
+      "source_inputs_matched": 500,
+      "experimental_probes": "1"
+    },
+    {
+      "backend": "public",
+      "directory": "build/local512-z-matched-bucket-v3-public",
+      "library_sha256": "e67f74866200132245ef3a93c829319262a43b5e5b2699ce55c432db2824ea52",
+      "cli_sha256": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+      "manifest_sha256": "140a55e17fa546490b39bb09bd4906cfe3e0b7505a575838fbae5f245972e378",
+      "runtime_build_id": "tc-runtime-build-v1-d701f28c4c030d18decea34d7dc666ce02efaa388a7b26e6e59d6614e3756657",
+      "source_inputs_matched": 500,
+      "experimental_probes": "0"
+    }
+  ],
+  "experiments": [
+    {
+      "name": "convrot-base-fox9",
+      "summary": "outputs/local512-z-matched-bucket-base9-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "139c408ca503aeb5e337aa8a88bf7eb2f68bfd579238223fca35c6e09cd38fb1",
+      "status": "complete_diagnostic",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "gpu",
+          "cold_request_seconds": 10.721973834,
+          "warm_request_seconds": [
+            9.61227925,
+            9.615194083
+          ],
+          "warm_median_seconds": 9.6137366665,
+          "stdout": "outputs/local512-z-matched-bucket-base9-v3-diagnostic-20261009/gpu.stdout.jsonl",
+          "stdout_sha256": "958e6027217ad1f50b3ea1978fb357c07b13d4dc191d77c95ededb55027ffaed",
+          "actual_steps": [
+            9,
+            9,
+            9
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "43bf842bbfd09e27ee93fcbcc4f6d256ef556a6b9fcd49cd8d9b594c4731b6f0",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 12902975024,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        },
+        {
+          "route": "bf16_fixed",
+          "cold_request_seconds": 9.059780417,
+          "warm_request_seconds": [
+            7.760483625,
+            7.752842875
+          ],
+          "warm_median_seconds": 7.75666325,
+          "stdout": "outputs/local512-z-matched-bucket-base9-v3-diagnostic-20261009/bf16_fixed.stdout.jsonl",
+          "stdout_sha256": "7febb3e14f2bd695607119cde008ecd0ed6c3084072ef7f5b6f2d49531251386",
+          "actual_steps": [
+            9,
+            9,
+            9
+          ],
+          "actual_bucket": [
+            1056,
+            1056,
+            1056
+          ],
+          "actual_calls_cumulative": [
+            290,
+            578,
+            866
+          ],
+          "overflow_retries_cumulative": [
+            2,
+            2,
+            2
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "forced_gpu_layers": [
+            [],
+            [],
+            []
+          ],
+          "memory_report_sha256": "1132025735e37ba3ff7d9f2167055cc33a38af06ca1476f7fe422980df7ec3f4",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 17359144592,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 19.316874186612086
+        },
+        {
+          "route": "bf16_matched",
+          "cold_request_seconds": 9.089573292,
+          "warm_request_seconds": [
+            7.752877,
+            7.737224
+          ],
+          "warm_median_seconds": 7.7450505,
+          "stdout": "outputs/local512-z-matched-bucket-base9-v3-diagnostic-20261009/bf16_matched.stdout.jsonl",
+          "stdout_sha256": "7acb6603bb08dbea74c6f1851e4852b7194b20a8d3dac9c2b13fa44e0161d9e8",
+          "actual_steps": [
+            9,
+            9,
+            9
+          ],
+          "actual_bucket": [
+            1056,
+            1056,
+            1056
+          ],
+          "actual_calls_cumulative": [
+            290,
+            578,
+            866
+          ],
+          "overflow_retries_cumulative": [
+            2,
+            2,
+            2
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "forced_gpu_layers": [
+            [],
+            [],
+            []
+          ],
+          "memory_report_sha256": "ed44ef3df2b5e75a1746a909326196a94f1d2cb205cfbb60e8961c4cfdc3b841",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 17356801848,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 19.43766748897563
+        }
+      ]
+    },
+    {
+      "name": "convrot-lora-fox8",
+      "summary": "outputs/local512-z-matched-bucket-fox-lora-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "eaabb1b56522b1fe62af6dd918131edae33e105275b84045f7be5bd30848bcd8",
+      "status": "complete_diagnostic",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "gpu",
+          "cold_request_seconds": 10.528756667,
+          "warm_request_seconds": [
+            9.501071333,
+            9.528952291
+          ],
+          "warm_median_seconds": 9.515011812000001,
+          "stdout": "outputs/local512-z-matched-bucket-fox-lora-v3-diagnostic-20261009/gpu.stdout.jsonl",
+          "stdout_sha256": "c5462aefbfa0d547167728ad9cf0edcef63325352d617d9f590db7a330a105cb",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "adaf866373aefcfb882c777fe5e8e6a769da58f1dcfc25b8c44e86ce19776e58",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 19462276896,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        },
+        {
+          "route": "bf16_fixed",
+          "cold_request_seconds": 9.406841542,
+          "warm_request_seconds": [
+            8.107878291,
+            8.083036959
+          ],
+          "warm_median_seconds": 8.095457625,
+          "stdout": "outputs/local512-z-matched-bucket-fox-lora-v3-diagnostic-20261009/bf16_fixed.stdout.jsonl",
+          "stdout_sha256": "cf52b0319012a1897b58511ad39e0c50c67ea1ecfae3255a171681bc528fd64f",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1056,
+            1056,
+            1056
+          ],
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ]
+          ],
+          "memory_report_sha256": "c826fb6240d7d759c68d2f54e5d7c41cacb85810082a6a88fa8c009d9513c0ea",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 19280431048,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 14.91910062801718
+        },
+        {
+          "route": "bf16_matched",
+          "cold_request_seconds": 9.325701459,
+          "warm_request_seconds": [
+            8.103812417,
+            8.116560125
+          ],
+          "warm_median_seconds": 8.110186271,
+          "stdout": "outputs/local512-z-matched-bucket-fox-lora-v3-diagnostic-20261009/bf16_matched.stdout.jsonl",
+          "stdout_sha256": "7777d8c3f5e0fdef38d528d7594959f148b5314b42ea34592326d1c4643305dc",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1056,
+            1056,
+            1056
+          ],
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ]
+          ],
+          "memory_report_sha256": "39df077c7978f3b161f503bb9696eca25d2901fb8b2e16123c5a4ea337af7ea0",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 19281561592,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 14.764306852759596
+        }
+      ]
+    },
+    {
+      "name": "convrot-lora-lighthouse8",
+      "summary": "outputs/local512-z-matched-bucket-lighthouse-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "94644a3edd6c1a36ce1b81b05ecf25fc1e05c67f9430c9e2d604f260ab91cf57",
+      "status": "complete_diagnostic",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "bf16_matched",
+          "cold_request_seconds": 9.576265833,
+          "warm_request_seconds": [
+            8.366209375,
+            8.40850675
+          ],
+          "warm_median_seconds": 8.3873580625,
+          "stdout": "outputs/local512-z-matched-bucket-lighthouse-v3-diagnostic-20261009/bf16_matched.stdout.jsonl",
+          "stdout_sha256": "b5b35033d1a46a0a4d5bba13768a349eb851ac36dc71f1a82013310f9388791d",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1152,
+            1152,
+            1152
+          ],
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ]
+          ],
+          "memory_report_sha256": "cbcdfe273e3398c88c914575142b817cd35eff5362d003325a82ff4ac60b1db2",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 19372279704,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 14.372310462230542
+        },
+        {
+          "route": "bf16_fixed",
+          "cold_request_seconds": 12.23657875,
+          "warm_request_seconds": [
+            10.996385333,
+            11.020054917
+          ],
+          "warm_median_seconds": 11.008220125,
+          "stdout": "outputs/local512-z-matched-bucket-lighthouse-v3-diagnostic-20261009/bf16_fixed.stdout.jsonl",
+          "stdout_sha256": "cec2d7d4d0b3de9cefaadd3551760a04929f1e0d279edeedf8224a576fb6448e",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1056,
+            1056,
+            1056
+          ],
+          "actual_calls_cumulative": [
+            480,
+            960,
+            1440
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ]
+          ],
+          "memory_report_sha256": "d9b83ca4f4ca37c7e9c14d6d1f64e2b4c96a5b3787c913547b43a14c9474f484",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 19472582624,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": -12.384430019905995
+        },
+        {
+          "route": "gpu",
+          "cold_request_seconds": 10.908642375,
+          "warm_request_seconds": [
+            9.797330416,
+            9.792963583
+          ],
+          "warm_median_seconds": 9.7951469995,
+          "stdout": "outputs/local512-z-matched-bucket-lighthouse-v3-diagnostic-20261009/gpu.stdout.jsonl",
+          "stdout_sha256": "fb6136cdc49c798407a227ecc846db28ff994abcfb4bf19dd564724a8835ac43",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "049833c86165086c24226cd17ae122d048d23e4240afa79b783086e09f6990fb",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 19416483544,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        }
+      ]
+    },
+    {
+      "name": "bf16-base-lighthouse9",
+      "summary": "outputs/local512-z-matched-bucket-bf16-base9-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "d7fd9b99e6bf76d024ae2b8f2b3fa989b00258c7ebef1859523babd7ac8b2091",
+      "status": "complete",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "gpu",
+          "cold_request_seconds": 10.890064125,
+          "warm_request_seconds": [
+            8.210818042,
+            8.211271417
+          ],
+          "warm_median_seconds": 8.2110447295,
+          "stdout": "outputs/local512-z-matched-bucket-bf16-base9-v3-diagnostic-20261009/0-gpu.stdout.jsonl",
+          "stdout_sha256": "1cdbe6ac3740582a1d72806bd16b4e7e91cff9db8d670b52307869e96f843338",
+          "actual_steps": [
+            9,
+            9,
+            9
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "240f69fde7a80922ba75c83293545c61ebba859617acab55eb843e3e9deb9657",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 23015581320,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        },
+        {
+          "route": "runtime",
+          "cold_request_seconds": 11.070529875,
+          "warm_request_seconds": [
+            6.685631,
+            6.662929416
+          ],
+          "warm_median_seconds": 6.674280208,
+          "stdout": "outputs/local512-z-matched-bucket-bf16-base9-v3-diagnostic-20261009/1-runtime.stdout.jsonl",
+          "stdout_sha256": "e1a8cfd4744a96e23df99b3e4e2c1dc6da60bfef82cd9d10d5d7c08c3eb569bc",
+          "actual_steps": [
+            9,
+            9,
+            9
+          ],
+          "actual_bucket": [
+            1152,
+            1152,
+            1152
+          ],
+          "actual_calls_cumulative": [
+            290,
+            578,
+            866
+          ],
+          "overflow_retries_cumulative": [
+            2,
+            2,
+            2
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "forced_gpu_layers": [
+            [],
+            [],
+            []
+          ],
+          "memory_report_sha256": "da8509794e67fb7c2598a15edd3eabc118005b6eb57ef53336e503109669fd8f",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 22829885472,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 18.715822068035166
+        }
+      ]
+    },
+    {
+      "name": "bf16-lora-lighthouse8",
+      "summary": "outputs/local512-z-matched-bucket-bf16-lora8-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "e3a48b96f01f95dd5dc41a60a28affa1a3d17394b0a88fcb1a426a589e61fa63",
+      "status": "complete",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "runtime",
+          "cold_request_seconds": 8.172498375,
+          "warm_request_seconds": [
+            7.318050875,
+            7.322517583
+          ],
+          "warm_median_seconds": 7.320284229,
+          "stdout": "outputs/local512-z-matched-bucket-bf16-lora8-v3-diagnostic-20261009/0-runtime.stdout.jsonl",
+          "stdout_sha256": "deb5202b474ffb8b9578a78b7cbd58a416c743c6bdb27296e5a3e50fdcd6149c",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1152,
+            1152,
+            1152
+          ],
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ]
+          ],
+          "memory_report_sha256": "70e2c4145ec486b67049a22edf3daeeb54957aad91018d8c6baa95bbc0d218df",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 24903657384,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 15.556259411665598
+        },
+        {
+          "route": "gpu",
+          "cold_request_seconds": 9.377788709,
+          "warm_request_seconds": [
+            8.672469041,
+            8.66519075
+          ],
+          "warm_median_seconds": 8.6688298955,
+          "stdout": "outputs/local512-z-matched-bucket-bf16-lora8-v3-diagnostic-20261009/1-gpu.stdout.jsonl",
+          "stdout_sha256": "447c6c2ff05be00322c4544529bbca6ff9b0687e643f4a564627acc452ebbd03",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "525b1cf9bef853a17bf5e4b217f5019cecdf4eda8e86d1a6432e7dca311b6938",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 25526462472,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        }
+      ]
+    },
+    {
+      "name": "gguf-q4-lora-lighthouse8-matched",
+      "summary": "outputs/local512-z-matched-bucket-gguf-q4-lora-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "685a0f91b75301438bc8c535c04b6e650f766ccb9352e1d647bed0eb6b24df6b",
+      "status": "complete",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "gpu",
+          "cold_request_seconds": 13.266748958,
+          "warm_request_seconds": [
+            10.773439,
+            10.73856925
+          ],
+          "warm_median_seconds": 10.756004125,
+          "stdout": "outputs/local512-z-matched-bucket-gguf-q4-lora-v3-diagnostic-20261009/0-gpu.stdout.jsonl",
+          "stdout_sha256": "eb17e87456156737f8c6e09c7196c3606ff146dd65cf3a493fc390111d1f713c",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "80c5fa504e0926caaaecf7ecc9e4f1c30451df4af557f5a5601f7dd66ad007e2",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 9590329952,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "gguf_request_source_read_bytes": [
+            4509395072,
+            0,
+            0
+          ],
+          "gguf_reused_packed_bank": [
+            false,
+            true,
+            true
+          ],
+          "gguf_dense_scope": [
+            "none",
+            "none",
+            "none"
+          ],
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        },
+        {
+          "route": "runtime",
+          "cold_request_seconds": 13.543412042,
+          "warm_request_seconds": [
+            9.449903458,
+            9.465852208
+          ],
+          "warm_median_seconds": 9.457877833,
+          "stdout": "outputs/local512-z-matched-bucket-gguf-q4-lora-v3-diagnostic-20261009/1-runtime.stdout.jsonl",
+          "stdout_sha256": "50f265f5e6bfe61a1b72e20555eb0d1641b1ec672bed802f1349ffcbf9b62979",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1152,
+            1152,
+            1152
+          ],
+          "actual_calls_cumulative": [
+            232,
+            464,
+            696
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              2
+            ]
+          ],
+          "memory_report_sha256": "042dd19a35080873af7dac51f8dadc01a2ee80e28c1905d8751c3195d464bcff",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 9783693968,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "gguf_request_source_read_bytes": [
+            4509395072,
+            0,
+            0
+          ],
+          "gguf_reused_packed_bank": [
+            false,
+            true,
+            true
+          ],
+          "gguf_dense_scope": [
+            "none",
+            "none",
+            "none"
+          ],
+          "nominal_warm_reduction_vs_own_gpu_pct": 12.068852679061248
+        }
+      ]
+    },
+    {
+      "name": "gguf-q4-lora-lighthouse8-fixed-separate-window",
+      "summary": "outputs/local512-z-fixed-bucket-gguf-q4-lora-v3-diagnostic-20261009/summary.json",
+      "summary_sha256": "56c06adf84ed3a27ad81db56b697d8bd07a850f4bfe09e1a7b79af6d67ce722a",
+      "status": "complete",
+      "continuous_load_qualified": false,
+      "trials": [
+        {
+          "route": "runtime",
+          "cold_request_seconds": 14.813152833,
+          "warm_request_seconds": [
+            12.112756375,
+            12.125209958
+          ],
+          "warm_median_seconds": 12.1189831665,
+          "stdout": "outputs/local512-z-fixed-bucket-gguf-q4-lora-v3-diagnostic-20261009/0-runtime.stdout.jsonl",
+          "stdout_sha256": "744b17133268ea6107a2be7e797190296df4e27b8dc7fdd8ab5aed217b74164e",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            1056,
+            1056,
+            1056
+          ],
+          "actual_calls_cumulative": [
+            464,
+            928,
+            1392
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "fallback_blocks_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              2
+            ]
+          ],
+          "memory_report_sha256": "621ce183b727dd7017e71bc092cc60112130494a651d0fd476ccf4ee9b5f15aa",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 9729380984,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "gguf_request_source_read_bytes": [
+            4509395072,
+            0,
+            0
+          ],
+          "gguf_reused_packed_bank": [
+            false,
+            true,
+            true
+          ],
+          "gguf_dense_scope": [
+            "none",
+            "none",
+            "none"
+          ],
+          "nominal_warm_reduction_vs_own_gpu_pct": -12.69669287175334
+        },
+        {
+          "route": "gpu",
+          "cold_request_seconds": 13.10165275,
+          "warm_request_seconds": [
+            10.760481333,
+            10.74677475
+          ],
+          "warm_median_seconds": 10.7536280415,
+          "stdout": "outputs/local512-z-fixed-bucket-gguf-q4-lora-v3-diagnostic-20261009/1-gpu.stdout.jsonl",
+          "stdout_sha256": "51046c903e2aa178158ef4abad82b0be9bb7447028d30999245884009b7fe81e",
+          "actual_steps": [
+            8,
+            8,
+            8
+          ],
+          "actual_bucket": [
+            null,
+            null,
+            null
+          ],
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "fallback_blocks_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "forced_gpu_layers": [
+            null,
+            null,
+            null
+          ],
+          "memory_report_sha256": "5c02bd2254294904597b2b44457b4a6c8909781cca868e68e78ae631d497d78c",
+          "memory_verified_complete": true,
+          "phys_footprint_peak_bytes": 8892289560,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "gguf_request_source_read_bytes": [
+            4509395072,
+            0,
+            0
+          ],
+          "gguf_reused_packed_bank": [
+            false,
+            true,
+            true
+          ],
+          "gguf_dense_scope": [
+            "none",
+            "none",
+            "none"
+          ],
+          "nominal_warm_reduction_vs_own_gpu_pct": 0
+        }
+      ]
+    }
+  ],
+  "same_process_switch": {
+    "summary": "outputs/local512-z-matched-bucket-state-v3-diagnostic-20261009/summary.json",
+    "summary_sha256": "bf409f5a9734e7827c23bff76c0d3d0d2a1b69d92694e477f3d58e7bb62b35d8",
+    "status": "complete_diagnostic",
+    "buckets": [
+      1056,
+      1152,
+      1152,
+      1056
+    ],
+    "actual_calls_cumulative": [
+      248,
+      248,
+      496,
+      248
+    ],
+    "png_sha256": [
+      "ae21429914328c1de0b6403092203c331ec9049a7e799a5b256336f0a82e5ab3",
+      "7fab42cff96a373cf522f2654501e8dd66344fbae298ee5a3072075192bf4030",
+      "7fab42cff96a373cf522f2654501e8dd66344fbae298ee5a3072075192bf4030",
+      "ae21429914328c1de0b6403092203c331ec9049a7e799a5b256336f0a82e5ab3"
+    ],
+    "final_validator_replay_passed": true,
+    "physical_overlap_qualified": false,
+    "phys_footprint_peak_bytes": 25971693784
+  },
+  "memory": {
+    "complete_reports": 18,
+    "maximum_phys_footprint_bytes": 25971693784,
+    "sum_system_swap_in_bytes": 0,
+    "sum_system_swap_out_bytes": 0,
+    "scope": "process-tree100ms samples, load+cold+warm+exit; not whole-system budget or physical driver attribution"
+  },
+  "retained_failures": {
+    "v1_missing_final_marker_summary": "outputs/local512-z-matched-bucket-lighthouse-v1-diagnostic-20261009/summary.json",
+    "v1_status": "incomplete",
+    "v2_unconditional_padding_summary": "outputs/local512-z-matched-bucket-fox-lora-v2-diagnostic-20261009/summary.json",
+    "v2_short_prompt_fixed_warm_seconds": 8.1211839375,
+    "v2_short_prompt_matched_warm_seconds": 8.180462,
+    "test_invocation_skips_log": "outputs/local512-z-matched-bucket-v3-private-extra-test-20261009.log",
+    "test_invocation_skips": 2,
+    "corrected_no_skip_log": "outputs/local512-z-matched-bucket-v3-private-extra-v2-test-20261009.log",
+    "host_wrong_module_log": "outputs/local512-z-matched-bucket-v3-host-test-20261009.log",
+    "host_wrong_module": "tests.native.test_runtime_ane_gguf; nonexistent module, not counted as passing; corrected76/new80 final"
+  },
+  "implementation": {
+    "flag": "TURBOCIDER_Z_RUNTIME_MATCH_ROWS=1; default off",
+    "policy": "keep aligned32 nominal template when it covers actual1024 image+padded caption rows; otherwise grow actual total to a128-row grid",
+    "bounds": "Private override rows32..8192 aligned32; caption positive/aligned32<=7168; image1024",
+    "scope": "explicit authorized fixed positive Private W8A8/ConvRot-W8A8, approximate unconstrained resident512 generation, chunks1/fixed-async1; no auto calibration, streaming or encoder ANE",
+    "identity": "matched-native-rows-v2-keep-fit=<rows>, snapshot from actual conditioning geometry",
+    "public_artifacts_resized": false,
+    "original_constructor_and_factory_signatures_preserved": true,
+    "original_checkpoint_independent_template_checked_before_override": true,
+    "safety": "source identity, finite/shape, memory admission, self-test/capability and late complete-GPU fallback retained"
+  },
+  "reference_read": {
+    "repository": "../splash",
+    "branch": "feat/ane",
+    "commit": "be83e8f895bc8d9036ace8348c7ddc2098dc5ebc",
+    "file": "runtime/ane/Prefill.hpp",
+    "read_only": true,
+    "scope": "workload-specific frozen configuration/identity; no checkout/fetch/download/model writes"
+  },
+  "verification": {
+    "host_tests": 80,
+    "host_skips": 0,
+    "host_log": "outputs/local512-z-matched-bucket-v6-host-test-20261009.log",
+    "private_selected_tests": 11,
+    "private_skips": 0,
+    "private_logs": [
+      "outputs/local512-z-matched-bucket-v3-private-test-20261009.log",
+      "outputs/local512-z-matched-bucket-v3-private-extra-v2-test-20261009.log"
+    ],
+    "public_selected_tests": 10,
+    "public_skips": 0,
+    "public_log": "outputs/local512-z-matched-bucket-v3-public-test-20261009.log",
+    "actual_private_override": "unchanged33-row full template, actual64/96-row native programs, exact call geometry, malformed/Public rejections, late whole-FFN GPU recovery",
+    "extra_regressions": "actual compiled Qwen phase24, joint LoRA24, original BF16 ConvRot partial18, leased source stacked4/rejection6, runtime wrapper/typed lifetime/source/memory/fallback",
+    "public_release_guard_exit_code": 0,
+    "public_release_guard_log": "outputs/local512-z-matched-bucket-v3-public-release-guard-v2-20261009.log",
+    "source_inventory_excludes": "docs/tests/validation scripts/Swift frontend; not clean staged-only or App packaging",
+    "native_build_logs": [
+      "outputs/local512-z-matched-bucket-v3-private-build-20261009.log",
+      "outputs/local512-z-matched-bucket-v3-public-build-20261009.log"
+    ],
+    "build_contains_pre_existing_user_convrot_drafts": true,
+    "full_repository_or_full_model_matrix": false
+  },
+  "visual_review": {
+    "scope": "finite agent whole512 case1 inspection only; not user acceptance, all-scene/seed or strict latent qualification",
+    "pairs": [
+      {
+        "gpu": "outputs/local512-z-matched-bucket-base9-v3-diagnostic-20261009/gpu-1.png",
+        "candidate": "outputs/local512-z-matched-bucket-base9-v3-diagnostic-20261009/bf16_matched-1.png",
+        "observation": "fox posture/face/tail/snow close; minor fur/texture details"
+      },
+      {
+        "gpu": "outputs/local512-z-matched-bucket-lighthouse-v3-diagnostic-20261009/gpu-1.png",
+        "candidate": "outputs/local512-z-matched-bucket-lighthouse-v3-diagnostic-20261009/bf16_matched-1.png",
+        "observation": "structure/light/stonework close; red GPU roof versus dark/black candidate roof retained as visible approximation difference"
+      },
+      {
+        "gpu": "outputs/local512-z-matched-bucket-bf16-lora8-v3-diagnostic-20261009/1-gpu-1.png",
+        "candidate": "outputs/local512-z-matched-bucket-bf16-lora8-v3-diagnostic-20261009/0-runtime-1.png",
+        "observation": "whole lighthouse geometry/red roof/lighting/foreground close; minor details"
+      },
+      {
+        "gpu": "outputs/local512-z-matched-bucket-gguf-q4-lora-v3-diagnostic-20261009/0-gpu-1.png",
+        "candidate": "outputs/local512-z-matched-bucket-gguf-q4-lora-v3-diagnostic-20261009/1-runtime-1.png",
+        "observation": "whole lighthouse geometry/dark roof/lighting/rocks close; minor texture/stonework"
+      }
+    ],
+    "no_automatic_visual_promotion": true
+  },
+  "gguf_ahead_decode": {
+    "asynchronous_ahead_decode_implemented": false,
+    "dense_sidecar_created": false,
+    "decision": "do not wire synchronous two-matrix dense window into rolling32-layer512 consumer without real reuse/overlap and whole-request benefit",
+    "existing_evidence": "docs/status/convrot-register-dense-window-2026-10-06.md",
+    "scope": "existing512-ish GGUF component decode amortization23..46 genuine reuse hits versus one-use rolling two-matrix cache; not two whole-FFN slots",
+    "remaining": "real bounded ahead-decode/fused packed consumer, GPU kernels, Public/Private operation profitability, Qwen generation/edit/base/LoRA/encoder full matrix, more scenes/seeds and matched quiet-window confirmation"
+  },
+  "cleanup": {
+    "owned_jobs_terminal_before_cleanup": true,
+    "directories": [
+      "build/local512-z-matched-bucket-v1-private",
+      "build/local512-z-matched-bucket-v2-private",
+      "build/local512-z-matched-bucket-v3-private",
+      "build/local512-z-matched-bucket-v3-public"
+    ],
+    "removed_rebuildable_objects": 865,
+    "removed_object_logical_bytes": 67782072,
+    "removed_empty_module_cache_directories": 4,
+    "remaining_owned_objects": 0,
+    "kept": "all libraries/CLIs/probes, runtime-build manifests, logs/failures, PNGs, original models/adapters/references",
+    "recoverability": "objects regenerate from original build commands; no models/user caches/external processes removed"
+  },
+  "log_sha256": {
+    "outputs/local512-z-matched-bucket-v3-private-build-20261009.log": "382e648ec88e97ae8e6f593bf1fccd8a4fd6422fe3098a65eb81db8051957a18",
+    "outputs/local512-z-matched-bucket-v3-public-build-20261009.log": "bb05d934a1ef4168bbc52d5bdaa2af478d4ccd8c4662f3cfad572e2eed1ee56f",
+    "outputs/local512-z-matched-bucket-v3-private-test-20261009.log": "cc7594000035865e5b7b1a7d6eea7833dd5ebef26e8f34e926809f549b3c1fb8",
+    "outputs/local512-z-matched-bucket-v3-public-test-20261009.log": "d7b3648ee67377894da2a390b4ec4f47348bd03e5338821a4fccd4aa6315507c",
+    "outputs/local512-z-matched-bucket-v3-private-extra-test-20261009.log": "2d47b2a289e3e43e6f9583503641840de76c884b8701f5ab4f6fd416510dd6d8",
+    "outputs/local512-z-matched-bucket-v3-private-extra-v2-test-20261009.log": "b539eabefa0087b9248a868d979b2660986fec9cd95cd52ada901bebd0c03f45",
+    "outputs/local512-z-matched-bucket-v6-host-test-20261009.log": "9c6f636fed2b38938744b923c325c8b2d4de20cf27a230add6bb8d0c1cdb128b",
+    "outputs/local512-z-matched-bucket-v3-host-test-20261009.log": "17c5f66dd9dfe312b441f93a03d65eab55be3e5f6f33e3ac978f24c05a53b6e0",
+    "outputs/local512-z-matched-bucket-v3-public-release-guard-v2-20261009.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

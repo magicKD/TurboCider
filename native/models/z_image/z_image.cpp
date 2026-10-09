@@ -20,6 +20,7 @@
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"
 #include "../../runtime/streaming/context.hpp"
+#include "runtime_bucket_config.hpp"
 #include "../../runtime/streaming/gguf_packed_bank.hpp"
 #include "../../runtime/streaming/resolved_request.hpp"
 #include "streaming_descriptor.hpp"
@@ -3879,6 +3880,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const double text_seconds = std::chrono::duration<double>(Clock::now() - text_start).count();
     const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
+    const bool match_runtime_rows=z_image::configured_runtime_match_rows(r);
+    const std::optional<int> runtime_bucket=match_runtime_rows ?
+        std::optional<int>(z_image::matched_runtime_bucket(image_rows,caption_rows,ane::runtime_template_shape(r.ane_manifest).rows)) : std::nullopt;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
     // An opted-in image-only W8A8 manifest needs the full BF16 GPU weights
     // for caption rows. Preserve the original explicit W8 ablation for all
@@ -4077,7 +4081,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
         const std::string request_identity = identity + ":row-placement="+ane::row_placement_name(z_runtime_row_placement())+
-            ":gpu-layers="+gpu_policy + (native_channel_auto ?
+            ":gpu-layers="+gpu_policy + (runtime_bucket ? ":matched-native-rows-v2-keep-fit="+std::to_string(*runtime_bucket) : "") + (native_channel_auto ?
             ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
         if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
             (runtime_ffn_->available() && !active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
@@ -4152,7 +4156,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 };
             }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
-                                                         !active_loras_.empty(),calibration?&*calibration:nullptr);
+                !active_loras_.empty(),calibration?&*calibration:nullptr,std::nullopt,std::nullopt,runtime_bucket);
             runtime_manifest_ = request_identity;
             if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }
@@ -4211,6 +4215,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             result.precision = runtime_ffn_->precision_label(gguf_transformer_);
             result.hybrid = runtime_ffn_->metrics();
             if (!runtime_convrot_) result.selection = runtime_ffn_->resolve_selection(result.selection);
+            if(runtime_bucket)result.selection+="; experimental request-matched Private FFN rows="+std::to_string(*runtime_bucket)+
+                "; checkpoint-independent template unchanged; not profitability calibration";
         }
         result.encoder_hybrid = cached_encoder_hybrid_metrics_;
         result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
@@ -4540,6 +4546,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             if(convrot_mpp_partial)result.selection+="; experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)";
             if(convrot_bf16_partial)result.selection+="; experimental BF16-rounded packed ConvRot GPU base-down partial widened to F32; ONE joined-hidden down-LoRA";
         }
+        if(runtime_bucket)result.selection+="; experimental request-matched Private FFN rows="+std::to_string(*runtime_bucket)+
+            "; checkpoint-independent template unchanged; not profitability calibration";
     }
     if (quantized) {
         result.backend = r.quantized_execution.precision_profile == "z-source-native-affine-v1" || r.quantized_execution.precision_profile == "z-mlx-compat-affine-v1"

@@ -262,6 +262,7 @@ class PrivateAneChannelMlxTests(unittest.TestCase):
             self.assertIn("PASS deferred typed lifetime",result.stdout)
             self.assertIn("PASS channel failure cleanup",result.stdout)
             self.assertIn("PASS GPU-first channel submission",result.stdout)
+            self.assertIn("PASS Private bucket override",result.stdout)
             print(result.stdout.strip())
 
 

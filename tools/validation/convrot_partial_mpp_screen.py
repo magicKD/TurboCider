@@ -18,6 +18,7 @@ from runtime_ane_memory import run_sampled
 ROOT=Path(__file__).resolve().parents[2]
 MODES=("gpu","original","mpp")
 NARROW_MODES=("gpu","mpp","bf16")
+MATCHED_BUCKET_MODES=("gpu","bf16_fixed","bf16_matched")
 MARKER="experimental MPP register-decoded ConvRot GPU F32 partial (m64/k32/n32)"
 BF16_MARKER="experimental BF16-rounded packed ConvRot GPU base-down partial widened to F32; ONE joined-hidden down-LoRA"
 LORA_MARKER="experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down"
@@ -37,7 +38,9 @@ def source_snapshot(path):
         ctime_ns=after.st_ctime_ns,header_sha256=hashlib.sha256(header).hexdigest())
 
 
-def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_layers=()):
+def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_layers=(),template_rows=0):
+    matched_rows=mode=="bf16_matched"
+    if mode in ("bf16_fixed","bf16_matched"):mode="bf16"
     if mode not in (*MODES,"bf16") or len(rows)!=count:raise ValueError("missing matched ConvRot requests")
     previous=0;previous_calls=0;previous_retries=0;first_headroom=None;previous_forced=0;previous_lora=0
     for index,row in enumerate(rows):
@@ -78,6 +81,10 @@ def validate_rows(rows,mode,steps,count=3,cold_retry_cap=0,has_lora=False,gpu_la
             # the original 32-row caption padding; a single extra group can
             # double calls when it crosses a fixed bucket's capacity.
             main_rows=1024+((tokens+31)//32)*32
+            selected_bucket=template_rows if template_rows>=main_rows and template_rows%32==0 else ((main_rows+127)//128)*128
+            if matched_rows and (bucket!=selected_bucket or
+                    "experimental request-matched Private FFN rows="+str(bucket) not in (row.get("acceleration_selection") or "")):
+                raise ValueError("matched bucket requires actual bounded geometry selection, not relabelled fixed calls")
             noise_blocks=2-sum(layer<2 for layer in gpu_layers)
             main_blocks=30-sum(layer>=2 for layer in gpu_layers)
             expected_calls=steps*(noise_blocks*((1024+bucket-1)//bucket)+main_blocks*((main_rows+bucket-1)//bucket))
@@ -107,6 +114,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ("cli","model","checkpoint","manifest","output"):parser.add_argument("--"+name,type=Path,required=True)
     parser.add_argument("--order")
+    parser.add_argument("--matched-bucket-screen",action="store_true",help="same bf16 partial: GPU / fixed template / request-matched Private native rows")
     parser.add_argument("--bf16-partial-screen",action="store_true",help="matched optimized GPU / exact MPP F32 / approximate BF16 QMM partial widened to F32; same ANE/math/LoRA")
     parser.add_argument("--steps",type=int,default=4)
     parser.add_argument("--seed",type=int,default=42)
@@ -117,14 +125,17 @@ def main():
     parser.add_argument("--cold-retry-cap",type=int,default=0,
         help="explicit additional diagnostic policy0..8; only cold retries, complete events, unchanged warm headroom and matched original/MPP final headroom; never strict qualification")
     parser.add_argument("--prompt",default="A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.")
-    args=parser.parse_args();modes=NARROW_MODES if args.bf16_partial_screen else MODES
+    args=parser.parse_args()
+    if args.matched_bucket_screen and args.bf16_partial_screen:parser.error("choose one partial/bucket screen")
+    modes=MATCHED_BUCKET_MODES if args.matched_bucket_screen else NARROW_MODES if args.bf16_partial_screen else MODES
     order=args.order.split(",") if args.order else list(modes)
-    if len(order)!=3 or set(order)!=set(modes) or not 1<=args.steps<=8 or not 30<=args.timeout<=1800 or \
+    if len(order)!=3 or set(order)!=set(modes) or not 1<=args.steps<=16 or not 30<=args.timeout<=1800 or \
         not 0<=args.cold_retry_cap<=8 or not args.prompt.strip() or not math.isfinite(args.lora_strength) or not -8<=args.lora_strength<=8:
-        parser.error("need each matched mode once, steps1..8, timeout30..1800 and a nonempty prompt")
+        parser.error("need each matched mode once, steps1..16, timeout30..1800 and a nonempty prompt")
     if args.output.exists() or args.output.is_symlink():parser.error("choose a new output directory")
     cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
     model=args.model.resolve(strict=True);checkpoint=args.checkpoint.resolve(strict=True);manifest=args.manifest.resolve(strict=True)
+    template_rows=json.loads(manifest.read_text())["rows"]
     if not library.is_file() or not model.is_dir():parser.error("CLI, adjacent library and local model directory required")
     bindings={str(p):sha256_file(p) for p in (cli,library,manifest)}
     lora=args.lora.resolve(strict=True) if args.lora else None
@@ -137,7 +148,7 @@ def main():
         source_identities=bindings,source_snapshots=snapshot,
         source_identity_scope="file generation stamps and bounded headers, not complete payload hashes/immutable source leases",
         scope="same-library resident512 base, first request separate then two same-prompt hot requests; optimized compiled-dense GPU with explicit retained3GiB allocator hint; process-tree memory, no strict-load/physical-overlap qualification",
-        cold_retry_cap=args.cold_retry_cap,bf16_partial_screen=args.bf16_partial_screen,lora=str(lora) if lora else None,lora_strength=args.lora_strength if lora else None,
+        cold_retry_cap=args.cold_retry_cap,bf16_partial_screen=args.bf16_partial_screen,matched_bucket_screen=args.matched_bucket_screen,lora=str(lora) if lora else None,lora_strength=args.lora_strength if lora else None,
         gpu_ffn_blocks=list(args.gpu_ffn_blocks),trials=[])
     if lora:summary["scope"]="same-library resident512 real unmerged Z distill LoRA, shared-rotation complete GPU; first then two same-prompt hot requests; process-tree memory, no strict-load/physical-overlap qualification"
     target=args.output/"summary.json";target.write_text(json.dumps(summary,indent=2)+"\n")
@@ -149,13 +160,14 @@ def main():
                 TURBOCIDER_Z_CONVROT_CACHE_RETAIN="1")
         elif mode!="gpu":
             env.update(TURBOCIDER_Z_RUNTIME_CONVROT="1",TURBOCIDER_Z_CONVROT_FP32_MPP="1" if mode=="mpp" else "0",
-                TURBOCIDER_Z_CONVROT_BF16_PARTIAL="1" if mode=="bf16" else "0",
+                TURBOCIDER_Z_CONVROT_BF16_PARTIAL="1" if mode in ("bf16","bf16_fixed","bf16_matched") else "0",
                 TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_GPU_IO="1",
                 TURBOCIDER_PRIVATE_ANE_DATA_PATH="convrot_w8a8",TURBOCIDER_PRIVATE_ANE_CHANNELS="4096",
                 TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE="1",TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE="1",
                 TURBOCIDER_PRIVATE_ANE_PREFETCH="0",TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD="0",
                 TURBOCIDER_RUNTIME_ANE_CHUNKS="1",TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC="1",
                 TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN="1")
+            if args.matched_bucket_screen:env["TURBOCIDER_Z_RUNTIME_MATCH_ROWS"]="1" if mode=="bf16_matched" else "0"
             if lora:env["TURBOCIDER_Z_RUNTIME_CONVROT_LORA"]="1"
             if args.gpu_ffn_blocks:env["TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS"]=",".join(map(str,args.gpu_ffn_blocks))
         requests=[]
@@ -172,7 +184,7 @@ def main():
             memory=run_sampled([str(cli),"batch",str(model),*requests],repo=ROOT,output=args.output,stem=mode,
                 env=env,stdout=stdout,stderr=stderr,timeout=args.timeout,interval_ms=100,max_gap_ms=500)
         rows=[json.loads(line) for line in (args.output/f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_rows(rows,mode,args.steps,cold_retry_cap=args.cold_retry_cap,has_lora=bool(lora),gpu_layers=args.gpu_ffn_blocks)
+        validate_rows(rows,mode,args.steps,cold_retry_cap=args.cold_retry_cap,has_lora=bool(lora),gpu_layers=args.gpu_ffn_blocks,template_rows=template_rows)
         if any(sha256_file(Path(p))!=value for p,value in bindings.items()) or \
             any(source_snapshot(Path(p))!=value for p,value in snapshot.items()):raise ValueError("runtime/source identity changed")
         times=[row["timings_seconds"]["request_wall"] for row in rows]

@@ -71,4 +71,8 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
                                     GraphGeometry expected, BackendPolicy policy,
                                     std::optional<int> calibrated_channels = std::nullopt,
                                     std::optional<int> channel_override = std::nullopt);
+// Explicit Private native geometry only. The original template is still
+// validated against the full model; no Public artifact is resized/relabelled.
+BuiltExecutor build_runtime_executor(const std::filesystem::path &,size_t,GraphGeometry,BackendPolicy,
+                                    std::optional<int>,std::optional<int>,std::optional<int> bucket_override);
 }

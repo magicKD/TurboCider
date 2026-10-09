@@ -97,6 +97,8 @@ class HybridFfn {
               const CalibrationWorkload *calibration = nullptr,
               std::optional<int> calibrated_channels = std::nullopt,
               std::optional<int> channel_override = std::nullopt);
+    HybridFfn(const std::filesystem::path &,int,int,size_t,std::atomic<bool> &,bool,
+              const CalibrationWorkload *,std::optional<int>,std::optional<int>,std::optional<int> bucket_override);
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.

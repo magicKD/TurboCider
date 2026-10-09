@@ -11,7 +11,16 @@ namespace tc::ane {
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
                                     GraphGeometry expected, BackendPolicy policy,
                                     std::optional<int> calibrated_channels,std::optional<int> channel_override) {
+    return build_runtime_executor(manifest,budget,expected,policy,calibrated_channels,channel_override,std::nullopt);
+}
+BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
+                                    GraphGeometry expected, BackendPolicy policy,
+                                    std::optional<int> calibrated_channels,std::optional<int> channel_override,
+                                    std::optional<int> bucket_override) {
     BuiltExecutor result;
+    if(bucket_override && (*bucket_override<32 || *bucket_override>8192 || *bucket_override%32 ||
+            policy.preferred!=BackendPreference::Private || !policy.allow_private || expected.kind!=Kind::SwiGLU || calibrated_channels))
+        throw std::runtime_error("Private bucket override requires rows32..8192 aligned32, explicit authorized SwiGLU and no calibration");
     const bool fp16_values=configured_fp16_bf16_values();
     if(fp16_values && (!policy.allow_private || policy.preferred!=BackendPreference::Private ||
                       expected.kind!=Kind::SwiGLU || expected.require_lora_inputs))
@@ -35,6 +44,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
     if(scope && !requested_group)throw std::runtime_error("A8 group scope requires explicit group size 256");
     if(requested_group && !try_private)throw std::runtime_error("group A8 requires an authorized private backend");
     const int channels = resolved_private_channel_count(expected.width, calibrated_channels,channel_override);
+    if(bucket_override && channels<=0)throw std::runtime_error("Private bucket override requires fixed positive intermediate channels");
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
     if(runtime_template_w8a8(manifest)) {
         if(policy.preferred!=BackendPreference::Public || channels || fp16_values || bf16_boundaries || requested_group)
@@ -49,6 +59,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
         if (shape.kind != expected.kind || shape.hidden != expected.hidden || shape.width != expected.width ||
             (expected.require_lora_inputs && !shape.lora_inputs))
             throw std::runtime_error("runtime ANE graph does not match model FFN geometry");
+        if(bucket_override)shape.rows=*bucket_override;
         if (calibrated_channels && channels == 0) {
             result.fallback_reason = "native channel calibration selected optimized GPU-only";
             return result;

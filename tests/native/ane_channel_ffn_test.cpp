@@ -280,6 +280,42 @@ int main(int argc,char**argv) {
             auto u=w.project_base_slice(input,p+"gate_up",f+first,f+first+count,0,h,false);auto hidden=silu(g)*u;
             return std::make_pair(w.project_base_slice(hidden,p+"out",0,h,first,first+count,false),hidden);};
         {
+            const auto original_rows=ane::runtime_template_shape(argv[1]).rows;
+            check(original_rows==33,"bucket fixture template unexpectedly changed");
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            for(int selected_rows:{64,96}) {
+                ane::HybridFfn resized(argv[1],h,f,512u<<20,cancelled,true,nullptr,std::nullopt,std::nullopt,selected_rows);
+                check(resized.available() && resized.metrics().bucket==selected_rows && resized.ane_channels()==512,
+                    "Private actual bucket override not selected");
+                resized.plan_block(0,67);resized.stage(0,67,sources);
+                auto actual=resized.run(0,px,full,cancelled,nullptr,partial);auto expected=full(px);mx::eval({actual,expected});
+                const float error=mx::sqrt(mx::sum(mx::square(mx::astype(actual,mx::float32)-mx::astype(expected,mx::float32)))/
+                    mx::sum(mx::square(mx::astype(expected,mx::float32)))).item<float>();
+                check(error<.05f && resized.metrics().runtime_calls==uint64_t((67+selected_rows-1)/selected_rows) &&
+                    resized.metrics().runtime_weight_channel_blocks==1 && !resized.metrics().runtime_failed,
+                    "resized private bucket lost actual all-row computation/call geometry");
+                auto bad=mx::concatenate({mx::full({1,64,h},.1f,mx::bfloat16),
+                    mx::full({1,3,h},NAN,mx::bfloat16)},1);
+                resized.plan_block(0,67);resized.stage(0,67,sources);int full_calls=0;
+                auto recovered=resized.run(0,bad,[&](const Tensor&x){++full_calls;return mx::full(x.shape(),7.f,x.dtype());},cancelled,nullptr,partial);
+                check(full_calls==1 && mx::all(recovered==Tensor(7.f,mx::bfloat16)).item<bool>() && resized.metrics().runtime_failed,
+                    "resized late chunk failure published partial scratch");
+            }
+            for(int invalid_rows:{-1,0,33,8193}) {
+                bool rejected=false;try{ane::HybridFfn invalid(argv[1],h,f,1,cancelled,true,nullptr,std::nullopt,std::nullopt,invalid_rows);}
+                catch(const std::exception&){rejected=true;}
+                check(rejected,"invalid bucket override reported successful fallback");
+            }
+            setenv("TURBOCIDER_ANE_BACKEND","public",1);
+            bool rejected=false;try{ane::HybridFfn invalid(argv[1],h,f,1,cancelled,true,nullptr,std::nullopt,512,64);}
+            catch(const std::exception&){rejected=true;}
+            check(rejected,"Public compiled artifact was resized/relabelled");
+            setenv("TURBOCIDER_ANE_BACKEND","private",1);
+            unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            check(ane::runtime_template_shape(argv[1]).rows==original_rows,"override changed checkpoint-independent template");
+            std::cout<<"PASS Private bucket override: unchanged template/full geometry, actual64/96-row native programs and call count, bounded policy and full late-chunk recovery\n";
+        }
+        {
             setenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","0",1);
             ane::HybridFfn legacy_policy(argv[1],h,f,512u<<20,cancelled,true);
             setenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","1",1);

@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+2026-10-09 Z512 的请求匹配 Private FFN bucket 接续见
+[长caption调用台阶与BF16/ConvRot/GGUF整请求](local512-z-matched-bucket-2026-10-09.md)。
+原桶够用时保持，越界才扩展；长caption有热请求收益，冷启动/可见颜色
+差异和未资格化边界保留。Qwen首步并行、encoder及真正GGUF提前解码
+仍在完整目标内，不因这项default-off优化完成而宣称整体完成。
+
 encoder源数组的有界复用、独立DiT/encoder channel override与真实两
 reference/LoRA组合见 [源复用与独立分区](local512-encoder-source-2026-10-07.md)。
 source只load一次、scale-cache真实命中，但公平GPU对照仍较快；保留

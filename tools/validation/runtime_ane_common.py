@@ -137,6 +137,28 @@ def gpu_layer_policy(value):
     return tuple(layers)
 
 
+def validate_z_matched_rows(rows,steps,layers=(),template_rows=0):
+    """Actual native bucket/call geometry, not an auto-profitability claim."""
+    if not rows or type(steps) is not int or steps<=0:raise ValueError("need actual matched-row requests")
+    previous_calls=previous_retries=0
+    for row in rows:
+        hybrid=row.get("hybrid") or {};runtime=hybrid.get("runtime_weight") or {}
+        tokens=row.get("text_tokens");bucket=hybrid.get("bucket")
+        actual_rows=1024+((tokens+31)//32)*32 if type(tokens) is int else 0
+        selected=template_rows if template_rows>=actual_rows and template_rows%32==0 else ((actual_rows+127)//128)*128
+        if row.get("model") not in ("z-image-turbo","z-image-turbo-gguf") or row.get("width")!=512 or row.get("height")!=512 or \
+            type(tokens) is not int or not 0<tokens<=7168 or type(bucket) is not int or \
+            bucket!=selected or \
+            "experimental request-matched Private FFN rows="+str(bucket) not in (row.get("acceleration_selection") or "") or \
+            runtime.get("executor_backend")!="private_ane" or runtime.get("partition_axis")!="intermediate_channels":
+            raise ValueError("matched rows require actual512 Private channel geometry and policy")
+        calls=session_counter(hybrid,"runtime_calls_session_total")
+        retries=session_counter(runtime,"overflow_retries_session_total")
+        if retries<previous_retries or calls-previous_calls!=steps*(32-len(layers))+retries-previous_retries:
+            raise ValueError("matched-row driver calls disagree with whole FFN/forced-GPU/retry work")
+        previous_calls=calls;previous_retries=retries
+
+
 def z_gpu_layer_environment(model_id, route, layers, routes):
     if layers is None:
         return {}

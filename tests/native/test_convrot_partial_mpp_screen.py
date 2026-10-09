@@ -13,6 +13,23 @@ STATE=importlib.util.module_from_spec(STATE_SPEC);STATE_SPEC.loader.exec_module(
 
 
 class ConvRotPartialScreenTests(unittest.TestCase):
+    def test_matched_bucket_requires_selected_grid_and_actual_calls(self):
+        rows=self.rows("original")
+        for row in rows:
+            row["hybrid"]["bucket"]=1152
+            row["acceleration_selection"]=SCREEN.BF16_MARKER+"; experimental request-matched Private FFN rows=1152"
+        SCREEN.validate_rows(rows,"bf16_matched",4)
+        for value in (1056,1088):
+            bad=copy.deepcopy(rows);bad[0]["hybrid"]["bucket"]=value
+            with self.assertRaises(ValueError):SCREEN.validate_rows(bad,"bf16_matched",4)
+        bad=copy.deepcopy(rows);bad[0]["acceleration_selection"]=SCREEN.BF16_MARKER
+        with self.assertRaises(ValueError):SCREEN.validate_rows(bad,"bf16_matched",4)
+        kept=copy.deepcopy(rows)
+        for row in kept:
+            row["hybrid"]["bucket"]=1056
+            row["acceleration_selection"]=SCREEN.BF16_MARKER+"; experimental request-matched Private FFN rows=1056"
+        SCREEN.validate_rows(kept,"bf16_matched",4,template_rows=1056)
+        with self.assertRaises(ValueError):SCREEN.validate_rows(rows,"bf16_matched",4,template_rows=1056)
     def rows(self,mode="mpp"):
         return [dict(steps=4,actual_denoise_steps=4,width=512,height=512,text_tokens=31,timings_seconds=dict(request_wall=7.0),
             acceleration_selection=SCREEN.MARKER if mode=="mpp" else "original",

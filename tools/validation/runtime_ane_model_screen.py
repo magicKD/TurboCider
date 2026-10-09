@@ -25,6 +25,7 @@ from runtime_ane_common import (
     validate_deferred_channel_join,
     gpu_layer_policy, z_gpu_layer_environment, validate_requested_gpu_layers,
     validate_fp32_channel_join,
+    validate_z_matched_rows,
 )
 from runtime_ane_memory import run_sampled, run_owned
 from runtime_ane_load import LoadObservation
@@ -136,6 +137,7 @@ def main():
                    help="private channel fixed-async owned lazy-join ablation; request_wall remains the timing scope")
     p.add_argument("--fp32-channel-join",action="store_true",
                    help="Private W8 F32 GPU partial restore/join; original BF16 hidden and ONE down-LoRA retained")
+    p.add_argument("--z-runtime-match-rows",action="store_true",help="Private fixed-channel resident512 bucket selected from actual padded caption; no Public artifact resize")
     p.add_argument("--z-runtime-gpu-blocks",type=gpu_layer_policy,
                    help="explicit complete GPU blocks by FFN ordinal; Z BF16/GGUF runtime only, never applied to GPU/frozen")
     p.add_argument("--qkv-manifest", type=Path,
@@ -202,6 +204,11 @@ def main():
     if args.runtime_backend != "public" and "runtime" not in routes:
         p.error("runtime backend selection requires runtime route")
     public_w8=args.runtime_backend=="public" and args.private_data_path=="w8a8"
+    if args.z_runtime_match_rows and (args.model_id not in ("z-image-turbo","z-image-turbo-gguf") or args.size!=512 or
+            args.runtime_backend!="private" or args.private_data_path!="w8a8" or not args.private_gpu_io or
+            not isinstance(args.private_channels,int) or not args.private_channels or args.fixed_async!="1" or
+            args.chunks!="1" or args.profile or "runtime" not in routes):
+        p.error("matched rows require Z512, fixed Private W8 GPU I/O, chunks1/fixed async and no profiling")
     if not 0<=args.weight_code_cache_bytes<=2<<30 or \
         ((args.weight_code_cache_bytes or args.weight_code_cache_mode!="copy") and
          ("runtime" not in routes or args.private_data_path!="w8a8" or not args.private_gpu_io)) or \
@@ -290,6 +297,7 @@ def main():
                "fixed_async": args.fixed_async,
                "defer_channel_join": args.defer_channel_join,
                "fp32_channel_join":args.fp32_channel_join,
+               "z_runtime_match_rows":args.z_runtime_match_rows,
                "z_runtime_gpu_blocks": args.z_runtime_gpu_blocks,
                "placement": "unknown",
                "profile": args.profile, "warm_repeats": args.warm_repeats,
@@ -363,6 +371,7 @@ def main():
             if args.fp32_channel_join:route_env["TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN"]="1"
             if args.fixed_async is not None:
                 route_env["TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC"] = args.fixed_async
+            if args.z_runtime_match_rows:route_env["TURBOCIDER_Z_RUNTIME_MATCH_ROWS"]="1"
             if args.defer_channel_join is not None:
                 route_env["TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN"] = args.defer_channel_join
             route_env["TURBOCIDER_ANE_BACKEND"] = args.runtime_backend
@@ -421,6 +430,7 @@ def main():
         active_runtime_rows = [row for row in rows if not native_auto or
             ((row.get("hybrid") or {}).get("runtime_weight") or {}).get("executor_backend")=="private_ane"]
         if route=="runtime":validate_requested_gpu_layers(rows,args.z_runtime_gpu_blocks,args.steps)
+        if route=="runtime" and args.z_runtime_match_rows:validate_z_matched_rows(rows,args.steps,args.z_runtime_gpu_blocks or (),json.loads(args.runtime_manifest.read_text())["rows"])
         if route=="runtime" and args.private_data_path=="w8a8" and args.weight_code_cache_bytes:
             validate_weight_code_cache(rows,args.weight_code_cache_bytes,args.weight_code_cache_mode)
         if route=="runtime":validate_fp32_channel_join(rows,args.fp32_channel_join,allow_gpu_decline=native_auto)
