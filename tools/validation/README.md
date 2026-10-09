@@ -22,6 +22,13 @@ native source record检查每请求loads1/2/3、retained0，不改写raw retenti
 metadata。反序须另起fresh output；完整条件和保留的失败见
 [当前base对照](../../docs/status/local512-qwen-frozen-base-2026-10-10.md)。
 
+Qwen原LoRA编辑首步缓存对照用 `--prefill-code-cache-bytes <budget>
+--joint-ab`，默认GPU/prefill/cache-copy/cache-surface四臂；可选三臂反序。
+仅缓存首步原W，decode保持完整GPU；验证actual cold fills/zero hits和warm进度、
+96 W producers及Shared Device的12 bootstrap/每prediction一个不可缓存A8。
+不把预算标记或ineligible误当未执行，也不追认memory fallback为混合。
+完整边界见[首步cache筛选](../../docs/status/local512-qwen-prefill-weight-cache-2026-10-10.md)。
+
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
 screen现有helper重导出和switch兼容接口保留，避免破坏已保存的复核脚本。
 Private W8A8 初筛使用 `--runtime-backend private --private-gpu-io

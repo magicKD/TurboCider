@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+2026-10-10 [Qwen首步GPU/ANE＋W缓存的完整单/双图正反序](local512-qwen-prefill-weight-cache-2026-10-10.md)
+已核对真实cold fill/warm hit及后五步GPU；surface几十ms优势在同任务
+反序翻转，继续cache off，避免额外1.0–1.3GB。保留双图大budget准入
+拒绝/完整GPU回退，不放宽guard、不以首步/缓存组件标签代替整图收益。
+
 2026-10-10 [实际独立stream有界ahead与四层真实FFN链](local512-affine-ahead-2026-10-10.md)
 已实现producer/ready消费、in-flight/escaped claims与独立target epoch，
 不是同步window重新贴标签。12个不同原source的链对immediate更快，

@@ -14,7 +14,7 @@ from pathlib import Path
 import statistics
 
 from qwen_encoder_residency_screen import (make_request, model_snapshot, validate_rows,
-    validate_shared_ranks, validate_b_epilogue, validate_joint_ab,validate_request_local_source)
+    validate_shared_ranks, validate_b_epilogue, validate_joint_ab,validate_request_local_source,validate_weight_code_cache)
 from runtime_ane_common import benchmark_environment, sha256_file, validate_deferred_channel_join
 from qwen_lora_source_proof import validate_source_proof
 from runtime_ane_load import LoadObservation
@@ -24,6 +24,41 @@ ROOT=Path(__file__).resolve().parents[2]
 MODES=("gpu","prefill","decode","all")
 LAYER_MODES=("gpu","prefill","prefill_first8","prefill_last8")
 LAYER_POLICIES={"prefill_first8":tuple(range(8)),"prefill_last8":tuple(range(24,32))}
+CACHE_MODES=("gpu","prefill","prefill_copy_cache","prefill_surface_cache")
+
+def phase_policy(mode):
+    return "gpu" if mode in ("gpu","frozen") else "prefill" if mode in (*LAYER_MODES,*CACHE_MODES) else mode
+
+def prefill_cache_policy(mode,budget):
+    return (budget,"surface" if mode=="prefill_surface_cache" else "copy") if mode in CACHE_MODES[2:] else (0,"copy")
+
+def validate_prefill_weight_cache(rows,budget,storage="copy"):
+    if len(rows)<3 or type(budget) is not int or not 0<=budget<=2<<30 or storage not in ("copy","surface"):
+        raise ValueError("prefill cache needs cold/two fresh warm receipts and explicit bounded policy")
+    validate_weight_code_cache(rows,budget,storage,cold_fill_only=True)
+    if not budget:return
+    names=("hits_session_total","misses_session_total","fills_session_total","declines_session_total","ineligible_session_total")
+    previous={name:0 for name in names};entries=None
+    for index,row in enumerate(rows):
+        phases=row.get("qwen_ffn_phases") or {};pre=phases.get("prefill") or {};decode=phases.get("decode") or {}
+        if phases.get("policy")!="prefill" or count(pre,"completed_channel_blocks_this_request")!=32 or \
+            count(decode,"completed_channel_blocks_this_request") or count(decode,"runtime_calls_this_request"):
+            raise ValueError("prefill cache must not stage/cache W during complete-GPU decode")
+        cache=row["hybrid"]["runtime_weight"]["weight_code_cache"]
+        current={name:count(cache,name) for name in names}
+        delta={name:current[name]-previous[name] for name in names}
+        if entries is None:entries=count(cache,"ready_entries")
+        # Shared Device also sees transposed A8 (never cache eligible).
+        # Private self-test stages three mutable W + one A8 three times=12;
+        # each actual prediction stages one A8 thereafter, not a W miss.
+        activation_stages=count(pre,"runtime_calls_this_request")
+        if not 0<entries<=96 or count(cache,"entries")!=entries or count(cache,"ready_entries")!=entries or \
+            count(cache,"evictions_session_total") or delta["ineligible_session_total"]!=activation_stages+(12 if index==0 else 0) or \
+            delta["hits_session_total"]+delta["misses_session_total"]!=96 or \
+            delta["fills_session_total"]+delta["declines_session_total"]!=delta["misses_session_total"] or \
+            delta["hits_session_total"]!=(entries if index else 0) or delta["fills_session_total"]!=(0 if index else entries):
+            raise ValueError("prefill cache needs actual cold fills and warm admitted-source reuse; 96 weight producers/request")
+        previous=current
 
 def reference_resize_flags(references,lora):
     return {"TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC":"1"} if references and lora else {}
@@ -163,6 +198,7 @@ def main():
     parser.add_argument("--fused-b",action="store_true",help="same fused B precision on every arm; requires the real six-step adapter")
     parser.add_argument("--joint-ab",action="store_true",help="same existing joint BF16 A/B/F32-rank profile on every arm; excludes fused-B-only")
     parser.add_argument("--prefill-layer-screen",action="store_true",help="GPU/all32 parallel/first8 GPU/last8 GPU, remaining prefill FFNs parallel and all decode complete GPU")
+    parser.add_argument("--prefill-code-cache-bytes",type=int,help="real joint-LoRA edit: GPU/prefill/no-cache/copy/surface; same all32 prefill and complete-GPU decode, bytes1..2147483648")
     parser.add_argument("--defer-prefill-join",action="store_true",help="same existing owned deferred join on all prefill hybrid arms")
     parser.add_argument("--channels",type=int,default=5120)
     parser.add_argument("--modes",help="matched subset containing gpu plus at least one known phase/layer arm")
@@ -172,9 +208,12 @@ def main():
     parser.add_argument("--timeout",type=int,default=900)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
+    if args.prefill_code_cache_bytes is not None and (not 0<args.prefill_code_cache_bytes<=2<<30 or not args.lora or not args.joint_ab or \
+        args.generation or args.frozen_manifest or args.prefill_layer_screen):
+        parser.error("prefill cache requires bounded positive budget, original joint LoRA edit and no generation/frozen/layer screen")
     if args.frozen_manifest and (not args.generation or args.lora or args.prefill_layer_screen):
         parser.error("frozen comparison requires original generation base without LoRA/layer policy")
-    allowed=LAYER_MODES if args.prefill_layer_screen else (*MODES,"frozen") if args.frozen_manifest else MODES
+    allowed=CACHE_MODES if args.prefill_code_cache_bytes is not None else LAYER_MODES if args.prefill_layer_screen else (*MODES,"frozen") if args.frozen_manifest else MODES
     modes=args.modes.split(",") if args.modes else list(allowed);order=args.order.split(",") if args.order else modes
     if len(modes)<2 or len(set(modes))!=len(modes) or "gpu" not in modes or not set(modes)<=set(allowed):
         parser.error("need complete GPU plus distinct known phase arms")
@@ -185,7 +224,7 @@ def main():
     if not 0<args.channels<12288 or args.channels%512:parser.error("fixed Private channels must be aligned and partial")
     if args.fused_b and not args.lora:parser.error("fused B requires a real unmerged adapter")
     if args.joint_ab and (not args.lora or args.fused_b):parser.error("joint A/B requires a real adapter and excludes B-only")
-    if args.defer_prefill_join and any(mode not in LAYER_MODES for mode in modes):parser.error("deferred join requires prefill-only arms")
+    if args.defer_prefill_join and any(mode not in (*LAYER_MODES,*CACHE_MODES) for mode in modes):parser.error("deferred join requires prefill-only arms")
     if not 1<=args.timeout<=3600:parser.error("timeout must be1..3600")
     if args.output.exists() or args.output.is_symlink():parser.error("choose a fresh output directory")
     cli=args.cli.resolve(strict=True);library=cli.parent/"libturbocider.dylib"
@@ -198,6 +237,7 @@ def main():
     summary=dict(schema="tc-qwen-ffn-phase-screen-v1",time_utc=datetime.now(timezone.utc).isoformat(),status="incomplete",
         qualification_passed=False,order=order,channels=args.channels,fused_b=args.fused_b,joint_ab=args.joint_ab,
         prefill_layer_screen=args.prefill_layer_screen,defer_prefill_join=args.defer_prefill_join,generation=args.generation,
+        prefill_code_cache_bytes=args.prefill_code_cache_bytes,
         operation="image.generate" if args.generation else "image.edit",frozen_manifest=str(frozen) if frozen else None,
         request_local_encoder=args.request_local_encoder,prompts=args.prompt,
         source_identities=before,model_snapshot=model_before,
@@ -205,7 +245,7 @@ def main():
         scope="serial same-library fresh-condition native request walls; explicit Private channel FFN and complete GPU control; host diagnostics, not physical overlap proof",trials=[])
     target=args.output/"summary.json";target.write_text(json.dumps(summary,indent=2)+"\n")
     for mode in order:
-        policy="gpu" if mode in ("gpu","frozen") else "prefill" if mode in LAYER_MODES else mode
+        policy=phase_policy(mode)
         gpu_layers=LAYER_POLICIES.get(mode,())
         if model_snapshot(model)!=model_before:raise ValueError("model generation changed between arms")
         env=benchmark_environment();env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="0" if args.request_local_encoder else "1",TURBOCIDER_QWEN21_PROFILE_STEPS="1",
@@ -214,6 +254,9 @@ def main():
             TURBOCIDER_QWEN21_LORA_BF16_AB="1" if args.joint_ab else "0")
         if gpu_layers:env["TURBOCIDER_QWEN21_PREFILL_GPU_FFN_BLOCKS"]=",".join(map(str,gpu_layers))
         env.update(reference_resize_flags(refs,lora))
+        cache_bytes,cache_storage=prefill_cache_policy(mode,args.prefill_code_cache_bytes)
+        if args.prefill_code_cache_bytes is not None:env.update(TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES=str(cache_bytes),
+            TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_MODE=cache_storage)
         if mode not in ("gpu","frozen"):
             env.update(TURBOCIDER_ANE_BACKEND="private",TURBOCIDER_ALLOW_PRIVATE_ANE="1",TURBOCIDER_PRIVATE_ANE_CHANNELS=str(args.channels),
                 TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",TURBOCIDER_PRIVATE_ANE_GPU_IO="1",TURBOCIDER_RUNTIME_ANE_CHUNKS="1",
@@ -244,6 +287,7 @@ def main():
             validate_rows(rows,"gpu_weights" if mode=="gpu" else "dit_weights",len(args.prompt),True,None,args.channels,
                 request_local_source=args.request_local_encoder)
             validate_phases(rows,policy,bool(lora),gpu_layers)
+        if args.prefill_code_cache_bytes is not None and mode!="gpu":validate_prefill_weight_cache(rows,cache_bytes,cache_storage)
         if lora:
             if args.joint_ab:validate_joint_ab(rows,True)
             else:validate_b_epilogue(rows,args.fused_b)
@@ -258,6 +302,7 @@ def main():
             warm_prefill_median_seconds=statistics.median(r["qwen_ffn_phases"]["prefill"]["step_seconds"] for r in rows[1:]),
             warm_decode_total_median_seconds=statistics.median(r["qwen_ffn_phases"]["decode"]["step_seconds"] for r in rows[1:]),
             memory=memory,load=load,png_sha256=[sha256_file(args.output/f"{mode}-{i}.png") for i in range(len(rows))])
+        if args.prefill_code_cache_bytes is not None:trial["weight_code_cache_receipts"]=[((r.get("hybrid") or {}).get("runtime_weight") or {}).get("weight_code_cache") for r in rows]
         summary["trials"].append(trial);target.write_text(json.dumps(summary,indent=2)+"\n")
     summary["status"]="complete_diagnostic";target.write_text(json.dumps(summary,indent=2)+"\n");print(json.dumps(summary,indent=2))
 

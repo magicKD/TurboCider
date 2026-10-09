@@ -144,9 +144,9 @@ def validate_down_ranks(rows, enabled):
         previous_blocks=blocks;previous_arrays=arrays
 
 
-def validate_weight_code_cache(rows, budget, storage="copy"):
+def validate_weight_code_cache(rows, budget, storage="copy",cold_fill_only=False):
     previous_hits=0
-    for row in rows:
+    for index,row in enumerate(rows):
         cache=((row.get("hybrid") or {}).get("runtime_weight") or {}).get("weight_code_cache")
         if not isinstance(cache,dict) or cache.get("enabled") is not (budget>0) or \
             type(cache.get("budget_bytes")) is not int or cache.get("budget_bytes")!=budget:
@@ -159,14 +159,15 @@ def validate_weight_code_cache(rows, budget, storage="copy"):
         values=[cache.get(key) for key in names]
         if any(type(value) is not int or value<0 for value in values):raise ValueError("invalid converted code cache counters")
         hits,misses,fills,failed,entries,ready,retained,live,peak,*_=values
+        cold_zero=cold_fill_only and index==0 and hits==0 and fills>0
         if budget:
-            if hits<=previous_hits or not 0<ready<=entries<=128 or not 0<retained<=live<=peak<=budget or failed or fills>misses:
+            if (hits<=previous_hits and not cold_zero) or not 0<ready<=entries<=128 or not 0<retained<=live<=peak<=budget or failed or fills>misses:
                 raise ValueError("need real successful converted-code reuse within admitted capacity")
         elif any(values):raise ValueError("disabled converted-code cache executed/retained work")
         previous_hits=hits
         copy_hits=cache.get("copy_hits_session_total");bind_hits=cache.get("surface_bind_hits_session_total")
         if any(type(v) is not int or v<0 for v in (copy_hits,bind_hits)) or copy_hits+bind_hits!=hits or \
-            (storage=="surface" and budget and (bind_hits<=0 or copy_hits)) or (storage=="copy" and bind_hits):
+            (storage=="surface" and budget and ((bind_hits<=0 and not cold_zero) or copy_hits)) or (storage=="copy" and bind_hits):
             raise ValueError("need actual separately counted copy/surface reuse, not storage intent")
 
 
