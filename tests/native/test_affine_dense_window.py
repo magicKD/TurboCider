@@ -15,10 +15,12 @@ class AffineDenseWindowTests(unittest.TestCase):
             subprocess.run(["bash", "tools/native/build_gpu_weight_consumer_probe.sh"], cwd=ROOT, check=True,
                            env={**os.environ, "TURBOCIDER_NATIVE_OUT": temporary}, capture_output=True, text=True)
             result = subprocess.run([str(Path(temporary) / "gpu-weight-consumer-probe")], cwd=ROOT,
-                                    capture_output=True, text=True, timeout=60)
+                                    capture_output=True, text=True, timeout=180)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS 12 typed affine dense window cases", result.stdout)
             self.assertIn("PASS 12 typed prepare attribution cases", result.stdout)
+            self.assertIn("PASS 144 fused affine finite numeric/lifetime cases and 252 malformed contracts",result.stdout)
+            self.assertIn("PASS 48 fused boundary coefficient cases and 240 last-group nonfinite/overflow rejections",result.stdout)
             for reuses in ("0","17"):
                 result = subprocess.run([str(Path(temporary) / "gpu-weight-consumer-probe"),
                     "gguf","never-read.gguf","unused", "33","9",reuses], cwd=ROOT,
@@ -35,6 +37,13 @@ class AffineDenseWindowTests(unittest.TestCase):
                     self.assertIn("MPP screen requires M>=32 and no actual-reuses option",result.stderr)
                     self.assertNotIn("cannot open GGUF",result.stderr)
                     self.assertNotIn("cannot open ConvRot",result.stderr)
+            for mode in ("gguf-finite","convrot-finite"):
+                result=subprocess.run([str(Path(temporary)/"gpu-weight-consumer-probe"),
+                    mode,"never-read.gguf","unused","1056","9","1"],cwd=ROOT,capture_output=True,text=True,timeout=30)
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn("fused finite screen requires no reuse option",result.stderr)
+                self.assertNotIn("cannot open GGUF",result.stderr)
+                self.assertNotIn("cannot open ConvRot",result.stderr)
             for mode in ("gguf-prepare","convrot-prepare"):
                 for rows,extra in (("33",[]),("1",["1"])):
                     result=subprocess.run([str(Path(temporary)/"gpu-weight-consumer-probe"),

@@ -7,6 +7,7 @@
 #include "backends/affine_gpu_shared.hpp"
 #include "backends/mlx_fd_reader.hpp"
 #include "core/gguf_affine.hpp"
+#include "affine_dense_finite_candidate.hpp"
 #include <CommonCrypto/CommonDigest.h>
 #include <chrono>
 #include <cmath>
@@ -90,6 +91,109 @@ Packed fixture(int bits, int group, mx::Dtype dtype, int seed) {
     auto arrays = mx::quantize(weight, group, bits);
     mx::eval(arrays);
     return {arrays[0], arrays[1], arrays[2]};
+}
+void fused_self_test() {
+    int cases=0,rejections=0;
+    for(int bits:{4,8})for(int group:{32,64,128})for(auto dtype:{mx::float16,mx::bfloat16})for(int rows:{1,3,65}) {
+        const int columns=group*3;
+        auto weight=mx::astype(mx::random::normal({rows+2,columns},mx::float32,mx::random::key(47))*.03f,dtype);
+        auto arrays=mx::quantize(weight,group,bits);mx::eval(arrays);
+        // Prepared row-contiguous source views with nonzero physical offsets.
+        Packed source{mx::slice(arrays[0],{1,0},{rows+1,arrays[0].shape(1)}),
+            mx::slice(arrays[1],{1,0},{rows+1,arrays[1].shape(1)}),mx::slice(arrays[2],{1,0},{rows+1,arrays[2].shape(1)})};
+        mx::eval({source[0],source[1],source[2]});
+        auto expected=mx::dequantize(source[0],source[1],source[2],group,bits,"affine",std::nullopt,dtype);mx::eval(expected);
+        for(int batch:{1,4})for(int tg:{128,256}) {
+            const auto g=research::affine_finite::geometry(source,bits,group,batch);
+            MemoryLedger ledger(g.dense_upper+g.status_upper);
+            {
+                auto dense=research::affine_finite::prepare(source,bits,group,ledger,1,batch,tg);
+                require(same_bits(dense,expected),"fused affine changed original typed coefficients");
+                require(ledger.snapshot().storage_count==1 && !ledger.snapshot().reserved_bytes,
+                    "fused finite status survived publication or left reservation");
+                auto reader=mx::sum(mx::astype(dense,mx::float32));dense=Tensor(0.f);
+                require(ledger.snapshot().storage_count==1,"fused prepare lost escaped lazy reader claim");
+                bool denied=false;try{(void)research::affine_finite::prepare(source,bits,group,ledger,2,batch,tg);}
+                catch(const std::exception &){denied=true;}
+                require(denied && ledger.snapshot().storage_count==1 && !ledger.snapshot().reserved_bytes,
+                    "fused prepare admitted next output over escaped reader or leaked reservation");
+                mx::eval(reader);
+            }
+            mx::synchronize();require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"fused reader claim leaked");
+            auto bad=source;bad[1]=mx::contiguous(mx::full(source[1].shape(),INFINITY,dtype));mx::eval(bad[1]);
+            bool finite_rejected=false;
+            try{(void)research::affine_finite::prepare(bad,bits,group,ledger,3,batch,tg);}
+            catch(const std::exception &error){finite_rejected=std::string(error.what()).find("rejects nonfinite")!=std::string::npos;}
+            require(finite_rejected && !ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,
+                "fused nonfinite status did not reject or leaked claims");
+            {auto recovered=research::affine_finite::prepare(source,bits,group,ledger,4,batch,tg);
+                require(same_bits(recovered,expected),"fused prepare failed clean refill after rejection");}
+            mx::synchronize();require(!ledger.snapshot().storage_bytes,"fused refill leaked claim");
+            MemoryLedger no_status(g.dense_upper);bool status_rejected=false;
+            try{(void)research::affine_finite::prepare(source,bits,group,no_status,5,batch,tg);}
+            catch(const std::exception &error){status_rejected=std::string(error.what()).find("finite-status admission denied")!=std::string::npos;}
+            require(status_rejected && !no_status.snapshot().storage_bytes && !no_status.snapshot().reserved_bytes,
+                "fused prepare did not reserve status capacity separately");
+            ++cases;
+        }
+        MemoryLedger empty(1<<20);
+        for(int invalid=0;invalid<7;++invalid) {
+            auto malformed=source;int bad_bits=bits,bad_group=group,bad_batch=1,bad_tg=128;uint64_t generation=1;
+            if(invalid==0)bad_bits=2;
+            if(invalid==1)bad_group=16;
+            if(invalid==2)bad_batch=2;
+            if(invalid==3)bad_tg=64;
+            if(invalid==4)generation=0;
+            if(invalid==5)malformed[1]=mx::astype(malformed[1],mx::float32);
+            if(invalid==6)malformed[2]=mx::slice(malformed[2],{0,0},{rows,malformed[2].shape(1)-1});
+            bool denied=false;try{(void)research::affine_finite::prepare(malformed,bad_bits,bad_group,empty,generation,bad_batch,bad_tg);}
+            catch(const std::exception &){denied=true;}
+            require(denied && !empty.snapshot().storage_bytes && !empty.snapshot().reserved_bytes,
+                "malformed fused recipe reached allocation/publication");++rejections;
+        }
+    }
+    std::cout<<"PASS "<<cases<<" fused affine finite numeric/lifetime cases and "<<rejections
+        <<" malformed contracts: original typed coefficients, row offsets, small/tail SIMD, finite reject/refill, status admission, escaped readers\n";
+    require(cases==144 && rejections==252,"unexpected fused affine case count");
+    int boundary_cases=0,finite_failures=0;
+    for(int bits:{4,8})for(int group:{32,64,128})for(auto dtype:{mx::float16,mx::bfloat16}) {
+        const int rows=3,columns=group*3,groups=rows*columns/group;
+        std::vector<uint32_t> codes(size_t(rows*columns/(32/bits)));
+        for(size_t i=0;i<codes.size();++i)codes[i]=uint32_t(i)*0x9e3779b9u;
+        codes.back()=UINT32_MAX;
+        std::vector<float> scales(static_cast<size_t>(groups)),biases(static_cast<size_t>(groups));
+        const std::array<float,9> s{0.f,-0.f,-.03f,.01f,std::ldexp(1.f,-20),std::ldexp(1.f,-24),1.f,.5f,.125f};
+        const std::array<float,9> b{0.f,-0.f,.2f,-.1f,std::ldexp(1.f,-18),-.000001f,-2.f,.1f,-float((1<<bits)-1)*.125f};
+        std::copy(s.begin(),s.end(),scales.begin());std::copy(b.begin(),b.end(),biases.begin());
+        auto meta=[&](const std::vector<float> &values){return mx::astype(Tensor(values.data(),{rows,columns/group},mx::float32),dtype);};
+        Packed source{Tensor(codes.data(),{rows,columns/(32/bits)},mx::uint32),meta(scales),meta(biases)};
+        mx::eval({source[0],source[1],source[2]});
+        auto expected=mx::dequantize(source[0],source[1],source[2],group,bits,"affine",std::nullopt,dtype);mx::eval(expected);
+        for(int batch:{1,4})for(int tg:{128,256}) {
+            const auto g=research::affine_finite::geometry(source,bits,group,batch);MemoryLedger ledger(g.dense_upper+g.status_upper);
+            {auto dense=research::affine_finite::prepare(source,bits,group,ledger,11,batch,tg);
+                require(same_bits(dense,expected),"fused boundary/cancellation/subnormal coefficient changed");}
+            ++boundary_cases;mx::synchronize();
+            for(int variant=0;variant<5;++variant) {
+                auto bad=source;auto ss=scales,bb=biases;
+                if(variant==0)ss.back()=INFINITY;
+                if(variant==1)ss.back()=NAN;
+                if(variant==2)bb.back()=-INFINITY;
+                if(variant==3)bb.back()=NAN;
+                if(variant==4)ss.back()=dtype==mx::float16?65504.f:3e38f;
+                bad[1]=meta(ss);bad[2]=meta(bb);mx::eval({bad[1],bad[2]});
+                if(variant==4)require(mx::all(mx::isfinite(bad[1])).item<bool>() && mx::all(mx::isfinite(bad[2])).item<bool>(),
+                    "overflow control must start with finite original metadata");
+                bool denied=false;try{(void)research::affine_finite::prepare(bad,bits,group,ledger,12,batch,tg);}
+                catch(const std::exception &error){denied=std::string(error.what()).find("rejects nonfinite")!=std::string::npos;}
+                require(denied && !ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,
+                    "fused last-group nonfinite/typed overflow escaped SIMD status or rollback");++finite_failures;
+            }
+        }
+    }
+    std::cout<<"PASS "<<boundary_cases<<" fused boundary coefficient cases and "<<finite_failures
+        <<" last-group nonfinite/overflow rejections: signed zero, cancellation, tiny metadata, finite-metadata overflow\n";
+    require(boundary_cases==48 && finite_failures==240,"unexpected fused boundary case count");
 }
 void self_test() {
     int cases = 0;
@@ -298,6 +402,88 @@ void benchmark_prepare(const Packed &packed,int bits,int iterations,bool convrot
     std::cout<<"],\"dense_claim_bytes_after_cleanup\":0,\"qualification_passed\":false,\"default_route_changed\":false,"
         "\"asynchronous_layer_ahead_decode_implemented\":false,\"scope\":\"guarded synchronous prepare attribution with perturbing eval boundaries; host spans, not device timestamps or a faster consumer\","
         "\"excludes\":[\"source-read/packing\",\"GEMM/complete-consumer-window\",\"full-model/LoRA/media\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
+}
+void benchmark_finite(const Packed &packed,int bits,int rows,int iterations,bool convrot,const std::string &source_hash) {
+    const int n=packed[0].shape(0),k=packed[1].shape(1)*32;const auto dtype=packed[1].dtype();
+    auto x=mx::astype(mx::reshape(mx::sin(mx::arange(rows*k,mx::float32)*.017f),{1,rows,k}),dtype);
+    if(convrot)x=convrot_kernel::rotate(x,convrot_kernel::Rotation::Shared);
+    mx::eval({x,packed[0],packed[1],packed[2]});
+    const auto g=research::affine_finite::geometry(packed,bits,32,1);
+    MemoryLedger ledger(2*g.dense_upper+g.status_upper);AffineDenseWindow window(ledger,g.dense_upper,1);
+    struct Recipe{const char *name;int batch,tg;};
+    const std::array<Recipe,5> recipes{{{"original_window",0,0},{"fused_b1_t128",1,128},
+        {"fused_b1_t256",1,256},{"fused_b4_t128",4,128},{"fused_b4_t256",4,256}}};
+    std::array<uint64_t,5> completed_prepares{};
+    auto prepare=[&](size_t index) {
+        auto dense=index?research::affine_finite::prepare(packed,bits,32,ledger,1,recipes[index].batch,recipes[index].tg):
+            window.prepare(packed,bits,32,source_hash,1);
+        ++completed_prepares[index];return dense;
+    };
+    {
+        auto control=prepare(0);
+        for(size_t i=1;i<recipes.size();++i){auto candidate=prepare(i);require(same_bits(candidate,control),"real fused coefficients changed");}
+    }
+    window.clear();mx::synchronize();require(!ledger.snapshot().storage_bytes,"fused coefficient preflight retained reader");
+    std::vector<bool> output_exact;std::vector<double> output_rel;
+    auto packed_output=mx::quantized_matmul(x,packed[0],packed[1],packed[2],true,32,bits,"affine");mx::eval(packed_output);
+    require(mx::all(mx::isfinite(packed_output)).item<bool>(),"packed complete-window control nonfinite");
+    for(size_t i=0;i<recipes.size();++i) {
+        {
+            auto dense=prepare(i),y=mx::matmul(x,mx::transpose(dense));mx::eval(y);
+            require(mx::all(mx::isfinite(y)).item<bool>(),"fused consumer nonfinite");
+            auto a=mx::astype(packed_output,mx::float32),b=mx::astype(y,mx::float32);
+            const double rel=mx::sqrt(mx::sum(mx::square(a-b))/mx::maximum(mx::sum(mx::square(a)),Tensor(1e-20f))).item<float>();
+            require(std::isfinite(rel) && rel<=.05,"fused complete-window consumer error exceeds component budget");
+            output_rel.push_back(rel);output_exact.push_back(same_bits(y,packed_output));
+        }
+        window.clear();mx::synchronize();require(!ledger.snapshot().storage_bytes,"fused consumer preflight retained reader");
+    }
+    std::vector<std::vector<double>> prepare_ms(recipes.size()),window_ms(recipes.size());std::vector<double> packed_ms;
+    auto run_prepare=[&](size_t index) {
+        require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"previous prepare left readers");
+        const auto start=Clock::now();{auto dense=prepare(index);prepare_ms[index].push_back(elapsed(start));}
+        window.clear();mx::synchronize();
+    };
+    auto run_window=[&](size_t index) {
+        require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"previous complete window left readers");
+        const auto start=Clock::now();
+        {auto dense=prepare(index),y=mx::matmul(x,mx::transpose(dense));mx::eval(y);window_ms[index].push_back(elapsed(start));}
+        window.clear();mx::synchronize();
+    };
+    auto run_packed=[&] {const auto start=Clock::now();auto y=mx::quantized_matmul(x,packed[0],packed[1],packed[2],true,32,bits,"affine");
+        mx::eval(y);packed_ms.push_back(elapsed(start));};
+    for(int warm=0;warm<3;++warm){run_packed();for(size_t i=0;i<recipes.size();++i){run_prepare(i);run_window(i);}}
+    packed_ms.clear();for(auto &times:prepare_ms)times.clear();for(auto &times:window_ms)times.clear();
+    for(int sample=0;sample<iterations;++sample) {
+        for(size_t visit=0;visit<recipes.size();++visit)run_prepare((visit+sample)%recipes.size());
+        // Cycle complete decode+GEMM and the actual packed control, not a sum
+        // of separately measured medians. Every dense trial is a fresh miss.
+        for(size_t visit=0;visit<=recipes.size();++visit) {
+            const size_t index=(visit+sample)%(recipes.size()+1);
+            if(index==recipes.size())run_packed();else run_window(index);
+        }
+    }
+    require(!ledger.snapshot().storage_bytes && !ledger.snapshot().reserved_bytes,"fused screen leaked backing claims");
+    require(!window.stats().hits && window.stats().misses==completed_prepares[0],"fused control must perform actual fresh window misses");
+    for(auto completed:completed_prepares)require(completed==uint64_t(8+2*iterations),"fused recipe did not complete all declared preparations");
+    std::cout<<std::setprecision(12)<<"{\"schema\":\"tc-affine-fused-finite-screen-v1\",\"basis\":\""
+        <<(convrot?"Comfy-H256-legacy-BF16-scale":"GGUF-native-affine-FP16")<<"\",\"source_payload_or_codes_sha256\":\""<<source_hash
+        <<"\",\"bits\":"<<bits<<",\"M\":"<<rows<<",\"N\":"<<n<<",\"K\":"<<k<<",\"dense_bytes\":"<<g.dense_bytes
+        <<",\"largest_status_bytes\":"<<g.status_bytes<<",\"shared_ledger_budget\":"<<2*g.dense_upper+g.status_upper
+        <<",\"warmups_per_arm\":3,\"samples_per_arm\":"<<iterations<<",\"actual_reuses\":1,\"typed_weight_coefficients_exact\":true,"
+        "\"packed_median_ms\":"<<median(packed_ms)<<",\"packed_samples_ms\":";samples(packed_ms);std::cout<<",\"recipes\":[";
+    for(size_t i=0;i<recipes.size();++i) {
+        const auto &r=recipes[i];const auto rg=research::affine_finite::geometry(packed,bits,32,r.batch?r.batch:1);
+        std::cout<<(i?",":"")<<"{\"name\":\""<<r.name<<"\",\"word_batch\":"<<r.batch<<",\"threadgroup\":"<<r.tg
+            <<",\"status_bytes\":"<<(i?rg.status_bytes:0)<<",\"completed_prepares\":"<<completed_prepares[i]<<",\"prepare_median_ms\":"<<median(prepare_ms[i])
+            <<",\"complete_window_median_ms\":"<<median(window_ms[i])<<",\"output_relative_l2_vs_packed\":"<<output_rel[i]
+            <<",\"output_byte_exact_vs_packed\":"<<(output_exact[i]?"true":"false")<<",\"prepare_samples_ms\":";samples(prepare_ms[i]);
+        std::cout<<",\"complete_window_samples_ms\":";samples(window_ms[i]);std::cout<<'}';
+    }
+    std::cout<<"],\"original_window_cache_hits\":"<<window.stats().hits<<",\"original_window_misses\":"<<window.stats().misses
+        <<",\"dense_claim_bytes_after_cleanup\":0,\"qualification_passed\":false,\"default_route_changed\":false,"
+        "\"asynchronous_layer_ahead_decode_implemented\":false,\"scope\":\"actual fresh guarded prepare and decode+one GEMM, cyclic-order serial host spans, not model or physical overlap\","
+        "\"excludes\":[\"source-read/packing\",\"input-rotation\",\"LoRA/full-model/media\",\"whole-process-memory\",\"ANE/physical-overlap\"]}\n";
 }
 void benchmark(const Packed &packed, int bits, int rows, int iterations, bool convrot,
                const std::string &source_hash) {
@@ -614,15 +800,18 @@ int main(int argc, char **argv) {
     try {
         configure_streams();
         mx::set_cache_limit(256ull << 20);
-        if (argc == 1) { self_test(); return 0; }
+        if (argc == 1) { self_test();fused_self_test(); return 0; }
+        if (argc == 2 && std::string(argv[1])=="--fused-self-test") {fused_self_test();return 0;}
         require((argc == 6 || argc == 7) && (std::string(argv[1]) == "gguf" || std::string(argv[1]) == "convrot" ||
                 std::string(argv[1]) == "gguf-mpp" || std::string(argv[1]) == "convrot-mpp" ||
                 std::string(argv[1]) == "gguf-shared" || std::string(argv[1]) == "convrot-shared" ||
-                std::string(argv[1]) == "gguf-prepare" || std::string(argv[1]) == "convrot-prepare"),
-                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations] or [gguf-shared|convrot-shared checkpoint tensor/prefix M iterations [selected-columns]] or [gguf-prepare|convrot-prepare checkpoint tensor/prefix 1 iterations]");
+                std::string(argv[1]) == "gguf-prepare" || std::string(argv[1]) == "convrot-prepare" ||
+                std::string(argv[1]) == "gguf-finite" || std::string(argv[1]) == "convrot-finite"),
+                "usage: gpu-weight-consumer-probe [gguf|convrot checkpoint tensor/prefix M iterations [actual-reuses]] or [gguf-mpp|convrot-mpp checkpoint tensor/prefix M iterations] or [gguf-shared|convrot-shared checkpoint tensor/prefix M iterations [selected-columns]] or [gguf-prepare|convrot-prepare checkpoint tensor/prefix 1 iterations] or [gguf-finite|convrot-finite checkpoint tensor/prefix M iterations]");
         const bool mpp=std::string(argv[1]).ends_with("-mpp");
         const bool shared=std::string(argv[1]).ends_with("-shared");
         const bool prepare=std::string(argv[1]).ends_with("-prepare");
+        const bool finite=std::string(argv[1]).ends_with("-finite");
         const int rows = std::stoi(argv[4]), iterations = std::stoi(argv[5]);
         const int reuses = argc == 7 ? std::stoi(argv[6]) : 0;
         require(rows >= 1 && rows <= 4224 && iterations >= 9 && iterations <= 99 && iterations % 2,
@@ -630,11 +819,13 @@ int main(int argc, char **argv) {
         require(argc != 7 || shared || (reuses >= 1 && reuses <= 16),"actual-reuses must be 1..16");
         require(!mpp || (argc==6 && rows>=32),"MPP screen requires M>=32 and no actual-reuses option");
         require(!prepare || (argc==6 && rows==1),"prepare attribution requires M=1 and no reuse option");
+        require(!finite || argc==6,"fused finite screen requires no reuse option");
         int bits = 8;
         std::string hash;
         const bool convrot = std::string(argv[1]).starts_with("convrot");
         auto source = convrot ? load_convrot(argv[2], argv[3], hash) : load_gguf(argv[2], argv[3], bits, hash);
-        if(prepare)benchmark_prepare(source,bits,iterations,convrot,hash);
+        if(finite)benchmark_finite(source,bits,rows,iterations,convrot,hash);
+        else if(prepare)benchmark_prepare(source,bits,iterations,convrot,hash);
         else if(shared)benchmark_shared(source,bits,rows,iterations,convrot,hash,reuses);
         else if(mpp)benchmark_mpp(source,bits,rows,iterations,convrot,hash);
         else if (reuses) benchmark_reuse(source,bits,rows,iterations,reuses,convrot,hash);

@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+2026-10-10 [GPU融合typed解码与finite status](local512-affine-fused-finite-2026-10-10.md)
+已实现并实测：75MiB准备约3.9→1.7–1.8ms，actual R1 decode+GEMM
+约10.3–10.5→8.0ms，仍慢于packed约6.1–6.6ms。不接默认每层dense重解码；
+继续真正有界ahead-decode，不把准备/组件收益或精确系数当完整模型验收。
+
 2026-10-10 GGUF/ConvRot准备路径接续见
 [typed解码与finite scan的实际成本](local512-gguf-prepare-parts-2026-10-10.md)。
 三个真实75MiB权重的归因中finite graph+eval约2.6ms，解码约1.9ms；
