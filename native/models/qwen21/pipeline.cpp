@@ -212,9 +212,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool hybrid_requested = r.execution == "gpu_ane" && !runtime_requested && !qkv_requested;
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
     require(binary_option_or_unset(encoder_weights_flag),"Qwen encoder weight retention requires 0 or 1");
-    const bool retain_encoder_weights=option_enabled(encoder_weights_flag);
     const bool gguf_transformer=transformer_source_.extension()==".gguf";
     const bool gguf_encoder=encoder_source_.extension()==".gguf";
+    const bool fast_encoder_default=gguf_fast_defaults_enabled() && gguf_fast_encoder_request(r,gguf_encoder,gguf_transformer);
+    const bool retain_encoder_weights=option_or_default(encoder_weights_flag,fast_encoder_default);
     const char *shared_down_flag=std::getenv("TURBOCIDER_QWEN21_GGUF_SHARED_DOWN");
     require(binary_option_or_unset(shared_down_flag),"Qwen GGUF shared down requires0 or1");
     const bool shared_down=option_enabled(shared_down_flag);
@@ -229,8 +230,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             r.allow_approximation && r.loras.empty() && (r.execution!="gpu" || r.ane_manifest.empty()) && r.encoder_ane_manifest.empty() &&
             !r.prompt_enhance && !r.qwen21_gpu_w8a16 && !r.qwen21_w8a8,
             "Qwen21 mixed GGUF requires approximate GPU/fixed Private FP16 channel base generation; encoder hybrid/edit/LoRA qualification pending");
-    const bool compile_encoder_gpu=compiled_encoder_gpu(r);
-    const bool encoder_prefill=option_enabled(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"));
+    const bool compile_encoder_gpu=compiled_encoder_gpu(r,fast_encoder_default);
+    const bool encoder_prefill=option_or_default(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"),fast_encoder_default);
     if(encoder_prefill && encoder_tokenizer_)encoder_tokenizer_->check_unchanged();
     if(retain_encoder_weights)
         require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&

@@ -7,8 +7,8 @@
 #include <string_view>
 
 namespace tc::qwen21 {
-// Keep the opt-in interpretation identical in planning, execution and result
-// reporting. Unset and "0" are off; only the literal "1" enables a flag.
+// Literal flag parsing stays identical in planning, execution and reporting.
+// Source-qualified GGUF defaults are resolved separately once sources are known.
 inline bool option_enabled(const char *value) {
     return value && std::string_view(value) == "1";
 }
@@ -16,13 +16,31 @@ inline bool option_enabled(const char *value) {
 inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
 }
-inline bool compiled_encoder_gpu(const Request &r) {
+inline bool gguf_fast_defaults_enabled() {
+    const auto *flag=std::getenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS");
+    require(binary_option_or_unset(flag),"Qwen GGUF fast defaults require0 or1");
+    return !flag || option_enabled(flag);
+}
+inline bool option_or_default(const char *value,bool fallback) {
+    require(binary_option_or_unset(value),"Qwen optimization override requires0 or1");
+    return value ? option_enabled(value) : fallback;
+}
+inline bool gguf_fast_encoder_request(const Request &r,bool gguf_encoder,bool gguf_dit) {
+    return gguf_encoder && gguf_dit && r.model=="qwen-image-2.1" && r.allow_approximation &&
+        r.operation=="image.generate" && r.inputs.empty() && r.loras.empty() &&
+        r.width==512 && r.height==512 && r.residency=="resident" && !r.prompt_enhance &&
+        !r.streaming.active() && !r.memory_constrained.enabled && !r.memory_budget_bytes &&
+        r.encoder_ane_manifest.empty() && !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+        (r.execution=="gpu" || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime"));
+}
+inline bool compiled_encoder_gpu(const Request &r,bool default_prefill=false) {
     const char *raw=std::getenv("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU");
     const char *prefill=std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");
     require(binary_option_or_unset(prefill),"Qwen fused GPU encoder prefill requires 0 or 1");
     require(binary_option_or_unset(raw),"Qwen compiled encoder GPU requires 0 or1");
-    const bool enabled=option_enabled(raw) || option_enabled(prefill);
-    if(option_enabled(prefill))require(r.encoder_ane_manifest.empty(),"fused encoder prefill is GPU-only");
+    const bool use_prefill=option_or_default(prefill,default_prefill);
+    const bool enabled=option_enabled(raw) || use_prefill;
+    if(use_prefill)require(r.encoder_ane_manifest.empty(),"fused encoder prefill is GPU-only");
     if(enabled)require(r.model=="qwen-image-2.1" && r.allow_approximation && r.residency=="resident" &&
         r.width==512 && r.height==512 && !r.prompt_enhance && !r.streaming.active() &&
         !r.memory_constrained.enabled && !r.memory_budget_bytes &&

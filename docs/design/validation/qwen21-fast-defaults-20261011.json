@@ -1,0 +1,1647 @@
+{
+  "schema": "tc-qwen21-fast-defaults-validation-v1",
+  "status": "complete_diagnostic",
+  "date": "2026-10-11",
+  "qualification_passed": false,
+  "native_inputs_matched": 513,
+  "build_identity": "tc-catalog-runtime-v1-45fd514bc9eea863c522b65cd0cdc6c0a7aa64fa1c891743117be5e35b06dc6e",
+  "scope": "unflagged measured fast profile; no automatic Private ANE opt-in or broad quality/memory qualification",
+  "pairs": [
+    {
+      "steps": 4,
+      "screens": [
+        {
+          "defaults": false,
+          "evidence": "outputs/qwen21-fast-defaults-v1-4step-explicit-20261011/summary.json",
+          "evidence_sha256": "a96d4a2108fcbb39b1c92e1c505d8bc6b501c08ce70224b3de04873e9e26c12f",
+          "trials": [
+            {
+              "mode": "gpu",
+              "channels": 0,
+              "timings": [
+                {
+                  "denoise": 4.424128542,
+                  "hybrid_setup": 0,
+                  "image_encode": 2.91e-07,
+                  "request_wall": 6.232663916,
+                  "text_encode": 0.774043291,
+                  "vae_decode": 0.614724917
+                },
+                {
+                  "denoise": 4.416254166,
+                  "hybrid_setup": 0,
+                  "image_encode": 2.92e-07,
+                  "request_wall": 5.114314708,
+                  "text_encode": 0.090193208,
+                  "vae_decode": 0.5922755
+                },
+                {
+                  "denoise": 4.416939875,
+                  "hybrid_setup": 0,
+                  "image_encode": 2.5e-07,
+                  "request_wall": 5.130319166,
+                  "text_encode": 0.091279042,
+                  "vae_decode": 0.60575625
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 5.122316937,
+                "text_encode": 0.090736125,
+                "denoise": 4.416597020499999
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0379492,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000558584,
+                  "import_wall_seconds": 0.374939
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0347061,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000476375,
+                  "import_wall_seconds": 0.432924
+                }
+              ],
+              "optimization_overrides": {
+                "TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS": "0",
+                "TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS": "1",
+                "TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU": "1",
+                "TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS": "8",
+                "TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB": "4",
+                "TURBOCIDER_QWEN21_GGUF_READ_AHEAD": "1",
+                "TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP": "1"
+              },
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15213239856,
+                "compression_bytes": 0,
+                "decompression_bytes": 0,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+                "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+                "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+              ]
+            },
+            {
+              "mode": "a5120",
+              "channels": 5120,
+              "timings": [
+                {
+                  "denoise": 3.708329875,
+                  "hybrid_setup": 9.1625e-05,
+                  "image_encode": 2.5e-07,
+                  "request_wall": 5.684392708,
+                  "text_encode": 0.755379375,
+                  "vae_decode": 0.591169666
+                },
+                {
+                  "denoise": 3.664555375,
+                  "hybrid_setup": 8.8042e-05,
+                  "image_encode": 2.92e-07,
+                  "request_wall": 4.356272583,
+                  "text_encode": 0.096714208,
+                  "vae_decode": 0.57961875
+                },
+                {
+                  "denoise": 3.666041875,
+                  "hybrid_setup": 9.675e-05,
+                  "image_encode": 2.09e-07,
+                  "request_wall": 4.35629725,
+                  "text_encode": 0.090483917,
+                  "vae_decode": 0.57918825
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 4.3562849165,
+                "text_encode": 0.0935990625,
+                "denoise": 3.665298625
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0381423,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000460417,
+                  "import_wall_seconds": 0.372725
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.035025,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000387417,
+                  "import_wall_seconds": 0.433852
+                }
+              ],
+              "optimization_overrides": {
+                "TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS": "0",
+                "TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS": "1",
+                "TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU": "1",
+                "TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS": "8",
+                "TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB": "4",
+                "TURBOCIDER_QWEN21_GGUF_READ_AHEAD": "1",
+                "TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP": "1"
+              },
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15387401992,
+                "compression_bytes": 0,
+                "decompression_bytes": 16384,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+                "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+                "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+              ]
+            }
+          ],
+          "source_sha256": {
+            "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+            "libturbocider.dylib": "2929d7bddda208724696b51adcc4fe8ac05f2d59e011934f613b724b7fdae628",
+            "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+            "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+            "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          }
+        },
+        {
+          "defaults": true,
+          "evidence": "outputs/qwen21-fast-defaults-v1-4step-unflagged-20261011/summary.json",
+          "evidence_sha256": "e2b42ab9fd95594007c2ca2d6aa570cf99e7b3eade8ec6666240fa30e26c684f",
+          "trials": [
+            {
+              "mode": "gpu",
+              "channels": 0,
+              "timings": [
+                {
+                  "denoise": 4.416563333,
+                  "hybrid_setup": 0,
+                  "image_encode": 1.25e-07,
+                  "request_wall": 6.16701225,
+                  "text_encode": 0.747886666,
+                  "vae_decode": 0.588393084
+                },
+                {
+                  "denoise": 4.416572667,
+                  "hybrid_setup": 0,
+                  "image_encode": 1.25e-07,
+                  "request_wall": 5.106590833,
+                  "text_encode": 0.0892615,
+                  "vae_decode": 0.585209792
+                },
+                {
+                  "denoise": 4.427918,
+                  "hybrid_setup": 0,
+                  "image_encode": 2.08e-07,
+                  "request_wall": 5.108937583,
+                  "text_encode": 0.091328333,
+                  "vae_decode": 0.57533025
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 5.107764208000001,
+                "text_encode": 0.09029491649999999,
+                "denoise": 4.422245333499999
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0376471,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000310167,
+                  "import_wall_seconds": 0.372386
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0348211,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000428708,
+                  "import_wall_seconds": 0.427138
+                }
+              ],
+              "optimization_overrides": {},
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 14974213824,
+                "compression_bytes": 0,
+                "decompression_bytes": 16384,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+                "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+                "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+              ]
+            },
+            {
+              "mode": "a5120",
+              "channels": 5120,
+              "timings": [
+                {
+                  "denoise": 3.70202425,
+                  "hybrid_setup": 7.8875e-05,
+                  "image_encode": 1.66e-07,
+                  "request_wall": 5.658421208,
+                  "text_encode": 0.7534245,
+                  "vae_decode": 0.568752292
+                },
+                {
+                  "denoise": 3.681204083,
+                  "hybrid_setup": 8.975e-05,
+                  "image_encode": 1.67e-07,
+                  "request_wall": 4.365007042,
+                  "text_encode": 0.096518875,
+                  "vae_decode": 0.572561375
+                },
+                {
+                  "denoise": 3.673070125,
+                  "hybrid_setup": 9.2042e-05,
+                  "image_encode": 3.33e-07,
+                  "request_wall": 4.363092584,
+                  "text_encode": 0.09195175,
+                  "vae_decode": 0.58311675
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 4.364049813,
+                "text_encode": 0.0942353125,
+                "denoise": 3.677137104
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0383004,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000212541,
+                  "import_wall_seconds": 0.373417
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0342717,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.00015725,
+                  "import_wall_seconds": 0.432962
+                }
+              ],
+              "optimization_overrides": {},
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15689457224,
+                "compression_bytes": 0,
+                "decompression_bytes": 0,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+                "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+                "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+              ]
+            }
+          ],
+          "source_sha256": {
+            "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+            "libturbocider.dylib": "2929d7bddda208724696b51adcc4fe8ac05f2d59e011934f613b724b7fdae628",
+            "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+            "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+            "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          }
+        }
+      ],
+      "comparisons": [
+        {
+          "mode": "gpu",
+          "request_index": 0,
+          "png_exact": true,
+          "tensors": [
+            {
+              "name": "text",
+              "dtype": "F16",
+              "shape": [
+                1,
+                24,
+                4096
+              ],
+              "payload_sha256": "bd50e281bfd059dc53b05a8c3a1cc14d17b530e734639a8235c3404e0701960b",
+              "exact": true
+            },
+            {
+              "name": "initial",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "4dd4c308f9665c00239bcb731bcd307f15bce43c4eeac08c29000dba32530a02",
+              "exact": true
+            },
+            {
+              "name": "latents",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "e7d855b29aa35420ec031a73823db1b838c8eafb47c1065fcc38c69bf9f3043f",
+              "exact": true
+            },
+            {
+              "name": "pixels",
+              "dtype": "F32",
+              "shape": [
+                1,
+                512,
+                512,
+                4
+              ],
+              "payload_sha256": "fdf3d4b4edff5c0a1803a648de15e74cd07939165994243f2d6d1c5a2644d28c",
+              "exact": true
+            }
+          ]
+        },
+        {
+          "mode": "gpu",
+          "request_index": 1,
+          "png_exact": true,
+          "tensors": [
+            {
+              "name": "text",
+              "dtype": "F16",
+              "shape": [
+                1,
+                24,
+                4096
+              ],
+              "payload_sha256": "d0c243566d8ff4febc9c0f3c8b633e0d1f3135c39b5bf06ad5c0d3f6467a0bec",
+              "exact": true
+            },
+            {
+              "name": "initial",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "4dd4c308f9665c00239bcb731bcd307f15bce43c4eeac08c29000dba32530a02",
+              "exact": true
+            },
+            {
+              "name": "latents",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "566e7c7500cad6411095a29991407c597f90193522f05edf443e3ae50b64f049",
+              "exact": true
+            },
+            {
+              "name": "pixels",
+              "dtype": "F32",
+              "shape": [
+                1,
+                512,
+                512,
+                4
+              ],
+              "payload_sha256": "037b6eef76f7ba10cbe0309cf265cc05b39fb62b85fbb31cc3e4f565e468b943",
+              "exact": true
+            }
+          ]
+        },
+        {
+          "mode": "gpu",
+          "request_index": 2,
+          "png_exact": true,
+          "tensors": [
+            {
+              "name": "text",
+              "dtype": "F16",
+              "shape": [
+                1,
+                24,
+                4096
+              ],
+              "payload_sha256": "31cced094a5e1ede6f6b18abd0787c249cb986fdd60756914df54b9365d8bb09",
+              "exact": true
+            },
+            {
+              "name": "initial",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "4dd4c308f9665c00239bcb731bcd307f15bce43c4eeac08c29000dba32530a02",
+              "exact": true
+            },
+            {
+              "name": "latents",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "b58d91470d0fc87fb74641ee099fbf84913f22f5772324f8f942f3cf353a271c",
+              "exact": true
+            },
+            {
+              "name": "pixels",
+              "dtype": "F32",
+              "shape": [
+                1,
+                512,
+                512,
+                4
+              ],
+              "payload_sha256": "de979bd6b03d487c23fdb64de68794ae122a51e66e394bd5cf4e899295fc5dae",
+              "exact": true
+            }
+          ]
+        },
+        {
+          "mode": "a5120",
+          "request_index": 0,
+          "png_exact": true,
+          "tensors": [
+            {
+              "name": "text",
+              "dtype": "F16",
+              "shape": [
+                1,
+                24,
+                4096
+              ],
+              "payload_sha256": "bd50e281bfd059dc53b05a8c3a1cc14d17b530e734639a8235c3404e0701960b",
+              "exact": true
+            },
+            {
+              "name": "initial",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "4dd4c308f9665c00239bcb731bcd307f15bce43c4eeac08c29000dba32530a02",
+              "exact": true
+            },
+            {
+              "name": "latents",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "85e481f45f6a6faf2d376abddef55d26a84e42967d196e9df95e9977e294751b",
+              "exact": true
+            },
+            {
+              "name": "pixels",
+              "dtype": "F32",
+              "shape": [
+                1,
+                512,
+                512,
+                4
+              ],
+              "payload_sha256": "86d3dccc82460c96161cf7e630921cc65ff4e7e0addcea85a23667842fc5f6f9",
+              "exact": true
+            }
+          ]
+        },
+        {
+          "mode": "a5120",
+          "request_index": 1,
+          "png_exact": true,
+          "tensors": [
+            {
+              "name": "text",
+              "dtype": "F16",
+              "shape": [
+                1,
+                24,
+                4096
+              ],
+              "payload_sha256": "d0c243566d8ff4febc9c0f3c8b633e0d1f3135c39b5bf06ad5c0d3f6467a0bec",
+              "exact": true
+            },
+            {
+              "name": "initial",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "4dd4c308f9665c00239bcb731bcd307f15bce43c4eeac08c29000dba32530a02",
+              "exact": true
+            },
+            {
+              "name": "latents",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "13b9b8e4e5566dfab2a67f6b27299d58822b7eaef8686506f19ca486c4f9518c",
+              "exact": true
+            },
+            {
+              "name": "pixels",
+              "dtype": "F32",
+              "shape": [
+                1,
+                512,
+                512,
+                4
+              ],
+              "payload_sha256": "0fa216e5e0a7647dc2eae50b5431c7478a782bb087d9b3391895e47525dbb664",
+              "exact": true
+            }
+          ]
+        },
+        {
+          "mode": "a5120",
+          "request_index": 2,
+          "png_exact": true,
+          "tensors": [
+            {
+              "name": "text",
+              "dtype": "F16",
+              "shape": [
+                1,
+                24,
+                4096
+              ],
+              "payload_sha256": "31cced094a5e1ede6f6b18abd0787c249cb986fdd60756914df54b9365d8bb09",
+              "exact": true
+            },
+            {
+              "name": "initial",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "4dd4c308f9665c00239bcb731bcd307f15bce43c4eeac08c29000dba32530a02",
+              "exact": true
+            },
+            {
+              "name": "latents",
+              "dtype": "F16",
+              "shape": [
+                1,
+                1024,
+                64
+              ],
+              "payload_sha256": "9f5f3a7751e56c8f11646da2cb42914f886156dc578395b4b8c98eb392a78267",
+              "exact": true
+            },
+            {
+              "name": "pixels",
+              "dtype": "F32",
+              "shape": [
+                1,
+                512,
+                512,
+                4
+              ],
+              "payload_sha256": "9169afd62f2cef56751e8b23ce06ec82c94ebe57d9f69b5a2fa3a8a6fd38ec9a",
+              "exact": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "steps": 40,
+      "screens": [
+        {
+          "defaults": false,
+          "evidence": "outputs/qwen21-fast-defaults-v1-40step-explicit-20261011/summary.json",
+          "evidence_sha256": "d811d52b84a79f2f4f6e797ecb63f4dc3d7196184f4ff00fd5be57bd7edf30ef",
+          "trials": [
+            {
+              "mode": "gpu",
+              "channels": 0,
+              "timings": [
+                {
+                  "denoise": 43.739120375,
+                  "hybrid_setup": 0,
+                  "image_encode": 1.67e-07,
+                  "request_wall": 45.509315458,
+                  "text_encode": 0.768806375,
+                  "vae_decode": 0.587720583
+                },
+                {
+                  "denoise": 43.738216416,
+                  "hybrid_setup": 0,
+                  "image_encode": 2.08e-07,
+                  "request_wall": 44.427194459,
+                  "text_encode": 0.089793959,
+                  "vae_decode": 0.585396583
+                },
+                {
+                  "denoise": 43.741727,
+                  "hybrid_setup": 0,
+                  "image_encode": 2.5e-07,
+                  "request_wall": 44.433206209,
+                  "text_encode": 0.090795333,
+                  "vae_decode": 0.587482833
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 44.430200334,
+                "text_encode": 0.090294646,
+                "denoise": 43.739971708
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0379387,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000323709,
+                  "import_wall_seconds": 0.372826
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0343643,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.0003765,
+                  "import_wall_seconds": 0.424892
+                }
+              ],
+              "optimization_overrides": {
+                "TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS": "0",
+                "TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS": "1",
+                "TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU": "1",
+                "TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS": "8",
+                "TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB": "4",
+                "TURBOCIDER_QWEN21_GGUF_READ_AHEAD": "1",
+                "TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP": "1"
+              },
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15211798088,
+                "compression_bytes": 0,
+                "decompression_bytes": 16384,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+                "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+                "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+              ]
+            },
+            {
+              "mode": "a5120",
+              "channels": 5120,
+              "timings": [
+                {
+                  "denoise": 36.192135667,
+                  "hybrid_setup": 7.975e-05,
+                  "image_encode": 1.67e-07,
+                  "request_wall": 38.193984959,
+                  "text_encode": 0.77374325,
+                  "vae_decode": 0.593871458
+                },
+                {
+                  "denoise": 36.177146,
+                  "hybrid_setup": 9.3334e-05,
+                  "image_encode": 1.66e-07,
+                  "request_wall": 36.878714208,
+                  "text_encode": 0.090623042,
+                  "vae_decode": 0.59809
+                },
+                {
+                  "denoise": 36.165714708,
+                  "hybrid_setup": 9.625e-05,
+                  "image_encode": 2.08e-07,
+                  "request_wall": 36.866906208,
+                  "text_encode": 0.090914708,
+                  "vae_decode": 0.597167417
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 36.872810208000004,
+                "text_encode": 0.090768875,
+                "denoise": 36.171430354
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0394873,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000387833,
+                  "import_wall_seconds": 0.377159
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": false,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0365677,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000152333,
+                  "import_wall_seconds": 0.438769
+                }
+              ],
+              "optimization_overrides": {
+                "TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS": "0",
+                "TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS": "1",
+                "TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU": "1",
+                "TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS": "8",
+                "TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB": "4",
+                "TURBOCIDER_QWEN21_GGUF_READ_AHEAD": "1",
+                "TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP": "1"
+              },
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15210602032,
+                "compression_bytes": 0,
+                "decompression_bytes": 49152,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+                "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+                "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+              ]
+            }
+          ],
+          "source_sha256": {
+            "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+            "libturbocider.dylib": "2929d7bddda208724696b51adcc4fe8ac05f2d59e011934f613b724b7fdae628",
+            "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+            "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+            "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          }
+        },
+        {
+          "defaults": true,
+          "evidence": "outputs/qwen21-fast-defaults-v1-40step-unflagged-20261011/summary.json",
+          "evidence_sha256": "a84a72a72ef330df2295cd06de00b18264c4d0836843a64b36b0b8ec2ca06d68",
+          "trials": [
+            {
+              "mode": "a5120",
+              "channels": 5120,
+              "timings": [
+                {
+                  "denoise": 36.1931315,
+                  "hybrid_setup": 7.9708e-05,
+                  "image_encode": 1.25e-07,
+                  "request_wall": 38.153651917,
+                  "text_encode": 0.748386625,
+                  "vae_decode": 0.580837917
+                },
+                {
+                  "denoise": 36.162171708,
+                  "hybrid_setup": 9.4417e-05,
+                  "image_encode": 2.08e-07,
+                  "request_wall": 36.857265667,
+                  "text_encode": 0.09378525,
+                  "vae_decode": 0.5885385
+                },
+                {
+                  "denoise": 36.167760375,
+                  "hybrid_setup": 9.3708e-05,
+                  "image_encode": 2.08e-07,
+                  "request_wall": 36.865456875,
+                  "text_encode": 0.090880584,
+                  "vae_decode": 0.593354
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 36.861361271,
+                "text_encode": 0.092332917,
+                "denoise": 36.1649660415
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0377526,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000322916,
+                  "import_wall_seconds": 0.370695
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0344954,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000146208,
+                  "import_wall_seconds": 0.428983
+                }
+              ],
+              "optimization_overrides": {},
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15417466584,
+                "compression_bytes": 0,
+                "decompression_bytes": 0,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+                "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+                "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+              ]
+            },
+            {
+              "mode": "gpu",
+              "channels": 0,
+              "timings": [
+                {
+                  "denoise": 43.730237375,
+                  "hybrid_setup": 0,
+                  "image_encode": 1.66e-07,
+                  "request_wall": 45.531269625,
+                  "text_encode": 0.774042333,
+                  "vae_decode": 0.604114875
+                },
+                {
+                  "denoise": 43.748082333,
+                  "hybrid_setup": 0,
+                  "image_encode": 1.25e-07,
+                  "request_wall": 44.443776125,
+                  "text_encode": 0.090339291,
+                  "vae_decode": 0.592102125
+                },
+                {
+                  "denoise": 43.741495709,
+                  "hybrid_setup": 0,
+                  "image_encode": 1.66e-07,
+                  "request_wall": 44.454666167,
+                  "text_encode": 0.094310958,
+                  "vae_decode": 0.604795375
+                }
+              ],
+              "warm_medians": {
+                "request_wall": 44.449221146,
+                "text_encode": 0.0923251245,
+                "denoise": 43.744789021
+              },
+              "verified_imports": [
+                {
+                  "component": "dit",
+                  "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4197580800,
+                  "read_wait_seconds": 0.0400764,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000506208,
+                  "import_wall_seconds": 0.383669
+                },
+                {
+                  "component": "encoder",
+                  "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                  "verification_bytes": 0,
+                  "verification_cache_hits": 1,
+                  "registration_enabled": true,
+                  "registration_cache_hits": 1,
+                  "registration_records_written": 0,
+                  "fast_defaults_enabled": true,
+                  "decode_workers": 8,
+                  "read_buffer_capacity_bytes": 8388608,
+                  "read_buffer_slots": 2,
+                  "read_ahead_enabled": true,
+                  "read_ahead_drained": true,
+                  "read_ahead_jobs": 1110,
+                  "read_ahead_bytes": 4320755712,
+                  "read_wait_seconds": 0.0367324,
+                  "first_registration_seconds": 0,
+                  "cpu_verify_import_schedule": true,
+                  "verified_before_publication": true,
+                  "physical_overlap_proved": false,
+                  "verification_seconds": 0.000231875,
+                  "import_wall_seconds": 0.435594
+                }
+              ],
+              "optimization_overrides": {},
+              "memory": {
+                "complete": true,
+                "tree_peak_phys_footprint_bytes": 15268945504,
+                "compression_bytes": 0,
+                "decompression_bytes": 98304,
+                "swap_in_bytes": 0,
+                "swap_out_bytes": 0
+              },
+              "png_sha256": [
+                "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+                "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+                "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+              ]
+            }
+          ],
+          "source_sha256": {
+            "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+            "libturbocider.dylib": "2929d7bddda208724696b51adcc4fe8ac05f2d59e011934f613b724b7fdae628",
+            "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+            "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+            "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          }
+        }
+      ],
+      "comparisons": [
+        {
+          "mode": "gpu",
+          "request_index": 0,
+          "png_exact": true,
+          "tensors": []
+        },
+        {
+          "mode": "gpu",
+          "request_index": 1,
+          "png_exact": true,
+          "tensors": []
+        },
+        {
+          "mode": "gpu",
+          "request_index": 2,
+          "png_exact": true,
+          "tensors": []
+        },
+        {
+          "mode": "a5120",
+          "request_index": 0,
+          "png_exact": true,
+          "tensors": []
+        },
+        {
+          "mode": "a5120",
+          "request_index": 1,
+          "png_exact": true,
+          "tensors": []
+        },
+        {
+          "mode": "a5120",
+          "request_index": 2,
+          "png_exact": true,
+          "tensors": []
+        }
+      ]
+    }
+  ],
+  "session_lifecycle": {
+    "evidence": "outputs/qwen21-fast-defaults-v1-session-20261011.log",
+    "evidence_sha256": "717ca6c14eb513a1025130bf265dd92c320eed4592aae96a48c390c2daa851ab",
+    "record": {
+      "schema": "tc-qwen21-encoder-prefill-session-v1",
+      "library_sha256": "2929d7bddda208724696b51adcc4fe8ac05f2d59e011934f613b724b7fdae628",
+      "requests": [
+        {
+          "name": "cold-prefill",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 1,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 30,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0.109716917,
+            "processor_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 16,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": false
+          },
+          "prepare_wall_seconds": 3.447786541
+        },
+        {
+          "name": "cached-prefill",
+          "prompt_cache_hit": true,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 1,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": false,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": false,
+            "gate_up_fused_layers": 0,
+            "input_rows": 0,
+            "native_gqa_attention": false,
+            "pack_seconds_this_request": 0,
+            "processor_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "qk_fused_layers": 0,
+            "qkv_fused_layers": 0,
+            "retained_rows": 0,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.000298542
+        },
+        {
+          "name": "fresh-prefill",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 1,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": true
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 31,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0,
+            "processor_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 17,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.045809209
+        },
+        {
+          "name": "switch-to-legacy",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 2,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": null,
+          "prepare_wall_seconds": 0.624612917
+        },
+        {
+          "name": "cached-legacy",
+          "prompt_cache_hit": true,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 2,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": null,
+          "prepare_wall_seconds": 0.000300958
+        },
+        {
+          "name": "switch-to-prefill",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 3,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 31,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0.104917666,
+            "processor_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 17,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.598862541
+        },
+        {
+          "name": "cached-after-switch",
+          "prompt_cache_hit": true,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 3,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": false,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": false,
+            "gate_up_fused_layers": 0,
+            "input_rows": 0,
+            "native_gqa_attention": false,
+            "pack_seconds_this_request": 0,
+            "processor_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "qk_fused_layers": 0,
+            "qkv_fused_layers": 0,
+            "retained_rows": 0,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.000258959
+        },
+        {
+          "name": "changed-processor-rejected",
+          "rejected": true,
+          "error": "streaming_source_lease: source fd changed"
+        },
+        {
+          "name": "recover-processor",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 4,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 31,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0.104880666,
+            "processor_sha256": "7ceaf87113caa06d8b2e2f6966ab11d12ac590cb887b64c591cae70ea89245f4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 17,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": false
+          },
+          "prepare_wall_seconds": 0.716267541
+        },
+        {
+          "name": "after-unload",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 1,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 31,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0.105706125,
+            "processor_sha256": "7ceaf87113caa06d8b2e2f6966ab11d12ac590cb887b64c591cae70ea89245f4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 17,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": false
+          },
+          "prepare_wall_seconds": 1.0836265
+        },
+        {
+          "name": "unflagged-cache",
+          "prompt_cache_hit": true,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 1,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": false,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": false,
+            "gate_up_fused_layers": 0,
+            "input_rows": 0,
+            "native_gqa_attention": false,
+            "pack_seconds_this_request": 0,
+            "processor_sha256": "7ceaf87113caa06d8b2e2f6966ab11d12ac590cb887b64c591cae70ea89245f4",
+            "qk_fused_layers": 0,
+            "qkv_fused_layers": 0,
+            "retained_rows": 0,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.000280584
+        },
+        {
+          "name": "unflagged-fresh",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 1,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": true
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 30,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0,
+            "processor_sha256": "7ceaf87113caa06d8b2e2f6966ab11d12ac590cb887b64c591cae70ea89245f4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 16,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.046010875
+        },
+        {
+          "name": "master-off-real-legacy",
+          "weights": {
+            "decline_reason": "",
+            "enabled": false,
+            "loads_session_total": 2,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 0,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": false,
+            "weights_reused": false
+          },
+          "prompt_cache_hit": false
+        },
+        {
+          "name": "unflagged-restored",
+          "prompt_cache_hit": false,
+          "weights": {
+            "decline_reason": "",
+            "enabled": true,
+            "loads_session_total": 3,
+            "logical_capacity_upper_bytes": 21474836480,
+            "retained_bytes": 5221410816,
+            "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+            "source_bytes": 5221410816,
+            "weights_retained": true,
+            "weights_reused": false
+          },
+          "prefill": {
+            "dense_checkpoint_expansion": false,
+            "encoder_evaluated_this_request": true,
+            "encoder_execution": "gpu",
+            "fused_rms_qk_neox_rope": true,
+            "gate_up_fused_layers": 36,
+            "input_rows": 30,
+            "native_gqa_attention": true,
+            "pack_seconds_this_request": 0.105945459,
+            "processor_sha256": "7ceaf87113caa06d8b2e2f6966ab11d12ac590cb887b64c591cae70ea89245f4",
+            "qk_fused_layers": 18,
+            "qkv_fused_layers": 18,
+            "retained_rows": 16,
+            "scope": "explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified",
+            "tokenizer_reused": true
+          },
+          "prepare_wall_seconds": 0.580522875
+        }
+      ],
+      "qualification_passed": false,
+      "scope": "real prepare/cache/source lifecycle; no denoise/performance qualification"
+    }
+  }
+}

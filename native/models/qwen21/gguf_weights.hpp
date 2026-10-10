@@ -70,6 +70,8 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
     auto result=std::make_unique<GgufComponent>();
     result->ledger=std::make_unique<MemoryLedger>(uint64_t(16)<<30);
     streaming::GgufKImportOptions options;options.enabled=true;options.floating_dtype=mx::float16;
+    const bool fast_defaults=gguf_fast_defaults_enabled();
+    if(fast_defaults)options.decode_workers=8;
     if(const char *workers=std::getenv("TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS")) {
         const auto value=std::string_view(workers);
         require(value.size()==1 && value[0]>='1' && value[0]<='8',"Qwen GGUF decode workers must be 1..8");
@@ -79,14 +81,15 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
     const char *flag=std::getenv("TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP");
     require(!flag || std::string_view(flag)=="0" || std::string_view(flag)=="1",
             "Qwen GGUF verify/import overlap requires 0 or 1");
-    const bool overlap=flag && std::string_view(flag)=="1";
+    const bool overlap=option_or_default(flag,fast_defaults);
     const bool registered=source_registration_enabled();
-    const int read_mib=gguf_read_buffer_mib(std::getenv("TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB"));
+    const auto *read_value=std::getenv("TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB");
+    const int read_mib=read_value ? gguf_read_buffer_mib(read_value) : (fast_defaults ? 4 : 1);
     require(read_mib>0,"Qwen GGUF read buffer requires1,4 or8 MiB");
     const uint64_t read_bytes=uint64_t(read_mib)<<20;
     const char *read_ahead_flag=std::getenv("TURBOCIDER_QWEN21_GGUF_READ_AHEAD");
     require(binary_option_or_unset(read_ahead_flag),"Qwen GGUF read ahead requires0 or1");
-    options.read_ahead=option_enabled(read_ahead_flag);
+    options.read_ahead=option_or_default(read_ahead_flag,fast_defaults);
     auto admission=[&](const streaming::GgufPackedBankMetrics &metrics) {
         const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
         const uint64_t growth=metrics.planned_packed_capacity_bytes+read_bytes*metrics.read_buffer_slots+(overlap ? uint64_t(1)<<20 : 0);
@@ -123,6 +126,8 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
             <<",\"registration_enabled\":"<<(registered ? "true" : "false")
             <<",\"registration_cache_hits\":"<<m.registration_cache_hits
             <<",\"registration_records_written\":"<<m.registration_records_written
+            <<",\"fast_defaults_enabled\":"<<(fast_defaults ? "true" : "false")
+            <<",\"decode_workers\":"<<m.decode_workers
             <<",\"read_buffer_capacity_bytes\":"<<m.read_buffer_capacity_bytes
             <<",\"read_buffer_slots\":"<<m.read_buffer_slots
             <<",\"read_ahead_enabled\":"<<(m.read_ahead_enabled ? "true" : "false")

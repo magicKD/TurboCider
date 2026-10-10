@@ -15,6 +15,30 @@ PROMPTS = (
     "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
     "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
 )
+OPTIMIZATION_FLAGS = (
+    "TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS",
+    "TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS",
+    "TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU",
+    "TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU",
+    "TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS",
+    "TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB",
+    "TURBOCIDER_QWEN21_GGUF_READ_AHEAD",
+    "TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP",
+)
+
+
+def configure_import_profile(env, args):
+    """Keep unflagged defaults genuinely unflagged; legacy arms stay explicit."""
+    for name in OPTIMIZATION_FLAGS:
+        env.pop(name, None)
+    if not args.fast_defaults:
+        env.update(TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS="0",
+                   TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1",
+                   TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS=str(args.decode_workers),
+                   TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB=str(args.read_buffer_mib),
+                   TURBOCIDER_QWEN21_GGUF_READ_AHEAD=str(int(args.read_ahead)),
+                   TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU=str(int(args.encoder_prefill)),
+                   TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP=str(int(args.verified_import_overlap)))
 
 
 def counter(record, name):
@@ -84,7 +108,8 @@ def validate_receipts(rows, channels, steps=40, phase="all", encoder_prefill=Fal
             raise ValueError("native hybrid failed, retried, fell back or performed different work")
 
 
-def validate_verified_imports(records, expected, registration="process", read_buffer_mib=1, read_ahead=False):
+def validate_verified_imports(records, expected, registration="process", read_buffer_mib=1, read_ahead=False,
+                              decode_workers=None):
     if registration not in ("process", "first", "reuse"):
         raise ValueError("unknown source registration phase")
     if type(read_buffer_mib) is not int or read_buffer_mib not in (1, 4, 8):
@@ -95,6 +120,8 @@ def validate_verified_imports(records, expected, registration="process", read_bu
         raise ValueError("one actual encoder/DiT import proof per fresh process required")
     for record in records:
         digest, size = expected[record["component"]]
+        if decode_workers is not None and counter(record, "decode_workers") != decode_workers:
+            raise ValueError("actual CPU decode worker count differs")
         if "read_buffer_capacity_bytes" in record or read_buffer_mib != 1 or read_ahead:
             if counter(record, "read_buffer_capacity_bytes") != (read_buffer_mib << 20) * (2 if read_ahead else 1):
                 raise ValueError("actual bounded read buffer differs from requested recipe")
@@ -143,12 +170,17 @@ def main():
     parser.add_argument("--encoder-prefill", action="store_true", help="explicit GPU prefill packed fusions and verified processor reuse")
     parser.add_argument("--dump-tensors", action="store_true", help="explicit matching numerical evidence; not a no-dump performance trial")
     parser.add_argument("--verified-import-overlap", action="store_true", help="CPU native full-SHA/import candidates; proof required before publication")
+    parser.add_argument("--fast-defaults", action="store_true",
+                        help="leave all eight optimization overrides unset; require actual default fast-profile receipts")
     parser.add_argument("--source-registration", choices=("process", "first", "reuse"), default="process",
                         help="separate first registration from fresh-process receipt reuse; legacy process mode hashes each fresh process")
     parser.add_argument("--registration-cache", type=Path, help="owned private receipt root, with an isolated subdirectory per arm")
     parser.add_argument("--order", help="gpu,a4096,a5120 or exact reverse/subset")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.fast_defaults:
+        args.decode_workers, args.read_buffer_mib = 8, 4
+        args.read_ahead = args.encoder_prefill = args.verified_import_overlap = True
     if args.source_registration != "process":
         if not args.registration_cache or not args.verified_import_overlap:
             parser.error("registration screens require an explicit cache and actual verified import receipts")
@@ -179,13 +211,13 @@ def main():
                    read_buffer_mib=args.read_buffer_mib,
                    read_ahead=args.read_ahead,
                    dump_tensors=args.dump_tensors, verified_import_overlap=args.verified_import_overlap,
-                   source_registration=args.source_registration, order=order, trials=[])
+                   source_registration=args.source_registration, fast_defaults=args.fast_defaults, order=order, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
         channels = 0 if mode == "gpu" else int(mode[1:])
         env = benchmark_environment()
-        env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1", TURBOCIDER_QWEN21_PROFILE_STEPS="1",
+        env.update(TURBOCIDER_QWEN21_PROFILE_STEPS="1",
                    TURBOCIDER_QWEN21_SOURCE_REGISTRATION="0")
         if args.source_registration != "process":
             cache = args.registration_cache / mode
@@ -194,11 +226,7 @@ def main():
                 raise ValueError("first registration needs a fresh cache; reuse needs its completed existing cache")
             env.update(TURBOCIDER_QWEN21_SOURCE_REGISTRATION="1", TURBOCIDER_SOURCE_REGISTRATION_CACHE=str(cache))
         env["TURBOCIDER_QWEN21_GGUF_SHARED_DOWN"] = "1" if args.shared_down else "0"
-        env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"] = str(args.decode_workers)
-        env["TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB"] = str(args.read_buffer_mib)
-        env["TURBOCIDER_QWEN21_GGUF_READ_AHEAD"] = "1" if args.read_ahead else "0"
-        env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if args.encoder_prefill else "0"
-        env["TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP"] = "1" if args.verified_import_overlap else "0"
+        configure_import_profile(env, args)
         if channels:
             env.update(TURBOCIDER_ANE_BACKEND="private", TURBOCIDER_ALLOW_PRIVATE_ANE="1",
                        TURBOCIDER_PRIVATE_ANE_CHANNELS=str(channels), TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",
@@ -234,12 +262,16 @@ def main():
                     imports.append(json.loads(line)["qwen_gguf_verified_import"])
             validate_verified_imports(imports, dict(dit=(identities[str(inputs[3])], inputs[3].stat().st_size),
                                                     encoder=(identities[str(inputs[4])], inputs[4].stat().st_size)),
-                                      args.source_registration,args.read_buffer_mib,args.read_ahead)
+                                      args.source_registration,args.read_buffer_mib,args.read_ahead,
+                                      args.decode_workers if args.fast_defaults else None)
+            if args.fast_defaults and any(record.get("fast_defaults_enabled") is not True for record in imports):
+                raise ValueError("default fast-profile receipt missing")
         if args.encoder_prefill and any(r["qwen_encoder_prefill"]["processor_sha256"] != identities[str(inputs[-1])] for r in rows):
             raise ValueError("actual processor proof differs from original source")
         if any(sha256_file(p) != identities[str(p)] for p in inputs):
             raise ValueError("model/runtime source changed during screen")
         trial = dict(mode=mode, channels=channels, timings=[r["timings_seconds"] for r in rows], memory=memory,
+                     optimization_overrides={name: env[name] for name in OPTIMIZATION_FLAGS if name in env},
                      verified_imports=imports,
                      warm_medians={k: statistics.median(r["timings_seconds"][k] for r in rows[1:])
                                    for k in ("request_wall", "text_encode", "denoise")},
