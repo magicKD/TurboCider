@@ -5,6 +5,10 @@ using tc::qwen21::W8A8CallBudget;
 using tc::qwen21::expected_w8a8_calls;
 
 int main() {
+    assert(gguf_read_buffer_mib(nullptr)==1 && gguf_read_buffer_mib("1")==1 &&
+        gguf_read_buffer_mib("4")==4 && gguf_read_buffer_mib("8")==8);
+    for(const char *value:{"","0","2","16","08"," 8","8 ","8.0","eight"})
+        assert(gguf_read_buffer_mib(value)==0);
     using namespace tc::qwen21;
     assert(!option_enabled(nullptr));
     assert(!option_enabled("0"));

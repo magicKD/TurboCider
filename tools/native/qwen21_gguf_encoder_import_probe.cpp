@@ -6,9 +6,14 @@ using namespace tc;
 using namespace tc::streaming;
 
 int main(int argc,char **argv) {try {
-    require(argc==4 || argc==5,"usage: qwen21-gguf-encoder-import-probe original-text-gguf workers packed|dense [--verify-overlap]");
-    const bool overlap=argc==5;
-    require(!overlap || std::string_view(argv[4])=="--verify-overlap","invalid verification option");
+    require(argc>=4 && argc<=6,"usage: qwen21-gguf-encoder-import-probe original-text-gguf workers packed|dense [--verify-overlap|--registered [1|4|8]]");
+    const bool registered=argc>=5 && std::string_view(argv[4])=="--registered";
+    const bool overlap=argc>=5 && !registered;
+    require(!overlap || (argc==5 && std::string_view(argv[4])=="--verify-overlap"),"invalid verification option");
+    const auto read_mib=argc==6 ? std::string_view(argv[5]) : std::string_view("1");
+    require(registered || argc<6,"read buffer screen requires registered source");
+    require(read_mib=="1" || read_mib=="4" || read_mib=="8","read buffer must be 1,4 or8 MiB");
+    const uint64_t read_bytes=uint64_t(read_mib[0]-'0')<<20;
     const auto worker=std::string_view(argv[2]),mode=std::string_view(argv[3]);
     require(worker.size()==1 && worker[0]>='1' && worker[0]<='8',"workers must be 1..8");
     require(mode=="packed" || mode=="dense","embedding mode must be packed or dense");
@@ -31,12 +36,13 @@ int main(int argc,char **argv) {try {
             });
         lease=pending.finish();verify=pending.verification_seconds();
     } else {
-        lease=SourceLease::capture_verified({source});verify=elapsed(start);
-        bank=std::make_unique<GgufPackedBank>(lease,"text",ledger,uint64_t(1)<<20,true,0,6,options);
+        lease=registered ? SourceLease::capture_registered({source}) : SourceLease::capture_verified({source});verify=elapsed(start);
+        bank=std::make_unique<GgufPackedBank>(lease,"text",ledger,read_bytes,true,0,6,options);
         bank->load(weights);
     }
-    require(lease->verification_bytes_read()==lease->file("text").bytes && lease->verification_cache_hits()==0,
-        "fresh native whole-file proof required, not a serialized/warm verification cache");
+    require(registered ? (lease->verification_bytes_read()==0 && lease->registration_cache_hits()==1) :
+        (lease->verification_bytes_read()==lease->file("text").bytes && lease->verification_cache_hits()==0),
+        "actual initial full-SHA or registered generation-bound source proof required");
     weights.materialize();const auto metrics=bank->metrics();
     const auto before_embedding=Clock::now();
     if(mode=="dense")weights.dequantize({"token_embd"});
@@ -55,6 +61,7 @@ int main(int argc,char **argv) {try {
         <<",\"source_sha256\":\""<<metrics.source_sha256<<"\",\"plan_digest\":\""<<metrics.plan_digest
         <<"\",\"workers\":"<<metrics.decode_workers<<",\"embedding_mode\":\""<<mode<<"\""
         <<",\"verification_bytes\":"<<lease->verification_bytes_read()<<",\"source_read_bytes\":"<<metrics.source_read_bytes
+        <<",\"registration_cache_hits\":"<<lease->registration_cache_hits()
         <<",\"packed_capacity_bytes\":"<<metrics.packed_capacity_bytes<<",\"read_buffer_capacity_bytes\":"<<metrics.read_buffer_capacity_bytes
         <<",\"managed_peak_bytes\":"<<metrics.managed_peak_bytes<<",\"final_weight_logical_bytes\":"<<weights.bytes()
         <<",\"native_verification_seconds\":"<<verify<<",\"bank_load_seconds\":"<<metrics.load_seconds

@@ -14,7 +14,9 @@ ROOT = Path(__file__).resolve().parents[2]
 ARMS = ("bf16-stream", "gguf-gpu", "gguf-ane", "bf16-resident")
 
 
-def validate_bf16_rows(rows, steps, streamed, prefixes, budget, hashes):
+def validate_bf16_rows(rows, steps, streamed, prefixes, budget, hashes, registration="process"):
+    if registration not in ("process", "first", "reuse"):
+        raise ValueError("unknown source registration phase")
     if len(rows) != 3:
         raise ValueError("three actual fresh-condition requests required")
     for index, row in enumerate(rows):
@@ -55,8 +57,9 @@ def validate_bf16_rows(rows, steps, streamed, prefixes, budget, hashes):
                 not 0 < counter(stage, "managed_weight_capacity_bytes") <= budget or
                 counter(stage, "resident_source_bytes") == 0 or counter(stage, "streamed_source_bytes") == 0):
                 raise ValueError("missing source proof, managed weight admission, real reads or drain")
-            if index == 0:
-                if counter(stage, "verification_bytes") != counter(stage, "source_file_bytes"):
+            if index == 0 and registration != "reuse":
+                if (counter(stage, "verification_bytes") != counter(stage, "source_file_bytes") or
+                    counter(stage, "verification_cache_hits") != 0):
                     raise ValueError("cold original source full-SHA proof missing")
             elif counter(stage, "verification_bytes") != 0 or counter(stage, "verification_cache_hits") != 1:
                 raise ValueError("warm native unchanged-generation content proof differs")
@@ -64,6 +67,27 @@ def validate_bf16_rows(rows, steps, streamed, prefixes, budget, hashes):
         if (phases.get("policy") != "gpu" or counter(phases.get("prefill") or {}, "steps_this_request") != 1 or
             counter(phases.get("decode") or {}, "steps_this_request") != steps - 1):
             raise ValueError("original prefix KV/complete denoise phase coverage differs")
+
+
+def validate_bf16_registration(records, registration, source_sizes):
+    if registration not in ("first", "reuse") or len(records) != 6:
+        raise ValueError("six actual encoder/DiT source registration receipts required")
+    order = list(source_sizes)
+    for index, record in enumerate(records):
+        name = order[index % 2]
+        cold = index < 2
+        reuse = cold and registration == "reuse"
+        hashed = cold and registration == "first"
+        if (record.get("component") != name or record.get("enabled") is not True or
+            counter(record, "verification_bytes") != (source_sizes[name] if hashed else 0) or
+            counter(record, "verification_cache_hits") != int(not hashed) or
+            counter(record, "registration_cache_hits") != int(reuse) or
+            counter(record, "registration_records_written") != int(hashed)):
+            raise ValueError("wrong BF16 initial registration, persistent hit or warm native proof")
+        initial, check = record.get("first_registration_seconds"), record.get("verification_seconds")
+        if (any(type(v) not in (int, float) or not math.isfinite(v) for v in (initial, check)) or
+            check <= 0 or (initial <= 0 if hashed else initial != 0)):
+            raise ValueError("invalid BF16 actual registration/check timing")
 
 
 def main():
@@ -79,8 +103,14 @@ def main():
     parser.add_argument("--weight-gib", type=int, default=11)
     parser.add_argument("--dump-latents", action="store_true")
     parser.add_argument("--optimized-gguf", action="store_true", help="GGUF-only explicit GPU prefill and parallel verified import; BF16 arithmetic controls unchanged")
+    parser.add_argument("--source-registration", choices=("process", "first", "reuse"), default="process")
+    parser.add_argument("--registration-cache", type=Path, help="private receipt root with an isolated subdirectory per arm")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.source_registration != "process":
+        if not args.registration_cache or not args.optimized_gguf:
+            parser.error("registration comparison requires an explicit private cache and optimized actual GGUF receipts")
+        args.registration_cache = args.registration_cache.absolute()
     order = args.order.split(",")
     if (len(order) != len(set(order)) or len(order) < 2 or set(order) - set(ARMS) or
         "bf16-stream" not in order or not 0 <= args.encoder_prefix <= 34 or not 0 <= args.dit_prefix <= 30 or
@@ -98,7 +128,7 @@ def main():
     summary = dict(schema="tc-qwen21-bf16-stream-comparison-v1", status="running", qualification_passed=False,
                    source_identities=hashes, order=order, steps=args.steps, encoder_prefix=args.encoder_prefix,
                    dit_prefix=args.dit_prefix, managed_weight_budget_bytes=args.weight_gib << 30,
-                   optimized_gguf=args.optimized_gguf, trials=[])
+                   optimized_gguf=args.optimized_gguf, source_registration=args.source_registration, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
@@ -107,6 +137,15 @@ def main():
         env.update(TURBOCIDER_QWEN21_PROFILE_STEPS="1", TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS="8",
                    TURBOCIDER_QWEN21_SOURCE_REGISTRATION="0")
         streamed = mode == "bf16-stream"
+        if args.source_registration != "process":
+            cache = args.registration_cache / mode
+            # Resident BF16 has no full-SHA lease capture on this base path.
+            # Do not add artificial registration to its actual lifecycle.
+            if mode != "bf16-resident" and (
+                (args.source_registration == "first" and (cache.exists() or cache.is_symlink())) or
+                (args.source_registration == "reuse" and (not cache.is_dir() or cache.is_symlink()))):
+                raise ValueError("first registration needs a fresh cache; reuse needs the completed original cache")
+            env.update(TURBOCIDER_QWEN21_SOURCE_REGISTRATION="1", TURBOCIDER_SOURCE_REGISTRATION_CACHE=str(cache))
         env["TURBOCIDER_QWEN21_BF16_STREAMING"] = "1" if streamed else "0"
         env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"] = "0" if streamed else "1"
         prefill = args.optimized_gguf and mode.startswith("gguf")
@@ -140,7 +179,7 @@ def main():
             memory = run_sampled([str(cli), "batch", str(model), *requests], repo=ROOT, output=args.output, stem=mode,
                 env=env, stdout=stdout, stderr=stderr, timeout=1800, interval_ms=100, max_gap_ms=500)
         rows = [json.loads(line) for line in (args.output / f"{mode}.stdout.jsonl").read_text().splitlines()]
-        imports = []
+        imports, registrations = [], []
         if mode.startswith("gguf"):
             validate_receipts(rows, 5120 if mode == "gguf-ane" else 0, args.steps, "all", prefill)
             if prefill:
@@ -148,17 +187,25 @@ def main():
                            for line in (args.output / f"{mode}.stderr.txt").read_text().splitlines()
                            if line.startswith('{"qwen_gguf_verified_import":')]
                 validate_verified_imports(imports,dict(dit=(hashes[str(sources[7])],sources[7].stat().st_size),
-                                                      encoder=(hashes[str(sources[6])],sources[6].stat().st_size)))
+                                                      encoder=(hashes[str(sources[6])],sources[6].stat().st_size)),
+                                          args.source_registration)
                 if any(r["qwen_encoder_prefill"]["processor_sha256"] != hashes[str(sources[-1])] for r in rows):
                     raise ValueError("optimized GGUF processor proof differs")
         else:
             validate_bf16_rows(rows, args.steps, streamed, (args.encoder_prefix, args.dit_prefix), args.weight_gib << 30,
-                dict(encoder=hashes[str(sources[3])], denoiser=hashes[str(sources[4])]))
+                dict(encoder=hashes[str(sources[3])], denoiser=hashes[str(sources[4])]), args.source_registration)
+            if streamed and args.source_registration != "process":
+                registrations = [json.loads(line)["qwen_source_registration"]
+                                 for line in (args.output / f"{mode}.stderr.txt").read_text().splitlines()
+                                 if line.startswith('{"qwen_source_registration":')]
+                validate_bf16_registration(registrations, args.source_registration,
+                    {sources[3].name: sources[3].stat().st_size, sources[4].name: sources[4].stat().st_size})
         trial = dict(mode=mode, timings=[r["timings_seconds"] for r in rows], memory=memory,
             warm_medians={name: statistics.median(r["timings_seconds"][name] for r in rows[1:])
                           for name in ("request_wall", "text_encode", "denoise", "vae_decode")},
             actual_streaming=[r.get("qwen_bf16_streaming") for r in rows],
             actual_encoder_prefill=[r.get("qwen_encoder_prefill") for r in rows],verified_imports=imports,
+            source_registrations=registrations,
             actual_phases=[r.get("qwen_ffn_phases") for r in rows],
             png_sha256=[sha256_file(args.output / f"{mode}-{i}.png") for i in range(3)])
         summary["trials"].append(trial)

@@ -101,6 +101,14 @@ inline bool lora_1024_generation(const Request &request) {
                                        request.hybrid_mlp_mode == "runtime"));
 }
 
+// Bounded original-source CPU import scratch; zero rejects malformed options.
+inline int gguf_read_buffer_mib(const char *value) {
+    if (!value || std::string_view(value) == "1") return 1;
+    if (std::string_view(value) == "4") return 4;
+    if (std::string_view(value) == "8") return 8;
+    return 0;
+}
+
 // Return a negative sentinel for malformed values so planning and execution
 // reject the same threshold rather than silently falling back to a default.
 inline float db_cache_threshold(const char *value) {

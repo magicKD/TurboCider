@@ -38,6 +38,22 @@ def receipts(channels=4096, steps=40):
 
 
 class MixedKHybridScreenTests(unittest.TestCase):
+    def test_actual_bounded_import_buffer_receipt(self):
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        records = [dict(component=k, source_sha256="a" * 64, verification_bytes=0,
+            verification_cache_hits=1, registration_enabled=True, registration_cache_hits=1,
+            registration_records_written=0, first_registration_seconds=0,
+            cpu_verify_import_schedule=True, verified_before_publication=True, physical_overlap_proved=False,
+            verification_seconds=.001, import_wall_seconds=.5, read_buffer_capacity_bytes=8 << 20) for k in expected]
+        validate_verified_imports(records, expected, "reuse", 8)
+        for value in (1 << 20, True, 8.0 * (1 << 20)):
+            broken = copy.deepcopy(records); broken[0]["read_buffer_capacity_bytes"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_verified_imports(broken, expected, "reuse", 8)
+        broken = copy.deepcopy(records); del broken[0]["read_buffer_capacity_bytes"]
+        with self.assertRaises(ValueError):
+            validate_verified_imports(broken, expected, "reuse", 8)
+
     def test_first_registration_and_independent_process_receipt_reuse(self):
         expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
         for phase in ("first", "reuse"):

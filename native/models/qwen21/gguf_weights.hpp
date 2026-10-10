@@ -3,6 +3,7 @@
 #include "../../backends/ane_memory.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "source_registration.hpp"
+#include "diagnostic_options.hpp"
 #include <map>
 #include <iostream>
 
@@ -80,21 +81,24 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
             "Qwen GGUF verify/import overlap requires 0 or 1");
     const bool overlap=flag && std::string_view(flag)=="1";
     const bool registered=source_registration_enabled();
+    const int read_mib=gguf_read_buffer_mib(std::getenv("TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB"));
+    require(read_mib>0,"Qwen GGUF read buffer requires1,4 or8 MiB");
+    const uint64_t read_bytes=uint64_t(read_mib)<<20;
     auto admission=[&](const streaming::GgufPackedBankMetrics &metrics) {
         const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
-        const uint64_t growth=metrics.planned_packed_capacity_bytes+((overlap ? uint64_t(2) : uint64_t(1))<<20);
+        const uint64_t growth=metrics.planned_packed_capacity_bytes+read_bytes+(overlap ? uint64_t(1)<<20 : 0);
         const auto decision=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,growth);
         require(decision.allowed(),"Qwen21 GGUF source admission declined: "+ane::memory_denial_reason(decision.denial,observed));
     };
     if(overlap) {
         streaming::PendingSourceVerification pending({source},&cancelled,registered);
         result->bank=streaming::GgufPackedBank::load_verifying(pending,"qwen21-component",*result->ledger,
-            weights,uint64_t(1)<<20,options,admission,&cancelled,event);
+            weights,read_bytes,options,admission,&cancelled,event);
     } else {
         auto lease=registered ? streaming::SourceLease::capture_registered({source},&cancelled) :
                                 streaming::SourceLease::capture_verified({source},&cancelled);
         result->bank=std::make_unique<streaming::GgufPackedBank>(lease,"qwen21-component",*result->ledger,
-            uint64_t(1)<<20,true,0,6,options);
+            read_bytes,true,0,6,options);
         admission(result->bank->metrics());result->bank->load(weights,&cancelled,event);
     }
     if(text) {
@@ -116,6 +120,7 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
             <<",\"registration_enabled\":"<<(registered ? "true" : "false")
             <<",\"registration_cache_hits\":"<<m.registration_cache_hits
             <<",\"registration_records_written\":"<<m.registration_records_written
+            <<",\"read_buffer_capacity_bytes\":"<<m.read_buffer_capacity_bytes
             <<",\"first_registration_seconds\":"<<(registered && m.verification_bytes ? m.verification_seconds : 0)
             <<",\"cpu_verify_import_schedule\":"<<(overlap ? "true" : "false")
             <<",\"verified_before_publication\":true,\"physical_overlap_proved\":false"

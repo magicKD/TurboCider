@@ -1,0 +1,2848 @@
+{
+  "schema": "tc-qwen21-matched-memory-and-candidate-validation-v1",
+  "date": "2026-10-10",
+  "goal_status": "active",
+  "qualification_passed": false,
+  "platform": {
+    "cpu": "Apple M4 Max",
+    "physical_memory_bytes": 68719476736,
+    "macos": "26.6.2"
+  },
+  "source_sha256": {
+    "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+    "libturbocider.dylib": "e332b640a9385ca64a6aca19ab319ced95e2d5534b29778a4e685c5fc2826b77",
+    "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+    "qwen3vl_8b_bf16.safetensors": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+    "qwen_image_2.1_bf16.safetensors": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+    "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+    "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+    "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+    "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+  },
+  "matched": {
+    "library_build_id": "tc-runtime-build-v1-087d77b5326cca55e3a9ed5eb8a4061a986323faaed890373b9d1b888df0e561",
+    "source_count": 512,
+    "first_registration_4step": {
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "mode": "bf16-stream",
+          "timings": [
+            {
+              "denoise": 9.999012625,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 17.724117,
+              "text_encode": 7.062072583,
+              "vae_decode": 0.645749208
+            },
+            {
+              "denoise": 5.292037792,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 7.156981583,
+              "text_encode": 1.305173333,
+              "vae_decode": 0.546009792
+            },
+            {
+              "denoise": 5.264255125,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 7.123489583,
+              "text_encode": 1.301322291,
+              "vae_decode": 0.544065875
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 7.140235583,
+            "text_encode": 1.303247812,
+            "denoise": 5.2781464585,
+            "vae_decode": 0.5450378335
+          },
+          "verified_imports": [],
+          "source_registrations": [
+            {
+              "component": "qwen3vl_8b_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 17534334616,
+              "verification_cache_hits": 0,
+              "registration_cache_hits": 0,
+              "registration_records_written": 1,
+              "first_registration_seconds": 5.71388,
+              "verification_seconds": 5.71388
+            },
+            {
+              "component": "qwen_image_2.1_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 14230280616,
+              "verification_cache_hits": 0,
+              "registration_cache_hits": 0,
+              "registration_records_written": 1,
+              "first_registration_seconds": 4.72344,
+              "verification_seconds": 4.72344
+            },
+            {
+              "component": "qwen3vl_8b_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000128625
+            },
+            {
+              "component": "qwen_image_2.1_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000107917
+            },
+            {
+              "component": "qwen3vl_8b_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.0001115
+            },
+            {
+              "component": "qwen_image_2.1_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.0001095
+            }
+          ],
+          "png_sha256": [
+            "bbcde3a565f5e8bfb6cdfbd42e4b92674198f2b6e6c3238119ef4ea366f4d33b",
+            "bb66c210c9dbdf36660b5392a806c8bbd3e347e7210ba102da209c9f9c4bb80e",
+            "8a4fbbd44db7282ff9e1ce8db9fbb66c99d3f13aa0fa57c0df506d77e33b3f97"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 14753458640,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gguf-gpu",
+          "timings": [
+            {
+              "denoise": 4.420049166,
+              "hybrid_setup": 0,
+              "image_encode": 2.09e-7,
+              "request_wall": 10.5505585,
+              "text_encode": 3.805664917,
+              "vae_decode": 0.588876208
+            },
+            {
+              "denoise": 4.435341375,
+              "hybrid_setup": 0,
+              "image_encode": 2.5e-7,
+              "request_wall": 5.106730333,
+              "text_encode": 0.089283667,
+              "vae_decode": 0.567723459
+            },
+            {
+              "denoise": 4.428418208,
+              "hybrid_setup": 0,
+              "image_encode": 1.25e-7,
+              "request_wall": 5.109224167,
+              "text_encode": 0.090840792,
+              "vae_decode": 0.574244333
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 5.107977249999999,
+            "text_encode": 0.09006222950000001,
+            "denoise": 4.4318797915,
+            "vae_decode": 0.570983896
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 4199565024,
+              "verification_cache_hits": 0,
+              "registration_enabled": true,
+              "registration_cache_hits": 0,
+              "registration_records_written": 1,
+              "first_registration_seconds": 1.69271,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 1.69271,
+              "import_wall_seconds": 1.69404
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 5027785568,
+              "verification_cache_hits": 0,
+              "registration_enabled": true,
+              "registration_cache_hits": 0,
+              "registration_records_written": 1,
+              "first_registration_seconds": 3.47257,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 3.47257,
+              "import_wall_seconds": 3.47424
+            }
+          ],
+          "source_registrations": [],
+          "png_sha256": [
+            "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+            "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+            "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15456820736,
+            "compression_bytes": 0,
+            "decompression_bytes": 32768,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gguf-ane",
+          "timings": [
+            {
+              "denoise": 3.704029041,
+              "hybrid_setup": 0.000078625,
+              "image_encode": 2.08e-7,
+              "request_wall": 10.01571675,
+              "text_encode": 3.797275125,
+              "vae_decode": 0.564217791
+            },
+            {
+              "denoise": 3.656625125,
+              "hybrid_setup": 0.000088042,
+              "image_encode": 2.5e-7,
+              "request_wall": 4.323617167,
+              "text_encode": 0.089239791,
+              "vae_decode": 0.563356958
+            },
+            {
+              "denoise": 3.662058708,
+              "hybrid_setup": 0.000100916,
+              "image_encode": 3.33e-7,
+              "request_wall": 4.331523917,
+              "text_encode": 0.091453791,
+              "vae_decode": 0.564170458
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 4.327570542,
+            "text_encode": 0.09034679100000001,
+            "denoise": 3.6593419165,
+            "vae_decode": 0.563763708
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 4199565024,
+              "verification_cache_hits": 0,
+              "registration_enabled": true,
+              "registration_cache_hits": 0,
+              "registration_records_written": 1,
+              "first_registration_seconds": 1.68969,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 1.68969,
+              "import_wall_seconds": 1.69098
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 5027785568,
+              "verification_cache_hits": 0,
+              "registration_enabled": true,
+              "registration_cache_hits": 0,
+              "registration_records_written": 1,
+              "first_registration_seconds": 3.4673,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 3.4673,
+              "import_wall_seconds": 3.46905
+            }
+          ],
+          "source_registrations": [],
+          "png_sha256": [
+            "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+            "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+            "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15387516632,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "bf16-resident",
+          "timings": [
+            {
+              "denoise": 4.285797459,
+              "hybrid_setup": 0,
+              "image_encode": 3.33e-7,
+              "request_wall": 7.486063625,
+              "text_encode": 2.103023333,
+              "vae_decode": 0.6926755
+            },
+            {
+              "denoise": 4.347976708,
+              "hybrid_setup": 0,
+              "image_encode": 2.5e-7,
+              "request_wall": 5.829643917,
+              "text_encode": 0.785542208,
+              "vae_decode": 0.6748325
+            },
+            {
+              "denoise": 4.357415166,
+              "hybrid_setup": 0,
+              "image_encode": 1.25e-7,
+              "request_wall": 5.360112708,
+              "text_encode": 0.319778667,
+              "vae_decode": 0.65797275
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 5.594878312500001,
+            "text_encode": 0.5526604374999999,
+            "denoise": 4.352695937,
+            "vae_decode": 0.6664026249999999
+          },
+          "verified_imports": [],
+          "source_registrations": [],
+          "png_sha256": [
+            "bbcde3a565f5e8bfb6cdfbd42e4b92674198f2b6e6c3238119ef4ea366f4d33b",
+            "bb66c210c9dbdf36660b5392a806c8bbd3e347e7210ba102da209c9f9c4bb80e",
+            "8a4fbbd44db7282ff9e1ce8db9fbb66c99d3f13aa0fa57c0df506d77e33b3f97"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 36135067168,
+            "compression_bytes": 8823078912,
+            "decompression_bytes": 8636743680,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        }
+      ]
+    },
+    "registered_40step": {
+      "status": "complete_diagnostic",
+      "stream_to_gguf_ane_tree_peak_ratio": 0.9468762676894413,
+      "memory_within_ten_percent": true,
+      "trials": [
+        {
+          "mode": "bf16-stream",
+          "timings": [
+            {
+              "denoise": 43.427389208,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 45.354152,
+              "text_encode": 1.336743917,
+              "vae_decode": 0.575148792
+            },
+            {
+              "denoise": 43.427274625,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 45.610348292,
+              "text_encode": 1.608497083,
+              "vae_decode": 0.562347875
+            },
+            {
+              "denoise": 43.426991292,
+              "hybrid_setup": 0,
+              "image_encode": 0,
+              "request_wall": 45.344903959,
+              "text_encode": 1.347063917,
+              "vae_decode": 0.558034834
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 45.477626125499995,
+            "text_encode": 1.4777805000000002,
+            "denoise": 43.427132958499996,
+            "vae_decode": 0.5601913545
+          },
+          "actual_streaming": [
+            {
+              "components_released_before_vae": true,
+              "cpu_refill_workers": 1,
+              "denoiser": {
+                "completed_layers": 1280,
+                "completed_passes": 40,
+                "completed_prefix_layers": 1120,
+                "completed_reader_fences": 160,
+                "completed_streamed_layers": 160,
+                "drained": true,
+                "fills": 160,
+                "layers": 32,
+                "layout_digest": "6acb2277c7a59531e02c60d82988189ece9fc65aaaab47af8d3cb9ef5b591eef",
+                "managed_weight_budget_bytes": 13958643712,
+                "managed_weight_capacity_bytes": 13358809088,
+                "prefix": 28,
+                "reader_fences": 160,
+                "resident_load_seconds": 0.87188625,
+                "resident_source_bytes": 12485416960,
+                "slot_arrays": 249,
+                "slots": 2,
+                "source_file_bytes": 14230280616,
+                "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+                "streamed_read_seconds": 4.083691453000001,
+                "streamed_source_bytes": 69793300480,
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "verification_seconds": 0.000339292,
+                "wait_seconds": 0.005050708999999999
+              },
+              "dynamic_layer_weight_arguments": true,
+              "encoder": {
+                "completed_layers": 36,
+                "completed_passes": 1,
+                "completed_prefix_layers": 28,
+                "completed_reader_fences": 8,
+                "completed_streamed_layers": 8,
+                "drained": true,
+                "fills": 8,
+                "layers": 36,
+                "layout_digest": "21d3f73446cfdbe30453aae019b673d115acbaefe4677d76be9b454bb42d1d23",
+                "managed_weight_budget_bytes": 13958643712,
+                "managed_weight_capacity_bytes": 12822921216,
+                "prefix": 28,
+                "reader_fences": 8,
+                "resident_load_seconds": 0.859656209,
+                "resident_source_bytes": 12049668096,
+                "slot_arrays": 332,
+                "slots": 2,
+                "source_file_bytes": 17534334616,
+                "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+                "streamed_read_seconds": 0.181075085,
+                "streamed_source_bytes": 3087142912,
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "verification_seconds": 0.000529125,
+                "wait_seconds": 0.1516165
+              },
+              "physical_overlap_proved": false,
+              "prefetch_distance": 1,
+              "public_memory_qualification": false,
+              "scope": "private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap",
+              "weight_precision": "original_bf16"
+            },
+            {
+              "components_released_before_vae": true,
+              "cpu_refill_workers": 1,
+              "denoiser": {
+                "completed_layers": 1280,
+                "completed_passes": 40,
+                "completed_prefix_layers": 1120,
+                "completed_reader_fences": 160,
+                "completed_streamed_layers": 160,
+                "drained": true,
+                "fills": 160,
+                "layers": 32,
+                "layout_digest": "6acb2277c7a59531e02c60d82988189ece9fc65aaaab47af8d3cb9ef5b591eef",
+                "managed_weight_budget_bytes": 13958643712,
+                "managed_weight_capacity_bytes": 13358809088,
+                "prefix": 28,
+                "reader_fences": 160,
+                "resident_load_seconds": 0.880154375,
+                "resident_source_bytes": 12485416960,
+                "slot_arrays": 249,
+                "slots": 2,
+                "source_file_bytes": 14230280616,
+                "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+                "streamed_read_seconds": 4.099186627000002,
+                "streamed_source_bytes": 69793300480,
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "verification_seconds": 0.001012708,
+                "wait_seconds": 0.0046071639999999995
+              },
+              "dynamic_layer_weight_arguments": true,
+              "encoder": {
+                "completed_layers": 36,
+                "completed_passes": 1,
+                "completed_prefix_layers": 28,
+                "completed_reader_fences": 8,
+                "completed_streamed_layers": 8,
+                "drained": true,
+                "fills": 8,
+                "layers": 36,
+                "layout_digest": "21d3f73446cfdbe30453aae019b673d115acbaefe4677d76be9b454bb42d1d23",
+                "managed_weight_budget_bytes": 13958643712,
+                "managed_weight_capacity_bytes": 12822921216,
+                "prefix": 28,
+                "reader_fences": 8,
+                "resident_load_seconds": 1.138539708,
+                "resident_source_bytes": 12049668096,
+                "slot_arrays": 332,
+                "slots": 2,
+                "source_file_bytes": 17534334616,
+                "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+                "streamed_read_seconds": 0.183689876,
+                "streamed_source_bytes": 3087142912,
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "verification_seconds": 0.000418208,
+                "wait_seconds": 0.1542015
+              },
+              "physical_overlap_proved": false,
+              "prefetch_distance": 1,
+              "public_memory_qualification": false,
+              "scope": "private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap",
+              "weight_precision": "original_bf16"
+            },
+            {
+              "components_released_before_vae": true,
+              "cpu_refill_workers": 1,
+              "denoiser": {
+                "completed_layers": 1280,
+                "completed_passes": 40,
+                "completed_prefix_layers": 1120,
+                "completed_reader_fences": 160,
+                "completed_streamed_layers": 160,
+                "drained": true,
+                "fills": 160,
+                "layers": 32,
+                "layout_digest": "6acb2277c7a59531e02c60d82988189ece9fc65aaaab47af8d3cb9ef5b591eef",
+                "managed_weight_budget_bytes": 13958643712,
+                "managed_weight_capacity_bytes": 13358809088,
+                "prefix": 28,
+                "reader_fences": 160,
+                "resident_load_seconds": 0.873959833,
+                "resident_source_bytes": 12485416960,
+                "slot_arrays": 249,
+                "slots": 2,
+                "source_file_bytes": 14230280616,
+                "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+                "streamed_read_seconds": 4.100276586999999,
+                "streamed_source_bytes": 69793300480,
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "verification_seconds": 0.000398334,
+                "wait_seconds": 0.001919959999999999
+              },
+              "dynamic_layer_weight_arguments": true,
+              "encoder": {
+                "completed_layers": 36,
+                "completed_passes": 1,
+                "completed_prefix_layers": 28,
+                "completed_reader_fences": 8,
+                "completed_streamed_layers": 8,
+                "drained": true,
+                "fills": 8,
+                "layers": 36,
+                "layout_digest": "21d3f73446cfdbe30453aae019b673d115acbaefe4677d76be9b454bb42d1d23",
+                "managed_weight_budget_bytes": 13958643712,
+                "managed_weight_capacity_bytes": 12822921216,
+                "prefix": 28,
+                "reader_fences": 8,
+                "resident_load_seconds": 0.881645584,
+                "resident_source_bytes": 12049668096,
+                "slot_arrays": 332,
+                "slots": 2,
+                "source_file_bytes": 17534334616,
+                "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+                "streamed_read_seconds": 0.18190029300000002,
+                "streamed_source_bytes": 3087142912,
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "verification_seconds": 0.000364375,
+                "wait_seconds": 0.152786502
+              },
+              "physical_overlap_proved": false,
+              "prefetch_distance": 1,
+              "public_memory_qualification": false,
+              "scope": "private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap",
+              "weight_precision": "original_bf16"
+            }
+          ],
+          "actual_phases": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 41.347737456000004,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.162738375,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 41.343139789,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.157501708,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 41.357736042,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.148592833,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "verified_imports": [],
+          "source_registrations": [
+            {
+              "component": "qwen3vl_8b_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.00043575
+            },
+            {
+              "component": "qwen_image_2.1_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000242584
+            },
+            {
+              "component": "qwen3vl_8b_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000324833
+            },
+            {
+              "component": "qwen_image_2.1_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000903333
+            },
+            {
+              "component": "qwen3vl_8b_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000286917
+            },
+            {
+              "component": "qwen_image_2.1_bf16.safetensors",
+              "enabled": true,
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_cache_hits": 0,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "verification_seconds": 0.000293833
+            }
+          ],
+          "png_sha256": [
+            "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+            "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+            "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 14764599472,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "fd8b6724160ff572cd29db8ef15c1444b3e71731a4ad49e117d5604955e9fbda"
+          }
+        },
+        {
+          "mode": "gguf-gpu",
+          "timings": [
+            {
+              "denoise": 43.729314083,
+              "hybrid_setup": 0,
+              "image_encode": 1.66e-7,
+              "request_wall": 46.976507125,
+              "text_encode": 2.018404792,
+              "vae_decode": 0.59769725
+            },
+            {
+              "denoise": 43.73717525,
+              "hybrid_setup": 0,
+              "image_encode": 8.3e-8,
+              "request_wall": 44.431782833,
+              "text_encode": 0.090415583,
+              "vae_decode": 0.589991375
+            },
+            {
+              "denoise": 43.733259292,
+              "hybrid_setup": 0,
+              "image_encode": 2.09e-7,
+              "request_wall": 44.433877125,
+              "text_encode": 0.096641083,
+              "vae_decode": 0.590009375
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 44.432829979000005,
+            "text_encode": 0.09352833299999999,
+            "denoise": 43.735217270999996,
+            "vae_decode": 0.590000375
+          },
+          "actual_streaming": [
+            null,
+            null,
+            null
+          ],
+          "actual_phases": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 42.58576704099999,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.141292875,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 42.596620877000014,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.137984042,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 42.592817454000006,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.138029084,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000391167,
+              "import_wall_seconds": 0.591135
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000300958,
+              "import_wall_seconds": 1.6845
+            }
+          ],
+          "source_registrations": [],
+          "png_sha256": [
+            "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+            "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+            "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15213059632,
+            "compression_bytes": 0,
+            "decompression_bytes": 2277376,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "862d4e6a4ecc34cc65a38772a56f349d0abca60df61b7626a66b9e46ba23cf80"
+          }
+        },
+        {
+          "mode": "gguf-ane",
+          "timings": [
+            {
+              "denoise": 36.207978708,
+              "hybrid_setup": 0.000074875,
+              "image_encode": 1.25e-7,
+              "request_wall": 39.867698625,
+              "text_encode": 2.176693042,
+              "vae_decode": 0.611646542
+            },
+            {
+              "denoise": 36.211545541,
+              "hybrid_setup": 0.000102083,
+              "image_encode": 4.59e-7,
+              "request_wall": 36.903329625,
+              "text_encode": 0.093726375,
+              "vae_decode": 0.584843417
+            },
+            {
+              "denoise": 36.1665325,
+              "hybrid_setup": 0.00010125,
+              "image_encode": 3.34e-7,
+              "request_wall": 36.855759291,
+              "text_encode": 0.090875875,
+              "vae_decode": 0.58451575
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 36.879544458,
+            "text_encode": 0.092301125,
+            "denoise": 36.189039020500005,
+            "vae_decode": 0.5846795835
+          },
+          "actual_streaming": [
+            null,
+            null,
+            null
+          ],
+          "actual_phases": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 1248,
+                "runtime_calls_this_request": 1248,
+                "step_seconds": 35.210205415,
+                "steps_this_request": 39
+              },
+              "policy": "all",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 0.994729583,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 1248,
+                "runtime_calls_this_request": 1248,
+                "step_seconds": 35.253320249000005,
+                "steps_this_request": 39
+              },
+              "policy": "all",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 0.9547935,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 1248,
+                "runtime_calls_this_request": 1248,
+                "step_seconds": 35.207995000000004,
+                "steps_this_request": 39
+              },
+              "policy": "all",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 32,
+                "runtime_calls_this_request": 32,
+                "step_seconds": 0.955426542,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000498291,
+              "import_wall_seconds": 0.609337
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000957583,
+              "import_wall_seconds": 1.83922
+            }
+          ],
+          "source_registrations": [],
+          "png_sha256": [
+            "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+            "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+            "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15592955464,
+            "compression_bytes": 0,
+            "decompression_bytes": 655360,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "af8026ec34978d8e28d116e6fa5833e0671c93c50e9c1afb591cbaba7c217826"
+          }
+        },
+        {
+          "mode": "bf16-resident",
+          "timings": [
+            {
+              "denoise": 42.126278125,
+              "hybrid_setup": 0,
+              "image_encode": 1.67e-7,
+              "request_wall": 45.572686625,
+              "text_encode": 2.323293834,
+              "vae_decode": 0.719011542
+            },
+            {
+              "denoise": 42.038526584,
+              "hybrid_setup": 0,
+              "image_encode": 1.25e-7,
+              "request_wall": 43.637729417,
+              "text_encode": 0.87639975,
+              "vae_decode": 0.69775375
+            },
+            {
+              "denoise": 42.068941125,
+              "hybrid_setup": 0,
+              "image_encode": 2.91e-7,
+              "request_wall": 43.005057375,
+              "text_encode": 0.267746708,
+              "vae_decode": 0.652396125
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 43.321393396000005,
+            "text_encode": 0.572073229,
+            "denoise": 42.0537338545,
+            "vae_decode": 0.6750749375
+          },
+          "actual_streaming": [
+            null,
+            null,
+            null
+          ],
+          "actual_phases": [
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 40.978455622000006,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.142486958,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 40.910016623999994,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.126073541,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            },
+            {
+              "decode": {
+                "actual_rows": 1024,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 40.889666248999994,
+                "steps_this_request": 39
+              },
+              "policy": "gpu",
+              "prefill": {
+                "actual_rows": 1048,
+                "completed_channel_blocks_this_request": 0,
+                "runtime_calls_this_request": 0,
+                "step_seconds": 1.177115708,
+                "steps_this_request": 1
+              },
+              "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+            }
+          ],
+          "verified_imports": [],
+          "source_registrations": [],
+          "png_sha256": [
+            "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+            "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+            "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 36963900960,
+            "compression_bytes": 7260487680,
+            "decompression_bytes": 7053508608,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "2b5c300aeced3c4ca46fed9813a4a4d04ff08907ac0dec1b19cf7fe649f87393"
+          }
+        }
+      ]
+    },
+    "scope": "same library four actual routes; no hard-RAM/physical overlap promotion; source registration outside 40-step window, weights load still counted"
+  },
+  "ffn_dense_probe": {
+    "evidence": "outputs/qwen21-ffn-dense-v1-screen-20261010/summary.json",
+    "status": "complete_diagnostic",
+    "trials": [
+      {
+        "component": "dit",
+        "medians": [
+          {
+            "M": 32,
+            "packed_seconds": 0.001897791,
+            "fresh_dequant_dense_seconds": 0.007164458,
+            "cached_dense_seconds": 0.003308875
+          },
+          {
+            "M": 128,
+            "packed_seconds": 0.003229625,
+            "fresh_dequant_dense_seconds": 0.006829416,
+            "cached_dense_seconds": 0.003530625
+          },
+          {
+            "M": 512,
+            "packed_seconds": 0.011856542,
+            "fresh_dequant_dense_seconds": 0.014452375,
+            "cached_dense_seconds": 0.011533375
+          },
+          {
+            "M": 1024,
+            "packed_seconds": 0.023271208,
+            "fresh_dequant_dense_seconds": 0.02480525,
+            "cached_dense_seconds": 0.022172125
+          },
+          {
+            "M": 2112,
+            "packed_seconds": 0.047040459,
+            "fresh_dequant_dense_seconds": 0.047773458,
+            "cached_dense_seconds": 0.0449185
+          },
+          {
+            "M": 4096,
+            "packed_seconds": 0.091021458,
+            "fresh_dequant_dense_seconds": 0.089198,
+            "cached_dense_seconds": 0.086308875
+          }
+        ],
+        "native": {
+          "schema": "tc-qwen21-real-ffn-dense-screen-v1",
+          "qualification_passed": false,
+          "scope": "one complete original layer0 FFN with synthetic FP16 inputs; no whole-model or ahead-decode qualification",
+          "component": "dit",
+          "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+          "verification_bytes": 0,
+          "registration_cache_hits": 1,
+          "source_read_bytes": 84934656,
+          "packed_capacity_bytes": 94371840,
+          "selected_tensor_count": 2,
+          "dense_block_bytes": 301989888,
+          "dense_blocks_retained": 1,
+          "fresh_packed_arguments_dynamic": true,
+          "group_size": 32,
+          "gate_bits": 4,
+          "down_bits": 4,
+          "K": 4096,
+          "intermediate": 12288,
+          "initial_dequantize_seconds": 0.013921916,
+          "cases": [
+            {
+              "M": 32,
+              "complete_output_elements": 131072,
+              "fresh_relative_l2": 0.000409949716413,
+              "cached_relative_l2": 0.000409949716413,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 128,
+              "complete_output_elements": 524288,
+              "fresh_relative_l2": 0.0000379440025426,
+              "cached_relative_l2": 0.0000379440025426,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 512,
+              "complete_output_elements": 2097152,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 1024,
+              "complete_output_elements": 4194304,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 2112,
+              "complete_output_elements": 8650752,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 4096,
+              "complete_output_elements": 16777216,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            }
+          ],
+          "warmups": 3,
+          "hot_samples": 9,
+          "mlx_logical_peak_bytes": 1436549120
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 1643315992,
+          "final_evidence_digest": "fbb60f017b948452ff122731b23af9489d683019806db018cd0bac1c8e04496f"
+        }
+      },
+      {
+        "component": "encoder",
+        "medians": [
+          {
+            "M": 32,
+            "packed_seconds": 0.001251042,
+            "fresh_dequant_dense_seconds": 0.005531417,
+            "cached_dense_seconds": 0.001899542
+          },
+          {
+            "M": 128,
+            "packed_seconds": 0.003328542,
+            "fresh_dequant_dense_seconds": 0.007904292,
+            "cached_dense_seconds": 0.003742834
+          },
+          {
+            "M": 512,
+            "packed_seconds": 0.011851916,
+            "fresh_dequant_dense_seconds": 0.014567917,
+            "cached_dense_seconds": 0.011526542
+          },
+          {
+            "M": 1024,
+            "packed_seconds": 0.023242125,
+            "fresh_dequant_dense_seconds": 0.025028916,
+            "cached_dense_seconds": 0.022196792
+          },
+          {
+            "M": 2112,
+            "packed_seconds": 0.047176375,
+            "fresh_dequant_dense_seconds": 0.047946875,
+            "cached_dense_seconds": 0.044794833
+          },
+          {
+            "M": 4096,
+            "packed_seconds": 0.091224333,
+            "fresh_dequant_dense_seconds": 0.089472208,
+            "cached_dense_seconds": 0.086367625
+          }
+        ],
+        "native": {
+          "schema": "tc-qwen21-real-ffn-dense-screen-v1",
+          "qualification_passed": false,
+          "scope": "one complete original layer0 FFN with synthetic FP16 inputs; no whole-model or ahead-decode qualification",
+          "component": "encoder",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "verification_bytes": 0,
+          "registration_cache_hits": 1,
+          "source_read_bytes": 97910784,
+          "packed_capacity_bytes": 119537664,
+          "selected_tensor_count": 3,
+          "dense_block_bytes": 301989888,
+          "dense_blocks_retained": 1,
+          "fresh_packed_arguments_dynamic": true,
+          "group_size": 32,
+          "gate_bits": 4,
+          "down_bits": 8,
+          "K": 4096,
+          "intermediate": 12288,
+          "initial_dequantize_seconds": 0.007360125,
+          "cases": [
+            {
+              "M": 32,
+              "complete_output_elements": 131072,
+              "fresh_relative_l2": 0.00040631426964,
+              "cached_relative_l2": 0.00040631426964,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 128,
+              "complete_output_elements": 524288,
+              "fresh_relative_l2": 0.0000296518774121,
+              "cached_relative_l2": 0.0000296518774121,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 512,
+              "complete_output_elements": 2097152,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 1024,
+              "complete_output_elements": 4194304,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 2112,
+              "complete_output_elements": 8650752,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            },
+            {
+              "M": 4096,
+              "complete_output_elements": 16777216,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0
+            }
+          ],
+          "warmups": 3,
+          "hot_samples": 9,
+          "mlx_logical_peak_bytes": 1461714944
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 1668383464,
+          "final_evidence_digest": "0f52c6ebc6d467fd54b828a3d5dc5815e2ff8a9f91c27caa8b2ece5a7007fedd"
+        }
+      }
+    ],
+    "scope": "one real original layer0 at a time, synthetic FP16 input; fresh packed args dynamic, cached one dense block; not whole-model qualification",
+    "final_matching_probe_window": {
+      "evidence": "outputs/qwen21-ffn-dense-v4-complete-screen-20261010/summary.json",
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "component": "dit",
+          "medians": [
+            {
+              "M": 32,
+              "packed_seconds": 0.001866083,
+              "fresh_dequant_dense_seconds": 0.007305291,
+              "cached_dense_seconds": 0.003259041
+            },
+            {
+              "M": 38,
+              "packed_seconds": 0.001972333,
+              "fresh_dequant_dense_seconds": 0.006680833,
+              "cached_dense_seconds": 0.001909375
+            },
+            {
+              "M": 128,
+              "packed_seconds": 0.003484042,
+              "fresh_dequant_dense_seconds": 0.00819625,
+              "cached_dense_seconds": 0.003946958
+            },
+            {
+              "M": 512,
+              "packed_seconds": 0.011876625,
+              "fresh_dequant_dense_seconds": 0.014471,
+              "cached_dense_seconds": 0.011505666
+            },
+            {
+              "M": 1024,
+              "packed_seconds": 0.023199542,
+              "fresh_dequant_dense_seconds": 0.024856291,
+              "cached_dense_seconds": 0.022231292
+            },
+            {
+              "M": 1048,
+              "packed_seconds": 0.023931541,
+              "fresh_dequant_dense_seconds": 0.026316041,
+              "cached_dense_seconds": 0.023658208
+            },
+            {
+              "M": 2112,
+              "packed_seconds": 0.047104792,
+              "fresh_dequant_dense_seconds": 0.047756583,
+              "cached_dense_seconds": 0.044937833
+            },
+            {
+              "M": 4096,
+              "packed_seconds": 0.091098042,
+              "fresh_dequant_dense_seconds": 0.089380834,
+              "cached_dense_seconds": 0.086353333
+            }
+          ],
+          "native": {
+            "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "verification_bytes": 0,
+            "registration_cache_hits": 1,
+            "source_read_bytes": 84934656,
+            "selected_tensor_count": 2,
+            "dense_block_bytes": 301989888,
+            "dense_blocks_retained": 1,
+            "fresh_packed_arguments_dynamic": true,
+            "group_size": 32,
+            "gate_bits": 4,
+            "down_bits": 4,
+            "K": 4096,
+            "intermediate": 12288,
+            "cases": [
+              {
+                "M": 32,
+                "complete_output_elements": 131072,
+                "fresh_relative_l2": 0.000409949716413,
+                "cached_relative_l2": 0.000409949716413,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 38,
+                "complete_output_elements": 155648,
+                "fresh_relative_l2": 0.000357087119482,
+                "cached_relative_l2": 0.000357087119482,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 128,
+                "complete_output_elements": 524288,
+                "fresh_relative_l2": 0.0000379440025426,
+                "cached_relative_l2": 0.0000379440025426,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 512,
+                "complete_output_elements": 2097152,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 1024,
+                "complete_output_elements": 4194304,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 1048,
+                "complete_output_elements": 4292608,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 2112,
+                "complete_output_elements": 8650752,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 4096,
+                "complete_output_elements": 16777216,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              }
+            ]
+          },
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 1643348784,
+            "final_evidence_digest": "12262192fe75b6c6b9b6840cad5464842e740b954190560303a781019f317d69"
+          }
+        },
+        {
+          "component": "encoder",
+          "medians": [
+            {
+              "M": 32,
+              "packed_seconds": 0.001857625,
+              "fresh_dequant_dense_seconds": 0.007467167,
+              "cached_dense_seconds": 0.003292083
+            },
+            {
+              "M": 38,
+              "packed_seconds": 0.00302525,
+              "fresh_dequant_dense_seconds": 0.007815667,
+              "cached_dense_seconds": 0.003221083
+            },
+            {
+              "M": 128,
+              "packed_seconds": 0.00324375,
+              "fresh_dequant_dense_seconds": 0.006911625,
+              "cached_dense_seconds": 0.003594875
+            },
+            {
+              "M": 512,
+              "packed_seconds": 0.011878584,
+              "fresh_dequant_dense_seconds": 0.014692417,
+              "cached_dense_seconds": 0.011476917
+            },
+            {
+              "M": 1024,
+              "packed_seconds": 0.023261666,
+              "fresh_dequant_dense_seconds": 0.025007,
+              "cached_dense_seconds": 0.022218166
+            },
+            {
+              "M": 1048,
+              "packed_seconds": 0.023975042,
+              "fresh_dequant_dense_seconds": 0.026414666,
+              "cached_dense_seconds": 0.023676875
+            },
+            {
+              "M": 2112,
+              "packed_seconds": 0.0471905,
+              "fresh_dequant_dense_seconds": 0.048091666,
+              "cached_dense_seconds": 0.045006209
+            },
+            {
+              "M": 4096,
+              "packed_seconds": 0.091275041,
+              "fresh_dequant_dense_seconds": 0.08946625,
+              "cached_dense_seconds": 0.086441166
+            }
+          ],
+          "native": {
+            "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "verification_bytes": 0,
+            "registration_cache_hits": 1,
+            "source_read_bytes": 97910784,
+            "selected_tensor_count": 3,
+            "dense_block_bytes": 301989888,
+            "dense_blocks_retained": 1,
+            "fresh_packed_arguments_dynamic": true,
+            "group_size": 32,
+            "gate_bits": 4,
+            "down_bits": 8,
+            "K": 4096,
+            "intermediate": 12288,
+            "cases": [
+              {
+                "M": 32,
+                "complete_output_elements": 131072,
+                "fresh_relative_l2": 0.00040631426964,
+                "cached_relative_l2": 0.00040631426964,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 38,
+                "complete_output_elements": 155648,
+                "fresh_relative_l2": 0.000335535616614,
+                "cached_relative_l2": 0.000335535616614,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 128,
+                "complete_output_elements": 524288,
+                "fresh_relative_l2": 0.0000296518774121,
+                "cached_relative_l2": 0.0000296518774121,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 512,
+                "complete_output_elements": 2097152,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 1024,
+                "complete_output_elements": 4194304,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 1048,
+                "complete_output_elements": 4292608,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 2112,
+                "complete_output_elements": 8650752,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              },
+              {
+                "M": 4096,
+                "complete_output_elements": 16777216,
+                "fresh_relative_l2": 0,
+                "cached_relative_l2": 0,
+                "fresh_cached_relative_l2": 0
+              }
+            ]
+          },
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 1668563712,
+            "final_evidence_digest": "a0a650df73bd6819d6d4ed23d9c82eb65bdb22170a34023720b06f5d82cf45df"
+          }
+        }
+      ]
+    }
+  },
+  "splash_u4_candidate": {
+    "splash_revision": "134807b80bd6f64b1533cb1306358c042bb750d5",
+    "references": [
+      "runtime/ops/Linear.cpp",
+      "runtime/metal/kernels/prefill/linear_q4.metal"
+    ],
+    "evidence": "outputs/qwen21-ffn-dense-v3-u4-dit-screen-20261010/summary.json",
+    "status": "complete_diagnostic",
+    "trials": [
+      {
+        "component": "dit",
+        "medians": [
+          {
+            "M": 32,
+            "packed_seconds": 0.001146708,
+            "fresh_dequant_dense_seconds": 0.006319292,
+            "cached_dense_seconds": 0.001722709,
+            "direct_u4_mpp_seconds": 0.002334833
+          },
+          {
+            "M": 38,
+            "packed_seconds": 0.001927292,
+            "fresh_dequant_dense_seconds": 0.006981917,
+            "cached_dense_seconds": 0.00200125,
+            "direct_u4_mpp_seconds": 0.002994625
+          },
+          {
+            "M": 128,
+            "packed_seconds": 0.003756333,
+            "fresh_dequant_dense_seconds": 0.007498292,
+            "cached_dense_seconds": 0.003643,
+            "direct_u4_mpp_seconds": 0.0050175
+          },
+          {
+            "M": 512,
+            "packed_seconds": 0.011831291,
+            "fresh_dequant_dense_seconds": 0.014445541,
+            "cached_dense_seconds": 0.011507208,
+            "direct_u4_mpp_seconds": 0.013686541
+          },
+          {
+            "M": 1024,
+            "packed_seconds": 0.023190834,
+            "fresh_dequant_dense_seconds": 0.024900833,
+            "cached_dense_seconds": 0.022232,
+            "direct_u4_mpp_seconds": 0.02598675
+          },
+          {
+            "M": 1048,
+            "packed_seconds": 0.023946333,
+            "fresh_dequant_dense_seconds": 0.026294375,
+            "cached_dense_seconds": 0.023628458,
+            "direct_u4_mpp_seconds": 0.026700917
+          },
+          {
+            "M": 2112,
+            "packed_seconds": 0.047023708,
+            "fresh_dequant_dense_seconds": 0.047888084,
+            "cached_dense_seconds": 0.04490075,
+            "direct_u4_mpp_seconds": 0.051639125
+          },
+          {
+            "M": 4096,
+            "packed_seconds": 0.091035,
+            "fresh_dequant_dense_seconds": 0.089451416,
+            "cached_dense_seconds": 0.086551542,
+            "direct_u4_mpp_seconds": 0.098306917
+          }
+        ],
+        "native": {
+          "schema": "tc-qwen21-real-ffn-dense-screen-v1",
+          "qualification_passed": false,
+          "scope": "one complete original layer0 FFN with synthetic FP16 inputs; no whole-model or ahead-decode qualification",
+          "component": "dit",
+          "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+          "verification_bytes": 0,
+          "registration_cache_hits": 1,
+          "source_read_bytes": 84934656,
+          "packed_capacity_bytes": 94371840,
+          "selected_tensor_count": 2,
+          "dense_block_bytes": 301989888,
+          "dense_blocks_retained": 1,
+          "fresh_packed_arguments_dynamic": true,
+          "group_size": 32,
+          "direct_u4_mpp": true,
+          "gate_bits": 4,
+          "down_bits": 4,
+          "K": 4096,
+          "intermediate": 12288,
+          "initial_dequantize_seconds": 0.011117,
+          "cases": [
+            {
+              "M": 32,
+              "complete_output_elements": 131072,
+              "fresh_relative_l2": 0.000409949716413,
+              "cached_relative_l2": 0.000409949716413,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000528846518137
+            },
+            {
+              "M": 38,
+              "complete_output_elements": 155648,
+              "fresh_relative_l2": 0.000357087119482,
+              "cached_relative_l2": 0.000357087119482,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000493007595651
+            },
+            {
+              "M": 128,
+              "complete_output_elements": 524288,
+              "fresh_relative_l2": 0.0000379440025426,
+              "cached_relative_l2": 0.0000379440025426,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000421068543801
+            },
+            {
+              "M": 512,
+              "complete_output_elements": 2097152,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.00042285604286
+            },
+            {
+              "M": 1024,
+              "complete_output_elements": 4194304,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000421318225563
+            },
+            {
+              "M": 1048,
+              "complete_output_elements": 4292608,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000421619392
+            },
+            {
+              "M": 2112,
+              "complete_output_elements": 8650752,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000423373887315
+            },
+            {
+              "M": 4096,
+              "complete_output_elements": 16777216,
+              "fresh_relative_l2": 0,
+              "cached_relative_l2": 0,
+              "fresh_cached_relative_l2": 0,
+              "direct_u4_relative_l2": 0.000423066667281
+            }
+          ],
+          "warmups": 3,
+          "hot_samples": 9,
+          "mlx_logical_peak_bytes": 1436549128
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 1644577584,
+          "final_evidence_digest": "5a8fbaeba4372ee9eacef9cc2a3ade6546bf4f1debac716d57f5d4f13d80d5cd"
+        }
+      }
+    ],
+    "scope": "validation-only group32 row-major U4 tensor MPP plus group sums; no production/default route; Q8 rejected",
+    "promoted": false
+  },
+  "registered_encoder_buffer": {
+    "evidence": "outputs/qwen21-registered-buffer-v1-screen-20261010/summary.json",
+    "status": "complete_diagnostic",
+    "medians": {
+      "1": {
+        "bank_load_seconds": 0.6485193955,
+        "bank_read_seconds": 0.218224574,
+        "bank_decode_seconds": 0.408031567,
+        "total_observed_seconds": 0.6647535
+      },
+      "4": {
+        "bank_load_seconds": 0.5389833955,
+        "bank_read_seconds": 0.1927002145,
+        "bank_decode_seconds": 0.32389986699999995,
+        "total_observed_seconds": 0.5534216869999999
+      },
+      "8": {
+        "bank_load_seconds": 0.5239295420000001,
+        "bank_read_seconds": 0.185466988,
+        "bank_decode_seconds": 0.315938587,
+        "total_observed_seconds": 0.539345813
+      }
+    },
+    "order": [
+      1,
+      4,
+      8,
+      8,
+      4,
+      1
+    ],
+    "trials": [
+      {
+        "buffer_mib": 1,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "5b0d3c0e08bfe49f83616ca36d8edc5ea61b7cac5d65b76c5c70e4ce611c659b",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 1048576,
+          "managed_peak_bytes": 5222459392,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000267375,
+          "bank_load_seconds": 0.651642625,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.219037642,
+          "bank_decode_seconds": 0.410089397,
+          "embedding_setup_seconds": 1.66e-7,
+          "token_gather_seconds": 0.008949916,
+          "total_observed_seconds": 0.669241875,
+          "mlx_logical_peak_bytes": 5222459392
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4818161552,
+          "final_evidence_digest": "27fc35d9d9bc3744b1a2c3982c9f9871b18035fc97a5378e7eadddc0e6f22dfb"
+        }
+      },
+      {
+        "buffer_mib": 4,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "0624c17101d081d7a2fd30b93273415b27a7d35f5029eebad565c8da8480b879",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 4194304,
+          "managed_peak_bytes": 5225605120,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000160583,
+          "bank_load_seconds": 0.539583375,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.192953605,
+          "bank_decode_seconds": 0.324153343,
+          "embedding_setup_seconds": 4.1e-8,
+          "token_gather_seconds": 0.008962125,
+          "total_observed_seconds": 0.554103166,
+          "mlx_logical_peak_bytes": 5225605120
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4745400160,
+          "final_evidence_digest": "8570da1800fabc5928b700909200ae27d61212a5459d1363f8ed6197dde11508"
+        }
+      },
+      {
+        "buffer_mib": 8,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "c5b97f068219d8679919f674421a12cc05eef408edd0b5a9c08446f30b8306d4",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 8388608,
+          "managed_peak_bytes": 5229799424,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000154042,
+          "bank_load_seconds": 0.525823542,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.185281791,
+          "bank_decode_seconds": 0.317998423,
+          "embedding_setup_seconds": 4.2e-8,
+          "token_gather_seconds": 0.009040166,
+          "total_observed_seconds": 0.540455459,
+          "mlx_logical_peak_bytes": 5229799424
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4868788160,
+          "final_evidence_digest": "40c4c352d6cf113b2cd2d4d29d99db5da75870d83fc55b75fe8d96574192fc89"
+        }
+      },
+      {
+        "buffer_mib": 8,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "c5b97f068219d8679919f674421a12cc05eef408edd0b5a9c08446f30b8306d4",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 8388608,
+          "managed_peak_bytes": 5229799424,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000156333,
+          "bank_load_seconds": 0.522035542,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.185652185,
+          "bank_decode_seconds": 0.313878751,
+          "embedding_setup_seconds": 1.25e-7,
+          "token_gather_seconds": 0.008737459,
+          "total_observed_seconds": 0.538236167,
+          "mlx_logical_peak_bytes": 5229799424
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4883959744,
+          "final_evidence_digest": "ab97ed2ca7d500ce6c662cccdf028e9acc6f18427e87fe83f15181d3aca0bfc5"
+        }
+      },
+      {
+        "buffer_mib": 4,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "0624c17101d081d7a2fd30b93273415b27a7d35f5029eebad565c8da8480b879",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 4194304,
+          "managed_peak_bytes": 5225605120,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.0001515,
+          "bank_load_seconds": 0.538383416,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.192446824,
+          "bank_decode_seconds": 0.323646391,
+          "embedding_setup_seconds": 8.3e-8,
+          "token_gather_seconds": 0.008832667,
+          "total_observed_seconds": 0.552740208,
+          "mlx_logical_peak_bytes": 5225605120
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4755197792,
+          "final_evidence_digest": "2ac60f3e490188a8532ca37d56521dcf94f8568bda47beaf40ee10dae310bfd0"
+        }
+      },
+      {
+        "buffer_mib": 1,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "5b0d3c0e08bfe49f83616ca36d8edc5ea61b7cac5d65b76c5c70e4ce611c659b",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 1048576,
+          "managed_peak_bytes": 5222459392,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000157167,
+          "bank_load_seconds": 0.645396166,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.217411506,
+          "bank_decode_seconds": 0.405973737,
+          "embedding_setup_seconds": 4.1e-8,
+          "token_gather_seconds": 0.009016459,
+          "total_observed_seconds": 0.660265125,
+          "mlx_logical_peak_bytes": 5222459392
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4768288632,
+          "final_evidence_digest": "1516f1fc8573c4c8ec70fb3e83144d197ac7a943291c3a60ee53ec2da8331b79"
+        }
+      }
+    ]
+  },
+  "buffer_implementation": {
+    "library_build_id": "tc-runtime-build-v1-bd5dfd8467ab64b0116a2fe30451d280a72e4972ff65266e52c87a14e2355a48",
+    "source_count": 512,
+    "default_mib": 1,
+    "allowed_mib": [
+      1,
+      4,
+      8
+    ],
+    "environment": "TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB",
+    "precision_change": false,
+    "source_verification_change": false,
+    "physical_admission": "actual read buffer plus separate original 1MiB hash scratch when overlap enabled",
+    "screens": [
+      {
+        "read_buffer_mib": 1,
+        "steps": 4,
+        "status": "complete_diagnostic",
+        "source_sha256": {
+          "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+          "libturbocider.dylib": "8e2bd2e26b1ad61f827f60e91c6ea8301408fa0115457c05e1822659e70d14b1",
+          "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+          "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+          "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+          "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        "trials": [
+          {
+            "mode": "gpu",
+            "timings": [
+              {
+                "denoise": 4.4398085,
+                "hybrid_setup": 0,
+                "image_encode": 2.08e-7,
+                "request_wall": 6.721399667,
+                "text_encode": 1.054537875,
+                "vae_decode": 0.592044
+              },
+              {
+                "denoise": 4.41727575,
+                "hybrid_setup": 0,
+                "image_encode": 2.91e-7,
+                "request_wall": 5.1282235,
+                "text_encode": 0.088940583,
+                "vae_decode": 0.607186792
+              },
+              {
+                "denoise": 4.417189708,
+                "hybrid_setup": 0,
+                "image_encode": 2.5e-7,
+                "request_wall": 5.107049875,
+                "text_encode": 0.092778709,
+                "vae_decode": 0.582494709
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 5.1176366875,
+              "text_encode": 0.090859646,
+              "denoise": 4.417232729
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000509666,
+                "import_wall_seconds": 0.591606
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000472917,
+                "import_wall_seconds": 0.657443
+              }
+            ],
+            "png_sha256": [
+              "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+              "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+              "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15401885352,
+              "compression_bytes": 0,
+              "decompression_bytes": 0,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "d86f8006b9af4603a01bdbddd3b054d36d2b8ff711f55a963336c1945194ad26"
+            }
+          },
+          {
+            "mode": "a5120",
+            "timings": [
+              {
+                "denoise": 3.701873833,
+                "hybrid_setup": 0.000103667,
+                "image_encode": 2.5e-7,
+                "request_wall": 6.0692675,
+                "text_encode": 0.970326833,
+                "vae_decode": 0.562959209
+              },
+              {
+                "denoise": 3.6704665,
+                "hybrid_setup": 0.00008925,
+                "image_encode": 2.92e-7,
+                "request_wall": 4.3432225,
+                "text_encode": 0.089747834,
+                "vae_decode": 0.568508458
+              },
+              {
+                "denoise": 3.667275459,
+                "hybrid_setup": 0.000099542,
+                "image_encode": 2.08e-7,
+                "request_wall": 4.336720917,
+                "text_encode": 0.093820709,
+                "vae_decode": 0.561277041
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 4.3399717085,
+              "text_encode": 0.0917842715,
+              "denoise": 3.6688709795
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000495292,
+                "import_wall_seconds": 0.587914
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000406916,
+                "import_wall_seconds": 0.653973
+              }
+            ],
+            "png_sha256": [
+              "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+              "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+              "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15127256672,
+              "compression_bytes": 0,
+              "decompression_bytes": 524288,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "d0eadec6ea369a96bd0f1bd49a5be53075ac57841bf165e8f237a8ef4227a401"
+            }
+          }
+        ]
+      },
+      {
+        "read_buffer_mib": 8,
+        "steps": 4,
+        "status": "complete_diagnostic",
+        "source_sha256": {
+          "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+          "libturbocider.dylib": "8e2bd2e26b1ad61f827f60e91c6ea8301408fa0115457c05e1822659e70d14b1",
+          "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+          "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+          "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+          "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        "trials": [
+          {
+            "mode": "gpu",
+            "timings": [
+              {
+                "denoise": 4.417831541,
+                "hybrid_setup": 0,
+                "image_encode": 2.5e-7,
+                "request_wall": 6.374020625,
+                "text_encode": 0.85736875,
+                "vae_decode": 0.585625125
+              },
+              {
+                "denoise": 4.441112209,
+                "hybrid_setup": 0,
+                "image_encode": 2.92e-7,
+                "request_wall": 5.114780208,
+                "text_encode": 0.089890791,
+                "vae_decode": 0.568832125
+              },
+              {
+                "denoise": 4.425105,
+                "hybrid_setup": 0,
+                "image_encode": 2.5e-7,
+                "request_wall": 5.100993792,
+                "text_encode": 0.090770875,
+                "vae_decode": 0.569506834
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 5.107887,
+              "text_encode": 0.090330833,
+              "denoise": 4.4331086045
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000380458,
+                "import_wall_seconds": 0.473622
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000374834,
+                "import_wall_seconds": 0.532414
+              }
+            ],
+            "png_sha256": [
+              "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+              "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+              "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 14447173144,
+              "compression_bytes": 0,
+              "decompression_bytes": 0,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "4c1816ea4f085beeffec66664a529cbce868178ec0ad210368beb9f57e37a478"
+            }
+          },
+          {
+            "mode": "a5120",
+            "timings": [
+              {
+                "denoise": 3.704719458,
+                "hybrid_setup": 0.000077292,
+                "image_encode": 2.5e-7,
+                "request_wall": 6.026216292,
+                "text_encode": 1.019756916,
+                "vae_decode": 0.57368225
+              },
+              {
+                "denoise": 3.66699725,
+                "hybrid_setup": 0.000091292,
+                "image_encode": 2.92e-7,
+                "request_wall": 4.34246525,
+                "text_encode": 0.094306459,
+                "vae_decode": 0.566963041
+              },
+              {
+                "denoise": 3.672547458,
+                "hybrid_setup": 0.000086333,
+                "image_encode": 1.67e-7,
+                "request_wall": 4.356196417,
+                "text_encode": 0.093341083,
+                "vae_decode": 0.573404875
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 4.3493308335,
+              "text_encode": 0.093823771,
+              "denoise": 3.669772354
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000152625,
+                "import_wall_seconds": 0.476112
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000172,
+                "import_wall_seconds": 0.70321
+              }
+            ],
+            "png_sha256": [
+              "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+              "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+              "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15401164432,
+              "compression_bytes": 0,
+              "decompression_bytes": 0,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "7e515b40be30d627d326b7b1b9ae294c3ad16aa8afbe29fefc79d0eb034290fd"
+            }
+          }
+        ]
+      },
+      {
+        "read_buffer_mib": 1,
+        "steps": 40,
+        "status": "complete_diagnostic",
+        "source_sha256": {
+          "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+          "libturbocider.dylib": "8e2bd2e26b1ad61f827f60e91c6ea8301408fa0115457c05e1822659e70d14b1",
+          "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+          "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+          "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+          "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        "trials": [
+          {
+            "mode": "gpu",
+            "timings": [
+              {
+                "denoise": 43.727896917,
+                "hybrid_setup": 0,
+                "image_encode": 3.75e-7,
+                "request_wall": 45.903988208,
+                "text_encode": 0.972479958,
+                "vae_decode": 0.578019625
+              },
+              {
+                "denoise": 43.738822959,
+                "hybrid_setup": 0,
+                "image_encode": 4.2e-8,
+                "request_wall": 44.431183125,
+                "text_encode": 0.089131208,
+                "vae_decode": 0.588352792
+              },
+              {
+                "denoise": 43.742860667,
+                "hybrid_setup": 0,
+                "image_encode": 3.33e-7,
+                "request_wall": 44.431771625,
+                "text_encode": 0.090460417,
+                "vae_decode": 0.584066792
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 44.431477375,
+              "text_encode": 0.0897958125,
+              "denoise": 43.740841813
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000324125,
+                "import_wall_seconds": 0.585679
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000463791,
+                "import_wall_seconds": 0.655094
+              }
+            ],
+            "png_sha256": [
+              "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+              "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+              "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15474925080,
+              "compression_bytes": 0,
+              "decompression_bytes": 0,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "33e1e2bc9f3409bd53ce8e3df67ea1872076a4b9c2adefc63c791cbccdd2a3a6"
+            }
+          },
+          {
+            "mode": "a5120",
+            "timings": [
+              {
+                "denoise": 36.191097583,
+                "hybrid_setup": 0.000086708,
+                "image_encode": 2.08e-7,
+                "request_wall": 38.614689625,
+                "text_encode": 0.986509125,
+                "vae_decode": 0.587053458
+              },
+              {
+                "denoise": 36.144074083,
+                "hybrid_setup": 0.000162292,
+                "image_encode": 1.25e-7,
+                "request_wall": 36.860326208,
+                "text_encode": 0.0964135,
+                "vae_decode": 0.60463575
+              },
+              {
+                "denoise": 36.166133625,
+                "hybrid_setup": 0.000115083,
+                "image_encode": 1.25e-7,
+                "request_wall": 36.8499425,
+                "text_encode": 0.092584583,
+                "vae_decode": 0.578483
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 36.855134354,
+              "text_encode": 0.09449904149999999,
+              "denoise": 36.155103854000004
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000137125,
+                "import_wall_seconds": 0.592872
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 1048576,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000161041,
+                "import_wall_seconds": 0.659436
+              }
+            ],
+            "png_sha256": [
+              "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+              "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+              "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15512362640,
+              "compression_bytes": 0,
+              "decompression_bytes": 0,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "5f4255e608f1e131ae640eb9ad9cadc47b4788b31012d8d8c94cbfc88375470c"
+            }
+          }
+        ]
+      },
+      {
+        "read_buffer_mib": 8,
+        "steps": 40,
+        "status": "complete_diagnostic",
+        "source_sha256": {
+          "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+          "libturbocider.dylib": "8e2bd2e26b1ad61f827f60e91c6ea8301408fa0115457c05e1822659e70d14b1",
+          "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+          "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+          "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+          "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        },
+        "trials": [
+          {
+            "mode": "gpu",
+            "timings": [
+              {
+                "denoise": 43.7326075,
+                "hybrid_setup": 0,
+                "image_encode": 2.08e-7,
+                "request_wall": 45.732273791,
+                "text_encode": 0.886501709,
+                "vae_decode": 0.584434375
+              },
+              {
+                "denoise": 43.730256875,
+                "hybrid_setup": 0,
+                "image_encode": 1.67e-7,
+                "request_wall": 44.440813416,
+                "text_encode": 0.089968459,
+                "vae_decode": 0.606688292
+              },
+              {
+                "denoise": 43.7380165,
+                "hybrid_setup": 0,
+                "image_encode": 2.08e-7,
+                "request_wall": 44.446982542,
+                "text_encode": 0.090928625,
+                "vae_decode": 0.603955208
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 44.443897979,
+              "text_encode": 0.09044854199999999,
+              "denoise": 43.7341366875
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000148,
+                "import_wall_seconds": 0.48992
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.00017325,
+                "import_wall_seconds": 0.553274
+              }
+            ],
+            "png_sha256": [
+              "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+              "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+              "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15455493704,
+              "compression_bytes": 475136,
+              "decompression_bytes": 50675712,
+              "swap_in_bytes": 131072,
+              "swap_out_bytes": 589824,
+              "final_evidence_digest": "ea5cdca8f4eca424aa56541075bd1c1048487663085630951874050aa399a547"
+            }
+          },
+          {
+            "mode": "a5120",
+            "timings": [
+              {
+                "denoise": 36.204333709,
+                "hybrid_setup": 0.000092291,
+                "image_encode": 2.09e-7,
+                "request_wall": 38.569104083,
+                "text_encode": 1.018848166,
+                "vae_decode": 0.591733375
+              },
+              {
+                "denoise": 36.142656125,
+                "hybrid_setup": 0.000102458,
+                "image_encode": 5e-7,
+                "request_wall": 36.831906708,
+                "text_encode": 0.089675167,
+                "vae_decode": 0.586671292
+              },
+              {
+                "denoise": 36.145967792,
+                "hybrid_setup": 0.000094959,
+                "image_encode": 2.5e-7,
+                "request_wall": 36.839675417,
+                "text_encode": 0.090427042,
+                "vae_decode": 0.589814959
+              }
+            ],
+            "warm_medians": {
+              "request_wall": 36.8357910625,
+              "text_encode": 0.0900511045,
+              "denoise": 36.1443119585
+            },
+            "verified_imports": [
+              {
+                "component": "dit",
+                "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000306417,
+                "import_wall_seconds": 0.49185
+              },
+              {
+                "component": "encoder",
+                "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+                "verification_bytes": 0,
+                "verification_cache_hits": 1,
+                "registration_enabled": true,
+                "registration_cache_hits": 1,
+                "registration_records_written": 0,
+                "read_buffer_capacity_bytes": 8388608,
+                "first_registration_seconds": 0,
+                "cpu_verify_import_schedule": true,
+                "verified_before_publication": true,
+                "physical_overlap_proved": false,
+                "verification_seconds": 0.000157208,
+                "import_wall_seconds": 0.681667
+              }
+            ],
+            "png_sha256": [
+              "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+              "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+              "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+            ],
+            "memory": {
+              "complete": true,
+              "status": "complete",
+              "tree_peak_phys_footprint_bytes": 15387975240,
+              "compression_bytes": 0,
+              "decompression_bytes": 3112960,
+              "swap_in_bytes": 0,
+              "swap_out_bytes": 0,
+              "final_evidence_digest": "ff5dd5c8d0f7fd9bcd28ed755256a47c2d2975e36d7afd2f0942da16a7162ebd"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "exact_output": {
+    "bf16_four_step_tensor_pairs": 12,
+    "bf16_four_step_png_pairs": 3,
+    "bf16_forty_step_png_pairs": 3,
+    "read_buffer_four_step_tensor_pairs": 24,
+    "read_buffer_four_step_png_pairs": 6,
+    "all_equal": true,
+    "method": "cmp complete files byte-for-byte; no sampled output rows",
+    "read_buffer_forty_step_png_pairs": 6
+  },
+  "reference": {
+    "evidence": "outputs/qwen21-final-comparison-v1-unsloth-gpu-40step-20261010/summary.json",
+    "encoder_placement": "gpu",
+    "cold_condition_seconds": 1.18,
+    "warm": {
+      "condition_seconds": 0.13,
+      "sampling_seconds": 107.27,
+      "generation_seconds": 125.325,
+      "http_request_seconds": 125.36059227096848
+    },
+    "scope": "original pinned explicit GPU conditioner; different engine noise/RNG; cold filesystem state not matched after BF16 streaming"
+  },
+  "regressions": {
+    "metal_methods": 3,
+    "screen_methods": 14,
+    "options_parser": true,
+    "logs": [
+      "outputs/qwen21-import-buffer-v2-metal-20261010.log",
+      "outputs/qwen21-final-matched-v2-final-host-20261010.log",
+      "outputs/qwen21-import-buffer-v2-options-host-20261010.log",
+      "outputs/qwen21-import-buffer-v2-build-inputs-20261010.log"
+    ]
+  },
+  "retained_failed_window": {
+    "evidence": "outputs/qwen21-ffn-dense-v2-u4-screen-20261010/summary.json",
+    "encoder_report": "outputs/qwen21-ffn-dense-v2-u4-screen-20261010/encoder-memory-report.json",
+    "status": "inconclusive",
+    "reason": "encoder layer0 is original Q6 to affine Q8; direct U4 rejects unsupported planes",
+    "encoder_command_exit": 1,
+    "dit_evidence_complete": true
+  },
+  "remaining": [
+    "generic cold encoder guarantee after file-cache pressure not proved: observed registered cold 2.018/2.177s vs reference 1.18s in non-matched filesystem state",
+    "real bounded ahead-decode scheduling/overlap and whole-model benefit not proved",
+    "no new public/hard-RAM or broad editing/LoRA/scene quality qualification"
+  ]
+}
