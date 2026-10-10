@@ -35,6 +35,15 @@ class Transformer {
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
                    const std::vector<ReferenceLatents> &references = {});
     size_t cached_layers() const { return prefix_.size(); }
+    using LayerWeights=std::function<const Weights &(int)>;
+    using RetireWeights=std::function<void(int)>;
+    // Explicit private streaming: W is a dynamic graph argument, never a
+    // captured slot value. ALL block/KV outputs complete before retirement.
+    void set_layer_weights(LayerWeights acquire,RetireWeights retire) {
+        require(bool(acquire)==bool(retire),"Qwen streamed source/retirement callbacks must be paired");
+        layer_weights_=std::move(acquire);retire_weights_=std::move(retire);
+        prefill_blocks_.clear();decode_blocks_.clear();
+    }
     // Decode-only FFN split: prefill remains exact GPU so cached
     // conditioning is unchanged. Caller owns the callback's runtime.
     using DecodeMLP = std::function<Tensor(int, const Tensor &)>;
@@ -154,6 +163,8 @@ class Transformer {
     ObserveMLP observe_mlp_;
     StageMLP stage_mlp_;
     DecodeMLP prefill_mlp_;
+    LayerWeights layer_weights_;
+    RetireWeights retire_weights_;
     int prefill_first_block_ = 0, decode_first_block_ = 0;
     Tensor embedding(float timestep, mx::Dtype) const;
     void geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &);

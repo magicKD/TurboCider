@@ -7,6 +7,7 @@
 #include "pe_generation.hpp"
 #include "runtime_ffn_graphs.hpp"
 #include "runtime_gpu_layer_config.hpp"
+#include "bf16_streaming.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
@@ -62,6 +63,11 @@ Session::Session(const std::filesystem::path &root) : root_(root) {
 }
 LoadResult Session::load(const Event &event, std::atomic<bool> &cancelled) {
     checkpoint(cancelled);
+    if(bf16_streaming_enabled()) {
+        require(transformer_source_.extension()==".safetensors" && encoder_source_.extension()==".safetensors",
+            "Qwen BF16 streaming cannot consume GGUF checkpoints");
+        return {0,mx::get_active_memory()}; // actual stages own bounded lazy source setup
+    }
     if(transformer_gguf_)transformer_gguf_->bank->check_unchanged();
     if (!transformer_.bytes()) {
         emit(event, "load_qwen21_transformer", 0, 1);
@@ -164,6 +170,7 @@ RunResult Session::generate(const Request &request, const Event &event, std::ato
 }
 RunResult Session::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                        bool warmup, bool prepare_only) try {
+    if(bf16_streaming_enabled())return run_bf16_streamed(requested,event,cancelled,warmup,prepare_only);
     auto start = Clock::now();
     Request r = requested;
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");

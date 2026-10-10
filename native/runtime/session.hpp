@@ -8,6 +8,7 @@
 #include "memory_policy.hpp"
 #include "memory_trace.hpp"
 #include "streaming/gguf_packed_metrics.hpp"
+#include "streaming/qwen_bf16_metrics.hpp"
 #include "tensor_metrics.hpp"
 #include <chrono>
 #include <map>
@@ -333,6 +334,7 @@ struct RunResult {
     std::optional<EncoderWeightResidencyMetrics> encoder_weight_residency;
     std::optional<SharedLoraRankMetrics> shared_lora_ranks;
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
+    std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;

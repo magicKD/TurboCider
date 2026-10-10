@@ -2,6 +2,13 @@
 
 ## 当前加速结论
 
+2026-10-10 [Qwen原始BF16 encoder+DiT双阶段streaming与GGUF完整40步同库对照](qwen21-bf16-streaming-2026-10-10.md)：
+实际峰值14.75GB的BF16 stream热请求45.34s，对15.36GB的GGUF混合36.99s，
+后者少18.42%/约1.23×；GGUF纯GPU44.61s仅小幅胜stream，BF16 resident
+43.45s但峰值37.27GB。原BF16 stream/resident三张40步PNG全SHA相同。
+未缩steps/分辨率、未放宽物理reserve；encoder对Unsloth冷/热与Public完整
+目标仍待完成，不将private managed weight预算冒充public RAM cap。
+
 2026-10-10 [Qwen Q4_K_M有界并行导入与局部embedding](qwen21-q4km-encoder-import-2026-10-10.md)：
 同binary正反序encoder bank导入2.08→.68s（8 workers），完整SHA保留；
 40步cold text2.70–2.96s、混合warm请求36.98s，对GPU44.62s少17.12%。

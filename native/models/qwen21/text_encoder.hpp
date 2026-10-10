@@ -29,11 +29,20 @@ class TextEncoder {
                              const std::vector<Tensor> &deepstack_deltas = {}) const;
     static std::string prompt_template(const std::string &);
     static std::string system_prefix();
+    using LayerWeights=std::function<const Weights &(int)>;
+    using RetireWeights=std::function<void(int)>;
+    void set_layer_weights(LayerWeights acquire,RetireWeights retire) {
+        require(bool(acquire)==bool(retire) && !runtime_ && !config_.compiled_gpu_blocks,
+            "Qwen streamed encoder preserves original GPU arithmetic and requires paired callbacks");
+        layer_weights_=std::move(acquire);retire_weights_=std::move(retire);
+    }
 
   private:
     const Weights &weights_;
     TextConfig config_;
     std::string language_prefix_;
     ane::HybridFfn *runtime_ = nullptr; // borrowed through encode completion
+    LayerWeights layer_weights_;
+    RetireWeights retire_weights_;
 };
 } // namespace tc::qwen21

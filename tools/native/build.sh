@@ -155,6 +155,8 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/qwen21/pe_sampling.cpp
  native/models/qwen21/pe_generation.cpp
  native/models/qwen21/pipeline.cpp
+ native/models/qwen21/bf16_streaming.cpp native/models/qwen21/bf16_streaming_pipeline.cpp
+ native/platform/apple/qwen21_bf16_streaming.mm
  native/models/qwen21_module.cpp
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp

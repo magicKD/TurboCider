@@ -150,6 +150,7 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
     std::map<std::tuple<std::vector<std::string>,int,int,int,bool>,BlockFunction> ffn_graphs;
     for (int i = 0; i < config_.layers; ++i) {
         checkpoint(cancelled);
+        const Weights &layer_weights=layer_weights_ ? layer_weights_(i) : weights_;
         auto p = language_prefix_ + "layers." + std::to_string(i);
         auto plan=runtime_ ? runtime_->plan_block(i,count) : ane::RowScheduler::Plan{ane::RowScheduler::Mode::Gpu,0};
         if(plan.measured())mx::eval(hidden);
@@ -176,7 +177,7 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             auto result=found->second(arguments);hidden=result[0];
             if(plan.split()) {input=result[1];++attention_segments;} else ++full_blocks;
         } else {
-            auto result=attention_block(hidden,cosine,sine,mask,weights_,config_,p);
+            auto result=attention_block(hidden,cosine,sine,mask,layer_weights,config_,p);
             hidden=result[0];input=result[1];
         }
         const auto mlp=p+".mlp";
@@ -193,7 +194,7 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
         if(config_.compiled_gpu_blocks && plan.split())compiled_full=shared_ffn(0,0,0,false);
         auto gpu=[&](const Tensor &x) {
             if(compiled_full) {++full_ffn_segments;return (*compiled_full)(with_sources(x))[0];}
-            return full_ffn(x,weights_,mlp);
+            return full_ffn(x,layer_weights,mlp);
         };
         if(plan.split()) {
             const int width=weights_.at(mlp+".gate_proj.weight").shape(0),h=input.shape(2);
@@ -221,7 +222,8 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             mx::eval(hidden);checkpoint(cancelled);
             runtime_->observe_block(i,count,std::chrono::duration<double>(std::chrono::steady_clock::now()-block_start).count());
         }
-        if ((i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
+        if (retire_weights_ || (i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
+        if(retire_weights_)retire_weights_(i);
         if (event) event("qwen21_text_encode", i + 1, config_.layers);
     }
     if(config_.compiled_gpu_blocks) {

@@ -54,5 +54,6 @@ class Session final : public ModelSession {
     void prepare_transformer(const Request &, const Event &, std::atomic<bool> &,
                              bool experimental_adapter, bool fused_qkv, bool lora_fp16);
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup, bool prepare_only);
+    RunResult run_bf16_streamed(const Request &,const Event &,std::atomic<bool> &,bool warmup,bool prepare_only);
 };
 } // namespace tc::qwen21

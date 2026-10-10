@@ -45,6 +45,9 @@ class MlxWeightPager {
 
     void load_resident(Weights &destination,
                        const std::atomic<bool> *cancel = nullptr);
+    // Private bounded core source adapters opt in before any payload exists.
+    // Fresh allocator bins and actual size checks; old pager defaults unchanged.
+    void use_exact_allocations();
     void create_pool(const PoolLayout &);
     void destroy_pool(uint32_t pool) noexcept;
     uint64_t fill(const Group &, const tc_stream_slot_ticket_v1 &,
