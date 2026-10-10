@@ -1,4 +1,5 @@
 #include "vision.hpp"
+#include "encoder_attention.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -202,7 +203,8 @@ VisionFeatures VisionEncoder::encode(const Tensor &input_patches, int h, int w,
         auto v=heads(mx::expand_dims(qkv[2],0),c.heads,head_dim);
         auto qr = rotate(q,cosine,sine), kr = rotate(k,cosine,sine);
         if (c.pe_qwen35) { qr = mx::astype(qr, q.dtype()); kr = mx::astype(kr, k.dtype()); }
-        auto attended=mx::squeeze(c.pe_qwen35 ? pe_attention(qr,kr,v, i == 0 ? trace : nullptr) : attend(qr,kr,v),0);
+        auto attended=mx::squeeze(c.pe_qwen35 ? pe_attention(qr,kr,v, i == 0 ? trace : nullptr)
+            : encoder_attention::vision(qr,kr,v,c.efficient_attention),0);
         auto projected = project(attended,p+".attn.proj");
         hidden=hidden+projected;
         auto n2 = norm(hidden,p+".norm2");

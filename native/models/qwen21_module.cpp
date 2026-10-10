@@ -1,5 +1,6 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "qwen21/native_route.hpp"
 #include "qwen21/viggle_adapter.hpp"
 #include <cmath>
 #include <cstdlib>
@@ -11,6 +12,7 @@ ModelModule qwen21_module() {
         [] { return Recipe{"qwen-image-2.1", {{"text_encode", {}}, {"denoise", {"text_encode"}, 40},
                                             {"vae_decode", {"denoise"}}, {"export", {"vae_decode"}}}, true}; },
         [](const Request &r) {
+            qwen21::validate_native_denoiser_request(r);
             const auto db_options = qwen21::db_cache_options(r);
             if (db_options.enabled && (db_options.front_blocks != 8 || db_options.warmup_steps != 8))
                 require(db_options.diagnostic && r.execution == "gpu" && r.loras.empty(),
@@ -111,19 +113,25 @@ ModelModule qwen21_module() {
                             !db_options.enabled &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")),
                         "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE FP16 (or the staged diagnostic), unmerged runtime LoRA and no frozen W8A8 or DBCache/prefix reuse");
+            const bool frozen_fp16 = qwen21::frozen_fp16(r);
+            if (frozen_fp16)
+                require(r.width == 512 && r.height == 512 && r.operation == "image.generate" &&
+                            r.inputs.empty() && !r.prompt_enhance && !db_options.enabled &&
+                            r.steps == (r.loras.empty() ? 20 : 6),
+                        "frozen FP16 fused FFN is experimental: 512px text-to-image, base 20 steps or runtime LoRA 6 steps, no PE/cache");
             if (r.hybrid_mlp_mode != "auto" && !runtime_ane && !runtime_qkv)
-                require(r.execution == "gpu_ane" && r.qwen21_w8a8 &&
+                require(r.execution == "gpu_ane" && (r.qwen21_w8a8 || frozen_fp16) &&
                             r.allow_approximation && !r.ane_manifest.empty() &&
                             (r.hybrid_mlp_mode == "base_fused" ? r.loras.empty() :
                              r.hybrid_mlp_mode == "lora_fused" || !r.loras.empty()),
-                        "explicit Qwen21 hybrid_mlp_mode requires a W8A8 manifest and matching base/LoRA request");
+                        "explicit Qwen21 hybrid_mlp_mode requires a matching frozen precision and base/LoRA request");
             const bool lora_base_ane = qwen21::lora_base_ane(r);
             const bool gate_up_ane = qwen21::gate_up_ane(r);
             const bool fused_lora_ane = qwen21::fused_lora_ane(r);
             require(qwen21::binary_option_or_unset(gate_up_flag),
                     "Qwen21 LoRA-compatible gate/up diagnostic accepts only 0 or 1");
             if (gate_up_ane || fused_lora_ane)
-                require(r.execution == "gpu_ane" && r.qwen21_w8a8 &&
+                require(r.execution == "gpu_ane" && (r.qwen21_w8a8 || frozen_fp16) &&
                             r.allow_approximation && !r.qwen21_gpu_w8a16 &&
                             r.qwen21_gpu_full_ffn_blocks.empty() &&
                             r.width == 512 && r.height == 512 &&
@@ -156,7 +164,7 @@ ModelModule qwen21_module() {
             require(qwen21::binary_option_or_unset(lora_ane_flag),
                     "Qwen21 runtime LoRA/base ANE diagnostic accepts only 0 or 1");
             if (lora_base_ane && (!fused_lora_ane || !r.loras.empty()))
-                require(r.allow_approximation && r.execution == "gpu_ane" && r.qwen21_w8a8 &&
+                require(r.allow_approximation && r.execution == "gpu_ane" && (r.qwen21_w8a8 || frozen_fp16) &&
                             !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
                             r.width == 512 && r.height == 512 && r.steps == 6 &&
                             (r.qwen21_reference_size == 1024 ||
@@ -462,9 +470,9 @@ ModelModule qwen21_module() {
                       r.inputs.size() >= 1 && r.inputs.size() <= 3 &&
                       (r.qwen21_gpu_full_ffn_blocks.empty() ||
                        r.qwen21_gpu_full_ffn_blocks == std::vector<int>{3, 5, 7})));
-                require(r.allow_approximation && !r.ane_manifest.empty() &&
+                require(qwen21::native_w1_requested(r) || (r.allow_approximation && !r.ane_manifest.empty() &&
                             (runtime_ane || runtime_qkv || diagnostic_t2i || diagnostic_rectangle || diagnostic_lora_base_ane ||
-                             diagnostic_full_ref || supported_512),
+                             diagnostic_full_ref || supported_512)),
                         "Qwen21 gpu_ane requires a validated 512px route; 1024px text-to-image, full-reference editing and 768x512/512x768 tiling are diagnostic-only");
             } else {
                 require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&

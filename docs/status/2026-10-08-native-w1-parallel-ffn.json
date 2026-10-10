@@ -1,0 +1,250 @@
+{
+  "schema": "tc-native-w1-component-v1",
+  "date": "2026-10-08",
+  "status": "component_passed_not_full_denoiser",
+  "runtime_build_id": "tc-runtime-build-v1-fdce2b4d788f4093c0beb8e1026ad02932367077d428ea1c22adbdd793c9cc1a",
+  "runtime_source_manifest_matches_current": true,
+  "native_build": {
+    "library_cli_source_identity": "passed",
+    "overall_script_exit": 143,
+    "extra_app_compilation": "intentionally_stopped_after_native_phase",
+    "initial_build": "source_identity_changed_during_build_rebuilt_without_waiver"
+  },
+  "standalone_component": {
+    "path": "build/native-hybrid-ffn-component/native-hybrid-ffn-component",
+    "sha256": "c24724deea360a3b2cee7f92e75f09fc974aacb8a4e4d0ef3fac83d7f95c49ae",
+    "links_mlx": false,
+    "source_hashes": [
+      {
+        "path": "tools/native/native_hybrid_ffn_component.cpp",
+        "sha256": "16be0f4640cb51fcfc7f052124c5ae55cb48ee4ab899c8a1180328a4155516a9"
+      },
+      {
+        "path": "tools/native/build_native_hybrid_ffn_component.sh",
+        "sha256": "4649ab5da3b76c4437345226df49e013ad8b597c110dc322e47e1e1727224380"
+      },
+      {
+        "path": "native/backends/metal_graph/native_hybrid_ffn.hpp",
+        "sha256": "57982f721fe8a6a21d74093ff262e00fc0366ba8bfc76625fd240532e541c362"
+      },
+      {
+        "path": "native/backends/metal_graph/native_hybrid_ffn.mm",
+        "sha256": "68926e0897e233800f2e3aebff181ea1f2a0f2319f944bd718a3c522a2dd843b"
+      },
+      {
+        "path": "native/backends/metal_graph/native_hybrid_state.hpp",
+        "sha256": "99f265da1791f4dee65b9b0b67c0fbeb6a60b5e4999538e6bf2a4d933ad3c2c9"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ane_stages.hpp",
+        "sha256": "bb22d79d9cfd57f0783fd957250a0da7527742e6ceb74cee9aa0ecb9e2809b1c"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ane_stages.mm",
+        "sha256": "906183771f75ce7c051ec445497633d83d6182e9c3a369dc41004d0ae52c53f1"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ane_stage_contract.hpp",
+        "sha256": "a916cc27ad20405052119ae9b6a4a30592a5f6f15b00c140e40d4dce3ddb16fa"
+      },
+      {
+        "path": "native/backends/metal_graph/kernels/native_ane_stages.hpp",
+        "sha256": "5745d2a2bc0d9d7cb465c68cdc128ed51a3cab8ca7b91beba50fcd1a00dfd655"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ane_handoff.hpp",
+        "sha256": "511bcaa8cb893a16548ce920bf3a90b737b1bfba31a1367a9352495b8bb2b9a4"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ane_handoff.mm",
+        "sha256": "377a940595e0aa1e2cc8beec4722b17cfa253c76b73496de4e94f90687d83e2e"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ane_handoff_state.hpp",
+        "sha256": "ca5b9a0860c63cd1a8fd685ae2eed5417912be596b4428e05cd2b9e1acfdc674"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ffn.hpp",
+        "sha256": "83bc76273520c223cae05366cb2854120c7be70154119ba399376da694516677"
+      },
+      {
+        "path": "native/backends/metal_graph/native_ffn.mm",
+        "sha256": "76a83cabfcb9196c57ef39c43675c5342bcaadcef8e48041572df7e42e9243b8"
+      },
+      {
+        "path": "native/backends/metal_graph/kernels/dense_ffn.hpp",
+        "sha256": "98db7637d27d2f80fe6af92a20e346329ba0d93ea1841538f7a1f705bee4f2f6"
+      },
+      {
+        "path": "native/backends/metal_graph/backend.hpp",
+        "sha256": "840cdb3185a1e466bd9a7273f5ddfffcf00a57635c50cf15af937ec11ca51053"
+      },
+      {
+        "path": "native/backends/metal_graph/backend.mm",
+        "sha256": "4fcd7664f91dfa8a91bc7a24c9a740e9251b2084440e63516e4476612873b3ea"
+      },
+      {
+        "path": "native/backends/metal_graph/native_step_ops.hpp",
+        "sha256": "7dff86023119af1128bca28d0add59664186ba3c7ced49839d77e1430967f03f"
+      },
+      {
+        "path": "native/backends/metal_graph/native_step_ops.mm",
+        "sha256": "91e9cbde39a76553fe63736aaaab7772ab6f7af35c0f40b95529fc758cb9e734"
+      },
+      {
+        "path": "native/backends/ane_gpu.hpp",
+        "sha256": "38a66d4782000e19d56fe3979bdc41916b0de49151d029a5f075c67c8d52e728"
+      },
+      {
+        "path": "native/backends/ane_gpu.mm",
+        "sha256": "f2096661d513f3bd1542c63149ee6fd0513329437a32fa9dcd408cc1af6943d9"
+      },
+      {
+        "path": "native/backends/private/ane_program.hpp",
+        "sha256": "0ae4539c78185766cf15c9bed7ec200e5a2122f50cb04d4ee1b35ec0c99a22fd"
+      },
+      {
+        "path": "native/backends/private/ane_program.mm",
+        "sha256": "a524ad7298b83b88733bfeefee1b2ca494835e9e875ec412436f2743bd49cc58"
+      },
+      {
+        "path": "native/backends/private/ane_mil.cpp",
+        "sha256": "8e5a166cd2c4c668f71b49c3e510e27b856f71c6d9a65a248a6d3c532cf4e5d6"
+      },
+      {
+        "path": "native/runtime/memory_accounting.cpp",
+        "sha256": "392b2de1739535463b7020cdd3628baf4b318db3bca6b318fa2cc8e59ec21981"
+      },
+      {
+        "path": "native/models/qwen21/native_block.hpp",
+        "sha256": "c6de465abe5cf833b580ff2cffb65a3b1cc15450aac1ec6064c73a22191c587c"
+      },
+      {
+        "path": "native/models/qwen21/native_block.cpp",
+        "sha256": "2069f1b9b988b165972a71d7d0e42cb2dfdb1cceaed80c2e538eef074860b225"
+      }
+    ],
+    "results": [
+      {
+        "rrms": 0.02475652297,
+        "max_abs": 0.0004119873047,
+        "reference_absmax": 0.01953125,
+        "max_abs_over_reference_peak": 0.02109375,
+        "cosine": 0.9996935111,
+        "finite": 4096,
+        "rrms_limit": 0.08,
+        "peak_relative_limit": 0.08
+      },
+      {
+        "rows": 32,
+        "hidden": 128,
+        "width": 1024,
+        "ane_channels": 512,
+        "seed": 2026100801,
+        "program_key": "b41d7d500bcc31811f3ba60662f825cf0ca2f2129e717c7a865739fdd180ee2b",
+        "prepare_seconds": 0.911852042,
+        "dense_wall_seconds": 0.002811709,
+        "hybrid_wall_seconds": 0.001430167,
+        "producer_seconds": 0.000668708,
+        "submit_ane_seconds": 0.00020225,
+        "branch_join_seconds": 0.000324166,
+        "consumer_seconds": 0.000194375,
+        "original_surface_allocations": 9,
+        "surface_bytes": 327680,
+        "native_allocations": 13,
+        "ledger_storage_bytes": 1388432,
+        "ledger_peak_bytes": 1404812,
+        "duplicate_import_charges": 0,
+        "producer_ane_gpu_consumer_physical": 1,
+        "source_immutable": 1,
+        "padding_preserved": 1
+      },
+      {
+        "native_hybrid_ffn_component": "PASS",
+        "dense_requests": 1,
+        "hybrid_requests": 1,
+        "invalid_requests_submitted": 0,
+        "ledger_released": 1,
+        "models": 0,
+        "full_model": 0,
+        "e2e": 0,
+        "performance_qualified": 0,
+        "quality_scope": "generated_component_only"
+      }
+    ],
+    "device_requests": {
+      "dense": 1,
+      "hybrid": 1,
+      "real_model": 0,
+      "e2e": 0
+    },
+    "numeric_qualification": "generated_fixture_only",
+    "performance_qualified": false,
+    "timing_limits": [
+      "single sample per arm",
+      "dense first, hybrid second",
+      "distinct pipeline first use",
+      "combined cold preparation not a paired request metric",
+      "system/driver caches not reset"
+    ]
+  },
+  "tests": {
+    "native_route": {
+      "ran": 5,
+      "passed": 5
+    },
+    "runtime_contract": {
+      "ran": 129,
+      "skipped": 3,
+      "status": "passed"
+    },
+    "stage_layout_checks": 82,
+    "stage_shared_source_checks": 149,
+    "hybrid_aggregate": "passed",
+    "parallel_math_layout": "passed",
+    "split_permit_protocol": "passed",
+    "strict_new_host_syntax": "passed"
+  },
+  "deferred": [
+    "native denoiser steady layer scheduling",
+    "hybrid phase memory manifest",
+    "full request physical cancellation/collection",
+    "real activation complete-path timing",
+    "new base E2E",
+    "LoRA",
+    "edit encoder",
+    "Z-image adapter",
+    "App backend selection",
+    "W2/W3"
+  ],
+  "model_downloads": 0,
+  "cleanup": {
+    "schema": "tc-owned-w1-cleanup-v1",
+    "removed_bytes": 254981200,
+    "removed_files": 681,
+    "retained": [
+      {
+        "path": "build/native-w1-20261008/libturbocider.dylib",
+        "sha256": "ba95a16b9a0ba2b510faa596512175c2990d7e9585e99963a5ea1f63f5542d86",
+        "bytes": 10010096
+      },
+      {
+        "path": "build/native-w1-20261008/turbocider",
+        "sha256": "3702be1e63bdd435db091118d8f6527e170fc186a4580630fb02ee39fef8aac0",
+        "bytes": 309384
+      },
+      {
+        "path": "build/native-w1-20261008/runtime-build/runtime-build-manifest.json",
+        "sha256": "ffbc106f5aa5780ea54a17c38975855f37e03b8bcf1a607eddc9c40dea2cc913",
+        "bytes": 154562
+      },
+      {
+        "path": "build/native-hybrid-ffn-component/native-hybrid-ffn-component",
+        "sha256": "c24724deea360a3b2cee7f92e75f09fc974aacb8a4e4d0ef3fac83d7f95c49ae",
+        "bytes": 719128
+      }
+    ],
+    "model_or_system_cache_removed": false,
+    "full_receipt": "outputs/native-w1-20261008/owned-cleanup.json"
+  }
+}

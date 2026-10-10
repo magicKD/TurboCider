@@ -10,7 +10,7 @@
 namespace tc::ane {
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
                                     GraphGeometry expected, BackendPolicy policy,
-                                    std::optional<int> calibrated_channels) {
+                                    std::optional<int> calibrated_channels, int fixed_bucket_rows) {
     BuiltExecutor result;
     const bool fp16_values=configured_fp16_bf16_values();
     if(fp16_values && (!policy.allow_private || policy.preferred!=BackendPreference::Private ||
@@ -37,6 +37,7 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
     const int channels = resolved_private_channel_count(expected.width, calibrated_channels);
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
     if(runtime_template_w8a8(manifest)) {
+        if(fixed_bucket_rows)throw std::runtime_error("Public W8A8 template does not support a private fixed bucket override");
         if(policy.preferred!=BackendPreference::Public || channels || fp16_values || bf16_boundaries || requested_group)
             throw std::runtime_error("Public W8A8 template requires Public policy and its explicit row/basis ABI");
         result.executor=std::make_unique<PublicW8Graph>(manifest,budget,expected);
@@ -51,6 +52,17 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
     if (shape.kind != expected.kind || shape.hidden != expected.hidden || shape.width != expected.width ||
         (expected.require_lora_inputs && !shape.lora_inputs))
         throw std::runtime_error("runtime ANE graph does not match model FFN geometry");
+    if(fixed_bucket_rows) {
+        if(!try_private || descriptor.has_public_artifact() || channels<=0 || configured_request_rows() ||
+                fixed_bucket_rows<512 || fixed_bucket_rows>2048 || fixed_bucket_rows%128)
+            throw std::runtime_error("fixed bucket override requires Private channels, descriptor rows and bounded128 geometry");
+        shape.rows=fixed_bucket_rows;
+    }
+    if (configured_request_rows()) {
+        if (!try_private || descriptor.has_public_artifact() || channels <= 0)
+            throw std::runtime_error("request rows require Private channel splitting and a shape-only descriptor");
+        shape.rows = private_request_bucket(expected.request_rows);
+    }
     if (try_private) {
         // Malformed manifests/geometries remain configuration failures, not
         // capability fallback. Only the native graph consumes this shape.

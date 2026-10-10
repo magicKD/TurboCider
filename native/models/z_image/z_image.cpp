@@ -4080,7 +4080,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
-        const std::string request_identity = identity + ":row-placement="+ane::row_placement_name(z_runtime_row_placement())+
+        const int request_rows = image_rows + caption_rows;
+        const std::string request_identity = identity + (ane::configured_request_rows() ?
+            ":bucket=" + std::to_string(ane::private_request_bucket(request_rows)) : "") + ":row-placement="+ane::row_placement_name(z_runtime_row_placement())+
             ":gpu-layers="+gpu_policy + (native_channel_auto ?
             ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
         if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
@@ -4155,7 +4157,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
                                                          !active_loras_.empty(),std::nullopt,
-                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_),calibration?&*calibration:nullptr);
+                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_),calibration?&*calibration:nullptr,
+                std::nullopt, request_rows);
             runtime_manifest_ = request_identity;
             if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }

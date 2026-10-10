@@ -1,0 +1,443 @@
+{
+  "schema": "turbocider.native_lora_foundation_status.v1",
+  "date": "2026-10-08",
+  "status": "foundation-pass_real-ffn-budget-abort",
+  "conclusion": {
+    "split_api_implemented": true,
+    "immutable_abi_spec_implemented": true,
+    "native_mil_emitter_implemented": true,
+    "tiny_same_graph_shared_low_passed": true,
+    "real_ffn_comparison_completed": false,
+    "performance_qualified": false,
+    "hybrid_lora_controller_connected": false,
+    "ane_program_compile_or_device_run_performed": false,
+    "request_route_or_default_changed": false,
+    "app_acceptance_performed": false,
+    "e2e_performed": false,
+    "full_request_memory_certified": false,
+    "dominant_bottleneck_identified": false,
+    "active_goal_completed": false
+  },
+  "build": {
+    "runtime_build_id": "tc-runtime-build-v1-47d3ed80c5de774df4ffa3ed634f9d362a0074f90c8b426a13df6f10abd4904a",
+    "source_count": 571,
+    "source_mismatches": [],
+    "private_package_build_passed": true,
+    "package_build_ran_full_tests": false,
+    "warnings": "3 existing ane_gpu.mm fastMathEnabled deprecations"
+  },
+  "cpu": {
+    "new_split_checks": 172,
+    "split_including_existing_contract_source_math_checks": 1646,
+    "public_private_host_passed": true,
+    "existing_shader_bodies_byte_unchanged": true,
+    "spec_checks": 244,
+    "spec_rejection_cases": 209,
+    "mil_checks": 685,
+    "legacy_mil_constants_byte_cases": 4,
+    "mil_compiled_programs": 0,
+    "device_model_calls": 0,
+    "replay_cpu_contract_passed": true
+  },
+  "abi": {
+    "variants": [
+      "Base",
+      "HiddenReference",
+      "Rank128Candidate"
+    ],
+    "real_geometry": {
+      "M": 1024,
+      "H": 4096,
+      "F": 12288,
+      "C": 6144,
+      "rank": 128,
+      "adapters": 1,
+      "strength": 1,
+      "headroom": 1,
+      "bias_projections": 0
+    },
+    "input_counts": {
+      "Base": 7,
+      "HiddenReference": 9,
+      "Rank128Candidate": 10
+    },
+    "physical_surface_counts": {
+      "Base": 9,
+      "HiddenReference": 11,
+      "Rank128Candidate": 12
+    },
+    "packed_rows": {
+      "Base": 4097,
+      "HiddenReference": 10241,
+      "Rank128Candidate": 4225
+    },
+    "writer_masks": {
+      "Base": [
+        15,
+        16
+      ],
+      "HiddenReference": [
+        111,
+        272
+      ],
+      "Rank128Candidate": [
+        239,
+        528
+      ]
+    },
+    "base_surface_payload_mib": 85.00390625,
+    "base_surface_capacity_upper_mib": 85.03125,
+    "incremental_surface_payload_mib": {
+      "HiddenReference": 36,
+      "Rank128Candidate": 25.75
+    },
+    "additional_low_mib": 0.5,
+    "new_masks_accepted_by_current_stages": false,
+    "spec_is_physical_permit": false,
+    "abi_fingerprint_is_cryptographic_hash": false,
+    "rank_recipe_preserves_original_fp32_low": false
+  },
+  "tiny_device": {
+    "scope": "generated same-graph SGv2 low plus two channel apply nodes; no full FFN, model, ANE or timing loop",
+    "records": [
+      {
+        "event": "identity",
+        "library_build_id": "tc-runtime-build-v1-47d3ed80c5de774df4ffa3ed634f9d362a0074f90c8b426a13df6f10abd4904a",
+        "tool_source_sha256": "933a2183ce9fe123399d25811d2202fcb25d3de72739e1751ed63d1c294acd39",
+        "binary_sha256": "83ecc9967e65b94cce53ca32f3a631380060596545020173f7ea98a168a129ea",
+        "scope": "generated shared low and split apply only; no model/dense base/ANE/full FFN/E2E",
+        "planned_native_submissions": 2,
+        "planned_native_dispatches": 5,
+        "performance_qualified": false
+      },
+      {
+        "event": "prepared",
+        "device": "Apple M4 Pro",
+        "recipe": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2",
+        "generated_artifact_sha256": "efa77776370472d1139da0041377f9ee3b8f674895b3ab93670a2bee292fd6ad",
+        "generated_artifact_bytes": 65783,
+        "source_generation": 1,
+        "native_scratch_backings": 4,
+        "native_capacity_upper_bytes": 65536,
+        "process_baseline_bytes": 95437400,
+        "planned_peak_bytes": 632373848,
+        "framework_guard_certified": false,
+        "whole_request_certified": false
+      },
+      {
+        "event": "math_complete",
+        "actual_pair": "SgMmaR128",
+        "M": 8,
+        "K": 128,
+        "N": 128,
+        "rank": 128,
+        "old_dispatches": 2,
+        "shared_dispatches": 3,
+        "shared_low_dispatches": 1,
+        "channel_apply_ranges": [
+          [
+            0,
+            64
+          ],
+          [
+            64,
+            128
+          ]
+        ],
+        "low_bit_differences": 0,
+        "output_bit_differences": 0,
+        "finite": true,
+        "source_padding_unchanged": true,
+        "actual_weights_gpu_oracle": true,
+        "actual_mlx_data_owners_verified": true,
+        "physical_native_tickets_completed": 2,
+        "native_low_readiness_scope": "same graph order and successful physical ticket; not a cross-graph certificate",
+        "submitted_buffers": 2,
+        "completed_buffers": 2
+      },
+      {
+        "event": "complete",
+        "accepted": true,
+        "native_submissions": 2,
+        "native_dispatches": 5,
+        "all_work_physically_complete": true,
+        "native_ledger_zero": true,
+        "models_loaded": 0,
+        "ane_calls": 0,
+        "performance_qualified": false
+      }
+    ],
+    "supervisor": {
+      "exit_code": 0,
+      "wall_seconds": 0.6968852089485154,
+      "timeout": false,
+      "build_unchanged": true,
+      "original_sources_stat_unchanged": true
+    },
+    "generated_fixture_removed": true,
+    "cross_graph_low_readiness_qualified": false,
+    "performance_qualified": false
+  },
+  "real_ffn_attempt": {
+    "scope": "same historical layer0 step5 local capture; actual MLX runtime_ffn::full vs Native split SGv2 complete FFN",
+    "planned_calls": {
+      "mlx": 3,
+      "native": 3,
+      "additional_oracle": 0
+    },
+    "completed_calls": {
+      "mlx": 2,
+      "native": 2
+    },
+    "planned_sequence": "warm AB, record AB, record BA",
+    "completed_sequence": "warm AB, record AB; failure at second pair checkpoint before BA",
+    "failure_receipt": {
+      "all_started_work_completed_at_recorded_boundary": true,
+      "error": "memory_pressure_abort: unattributed process footprint exceeds framework upper at mlx_native_ffn_pair_complete",
+      "incomplete_domain": "none",
+      "library_build_identity": "tc-runtime-build-v1-47d3ed80c5de774df4ffa3ed634f9d362a0074f90c8b426a13df6f10abd4904a",
+      "owner_quarantined": false,
+      "process_exit_is_not_physical_proof": true,
+      "records": [
+        {
+          "arm": "mlx",
+          "completion_source": "actual mx::eval + mx::synchronize",
+          "eval_synchronize_seconds": 0.14206829199999998,
+          "first_compile_execution_in_warmup": true,
+          "fresh_output_data_owner": true,
+          "gpu_span_available": false,
+          "gpu_span_seconds": null,
+          "invoke_seconds": 0.000264958,
+          "native_ticket_available": false,
+          "order": 0,
+          "output_snapshot_bytes": 8388608,
+          "output_snapshot_seconds": 0.00084225,
+          "round": 0,
+          "wall_seconds": 0.14233325,
+          "warmup": true
+        },
+        {
+          "actual_sgmma_low_rank_dispatches": 6,
+          "arm": "native-split-sgmma-v2",
+          "completed_buffers": 1,
+          "completion_source": "native Ticket physical completion",
+          "dispatches": 10,
+          "gpu_span_available": true,
+          "gpu_span_seconds": 0.051532750017941,
+          "native_ticket_available": true,
+          "order": 1,
+          "output_snapshot_bytes": 0,
+          "output_snapshot_seconds": 0,
+          "physically_complete": true,
+          "round": 0,
+          "submitted_buffers": 1,
+          "wall_seconds": 0.052492333,
+          "warmup": true
+        },
+        {
+          "arm": "mlx",
+          "completion_source": "actual mx::eval + mx::synchronize",
+          "eval_synchronize_seconds": 0.047245875,
+          "first_compile_execution_in_warmup": false,
+          "fresh_output_data_owner": true,
+          "gpu_span_available": false,
+          "gpu_span_seconds": null,
+          "invoke_seconds": 2.2125e-05,
+          "native_ticket_available": false,
+          "order": 0,
+          "output_snapshot_bytes": 8388608,
+          "output_snapshot_seconds": 0.000253542,
+          "round": 1,
+          "wall_seconds": 0.047268,
+          "warmup": false
+        },
+        {
+          "actual_sgmma_low_rank_dispatches": 6,
+          "arm": "native-split-sgmma-v2",
+          "completed_buffers": 1,
+          "completion_source": "native Ticket physical completion",
+          "dispatches": 10,
+          "gpu_span_available": true,
+          "gpu_span_seconds": 0.05104449996724725,
+          "native_ticket_available": true,
+          "order": 1,
+          "output_snapshot_bytes": 0,
+          "output_snapshot_seconds": 0,
+          "physically_complete": true,
+          "round": 1,
+          "submitted_buffers": 1,
+          "wall_seconds": 0.051271583,
+          "warmup": false
+        }
+      ],
+      "schema": "native-qwen-lora-mlx-ffn-replay-v1",
+      "status": "failed"
+    },
+    "framework_allowance_bytes": 536870912,
+    "source_payload_bytes": 322961408,
+    "native_scratch_backings": 6,
+    "native_scratch_layout_bytes": 93192192,
+    "failure_peak_or_pair_numeric_report_available": false,
+    "source_final_tensor_digest_verification_report_available": false,
+    "real_phase_ledger_zero_report_available": false,
+    "supervisor_exit_code": 1,
+    "supervisor_wall_seconds": 1.9423810839653015,
+    "supervisor_timeout": false,
+    "build_unchanged": true,
+    "original_source_stats_unchanged": true,
+    "automatic_retries": 0,
+    "performance_qualified": false
+  },
+  "memory_review": {
+    "leak_or_system_oom_proven": false,
+    "unfused_logical_allocation_sum_mib": 833.5,
+    "logical_sum_is_concurrent_peak_or_physical_upper": false,
+    "includes_backend_temporary_cache_compiler_driver": false,
+    "required_diagnostic_order": "Capture failure metrics/admission snapshot before release; persist pairs before checkpoint; separate cleanup take_report after finalize",
+    "runtime_budget_or_guard_modified": false,
+    "working_hypothesis": "Before-first-MLX baseline and compiled/allocator resources may exceed the initial fixed framework allowance; exact failed footprint not saved",
+    "causal_attribution_verified": false,
+    "observed_fact": "unattributed process footprint exceeded framework upper at second-pair checkpoint"
+  },
+  "constraints": {
+    "device_groups": 2,
+    "model_downloads": 0,
+    "checkpoint_copies": 0,
+    "whole_model_exports": 0,
+    "new_captures": 0,
+    "e2e_calls": 0,
+    "automatic_retries": 0
+  },
+  "cleanup": {
+    "status": "complete",
+    "removed_file_count": 250,
+    "removed_bytes": 34613684,
+    "manifest_sha256": "a8012b47fc0e3343fd6f7c5087645059a38f522769fb4ec87f84f1856155e4c2",
+    "remaining_removed_files": 0,
+    "original_models_captures_binaries_receipts_preserved": true,
+    "system_driver_cache_removed": false
+  },
+  "implementation_sha256": {
+    "native/backends/metal_graph/native_lora.hpp": "2bc56670c140fe4a9918666b046bd43a8d8875b41be3c4ec54b041a0d81fb698",
+    "native/backends/metal_graph/native_lora.mm": "f5b6469bd55e5652f64e88ac488ba48f7e3c870cf14c4dcbae04473312fd5499",
+    "native/backends/metal_graph/kernels/native_lora.hpp": "ec69436956b03145b468008f427722bb7916bcdef1e0c49020d996d16d2f3be5",
+    "native/backends/metal_graph/native_ane_lora_contract.hpp": "1edc74d3dc26d84426d28219ef8fbe503ad813b21eb94b8a8e42314547a9917f",
+    "native/backends/private/ane_mil.cpp": "389d14ff95a99f1efd79dfeac24e6063ecabc017fddcb312e7c1f8b908381c85",
+    "native/backends/private/ane_mil.hpp": "9faa12be5028a900afcf92844153ce748844df49d20d3cfe7e8e32bc05be39a1",
+    "tests/native/native_lora_split_contract_test.cpp": "70432a42f22afd4d4c97d5ac4331e6cd87c1fe8a77eda34331e5226c6e77732b",
+    "tests/native/native_ane_lora_contract_test.cpp": "0c0ce8284b622bace7f48b8fafcadb548d0a8b162040bc9223815145493cbe52",
+    "tests/native/native_ane_lora_mil_test.cpp": "3ca9f3372ea1213433dbefddd7a9071241aec481a06c889f72a5a244acfeb070",
+    "tools/native/native_lora_shared_low_component.cpp": "933a2183ce9fe123399d25811d2202fcb25d3de72739e1751ed63d1c294acd39",
+    "tools/native/build_native_lora_shared_low_component.sh": "4e34db5f9bdeae8ce7d48d5280d444baad62d1b90011e4e31014ef06e8be1e37",
+    "tools/native/native_qwen_lora_mlx_ffn_replay.cpp": "3da95af079b31b04c6c18d61383a970b222f73d7121eb35106d4423aeb92b13b",
+    "tools/native/build_native_qwen_lora_mlx_ffn_replay.sh": "27829ac2e3d9025dba4a3c18d07341288bad0a0134198be324edbe570d882647"
+  },
+  "evidence": {
+    "outputs/native-lora-foundation-20261008/full-build.log": {
+      "bytes": 2246,
+      "sha256": "6da8316860b399860c5d9055ded373123b8f408ee7b7eb497fa8b17f068baa73"
+    },
+    "outputs/native-lora-foundation-20261008/split-host.log": {
+      "bytes": 2009,
+      "sha256": "ed36e75ed628e4743222fcc4a0698bbc345418cb810da70220626c60eb73594e"
+    },
+    "outputs/native-lora-foundation-20261008/split-cpu.log": {
+      "bytes": 1504,
+      "sha256": "bae24e98cce15da6087a3538c46aa5f02b95b90547aeccbc9d4f5978d0804662"
+    },
+    "outputs/native-lora-foundation-20261008/split-public-host.log": {
+      "bytes": 405,
+      "sha256": "0839b7a55fbfea69921f6c6ac438a0107948683dc8bb3ff694ee70686acb2833"
+    },
+    "outputs/native-lora-foundation-20261008/split-private-host.log": {
+      "bytes": 441,
+      "sha256": "c582bdc1408bae6b1db47e92e55e8931f5adfb33bbf5862be54cd110f28cfec8"
+    },
+    "outputs/native-lora-foundation-20261008/shared-low-host.log": {
+      "bytes": 1532,
+      "sha256": "5a84ada22d8f06025cf43b35a28d30c0c40add7530f6e459604463731f106f2b"
+    },
+    "outputs/native-lora-foundation-20261008/mil-cpu-v3.log": {
+      "bytes": 182,
+      "sha256": "8d0362d025b30bdb62a36feb1e446d322f49f26f08c588408d8c7f2c94a0ee6f"
+    },
+    "outputs/native-lora-foundation-20261008/legacy-emitter-baseline.json": {
+      "bytes": 1574,
+      "sha256": "4eadc0c2f2f924253dc766a2f7a545278587e5b11035045b80b46be02455c2f8"
+    },
+    "outputs/native-lora-foundation-20261008/legacy-mil-baseline.cpp": {
+      "bytes": 820,
+      "sha256": "c22904352d8d9d628cf10d60419257513e87b99efc218d6a083d2164237d93ae"
+    },
+    "outputs/native-lora-foundation-20261008/mlx-replay-cpu.log": {
+      "bytes": 169,
+      "sha256": "e4a324d375fb3768a46dc87b4b0a191224c57829db380cd6efe48ad831337cee"
+    },
+    "outputs/native-lora-foundation-20261008/shared-low-link.log": {
+      "bytes": 495,
+      "sha256": "4ddf7b4fcd0b147718cac87ec7c71488698b07bc6f6201b56daba123bd059369"
+    },
+    "outputs/native-lora-foundation-20261008/shared-low-device/receipt.jsonl": {
+      "bytes": 1718,
+      "sha256": "830f2f52d140900f23427c782e80ab584f2c5a576596c8f31ff3d26673f884a7"
+    },
+    "outputs/native-lora-foundation-20261008/shared-low-supervisor.json": {
+      "bytes": 10929,
+      "sha256": "ab5508203b7d30fc7904ceaa727d4d5de991cec0679c5d6d29ee9fb6c6aaecc3"
+    },
+    "outputs/native-lora-foundation-20261008/shared-low-pre-verification.json": {
+      "bytes": 1430,
+      "sha256": "786027f8721d978e89bf8bfa02c7ba1f2b85b15f28db6f6572f455756da075a5"
+    },
+    "outputs/native-lora-foundation-20261008/mlx-ffn.json": {
+      "bytes": 2245,
+      "sha256": "03bd3e12491cfb09f981cc0e09d26313093c9084abcdf35939cb159ece6edd55"
+    },
+    "outputs/native-lora-foundation-20261008/mlx-ffn-device.log": {
+      "bytes": 152,
+      "sha256": "b440ee44cf02d810fdd1721de8e0a65b556478d5f2b30961debb3d4e801f144e"
+    },
+    "outputs/native-lora-foundation-20261008/mlx-ffn-supervisor.json": {
+      "bytes": 11310,
+      "sha256": "130f28da2b936df139ca720ac7891ea657862a7eafaa8c9c2e16c581fd918be1"
+    },
+    "outputs/native-lora-foundation-20261008/mlx-ffn-pre-verification.json": {
+      "bytes": 1430,
+      "sha256": "786027f8721d978e89bf8bfa02c7ba1f2b85b15f28db6f6572f455756da075a5"
+    },
+    "outputs/native-lora-foundation-20261008/run-components.py": {
+      "bytes": 7599,
+      "sha256": "6d7553e697ff6756f34c430072279aac925b98b9f394954d7227c4fadfd0cce1"
+    },
+    "outputs/native-lora-foundation-20261008/owned-cleanup.json": {
+      "bytes": 65254,
+      "sha256": "a8012b47fc0e3343fd6f7c5087645059a38f522769fb4ec87f84f1856155e4c2"
+    },
+    "build/native-lora-foundation-runtime-20261008/runtime-build/runtime-build-manifest.json": {
+      "bytes": 156222,
+      "sha256": "f3a2027e665e69d0481eb7f164c66bc3671edb92945d791e854b9c36f37b024a"
+    },
+    "build/native-lora-foundation-runtime-20261008/libturbocider.dylib": {
+      "bytes": 10174480,
+      "sha256": "8f15baa63ef5e660a0816340f644587a05abe6edf1ba01e6ddb64956aee0173e"
+    },
+    "build/native-lora-foundation-runtime-20261008/turbocider": {
+      "bytes": 309176,
+      "sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641"
+    },
+    "outputs/native-lora-foundation-20261008/spec-cpu.log": {
+      "bytes": 98,
+      "sha256": "fed10e49aee41f5409feadba9cb7409fe47012072c7d103e648a46584e07cb34"
+    },
+    "build/native-ane-lora-contract-20261008/native-ane-lora-contract-test": {
+      "bytes": 113840,
+      "sha256": "c75f5ecaf40abd9f77f9138055b857855f1547231d2a8ee066893649e72b3a51"
+    }
+  },
+  "next_work": [
+    "diagnostic-rich shape/liveness-based framework budgeting before another real replay",
+    "HiddenReference delta writer / recipe-specific status / hidden restore / W1S controller",
+    "Rank candidate independently after Hidden component loop",
+    "Model/Session, quality/performance, product acceptance after full-path component benefit; W2/edit/Z-image remain independent"
+  ]
+}

@@ -1,0 +1,395 @@
+{
+  "schema": "native-lora-sgmma-component-screen-v1",
+  "date": "2026-10-08",
+  "status": "component-screen-pass-independent-e2e-complete-performance-unqualified",
+  "scope": "One generated component group plus one historical layer0/step5 full-FFN input; not full DiT/E2E/hybrid/W2 qualification",
+  "device": "Apple M4 Pro",
+  "runtime_build_id": "tc-runtime-build-v1-77863b3f55434af37ee12615039845b576878a6f310e39656bc2bc1cf308c2fb",
+  "source_revision_evidence": {
+    "build_source_count": 567,
+    "source_mismatches": [],
+    "artifacts": {
+      "build/native-lora-sgmma-runtime-20261008/libturbocider.dylib": "e45ecae722fb2632b5974112ade35b75f1d27e548affe71707399ef9e9ae5099",
+      "build/native-lora-sgmma-runtime-20261008/turbocider": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+      "build/native-lora-sgmma-component-20261008/native-lora-sgmma-component": "c83e6e3478cd89edd1adf5d9e1ce53466d868e6bcfd339821394dbc767fcebbe"
+    }
+  },
+  "recipes": {
+    "scalar": "runtime-lora-tiled8x32-fp32-fma-low-fp32-scaled-ordered-bf16-bias-last-v1",
+    "sgmma": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2"
+  },
+  "source_implementation": {
+    "sgmma_threadgroup_bytes": 6144,
+    "scalar_threadgroup_bytes": 5120,
+    "additional_native_global_buffer_bytes": 0,
+    "additional_candidate_pipelines": 2,
+    "precision": "FP32 simdgroup_float8x8; original BF16/FP32 factors; FP32 low, effective scale, per-term ordered BF16 add, bias last",
+    "selection": "Explicit SgMmaR128; aligned eligible rank128 terms use candidate; bounded ineligible terms use scalar; candidate prepare capability rejection propagates",
+    "references": [
+      "native/backends/metal_graph/kernels/native_lora.hpp:13",
+      "native/backends/metal_graph/kernels/native_lora.hpp:87",
+      "native/backends/metal_graph/kernels/native_lora.hpp:346",
+      "native/backends/metal_graph/kernels/native_lora.hpp:383",
+      "native/backends/metal_graph/native_lora.mm:25",
+      "native/backends/metal_graph/native_lora.mm:79"
+    ]
+  },
+  "generated": {
+    "submissions": 14,
+    "source_model_loads": 0,
+    "ane_calls": 0,
+    "e2e_images": 0,
+    "production_like_cases": [
+      {
+        "case": "gate-or-up",
+        "prepare": {
+          "event": "prepare",
+          "case": "gate-or-up",
+          "M": 1024,
+          "K": 4096,
+          "N": 12288,
+          "source_and_oracle_seconds": 0.171704666,
+          "scalar_pso_seconds": 0.047352375,
+          "sgmma_pso_seconds": 0.046764208,
+          "scalar_recipe": "runtime-lora-tiled8x32-fp32-fma-low-fp32-scaled-ordered-bf16-bias-last-v1",
+          "sgmma_recipe": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2",
+          "baseline_process_bytes": 381911832,
+          "planned_upper_bytes": 1507296024,
+          "native_capacity_upper_bytes": 51642368,
+          "artifact_sha256": "6241ae2b76c658255d896bb49817e319877a1b7452a027dade7b6aa8c538773e",
+          "baseline_includes_immutable_sources": true,
+          "anonymous_import_claims": false,
+          "native_backings": 4,
+          "framework_guard_bytes": 1073741824
+        },
+        "recorded_pairs": [
+          {
+            "round": 1,
+            "order": "AB",
+            "scalar_ms": 12.778292,
+            "sgmma_ms": 4.729625,
+            "wall_reduction_percent": 62.98703300879335,
+            "scalar_div_sgmma": 2.7017558474509076
+          },
+          {
+            "round": 2,
+            "order": "BA",
+            "scalar_ms": 6.58725,
+            "sgmma_ms": 10.966875,
+            "wall_reduction_percent": -66.48639417055675,
+            "scalar_div_sgmma": 0.6006496837066165
+          }
+        ],
+        "maximum_low_rrms": 3.82808170413e-07,
+        "maximum_output_rrms": 8.91609381172e-06,
+        "stable_speedup_qualified": false
+      },
+      {
+        "case": "down",
+        "prepare": {
+          "event": "prepare",
+          "case": "down",
+          "M": 1024,
+          "K": 12288,
+          "N": 4096,
+          "source_and_oracle_seconds": 0.108522084,
+          "scalar_pso_seconds": 0.000227625,
+          "sgmma_pso_seconds": 7.1833e-05,
+          "scalar_recipe": "runtime-lora-tiled8x32-fp32-fma-low-fp32-scaled-ordered-bf16-bias-last-v1",
+          "sgmma_recipe": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2",
+          "baseline_process_bytes": 402572104,
+          "planned_upper_bytes": 1494336328,
+          "native_capacity_upper_bytes": 18022400,
+          "artifact_sha256": "fc0b7f17ded85126d5d8fd118dd6cac95cb4462c5093541eda5d8910722f6641",
+          "baseline_includes_immutable_sources": true,
+          "anonymous_import_claims": false,
+          "native_backings": 4,
+          "framework_guard_bytes": 1073741824
+        },
+        "recorded_pairs": [
+          {
+            "round": 1,
+            "order": "AB",
+            "scalar_ms": 16.090709,
+            "sgmma_ms": 5.086,
+            "wall_reduction_percent": 68.39169734534383,
+            "scalar_div_sgmma": 3.1637257176563116
+          },
+          {
+            "round": 2,
+            "order": "BA",
+            "scalar_ms": 4.9855,
+            "sgmma_ms": 13.849459,
+            "wall_reduction_percent": -177.79478487614077,
+            "scalar_div_sgmma": 0.35997796014992356
+          }
+        ],
+        "maximum_low_rrms": 9.4595791022e-07,
+        "maximum_output_rrms": 1.2965100444e-05,
+        "stable_speedup_qualified": false
+      }
+    ],
+    "correctness_trap": {
+      "M": 8,
+      "K": 128,
+      "N": 64,
+      "rank": 128,
+      "ordered_terms": 2,
+      "fp32_factor": 1.0001220703125,
+      "expected_bf16_output": 34,
+      "both_routes_low_output_bitwise_equal_to_oracle": true,
+      "performance_ranked": false
+    },
+    "all_samples_accepted": true,
+    "all_three_phases_physical_source_padding_zero_ledger": true,
+    "stable_speedup_qualified": false,
+    "identity": {
+      "event": "identity",
+      "library_build_id": "tc-runtime-build-v1-77863b3f55434af37ee12615039845b576878a6f310e39656bc2bc1cf308c2fb",
+      "tool_source_sha256": "b38166650f6a02e599f8b892948ed1fcef7fe631b75c8b4023f2287f8cce6f07",
+      "cpu_contract_source_sha256": "518df439c8c73c7f9dec30afb4a3ca4286a6a794f4bf4c9233d85677a1384d68",
+      "binary_sha256": "c83e6e3478cd89edd1adf5d9e1ce53466d868e6bcfd339821394dbc767fcebbe",
+      "scope": "generated LoRA correction only; supplied shared base; no dense GEMM/full FFN",
+      "performance_qualified": false,
+      "planned_native_submissions": 14,
+      "gpu_span_scope": "first GPU start to last end, not busy time or overlap proof"
+    }
+  },
+  "real_ffn": {
+    "submissions": 6,
+    "layer": 0,
+    "step": 5,
+    "capture_id": "75991-1226054446574458",
+    "M": 1024,
+    "H": 4096,
+    "F": 12288,
+    "rank": 128,
+    "strength": 1,
+    "single_bf16_term_each_gate_up_down": true,
+    "dispatches_per_call": 10,
+    "candidate_low_apply_dispatches_per_call": 6,
+    "records": [
+      {
+        "round": 1,
+        "order": "AB",
+        "scalar_ms": 54.993458000000004,
+        "sgmma_ms": 51.002875,
+        "wall_reduction_percent": 7.256468578498916,
+        "scalar_div_sgmma": 1.0782423147714713
+      },
+      {
+        "round": 2,
+        "order": "BA",
+        "scalar_ms": 54.341333,
+        "sgmma_ms": 52.39191700000001,
+        "wall_reduction_percent": 3.5873540312306944,
+        "scalar_div_sgmma": 1.0372083350185486
+      }
+    ],
+    "warmup_excluded_from_ranking": true,
+    "v1_v2_all_pair_outputs_bitwise_equal": true,
+    "oracle_rrms": 9.935683191904662e-07,
+    "oracle_bf16_difference_count": 95,
+    "oracle_elements": 4194304,
+    "oracle_max_abs": 0.001953125,
+    "rrms_screening_limit": 0.005,
+    "preparation_seconds": {
+      "adapter_verification_included": 0.24668175,
+      "linear_pso": 0.132122042,
+      "one_mlx_oracle": 0.170034375,
+      "scalar_pso": 0.009161125,
+      "sgmma_pso": 0.01003675,
+      "source_including_adapter_verification": 0.297925709
+    },
+    "memory": {
+      "framework_guard_certified": false,
+      "ledger_pending_release_count_after_release": 0,
+      "ledger_reservation_count_after_release": 0,
+      "ledger_storage_bytes_after_release": 0,
+      "ledger_storage_count_after_release": 0,
+      "ledger_unknown_bytes_after_release": 0,
+      "manifest_digest": "d08997598f7c79bf71a0f1edfd8baea8da883a1cf9d539011f11e52214876af5",
+      "mlx_active_after_oracle": 331350016,
+      "native_owned_bytes_before_release": 93192192,
+      "native_scratch_backings": 6,
+      "process_baseline_bytes": 774308752,
+      "process_observed_after_bytes": 526631896,
+      "same_phase_peak_committed_bytes": 867500944,
+      "source_payload_bytes": 322961408,
+      "whole_request_certified": false
+    },
+    "pair_validation_scope": "finite/RRMS comparisons, stat revalidation, padding and memory checkpoint after both arms; only an explicitly timed 8-MiB output snapshot between arms",
+    "source_immutable": true,
+    "actual_mlx_data_owner_verified": true,
+    "all_work_physically_complete": true,
+    "padding_intact": true,
+    "same_ledger_released": true,
+    "tool_source_sha256": "b8b73281269ea4b841fdf2461c7629345a4822d5018d6ae1f7f0cb024f557e0f",
+    "source_proof": {
+      "base": "same held descriptor and canonical stat generation; no full-checkpoint hash",
+      "adapter": "verified-held-fd",
+      "adapter_sha256": "bafb91d0047df3f9b8a5a850b0c967f051164314d8aad778dfa34d9c24ec345b",
+      "adapter_artifact_digest": "b2720b99dd5c883f0d1eec37274ecc5ea96864ecbb6417676bd72e021101b2b3",
+      "adapter_source_generation": 2,
+      "capture_complete_sha256": "ad8192c7d56af5b21c56e4011dc90f4d2938941800e2df7afd85857d46658145",
+      "input_file_sha256": "c3374d9c7eb725a1721bf2027acec7f2eb253f988cd077738597e2328deacc51",
+      "produced_source_digest_order": [
+        "gate",
+        "up",
+        "down",
+        "input",
+        "gate.A",
+        "gate.B",
+        "up.A",
+        "up.B",
+        "down.A",
+        "down.B",
+        "mlx_oracle"
+      ],
+      "produced_source_pre_post_sha256": [
+        "a64f445d9dc5d3c6ff4888d18605eb32cc4d4abf1bba4a2d191eef002f3194a2",
+        "41f2381489bad58208272e46d88409c0a212746ab603ea7883feaedfee76e715",
+        "09ecd39bf22ad4e8ed88b45deb01f65d78d643a17ee18b0fa3d4f848e46a999c",
+        "66fa43b6d9a60682bfd2959ef8f5fd16f09c91ca1aa3521ec08b5182a345296e",
+        "37ba9cacb9941206501639f4409a0a7110c980a27435ce2ddb1213bcc61cd9ff",
+        "9167d425a1780cb463435508bd2e6b80299e6e90c175cbf01b44ca23ad295bb7",
+        "54296f1e326957682db967108cce73f070d6b663bff0e34eece31d6cdfe8f22c",
+        "0a5e516f9def96a548ec7b19a67f05b7d6c2c649486199f53986cba46b5f3e13",
+        "77e9ae4aa86cfa69c9fa51dfda9eca608dd56421692c6ba3e380d4a71eea64c1",
+        "8192203e9ab081c01f081f995279935485801821538615fac0ebe036c116d5d3",
+        "7a4f2544d963f255c897968a600ef107e596e128ddbe50c34497c4a1c4b90399"
+      ]
+    },
+    "qualification": "bounded component pass on this input only"
+  },
+  "timing_caveats": [
+    "Generated recorded AB/BA order strongly reverses the apparent winner; no stable kernel speedup claim.",
+    "Full-FFN two recorded pairs share one input and layer; no confidence interval or population estimate.",
+    "GPU span is first GPUStartTime to last GPUEndTime; not GPU busy time or proof of overlap.",
+    "Prepare timings share OS/driver/compiler cache; scalar prepared first; not isolated fresh-install cold latency.",
+    "Real pair includes a separately timed 8 MiB CPU snapshot between arms; full comparison and integrity follow both arms.",
+    "Pair CPU idle intervals are recorded; their effect on clocks or thermals is unproven.",
+    "0 extra global buffers excludes additional PSO/driver memory, which has no exact measurement or certified guard."
+  ],
+  "supervisors": {
+    "generated": {
+      "command": [
+        "/Users/kd/Documents/project/TurboCider/build/native-lora-sgmma-component-20261008/native-lora-sgmma-component",
+        "--device",
+        "/Users/kd/Documents/project/TurboCider/outputs/native-lora-sgmma-20261008/generated"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 2.263358209049329,
+      "supervisor_timeout": false,
+      "owned_process_group": 67848,
+      "physical_completion_claimed_by_supervisor": false
+    },
+    "real_ffn": {
+      "command": [
+        "/Users/kd/Documents/project/TurboCider/build/native-lora-sgmma-replay-pair-validation-20261008/native-qwen-lora-sgmma-ffn-replay",
+        "--device",
+        "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors",
+        "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/lora/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+        "/Users/kd/Documents/project/TurboCider/outputs/qwen-real-ffn-20261007/lora-captures/75991-1226054446574458-replay",
+        "/Users/kd/Documents/project/TurboCider/outputs/native-lora-sgmma-20261008/real-ffn.json"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.3416752089979127,
+      "supervisor_timeout": false,
+      "owned_process_group": 67906,
+      "physical_completion_claimed_by_supervisor": false
+    }
+  },
+  "evidence": [
+    {
+      "path": "outputs/native-lora-sgmma-20261008/generated/receipt.jsonl",
+      "sha256": "6f56427d7b8f53245f7ade035cdff8836356e9c240751ba4aebaa50af5300d14"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/real-ffn.json",
+      "sha256": "e2bb5e9f9fa49554c8916c37642f1cb5c94f472e1c596b7e6251f063767274a2"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/generated-supervisor.json",
+      "sha256": "263c70c6e335556b8666bfd533829637d2529e94191974a9429b53e7b4914a5c"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/real-ffn-supervisor.json",
+      "sha256": "507e496cc55da84acc8e12421a4d4ee03f61b4a4d10dc07dd4d8b6823d8175f9"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/pre-device-verification.json",
+      "sha256": "d9cb214c2b977c4d82ae83fd2c93ba04c72e0e0f385f1479112b3752502cf603"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/receipt.json",
+      "sha256": "a949b0f8400bbace0bfe4cb5ed107571f1c7506d2d0dbe87e79b1561553c810d"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/owned-cleanup.json",
+      "sha256": "b14ca812f398ae95f6cc290d0a392bbaac3683aa81e409ea13a8cc764cfa1a05"
+    }
+  ],
+  "qualification": {
+    "numeric_component_screen": true,
+    "real_single_input_complete_ffn_benefit_screen": true,
+    "generated_stable_gain": false,
+    "e2e_completed": true,
+    "e2e_performance_qualified": false,
+    "image_quality_qualified": false,
+    "hybrid_lora_qualified": false,
+    "w2_qualified": false,
+    "product_default_qualified": false
+  },
+  "next_step": "Independent MLX-to-SGMMA full-image pair completed; native full graph remains slower than MLX and performance-unqualified. See docs/status/2026-10-08-native-lora-sgmma-e2e.md. Do not transfer its timings into these component speedup figures.",
+  "cleanup": {
+    "status": "completed_by_root",
+    "scope": "only freshly owned 20261008 SGMMA build intermediates/module caches and explicitly generated fixtures",
+    "files_removed": 244,
+    "bytes_removed": 29332442,
+    "owned_ranges": {
+      "build/native-lora-sgmma-component-20261008": {
+        "files_removed": 1,
+        "bytes_removed": 137144
+      },
+      "build/native-lora-sgmma-replay-host-20261008": {
+        "files_removed": 1,
+        "bytes_removed": 211696
+      },
+      "build/native-lora-sgmma-runtime-20261008": {
+        "files_removed": 238,
+        "bytes_removed": 20446536
+      },
+      "outputs/native-lora-sgmma-20261008/generated/down": {
+        "files_removed": 1,
+        "bytes_removed": 4194560
+      },
+      "outputs/native-lora-sgmma-20261008/generated/fp32-ordered-trap": {
+        "files_removed": 2,
+        "bytes_removed": 147946
+      },
+      "outputs/native-lora-sgmma-20261008/generated/gate-or-up": {
+        "files_removed": 1,
+        "bytes_removed": 4194560
+      }
+    },
+    "runtime_device_work_completed_before_cleanup": true,
+    "no_original_models_removed": true,
+    "preserved": "runtime CLI/libraries/manifests, probe binaries, original model/capture files, raw receipts/logs and both E2E images",
+    "manifest": "outputs/native-lora-sgmma-20261008/owned-cleanup.json",
+    "manifest_sha256": "b14ca812f398ae95f6cc290d0a392bbaac3683aa81e409ea13a8cc764cfa1a05",
+    "deleted_by_this_document_task": false,
+    "historical_receipts_modified": false
+  },
+  "independent_e2e_followup": {
+    "report": "docs/status/2026-10-08-native-lora-sgmma-e2e.md",
+    "receipt": "outputs/native-lora-sgmma-20261008/e2e-pair/receipt.json",
+    "receipt_sha256": "a949b0f8400bbace0bfe4cb5ed107571f1c7506d2d0dbe87e79b1561553c810d",
+    "pair_complete": true,
+    "native_full_graph_slower_than_mlx": true,
+    "performance_qualified": false,
+    "image_quality_verified": false,
+    "full_request_memory_certified": false,
+    "component_timing_figures_unchanged": true
+  }
+}

@@ -1,0 +1,1331 @@
+{
+  "schema": "tc-native-block-bridge-components-v1",
+  "date": "2026-10-08",
+  "timezone": "Asia/Shanghai",
+  "device": "Apple M4 Pro",
+  "scope": {
+    "models_downloaded": 0,
+    "checkpoints_copied": 0,
+    "model_generations": 0,
+    "app_launches": 0,
+    "new_e2e_groups": 0,
+    "full_native_dit": false,
+    "gpu_ane_parallel_proof": false,
+    "production_route_enabled": false
+  },
+  "native_block": {
+    "cases": [
+      {
+        "rows": "37",
+        "heads": "1",
+        "prefix": "5",
+        "phase": "prefill",
+        "steps": "18",
+        "workspace": "142080",
+        "gpu_seconds": "0.000546875"
+      },
+      {
+        "rows": "33",
+        "heads": "1",
+        "prefix": "5",
+        "phase": "steady",
+        "steps": "18",
+        "workspace": "146176",
+        "gpu_seconds": "0.000436875"
+      },
+      {
+        "rows": "3",
+        "heads": "2",
+        "prefix": "0",
+        "phase": "steady",
+        "steps": "14",
+        "workspace": "21504",
+        "gpu_seconds": "0.000697458"
+      }
+    ],
+    "linear_cases": [
+      {
+        "rows": 33,
+        "k": 64,
+        "n": 64,
+        "bias": false,
+        "output": "bf16"
+      },
+      {
+        "rows": 33,
+        "k": 64,
+        "n": 192,
+        "bias": true,
+        "output": "bf16"
+      },
+      {
+        "rows": 33,
+        "k": 192,
+        "n": 64,
+        "bias": true,
+        "output": "fp32"
+      }
+    ],
+    "all_observed_cpu_oracle_errors_zero": true,
+    "linear_output_elements": 10560,
+    "block_final_output_elements": 9728,
+    "readonly_snapshots_and_padding": true,
+    "late_invalid_binding_atomic_rejection": true,
+    "cross_step_alias_rejection": true,
+    "recipe": "qwen-ln-centered-fp32-bf16-mod-bf16-rms128-preweight-bf16-pairrope-fp32-v2",
+    "real_h4096_block_perf_test": false
+  },
+  "native_ane_handoff": {
+    "successful_requests": 1,
+    "finite_values": 256,
+    "max_abs": 0,
+    "independent_events": true,
+    "imported_native_allocations": 0,
+    "permit_duplicate_rejected": true,
+    "w0_host_wait": true,
+    "ane_overlap": false,
+    "fresh_owned_source_cache": true,
+    "prepare_seconds": 0.0351373,
+    "driver_cache_state_controlled": false,
+    "first_attempt": "producer complete; prepare rejected valid SharedEvent.device=nil; no ANE submit; repaired nullable reported-device admission and retained creator-device checks"
+  },
+  "cpu_contracts": {
+    "native_linear_checks": 62,
+    "attention_checks": 59,
+    "qwen_ops": "pass, includes centered variance/preweight BF16 fixtures",
+    "block_geometry_workspace": "pass without device/allocation",
+    "ane_event_surface_metadata": "pass including nullable reported-device admission",
+    "sticky_ane_ticket_retirement": "pass"
+  },
+  "build": {
+    "native_library_cli": "pass",
+    "private_ane": true,
+    "swift_app_built": false,
+    "app_run": false,
+    "runtime_build_id": "tc-runtime-build-v1-d0c288593d9e380080fb68679faf3f9e4961843baa3e7732325d444ba00bb582",
+    "output_directory": "build/native-graph-20261008",
+    "command": "DEVELOPER_DIR=/Library/Developer/CommandLineTools TURBOCIDER_BUILD_OUTPUT_DIR=\"$PWD/build/native-graph-20261008\" TURBOCIDER_BUILD_PACKAGE_ONLY=1 TURBOCIDER_NATIVE_ONLY=1 TURBOCIDER_ENABLE_PRIVATE_ANE=1 bash tools/native/build.sh",
+    "known_warnings": "existing CommonCrypto/legacy Metal fastMathEnabled deprecations",
+    "verified_symbols": [
+      "NativeBlock::encode",
+      "NativeAttention::encode",
+      "NativeQwenOps::encode_qk_norm_rope",
+      "NativeAneHandoff::finish",
+      "Program::prepare(AneEventBinding)"
+    ]
+  },
+  "source_snapshot": [
+    {
+      "path": "native/backends/ane_gpu.hpp",
+      "bytes": 7678,
+      "sha256": "0a55482002fb70b9ce48e21d849d0c216e3f98614011d51c80b3ffd9d82ce08f"
+    },
+    {
+      "path": "native/backends/ane_gpu.mm",
+      "bytes": 49067,
+      "sha256": "8623b8abbd2aae939b6a00c03b9e9616900221560b7772a41ef1adf133bd98ce"
+    },
+    {
+      "path": "native/backends/metal_graph/backend.hpp",
+      "bytes": 10106,
+      "sha256": "840cdb3185a1e466bd9a7273f5ddfffcf00a57635c50cf15af937ec11ca51053"
+    },
+    {
+      "path": "native/backends/metal_graph/backend.mm",
+      "bytes": 25605,
+      "sha256": "e1b625b66a284791a8354bae7ec6ee6582a9f5d97785a6bfe4db8966ec118bb9"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/dense_attention.hpp",
+      "bytes": 14299,
+      "sha256": "43ec21aa7798f8a7a5f7b2dcf641a7f31092ab1f352a883336ee6213489e7f92"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/dense_ffn.hpp",
+      "bytes": 6549,
+      "sha256": "d57e96d5c562994687e41b7d781591c5b1f3568604418df3725e467328d5e4ea"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/dense_linear.hpp",
+      "bytes": 8416,
+      "sha256": "fecf0614c9fba341dd4c5befe58b1321b65dad8617155d3a919c2b8c8bee11d1"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/qwen_ops.hpp",
+      "bytes": 12374,
+      "sha256": "bafa8167fd1549e91ee4da6c6a2b15f251def385e088874a5ed48ff450ccb945"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/vendor/steel_attention_support.hpp",
+      "bytes": 38578,
+      "sha256": "b9b5e3bdab01338cf61bac187a8a7199f5e1de4984a62354015b17b5ab9f9f61"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_bridge.cpp",
+      "bytes": 3779,
+      "sha256": "41fe2effb17f8092f304ab933329b2d3cf08f43fb8a8e33548b16804b600d60c"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_bridge.hpp",
+      "bytes": 1071,
+      "sha256": "1d75bb13dc460f509ad4fd643d5d3c76972a05dd1be6a14a7a8107e2a1c7438b"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_ffn_island.cpp",
+      "bytes": 1970,
+      "sha256": "12d3614b3700d87fe08882a21b6bc3f4b53701f5177659fb069327bb92522bb0"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_ffn_island.hpp",
+      "bytes": 984,
+      "sha256": "31b1b4e8ab97a895a629f4571b953adb4f32e1be219dfe585e66ecf11c1c4496"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ane_handoff.hpp",
+      "bytes": 5044,
+      "sha256": "2c8dcb492c884b1637f08ae03a0526cd624d4393a9b0249ec6be2ed5243e4671"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ane_handoff.mm",
+      "bytes": 11921,
+      "sha256": "7cbd594f3f8fb4b64928d1ba8fbd56cf92d5f432729c477a885da6f2d11f5d87"
+    },
+    {
+      "path": "native/backends/metal_graph/native_attention.hpp",
+      "bytes": 1890,
+      "sha256": "b7c42243f9fc31fe3c81ea0cb0baf5339cb531d00fdc923915fa13cb8af8a610"
+    },
+    {
+      "path": "native/backends/metal_graph/native_attention.mm",
+      "bytes": 3145,
+      "sha256": "7ff53e4c59900865c42cc1c7d2fcf0cf1b48b2532c9beb63876413369fa22ed6"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ffn.hpp",
+      "bytes": 2165,
+      "sha256": "9db40984924773213b93f5aba15a648a6c9162f2e24c267bfe38997e28ce60c7"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ffn.mm",
+      "bytes": 7015,
+      "sha256": "6ea3000c6f4cfd1d9e29b27f942555ceeed04bd5b91cb4a39f9c902455ee4bf7"
+    },
+    {
+      "path": "native/backends/metal_graph/native_linear.hpp",
+      "bytes": 1349,
+      "sha256": "0ce03b11f004aa49879134929579726a978486dd944ce9bcf442be1d352140b7"
+    },
+    {
+      "path": "native/backends/metal_graph/native_linear.mm",
+      "bytes": 3639,
+      "sha256": "b82e52b6f33d77d75cce5a16cd583e55d0e2cb8347769041f6a5ae8a50127a10"
+    },
+    {
+      "path": "native/backends/metal_graph/native_qwen_ops.hpp",
+      "bytes": 4394,
+      "sha256": "3f361cbe95f315d39f62648f8244014e56007e621960267ca65b92502a60735e"
+    },
+    {
+      "path": "native/backends/metal_graph/native_qwen_ops.mm",
+      "bytes": 13209,
+      "sha256": "359ff289a22db8e52fd8d503481a40927bcbc53a992763a90a7fd4b8d85a1e21"
+    },
+    {
+      "path": "native/backends/private/ane_program.hpp",
+      "bytes": 4825,
+      "sha256": "0ae4539c78185766cf15c9bed7ec200e5a2122f50cb04d4ee1b35ec0c99a22fd"
+    },
+    {
+      "path": "native/backends/private/ane_program.mm",
+      "bytes": 26416,
+      "sha256": "a524ad7298b83b88733bfeefee1b2ca494835e9e875ec412436f2743bd49cc58"
+    },
+    {
+      "path": "native/backends/private/ane_ticket_state.hpp",
+      "bytes": 1951,
+      "sha256": "1c193febf9c005ee209dabaa2363c7b0d13e1010e526bc68d6f04a308cd6fcde"
+    },
+    {
+      "path": "native/backends/private/native_handoff_types.hpp",
+      "bytes": 4707,
+      "sha256": "20392d20b862a50bf3cec73cd823fecdb2313149e23a0d9b95d183a9bb6232da"
+    },
+    {
+      "path": "native/models/qwen21/native_block.cpp",
+      "bytes": 14209,
+      "sha256": "220270e5e1265cd30e2675b13310aef52f0b22a73e74ac0d0de8e796d19aec0d"
+    },
+    {
+      "path": "native/models/qwen21/native_block.hpp",
+      "bytes": 3888,
+      "sha256": "447c71f693aa91d3246688bd4c44c1c5f77d8ea7b40856d1b06661e7265a9103"
+    },
+    {
+      "path": "tests/native/native_ane_handoff_types_test.cpp",
+      "bytes": 7770,
+      "sha256": "b13f34ad90b853e75535808d083d6571209539449d341412f455b9dee7a43eeb"
+    },
+    {
+      "path": "tests/native/native_attention_contract_test.cpp",
+      "bytes": 6672,
+      "sha256": "635a637752f71dd8ba9718d2d95924d628e664b4c9fe718883f58b2b6ac42bdf"
+    },
+    {
+      "path": "tests/native/native_linear_contract_test.cpp",
+      "bytes": 5746,
+      "sha256": "399968411acebfeabd6644143af719dc1c94a1770894634c2e1c0993ac81b8e6"
+    },
+    {
+      "path": "tests/native/native_qwen_block_contract_test.cpp",
+      "bytes": 4578,
+      "sha256": "c6d0dec0a1ad1d82167a49bf7ddea3ff052ecc5e35bf45b13c02df8d3d3b004e"
+    },
+    {
+      "path": "tests/native/private_ane_ticket_state_test.cpp",
+      "bytes": 4425,
+      "sha256": "9306beb9fe68816fe6f0d721f4d25a478467891ead5256fc7b04c138c8706060"
+    },
+    {
+      "path": "tests/native/qwen_native_ops_contract_test.cpp",
+      "bytes": 4696,
+      "sha256": "d2994808f0196e0ff75145b385a5be47cc523699467314b0303bee3ec52d70a6"
+    },
+    {
+      "path": "tools/native/build.sh",
+      "bytes": 30792,
+      "sha256": "84f44a5d09b2d59750ae8df98c63e9660ea04789dc9085ca365c74a9d0e61fdd"
+    },
+    {
+      "path": "tools/native/build_native_ane_handoff_component.sh",
+      "bytes": 863,
+      "sha256": "225677d3e562ac22a1f5048fafed7af0e309c305e1645c0c19f107aefe74f86b"
+    },
+    {
+      "path": "tools/native/build_native_qwen_block_component.sh",
+      "bytes": 1063,
+      "sha256": "08585e50a82ce0aaece2343c385f21908661bb438aa937264c8b82750534e23f"
+    },
+    {
+      "path": "tools/native/native_ane_handoff_component.cpp",
+      "bytes": 5763,
+      "sha256": "4abc2c4b24a5a91ea45cea0c088b5985bec8861f4f36eda05fcfb2846b54902c"
+    },
+    {
+      "path": "tools/native/native_qwen_block_component.cpp",
+      "bytes": 19995,
+      "sha256": "8f877310eecccda05400aa8ad2bfac2725c7be2ef859548b4f096610a03b3c99"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "build/native-graph-20261008/libturbocider.dylib",
+      "bytes": 9642848,
+      "sha256": "ecf04c7e776f92b9189065ef5a6929bcc4f2d367e2d8e3e37b8474cb4be1330e"
+    },
+    {
+      "path": "build/native-graph-20261008/turbocider",
+      "bytes": 309176,
+      "sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641"
+    },
+    {
+      "path": "build/native-graph-components-20261008/native-qwen-block-component",
+      "bytes": 315368,
+      "sha256": "f49d582af24c316f7f997748a8e6acc2e8b6df0662717f61a3c850505d73efdf"
+    },
+    {
+      "path": "build/native-graph-components-20261008/native-qwen-block-contract",
+      "bytes": 260296,
+      "sha256": "e6149e93fc907a393a0b975953944feb7e1994a37aaabb98911fc1375adb06e7"
+    },
+    {
+      "path": "build/native-graph-components-20261008/native-ane-handoff-component",
+      "bytes": 334560,
+      "sha256": "f6443762f9f637a640d9a4d1c8cc1791e45bc21a80f298752f5b1bf28f601913"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/native-qwen-block-component.v2.log",
+      "bytes": 2333,
+      "sha256": "74d35f1ca7306dc1fa9036fa76375dfd31a5558bcfaf13ecf25542a6c1bcea2b"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/native-qwen-block-cpu-contract.log",
+      "bytes": 72,
+      "sha256": "266b4cc9267c614ac143dcd5a9f83886d18b2468c5691e24fbeb2a43ee5ed992"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/native-ane-handoff-component.log",
+      "bytes": 89,
+      "sha256": "b5dd8ed952c0a317fc58ca187758a93e49bf074b6b39b2bb1da20660ccbf031b"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/native-ane-handoff-component.v2.log",
+      "bytes": 243,
+      "sha256": "683df68942ca345ec031a62c4cd7d47b01583ecdc74a733691b82cb32043342a"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/native-graph-build-20261008.log",
+      "bytes": 2246,
+      "sha256": "3d6df25981394b5f45aebd46137a71ec39ff78f5c0f2182812b0e0b1ff8a8dd5"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/native-handoff-types-cpu.log",
+      "bytes": 123,
+      "sha256": "b9b5f8fc633e08a828809501697038d992fa089cbae26566814f41b008204ca1"
+    },
+    {
+      "path": "outputs/qwen-real-ffn-20261007/private-ticket-state-cpu-20261008.log",
+      "bytes": 137,
+      "sha256": "e235760bcd2ccfbafbe7d98fbdb2f38223a93a81a3ea24febe3a766ac7b6fed7"
+    },
+    {
+      "path": "build/native-graph-20261008/runtime-build/runtime-build-manifest.json",
+      "bytes": 150480,
+      "sha256": "d01259f92dbcf6c8fc0745c357928271ec92e321d208068060764dc2a8ad8d73"
+    }
+  ],
+  "cleanup": {
+    "removed": [
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3.o",
+        "bytes": 71792
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_ane_disabled.o",
+        "bytes": 8280
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_audio_vae.o",
+        "bytes": 44544
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_coreml.o",
+        "bytes": 58760
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_dit.o",
+        "bytes": 257680
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_dit_schedule.o",
+        "bytes": 20752
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_ffmpeg.o",
+        "bytes": 24272
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_gpu.o",
+        "bytes": 445816
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_host.o",
+        "bytes": 16176
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_metal.o",
+        "bytes": 2872
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_multimodal.o",
+        "bytes": 9512
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_quant_cache.o",
+        "bytes": 5168
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_quantize_stream_cache.o",
+        "bytes": 9032
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_safetensors.o",
+        "bytes": 18280
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_streaming_policy.o",
+        "bytes": 2192
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_taeh3.o",
+        "bytes": 21472
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_terminal.o",
+        "bytes": 9024
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_text_encoder.o",
+        "bytes": 27552
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_tokenizer.o",
+        "bytes": 39784
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_video_encoder.o",
+        "bytes": 23528
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_video_vae.o",
+        "bytes": 48624
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_vision_encoder.o",
+        "bytes": 31568
+      },
+      {
+        "path": "build/native-graph-20261008/h3-runtime/h3_weights.o",
+        "bytes": 10440
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/block_residency.o",
+        "bytes": 2056
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/libltx-runtime.a",
+        "bytes": 1616896
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx.o",
+        "bytes": 12984
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_ane_kv.o",
+        "bytes": 21992
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_ane_mlp.o",
+        "bytes": 30648
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_ane_qkv.o",
+        "bytes": 22408
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_ane_v2a.o",
+        "bytes": 22016
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_audio_mux_tool.o",
+        "bytes": 6872
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_audio_vae_decode_tool.o",
+        "bytes": 4600
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_blocks.o",
+        "bytes": 129264
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_bwe_decode_tool.o",
+        "bytes": 4648
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_conditioning.o",
+        "bytes": 9560
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_connector.o",
+        "bytes": 14944
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_gemma_ane_mlp.o",
+        "bytes": 43048
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_gemma_encode_tool.o",
+        "bytes": 6608
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_gemma_encoder.o",
+        "bytes": 46024
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_gemma_tokenizer.o",
+        "bytes": 28408
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_gpu.o",
+        "bytes": 466000
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_latent_stats.o",
+        "bytes": 4592
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_mlx_audio_vae.o",
+        "bytes": 84696
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_mlx_bwe.o",
+        "bytes": 114240
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_mlx_upsampler.o",
+        "bytes": 73192
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_mlx_video_vae.o",
+        "bytes": 116688
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_mlx_vocoder.o",
+        "bytes": 89936
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_rng.o",
+        "bytes": 2000
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_safetensors.o",
+        "bytes": 21000
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_streaming_layout.o",
+        "bytes": 14368
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_streaming_slot.o",
+        "bytes": 2400
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_transformer_io.o",
+        "bytes": 8800
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_upsampler.o",
+        "bytes": 64984
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_video_convert.o",
+        "bytes": 1760
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_video_finalizer_tool.o",
+        "bytes": 44800
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_video_vae.o",
+        "bytes": 68288
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_video_vae_decode_tool.o",
+        "bytes": 6280
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_vocoder_decode_tool.o",
+        "bytes": 4760
+      },
+      {
+        "path": "build/native-graph-20261008/ltx-runtime/ltx_weights.o",
+        "bytes": 32168
+      },
+      {
+        "path": "build/native-graph-20261008/native_api_c_api.o",
+        "bytes": 278432
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_backend.o",
+        "bytes": 24648
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_channel_calibration.o",
+        "bytes": 261144
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_ffn.o",
+        "bytes": 202192
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_gpu.o",
+        "bytes": 156296
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_memory.o",
+        "bytes": 1464
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_public_w8.o",
+        "bytes": 136040
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_qkv.o",
+        "bytes": 50672
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_runtime.o",
+        "bytes": 206496
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_ane_smoothquant.o",
+        "bytes": 89336
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_artifact_cache.o",
+        "bytes": 80512
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_coreml.o",
+        "bytes": 148392
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_coreml_resources.o",
+        "bytes": 88528
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_backend.o",
+        "bytes": 85064
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_mlx_bridge.o",
+        "bytes": 14184
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_mlx_ffn_island.o",
+        "bytes": 7968
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_native_ane_handoff.o",
+        "bytes": 37576
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_native_attention.o",
+        "bytes": 62768
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_native_ffn.o",
+        "bytes": 25048
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_native_linear.o",
+        "bytes": 23656
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_metal_graph_native_qwen_ops.o",
+        "bytes": 52736
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_mlx.o",
+        "bytes": 483848
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_private_ane_calibration.o",
+        "bytes": 98208
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_private_ane_executor.o",
+        "bytes": 136376
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_private_ane_mil.o",
+        "bytes": 254224
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_private_ane_program.o",
+        "bytes": 95040
+      },
+      {
+        "path": "build/native-graph-20261008/native_backends_private_ane_w8_executor.o",
+        "bytes": 128344
+      },
+      {
+        "path": "build/native-graph-20261008/native_components_diffusion_wan.o",
+        "bytes": 33400
+      },
+      {
+        "path": "build/native-graph-20261008/native_components_text_qwen3.o",
+        "bytes": 91544
+      },
+      {
+        "path": "build/native-graph-20261008/native_components_text_qwen3_gguf.o",
+        "bytes": 185904
+      },
+      {
+        "path": "build/native-graph-20261008/native_components_text_umt5.o",
+        "bytes": 54048
+      },
+      {
+        "path": "build/native-graph-20261008/native_components_vae_taehv.o",
+        "bytes": 58120
+      },
+      {
+        "path": "build/native-graph-20261008/native_components_weights_affine.o",
+        "bytes": 10304
+      },
+      {
+        "path": "build/native-graph-20261008/native_core_common.o",
+        "bytes": 3152
+      },
+      {
+        "path": "build/native-graph-20261008/native_core_gguf_affine.o",
+        "bytes": 11704
+      },
+      {
+        "path": "build/native-graph-20261008/native_core_gguf_decode.o",
+        "bytes": 20552
+      },
+      {
+        "path": "build/native-graph-20261008/native_core_json_keys.o",
+        "bytes": 9992
+      },
+      {
+        "path": "build/native-graph-20261008/native_core_quantized_execution.o",
+        "bytes": 13816
+      },
+      {
+        "path": "build/native-graph-20261008/native_media_audio.o",
+        "bytes": 48648
+      },
+      {
+        "path": "build/native-graph-20261008/native_media_image.o",
+        "bytes": 25848
+      },
+      {
+        "path": "build/native-graph-20261008/native_media_input.o",
+        "bytes": 37656
+      },
+      {
+        "path": "build/native-graph-20261008/native_media_pe_image.o",
+        "bytes": 26344
+      },
+      {
+        "path": "build/native-graph-20261008/native_media_reference_preparation.o",
+        "bytes": 41240
+      },
+      {
+        "path": "build/native-graph-20261008/native_media_video.o",
+        "bytes": 22408
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_flux2_flux_encode.o",
+        "bytes": 41224
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_flux2_flux_text.o",
+        "bytes": 22000
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_flux2_flux_transformer.o",
+        "bytes": 154600
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_flux2_flux_vae.o",
+        "bytes": 52424
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_flux2_pipeline.o",
+        "bytes": 283008
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_flux_module.o",
+        "bytes": 56656
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_audio_vae.o",
+        "bytes": 65696
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_conditioner.o",
+        "bytes": 96480
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_conditioner_math.o",
+        "bytes": 816
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_dit.o",
+        "bytes": 85680
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_geometry.o",
+        "bytes": 17672
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_module.o",
+        "bytes": 71712
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_pipeline.o",
+        "bytes": 33984
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_vae_weights.o",
+        "bytes": 32664
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_vdn.o",
+        "bytes": 15872
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_vdn_mlx.o",
+        "bytes": 153608
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_video_vae.o",
+        "bytes": 103416
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_vsa.o",
+        "bytes": 36824
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_mlx_vsa_attention.o",
+        "bytes": 54832
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_module.o",
+        "bytes": 37936
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_h3_runtime_h3_streaming_descriptor.o",
+        "bytes": 124576
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_llada_llada.o",
+        "bytes": 132400
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_llada_llada_text.o",
+        "bytes": 94688
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_llada_llada_transformer.o",
+        "bytes": 201064
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_llada_module.o",
+        "bytes": 33680
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_ltx_mlx_block.o",
+        "bytes": 124784
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_ltx_mlx_model.o",
+        "bytes": 60752
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_ltx_mlx_native.o",
+        "bytes": 71856
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_ltx_module.o",
+        "bytes": 43912
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_ltx_runtime_ltx_streaming_descriptor.o",
+        "bytes": 67800
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_ltx_runtime_ltx_streaming_plan.o",
+        "bytes": 17032
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_conditioning.o",
+        "bytes": 58032
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_hybrid.o",
+        "bytes": 73480
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_module.o",
+        "bytes": 93176
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_native_block.o",
+        "bytes": 40752
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pe_conditioning.o",
+        "bytes": 36816
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pe_delta.o",
+        "bytes": 52064
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pe_generation.o",
+        "bytes": 57808
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pe_language.o",
+        "bytes": 75720
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pe_processor.o",
+        "bytes": 33736
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pe_sampling.o",
+        "bytes": 17632
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_pipeline.o",
+        "bytes": 760632
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_sequence.o",
+        "bytes": 6096
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_text_encoder.o",
+        "bytes": 54248
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_transformer.o",
+        "bytes": 186128
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_vae.o",
+        "bytes": 183808
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_qwen21_vision.o",
+        "bytes": 84208
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_registry.o",
+        "bytes": 14784
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_wan_dit.o",
+        "bytes": 73528
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_wan_hybrid.o",
+        "bytes": 39976
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_wan_module.o",
+        "bytes": 35344
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_wan_wan_pipeline.o",
+        "bytes": 42544
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_coreml_generation.o",
+        "bytes": 47424
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_gguf.o",
+        "bytes": 56664
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_gguf_execution.o",
+        "bytes": 150176
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_gguf_module.o",
+        "bytes": 38784
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_hybrid_layout.o",
+        "bytes": 19000
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_hybrid_math.o",
+        "bytes": 12392
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_module.o",
+        "bytes": 45192
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_suffix_materialization.o",
+        "bytes": 8912
+      },
+      {
+        "path": "build/native-graph-20261008/native_models_z_image_z_image.o",
+        "bytes": 1356184
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_device.o",
+        "bytes": 35432
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_flux_streaming_descriptor.o",
+        "bytes": 179544
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_h3_mlx_checkpoint.o",
+        "bytes": 103480
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_h3_mlx_prompt_cache.o",
+        "bytes": 74312
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_h3_mlx_session.o",
+        "bytes": 131424
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_h3_mlx_shards.o",
+        "bytes": 69368
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_h3_mlx_vae_config.o",
+        "bytes": 16584
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_h3_session.o",
+        "bytes": 217720
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_llada_session.o",
+        "bytes": 36832
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_ltx_session.o",
+        "bytes": 590184
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_memory_probe.o",
+        "bytes": 79760
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_profile.o",
+        "bytes": 44216
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_qwen21_prompt_rewrite.o",
+        "bytes": 32040
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_qwen3_gguf_config.o",
+        "bytes": 28880
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_request.o",
+        "bytes": 103376
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_results.o",
+        "bytes": 417040
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_streaming_catalog_test.o",
+        "bytes": 448
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_streaming_config.o",
+        "bytes": 37136
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_tokenizer.o",
+        "bytes": 55792
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_unigram_tokenizer.o",
+        "bytes": 49776
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_wan_checkpoint.o",
+        "bytes": 52584
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_wan_hybrid.o",
+        "bytes": 22768
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_wan_session.o",
+        "bytes": 143936
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_z_image_coreml_bundle.o",
+        "bytes": 52816
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_z_image_streaming_descriptor.o",
+        "bytes": 185000
+      },
+      {
+        "path": "build/native-graph-20261008/native_platform_apple_z_image_weight_stream.o",
+        "bytes": 188784
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_build_identity.o",
+        "bytes": 1032
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_execution.o",
+        "bytes": 8016
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_lora_identity.o",
+        "bytes": 12048
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_accounting.o",
+        "bytes": 71576
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_execution.o",
+        "bytes": 95208
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_manifest.o",
+        "bytes": 111360
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_plan.o",
+        "bytes": 83288
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_policy.o",
+        "bytes": 23856
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_schedule.o",
+        "bytes": 22136
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_scheduler.o",
+        "bytes": 35184
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_trace.o",
+        "bytes": 7760
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_memory_watchdog.o",
+        "bytes": 9232
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_plan.o",
+        "bytes": 81512
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_residency.o",
+        "bytes": 3704
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_actual_receipt.o",
+        "bytes": 62488
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_audit.o",
+        "bytes": 336
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_c_bridge.o",
+        "bytes": 41400
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_canonical_encoding.o",
+        "bytes": 4680
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_catalog_provider.o",
+        "bytes": 28720
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_config.o",
+        "bytes": 21288
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_context.o",
+        "bytes": 47544
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_gguf_gpu_affine_fixed.o",
+        "bytes": 424352
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_gguf_packed_bank.o",
+        "bytes": 85440
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_gguf_weight_pager.o",
+        "bytes": 186528
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_io_executor.o",
+        "bytes": 14320
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_layout.o",
+        "bytes": 85304
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_mlx_weight_pager.o",
+        "bytes": 62168
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_preset_catalog.o",
+        "bytes": 100744
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_preset_resolver.o",
+        "bytes": 60912
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_public_request_validation.o",
+        "bytes": 4448
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_public_result.o",
+        "bytes": 28168
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_public_runtime.o",
+        "bytes": 71128
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_resolved_request.o",
+        "bytes": 7336
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_run_context.o",
+        "bytes": 38832
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_slot_pool.o",
+        "bytes": 12408
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_source_lease.o",
+        "bytes": 71312
+      },
+      {
+        "path": "build/native-graph-20261008/native_runtime_streaming_value_probe.o",
+        "bytes": 18352
+      },
+      {
+        "path": "build/native-graph-20261008/native_workflows_image_workflows.o",
+        "bytes": 34064
+      },
+      {
+        "path": "build/native-graph-20261008/module-cache",
+        "bytes": 0
+      },
+      {
+        "path": "build/native-qwen-block-component-20261007",
+        "bytes": 297240
+      },
+      {
+        "path": "build/native-graph-components-20261008/handoff-types",
+        "bytes": 38800
+      },
+      {
+        "path": "build/native-graph-components-20261008/ticket-state",
+        "bytes": 36544
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/native-handoff-owned-cache-20261008",
+        "bytes": 569
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/native-handoff-owned-cache-20261008-v2",
+        "bytes": 569
+      }
+    ],
+    "removed_file_bytes": 19920946,
+    "retained_build_file_bytes": 11869165,
+    "retained_component_file_bytes": 910224,
+    "models_dist_prior_runtime_and_captures_preserved": true,
+    "external_driver_caches_not_managed": true
+  }
+}

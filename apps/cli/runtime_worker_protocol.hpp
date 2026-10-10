@@ -41,7 +41,7 @@ inline NSDictionary *validate(id raw) {
     NSDictionary *request=object(input[@"native_request_v2"]),*options=object(input[@"runtime_options"]);
     NSArray *option_keys=@[@"profile_id",@"descriptor_path",@"cache_dir"];
     keys(options,option_keys,option_keys);
-    require(equal(options[@"profile_id"],@"private-w8a8-hadamard-512-v1") &&
+    require(equal(options[@"profile_id"],@"private-w8a8-hadamard-512-v2") &&
         normalized_path(options[@"descriptor_path"]) && normalized_path(options[@"cache_dir"]),"runtime_worker_options_unqualified");
     keys(request,@[@"schema_version",@"model",@"operation",@"inputs",@"outputs",@"sampling",@"execution",@"parameters",@"loras",@"lora_strategy"],
         @[@"schema_version",@"model",@"operation",@"inputs",@"outputs",@"sampling",@"execution",@"parameters"]);
@@ -102,6 +102,7 @@ inline NSDictionary *environment(NSDictionary *input) {
         @"TURBOCIDER_ANE_BACKEND":@"auto",@"TURBOCIDER_ALLOW_PRIVATE_ANE":@"1",
         @"TURBOCIDER_PRIVATE_ANE_DATA_PATH":@"w8a8",@"TURBOCIDER_PRIVATE_ANE_GPU_IO":@"1",
         @"TURBOCIDER_PRIVATE_ANE_CHANNELS":@"4096",@"TURBOCIDER_RUNTIME_ANE_CHUNKS":@"1",
+        @"TURBOCIDER_PRIVATE_ANE_ROWS":@"request",
         @"TURBOCIDER_RUNTIME_ANE_PROFILE":@"0",@"TURBOCIDER_PRIVATE_ANE_SCALE_CACHE":@"1",
         @"TURBOCIDER_PRIVATE_ANE_PREFETCH":@"0",@"TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE":@"0",
         @"TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD":@"0",@"TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE":@"0",

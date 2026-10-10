@@ -37,6 +37,9 @@ inline bool gate_up_ane(const Request &request) {
 inline bool fused_lora_ane(const Request &request) {
     return request.hybrid_mlp_mode == "lora_fused";
 }
+inline bool frozen_fp16(const Request &request) {
+    return request.execution == "gpu_ane" && fused_lora_ane(request) && !request.qwen21_w8a8;
+}
 
 // Request opt-in for the locally verified r128 GPU editing route. Planning
 // recognizes the release filename; Session still verifies its pinned SHA-256

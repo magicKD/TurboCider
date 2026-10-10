@@ -8,6 +8,18 @@
 
 using namespace tc::ane;
 int main() {
+    unsetenv("TURBOCIDER_PRIVATE_ANE_ROWS");
+    if (configured_request_rows()) return 1;
+    setenv("TURBOCIDER_PRIVATE_ANE_ROWS", "request", 1);
+    if (!configured_request_rows() || private_request_bucket(1024) != 1024 ||
+        private_request_bucket(1056) != 1152 || private_request_bucket(1088) != 1152 ||
+        private_request_bucket(1536) != 1536 || private_request_bucket(4096) != 2048) return 1;
+    for (int rows : {0, -1, 32769}) {
+        try { private_request_bucket(rows); return 1; } catch (const std::runtime_error &) {}
+    }
+    setenv("TURBOCIDER_PRIVATE_ANE_ROWS", "auto", 1);
+    try { configured_request_rows(); return 1; } catch (const std::runtime_error &) {}
+    unsetenv("TURBOCIDER_PRIVATE_ANE_ROWS");
     static_assert(std::is_base_of_v<Executor, RuntimeGraph>);
     if (!public_runtime_preparation_allowed({BackendPreference::Public, false}) ||
         !public_runtime_preparation_allowed({BackendPreference::Public, true}) ||

@@ -2,6 +2,7 @@
 // Modified: checked selectors, named bindings, SHA256/OS/ABI cache identity,
 // process locking, actual allocation accounting and retained async ownership.
 #include "ane_program.hpp"
+#include "ane_ticket_state.hpp"
 #include "../ane_runtime.hpp"
 #include "../ane_w8a8_math.hpp"
 #include "../ane_w8_stage.hpp"
@@ -67,6 +68,14 @@ namespace {
 constexpr unsigned qos = QOS_CLASS_DEFAULT;
 std::atomic<bool> process_healthy{true};
 void require(bool ok, const std::string &error) { if (!ok) throw CapabilityError(error); }
+uint64_t next_binding_generation() {
+    static std::atomic<uint64_t> next{1};
+    auto current = next.load(std::memory_order_relaxed);
+    do {
+        require(current < std::numeric_limits<uint64_t>::max(), "private ANE binding generation exhausted");
+    } while (!next.compare_exchange_weak(current, current + 1, std::memory_order_relaxed));
+    return current;
+}
 std::string description(NSError *error) {
     return error ? std::string(error.localizedDescription.UTF8String) : "no driver diagnostic";
 }
@@ -178,6 +187,7 @@ struct Program::Impl {
     std::optional<Device> device;
     std::vector<std::string> inputs, outputs;
     std::string key;
+    const uint64_t binding_generation = next_binding_generation();
     bool loaded = false, compiled = false;
     ~Impl() {
         @autoreleasepool { if (loaded) [connection unloadModel:model options:@{} qos:qos error:nil]; }
@@ -230,13 +240,13 @@ bool Program::healthy() { return process_healthy.load() && gpu::healthy(); }
 const std::vector<std::string> &Program::inputs() const { return impl_->inputs; }
 const std::vector<std::string> &Program::outputs() const { return impl_->outputs; }
 const std::string &Program::cache_key() const { return impl_->key; }
+uint64_t Program::binding_generation() const { return impl_->binding_generation; }
 bool Program::compiled_now() const { return impl_->compiled; }
 
 struct Ticket::Impl {
     std::mutex mutex;
     std::condition_variable cv;
-    bool done = false;
-    Completion result;
+    detail::TicketCompletionState completion;
     std::function<void(uint64_t)> release;
     uint64_t signal = 0;
     std::function<void()> failure;
@@ -245,24 +255,48 @@ struct Ticket::Impl {
     // missing callback conservatively quarantines this one state until exit.
     std::shared_ptr<void> program;
     std::vector<Surface> surfaces;
+    std::optional<AneEventBinding> external_events;
+    id<MTLSharedEvent> ready_event, done_event;
     id request;
 };
+std::optional<AneRequestProvenance> Ticket::provenance() const {
+    if (!impl_ || !impl_->external_events) return std::nullopt;
+    return impl_->external_events->provenance();
+}
+Completion Ticket::status() const {
+    if (!impl_) return {false, false, "private ANE empty ticket", true, true};
+    std::lock_guard lock(impl_->mutex);
+    return impl_->completion.status();
+}
 Completion Ticket::finish(std::chrono::milliseconds timeout) {
-    if (!impl_) return {false, false, "private ANE empty ticket"};
+    if (!impl_) return status();
     std::unique_lock lock(impl_->mutex);
-    if (!impl_->cv.wait_for(lock, timeout, [&] { return impl_->done; })) {
+    if (!impl_->cv.wait_for(lock, timeout, [&] { return impl_->completion.terminal(); })) {
+        const bool first_failure = impl_->completion.retire(
+            "private ANE callback timeout; resources quarantined, executor must disable", true);
+        const auto result = impl_->completion.status();
+        lock.unlock();
         process_healthy = false;
-        if (impl_->failure) impl_->failure();
-        impl_->release(impl_->signal);
-        return {false, true, "private ANE callback timeout; resources quarantined, executor must disable"};
+        impl_->cv.notify_all();
+        if (first_failure) {
+            if (impl_->failure) impl_->failure();
+            // Legacy waiter-release policy only. It proves neither physical
+            // completion nor permission for a native graph to read the output.
+            if (impl_->release) impl_->release(impl_->signal);
+        }
+        return result;
     }
-    return impl_->result;
+    return impl_->completion.status();
 }
 void PreparedRequest::discard() noexcept {
     if (!state_) return;
     // No driver work exists until submit consumes state_. A prepared request
     // owns its callback, which owns this state, so explicitly break the cycle.
-    { std::lock_guard lock(state_->mutex); state_->request = nil; }
+    {
+        std::lock_guard lock(state_->mutex);
+        state_->completion.discard_unsubmitted();
+        state_->request = nil;
+    }
     state_.reset();
 }
 PreparedRequest::~PreparedRequest() { discard(); }
@@ -275,27 +309,55 @@ PreparedRequest &PreparedRequest::operator=(PreparedRequest &&other) noexcept {
 Ticket PreparedRequest::submit() {
     require(bool(state_), "private ANE prepared request already consumed");
     require(Program::healthy(), "private ANE disabled after failed/missing completion");
+    auto program = std::static_pointer_cast<Program::Impl>(state_->program);
+    if (state_->external_events) {
+        // W0 only. This does not replace the caller's successful physical GPU
+        // producer certificate; the epoch owner must exclude other signalers.
+        @try {
+            state_->external_events->validate_metadata(program->device->native_device(), program->key,
+                                                       program->binding_generation);
+            state_->external_events->validate_w0_values(state_->ready_event.signaledValue,
+                                                       state_->done_event.signaledValue);
+        } @catch (NSException *exception) {
+            // No request has been submitted; its PreparedRequest still owns it.
+            throw CapabilityError("private ANE external event preflight exception: " +
+                                  std::string(exception.reason.UTF8String ?: "unknown"));
+        }
+    }
     auto state = std::exchange(state_, {});
-    auto program = std::static_pointer_cast<Program::Impl>(state->program);
     @autoreleasepool {
       @try {
         NSError *error = nil;
         if (![program->connection evaluateWithModel:program->model options:@{} request:state->request qos:qos error:&error]) {
             process_healthy = false;
-            if (state->failure) state->failure();
-            state->release(state->signal);
             // A failed submission may still have reached the driver. Retain
-            // its callback resources exactly like the inference enqueue path.
-            std::lock_guard lock(state->mutex);
-            state->result = {false, false, "private ANE enqueue failed: " + description(error)};
-            state->done = true;
+            // its callback resources; rejection is not physical completion.
+            bool first_failure;
+            {
+                std::lock_guard lock(state->mutex);
+                first_failure = state->completion.retire("private ANE enqueue failed: " + description(error));
+            }
+            state->cv.notify_all();
+            if (first_failure) {
+                if (state->failure) state->failure();
+                if (state->release) state->release(state->signal);
+            }
         }
         Ticket ticket; ticket.impl_ = std::move(state); return ticket;
       } @catch (NSException *exception) {
         process_healthy = false;
-        if (state->failure) state->failure();
-        state->release(state->signal);
-        throw CapabilityError("private ANE enqueue exception: " + std::string(exception.reason.UTF8String ?: "unknown"));
+        const auto message = "private ANE enqueue exception: " + std::string(exception.reason.UTF8String ?: "unknown");
+        bool first_failure;
+        {
+            std::lock_guard lock(state->mutex);
+            first_failure = state->completion.retire(message);
+        }
+        state->cv.notify_all();
+        if (first_failure) {
+            if (state->failure) state->failure();
+            if (state->release) state->release(state->signal);
+        }
+        throw CapabilityError(message);
       }
     }
 }
@@ -307,18 +369,57 @@ Ticket Program::enqueue(std::span<const std::pair<std::string, Surface>> inputs,
 PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>> inputs,
                                 std::span<const std::pair<std::string, Surface>> outputs,
                                 uint64_t wait_value, uint64_t signal_value, std::function<void()> failure) {
+    return prepare_impl(inputs, outputs, wait_value, signal_value, std::nullopt, std::move(failure));
+}
+PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>> inputs,
+                                std::span<const std::pair<std::string, Surface>> outputs,
+                                AneEventBinding events, std::function<void()> failure) {
+    const auto ready = events.ready().value, done = events.done().value;
+    return prepare_impl(inputs, outputs, ready, done, std::move(events), std::move(failure));
+}
+PreparedRequest Program::prepare_impl(std::span<const std::pair<std::string, Surface>> inputs,
+                                     std::span<const std::pair<std::string, Surface>> outputs,
+                                     uint64_t wait_value, uint64_t signal_value,
+                                     std::optional<AneEventBinding> external_events,
+                                     std::function<void()> failure) {
     @autoreleasepool {
+      const bool external = external_events.has_value();
       auto emergency_failure = failure;
       @try {
         require(healthy(), "private ANE disabled after failed/missing completion");
-        require(wait_value && signal_value > wait_value && wait_value >= impl_->device->value(),
-                "private ANE invalid dependency timeline");
+        if (external) {
+            external_events->validate_metadata(impl_->device->native_device(), impl_->key, impl_->binding_generation);
+        } else {
+            require(wait_value && signal_value > wait_value && wait_value >= impl_->device->value(),
+                    "private ANE invalid dependency timeline");
+        }
         auto state = std::make_shared<Ticket::Impl>();
         state->failure = std::move(failure);
         state->program = impl_; state->signal = signal_value;
         auto device = impl_->device;
-        state->release = [device](uint64_t value) { device->release_after_failure(value); };
-        auto objects = [&](auto bindings, const auto &names) {
+        state->external_events = std::move(external_events);
+        if (external) {
+            state->ready_event = (__bridge id<MTLSharedEvent>)state->external_events->ready().native_event;
+            state->done_event = (__bridge id<MTLSharedEvent>)state->external_events->done().native_event;
+            for (const auto *endpoint : {&state->external_events->ready(), &state->external_events->done()}) {
+                id<MTLSharedEvent> event = (__bridge id<MTLSharedEvent>)endpoint->native_event;
+                require([(id)event respondsToSelector:@selector(device)] &&
+                        [(id)event respondsToSelector:@selector(signaledValue)],
+                        "private ANE external event has wrong Metal type");
+                detail::validate_shared_event_device(endpoint->native_device, (__bridge void*)event.device,
+                                                     device->native_device());
+                // Splash Program::enqueue (local 0d5a035e) checks eventPort:
+                // validation-layer wrappers may lack the port ANE must share.
+                require([(id)event respondsToSelector:NSSelectorFromString(@"eventPort")],
+                        "private ANE cannot share a validation-wrapped Metal event");
+            }
+            // Deliberately no release callback: failure/timeout must not raise
+            // either external event or grant permission to read stale output.
+        } else {
+            state->ready_event = state->done_event = (__bridge id<MTLSharedEvent>)device->shared_event();
+            state->release = [device](uint64_t value) { device->release_after_failure(value); };
+        }
+        auto objects = [&](auto bindings, const auto &names, bool writes) {
             require(bindings.size() == names.size(), "private ANE binding count mismatch");
             NSMutableArray *result = [NSMutableArray new];
             std::set<std::string> observed;
@@ -327,6 +428,13 @@ PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>
                 auto found = std::find_if(bindings.begin(), bindings.end(), [&](const auto &b) { return b.first == name; });
                 require(found != bindings.end() && observed.insert(name).second, "private ANE binding names mismatch: " + name);
                 require(!found->second.is_view(), "private ANE consumer surface slice cannot be a driver binding");
+                if (external) {
+                    const auto lease = found->second.metal_buffer_lease();
+                    lease.validate(device->native_device());
+                    if (writes) for (const auto &previous : state->surfaces)
+                        require(previous.metal_buffer_lease().native_buffer != lease.native_buffer,
+                                "private ANE W0 output must not alias an input or another output");
+                }
                 id object = [cls objectWithIOSurface:(IOSurfaceRef)found->second.native_iosurface()];
                 require(object != nil, "private ANE surface binding failed");
                 [result addObject:object]; state->surfaces.push_back(found->second);
@@ -335,16 +443,16 @@ PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>
         };
         // Build bindings before any async evaluation. No driver work exists
         // if validation throws here.
-        NSArray *in = objects(inputs, impl_->inputs), *out = objects(outputs, impl_->outputs);
+        NSArray *in = objects(inputs, impl_->inputs, false), *out = objects(outputs, impl_->outputs, true);
         auto indices = [](NSUInteger count) {
             NSMutableArray *result = [NSMutableArray new];
             for (NSUInteger i = 0; i < count; ++i) [result addObject:@(i)];
             return result;
         };
         id wait = [(Class<TCAneEvents>)api_class(@"_ANESharedWaitEvent", @selector(waitEventWithValue:sharedEvent:eventType:))
-            waitEventWithValue:wait_value sharedEvent:(__bridge id<MTLSharedEvent>)device->shared_event() eventType:0];
+            waitEventWithValue:wait_value sharedEvent:state->ready_event eventType:0];
         id signal = [(Class<TCAneEvents>)api_class(@"_ANESharedSignalEvent", @selector(signalEventWithValue:symbolIndex:eventType:sharedEvent:))
-            signalEventWithValue:signal_value symbolIndex:0 eventType:0 sharedEvent:(__bridge id<MTLSharedEvent>)device->shared_event()];
+            signalEventWithValue:signal_value symbolIndex:0 eventType:0 sharedEvent:state->done_event];
         require(wait && signal, "private ANE event binding failed");
         id events = [(Class<TCAneEvents>)api_class(@"_ANESharedEvents", @selector(sharedEventsWithSignalEvents:waitEvents:))
             sharedEventsWithSignalEvents:@[signal] waitEvents:@[wait]];
@@ -354,11 +462,16 @@ PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>
             weightsBuffer:nil perfStats:nil procedureIndex:@0 sharedEvents:events transactionHandle:nil];
         require(state->request && [state->request respondsToSelector:@selector(setCompletionHandler:)], "private ANE async request creation failed");
         [(id<TCAneRequest>)state->request setCompletionHandler:^(BOOL ok, NSError *error) {
-            if (!ok) { process_healthy = false; if (state->failure) state->failure(); state->release(state->signal); }
+            bool first_failure;
             {
                 std::lock_guard lock(state->mutex);
-                if (!state->done) { state->result = {bool(ok), false, ok ? "" : description(error)}; state->done = true; }
+                first_failure = state->completion.completed(bool(ok), ok ? "" : description(error));
                 state->request = nil; // break callback ownership cycle ONLY on driver completion
+            }
+            if (!ok) process_healthy = false;
+            if (first_failure) {
+                if (state->failure) state->failure();
+                if (state->release) state->release(state->signal);
             }
             state->cv.notify_all();
         }];
@@ -366,7 +479,7 @@ PreparedRequest Program::prepare(std::span<const std::pair<std::string, Surface>
       } @catch (NSException *exception) {
         process_healthy = false;
         if (emergency_failure) emergency_failure();
-        impl_->device->release_after_failure(signal_value);
+        if (!external) impl_->device->release_after_failure(signal_value);
         throw CapabilityError("private ANE enqueue exception: " + std::string(exception.reason.UTF8String ?: "unknown"));
       }
     }

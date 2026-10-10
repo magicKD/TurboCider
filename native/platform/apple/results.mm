@@ -1,13 +1,23 @@
 #include "bridge.hpp"
 #include "../../core/quantized_execution_profiles.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
+#include "../../models/qwen21/native_route.hpp"
 #include "../../models/qwen21/viggle_adapter.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
 #include "../../runtime/streaming/actual_receipt.hpp"
 namespace tc {
+static bool native_w1_executed(const RunResult &result) {
+    return !result.prepared && result.native_denoiser_hybrid &&
+        result.native_denoiser_hybrid->enabled &&
+        result.native_denoiser_hybrid->successful_ffns > 0 &&
+        result.native_denoiser_hybrid->completed_hybrid_steps > 0;
+}
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "qwen-image-2.1" && r.qwen21_denoiser_backend == "native-metal-graph")
+        return qwen21::native_w1_requested(r) ? @"native_full_dit_euler_w1" :
+            qwen21::native_viggle_lora_requested(r) ? @"native_full_dit_euler_runtime_lora" : @"native_full_dit_euler";
     if (r.hybrid_mlp_mode == "runtime") return @"runtime_weight_token_row_ffn";
     if (r.hybrid_mlp_mode == "runtime_qkv") return @"runtime_weight_token_row_qkv";
     if (r.model == "qwen-image-2.1")
@@ -42,6 +52,13 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if (result.backend == "native_metal_graph+mlx_encoder_vae")
+        return result.prepared ? @"native_source_preparation" :
+            result.native_denoiser_lora && result.native_denoiser_lora->completed ?
+            @"native_full_dit_euler_runtime_lora" : @"native_full_dit_euler";
+    if (result.backend == "native_metal_graph+private_ane_w1+mlx_encoder_vae")
+        return result.prepared ? @"native_source_preparation" :
+            (native_w1_executed(result) ? @"native_full_dit_euler_w1" : @"native_full_dit_euler");
     if(result.backend=="mlx_cpp_metal_dense_split_gpu_control")
         return @"compiled_split_gpu_ffn_control";
     if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
@@ -76,9 +93,29 @@ static NSString *encoder_backend_label(const Request &request, bool hybrid) {
         return hybrid ? @"metal_mps+coreml" : @"metal_mps";
     return hybrid ? @"mlx_cpp_metal+coreml" : @"mlx_cpp_metal";
 }
+static bool executed_encoder_hybrid(const RunResult& result) {
+    if(result.native_encoder && result.native_encoder->ane_ffns)return true;
+    return result.encoder_hybrid && (result.request.model!="qwen-image-2.1" ||
+        result.encoder_hybrid->runtime_weight_hybrid_blocks>0);
+}
+static NSString *executed_encoder_backend(const RunResult& result) {
+    if(result.native_encoder)return result.native_encoder->ane_ffns?@"native_metal_graph_qwen3_vl_private_ane_w1_experimental":@"native_metal_graph_qwen3_vl_experimental";
+    if(executed_encoder_hybrid(result) && result.encoder_hybrid->runtime_weight_backend=="private_ane")
+        return @"mlx_cpp_metal+private_ane_runtime_weight_experimental";
+    return encoder_backend_label(result.request,executed_encoder_hybrid(result));
+}
+static NSString *executed_encoder_precision(const RunResult& result) {
+    if(result.native_encoder)return @(result.native_encoder->precision.c_str());
+    if(!executed_encoder_hybrid(result))return @"bf16";
+    const auto& metrics=*result.encoder_hybrid;
+    if(result.request.model=="qwen-image-2.1" && metrics.runtime_weight_backend=="private_ane" &&
+       metrics.runtime_weight_data_path=="w8a8_hadamard")
+        return @"bf16_gpu+private_ane_runtime_w8a8_hadamard+fp32_partial_join+bf16_conditioning";
+    return @(hybrid_precision_label(metrics).c_str());
+}
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
     if (request.model == "qwen-image-2.1")
-        return @"qwen3_vl_deepstack_gpu_only";
+        return hybrid ? @"qwen3_vl_language_ffn_runtime_channel_complement" : @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
         return hybrid ? @"gemma4_encoder_mlp_complement"
                       : @"gemma4_gpu_only";
@@ -86,6 +123,10 @@ static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
         return hybrid ? @"qwen3_vl_encoder_mlp_complement"
                       : @"qwen3_vl_gpu_only";
     return hybrid ? @"qwen3_encoder_mlp_complement" : @"qwen3_gpu_only";
+}
+static NSString *executed_encoder_gpu_graph(const RunResult& result) {
+    return result.native_encoder ? (result.native_encoder->ane_ffns?@"native_vision_gpu_language_private_ane_w1_padded_ffn":@"native_vision27_language36_two_layer_graph") :
+        encoder_gpu_graph_label(result.request, executed_encoder_hybrid(result));
 }
 static NSString *encoder_weight_validation_label(const Request &request,
                                                   bool hybrid,
@@ -218,6 +259,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     auto &r = plan.request;
     auto &recipe = plan.recipe;
     bool hybrid = r.execution == "gpu_ane";
+    const bool native_w1 = qwen21::native_w1_requested(r);
     bool encoder_hybrid = !r.encoder_ane_manifest.empty();
     const auto lora_strategy = effective_lora_strategy(r);
     auto validation = r.model == "z-image-turbo-gguf" ? @"native_gguf_candidate" :
@@ -262,7 +304,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.model.starts_with("flux2-klein-") ? @"load_time_baked" : @"in_memory_delta") :
          r.model == "wan2.1-1.3b-qad" ? @"premerged_manifest_verified" :
          @"premerged_manifest_verified");
-    auto backend = r.hybrid_mlp_mode == "runtime_qkv" ? @"mlx_cpp_metal+coreml_runtime_qkv" :
+    auto backend = native_w1 ? @"native_metal_graph+private_ane_w1+mlx_encoder_vae" :
+        r.model == "qwen-image-2.1" && r.qwen21_denoiser_backend == "native-metal-graph"
+        ? @"native_metal_graph+mlx_encoder_vae" :
+        r.hybrid_mlp_mode == "runtime_qkv" ? @"mlx_cpp_metal+coreml_runtime_qkv" :
         r.hybrid_mlp_mode == "runtime" ?
         (r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml_runtime_weight"
                                        : @"mlx_cpp_metal+coreml_runtime_weight") : hybrid ?
@@ -302,7 +347,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && qwen21::gate_up_ane(r))
         [algorithm_approximations addObject:@"qwen21_w8a8_gate_up_gpu_silu_down_diagnostic"];
     if (r.model == "qwen-image-2.1" && qwen21::fused_lora_ane(r))
-        [algorithm_approximations addObject:@"qwen21_w8a8_fused_lora_pre_silu_diagnostic"];
+        [algorithm_approximations addObject:qwen21::frozen_fp16(r)
+            ? @"qwen21_fp16_fused_lora_pre_silu_diagnostic"
+            : @"qwen21_w8a8_fused_lora_pre_silu_diagnostic"];
     if (r.model == "qwen-image-2.1" && qwen21::lora_base_ane(r) &&
             !qwen21::gate_up_ane(r) && !qwen21::fused_lora_ane(r))
         [algorithm_approximations addObject:@"qwen21_runtime_lora_base_ane_suffix_only_diagnostic"];
@@ -363,6 +410,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     else if (!r.quantized_cache.empty())
         [algorithm_approximations addObject:
             @"row_symmetric_int8_weight_quantization"];
+    else if (native_w1)
+        [algorithm_approximations addObject:@"qwen21_native_w1_sylvester_w8a8_channel_split"];
     else if (hybrid && r.hybrid_mlp_mode != "runtime" && r.hybrid_mlp_mode != "runtime_qkv")
         [algorithm_approximations addObject:
             r.model == "qwen-image-2.1"
@@ -443,7 +492,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
+        @"precision" : native_w1 ? @"bf16_gpu+w8a8_sylvester_ane_fp16_io" :
+                      r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
                       r.hybrid_mlp_mode == "runtime" ?
                           (r.model == "z-image-turbo-gguf" ? @"gguf_native_gpu+runtime_fp16_ffn"
                                                           : @"bf16_gpu+runtime_fp16_ffn_bf16_io") :
@@ -525,6 +575,24 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
         report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
         report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
+        report[@"qwen21_denoiser_backend"] = @(r.qwen21_denoiser_backend.c_str());
+        if (r.qwen21_denoiser_backend == "native-metal-graph")
+            report[@"qwen21_denoiser_qualification"] = @"experimental-unqualified";
+        if (qwen21::native_viggle_lora_requested(r)) {
+            report[@"qwen21_native_variant"] = @"viggle-r128-6step";
+            report[@"qwen21_native_lora_kernel"] = @(r.qwen21_native_lora_kernel.c_str());
+            report[@"weight_validation"] = @"r128 adapter content pin and produced factor owners verified at execution";
+        }
+        if (native_w1) {
+            report[@"qwen21_native_ane_cache"] = @(r.qwen21_native_ane_cache.c_str());
+            report[@"qwen21_native_w8_staging"] = @(r.qwen21_native_w8_staging.c_str());
+            report[@"qwen21_native_scale_cache"] = @(r.qwen21_native_scale_cache);
+            report[@"planned_native_w1_phase"] = @"gpu_prefix_build_then_steady_decode";
+            report[@"planned_native_w1_geometry"] = @{@"hidden": @4096, @"intermediate": @12288,
+                @"ane_channels": @6144, @"target_rows": @1024, @"slots": @1};
+            report[@"native_ane_hardware_arithmetic"] = @"unverified";
+            report[@"weight_validation"] = @"held dense sources and runtime MIL geometry checked at execution; Sylvester W8A8 whole-model quality/performance unqualified";
+        }
         report[@"qwen21_gpu_full_ffn_blocks"] = blocks;
         if (r.qwen21_w8a8)
             report[@"planned_w8a8_ffn_layer_coverage"] = @((32. - blocks.count) / 32.);
@@ -870,16 +938,34 @@ static NSDictionary *runtime_plan(const RunResult &result) {
     plan[@"gpu_graph"] = gpu_graph_label(result);
     const bool runtime_unselected = result.request.hybrid_mlp_mode == "runtime" && result.hybrid &&
         result.hybrid->runtime_weight_backend.empty();
-    const bool hybrid = result.request.execution == "gpu_ane" && !runtime_unselected;
-    const bool encoder_hybrid = result.encoder_hybrid.has_value();
+    const bool native_dit = qwen21::native_denoiser_requested(result.request);
+    const bool hybrid = result.native_prefill.has_value() || (native_dit ? native_w1_executed(result)
+        : result.request.execution == "gpu_ane" && !runtime_unselected);
+    const bool encoder_hybrid = executed_encoder_hybrid(result);
     plan[@"execution"] = hybrid ? @"gpu_ane_experimental" : @"gpu";
+    if(result.native_prefill){NSMutableArray* approximations=[plan[@"algorithm_approximations"] mutableCopy];
+        [approximations addObject:@"qwen21_native_prefill_w1_w8a8_channel_split"];plan[@"algorithm_approximations"]=approximations;}
+    if (native_dit) {
+        plan[@"native_w1_executed"] = @(native_w1_executed(result));
+        if (!hybrid) {
+            NSMutableArray *approximations = [plan[@"algorithm_approximations"] mutableCopy];
+            [approximations removeObject:@"qwen21_native_w1_sylvester_w8a8_channel_split"];
+            plan[@"algorithm_approximations"] = approximations;
+            plan[@"precision"] = @"bf16";
+            plan[@"backend"] = @"native_metal_graph+mlx_encoder_vae";
+        }
+    }
     plan[@"encoder_execution"] = encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    plan[@"encoder_backend"] = encoder_backend_label(
-        result.request, encoder_hybrid);
+    plan[@"encoder_backend"] = executed_encoder_backend(result);
     plan[@"encoder_gpu_graph"] =
-        encoder_gpu_graph_label(result.request, encoder_hybrid);
-    plan[@"encoder_precision"] = encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
-                                                  : @"bf16";
+        executed_encoder_gpu_graph(result);
+    plan[@"encoder_precision"] = executed_encoder_precision(result);
+    if(encoder_hybrid && result.request.model=="qwen-image-2.1") {
+        NSMutableArray* approximations=[plan[@"algorithm_approximations"] mutableCopy];
+        if(![approximations containsObject:@"qwen21_encoder_runtime_w8a8_channel_split"])
+            [approximations addObject:@"qwen21_encoder_runtime_w8a8_channel_split"];
+        plan[@"algorithm_approximations"]=approximations;
+    }
     if (result.hybrid && result.request.model != "z-image-turbo-gguf")
         plan[@"precision"] = @((result.precision.empty()
             ? hybrid_precision_label(*result.hybrid) : result.precision).c_str());
@@ -1397,6 +1483,61 @@ NSDictionary *to_dictionary(const MemoryExecutionReport &report) {
         @"memory_trace" : to_array(report.trace),
     };
 }
+static NSDictionary *to_dictionary(const NativeDenoiserLoRAMetrics &m) {
+    require(m.enabled && m.completed && m.source_generation && m.adapter_count &&
+            !m.adapter_revision.empty() && !m.adapter_sha256.empty() && !m.verified_artifact_digest.empty(),
+            "native LoRA JSON requires an actual completed verified execution");
+    return @{@"schema_version": @1, @"enabled": @(m.enabled), @"completed": @(m.completed),
+        @"variant": @(m.variant.c_str()), @"source_kind": @"verified-held-fd",
+        @"source_generation": @(m.source_generation), @"adapter_count": @(m.adapter_count),
+        @"resolved_bindings": @(m.resolved_bindings), @"logical_projections": @(m.logical_projections),
+        @"ordered_terms": @(m.ordered_terms), @"max_rank": @(m.max_rank),
+        @"completed_steps": @(m.completed_steps), @"scratch_bytes": @(m.scratch_bytes),
+        @"source_strength": @(m.source_strength), @"adapter_sha256": @(m.adapter_sha256.c_str()),
+        @"verified_artifact_digest": @(m.verified_artifact_digest.c_str()),
+        @"adapter_revision": @(m.adapter_revision.c_str()), @"precision_recipe": @(m.precision_recipe.c_str())};
+}
+static NSDictionary *to_dictionary(const NativeDenoiserPhaseMetrics &m) {
+    return @{
+        @"scope" : @"native_denoise_phase",
+        @"full_request_certified" : @NO,
+        @"source_coverage" : @"produced MLX weights and inputs retained in observed phase baseline",
+        @"prepare_seconds" : @(m.prepare_seconds),
+        @"memory_admission" : to_dictionary(m.admission),
+        @"memory_trace" : to_array(m.trace),
+    };
+}
+static NSDictionary *to_dictionary(const NativeHybridDenoiserMetrics &m) {
+    return @{
+        @"enabled": @(m.enabled),
+        @"executor": @"native_metal_graph_private_ane_w1",
+        @"recipe": @"sylvester_w8a8_channel_split_fp16_io",
+        @"successful_ffns": @(m.successful_ffns),
+        @"completed_hybrid_steps": @(m.completed_hybrid_steps),
+        @"surface_bytes": @(m.surface_bytes),
+        @"partial_bytes": @(m.partial_bytes),
+        @"weight_staging": @(m.weight_staging.c_str()),
+        @"weight_scale_cache": @{
+            @"enabled": @(m.weight_scale_cache_enabled),
+            @"entries": @(m.weight_scale_cache_entries),
+            @"payload_bytes": @(m.weight_scale_cache_payload_bytes),
+            @"hits": @(m.weight_scale_cache_hits), @"misses": @(m.weight_scale_cache_misses),
+            @"scope": @"request-local immutable sources; one entry/lookup per gate-up-down layer; successful FFNs only"},
+        @"device_spans_seconds": @{
+            @"producer_gpu": @(m.producer_gpu_span_seconds),
+            @"gpu_complement": @(m.gpu_complement_span_seconds),
+            @"timed_ffns": @(m.device_timed_ffns),
+            @"scope": @"paired coverage only: both positive captured GPU spans; excludes unavailable samples"},
+        @"host_spans_seconds": @{
+            @"producer": @(m.producer_seconds), @"submit_ane": @(m.submit_ane_seconds),
+            @"branch_join": @(m.branch_join_seconds), @"consumer": @(m.consumer_seconds),
+            @"total": @(m.total_seconds)},
+        @"timing_scope": @"host controller spans plus captured Metal ticket first-start/last-end spans; zero device span is unavailable, inter-CB gaps included; not additive kernel busy times or proof of ANE overlap",
+        @"physical_ane_placement_verified": @NO,
+        @"hardware_int8_arithmetic_verified": @NO,
+        @"whole_request_performance_qualified": @NO,
+    };
+}
 RunResult native_run_result(NSDictionary *value, const Request &request,
                             const ExecutionPlan &plan) {
     require([value isKindOfClass:NSDictionary.class], "native session returned an invalid result");
@@ -1436,17 +1577,22 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"block_residency"] = to_dictionary(*result.block_residency);
         if (result.memory_admission)
             copy[@"memory_admission"] = to_dictionary(*result.memory_admission);
+        if (result.native_denoiser_memory_phase)
+            copy[@"native_denoiser_memory_phase"] = to_dictionary(*result.native_denoiser_memory_phase);
+        if (result.native_denoiser_hybrid)
+            copy[@"native_denoiser_hybrid"] = to_dictionary(*result.native_denoiser_hybrid);
+        if (result.native_denoiser_lora)
+            copy[@"native_denoiser_lora"] = to_dictionary(*result.native_denoiser_lora);
         if (!result.memory_trace.empty())
             copy[@"memory_trace"] = to_array(result.memory_trace);
         if (result.memory_admission)
             copy[@"plan"] = runtime_plan(result);
         if (result.encoder_hybrid) {
-            copy[@"encoder_execution"] = @"gpu_ane_experimental";
-            copy[@"encoder_runtime_backend"] = encoder_backend_label(
-                result.request, true);
+            copy[@"encoder_execution"] = executed_encoder_hybrid(result) ? @"gpu_ane_experimental" : @"gpu";
+            copy[@"encoder_runtime_backend"] = executed_encoder_backend(result);
             copy[@"encoder_gpu_graph"] =
-                encoder_gpu_graph_label(result.request, true);
-            copy[@"encoder_runtime_precision"] = @(hybrid_precision_label(*result.encoder_hybrid).c_str());
+                executed_encoder_gpu_graph(result);
+            copy[@"encoder_runtime_precision"] = executed_encoder_precision(result);
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
             copy[@"plan"] = runtime_plan(result);
         }
@@ -1474,13 +1620,11 @@ NSDictionary *to_dictionary(const RunResult &result) {
     auto encoder_hybrid = result.encoder_hybrid
                               ? to_dictionary(*result.encoder_hybrid)
                               : @{};
-    auto encoder_execution = result.encoder_quantized_execution ? @"gguf_bounded_gpu_experimental" : result.encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    auto encoder_backend = result.encoder_quantized_execution ? @"mlx_cpp_metal_gguf_bounded" : encoder_backend_label(
-        r, result.encoder_hybrid.has_value());
+    auto encoder_execution = result.encoder_quantized_execution ? @"gguf_bounded_gpu_experimental" : executed_encoder_hybrid(result) ? @"gpu_ane_experimental" : @"gpu";
+    auto encoder_backend = result.encoder_quantized_execution ? @"mlx_cpp_metal_gguf_bounded" : executed_encoder_backend(result);
     auto encoder_gpu_graph =
-        result.encoder_quantized_execution ? @"each-layer-eager-submission" : encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
-    auto encoder_precision = result.encoder_quantized_execution ? @"source_mixed_weights+fp32_residual_rope+bf16_conditioning" : result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
-                                                    : @"bf16";
+        result.encoder_quantized_execution ? @"each-layer-eager-submission" : executed_encoder_gpu_graph(result);
+    auto encoder_precision = result.encoder_quantized_execution ? @"source_mixed_weights+fp32_residual_rope+bf16_conditioning" : executed_encoder_precision(result);
     if (result.prepared) {
         NSMutableDictionary *prepared = [@{
             @"acceleration_selection" : @(result.selection.c_str()),
@@ -1512,6 +1656,12 @@ NSDictionary *to_dictionary(const RunResult &result) {
         if (result.memory_admission)
             prepared[@"memory_admission"] =
                 to_dictionary(*result.memory_admission);
+        if (result.native_denoiser_memory_phase)
+            prepared[@"native_denoiser_memory_phase"] = to_dictionary(*result.native_denoiser_memory_phase);
+        if (result.native_denoiser_hybrid)
+            prepared[@"native_denoiser_hybrid"] = to_dictionary(*result.native_denoiser_hybrid);
+        if (result.native_denoiser_lora)
+            prepared[@"native_denoiser_lora"] = to_dictionary(*result.native_denoiser_lora);
         if (!result.memory_trace.empty())
             prepared[@"memory_trace"] = to_array(result.memory_trace);
         if (result.public_streaming)
@@ -1570,6 +1720,12 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
+    if (result.native_denoiser_memory_phase)
+        value[@"native_denoiser_memory_phase"] = to_dictionary(*result.native_denoiser_memory_phase);
+    if (result.native_denoiser_hybrid)
+        value[@"native_denoiser_hybrid"] = to_dictionary(*result.native_denoiser_hybrid);
+    if (result.native_denoiser_lora)
+        value[@"native_denoiser_lora"] = to_dictionary(*result.native_denoiser_lora);
     if (result.gguf_import) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{
@@ -1644,6 +1800,24 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"quantized_source_validation"]=@{@"source_profile":@"z-mlx-compat-affine-v1",
             @"scope":@"diagnostic dual-forward independent source trajectory; FP64 valid-row metrics excluding padding; not timing/media/qualification",
             @"all_block_n1_pass":@(layers_pass),@"final_latent_n1_pass":@(final_pass),@"comparisons":rows};
+    }
+    if(result.native_encoder) {
+        const auto& m=*result.native_encoder;
+        value[@"native_encoder_execution"]=@{@"experimental":@YES,@"release_qualified":@NO,
+            @"precision":@(m.precision.c_str()),@"vision_layers":@(m.vision_layers),@"language_layers":@(m.language_layers),
+            @"graph_submissions":@(m.graph_submissions),@"dispatches":@(m.dispatches),@"future_weight_windows":@(m.future_weight_windows),
+            @"skipped_future_windows":@(m.skipped_future_windows),@"preparation_seconds":@(m.preparation_seconds),
+            @"source_ready_seconds":@(m.source_ready_seconds),@"gpu_wait_seconds":@(m.gpu_wait_seconds),
+            @"ane_ffns":@(m.ane_ffns),@"ane_chunks":@(m.ane_chunks),@"ane_padded_rows":@(m.ane_padded_rows),
+            @"ane_producer_seconds":@(m.ane_producer_seconds),@"ane_branch_seconds":@(m.ane_branch_seconds),@"ane_consumer_seconds":@(m.ane_consumer_seconds),
+            @"physically_complete":@(m.physically_complete),@"conditioning_cache_hit":@(m.conditioning_cache_hit),@"vision_cache_hit":@(m.vision_cache_hit)};
+    }
+    if(result.native_prefill){const auto& m=*result.native_prefill;
+        value[@"native_prefill_execution"]=@{@"experimental":@YES,@"release_qualified":@NO,@"first_step_only":@YES,@"base_only":@YES,
+            @"runtime":@"native_metal+private_ane_w1",@"precision":@"bf16_gpu+w8a8_h128_h512_fp16_io+fp32_join",@"calls":@(m.calls),@"chunks":@(m.chunks),
+            @"valid_rows":@(m.valid_rows),@"padded_rows":@(m.padded_rows),@"bucket_rows":@(m.bucket_rows),@"preparation_seconds":@(m.preparation_seconds),
+            @"input_ready_seconds":@(m.input_ready_seconds),@"producer_seconds":@(m.producer_seconds),@"branch_seconds":@(m.branch_seconds),
+            @"consumer_seconds":@(m.consumer_seconds),@"total_seconds":@(m.total_seconds),@"prewarm_seconds":@(m.prewarm_seconds),@"preparation_reused":@(m.preparation_reused),@"physically_complete":@(m.physically_complete)};
     }
     if (result.encoder_quantized_execution) {
         const auto &m = *result.encoder_quantized_execution;

@@ -67,6 +67,7 @@ struct AccelerationView: View {
                     .disabled(store.busy || (!runtimeANEAvailable && !studio.draft.usesRuntimeANE))
                     .accessibilityIdentifier("runtimeANEExperiment")
                 Text("本机实验仅限 Apple M4 Pro / 48 GiB：Z-Image BF16 8 步，Qwen 基础 20 步或 Viggle r128 6 步、强度 1。固定 512 输出；Qwen 最多 2 张参考图、标准 1024 编码。当前版本待图像性能与质量复验，不保证更快；实际回退会显示在结果中。")
+                Text("分区按实际 token 行数选择：Qwen 的 512 输出使用 1024 行；Z-Image 将图像与文本行数合并后选择容量，长文本分块处理。首次使用新容量需要编译，缓存可在此清理。")
                     .font(.caption).foregroundStyle(.secondary)
                 if studio.draft.usesRuntimeANE {
                     Button("应用实验设置") {

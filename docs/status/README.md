@@ -1,5 +1,63 @@
 # TurboCider 状态文档入口
 
+最新[Native encoder / 无 KV 编辑首步 ANE](2026-10-08-qwen-native-prefill-ane.md)已接入共享变长 FFN、Session 预热/资源复用与提交后下一层源准备。
+完整encoder资源复用省时16.56%；同构建预热后的单步base编辑首步少13.22%、生成等待少6.62%，冷全成本少4.67%。
+保留冷启动慢8.62%的负结果；仍为显式BaseOnly实验，无W2/LoRA/App UI发布资格，未下载模型。
+
+上一轮[完整 Native Metal encoder 单图验证](2026-10-08-qwen-native-encoder.md)已执行视觉27层＋语言36层；
+单图1024-reference独立encoder省时24.93%（FP32视觉）／26.77%（BF16视觉GEMM）。
+实际512²六步编辑的FP32路径encoder省时7.49%、请求少1.59%，图像pixel RRMS0.88%，保持显式实验和MLX默认。
+该轮实际为Native GPU，尚无Native encoder ANE/W2或App UI发布资格；没有下载模型。
+
+上一轮[Qwen encoder 调度与校准](2026-10-08-qwen-encoder-scheduling.md)补上有界分区、Session准备复用、当前GPU提交后的下一层预取及36层独立S1校准。
+三图1024-reference完整encoder从12.37s到11.28s，复用准备后11.01s，省时约8.85%／11.01%；
+conditioning误差仍5.754%，通过预声明8%筛选。S1仅通过组件，默认GPU；当时尚无完整Metal encoder／整图发布资格。
+
+上一轮[Qwen encoder runtime 继续优化](2026-10-08-qwen-encoder-followup.md)复用BF16 MPP partial和动态compiled FFN，
+真实三图FFN两顺序省时约22%，完整encoder总时间少3.93%、语言少10.09%；
+新旧hybrid输出逐值一致，conditioning RRMS5.754%通过本轮预声明8%encoder筛选。
+完整收益未达5%性能筛选，单样本、默认GPU；未做整图/UI测试。两个有限设备组、无模型下载，清理owned缓存约215.58MiB。
+
+上一轮[Qwen Edit ANE encoder runtime](2026-10-08-qwen-ane-encoder.md)已接入显式诊断桥。
+三图真实layer0 FFN两顺序省时约16%，但完整encoder慢10.03%、最终conditioning RRMS5.75%超过预声明5%线；
+保留候选、默认GPU，不追加整图或App开关。只有两个成功设备组，没有下载模型；程序与owned编译缓存按本轮结果清理。
+
+本轮[Qwen Edit 1–3 图 encoder GPU 融合加速](2026-10-08-qwen-edit-encoder.md)已接入原生 pipeline，App 编译通过。
+真实1024 reference视觉＋语言计算省时18.70%／20.54%／21.77%；5%张量筛选通过，2%严格线未通过。
+512 reference三图六步完整请求质量通过、总时间少1.21%，但encoder没有净收益，不授稳定性能资格。
+该轮实际执行GPU，Native encoder／ANE／VAE未迁移；没有下载或导出模型，owned缓存已清理约232.06 MiB。
+
+本轮[Native LoRA hybrid 基础实现与验证结论](2026-10-08-native-lora-foundation.md)使用 `47d3ed80…` 新库。
+Spec、MIL emitter 和 low／apply 拆分已落地，CPU 与 tiny 共享 low 检查通过。
+真实单层暖机对照在完成两对后触发 framework 内存预算保护；未重跑，不授性能资格。
+hybrid stages／controller／模型路线仍待接入；owned 编译缓存和生成 fixture 已清理约 33.01 MiB。
+
+独立 paired gate/up base 原语的[真实单层筛选](2026-10-08-native-lora-paired-base-screen.md)使用 `e6ea1909…` 新库。
+暖机后两种顺序分别慢 0.0970%／0.5691%，与 split 输出逐位一致，属于当前输入 NoGain。
+保留组件，未接模型／App、未追加 E2E；570 个身份源与物理释放通过，owned 编译缓存已清理。
+
+新原生 LoRA SGMMA 的[真实单层筛选](2026-10-08-native-lora-sgmma-screen.md)与
+[六步整图配对](2026-10-08-native-lora-sgmma-e2e.md)使用同一 `77863b3f…` 构建。
+单层完整 FFN 省时 7.26%／3.59%，两内核输出逐位一致；整图 Native 23.987 s、MLX 20.960 s，仍慢 14.44%。
+图像目视接近、227 target 和 Native 阶段释放通过，保持显式实验，默认不变；owned 缓存／fixture 已清理。
+
+独立原生后端的 GPU Viggle r128 六步窄域及首次真实配对见
+[2026-10-08 Native GPU LoRA E2E](2026-10-08-native-lora-gpu-e2e.md)。
+全部 227 target／物理释放通过，图片目视接近；完整请求慢 21.48%，保持显式实验，默认不变。没有下载模型，仅一组配对，owned 编译缓存已清理。
+
+此前完整 GPU LoRA 组件、held-fd／重绑／内存接线与 generated 验证见
+[2026-10-08 Native GPU LoRA](2026-10-08-native-lora-gpu-components.md)。
+小型两层图 Base→LoRA→Base 与 MLX 对照一致；当时请求门关闭，历史记录不转授后续构建资格。
+
+请求内 compact row-scale 缓存的真实 FFN OFF／ON 筛选见
+[2026-10-08 Native scale cache real screen](2026-10-08-native-scale-cache-real-screen.md)。
+实际 MLX Data 身份、命中与逐位相同通过；收益随顺序反转，正式均值没有净收益，因此默认关闭且不追加 E2E。
+实现与此前生成数据验证见[Native request scale cache](2026-10-08-native-request-scale-cache.md)；owned 缓存均已清理。
+
+独立 Native Metal Graph 后端的 register W staging、当前完整构建与首次 Base 配对净收益见
+[2026-10-08 Native register W1](2026-10-08-native-register-w1-base-e2e.md)。
+同构建 512²、20 步的一组请求省时 9.97%，图片肉眼接近；仅显式 CLI 实验，LoRA／编辑／Z-image／App 及通用资格仍待验收。本轮没有下载模型，owned 编译与 ANE cache 已清理。
+
 `dev` 合并至 `dev-verify` 的冲突处理、新构建/测试、两次 BF16 Z 生图及 GGUF/Private
 功能与性能缺口见 [2026-10-04 整合评估](2026-10-04-dev-merge-review.md)。本轮没有下载模型。
 

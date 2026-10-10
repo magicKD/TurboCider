@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "../../core/json_keys.hpp"
+#include "../../models/qwen21/native_route.hpp"
 #include <cmath>
 namespace tc {
 std::string json(id object) {
@@ -148,6 +149,16 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
 static void parse_qwen21_options(NSDictionary *d, Request &r) {
+    r.qwen21_denoiser_backend = string_value(d, @"qwen21_denoiser_backend", r.qwen21_denoiser_backend);
+    r.qwen21_native_ane_cache = string_value(d, @"qwen21_native_ane_cache", r.qwen21_native_ane_cache);
+    r.qwen21_native_w8_staging = string_value(d, @"qwen21_native_w8_staging", r.qwen21_native_w8_staging);
+    if (d[@"qwen21_native_w8_staging"]) r.qwen21_native_w8_staging_specified = true;
+    r.qwen21_native_scale_cache = boolean(d, @"qwen21_native_scale_cache", r.qwen21_native_scale_cache);
+    if (d[@"qwen21_native_scale_cache"]) r.qwen21_native_scale_cache_specified = true;
+    r.qwen21_native_lora_kernel = string_value(d, @"qwen21_native_lora_kernel", r.qwen21_native_lora_kernel);
+    if (d[@"qwen21_native_lora_kernel"]) r.qwen21_native_lora_kernel_specified = true;
+    if (d[@"qwen21_native_ane_cache"])
+        require(!r.qwen21_native_ane_cache.empty(), "qwen21_native_ane_cache must be a nonempty absolute directory");
     if (d[@"qwen21_dit_cache"]) r.qwen21_dit_cache_explicit = true;
     r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
     r.qwen21_dit_cache = string_value(d, @"qwen21_dit_cache", r.qwen21_dit_cache);
@@ -221,8 +232,8 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_dit_cache",
-            @"qwen21_gpu_full_ffn_blocks",
+            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_dit_cache", @"qwen21_denoiser_backend",
+            @"qwen21_gpu_full_ffn_blocks", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
@@ -327,7 +338,7 @@ Request request_from_json(NSDictionary *d) {
             @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"hybrid_mlp_mode",
-               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks", @"qwen21_dit_cache",
+               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks", @"qwen21_dit_cache", @"qwen21_denoiser_backend", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
                @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
@@ -458,7 +469,8 @@ Request request_from_json(NSDictionary *d) {
                 "encoder_ane_manifest is currently supported for FLUX/Z-Image "
                 "Qwen3, LTX Gemma4, and H3 Qwen3-VL encoders only");
     }
-    if (r.execution == "gpu_ane") {
+    qwen21::validate_native_denoiser_request(r);
+    if (r.execution == "gpu_ane" && !qwen21::native_w1_requested(r)) {
         require(!r.ane_manifest.empty(),
                 "gpu_ane requires an explicit ANE manifest or partition directory");
         if (r.model == "ltx-2.5-distilled")

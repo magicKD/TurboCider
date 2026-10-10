@@ -23,6 +23,7 @@ def profile_environment(cache, qwen=False):
     result = {key: value for key, value in os.environ.items() if not key.startswith('TURBOCIDER_')}
     flags = {'ANE_BACKEND': 'auto', 'ALLOW_PRIVATE_ANE': '1', 'PRIVATE_ANE_DATA_PATH': 'w8a8',
              'PRIVATE_ANE_GPU_IO': '1', 'PRIVATE_ANE_CHANNELS': '4096', 'RUNTIME_ANE_CHUNKS': '1',
+             'PRIVATE_ANE_ROWS': 'request',
              'RUNTIME_ANE_PROFILE': '0', 'PRIVATE_ANE_SCALE_CACHE': '1', 'PRIVATE_ANE_PREFETCH': '0',
              'PRIVATE_ANE_LAUNCH_FENCE': '0', 'PRIVATE_ANE_A8_LOOKAHEAD': '0',
              'PRIVATE_ANE_STAGE_SPECIALIZE': '0', 'PRIVATE_ANE_CACHE_DIR': str(cache)}
@@ -66,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='tc-runtime-worker-') as temporary:
         output = case / 'output.png'
         descriptor_path = case / 'descriptor.json'
         qwen = mode.startswith('qwen_')
-        options = {'profile_id': 'private-w8a8-hadamard-512-v1',
+        options = {'profile_id': 'private-w8a8-hadamard-512-v2',
                    'descriptor_path': str(descriptor_path), 'cache_dir': str(cache)}
         descriptor = {'schema_version': 1, 'descriptor_version': 1, 'backend': 'private_runtime_shape',
                       'kind': 'swiglu', 'rows': 1056, 'hidden': 4096 if qwen else 3840,

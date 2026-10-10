@@ -41,6 +41,22 @@ struct Request {
     // Explicit Qwen21-only W8A8 diagnostics in the public CLI contract.
     // The default remains the original 1024-reference BF16 GPU path.
     bool qwen21_w8a8 = false, qwen21_gpu_w8a16 = false;
+    // Independent executor identity, separate from GPU/ANE device policy.
+    // Explicit experimental opt-in; the existing MLX route remains default.
+    std::string qwen21_denoiser_backend = "mlx";
+    // Native W1 only: explicit absolute owner-managed private MIL/cache root.
+    // Not a frozen Core ML manifest and never inferred from an environment path.
+    std::string qwen21_native_ane_cache;
+    // Native private W1 only; keep generic as the default/reference recipe.
+    std::string qwen21_native_w8_staging = "generic";
+    bool qwen21_native_w8_staging_specified = false;
+    // Request-local compact W row scales only; never a persistent model cache.
+    bool qwen21_native_scale_cache = false;
+    bool qwen21_native_scale_cache_specified = false;
+    // Explicit native GPU Viggle candidate only. Keep scalar as the baseline;
+    // sgmma changes FP32 reduction order and carries a separate recipe.
+    std::string qwen21_native_lora_kernel = "scalar";
+    bool qwen21_native_lora_kernel_specified = false;
     int qwen21_reference_size = 1024;
     std::string qwen21_dit_cache = "off";
     // Explicit JSON off overrides diagnostic environment defaults. Requests
