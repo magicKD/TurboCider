@@ -14,6 +14,7 @@ struct GgufPackedBankMetrics {
     uint32_t decode_workers = 1;
     bool verification_overlap = false;
     uint64_t verification_cache_hits = 0;
+    uint64_t registration_cache_hits = 0, registration_records_written = 0;
     double verification_seconds = 0, verified_import_seconds = 0;
     double load_seconds = 0, read_seconds = 0, decode_seconds = 0;
     double affine_decode_seconds=0,float_decode_seconds=0;

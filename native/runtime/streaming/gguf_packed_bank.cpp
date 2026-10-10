@@ -203,6 +203,9 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
     if(s.lease->has_verified_content())s.metrics.source_sha256 = file.content_digest;
     s.metrics.verification_bytes = s.lease->verification_bytes_read();
     s.metrics.verification_cache_hits = s.lease->verification_cache_hits();
+    s.metrics.registration_cache_hits = s.lease->registration_cache_hits();
+    s.metrics.registration_records_written = s.lease->registration_records_written();
+    s.metrics.verification_seconds = s.lease->verification_seconds();
     s.metrics.affine_packing_recipe=fused_affine ? "fused-affine-one-pass-v1" : "legacy-affine-three-pass-v1";
     s.metrics.float_import_recipe=fused_affine ? "direct-bf16-read-inplace-f16-v1" : "buffered-row-rne-v1";
     if(s.k_import.enabled) {
@@ -349,6 +352,8 @@ std::unique_ptr<GgufPackedBank> GgufPackedBank::load_verifying(
             s.metrics.source_sha256=s.lease->file(logical).content_digest;
             s.metrics.verification_bytes=s.lease->verification_bytes_read();
             s.metrics.verification_cache_hits=s.lease->verification_cache_hits();
+            s.metrics.registration_cache_hits=s.lease->registration_cache_hits();
+            s.metrics.registration_records_written=s.lease->registration_records_written();
             s.metrics.verification_overlap=true;
             s.metrics.verification_seconds=pending.verification_seconds();
             s.metrics.plan_digest=s.plan_digest();

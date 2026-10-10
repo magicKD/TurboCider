@@ -2,6 +2,8 @@
 
 2026-10-10，M4 Max 64GB / macOS26.6.2。接续
 [GPU encoder prefill](qwen21-gpu-encoder-prefill-2026-10-10.md)。
+本文保留当时每个 fresh process 全 SHA 的实测合同；用户之后要求仅首次
+校验，现有默认行为见[首次注册与跨进程复用](qwen21-source-registration-2026-10-10.md)。
 完整目标仍 active；此轮减少冷准备开销，不删除原完整 SHA、不引入
 序列化 proof/dense checkpoint cache，也不将 warm 或导入组件冒称整个
 cold encoder 已胜过 Unsloth。

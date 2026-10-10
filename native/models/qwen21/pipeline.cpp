@@ -8,6 +8,7 @@
 #include "runtime_ffn_graphs.hpp"
 #include "runtime_gpu_layer_config.hpp"
 #include "bf16_streaming.hpp"
+#include "source_registration.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
@@ -104,10 +105,11 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
         if(experimental_adapter) {
             streaming::SourceFileIdentity source;source.logical_id="qwen21-adapter";source.path=r.loras[0].path;
             // Full hash on the first capture; subsequent requests may consume
-            // ONLY native process proofs for the same dev/ino/size/mtime/ctime.
-            // Caller digests/metadata are never imported as proof. The same
+            // Native process proofs or authenticated initial-registration
+            // receipts for the same path/dev/ino/size/mtime/ctime. Caller
+            // digests/metadata are never imported as proof. The same
             // held descriptors feed the first actual low-rank source binding.
-            adapter_lease=streaming::SourceLease::capture_verified({source},&cancelled);
+            adapter_lease=capture_model_source(source,cancelled);
             require(adapter_lease->file("qwen21-adapter").canonical_target_path==path,
                     "Qwen21 adapter alias changed during identity capture");
             identity+=":"+adapter_lease->file("qwen21-adapter").content_digest;

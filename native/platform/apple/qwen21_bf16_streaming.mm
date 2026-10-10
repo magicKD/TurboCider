@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #include "../../models/qwen21/bf16_streaming.hpp"
+#include "../../models/qwen21/source_registration.hpp"
 #include "../../core/json_keys.hpp"
 #include <algorithm>
 #include <map>
@@ -37,7 +38,7 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
     const auto begin=Clock::now();streaming::SourceFileIdentity source;
     source.logical_id=path.filename().string();source.path=path;
     require(path.extension()==".safetensors","Qwen BF16 streaming requires original safetensors");
-    plan.lease=streaming::SourceLease::capture_verified({source},&cancel);
+    plan.lease=capture_model_source(source,cancel);
     plan.verification_seconds=std::chrono::duration<double>(Clock::now()-begin).count();
     const auto &identity=plan.lease->file(source.logical_id);auto fd=plan.lease->duplicate_fd(source.logical_id);
     std::array<uint8_t,8> encoded{};read_exact(fd.get(),encoded.data(),8,0,cancel);

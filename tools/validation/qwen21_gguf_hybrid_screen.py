@@ -84,15 +84,26 @@ def validate_receipts(rows, channels, steps=40, phase="all", encoder_prefill=Fal
             raise ValueError("native hybrid failed, retried, fell back or performed different work")
 
 
-def validate_verified_imports(records, expected):
+def validate_verified_imports(records, expected, registration="process"):
+    if registration not in ("process", "first", "reuse"):
+        raise ValueError("unknown source registration phase")
     if len(records) != 2 or {r.get("component") for r in records} != {"encoder", "dit"}:
         raise ValueError("one actual encoder/DiT import proof per fresh process required")
     for record in records:
         digest, size = expected[record["component"]]
-        if (record.get("source_sha256") != digest or counter(record, "verification_bytes") != size or
-            counter(record, "verification_cache_hits") != 0 or record.get("cpu_verify_import_schedule") is not True or
+        reuse = registration == "reuse"
+        if (record.get("source_sha256") != digest or counter(record, "verification_bytes") != (0 if reuse else size) or
+            counter(record, "verification_cache_hits") != int(reuse) or record.get("cpu_verify_import_schedule") is not True or
             record.get("verified_before_publication") is not True or record.get("physical_overlap_proved") is not False):
             raise ValueError("original native whole-file proof/publication schedule changed")
+        if registration != "process":
+            if (record.get("registration_enabled") is not True or
+                counter(record, "registration_cache_hits") != int(reuse) or
+                counter(record, "registration_records_written") != int(not reuse) or
+                type(record.get("first_registration_seconds")) not in (float, int) or
+                not math.isfinite(record["first_registration_seconds"]) or
+                (record["first_registration_seconds"] != 0 if reuse else record["first_registration_seconds"] <= 0)):
+                raise ValueError("actual initial registration or fresh-process reuse differs")
         for key in ("verification_seconds", "import_wall_seconds"):
             value = record.get(key)
             if type(value) not in (float, int) or not math.isfinite(value) or value <= 0:
@@ -113,9 +124,16 @@ def main():
     parser.add_argument("--encoder-prefill", action="store_true", help="explicit GPU prefill packed fusions and verified processor reuse")
     parser.add_argument("--dump-tensors", action="store_true", help="explicit matching numerical evidence; not a no-dump performance trial")
     parser.add_argument("--verified-import-overlap", action="store_true", help="CPU native full-SHA/import candidates; proof required before publication")
+    parser.add_argument("--source-registration", choices=("process", "first", "reuse"), default="process",
+                        help="separate first registration from fresh-process receipt reuse; legacy process mode hashes each fresh process")
+    parser.add_argument("--registration-cache", type=Path, help="owned private receipt root, with an isolated subdirectory per arm")
     parser.add_argument("--order", help="gpu,a4096,a5120 or exact reverse/subset")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.source_registration != "process":
+        if not args.registration_cache or not args.verified_import_overlap:
+            parser.error("registration screens require an explicit cache and actual verified import receipts")
+        args.registration_cache = args.registration_cache.absolute()
     if (not 2 <= args.steps <= 40 or not args.channels or len(set(args.channels)) != len(args.channels) or
         any(not 0 < v < 12288 or v % 512 for v in args.channels)):
         parser.error("bounded steps and distinct fixed aligned partial channel shares required")
@@ -139,13 +157,21 @@ def main():
     summary = dict(schema="tc-qwen21-gguf-hybrid-screen-v1", status="running", qualification_passed=False,
                    source_identities=identities, steps=args.steps, phase=args.phase, shared_down=args.shared_down,
                    decode_workers=args.decode_workers, encoder_prefill=args.encoder_prefill,
-                   dump_tensors=args.dump_tensors, verified_import_overlap=args.verified_import_overlap, order=order, trials=[])
+                   dump_tensors=args.dump_tensors, verified_import_overlap=args.verified_import_overlap,
+                   source_registration=args.source_registration, order=order, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
         channels = 0 if mode == "gpu" else int(mode[1:])
         env = benchmark_environment()
-        env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1", TURBOCIDER_QWEN21_PROFILE_STEPS="1")
+        env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1", TURBOCIDER_QWEN21_PROFILE_STEPS="1",
+                   TURBOCIDER_QWEN21_SOURCE_REGISTRATION="0")
+        if args.source_registration != "process":
+            cache = args.registration_cache / mode
+            if ((args.source_registration == "first" and (cache.exists() or cache.is_symlink())) or
+                (args.source_registration == "reuse" and (not cache.is_dir() or cache.is_symlink()))):
+                raise ValueError("first registration needs a fresh cache; reuse needs its completed existing cache")
+            env.update(TURBOCIDER_QWEN21_SOURCE_REGISTRATION="1", TURBOCIDER_SOURCE_REGISTRATION_CACHE=str(cache))
         env["TURBOCIDER_QWEN21_GGUF_SHARED_DOWN"] = "1" if args.shared_down else "0"
         env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"] = str(args.decode_workers)
         env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if args.encoder_prefill else "0"
@@ -184,7 +210,8 @@ def main():
                 if line.startswith('{"qwen_gguf_verified_import":'):
                     imports.append(json.loads(line)["qwen_gguf_verified_import"])
             validate_verified_imports(imports, dict(dit=(identities[str(inputs[3])], inputs[3].stat().st_size),
-                                                    encoder=(identities[str(inputs[4])], inputs[4].stat().st_size)))
+                                                    encoder=(identities[str(inputs[4])], inputs[4].stat().st_size)),
+                                      args.source_registration)
         if args.encoder_prefill and any(r["qwen_encoder_prefill"]["processor_sha256"] != identities[str(inputs[-1])] for r in rows):
             raise ValueError("actual processor proof differs from original source")
         if any(sha256_file(p) != identities[str(p)] for p in inputs):

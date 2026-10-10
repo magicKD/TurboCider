@@ -1,6 +1,7 @@
 #include "source_lease.hpp"
 
 #include "canonical_encoding.hpp"
+#include "source_registration_store.hpp"
 #include "../memory_manifest.hpp"
 
 #include "../../core/common.hpp"
@@ -195,6 +196,9 @@ struct SourceLease::State {
     std::string artifact_digest;
     uint64_t verification_bytes_read = 0;
     size_t verification_cache_hits = 0;
+    size_t registration_cache_hits = 0;
+    size_t registration_records_written = 0;
+    double verification_seconds = 0;
 };
 
 SourceLeaseDescriptor capture_source_lease_descriptor(
@@ -220,6 +224,11 @@ std::shared_ptr<const SourceLease> SourceLease::capture_preverified(
     return capture_impl(std::move(files), true, false, cancelled);
 }
 
+std::shared_ptr<const SourceLease> SourceLease::capture_registered(
+        std::vector<SourceFileIdentity> files, const std::atomic<bool> *cancelled) {
+    return capture_impl(std::move(files), true, true, cancelled, true);
+}
+
 std::shared_ptr<const SourceLease> SourceLease::capture_for_query(
         std::vector<SourceFileIdentity> files, bool &require_verified) {
     if (require_verified) return capture_preverified(std::move(files));
@@ -234,7 +243,7 @@ std::shared_ptr<const SourceLease> SourceLease::capture_for_query(
 
 std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
-        const std::atomic<bool> *cancelled) {
+        const std::atomic<bool> *cancelled, bool registered) {
     check_cancelled(cancelled);
     for (auto &file : files)
         file.path = normalized_named_path(
@@ -282,12 +291,12 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         state->indexes.emplace(file.logical_id, index);
         state->files.push_back({std::move(file), std::move(fd)});
     }
-    return seal_state(std::move(state), verify_content, allow_hash, cancelled);
+    return seal_state(std::move(state), verify_content, allow_hash, cancelled, nullptr, registered);
 }
 
 std::shared_ptr<const SourceLease> SourceLease::verify_held_capture(
         const SourceLease &captured, const std::atomic<bool> *cancelled,
-        const std::atomic<bool> *stopped) {
+        const std::atomic<bool> *stopped, bool registered) {
     check_cancelled(cancelled);check_cancelled(stopped);
     captured.revalidate_after_drain();
     auto state=std::make_unique<State>();
@@ -296,16 +305,21 @@ std::shared_ptr<const SourceLease> SourceLease::verify_held_capture(
         state->indexes.emplace(entry.identity.logical_id,state->files.size());
         state->files.push_back({entry.identity,captured.duplicate_fd(entry.identity.logical_id)});
     }
-    return seal_state(std::move(state),true,true,cancelled,stopped);
+    return seal_state(std::move(state),true,true,cancelled,stopped,registered);
 }
 
 std::shared_ptr<const SourceLease> SourceLease::seal_state(
         std::unique_ptr<State> state, bool verify_content, bool allow_hash,
-        const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped) {
+        const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped, bool registered) {
+    const auto start = std::chrono::steady_clock::now();
     check_cancelled(cancelled);check_cancelled(stopped);
+    std::unique_ptr<detail::SourceRegistrationStore> registration;
+    if (verify_content && registered) registration = std::make_unique<detail::SourceRegistrationStore>();
+    std::vector<bool> registered_files(state->files.size(), false);
     if (verify_content) {
         CanonicalEncoder artifact("tc-streaming-artifact-content-v1");
         artifact.begin_list("files", state->files.size());
+        size_t index = 0;
         for (auto &entry : state->files) {
             check_cancelled(cancelled);check_cancelled(stopped);
             std::string verified;
@@ -313,6 +327,14 @@ std::shared_ptr<const SourceLease> SourceLease::seal_state(
                 std::lock_guard lock(content_cache_mutex);
                 const auto cached = content_cache.find(content_key(entry.identity));
                 if (cached != content_cache.end()) verified = cached->second;
+            }
+            if (registration) {
+                const auto stored = registration->lookup(entry.identity);
+                registered_files[index] = !stored.empty() && (verified.empty() || stored == verified);
+                if (verified.empty() && !stored.empty()) {
+                    verified = stored;
+                    ++state->registration_cache_hits;
+                }
             }
             if (verified.empty()) {
                 if (!allow_hash) throw ArtifactVerificationRequired();
@@ -329,6 +351,7 @@ std::shared_ptr<const SourceLease> SourceLease::seal_state(
             artifact.string_field("logical_id", entry.identity.logical_id);
             artifact.unsigned_field("bytes", entry.identity.bytes);
             artifact.string_field("sha256", verified);
+            ++index;
         }
         state->artifact_digest = artifact.sha256();
     }
@@ -345,11 +368,25 @@ std::shared_ptr<const SourceLease> SourceLease::seal_state(
     result->revalidate_after_drain();
     check_cancelled(cancelled);check_cancelled(stopped);
     if (verify_content) {
-        std::lock_guard lock(content_cache_mutex);
-        for (const auto &entry : result->state_->files) {
-            if (content_cache.size() >= 256) content_cache.clear();
-            content_cache[content_key(entry.identity)] = entry.identity.content_digest;
+        {
+            std::lock_guard lock(content_cache_mutex);
+            for (const auto &entry : result->state_->files) {
+                if (content_cache.size() >= 256) content_cache.clear();
+                content_cache[content_key(entry.identity)] = entry.identity.content_digest;
+            }
         }
+        // Only publish after ALL source generations/expectations and cancellation
+        // checks pass. Never persist caller metadata or a partly verified set.
+        if (registration) {
+            for (size_t i = 0; i < result->state_->files.size(); ++i) {
+                check_cancelled(cancelled);check_cancelled(stopped);
+                if (!registered_files[i] && registration->publish(result->state_->files[i].identity))
+                    ++result->state_->registration_records_written;
+            }
+            result->revalidate_after_drain();
+            check_cancelled(cancelled);check_cancelled(stopped);
+        }
+        result->state_->verification_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     }
     return result;
 }
@@ -368,13 +405,13 @@ struct PendingSourceVerification::State {
     }
 };
 PendingSourceVerification::PendingSourceVerification(std::vector<SourceFileIdentity> files,
-        const std::atomic<bool> *cancelled):state_(std::make_unique<State>(cancelled)) {
+        const std::atomic<bool> *cancelled, bool registered):state_(std::make_unique<State>(cancelled)) {
     check_cancelled(cancelled);
     state_->metadata=SourceLease::capture(std::move(files));
     auto *state=state_.get();
-    state->worker=std::thread([state] {
+    state->worker=std::thread([state,registered] {
         const auto start=std::chrono::steady_clock::now();
-        try {state->verified=SourceLease::verify_held_capture(*state->metadata,state->cancelled,&state->stopped);}
+        try {state->verified=SourceLease::verify_held_capture(*state->metadata,state->cancelled,&state->stopped,registered);}
         catch(...) {state->error=std::current_exception();}
         state->seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
     });
@@ -556,6 +593,18 @@ uint64_t SourceLease::verification_bytes_read() const noexcept {
 
 size_t SourceLease::verification_cache_hits() const noexcept {
     return state_ ? state_->verification_cache_hits : 0;
+}
+
+size_t SourceLease::registration_cache_hits() const noexcept {
+    return state_ ? state_->registration_cache_hits : 0;
+}
+
+size_t SourceLease::registration_records_written() const noexcept {
+    return state_ ? state_->registration_records_written : 0;
+}
+
+double SourceLease::verification_seconds() const noexcept {
+    return state_ ? state_->verification_seconds : 0;
 }
 
 } // namespace tc::streaming

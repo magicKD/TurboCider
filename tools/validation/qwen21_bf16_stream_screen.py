@@ -8,7 +8,7 @@ import statistics
 
 from runtime_ane_common import benchmark_environment, sha256_file
 from runtime_ane_memory import run_sampled
-from qwen21_gguf_hybrid_screen import PROMPTS, counter, validate_receipts
+from qwen21_gguf_hybrid_screen import PROMPTS, counter, validate_receipts, validate_verified_imports
 
 ROOT = Path(__file__).resolve().parents[2]
 ARMS = ("bf16-stream", "gguf-gpu", "gguf-ane", "bf16-resident")
@@ -78,6 +78,7 @@ def main():
     parser.add_argument("--dit-prefix", type=int, default=24)
     parser.add_argument("--weight-gib", type=int, default=11)
     parser.add_argument("--dump-latents", action="store_true")
+    parser.add_argument("--optimized-gguf", action="store_true", help="GGUF-only explicit GPU prefill and parallel verified import; BF16 arithmetic controls unchanged")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     order = args.order.split(",")
@@ -90,20 +91,27 @@ def main():
         bf16 / "text_encoders/qwen3vl_8b_bf16.safetensors", bf16 / "diffusion_models/qwen_image_2.1_bf16.safetensors",
         bf16 / "vae/qwen_image_2.1_vae_bf16.safetensors", gguf / "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
         gguf / "diffusion_models/qwen-image-2.1-Q4_K_M.gguf"]
+    if args.optimized_gguf:
+        sources.append(gguf / "processor/tokenizer.json")
     hashes = {str(p): sha256_file(p) for p in sources}
     args.output.mkdir(parents=True)
     summary = dict(schema="tc-qwen21-bf16-stream-comparison-v1", status="running", qualification_passed=False,
                    source_identities=hashes, order=order, steps=args.steps, encoder_prefix=args.encoder_prefix,
-                   dit_prefix=args.dit_prefix, managed_weight_budget_bytes=args.weight_gib << 30, trials=[])
+                   dit_prefix=args.dit_prefix, managed_weight_budget_bytes=args.weight_gib << 30,
+                   optimized_gguf=args.optimized_gguf, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
         print(json.dumps({"starting": mode}), flush=True)
         env = benchmark_environment()
-        env.update(TURBOCIDER_QWEN21_PROFILE_STEPS="1", TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS="8")
+        env.update(TURBOCIDER_QWEN21_PROFILE_STEPS="1", TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS="8",
+                   TURBOCIDER_QWEN21_SOURCE_REGISTRATION="0")
         streamed = mode == "bf16-stream"
         env["TURBOCIDER_QWEN21_BF16_STREAMING"] = "1" if streamed else "0"
         env["TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS"] = "0" if streamed else "1"
+        prefill = args.optimized_gguf and mode.startswith("gguf")
+        env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if prefill else "0"
+        env["TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP"] = "1" if prefill else "0"
         env.update(TURBOCIDER_QWEN21_BF16_STREAM_ENCODER_PREFIX=str(args.encoder_prefix),
                    TURBOCIDER_QWEN21_BF16_STREAM_DIT_PREFIX=str(args.dit_prefix),
                    TURBOCIDER_QWEN21_BF16_STREAM_WEIGHT_GIB=str(args.weight_gib))
@@ -132,8 +140,17 @@ def main():
             memory = run_sampled([str(cli), "batch", str(model), *requests], repo=ROOT, output=args.output, stem=mode,
                 env=env, stdout=stdout, stderr=stderr, timeout=1800, interval_ms=100, max_gap_ms=500)
         rows = [json.loads(line) for line in (args.output / f"{mode}.stdout.jsonl").read_text().splitlines()]
+        imports = []
         if mode.startswith("gguf"):
-            validate_receipts(rows, 5120 if mode == "gguf-ane" else 0, args.steps, "all")
+            validate_receipts(rows, 5120 if mode == "gguf-ane" else 0, args.steps, "all", prefill)
+            if prefill:
+                imports = [json.loads(line)["qwen_gguf_verified_import"]
+                           for line in (args.output / f"{mode}.stderr.txt").read_text().splitlines()
+                           if line.startswith('{"qwen_gguf_verified_import":')]
+                validate_verified_imports(imports,dict(dit=(hashes[str(sources[7])],sources[7].stat().st_size),
+                                                      encoder=(hashes[str(sources[6])],sources[6].stat().st_size)))
+                if any(r["qwen_encoder_prefill"]["processor_sha256"] != hashes[str(sources[-1])] for r in rows):
+                    raise ValueError("optimized GGUF processor proof differs")
         else:
             validate_bf16_rows(rows, args.steps, streamed, (args.encoder_prefix, args.dit_prefix), args.weight_gib << 30,
                 dict(encoder=hashes[str(sources[3])], denoiser=hashes[str(sources[4])]))
@@ -141,6 +158,7 @@ def main():
             warm_medians={name: statistics.median(r["timings_seconds"][name] for r in rows[1:])
                           for name in ("request_wall", "text_encode", "denoise", "vae_decode")},
             actual_streaming=[r.get("qwen_bf16_streaming") for r in rows],
+            actual_encoder_prefill=[r.get("qwen_encoder_prefill") for r in rows],verified_imports=imports,
             actual_phases=[r.get("qwen_ffn_phases") for r in rows],
             png_sha256=[sha256_file(args.output / f"{mode}-{i}.png") for i in range(3)])
         summary["trials"].append(trial)

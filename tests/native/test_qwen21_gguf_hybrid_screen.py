@@ -38,6 +38,29 @@ def receipts(channels=4096, steps=40):
 
 
 class MixedKHybridScreenTests(unittest.TestCase):
+    def test_first_registration_and_independent_process_receipt_reuse(self):
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        for phase in ("first", "reuse"):
+            reused = phase == "reuse"
+            records = [dict(component=k, source_sha256="a" * 64, verification_bytes=0 if reused else 1057,
+                            verification_cache_hits=int(reused), registration_enabled=True,
+                            registration_cache_hits=int(reused), registration_records_written=int(not reused),
+                            first_registration_seconds=0 if reused else .1,
+                            cpu_verify_import_schedule=True, verified_before_publication=True,
+                            physical_overlap_proved=False, verification_seconds=.001 if reused else .1,
+                            import_wall_seconds=.2) for k in expected]
+            validate_verified_imports(records, expected, phase)
+            for key, value in (("registration_enabled", False), ("registration_cache_hits", int(not reused)),
+                               ("registration_records_written", int(reused)), ("registration_cache_hits", True),
+                               ("first_registration_seconds", .1 if reused else 0),
+                               ("verification_bytes", 1057 if reused else 0),
+                               ("first_registration_seconds", float("nan"))):
+                invalid = copy.deepcopy(records);invalid[0][key] = value
+                with self.subTest(phase=phase, key=key), self.assertRaises(ValueError):
+                    validate_verified_imports(invalid, expected, phase)
+        with self.assertRaises(ValueError):
+            validate_verified_imports([], expected, "untrusted")
+
     def test_original_whole_file_verified_before_candidate_publication(self):
         records = [dict(component=k, source_sha256="a" * 64, verification_bytes=1057,
                         verification_cache_hits=0, cpu_verify_import_schedule=True, verified_before_publication=True,

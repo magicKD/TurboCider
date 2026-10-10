@@ -97,6 +97,15 @@ class SourceLease final {
         std::vector<SourceFileIdentity> files,
         const std::atomic<bool> *cancelled = nullptr);
 
+    // Model registration: first capture hashes all bytes; later processes may
+    // reuse an authenticated, owner-private native receipt for the exact named
+    // path/canonical target and stat generation. Missing/invalid/changed records
+    // are reverified. Caller content_digest remains an expectation, never proof.
+    // Cache unavailability falls back to capture_verified semantics.
+    static std::shared_ptr<const SourceLease> capture_registered(
+        std::vector<SourceFileIdentity> files,
+        const std::atomic<bool> *cancelled = nullptr);
+
     // Request-time capture: consumes native generation-bound proofs without
     // reading model contents. Missing/evicted/changed proofs fail explicitly.
     // The current cache is process-local; this is not a persistent import API.
@@ -137,6 +146,9 @@ class SourceLease final {
     std::string_view artifact_digest() const;
     uint64_t verification_bytes_read() const noexcept;
     size_t verification_cache_hits() const noexcept;
+    size_t registration_cache_hits() const noexcept;
+    size_t registration_records_written() const noexcept;
+    double verification_seconds() const noexcept;
     size_t file_count() const noexcept;
 
   private:
@@ -144,24 +156,27 @@ class SourceLease final {
     struct State;
     static std::shared_ptr<const SourceLease> capture_impl(
         std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
-        const std::atomic<bool> *cancelled);
+        const std::atomic<bool> *cancelled, bool registered = false);
     static std::shared_ptr<const SourceLease> seal_state(
         std::unique_ptr<State>, bool verify_content, bool allow_hash,
-        const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped = nullptr);
+        const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped = nullptr,
+        bool registered = false);
     static std::shared_ptr<const SourceLease> verify_held_capture(
         const SourceLease &, const std::atomic<bool> *cancelled,
-        const std::atomic<bool> *stopped);
+        const std::atomic<bool> *stopped, bool registered);
     explicit SourceLease(std::unique_ptr<State> state);
     std::unique_ptr<State> state_;
 };
 
-// One native full-hash worker over the original held descriptors. metadata()
+// One native verification worker over the original held descriptors (full SHA
+// on first capture, authenticated receipt reuse when registered). metadata()
 // never grants content trust: only finish() returns a verified immutable lease.
 // The owner must drain the worker before destroying candidate import buffers.
 class PendingSourceVerification final {
   public:
     PendingSourceVerification(std::vector<SourceFileIdentity>,
-                              const std::atomic<bool> *cancelled = nullptr);
+                              const std::atomic<bool> *cancelled = nullptr,
+                              bool registered = false);
     ~PendingSourceVerification();
     PendingSourceVerification(const PendingSourceVerification &) = delete;
     PendingSourceVerification &operator=(const PendingSourceVerification &) = delete;

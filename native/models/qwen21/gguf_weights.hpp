@@ -2,6 +2,7 @@
 #include "../../runtime/streaming/gguf_packed_bank.hpp"
 #include "../../backends/ane_memory.hpp"
 #include "../../backends/ane_ffn.hpp"
+#include "source_registration.hpp"
 #include <map>
 #include <iostream>
 
@@ -78,6 +79,7 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
     require(!flag || std::string_view(flag)=="0" || std::string_view(flag)=="1",
             "Qwen GGUF verify/import overlap requires 0 or 1");
     const bool overlap=flag && std::string_view(flag)=="1";
+    const bool registered=source_registration_enabled();
     auto admission=[&](const streaming::GgufPackedBankMetrics &metrics) {
         const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
         const uint64_t growth=metrics.planned_packed_capacity_bytes+((overlap ? uint64_t(2) : uint64_t(1))<<20);
@@ -85,11 +87,12 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
         require(decision.allowed(),"Qwen21 GGUF source admission declined: "+ane::memory_denial_reason(decision.denial,observed));
     };
     if(overlap) {
-        streaming::PendingSourceVerification pending({source},&cancelled);
+        streaming::PendingSourceVerification pending({source},&cancelled,registered);
         result->bank=streaming::GgufPackedBank::load_verifying(pending,"qwen21-component",*result->ledger,
             weights,uint64_t(1)<<20,options,admission,&cancelled,event);
     } else {
-        auto lease=streaming::SourceLease::capture_verified({source},&cancelled);
+        auto lease=registered ? streaming::SourceLease::capture_registered({source},&cancelled) :
+                                streaming::SourceLease::capture_verified({source},&cancelled);
         result->bank=std::make_unique<streaming::GgufPackedBank>(lease,"qwen21-component",*result->ledger,
             uint64_t(1)<<20,true,0,6,options);
         admission(result->bank->metrics());result->bank->load(weights,&cancelled,event);
@@ -105,11 +108,16 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
         });
     }
     weights.materialize();result->bank->check_unchanged();
-    if(overlap) {
+    {
         const auto m=result->bank->metrics();
         std::cerr<<"{\"qwen_gguf_verified_import\":{\"component\":\""<<(text ? "encoder" : "dit")
             <<"\",\"source_sha256\":\""<<m.source_sha256<<"\",\"verification_bytes\":"<<m.verification_bytes
-            <<",\"verification_cache_hits\":"<<m.verification_cache_hits<<",\"cpu_verify_import_schedule\":true"
+            <<",\"verification_cache_hits\":"<<m.verification_cache_hits
+            <<",\"registration_enabled\":"<<(registered ? "true" : "false")
+            <<",\"registration_cache_hits\":"<<m.registration_cache_hits
+            <<",\"registration_records_written\":"<<m.registration_records_written
+            <<",\"first_registration_seconds\":"<<(registered && m.verification_bytes ? m.verification_seconds : 0)
+            <<",\"cpu_verify_import_schedule\":"<<(overlap ? "true" : "false")
             <<",\"verified_before_publication\":true,\"physical_overlap_proved\":false"
             <<",\"verification_seconds\":"<<m.verification_seconds<<",\"import_wall_seconds\":"
             <<std::chrono::duration<double>(Clock::now()-import_start).count()<<"}}\n";
