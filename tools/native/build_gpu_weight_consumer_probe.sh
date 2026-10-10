@@ -12,7 +12,8 @@ MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
  build && /minos /{print $2; exit}
 ')"
 xcrun clang++ -std=c++20 -O2 -ffp-contract=off -Wall -Wextra -Werror \
- -mmacosx-version-min="${MLX_MIN_MACOS:-15.0}" -I native -I native/core -isystem "$MLX_ROOT/include" \
- tools/native/gpu_weight_consumer_probe.cpp native/core/gguf_affine.cpp native/core/gguf_decode.cpp \
+ -mmacosx-version-min="${MLX_MIN_MACOS:-15.0}" -I native -I native/core -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
+ tools/native/gpu_weight_consumer_probe.cpp tools/native/affine_ahead_candidate.cpp native/core/gguf_affine.cpp native/core/gguf_decode.cpp \
  -L "$LIB" -lturbocider -L "$MLX_ROOT/lib" -lmlx -Wl,-rpath,"$LIB" -Wl,-rpath,"$MLX_ROOT/lib" \
+ -framework Metal -framework Foundation \
  -o "$OUT/gpu-weight-consumer-probe"

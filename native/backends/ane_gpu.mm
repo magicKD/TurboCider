@@ -8,6 +8,7 @@
 #include "ane_w8_stage.hpp"
 #include "ane_a8_single_pass_kernels.hpp"
 #include "private/ane_a8_single_pass.hpp"
+#include "ane_weight_code_cache.hpp"
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurface.h>
 #import <Metal/Metal.h>
@@ -29,11 +30,62 @@ void require(bool ok,const std::string &error) { if(!ok)throw CapabilityError(er
 std::string description(NSError *error) { return error?std::string(error.localizedDescription.UTF8String):"no GPU diagnostic"; }
 }
 namespace {
+bool same_generation(const std::weak_ptr<void>&a,const std::weak_ptr<void>&b) {
+    return !a.owner_before(b)&&!b.owner_before(a);
+}
+bool has_generation(const std::weak_ptr<void> &value) {
+    return !same_generation(value,{}); // distinguishes absent from expired
+}
+bool same_scale_matrix(const DeviceMatrixView&a,const DeviceMatrixView&b) {
+    return same_generation(a.allocation_identity,b.allocation_identity)&&
+        std::tie(a.buffer,a.buffer_bytes,a.offset_bytes,a.rows,a.cols,a.row_stride_bytes,a.dtype)==
+        std::tie(b.buffer,b.buffer_bytes,b.offset_bytes,b.rows,b.cols,b.row_stride_bytes,b.dtype);
+}
+bool same_scale_key(const DeviceWeightRegion&a,const DeviceWeightRegion&b) {
+    const auto &x=a.source,&y=b.source;const auto &p=a.selection,&q=b.selection;
+    const auto meta=[](const auto&a,const auto&b){return bool(a)==bool(b)&&(!a||same_scale_matrix(*a,*b));};
+    const bool logical=has_generation(x.logical_content_identity);
+    if(logical!=has_generation(y.logical_content_identity))return false;
+    if(logical) {
+        if(!same_generation(x.logical_content_identity,y.logical_content_identity))return false;
+    } else if(!same_generation(x.allocation_identity,y.allocation_identity) ||
+        std::tie(x.buffer,x.buffer_bytes,x.offset_bytes,x.row_stride_bytes)!=
+        std::tie(y.buffer,y.buffer_bytes,y.offset_bytes,y.row_stride_bytes))return false;
+    return meta(x.scales,y.scales)&&meta(x.offsets,y.offsets)&&
+        meta(p.column_scale,q.column_scale) && p.inverse_column_scale==q.inverse_column_scale &&
+        std::tie(x.rows,x.cols,x.encoding,x.dense_dtype,x.group_size)==
+        std::tie(y.rows,y.cols,y.encoding,y.dense_dtype,y.group_size)&&
+        std::tie(p.row_begin,p.rows,p.column_begin,p.columns,p.rotation_block,p.rotation_seed,p.transpose,p.basis,p.activation_group_size)==
+        std::tie(q.row_begin,q.rows,q.column_begin,q.columns,q.rotation_block,q.rotation_seed,q.transpose,q.basis,q.activation_group_size);
+}
+bool live_scale_key(const DeviceWeightRegion&key) {
+    return (has_generation(key.source.logical_content_identity) ? !key.source.logical_content_identity.expired() :
+        !key.source.allocation_identity.expired()) &&
+        (!key.source.scales||!key.source.scales->allocation_identity.expired()) &&
+        (!key.source.offsets||!key.source.offsets->allocation_identity.expired()) &&
+        (!key.selection.column_scale||!key.selection.column_scale->allocation_identity.expired());
+}
+DeviceWeightRegion weak_scale_key(DeviceWeightView source,W8StageSpec spec) {
+    source.owner.reset();if(source.scales)source.scales->owner.reset();if(source.offsets)source.offsets->owner.reset();
+    if(spec.column_scale)spec.column_scale->owner.reset();
+    return {std::move(source),spec}; // no strong source/model allocation lease retained in the cache
+}
 struct ScaleCacheEntry {
     DeviceWeightRegion key;
     id<MTLBuffer> buffer;
     std::atomic<bool> valid{false};
     uint64_t last_use=0;
+};
+struct CodeCacheEntry {
+    DeviceWeightRegion key;
+    std::shared_ptr<WeightCodeCacheClaim> claim;
+    id<MTLBuffer> codes, scales;
+    std::optional<Surface> native_codes, native_scales;
+    std::atomic<bool> valid{false}, pending{true};
+    ~CodeCacheEntry() {
+        codes = nil; scales = nil;
+    }
+    uint64_t capacity() const { return claim ? claim->bytes() : 0; }
 };
 }
 struct Device::Impl {
@@ -128,6 +180,59 @@ struct Device::Impl {
     std::vector<std::shared_ptr<ScaleCacheEntry>> scale_cache;
     WeightCacheStats scale_stats;
     uint64_t scale_clock=0;
+    std::mutex code_cache_mutex;
+    std::vector<std::shared_ptr<CodeCacheEntry>> code_cache;
+    std::shared_ptr<WeightCodeCacheLedger> code_ledger;
+    WeightCodeCacheReport code_stats;
+    std::pair<std::shared_ptr<CodeCacheEntry>,bool> code_binding(const DeviceWeightRegion &key,
+                                                               bool eligible,Device &outer) {
+        std::lock_guard lock(code_cache_mutex);
+        if(!code_stats.enabled)return {{},false};
+        // First-admitted live generations stay pinned. A smaller cache must
+        // not thrash across a complete 32-layer traversal and have zero hits.
+        for(auto it=code_cache.begin();it!=code_cache.end();) {
+            const auto &entry=*it;
+            if(!live_scale_key(entry->key) || (!entry->pending.load(std::memory_order_acquire) &&
+                                              !entry->valid.load(std::memory_order_acquire))) {
+                it=code_cache.erase(it);++code_stats.evictions;
+            } else ++it;
+        }
+        if(!eligible) {++code_stats.ineligible;return {{},false};}
+        for(const auto &entry:code_cache)if(same_scale_key(entry->key,key)) {
+            if(entry->valid.load(std::memory_order_acquire))return {entry,true};
+            ++code_stats.misses;++code_stats.declines;return {{},false}; // pending producer, no unsafe hit or duplicate
+        }
+        ++code_stats.misses;
+        const auto plan=weight_code_cache_plan(key.selection.rows,key.selection.columns,uint64_t(getpagesize()),code_stats.native_surface_storage);
+        if(!plan || code_cache.size()>=weight_code_cache_max_entries || !code_ledger->reserve(plan->allocation_upper)) {
+            ++code_stats.declines;return {{},false};
+        }
+        std::shared_ptr<CodeCacheEntry> entry;
+        try {
+            entry=std::make_shared<CodeCacheEntry>();
+            entry->claim=std::make_shared<WeightCodeCacheClaim>(code_ledger,plan->allocation_upper);
+        }
+        catch(...) {code_ledger->release(plan->allocation_upper);throw;}
+        entry->key=key;
+        uint64_t actual=0;
+        if(code_stats.native_surface_storage) {
+            entry->native_codes.emplace(outer,key.selection.rows,key.selection.columns,Element::I8);
+            entry->native_scales.emplace(outer,key.selection.rows,1,Element::FP16);
+            actual=entry->native_codes->cache_capacity_bytes()+entry->native_scales->cache_capacity_bytes();
+            entry->native_codes->retain_cache_claim(entry->claim);
+            entry->native_scales->retain_cache_claim(entry->claim);
+        } else {
+            entry->codes=[device newBufferWithLength:plan->codes_bytes options:MTLResourceStorageModeShared];
+            entry->scales=[device newBufferWithLength:plan->scales_bytes options:MTLResourceStorageModeShared];
+            if(!entry->codes || !entry->scales) {++code_stats.declines;return {{},false};}
+            actual=entry->codes.allocatedSize+entry->scales.allocatedSize;
+        }
+        if(actual<plan->codes_bytes+plan->scales_bytes || actual>plan->allocation_upper) {
+            ++code_stats.declines;return {{},false};
+        }
+        entry->claim->commit(actual);
+        code_cache.push_back(entry);return {entry,false};
+    }
     // One current seed, not an unbounded seed/model cache. Active stage
     // tickets retain previous immutable buffers across a seed change. H128
     // takes the first 128 signs of this same H512 recipe table.
@@ -157,10 +262,18 @@ bool configured_flag(const char *name,bool fallback) {
 }
 }
 Device::Device() : Device(configured_flag("TURBOCIDER_PRIVATE_ANE_SCALE_CACHE",true),
-                         configured_flag("TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",false)) {
-    impl_->a8_single_pass_requested = a8_single_pass::requested_flag(std::getenv("TURBOCIDER_PRIVATE_ANE_A8_SINGLE_PASS"));
+                         configured_flag("TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",false)) {}
+uint64_t configured_weight_code_cache_bytes() {
+    return parse_weight_code_cache_bytes(std::getenv("TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES"));
 }
-Device::Device(bool scale_cache,bool specialize) : impl_(std::make_shared<Impl>()) {
+Device::Device(bool scale_cache,bool specialize) : Device(scale_cache,specialize,configured_weight_code_cache_bytes(),
+    parse_weight_code_cache_storage(std::getenv("TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_MODE"))) {}
+Device::Device(bool scale_cache,bool specialize,uint64_t code_bytes) : Device(scale_cache,specialize,code_bytes,WeightCodeCacheStorage::CompactCopy) {}
+Device::Device(bool scale_cache,bool specialize,uint64_t code_bytes,WeightCodeCacheStorage storage) : impl_(std::make_shared<Impl>()) {
+    impl_->code_ledger=std::make_shared<WeightCodeCacheLedger>(code_bytes);
+    impl_->code_stats.enabled=code_bytes>0;impl_->code_stats.budget_bytes=code_bytes;
+    impl_->code_stats.native_surface_storage=storage==WeightCodeCacheStorage::NativeSurface;
+    impl_->a8_single_pass_requested = a8_single_pass::requested_flag(std::getenv("TURBOCIDER_PRIVATE_ANE_A8_SINGLE_PASS"));
     require(impl_->device != nil, "ANE GPU Metal unavailable");
     impl_->queue = [impl_->device newCommandQueueWithMaxCommandBufferCount:256];
     impl_->staging_queue = [impl_->device newCommandQueueWithMaxCommandBufferCount:256];
@@ -180,6 +293,23 @@ void *Device::shared_event() const { return (__bridge void*)impl_->event; }
 void Device::release_after_failure(uint64_t value) const { impl_->release(value); }
 WeightCacheStats Device::scale_cache_stats() const {
     std::lock_guard lock(impl_->scale_cache_mutex);auto stats=impl_->scale_stats;stats.entries=impl_->scale_cache.size();return stats;
+}
+WeightCodeCacheReport Device::weight_code_cache_stats() const {
+    std::lock_guard lock(impl_->code_cache_mutex);
+    auto stats=impl_->code_stats;
+    stats.entries=impl_->code_cache.size();
+    for(const auto &entry:impl_->code_cache) {
+        stats.ready_entries+=entry->valid.load(std::memory_order_acquire);
+        stats.retained_bytes+=entry->capacity();
+    }
+    stats.live_capacity_bytes=impl_->code_ledger->live();
+    stats.peak_capacity_bytes=impl_->code_ledger->peak();
+    return stats;
+}
+uint64_t Device::weight_code_cache_budget_bytes() const { return impl_->code_stats.budget_bytes; }
+void Device::clear_weight_code_cache() {
+    std::lock_guard lock(impl_->code_cache_mutex);
+    impl_->code_stats.evictions+=impl_->code_cache.size();impl_->code_cache.clear();
 }
 StagePipelineStats Device::stage_pipeline_stats() const {
     std::lock_guard lock(impl_->pipelines_mutex);
@@ -224,6 +354,7 @@ bool Device::wait(uint64_t value, std::chrono::milliseconds timeout) {
 }
 
 struct Surface::Impl {
+    std::shared_ptr<WeightCodeCacheClaim> cache_claim;
     IOSurfaceRef surface = nullptr;
     id<MTLBuffer> buffer;
     uint32_t rows = 0, columns = 0;
@@ -251,6 +382,10 @@ Surface::Surface(Device &device, uint32_t rows, uint32_t columns, Element elemen
     require(impl_->buffer != nil, "ANE GPU cannot share IOSurface with Metal");
 }
 size_t Surface::bytes() const { return impl_->buffer.allocatedSize; }
+size_t Surface::cache_capacity_bytes() const {
+    return std::max(size_t(impl_->buffer.allocatedSize),size_t(IOSurfaceGetAllocSize(impl_->surface)));
+}
+void Surface::retain_cache_claim(std::shared_ptr<WeightCodeCacheClaim> claim) { impl_->cache_claim=std::move(claim); }
 size_t Surface::pitch() const { return IOSurfaceGetBytesPerRow(impl_->surface); }
 uint32_t Surface::rows() const { return row_count_ ? row_count_ : impl_->rows; }
 uint32_t Surface::columns() const { return impl_->columns; }
@@ -313,6 +448,7 @@ Transfer Device::prepare_transfer_impl(std::vector<Upload> uploads, std::vector<
                 "ANE GPU invalid transfer timeline/bindings");
         for (const auto &u : uploads) {
             validate_device(u.source, impl_->device, false);
+            require(!u.destination.impl_->cache_claim,"cached weight surface cannot be an upload destination");
             require(u.destination.element() == Element::FP16 && u.source.cols == int(u.destination.rows()) &&
                 u.begin_row >= 0 && u.begin_row <= u.source.rows && int(u.destination.columns()) <= u.source.rows - u.begin_row &&
                 std::isfinite(u.scale) && u.scale > 0, "ANE GPU upload geometry/scale mismatch");
@@ -466,6 +602,7 @@ struct QuantStage::Impl {
     id<MTLBuffer> status, signs;
     id<MTLSharedEvent> event;
     std::shared_ptr<ScaleCacheEntry> cached_scales;
+    std::shared_ptr<CodeCacheEntry> cached_codes;
     std::mutex mutex;
     std::condition_variable cv;
     bool done = false, ok = false, single_pass = false;
@@ -503,7 +640,14 @@ size_t w8_source_row_bytes(const DeviceWeightView &v) {
     throw CapabilityError("W8 source encoding unsupported");
 }
 }
-QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface codes, Surface scales) {
+QuantStage Device::stage_w8(DeviceWeightView source,W8StageSpec spec,Surface codes,Surface scales) {
+    return stage_w8_impl(std::move(source),spec,std::move(codes),std::move(scales),nullptr,nullptr);
+}
+QuantStage Device::bind_w8(DeviceWeightView source,W8StageSpec spec,Surface &codes,Surface &scales) {
+    return stage_w8_impl(std::move(source),spec,codes,scales,&codes,&scales);
+}
+QuantStage Device::stage_w8_impl(DeviceWeightView source, W8StageSpec spec, Surface codes, Surface scales,
+                               Surface *bound_codes,Surface *bound_scales) {
     @autoreleasepool {
       @try {
         require(source.owner && source.buffer && source.rows > 0 && source.rows <= 1048576 && source.cols > 0 && source.cols <= 32768,
@@ -535,6 +679,10 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             "W8 target surface geometry/type mismatch");
         const bool packed_comfy = source.encoding==DeviceWeightEncoding::ConvrotQ8Packed;
         const bool affine = source.encoding == DeviceWeightEncoding::AffineQ4 || source.encoding == DeviceWeightEncoding::AffineQ8 || packed_comfy;
+        const bool raw=source.encoding==DeviceWeightEncoding::GgufQ4_0 || source.encoding==DeviceWeightEncoding::GgufQ4_K ||
+            source.encoding==DeviceWeightEncoding::GgufQ8_0 || source.encoding==DeviceWeightEncoding::GgufQ6_K;
+        require(!has_generation(source.logical_content_identity) || (raw && source.immutable_generation),
+                "W8 logical content identity requires immutable raw GGUF source");
         require(affine || direct || (!source.scales && !source.offsets), "W8 non-affine source cannot have affine metadata");
         if (affine) {
             require(source.scales && (source.group_size == 32 || source.group_size == 64 || source.group_size == 128 || source.group_size == 256) &&
@@ -564,6 +712,8 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         for (const auto *meta : {&source.scales, &source.offsets}) if (*meta) disjoint((**meta).buffer);
         if (spec.column_scale) disjoint(spec.column_scale->buffer);
         require(codes.impl_->buffer != scales.impl_->buffer, "W8 code/scale target aliases");
+        require(!codes.impl_->cache_claim && !scales.impl_->cache_claim,
+                "cached W8 surfaces are immutable readers; reset the bank to fixed scratch before staging");
         const bool single_pass = impl_->a8_single_pass_requested && a8_single_pass::eligible(source, spec);
         id<MTLComputePipelineState> a8_pipeline = nil;
         Device::Impl::W8Pipelines pipelines{};
@@ -584,8 +734,46 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
         // Fresh Shared storage is initialized before submission; completion owns it through timeout.
         *static_cast<uint32_t *>(state->status.contents) = 0;
         bool scale_hit=false;
-        const DeviceWeightRegion key=w8_stage::weak_key(state->source,spec);
-        if(impl_->scale_stats.enabled && state->source.immutable_generation && !spec.transpose && !direct && w8_stage::live_key(key)) {
+        const DeviceWeightRegion key=weak_scale_key(state->source,spec);
+        const auto code_binding=impl_->code_binding(key,state->source.immutable_generation &&
+            !spec.transpose && live_scale_key(key) && state->codes.pitch()==size_t(spec.columns),*this);
+        const bool code_hit=code_binding.second;
+        state->cached_codes=code_binding.first;
+        const bool bind_native=bound_codes && bound_scales && state->cached_codes && state->cached_codes->native_codes;
+        if(bind_native) {
+            state->codes=*state->cached_codes->native_codes;state->scales=*state->cached_codes->native_scales;
+            if(code_hit) {
+                // Source/metadata/target validation above still applies on a
+                // hit, including physical raw-refill extents and aliases.
+                // These cached surfaces were already produced and validated.
+                *static_cast<uint32_t*>(state->status.contents)=0;
+                state->event.signaledValue=1;state->ok=true;state->done=true;
+                *bound_codes=state->codes;*bound_scales=state->scales;
+                {std::lock_guard cache_lock(impl_->code_cache_mutex);++impl_->code_stats.hits;++impl_->code_stats.surface_bind_hits;}
+                QuantStage ticket;ticket.impl_=std::move(state);return ticket;
+            }
+        }
+        bool code_submitted=false;
+        struct UnsubmittedCodeFill {
+            std::shared_ptr<QuantStage::Impl> state;
+            bool &submitted;
+            bool hit;
+            ~UnsubmittedCodeFill() {
+                if(submitted || hit || !state->cached_codes)return;
+                // A prepare/encode/commit exception must not pin a forever
+                // pending entry. A possibly submitted CB still retains the
+                // ticket/entry and its capacity until actual completion.
+                auto entry=state->cached_codes;
+                entry->valid.store(false,std::memory_order_release);
+                entry->pending.store(false,std::memory_order_release);
+                std::lock_guard cache_lock(state->device->code_cache_mutex);
+                auto &entries=state->device->code_cache;
+                auto at=std::find(entries.begin(),entries.end(),entry);
+                if(at!=entries.end()) {entries.erase(at);++state->device->code_stats.evictions;}
+                ++state->device->code_stats.failed_fills;
+            }
+        } unsubmitted{state,code_submitted,code_hit};
+        if(!code_hit && impl_->scale_stats.enabled && state->source.immutable_generation && !spec.transpose && !direct && live_scale_key(key)) {
             std::lock_guard lock(impl_->scale_cache_mutex);
             for(auto it=impl_->scale_cache.begin();it!=impl_->scale_cache.end();) {
                 if(!w8_stage::live_key((*it)->key)) {impl_->scale_stats.bytes-=(*it)->buffer.length;it=impl_->scale_cache.erase(it);++impl_->scale_stats.evictions;}
@@ -633,17 +821,36 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             if (spec.column_scale) [encoder setBuffer:(__bridge id<MTLBuffer>)spec.column_scale->buffer offset:spec.column_scale->offset_bytes atIndex:index];
             else [encoder setBuffer:state->status offset:0 atIndex:index];
         };
-        auto copy_scales=[&](bool restore) {
+        auto copy_scales=[&](bool restore,id<MTLBuffer> cached,uint32_t cached_pitch=1) {
             id<MTLComputeCommandEncoder> copy=[command computeCommandEncoder];require(copy!=nil,"W8 scale cache encoder unavailable");
-            const uint32_t params[4]{uint32_t(spec.rows),restore?1u:uint32_t(state->scales.pitch()/2),restore?uint32_t(state->scales.pitch()/2):1u,0};
+            const uint32_t params[4]{uint32_t(spec.rows),restore?cached_pitch:uint32_t(state->scales.pitch()/2),restore?uint32_t(state->scales.pitch()/2):cached_pitch,0};
             [copy setComputePipelineState:impl_->w8_scale_copy];
-            [copy setBuffer:restore?state->cached_scales->buffer:state->scales.impl_->buffer offset:restore?0:size_t(state->scales.row_begin_)*state->scales.pitch() atIndex:0];
-            [copy setBuffer:restore?state->scales.impl_->buffer:state->cached_scales->buffer offset:restore?size_t(state->scales.row_begin_)*state->scales.pitch():0 atIndex:1];
+            [copy setBuffer:restore?cached:state->scales.impl_->buffer offset:restore?0:size_t(state->scales.row_begin_)*state->scales.pitch() atIndex:0];
+            [copy setBuffer:restore?state->scales.impl_->buffer:cached offset:restore?size_t(state->scales.row_begin_)*state->scales.pitch():0 atIndex:1];
             [copy setBytes:params length:sizeof(params) atIndex:2];
             [copy dispatchThreads:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(64,1,1)];[copy endEncoding];
         };
-        if (!single_pass && scale_hit) copy_scales(true);
-        else if (!single_pass) {
+        auto copy_codes=[&](bool restore) {
+            id<MTLBlitCommandEncoder> copy=[command blitCommandEncoder];
+            require(copy!=nil,"W8 converted-code copy encoder unavailable");
+            const size_t offset=size_t(state->codes.row_begin_)*state->codes.pitch();
+            const size_t bytes=size_t(spec.rows)*spec.columns;
+            id<MTLBuffer> cached=state->cached_codes->native_codes ? state->cached_codes->native_codes->impl_->buffer : state->cached_codes->codes;
+            [copy copyFromBuffer:restore?cached:state->codes.impl_->buffer
+                sourceOffset:restore?0:offset toBuffer:restore?state->codes.impl_->buffer:cached
+                destinationOffset:restore?offset:0 size:bytes];[copy endEncoding];
+        };
+        auto copy_code_scales=[&](bool restore) {
+            if(state->cached_codes->native_scales) {
+                const auto &surface=*state->cached_codes->native_scales;
+                copy_scales(restore,surface.impl_->buffer,uint32_t(surface.pitch()/2));
+            } else copy_scales(restore,state->cached_codes->scales);
+        };
+        if(code_hit) {
+            copy_code_scales(true);copy_codes(true);
+        } else {
+            if(!single_pass && scale_hit)copy_scales(true,state->cached_scales->buffer);
+            else if(!single_pass) {
             id<MTLComputeCommandEncoder> scale = [command computeCommandEncoder];
             require(scale != nil, "W8 scale encoder unavailable"); bind(scale);
             [scale setComputePipelineState:pipelines.scales];
@@ -656,29 +863,46 @@ QuantStage Device::stage_w8(DeviceWeightView source, W8StageSpec spec, Surface c
             // belongs to THIS operation, never the first cached shape.
             else [scale dispatchThreadgroups:MTLSizeMake(spec.rows, grouped?spec.columns/256:1, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy||pipelines.register_sylvester?32:spec.rotation_block, 1, 1)];
             [scale endEncoding];
-            if(state->cached_scales)copy_scales(false);
+            if(state->cached_scales)copy_scales(false,state->cached_scales->buffer);
+            }
+            id<MTLComputeCommandEncoder> quant = [command computeCommandEncoder];
+            require(quant != nil, "W8 code encoder unavailable"); bind(quant);
+            [quant setComputePipelineState:single_pass ? a8_pipeline : pipelines.codes];
+            [quant setBuffer:state->scales.impl_->buffer offset:size_t(state->scales.row_begin_) * state->scales.pitch() atIndex:3];
+            [quant setBuffer:state->codes.impl_->buffer offset:size_t(state->codes.row_begin_) * state->codes.pitch() atIndex:4];
+            [quant setBuffer:state->status offset:0 atIndex:5]; [quant setBytes:&p length:sizeof(p) atIndex:6];
+            [quant setBuffer:state->signs offset:0 atIndex:7];
+            bind_column_scale(quant, 8);
+            if (single_pass) [quant dispatchThreadgroups:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(128,1,1)];
+            else if (direct) [quant dispatchThreads:MTLSizeMake(spec.columns,spec.rows,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];
+            else [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy||pipelines.register_sylvester?32:spec.rotation_block, 1, 1)];
+            [quant endEncoding];
+            if(state->cached_codes && !bind_native) {
+                copy_code_scales(false);copy_codes(false);
+            }
         }
-        id<MTLComputeCommandEncoder> quant = [command computeCommandEncoder];
-        require(quant != nil, "W8 code encoder unavailable"); bind(quant);
-        [quant setComputePipelineState:single_pass ? a8_pipeline : pipelines.codes];
-        [quant setBuffer:state->scales.impl_->buffer offset:size_t(state->scales.row_begin_) * state->scales.pitch() atIndex:3];
-        [quant setBuffer:state->codes.impl_->buffer offset:size_t(state->codes.row_begin_) * state->codes.pitch() atIndex:4];
-        [quant setBuffer:state->status offset:0 atIndex:5]; [quant setBytes:&p length:sizeof(p) atIndex:6];
-        [quant setBuffer:state->signs offset:0 atIndex:7];
-        bind_column_scale(quant, 8);
-        if (single_pass) [quant dispatchThreadgroups:MTLSizeMake(spec.rows,1,1) threadsPerThreadgroup:MTLSizeMake(128,1,1)];
-        else if (direct) [quant dispatchThreads:MTLSizeMake(spec.columns,spec.rows,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];
-        else [quant dispatchThreadgroups:MTLSizeMake(spec.rows, spec.columns / spec.rotation_block, 1) threadsPerThreadgroup:MTLSizeMake(pipelines.register_comfy||pipelines.register_sylvester?32:spec.rotation_block, 1, 1)];
-        [quant endEncoding];
         [command encodeSignalEvent:state->event value:1];
         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if (completed.status == MTLCommandBufferStatusError && state->event.signaledValue < 1) state->event.signaledValue = 1;
             if(state->cached_scales && !scale_hit)state->cached_scales->valid.store(
                 completed.status==MTLCommandBufferStatusCompleted && !*static_cast<const uint32_t*>(state->status.contents),std::memory_order_release);
+            if(state->cached_codes) {
+                const bool valid=completed.status==MTLCommandBufferStatusCompleted &&
+                    !*static_cast<const uint32_t*>(state->status.contents);
+                std::lock_guard cache_lock(state->device->code_cache_mutex);
+                if(code_hit) {if(valid){++state->device->code_stats.hits;++state->device->code_stats.copy_hits;}}
+                else {
+                    state->cached_codes->valid.store(valid,std::memory_order_release);
+                    state->cached_codes->pending.store(false,std::memory_order_release);
+                    if(valid)++state->device->code_stats.fills;
+                    else ++state->device->code_stats.failed_fills;
+                }
+            }
             { std::lock_guard lock(state->mutex); state->ok = completed.status == MTLCommandBufferStatusCompleted; state->done = true; }
             state->cv.notify_all();
         }];
-        [command commit];
+        [command commit];code_submitted=true;
+        if(bind_native) {*bound_codes=state->codes;*bound_scales=state->scales;}
         if (single_pass) impl_->a8_eligible_submissions.fetch_add(1, std::memory_order_relaxed);
         else if (impl_->a8_single_pass_requested && spec.transpose) impl_->a8_ineligible_submissions.fetch_add(1, std::memory_order_relaxed);
         QuantStage ticket; ticket.impl_ = std::move(state); return ticket;

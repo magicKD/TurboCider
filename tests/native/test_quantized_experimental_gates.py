@@ -57,6 +57,8 @@ class ExperimentalGateTests(unittest.TestCase):
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"qmm_f16_down64"}),
                  ("z-image-turbo-gguf",q8,{"TURBOCIDER_Z_GGUF_IMPORT":"cpu_direct","TURBOCIDER_Z_GGUF_COMPILE_PACKED":"1","TURBOCIDER_Z_GGUF_COMPUTE":"qmm_f16_refmpp_dynamic","TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES":"1073741824"}),
                  ("z-image-turbo",bf16,{"TURBOCIDER_Z_RUNTIME_CONVROT":"1"})]
+        cases += [("z-image-turbo",bf16,{"TURBOCIDER_Z_CONVROT_GPU_RECIPE":recipe})
+                  for recipe in ("compiled_dense","compiled_butterfly")]
         for model_id, root, controls in cases:
             with self.subTest(controls=controls), tempfile.TemporaryDirectory(prefix="tc-z-gate-") as raw:
                 image=Path(raw)/"rejected.png"

@@ -1,0 +1,921 @@
+{
+  "schema": "tc-dev-verify-merge-light-validation-v1",
+  "date": "2026-10-10",
+  "context": {
+    "baseline": "8d12b44cc764d079ee31c6092725e22fcc8fb9e0",
+    "incoming": "ea55048933b6c53be44289b515418ec2a9756dca",
+    "counts_before": {
+      "dev_verify_only": 43,
+      "dev_only": 39
+    },
+    "machine": {
+      "chip": "Apple M4 Pro",
+      "physical_memory_bytes": 51539607552,
+      "os": "macOS 26.6 (25G72)"
+    },
+    "model_downloads": false
+  },
+  "model_downloads": false,
+  "libraries": {
+    "baseline": "e3b2ee0e6806dd3514bb78b2c4ff00065c1d29c3ca6ec1f38099d73e4412f8e4",
+    "merged": "5470db1d35dc337c5db03ddcd5eb27823014c266675150fd6e225f4b4431ff04"
+  },
+  "workloads": [
+    {
+      "name": "qwen-base-8",
+      "baseline_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 23.573179790982977,
+          "actual_steps": 8,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 17.232902292,
+            "hybrid_setup": 0,
+            "image_encode": 7.08e-07,
+            "request_wall": 23.448937292,
+            "text_encode": 2.719471708,
+            "vae_decode": 1.113083666
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14906264818,
+            "mlx_peak_bytes": 20601289314,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 6536445952,
+            "phys_footprint_bytes": 15615061392,
+            "lifetime_max_phys_footprint_bytes": 19634548112,
+            "diskio_bytesread_bytes": 30055079936,
+            "diskio_byteswritten_bytes": 532480
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 868352,
+            "Swapouts": 0,
+            "Pageins": 29804740608,
+            "Compressions": 12179996672,
+            "Decompressions": 9067773952
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 23.57305612496566,
+          "actual_steps": 8,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 17.368087833,
+            "hybrid_setup": 0,
+            "image_encode": 9.17e-07,
+            "request_wall": 23.538068833,
+            "text_encode": 5.215089416,
+            "vae_decode": 0.92972125
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14906264818,
+            "mlx_peak_bytes": 30106389134,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 127713280,
+            "phys_footprint_bytes": 15628791184,
+            "lifetime_max_phys_footprint_bytes": 30731049064,
+            "diskio_bytesread_bytes": 45203587072,
+            "diskio_byteswritten_bytes": 1015808
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 33423360,
+            "Swapouts": 1337458688,
+            "Pageins": 15695331328,
+            "Compressions": 28292431872,
+            "Decompressions": 17982390272
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        }
+      ],
+      "merged_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 23.01243083400186,
+          "actual_steps": 8,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 17.271907666,
+            "hybrid_setup": 0,
+            "image_encode": 3.33e-07,
+            "request_wall": 22.873612375,
+            "text_encode": 2.127137,
+            "vae_decode": 1.11899375
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14906264818,
+            "mlx_peak_bytes": 20601289314,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 10802708480,
+            "phys_footprint_bytes": 15613226432,
+            "lifetime_max_phys_footprint_bytes": 19717221824,
+            "diskio_bytesread_bytes": 26290216960,
+            "diskio_byteswritten_bytes": 532480
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 9830400,
+            "Swapouts": 0,
+            "Pageins": 26119438336,
+            "Compressions": 5737889792,
+            "Decompressions": 4728078336
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 23.194739416940138,
+          "actual_steps": 8,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 17.417583,
+            "hybrid_setup": 0,
+            "image_encode": 7.08e-07,
+            "request_wall": 23.155387,
+            "text_encode": 4.767789625,
+            "vae_decode": 0.946030292
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14906264818,
+            "mlx_peak_bytes": 30106389134,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 129253376,
+            "phys_footprint_bytes": 15625137624,
+            "lifetime_max_phys_footprint_bytes": 30732654672,
+            "diskio_bytesread_bytes": 41438605312,
+            "diskio_byteswritten_bytes": 1015808
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 47906816,
+            "Swapouts": 1213399040,
+            "Pageins": 15420391424,
+            "Compressions": 24592351232,
+            "Decompressions": 16427401216
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        }
+      ],
+      "image_comparison": [
+        {
+          "run": 0,
+          "baseline_sha256": "cbee89d926b1b86c755a6acdb5e161cf390baf572c8dd48cdbd1c4b2373b1996",
+          "merged_sha256": "cbee89d926b1b86c755a6acdb5e161cf390baf572c8dd48cdbd1c4b2373b1996",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        },
+        {
+          "run": 1,
+          "baseline_sha256": "7cb410f6950057d63c217152494fdf56c4d679b3360d60e30dfaf66ba8c8b102",
+          "merged_sha256": "7cb410f6950057d63c217152494fdf56c4d679b3360d60e30dfaf66ba8c8b102",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        }
+      ]
+    },
+    {
+      "name": "qwen-r128-lora-6",
+      "baseline_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 20.604895416996442,
+          "actual_steps": 6,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 14.4190875,
+            "hybrid_setup": 0,
+            "image_encode": 5.42e-07,
+            "request_wall": 20.462597667,
+            "text_encode": 2.236790125,
+            "vae_decode": 1.103708583
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14914718962,
+            "mlx_peak_bytes": 21951920986,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 11039031296,
+            "phys_footprint_bytes": 15622827744,
+            "lifetime_max_phys_footprint_bytes": 20990145760,
+            "diskio_bytesread_bytes": 27975053312,
+            "diskio_byteswritten_bytes": 544768
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 8847360,
+            "Swapouts": 0,
+            "Pageins": 27747270656,
+            "Compressions": 5403885568,
+            "Decompressions": 4270505984
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 15.391530875000171,
+          "actual_steps": 6,
+          "prompt_cache_hit": true,
+          "timings_seconds": {
+            "denoise": 14.348040709,
+            "hybrid_setup": 0,
+            "image_encode": 4.17e-07,
+            "request_wall": 15.391121917,
+            "text_encode": 0.001434834,
+            "vae_decode": 0.984548458
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14914718962,
+            "mlx_peak_bytes": 21951920986,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 11042652160,
+            "phys_footprint_bytes": 15677042256,
+            "lifetime_max_phys_footprint_bytes": 20990145760,
+            "diskio_bytesread_bytes": 27975053312,
+            "diskio_byteswritten_bytes": 1097728
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 196608,
+            "Swapouts": 0,
+            "Pageins": 10190848,
+            "Compressions": 0,
+            "Decompressions": 37011456
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        }
+      ],
+      "merged_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 20.558656999957748,
+          "actual_steps": 6,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 14.433821625,
+            "hybrid_setup": 0,
+            "image_encode": 5.42e-07,
+            "request_wall": 20.4307475,
+            "text_encode": 2.183007458,
+            "vae_decode": 1.09790675
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14914718962,
+            "mlx_peak_bytes": 21951920986,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 12129878016,
+            "phys_footprint_bytes": 15622401760,
+            "lifetime_max_phys_footprint_bytes": 21041214760,
+            "diskio_bytesread_bytes": 27453759488,
+            "diskio_byteswritten_bytes": 544768
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 118423552,
+            "Swapouts": 0,
+            "Pageins": 27274444800,
+            "Compressions": 5589745664,
+            "Decompressions": 3962322944
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 15.53394112503156,
+          "actual_steps": 6,
+          "prompt_cache_hit": true,
+          "timings_seconds": {
+            "denoise": 14.473835417,
+            "hybrid_setup": 0,
+            "image_encode": 4.1e-08,
+            "request_wall": 15.5335345,
+            "text_encode": 0.001399792,
+            "vae_decode": 1.002262167
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 14914718962,
+            "mlx_peak_bytes": 21951920986,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 12129943552,
+            "phys_footprint_bytes": 15625908008,
+            "lifetime_max_phys_footprint_bytes": 21041214760,
+            "diskio_bytesread_bytes": 27453759488,
+            "diskio_byteswritten_bytes": 1097728
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 4997120,
+            "Swapouts": 0,
+            "Pageins": 8552448,
+            "Compressions": 0,
+            "Decompressions": 183926784
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        }
+      ],
+      "image_comparison": [
+        {
+          "run": 0,
+          "baseline_sha256": "bc5bd1a300bad132b8cc8fa80982ed0b3ee455531569200850861423bb599b21",
+          "merged_sha256": "bc5bd1a300bad132b8cc8fa80982ed0b3ee455531569200850861423bb599b21",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        },
+        {
+          "run": 1,
+          "baseline_sha256": "bc5bd1a300bad132b8cc8fa80982ed0b3ee455531569200850861423bb599b21",
+          "merged_sha256": "bc5bd1a300bad132b8cc8fa80982ed0b3ee455531569200850861423bb599b21",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        }
+      ]
+    },
+    {
+      "name": "qwen-single-reference-edit-6",
+      "baseline_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 24.561415374977514,
+          "actual_steps": 6,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 17.426677083,
+            "hybrid_setup": 0,
+            "image_encode": 0.248747125,
+            "request_wall": 24.438411791,
+            "text_encode": 3.02196325,
+            "vae_decode": 0.925682959
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 360970,
+            "mlx_peak_bytes": 18318888726,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 131416064,
+            "phys_footprint_bytes": 814319272,
+            "lifetime_max_phys_footprint_bytes": 18799474008,
+            "diskio_bytesread_bytes": 32387309568,
+            "diskio_byteswritten_bytes": 614400
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 6029312,
+            "Swapouts": 0,
+            "Pageins": 32057229312,
+            "Compressions": 6855213056,
+            "Decompressions": 6018859008
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 19.438666791887954,
+          "actual_steps": 6,
+          "prompt_cache_hit": true,
+          "timings_seconds": {
+            "denoise": 17.410792084,
+            "hybrid_setup": 0,
+            "image_encode": 1.708e-06,
+            "request_wall": 19.438251083,
+            "text_encode": 6.25e-06,
+            "vae_decode": 0.916155083
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 360970,
+            "mlx_peak_bytes": 18339958550,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 129220608,
+            "phys_footprint_bytes": 794625656,
+            "lifetime_max_phys_footprint_bytes": 18875364936,
+            "diskio_bytesread_bytes": 34390888448,
+            "diskio_byteswritten_bytes": 1236992
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 12976128,
+            "Swapouts": 0,
+            "Pageins": 2139979776,
+            "Compressions": 3195404288,
+            "Decompressions": 3059630080
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        }
+      ],
+      "merged_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 24.464041041908786,
+          "actual_steps": 6,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 17.375484333,
+            "hybrid_setup": 0,
+            "image_encode": 0.258203125,
+            "request_wall": 24.335265167,
+            "text_encode": 2.986974417,
+            "vae_decode": 0.929646125
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 360970,
+            "mlx_peak_bytes": 18318905110,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 141852672,
+            "phys_footprint_bytes": 807994856,
+            "lifetime_max_phys_footprint_bytes": 18851640688,
+            "diskio_bytesread_bytes": 31217815552,
+            "diskio_byteswritten_bytes": 614400
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 23298048,
+            "Swapouts": 0,
+            "Pageins": 31072911360,
+            "Compressions": 6089506816,
+            "Decompressions": 5405949952
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 19.30486666597426,
+          "actual_steps": 6,
+          "prompt_cache_hit": true,
+          "timings_seconds": {
+            "denoise": 17.33383125,
+            "hybrid_setup": 0,
+            "image_encode": 1.333e-06,
+            "request_wall": 19.304414542,
+            "text_encode": 4.792e-06,
+            "vae_decode": 0.920193458
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 360970,
+            "mlx_peak_bytes": 18339974934,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 145670144,
+            "phys_footprint_bytes": 793970152,
+            "lifetime_max_phys_footprint_bytes": 18851640688,
+            "diskio_bytesread_bytes": 32226148352,
+            "diskio_byteswritten_bytes": 1236992
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 167510016,
+            "Swapouts": 0,
+            "Pageins": 948535296,
+            "Compressions": 1985970176,
+            "Decompressions": 1863483392
+          },
+          "runtime_backend": "mlx_cpp_metal",
+          "streaming": null
+        }
+      ],
+      "image_comparison": [
+        {
+          "run": 0,
+          "baseline_sha256": "78190c21674c834d094ab9c13648b7d922379cd6dfc958cf84a3555b65f34467",
+          "merged_sha256": "78190c21674c834d094ab9c13648b7d922379cd6dfc958cf84a3555b65f34467",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        },
+        {
+          "run": 1,
+          "baseline_sha256": "78190c21674c834d094ab9c13648b7d922379cd6dfc958cf84a3555b65f34467",
+          "merged_sha256": "78190c21674c834d094ab9c13648b7d922379cd6dfc958cf84a3555b65f34467",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        }
+      ]
+    },
+    {
+      "name": "flux2-klein4b-4",
+      "baseline_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 6.308530792011879,
+          "actual_steps": 4,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 4.707883208,
+            "hybrid_setup": 1.5875e-05,
+            "image_encode": 1.375e-05,
+            "request_wall": 6.211635125,
+            "text_encode": 1.012317708,
+            "vae_decode": 0.447578458
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 7852574806,
+            "mlx_peak_bytes": 9899190626,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 7988559872,
+            "phys_footprint_bytes": 8510954240,
+            "lifetime_max_phys_footprint_bytes": 9892567808,
+            "diskio_bytesread_bytes": 14095249408,
+            "diskio_byteswritten_bytes": 405504
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 65536,
+            "Swapouts": 0,
+            "Pageins": 14071840768,
+            "Compressions": 0,
+            "Decompressions": 20660224
+          },
+          "runtime_backend": null,
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 4.554789207992144,
+          "actual_steps": 4,
+          "prompt_cache_hit": true,
+          "timings_seconds": {
+            "denoise": 4.092188375,
+            "hybrid_setup": 6.208e-06,
+            "image_encode": 1.25e-07,
+            "request_wall": 4.554435625,
+            "text_encode": 7.92e-07,
+            "vae_decode": 0.447154583
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 7852574806,
+            "mlx_peak_bytes": 9900741736,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 7988887552,
+            "phys_footprint_bytes": 8509053696,
+            "lifetime_max_phys_footprint_bytes": 9955613440,
+            "diskio_bytesread_bytes": 14095249408,
+            "diskio_byteswritten_bytes": 786432
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 65536,
+            "Swapouts": 0,
+            "Pageins": 720896,
+            "Compressions": 0,
+            "Decompressions": 2260992
+          },
+          "runtime_backend": null,
+          "streaming": null
+        }
+      ],
+      "merged_samples": [
+        {
+          "run": 0,
+          "request_wall_including_export": 6.035692458041012,
+          "actual_steps": 4,
+          "prompt_cache_hit": false,
+          "timings_seconds": {
+            "denoise": 4.433673083,
+            "hybrid_setup": 1.5875e-05,
+            "image_encode": 1.67e-07,
+            "request_wall": 5.938847667,
+            "text_encode": 1.014791667,
+            "vae_decode": 0.452528125
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 7852558422,
+            "mlx_peak_bytes": 9899174242,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 7984218112,
+            "phys_footprint_bytes": 8508496688,
+            "lifetime_max_phys_footprint_bytes": 9889307440,
+            "diskio_bytesread_bytes": 14096097280,
+            "diskio_byteswritten_bytes": 372736
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 56360960,
+            "Swapouts": 0,
+            "Pageins": 13969850368,
+            "Compressions": 0,
+            "Decompressions": 123944960
+          },
+          "runtime_backend": null,
+          "streaming": null
+        },
+        {
+          "run": 1,
+          "request_wall_including_export": 4.49336433399003,
+          "actual_steps": 4,
+          "prompt_cache_hit": true,
+          "timings_seconds": {
+            "denoise": 4.04619175,
+            "hybrid_setup": 6.667e-06,
+            "image_encode": 1.25e-07,
+            "request_wall": 4.492898709,
+            "text_encode": 4.17e-07,
+            "vae_decode": 0.434337
+          },
+          "mlx_memory": {
+            "mlx_active_bytes": 7852558422,
+            "mlx_peak_bytes": 9900725352,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "process_memory": {
+            "resident_size_bytes": 7984840704,
+            "phys_footprint_bytes": 8508087112,
+            "lifetime_max_phys_footprint_bytes": 9891109704,
+            "diskio_bytesread_bytes": 14096097280,
+            "diskio_byteswritten_bytes": 753664
+          },
+          "system_vm_delta_bytes": {
+            "Swapins": 9928704,
+            "Swapouts": 0,
+            "Pageins": 25067520,
+            "Compressions": 0,
+            "Decompressions": 48152576
+          },
+          "runtime_backend": null,
+          "streaming": null
+        }
+      ],
+      "image_comparison": [
+        {
+          "run": 0,
+          "baseline_sha256": "c517d722051bc31b60ffb9b704ae75142979a2378a48ea2913239a6557983b99",
+          "merged_sha256": "c517d722051bc31b60ffb9b704ae75142979a2378a48ea2913239a6557983b99",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        },
+        {
+          "run": 1,
+          "baseline_sha256": "c517d722051bc31b60ffb9b704ae75142979a2378a48ea2913239a6557983b99",
+          "merged_sha256": "c517d722051bc31b60ffb9b704ae75142979a2378a48ea2913239a6557983b99",
+          "png_sha_equal": true,
+          "rgba_pixels_equal": true,
+          "max_absolute_8bit": 0
+        }
+      ]
+    }
+  ],
+  "streaming": {
+    "encoder_prefix": 28,
+    "dit_prefix": 28,
+    "managed_weight_gib": 13,
+    "samples": [
+      {
+        "run": 0,
+        "request_wall_including_export": 34.768906124983914,
+        "actual_steps": 8,
+        "prompt_cache_hit": false,
+        "timings_seconds": {
+          "denoise": 25.048309291,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 34.673665791,
+          "text_encode": 8.588959834,
+          "vae_decode": 1.001107792
+        },
+        "mlx_memory": {
+          "mlx_active_bytes": 680341270,
+          "mlx_peak_bytes": 14234295982,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "process_memory": {
+          "resident_size_bytes": 338706432,
+          "phys_footprint_bytes": 874710312,
+          "lifetime_max_phys_footprint_bytes": 14656055640,
+          "diskio_bytesread_bytes": 32455921664,
+          "diskio_byteswritten_bytes": 532480
+        },
+        "system_vm_delta_bytes": {
+          "Swapins": 122339328,
+          "Swapouts": 458752,
+          "Pageins": 32698138624,
+          "Compressions": 2296872960,
+          "Decompressions": 2589851648
+        },
+        "runtime_backend": "mlx_cpp_metal_qwen21_bf16_streaming_experimental",
+        "streaming": {
+          "components_released_before_vae": true,
+          "cpu_refill_workers": 1,
+          "denoiser": {
+            "completed_layers": 256,
+            "completed_passes": 8,
+            "completed_prefix_layers": 224,
+            "completed_reader_fences": 32,
+            "completed_streamed_layers": 32,
+            "drained": true,
+            "fills": 32,
+            "layers": 32,
+            "layout_digest": "5e71d8029d2f8db6a8d8a3565b7da73817cb7f9fe261cd7ae7a4fca1b9de3700",
+            "managed_weight_budget_bytes": 13958643712,
+            "managed_weight_capacity_bytes": 13358809088,
+            "prefix": 28,
+            "reader_fences": 32,
+            "resident_load_seconds": 1.091941291,
+            "resident_source_bytes": 12485416960,
+            "slot_arrays": 249,
+            "slots": 2,
+            "source_file_bytes": 14230280616,
+            "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+            "streamed_read_seconds": 1.0371936690000003,
+            "streamed_source_bytes": 13958660096,
+            "verification_bytes": 14230280616,
+            "verification_cache_hits": 0,
+            "verification_seconds": 5.623064291,
+            "wait_seconds": 2.6754000000000005e-05
+          },
+          "dynamic_layer_weight_arguments": true,
+          "encoder": {
+            "completed_layers": 36,
+            "completed_passes": 1,
+            "completed_prefix_layers": 28,
+            "completed_reader_fences": 8,
+            "completed_streamed_layers": 8,
+            "drained": true,
+            "fills": 8,
+            "layers": 36,
+            "layout_digest": "21d3f73446cfdbe30453aae019b673d115acbaefe4677d76be9b454bb42d1d23",
+            "managed_weight_budget_bytes": 13958643712,
+            "managed_weight_capacity_bytes": 12822921216,
+            "prefix": 28,
+            "reader_fences": 8,
+            "resident_load_seconds": 1.063839083,
+            "resident_source_bytes": 12049668096,
+            "slot_arrays": 332,
+            "slots": 2,
+            "source_file_bytes": 17534334616,
+            "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+            "streamed_read_seconds": 0.213006123,
+            "streamed_source_bytes": 3087142912,
+            "verification_bytes": 17534334616,
+            "verification_cache_hits": 0,
+            "verification_seconds": 6.907703666,
+            "wait_seconds": 0.168724166
+          },
+          "physical_overlap_proved": false,
+          "prefetch_distance": 1,
+          "public_memory_qualification": false,
+          "scope": "private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap",
+          "weight_precision": "original_bf16"
+        }
+      },
+      {
+        "run": 1,
+        "request_wall_including_export": 30.37704837496858,
+        "actual_steps": 8,
+        "prompt_cache_hit": false,
+        "timings_seconds": {
+          "denoise": 22.28397225,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 30.373953917,
+          "text_encode": 7.092650333,
+          "vae_decode": 0.982033959
+        },
+        "mlx_memory": {
+          "mlx_active_bytes": 680341270,
+          "mlx_peak_bytes": 14234295982,
+          "scope": "MLX allocator; excludes Core ML/OS/file cache"
+        },
+        "process_memory": {
+          "resident_size_bytes": 362037248,
+          "phys_footprint_bytes": 885491008,
+          "lifetime_max_phys_footprint_bytes": 14674127264,
+          "diskio_bytesread_bytes": 52104437760,
+          "diskio_byteswritten_bytes": 1019904
+        },
+        "system_vm_delta_bytes": {
+          "Swapins": 36585472,
+          "Swapouts": 36372480,
+          "Pageins": 19353583616,
+          "Compressions": 55507730432,
+          "Decompressions": 37632409600
+        },
+        "runtime_backend": "mlx_cpp_metal_qwen21_bf16_streaming_experimental",
+        "streaming": {
+          "components_released_before_vae": true,
+          "cpu_refill_workers": 1,
+          "denoiser": {
+            "completed_layers": 256,
+            "completed_passes": 8,
+            "completed_prefix_layers": 224,
+            "completed_reader_fences": 32,
+            "completed_streamed_layers": 32,
+            "drained": true,
+            "fills": 32,
+            "layers": 32,
+            "layout_digest": "5e71d8029d2f8db6a8d8a3565b7da73817cb7f9fe261cd7ae7a4fca1b9de3700",
+            "managed_weight_budget_bytes": 13958643712,
+            "managed_weight_capacity_bytes": 13358809088,
+            "prefix": 28,
+            "reader_fences": 32,
+            "resident_load_seconds": 2.246730625,
+            "resident_source_bytes": 12485416960,
+            "slot_arrays": 249,
+            "slots": 2,
+            "source_file_bytes": 14230280616,
+            "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+            "streamed_read_seconds": 1.5554033770000002,
+            "streamed_source_bytes": 13958660096,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "verification_seconds": 0.000176875,
+            "wait_seconds": 0.31000442100000014
+          },
+          "dynamic_layer_weight_arguments": true,
+          "encoder": {
+            "completed_layers": 36,
+            "completed_passes": 1,
+            "completed_prefix_layers": 28,
+            "completed_reader_fences": 8,
+            "completed_streamed_layers": 8,
+            "drained": true,
+            "fills": 8,
+            "layers": 36,
+            "layout_digest": "21d3f73446cfdbe30453aae019b673d115acbaefe4677d76be9b454bb42d1d23",
+            "managed_weight_budget_bytes": 13958643712,
+            "managed_weight_capacity_bytes": 12822921216,
+            "prefix": 28,
+            "reader_fences": 8,
+            "resident_load_seconds": 2.760268541,
+            "resident_source_bytes": 12049668096,
+            "slot_arrays": 332,
+            "slots": 2,
+            "source_file_bytes": 17534334616,
+            "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+            "streamed_read_seconds": 1.7453275000000004,
+            "streamed_source_bytes": 3087142912,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "verification_seconds": 0.000117042,
+            "wait_seconds": 1.4252410429999998
+          },
+          "physical_overlap_proved": false,
+          "prefetch_distance": 1,
+          "public_memory_qualification": false,
+          "scope": "private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap",
+          "weight_precision": "original_bf16"
+        }
+      }
+    ],
+    "image_comparison": [
+      {
+        "run": 0,
+        "baseline_sha256": "cbee89d926b1b86c755a6acdb5e161cf390baf572c8dd48cdbd1c4b2373b1996",
+        "merged_sha256": "cbee89d926b1b86c755a6acdb5e161cf390baf572c8dd48cdbd1c4b2373b1996",
+        "png_sha_equal": true,
+        "rgba_pixels_equal": true,
+        "max_absolute_8bit": 0
+      },
+      {
+        "run": 1,
+        "baseline_sha256": "7cb410f6950057d63c217152494fdf56c4d679b3360d60e30dfaf66ba8c8b102",
+        "merged_sha256": "7cb410f6950057d63c217152494fdf56c4d679b3360d60e30dfaf66ba8c8b102",
+        "png_sha_equal": true,
+        "rgba_pixels_equal": true,
+        "max_absolute_8bit": 0
+      }
+    ]
+  },
+  "semantic_edit_review": {
+    "runtime_completed": true,
+    "regression_against_baseline": false,
+    "cabin_instruction_satisfied": false,
+    "observation": "Fox remains in forest with altered contrast; requested wooden cabin is absent."
+  },
+  "performance_qualification": false,
+  "notes": [
+    "Two requests per workload, one new engine and one subsequent request; serial, not a statistical campaign.",
+    "Wall includes export and excludes constructor. Base uses two fresh prompts; other workloads repeat their prompt.",
+    "After user requested light tests all new inference uses at most eight steps; earlier 40-step baseline excluded.",
+    "Physical footprint is per-process lifetime peak. VM deltas are system-wide, not process attribution.",
+    "No complete local Q4_K_M pair or Z-Image text encoder; no corresponding full-model or private ANE qualification.",
+    "Native/CLI/App compiled, Qwen workflow and focused contracts/numerics verified; no complete make test, manual desktop or release package campaign."
+  ]
+}

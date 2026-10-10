@@ -1,0 +1,104 @@
+{
+  "schema": "tc-local512-affine-fused-finite-v1",
+  "date_local": "2026-10-10",
+  "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_component_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "default_route_changed": false,
+  "production_native_sources_or_libraries_changed": false,
+  "asynchronous_layer_ahead_decode_implemented": false,
+  "fused_decode_finite_kernel_implemented": true,
+  "identity": {
+    "probe": "build/local512-affine-finite-v3/gpu-weight-consumer-probe",
+    "probe_sha256": "fba7dcae0b8d880f0906df34f58db94fcacbfa31e92d0fcfa9424c8056a9fecf",
+    "source_sha256": "28f42d83d1a00b71ef7143470be2e140d7ec32d3ff8a5bbcaf966dbd744aba5e",
+    "candidate_header": "tools/native/affine_dense_finite_candidate.hpp",
+    "candidate_header_sha256": "40be8750526ad79238303308d2d356e35665c8ad39ad7e190bb678aae29d955a",
+    "retained_library": "build/local512-qwen-generation-phases-v1-private/libturbocider.dylib",
+    "retained_library_sha256": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+    "absolute_rpath": true,
+    "adjacent_dylib_or_loaded_image_proof": false
+  },
+  "scope": "three real original layer0 weights, prepared synthetic M1056 input, actual fresh guarded prepare and decode+one GEMM; cyclic-order serial host spans, not model/LoRA/visual/ANE/physical overlap",
+  "sampling": {"warmups_per_arm": 3, "samples_per_arm": 15, "actual_reuses": 1, "completed_prepares_per_recipe": 38, "original_window_misses": 38, "original_window_hits": 0, "all_samples_retained": true},
+  "dense_bytes_per_case": 78643200,
+  "cases": [
+    {
+      "name": "gguf-q4-gate",
+      "evidence": "outputs/local512-gguf-q4-gate-finite-v3-component-20261010.json",
+      "evidence_sha256": "b8ad82077cb2890097446bd4627ed318be3e18870abd2df84644c969a779114f",
+      "source_payload_sha256": "79dcaebad7d53a6310d296e7158572ffffb7548ca1074b283720009b58aa5881",
+      "bits": 4, "M": 1056, "N": 10240, "K": 3840, "dtype": "FP16",
+      "largest_status_bytes": 614400, "shared_ledger_budget": 157908992,
+      "packed_median_ms": 6.059375,
+      "recipes": [
+        {"name": "original_window", "prepare_median_ms": 3.948542, "complete_window_median_ms": 10.307083},
+        {"name": "fused_b1_t128", "prepare_median_ms": 1.884, "complete_window_median_ms": 8.173875},
+        {"name": "fused_b1_t256", "prepare_median_ms": 1.840791, "complete_window_median_ms": 7.992042},
+        {"name": "fused_b4_t128", "prepare_median_ms": 1.763916, "complete_window_median_ms": 8.013666},
+        {"name": "fused_b4_t256", "prepare_median_ms": 1.70575, "complete_window_median_ms": 8.012208}
+      ],
+      "maximum_observation_gap_seconds": 0.16574158403091133,
+      "observation_errors": 0, "exit_code": 0, "binary_unchanged": true,
+      "typed_coefficients_and_all_recipe_outputs_byte_exact": true, "output_relative_l2": 0, "dense_claim_bytes_after_cleanup": 0
+    },
+    {
+      "name": "gguf-q8-down",
+      "evidence": "outputs/local512-gguf-q8-down-finite-v3-component-20261010.json",
+      "evidence_sha256": "fe740a92bb2eb305d6d59bc59789ae3b295b8b284e5036ab63cdf1f6f92bd9a0",
+      "source_payload_sha256": "1ad46c79b2f3268a711b8e622d46e04d777110c7380808d255535e9db9d134fb",
+      "bits": 8, "M": 1056, "N": 3840, "K": 10240, "dtype": "FP16",
+      "largest_status_bytes": 1228800, "shared_ledger_budget": 158515200,
+      "packed_median_ms": 6.246125,
+      "recipes": [
+        {"name": "original_window", "prepare_median_ms": 3.942, "complete_window_median_ms": 10.456375},
+        {"name": "fused_b1_t128", "prepare_median_ms": 2.245041, "complete_window_median_ms": 8.4555},
+        {"name": "fused_b1_t256", "prepare_median_ms": 2.1715, "complete_window_median_ms": 8.447541},
+        {"name": "fused_b4_t128", "prepare_median_ms": 1.784791, "complete_window_median_ms": 8.011083},
+        {"name": "fused_b4_t256", "prepare_median_ms": 1.742625, "complete_window_median_ms": 8.021625}
+      ],
+      "maximum_observation_gap_seconds": 0.13198237505275756,
+      "observation_errors": 0, "exit_code": 0, "binary_unchanged": true,
+      "typed_coefficients_and_all_recipe_outputs_byte_exact": true, "output_relative_l2": 0, "dense_claim_bytes_after_cleanup": 0
+    },
+    {
+      "name": "convrot-gate",
+      "evidence": "outputs/local512-convrot-gate-finite-v3-component-20261010.json",
+      "evidence_sha256": "04c2f4b02454cbaf18914912fdf0f0c6074efa562ddb0b50489ff9d143823a13",
+      "source_codes_sha256": "7719089bde309d54523d1c8a888a869967175639c4071cc3fdd4d3213a523aac",
+      "bits": 8, "M": 1056, "N": 10240, "K": 3840, "dtype": "BF16 legacy stored scales",
+      "largest_status_bytes": 1228800, "shared_ledger_budget": 158515200,
+      "packed_median_ms": 6.564625,
+      "recipes": [
+        {"name": "original_window", "prepare_median_ms": 3.913417, "complete_window_median_ms": 10.332667},
+        {"name": "fused_b1_t128", "prepare_median_ms": 2.231958, "complete_window_median_ms": 8.4065},
+        {"name": "fused_b1_t256", "prepare_median_ms": 2.152083, "complete_window_median_ms": 8.369334},
+        {"name": "fused_b4_t128", "prepare_median_ms": 1.724791, "complete_window_median_ms": 7.935084},
+        {"name": "fused_b4_t256", "prepare_median_ms": 1.762958, "complete_window_median_ms": 7.913041}
+      ],
+      "maximum_observation_gap_seconds": 0.13150216697249562,
+      "observation_errors": 0, "exit_code": 0, "binary_unchanged": true,
+      "typed_coefficients_and_all_recipe_outputs_byte_exact": true, "output_relative_l2": 0, "dense_claim_bytes_after_cleanup": 0
+    }
+  ],
+  "guards": ["original typed metadata expression and coefficient boundary", "Safe math", "contiguous source and physical row offset", "Q4/Q8 and group32/64/128 geometry", "256MiB fresh target upper", "separate dense/status reservations", "capacity verified before publication", "full decoded nonfinite and typed overflow rejection", "Data-held escaped reader claims", "failure/refill/admission rollback"],
+  "tests": {
+    "opt_in_real_gpu_unit_tests_passed": 1, "skips": 0,
+    "original_window_cases": 12, "original_attribution_cases": 12,
+    "new_numeric_lifetime_cases": 144, "new_boundary_coefficient_cases": 48,
+    "malformed_contracts": 252, "last_group_nonfinite_overflow_rejections": 240,
+    "additional_finite_reject_refill_and_escaped_admission_in_each_numeric_case": true,
+    "cli_errors_before_source_access": 12,
+    "log": "outputs/local512-affine-finite-v3-native-test-20261010.log",
+    "log_sha256": "3374232b184005d697961e0336d18d53330beafb090892092f30b25b94a9dbad",
+    "measured_binary_selftest": "outputs/local512-affine-finite-v3-measured-selftest-20261010.log",
+    "measured_binary_selftest_sha256": "ce597ff026f46e3a6406003c7e7925c56a24d75ad0717589054672db0ab4922c",
+    "repeated_cases_counted_twice_or_full_model_suite_claimed": false
+  },
+  "cleanup": {"all_owned_jobs_terminal": true, "temporary_test_directory_removed": true, "objects_or_module_cache_remaining_in_three_owned_probe_builds": 0, "probe_logs_receipts_original_models_and_compiled_artifacts_preserved": true, "downloaded_models_or_user_driver_cache_cleanup_or_external_signals": false},
+  "decision": "retain faster fused prepare for research; actual fresh decode+one GEMM still loses to packed, so do not integrate R1 layer re-decode into defaults",
+  "next": "bounded actual current/next-layer async producer, ready consumer, source/generation and in-flight/escaped claims, drain/fallback and complete consumer/model profitability",
+  "remaining_full_goal": ["Z/Qwen base and original LoRA", "Qwen 1-2 reference edit and encoder", "GPU/ANE parallel FFN", "Public/Private profitability", "GGUF/ConvRot model consumers and true ahead-decode", "broader visual/scene/seed and quiet-window verification"]
+}

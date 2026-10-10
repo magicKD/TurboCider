@@ -137,14 +137,36 @@ def gpu_layer_policy(value):
     return tuple(layers)
 
 
+def validate_z_matched_rows(rows,steps,layers=(),template_rows=0):
+    """Actual native bucket/call geometry, not an auto-profitability claim."""
+    if not rows or type(steps) is not int or steps<=0:raise ValueError("need actual matched-row requests")
+    previous_calls=previous_retries=0
+    for row in rows:
+        hybrid=row.get("hybrid") or {};runtime=hybrid.get("runtime_weight") or {}
+        tokens=row.get("text_tokens");bucket=hybrid.get("bucket")
+        actual_rows=1024+((tokens+31)//32)*32 if type(tokens) is int else 0
+        selected=template_rows if template_rows>=actual_rows and template_rows%32==0 else ((actual_rows+127)//128)*128
+        if row.get("model") not in ("z-image-turbo","z-image-turbo-gguf") or row.get("width")!=512 or row.get("height")!=512 or \
+            type(tokens) is not int or not 0<tokens<=7168 or type(bucket) is not int or \
+            bucket!=selected or \
+            "experimental request-matched Private FFN rows="+str(bucket) not in (row.get("acceleration_selection") or "") or \
+            runtime.get("executor_backend")!="private_ane" or runtime.get("partition_axis")!="intermediate_channels":
+            raise ValueError("matched rows require actual512 Private channel geometry and policy")
+        calls=session_counter(hybrid,"runtime_calls_session_total")
+        retries=session_counter(runtime,"overflow_retries_session_total")
+        if retries<previous_retries or calls-previous_calls!=steps*(32-len(layers))+retries-previous_retries:
+            raise ValueError("matched-row driver calls disagree with whole FFN/forced-GPU/retry work")
+        previous_calls=calls;previous_retries=retries
+
+
 def z_gpu_layer_environment(model_id, route, layers, routes):
     if layers is None:
         return {}
     if (not isinstance(layers,tuple) or not layers or len(layers)>32 or
             any(type(x) is not int or not 0<=x<32 for x in layers) or layers!=tuple(sorted(set(layers)))):
         raise ValueError("invalid canonical Z runtime GPU layer policy")
-    if model_id!="z-image-turbo" or "runtime" not in routes:
-        raise ValueError("explicit GPU block screen currently requires Z-Image BF16 and a runtime route")
+    if model_id not in ("z-image-turbo","z-image-turbo-gguf") or "runtime" not in routes:
+        raise ValueError("explicit GPU block screen requires Z-Image BF16/GGUF and a runtime route")
     if route!="runtime":
         return {}
     return {"TURBOCIDER_Z_RUNTIME_GPU_FFN_BLOCKS":",".join(map(str,layers))}
@@ -225,7 +247,7 @@ def validate_results(rows, route, expected_count, model_id="z-image-turbo", expe
         raise ValueError("wrong result count")
     if runtime_backend not in ("public", "private", "auto"):
         raise ValueError("unknown runtime executor backend")
-    if expected_data_path not in (None, "fp16", "w8a8_hadamard"):
+    if expected_data_path not in (None, "fp16", "w8a8_hadamard", "w8a8_convrot"):
         raise ValueError("unknown runtime data path")
     base_backend = {"z-image-turbo": "mlx_cpp_metal",
                     "qwen-image-2.1": "mlx_cpp_metal",
@@ -648,6 +670,24 @@ def validate_fixed_async(rows, enabled):
         if blocks<=0 or (enabled and (untimed!=blocks or asynchronous!=blocks)) or (
                 not enabled and (untimed!=0 or asynchronous!=0)):
             raise ValueError("requested fixed async head policy was not executed")
+
+
+def validate_channel_gpu_first(rows, enabled):
+    """Successful async channel submission order, never physical overlap."""
+    if type(enabled) is not bool or not rows:
+        raise ValueError("need explicit channel launch order and actual request receipts")
+    previous = 0
+    for row in rows:
+        runtime = (row.get("hybrid") or {}).get("runtime_weight") or {}
+        blocks = session_counter(runtime, "channel_blocks_session_total")
+        first = session_counter(runtime, "channel_gpu_first_blocks_session_total")
+        asynchronous = session_counter(runtime, "async_hybrid_blocks_session_total")
+        if (runtime.get("channel_gpu_first_enabled") is not enabled or
+                runtime.get("executor_backend") != "private_ane" or
+                runtime.get("partition_axis") != "intermediate_channels" or
+                blocks <= previous or asynchronous != blocks or first != (blocks if enabled else 0)):
+            raise ValueError("channel launch order lacks actual successful async blocks")
+        previous = blocks
 
 
 def validate_deferred_channel_join(rows, enabled):

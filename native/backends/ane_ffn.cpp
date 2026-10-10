@@ -47,6 +47,17 @@ Tensor device_output(int rows, int cols, DType dtype) {
     return Tensor(buffer, {1, rows, cols}, dtype == DType::FP32 ? mx::float32 : dtype == DType::FP16 ? mx::float16 : mx::bfloat16);
 }
 WeightView weight_view(const FfnWeight &w) {
+    if (w.raw_gguf) {
+        const auto &a=w.values;
+        require(!w.scales && !w.offsets && w.transform==FfnWeight::Transform::None &&
+                a.dtype()==mx::uint8 && a.ndim()==2 && a.flags().row_contiguous,
+                "runtime ANE raw GGUF cannot carry affine metadata/rotation");
+        GgufView source{a.data<uint8_t>(),a.nbytes(),a.shape(0),w.raw_gguf->columns,
+                        size_t(a.shape(1)),w.raw_gguf->type};
+        require(gguf_row_bytes(source)==size_t(a.shape(1)),"runtime ANE raw GGUF physical row mismatch");
+        validate_gguf_view(source);
+        return source;
+    }
     require(w.transform==FfnWeight::Transform::None || w.transform==FfnWeight::Transform::ComfyH256Inverse,
             "runtime ANE unknown FFN transform");
     if (!w.scales) {
@@ -76,6 +87,24 @@ DeviceWeightView device_weight_view(const FfnWeight &w) {
     source.buffer=const_cast<void*>(a.buffer().ptr());source.buffer_bytes=a.buffer_size();source.offset_bytes=size_t(a.offset());
     source.rows=a.shape(0);source.owner=std::make_shared<Tensor>(a);source.group_size=w.group_size;
     source.allocation_identity=a.data_shared_ptr();source.immutable_generation=true;
+    if (w.raw_gguf) {
+        require(!comfy && !w.scales && !w.offsets && a.dtype()==mx::uint8,
+                "W8 raw GGUF cannot carry affine metadata/rotation");
+        switch(w.raw_gguf->type) {
+            case 2:source.encoding=DeviceWeightEncoding::GgufQ4_0;break;
+            case 8:source.encoding=DeviceWeightEncoding::GgufQ8_0;break;
+            case 12:source.encoding=DeviceWeightEncoding::GgufQ4_K;break;
+            case 14:source.encoding=DeviceWeightEncoding::GgufQ6_K;break;
+            default:throw std::invalid_argument("W8 raw GGUF encoding unsupported");
+        }
+        source.cols=w.raw_gguf->columns;source.row_stride_bytes=size_t(a.shape(1));
+        source.logical_content_identity=w.raw_gguf->logical_content_identity;
+        const auto row_bytes=gguf_row_bytes({nullptr,0,source.rows,source.cols,0,w.raw_gguf->type});
+        require(row_bytes==source.row_stride_bytes && source.offset_bytes<=source.buffer_bytes &&
+                size_t(source.rows)<= (source.buffer_bytes-source.offset_bytes)/row_bytes,
+                "W8 raw GGUF physical storage mismatch");
+        return source;
+    }
     if (!w.scales) {
         require(!comfy,"W8 ConvRot requires explicit row scales");
         const auto view=device_view(a,a.shape(0),a.shape(1));source.cols=view.cols;source.row_stride_bytes=view.row_stride_bytes;source.dense_dtype=view.dtype;
@@ -116,10 +145,16 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
                      size_t budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
                      std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared,
                      std::string scheduler_identity,
-                     const CalibrationWorkload *calibration, std::optional<int> calibrated_channels)
+                     const CalibrationWorkload *calibration, std::optional<int> calibrated_channels,
+                     std::optional<int> channel_override, std::optional<int> bucket_override)
     : memory_budget_(budget) {
     checkpoint(cancelled);
-    if (private_channel_count(width) < 0 && !calibrated_channels) {
+    const char *prefetch_after=std::getenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
+    require(!prefetch_after || std::string(prefetch_after)=="0" || std::string(prefetch_after)=="1",
+            "runtime ANE prefetch placement requires 0 or 1");
+    prefetch_after_gpu_=!prefetch_after || std::string(prefetch_after)=="1";
+    metrics_.runtime_weight_prefetch_after_gpu=prefetch_after_gpu_;
+    if (!channel_override && private_channel_count(width) < 0 && !calibrated_channels) {
         require(calibration != nullptr, "automatic ANE channels require a model-supplied calibration workload");
         const auto selection = calibrate_channels(manifest, hidden, width, budget, cancelled, require_lora_inputs, *calibration);
         calibrated_channels = selection.channels;
@@ -127,7 +162,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
         calibration_reason_ = selection.reason + (selection.cache_hit ? "; cache hit" : "; measured/not cached");
         calibration_declined_ = selection.channels == 0;
     }
-    const int selected_channels = resolved_private_channel_count(width, calibrated_channels);
+    const int selected_channels = resolved_private_channel_count(width, calibrated_channels,channel_override);
     const int chunks = configured_chunks();
     const char *lora_range = std::getenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE");
     require(!lora_range || std::string(lora_range)=="0" || std::string(lora_range)=="1",
@@ -147,6 +182,13 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     require(!defer || std::string(defer)=="0" || std::string(defer)=="1",
             "runtime ANE deferred channel join requires 0 or 1");
     const bool requested_defer = defer && std::string(defer)=="1";
+    const char *gpu_first = std::getenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST");
+    require(!gpu_first || std::string(gpu_first)=="0" || std::string(gpu_first)=="1",
+            "runtime ANE channel GPU-first submission requires 0 or 1");
+    const bool requested_gpu_first = gpu_first && std::string(gpu_first)=="1";
+    require(!requested_gpu_first || (fixed_async_ && selected_channels>0 && prefetch_after_gpu_ &&
+            configured_backend().allow_private && configured_backend().preferred==BackendPreference::Private),
+            "runtime ANE channel GPU-first requires authorized fixed Private channels, fixed async and post-GPU prefetch");
     const bool requested_fp32=configured_fp32_channel_join();
     require(!requested_defer || (fixed_async_ && (selected_channels>0 || calibration_declined_) &&
             configured_backend().allow_private &&
@@ -166,7 +208,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     try {
         if (prepared) {
             require(public_runtime_preparation_allowed(configured_backend()) &&
-                        private_channel_count(width) == 0,
+                        private_channel_count(width) == 0 && !channel_override && !bucket_override,
                     "prepared Core ML graph requires the public backend without channel splitting");
             metrics_.runtime_weight_prepared_early = true;
             metrics_.runtime_weight_prepare_seconds = prepared->seconds;
@@ -182,7 +224,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
             graph_ = std::make_unique<RuntimeGraph>(std::move(prepared->value), budget);
         } else {
             auto built = build_runtime_executor(manifest, budget,
-                GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels);
+                GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels,channel_override,bucket_override);
             graph_ = std::move(built.executor); verified = built.self_test_passed;
             verified_seconds = built.self_test_seconds;
             metrics_.runtime_weight_backend_fallback_reason = std::move(built.fallback_reason);
@@ -218,6 +260,10 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     if(fp32_channel_join_)metrics_.runtime_weight_source_recipe+="+fp32-partial-join-v1";
     defer_channel_join_ = requested_defer && channel_split();
     metrics_.runtime_weight_deferred_join_enabled = defer_channel_join_;
+    require(!requested_gpu_first || (channel_split() && graph_->backend()==BackendKind::PrivateANE),
+            "runtime ANE channel GPU-first requires a selected Private channel executor");
+    channel_gpu_first_ = requested_gpu_first;
+    metrics_.runtime_weight_channel_gpu_first_enabled = channel_gpu_first_;
     metrics_.bucket = graph_->shape().rows;
     if (graph_->shape().lora_inputs) metrics_.mlp_output_kind = "runtime_weight_swiglu_lora_inputs";
     metrics_.load_seconds = graph_->load_seconds();
@@ -292,6 +338,10 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_QWEN21_RUNTIME_LORA_FP16",
                            "TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",
                            "TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN",
+                           "TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",
+                           "TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES",
+                           "TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_MODE",
+                           "TURBOCIDER_RUNTIME_ANE_CHUNKS","TURBOCIDER_RUNTIME_ANE_PROFILE",
                            "TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE","TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE",
                            "TURBOCIDER_PRIVATE_ANE_CONVROT_BF16_BOUNDARIES",
                            "TURBOCIDER_PRIVATE_ANE_FP16_BF16_VALUES"}) {
@@ -299,6 +349,10 @@ std::string HybridFfn::executor_configuration_identity() {
         const std::string value = raw ? raw : "<unset>";
         identity += ":" + std::to_string(value.size()) + ":" + value;
     }
+    // Unset/0 preserve the old identity. Only an explicitly different launch
+    // policy gets a new executor/calibration/prefix-cache namespace.
+    const char *gpu_first=std::getenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST");
+    if(gpu_first && std::string(gpu_first)!="0")identity+=":channel-gpu-first-v1:"+std::string(gpu_first);
     return identity;
 }
 uint64_t HybridFfn::retained_bytes() const {
@@ -355,7 +409,10 @@ void HybridFfn::set_smoothquant(const std::string &digest,
     metrics_.runtime_weight_s1_bytes = growth;
 }
 void HybridFfn::drain(bool discard_future) {
-    if (graph_ && pending_) { graph_->finish(); pending_ = false; }
+    // Staging can be in flight BEFORE launch sets pending_. In particular a
+    // retained encoder must finish those borrowed-source reads before a
+    // failed attention scope destroys its request-local checkpoint arrays.
+    if (graph_) { graph_->finish(); pending_ = false; }
     if (graph_ && discard_future) {
         graph_->discard_prefetched_weights();
         if(prefetched_layer_>=0)++metrics_.runtime_weight_prefetch_discards;
@@ -632,6 +689,13 @@ std::vector<DeviceWeightRegion> HybridFfn::device_regions(const std::vector<FfnW
     }
     return regions;
 }
+void HybridFfn::fail_staging(int layer,int rows,const std::string &reason) {
+    require(planned_ && block_plan_ && layer==layer_ && rows==rows_ && !reason.empty(),
+            "runtime ANE source failure requires matching planned block/reason");
+    drain();planned_=false;block_sample_valid_=false;
+    if(!block_plan_->measured())block_plan_.reset();
+    degrade(reason,layer);chunks_=0;++metrics_.runtime_weight_fallback_blocks;
+}
 void HybridFfn::maybe_prefetch(int next,int rows,const NextWeights &provider) {
     if(!prefetch_ || !available() || !provider || prefetched_layer_>=0)return;
     if(std::binary_search(metrics_.runtime_weight_gpu_layers.begin(),metrics_.runtime_weight_gpu_layers.end(),next))return;
@@ -793,7 +857,7 @@ Tensor HybridFfn::run(int layer, const Tensor &input, const Gpu &gpu,
         device_view(*device_tail, ane_rows, input.shape(2)), device_adapter);
     else graph_->launch(tail_input, output_.data(), output_.size(), dtype, adapter_input);
     pending_ = true;
-    maybe_prefetch(layer+1,rows_,next_weights);
+    if(!prefetch_after_gpu_)maybe_prefetch(layer+1,rows_,next_weights);
     // Steady auto plans do not feed branch timings to the scheduler. Submit
     // their GPU head without a host wait, so ANE output ownership/corrections
     // can be prepared while that head is still running. Sampling and profile
@@ -811,6 +875,10 @@ Tensor HybridFfn::run(int layer, const Tensor &input, const Gpu &gpu,
         if (async_head) mx::async_eval(*head);
         else mx::eval(*head);
         const double gpu_seconds = async_head ? 0 : elapsed(gpu_start);
+        // Raw providers may synchronously read source bytes. Submit the GPU
+        // complement first so this optional future work does not postpone its
+        // producer. This is host scheduling, not physical-overlap evidence.
+        if(prefetch_after_gpu_)maybe_prefetch(layer+1,rows_,next_weights);
         const auto join_start = Clock::now();
         auto result = graph_->finish();
         pending_ = false;
@@ -936,12 +1004,20 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     const uint64_t padded64 = (uint64_t(rows_) + chunk - 1) / chunk * chunk;
     require(padded64 <= INT_MAX && padded64 / chunk <= 128, "channel split row bucket extent too large");
     const int padded = int(padded64);
+    const auto *down_ranks=adapter && adapter->channel_down_ranks ? &*adapter->channel_down_ranks : nullptr;
+    uint64_t rank_scratch=0;
+    if(down_ranks) {
+        require(down_ranks->prepare_gpu && down_ranks->finish && down_ranks->scratch_bytes_per_row>0 &&
+                down_ranks->scratch_bytes_per_row<=memory_budget_/uint64_t(rows_),
+                "invalid channel down-rank callbacks/scratch upper");
+        rank_scratch=uint64_t(rows_)*down_ranks->scratch_bytes_per_row;
+    }
     // Optional-tier allocations, including temporary padding/corrections and
     // the complete hidden needed for ONE down-LoRA. No checkpoint W copies.
     const uint64_t scratch = padded64 * (uint64_t(h) * (fp32_channel_join_?4:2) + (adapter ? uint64_t(fa) * 10 : 0)) +
         (padded != rows_ ? padded64 * h * input.itemsize() : 0) +
         (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4 +
-        (fp32_channel_join_ ? uint64_t(rows_) * h * 2 : 0);
+        (fp32_channel_join_ ? uint64_t(rows_) * h * 2 : 0) + rank_scratch;
     const uint64_t resident = graph_->estimated_bytes() + retained_bytes();
     if (resident > memory_budget_ || scratch > memory_budget_ - resident ||
         !admit_memory(observe_runtime_memory(mx::get_active_memory()), {uint64_t(4)<<30,memory_budget_},
@@ -993,17 +1069,46 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
     std::optional<DeviceAdapterInput> correction;
     if (adapter) correction = DeviceAdapterInput{device_view(*gate,padded,fa),device_view(*up,padded,fa),device_view(*hidden,padded,fa)};
     const auto start = Clock::now();
-    graph_->launch_device(device_view(*packed,padded,h),device_view(*output,padded,h),correction); pending_ = true;
-    maybe_prefetch(layer+1,rows_,next_weights);
     const bool async_head = !profile_ && block_plan_ && block_plan_->mode == RowScheduler::Mode::HybridUntimed;
+    require(!channel_gpu_first_ || async_head,"GPU-first channel submission requires an untimed async plan");
     std::optional<std::pair<Tensor,Tensor>> head;
+    std::vector<Tensor> gpu_values,gpu_ranks;
     try {
-        const auto gpu_start = Clock::now(); head = channel_gpu(input,0,fg);
-        require(head->first.shape() == input.shape() && head->second.shape() == mx::Shape({1,rows_,fg}) &&
-                head->first.dtype() == (fp32_channel_join_?mx::float32:input.dtype()) && head->second.dtype() == input.dtype(),
-                "channel GPU base-down/hidden contract mismatch");
-        if (async_head) mx::async_eval({head->first,head->second}); else mx::eval({head->first,head->second});
-        const double gpu_seconds = async_head ? 0 : elapsed(gpu_start);
+        double gpu_seconds = 0;
+        auto submit_gpu = [&] {
+            const auto gpu_start = Clock::now(); head = channel_gpu(input,0,fg);
+            require(head->first.shape() == input.shape() && head->second.shape() == mx::Shape({1,rows_,fg}) &&
+                    head->first.dtype() == (fp32_channel_join_?mx::float32:input.dtype()) && head->second.dtype() == input.dtype(),
+                    "channel GPU base-down/hidden contract mismatch");
+            gpu_values={head->first,head->second};
+            if(down_ranks) {
+                gpu_ranks=down_ranks->prepare_gpu(head->second);
+                require(!gpu_ranks.empty(),"channel down-rank GPU partials missing");
+                uint64_t bytes=0;
+                for(const auto &rank:gpu_ranks) {
+                    require(rank.ndim()==3 && rank.shape(0)==1 && rank.shape(1)==rows_ && rank.shape(2)>0 &&
+                            rank.dtype()==mx::float32 && rank.nbytes()<=rank_scratch-bytes,
+                            "channel down-rank partial geometry/dtype/capacity mismatch");
+                    bytes+=rank.nbytes();
+                }
+                gpu_values.insert(gpu_values.end(),gpu_ranks.begin(),gpu_ranks.end());
+            }
+            if (async_head) mx::async_eval(gpu_values); else mx::eval(gpu_values);
+            gpu_seconds = async_head ? 0 : elapsed(gpu_start);
+        };
+        auto submit_ane = [&] {
+            graph_->launch_device(device_view(*packed,padded,h),device_view(*output,padded,h),correction);
+            pending_ = true;
+            if(!prefetch_after_gpu_)maybe_prefetch(layer+1,rows_,next_weights);
+        };
+        // Same arithmetic and ready input/correction owners. Only the explicit
+        // fixed-channel experiment submits the GPU complement while the ANE
+        // worker prepares A8/its first ready producer. This may contend for
+        // shared bandwidth; asynchronous submission is not overlap evidence.
+        if(channel_gpu_first_)submit_gpu();
+        submit_ane();
+        if(!channel_gpu_first_)submit_gpu();
+        if(prefetch_after_gpu_)maybe_prefetch(layer+1,rows_,next_weights);
         const auto join_start = Clock::now(); const auto result = graph_->finish(); pending_ = false;
         const double join = elapsed(join_start); checkpoint(cancelled);
         metrics_.runtime_weight_overflow_events.record({layer,rows_,metrics_.runtime_calls,result.calls,
@@ -1022,7 +1127,7 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         if (!async_head) metrics_.runtime_weight_join_seconds += join;
         if (!result.ok) {
             degrade(result.error,layer); ++metrics_.runtime_weight_fallback_blocks;
-            if (async_head) mx::eval({head->first,head->second});
+            if (async_head) mx::eval(gpu_values);
             // A late chunk may have written scratch. Recompute the COMPLETE
             // FFN (including full hidden/down-LoRA), never publish that scratch.
             return fallback();
@@ -1032,8 +1137,11 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         auto merged = mx::astype(mx::astype(head->first,mx::float32)+mx::astype(tail,mx::float32),input.dtype());
         if (adapter) {
             auto ane_hidden = mx::astype(slice_axis(*hidden,1,0,rows_),input.dtype());
-            auto full_hidden = mx::concatenate({head->second,ane_hidden},-1);
-            merged = adapter->down_and_add(full_hidden,merged);
+            if(down_ranks)merged=down_ranks->finish(ane_hidden,gpu_ranks,merged);
+            else {
+                auto full_hidden = mx::concatenate({head->second,ane_hidden},-1);
+                merged = adapter->down_and_add(full_hidden,merged);
+            }
             require(merged.shape() == input.shape() && merged.dtype() == input.dtype(), "channel down-LoRA output contract mismatch");
         }
         // ANE and its GPU restoration are already complete. Each output and
@@ -1052,6 +1160,11 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         } else if (!result.overflow_retries) scheduler_->observe(layer,rows_,1,pre_seconds+wall);
         ++metrics_.runtime_weight_hybrid_blocks; ++metrics_.runtime_weight_channel_blocks;
         if (!smoothquant_.empty()) ++metrics_.runtime_weight_s1_hybrid_blocks;
+        if(channel_gpu_first_)++metrics_.runtime_weight_channel_gpu_first_blocks;
+        if(down_ranks) {
+            ++metrics_.runtime_weight_down_rank_blocks;
+            metrics_.runtime_weight_down_rank_arrays+=gpu_ranks.size();
+        }
         metrics_.runtime_weight_ane_rows += rows_;
         metrics_.runtime_weight_wall_seconds += wall;
         if (block_plan_ && block_plan_->mode == RowScheduler::Mode::HybridUntimed) ++metrics_.runtime_weight_untimed_hybrid_blocks;
@@ -1062,9 +1175,11 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
             << ",\"ane_seconds\":" << result.total_seconds << ",\"ffn_seconds\":" << wall << "}\n";
         return merged;
     } catch (...) {
-        if (graph_ && pending_) { graph_->finish(); pending_ = false; }
-        if (head) { try { mx::eval({head->first,head->second}); } catch (...) {} }
-        throw;
+        const auto failure=std::current_exception();
+        try { if(graph_ && pending_)graph_->finish(); } catch (...) {}
+        pending_ = false;
+        if (head) { try { mx::eval(gpu_values.empty()?std::vector<Tensor>{head->first,head->second}:gpu_values); } catch (...) {} }
+        std::rethrow_exception(failure);
     }
 }
 void HybridFfn::fill_activation_stage_metrics(HybridMetrics &metrics) const {
@@ -1088,6 +1203,7 @@ HybridMetrics HybridFfn::metrics() const {
         metrics.runtime_weight_scale_cache_hits=cache.hits;metrics.runtime_weight_scale_cache_misses=cache.misses;
         metrics.runtime_weight_scale_cache_entries=cache.entries;metrics.runtime_weight_scale_cache_bytes=cache.bytes;
         metrics.runtime_weight_scale_cache_evictions=cache.evictions;
+        metrics.runtime_weight_code_cache=graph_->weight_code_cache_stats();
     }
     metrics.prefill_plan_reason = reason_;
     if (metrics.runtime_weight_s1_hybrid_blocks)

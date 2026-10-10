@@ -1,0 +1,80 @@
+{
+  "schema": "tc-local512-qwen-prefill-weight-cache-v1",
+  "date_local": "2026-10-10", "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_busy_diagnostic", "qualification_passed": false,
+  "goal_complete": false, "default_changed": false, "native_changed_or_rebuilt": false,
+  "workload": {"model": "qwen-image-2.1", "operation": "image.edit", "width": 512, "height": 512, "steps": 6, "seed": 29, "lora": "original Viggle v0.2.1 r256/strength1, inference_time, 227 bindings", "joint_bf16_ab_f32_ranks": true, "gpu_encoder": true, "original_encoder_source_retention_uniform": true, "conditioning_hits": 0, "prefill_gpu_ane_channels": [7168,5120], "all32_prefill_parallel": true, "later5_complete_gpu": true, "time_reuse_prefetch_lookahead_down_split": false},
+  "build": {"private_library_sha256": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0", "public_library_sha256": "a5a147a94eafc49e6214ccc6c517ca49cdceef402d52146a0c9bea4d557682b3", "retained_source_inputs_matched": 502, "source_seals_matched": true, "contains_original_user_drafts": true, "new_app_or_public_cache_performance_tested": false},
+  "tool_hashes": {"tools/validation/qwen_ffn_phase_screen.py": "a217b2a5697f8dae5b68c19345aee8bfc7f6b296cccf792db8bbedb7a5c2e538", "tools/validation/qwen_encoder_residency_screen.py": "4b58426fa3342f6d6ec785642289867746b272edd1e8d23db54c88038c6da88b"},
+  "experiments": [
+    {
+      "references": 1, "version": "v2", "cache_budget": 1342177280, "bucket": 2112, "rows": 2096, "join": "eager",
+      "summary": "outputs/local512-qwen-edit1-prefill-code-cache-v2-diagnostic-20261010/summary.json", "summary_sha256": "2564fec2109379b7db9895120a07235c4693b3f70865b78486b126c224e03ab2",
+      "load_report": "outputs/local512-qwen-edit1-prefill-code-cache-v2-busy-load-report-20261010.json", "load_report_sha256": "65ed09e0ab254badf958ccd57b0a4c6b7dde033f04b8e6a9b7f93ae8fdda5f97", "load_check_passed": false,
+      "order": ["prefill_surface_cache","prefill_copy_cache","prefill","gpu"],
+      "trials": [
+        {"mode": "prefill_surface_cache", "cold_seconds": 15.509014291, "warm_seconds": [10.582738958,9.877041542], "warm_median": 10.22989025, "first_median": 2.202999333, "later5_median": 6.0945636255},
+        {"mode": "prefill_copy_cache", "cold_seconds": 15.357858, "warm_seconds": [10.788038959,9.946511625], "warm_median": 10.367275292, "first_median": 2.2868956045, "later5_median": 6.0858392905},
+        {"mode": "prefill", "cold_seconds": 15.327706667, "warm_seconds": [10.685092792,9.905750542], "warm_median": 10.295421667, "first_median": 2.270468729, "later5_median": 6.093229063},
+        {"mode": "gpu", "cold_seconds": 15.4232545, "warm_seconds": [10.926582125,10.157428166], "warm_median": 10.5420051455, "first_median": 2.428092896, "later5_median": 6.098011166}
+      ],
+      "surface_request_reduction_vs_own_off_pct": 0.636510277282254, "off_request_reduction_vs_own_gpu_pct": 2.339056707871723
+    },
+    {
+      "references": 1, "version": "v3", "cache_budget": 1342177280, "bucket": 2112, "rows": 2096, "join": "eager",
+      "summary": "outputs/local512-qwen-edit1-prefill-code-cache-v3-diagnostic-20261010/summary.json", "summary_sha256": "f39c0409e5f3b9d50c69422df7cc07044cccbe1caeee8fa00528c746c6d5b4ab",
+      "load_report": "outputs/local512-qwen-edit1-prefill-code-cache-v3-busy-load-report-20261010.json", "load_report_sha256": "7d1528576af909c6d45b524ecefd187dcf8ba3ed6eb024f94fe373efdc083096", "load_check_passed": false,
+      "order": ["gpu","prefill","prefill_surface_cache"],
+      "trials": [
+        {"mode": "gpu", "cold_seconds": 15.388726084, "warm_seconds": [10.965617375,10.116167583], "warm_median": 10.540892479, "first_median": 2.4260380835, "later5_median": 6.087299458},
+        {"mode": "prefill", "cold_seconds": 15.498530666, "warm_seconds": [10.576166292,9.900951875], "warm_median": 10.2385590835, "first_median": 2.2544286665, "later5_median": 6.092869229},
+        {"mode": "prefill_surface_cache", "cold_seconds": 15.454583292, "warm_seconds": [10.674092667,9.938919125], "warm_median": 10.306505896, "first_median": 2.270777604, "later5_median": 6.0806558745}
+      ],
+      "surface_request_reduction_vs_own_off_pct": -0.6636364740962408, "off_request_reduction_vs_own_gpu_pct": 2.868195421804376
+    },
+    {
+      "references": 2, "version": "v2", "cache_budget": 1073741824, "bucket": 3168, "rows": 3144, "join": "deferred",
+      "summary": "outputs/local512-qwen-edit2-prefill-code-cache-v2-diagnostic-20261010/summary.json", "summary_sha256": "d3cda9b5f3be12493e6fd528f3d2688ee74fcc75cba0af11ab2e131828a879ed",
+      "load_report": "outputs/local512-qwen-edit2-prefill-code-cache-v2-busy-load-report-20261010.json", "load_report_sha256": "2e6007d331c1d4ba006f70e0894184dadef56aec4f1ba6f438f46816a50d733c", "load_check_passed": false,
+      "order": ["prefill_surface_cache","prefill_copy_cache","prefill","gpu"],
+      "trials": [
+        {"mode": "prefill_surface_cache", "cold_seconds": 17.100953958, "warm_seconds": [12.310948625,11.890656875], "warm_median": 12.10080275, "first_median": 3.286216354, "later5_median": 6.359487188},
+        {"mode": "prefill_copy_cache", "cold_seconds": 17.311821917, "warm_seconds": [12.444609875,11.862819041], "warm_median": 12.153714458, "first_median": 3.328210771, "later5_median": 6.3341635215},
+        {"mode": "prefill", "cold_seconds": 17.174242125, "warm_seconds": [12.476449875,11.930630333], "warm_median": 12.203540104, "first_median": 3.305759083, "later5_median": 6.3680332295},
+        {"mode": "gpu", "cold_seconds": 17.350408125, "warm_seconds": [13.027712083,12.396711375], "warm_median": 12.712211729, "first_median": 3.7440242505, "later5_median": 6.372894396}
+      ],
+      "surface_request_reduction_vs_own_off_pct": 0.8418651729290016, "off_request_reduction_vs_own_gpu_pct": 4.001440786575183
+    },
+    {
+      "references": 2, "version": "v3", "cache_budget": 1073741824, "bucket": 3168, "rows": 3144, "join": "deferred",
+      "summary": "outputs/local512-qwen-edit2-prefill-code-cache-v3-diagnostic-20261010/summary.json", "summary_sha256": "abf79cc7fe7848720908024f3a9423e8bc75cec892f99cfc752137c7f1fde21a",
+      "load_report": "outputs/local512-qwen-edit2-prefill-code-cache-v3-busy-load-report-20261010.json", "load_report_sha256": "5e09f1303857cf51fdac3b91316376b113664e922dc180625b73f8fe5aa9185b", "load_check_passed": false,
+      "order": ["gpu","prefill","prefill_surface_cache"],
+      "trials": [
+        {"mode": "gpu", "cold_seconds": 17.361457459, "warm_seconds": [12.986339958,12.415626], "warm_median": 12.700982979, "first_median": 3.7485328125, "later5_median": 6.351918521},
+        {"mode": "prefill", "cold_seconds": 17.403821834, "warm_seconds": [12.462209417,11.931909833], "warm_median": 12.197059625, "first_median": 3.29955375, "later5_median": 6.3509243335},
+        {"mode": "prefill_surface_cache", "cold_seconds": 17.253452292, "warm_seconds": [12.479697958,11.969163709], "warm_median": 12.2244308335, "first_median": 3.3093779795, "later5_median": 6.35038725}
+      ],
+      "surface_request_reduction_vs_own_off_pct": -0.22440825364087313, "off_request_reduction_vs_own_gpu_pct": 3.967593333785202
+    }
+  ],
+  "execution_proof": {"valid_native_requests": 42, "independently_replayed_raw_routes_and_memory_evidence": 14, "cache_cold_hits": 0, "actual_prefill_calls_per_request": 32, "successful_channel_shared_rank_blocks_per_request": 32, "later_gpu_calls_blocks": 0, "native_lora_source_cold_full_hash_and_warm_verified_reuse": true, "source_lifecycle_uniform": true, "actual_weight_producers_per_request": 96, "ineligible_bootstrap": 12, "ineligible_a8_per_actual_prediction": 1, "ineligible_cumulative": [44,76,108], "headroom_scale": 1, "valid_failures_fallback_overflow_retries": 0},
+  "cache_realized": {
+    "single_copy": {"ready_entries": 63, "hits_cumulative": [0,63,126], "retained_bytes": 1321807872},
+    "single_surface": {"ready_entries": 63, "hits_cumulative": [0,63,126], "retained_bytes": 1340473344},
+    "double_copy": {"ready_entries": 51, "hits_cumulative": [0,51,102], "retained_bytes": 1070034944},
+    "double_surface": {"ready_entries": 50, "hits_cumulative": [0,50,100], "retained_bytes": 1063911424},
+    "other_representation_hit_counter_zero": true, "evictions_or_failed_fills": 0
+  },
+  "memory": {"reports_complete": 14, "valid_swap_in_bytes": 0, "valid_swap_out_bytes": 0, "largest_process_tree_phys_footprint_bytes": 41016894592, "system_compression_trial_cumulative_bytes_range": [11925143552,15718367232], "scope": "100ms process tree load+cold+warm+exit; excludes external service/driver attribution, not no-pressure claim"},
+  "visual": {"all_copy_surface_pngs_equal_to_corresponding_off": true, "same_route_corresponding_v2_v3_pngs_equal": true, "gpu_equal_to_hybrid_claimed": false, "agent_review": "case1 whole512 all four arms per one/two-ref; teapot shape/lid/handle/colors/left-right/table/light close with minor texture/highlight differences; no obvious new blocks/fracture/color artifacts", "all_scenes_seeds_details_or_user_acceptance": false, "strict_latent_equality_required": false},
+  "retained_failures": [
+    {"summary": "outputs/local512-qwen-edit1-prefill-code-cache-v1-diagnostic-20261010/summary.json", "status": "incomplete", "reason": "validator originally wrongly required shared code-cache ineligible0; actual12 bootstrap +32 A8/prediction per request; raw replay passes final scope, historical summary not rewritten", "valid_four_route_ratio": false},
+    {"summary": "outputs/local512-qwen-edit2-prefill-code-cache-v1-diagnostic-20261010/summary.json", "status": "incomplete", "reason": "1280MiB cache + c3168 graph estimate1902379264 + guarded scratch394592256 =2296971520 exceeds original optional2GiB2147483648; complete GPU fallback refused as hybrid result", "valid_four_route_ratio": false, "guard_relaxed": false}
+  ],
+  "tests": {"final_host_passed": 41, "skips": 0, "log": "outputs/local512-qwen-prefill-weight-cache-v2-host-test-20261010.log", "log_sha256": "85c49a8cfe06d8f8c34cf5805992e6448657ef208ca79dd978774140c6eba852", "earlier_repeats_counted_twice": false, "new_native_build_or_full_repo_suite_claimed": false},
+  "cleanup": {"all_owned_jobs_terminal": true, "new_compilation_objects_module_cache_or_exported_models": false, "original_models_adapters_refs_compiled_artifacts_and_all_failure_valid_logs_pngs_preserved": true, "external_signals_or_driver_user_cache_cleanup": false},
+  "decision": "keep cache-off all32 prefill GPU/ANE FFN plus complete GPU KV-hit candidate; real W cache hits/binding do not reproduce extra whole-request gain in reverse same workloads; no default promotion",
+  "remaining_full_goal": ["LoRA/FFN handoff and GPU computation profitability", "Qwen generation/edit1-2refs and encoder wider matrix", "Z base and original LoRA", "Public/Private operation routing", "GGUF/ConvRot model integration/consumers", "broader visual/seed/quiet-window and memory verification"]
+}

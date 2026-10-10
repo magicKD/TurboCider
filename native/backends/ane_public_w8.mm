@@ -5,6 +5,7 @@
 #include "ane_w8_stage.hpp"
 #include "ane_public_w8_availability.hpp"
 #include "ane_backend.hpp"
+#include "ane_weight_identity.hpp"
 #import <CoreML/CoreML.h>
 #import <CoreVideo/CoreVideo.h>
 #include <dispatch/dispatch.h>
@@ -200,9 +201,11 @@ struct PublicW8Graph::Impl {
     // Exactly two source-independent banks, reused across every layer/step.
     struct Bank {
         Surface g, sg, u, su, d, sd;
+        std::array<Surface,6> bound;
         bool ready = false;
         Bank(gpu::Device &dev, const GraphShape &s) : g(dev,s.width,s.hidden,Element::I8), sg(dev,s.width,1,Element::FP16),
-            u(dev,s.width,s.hidden,Element::I8), su(dev,s.width,1,Element::FP16), d(dev,s.hidden,s.width,Element::I8), sd(dev,s.hidden,1,Element::FP16) {}
+            u(dev,s.width,s.hidden,Element::I8), su(dev,s.width,1,Element::FP16), d(dev,s.hidden,s.width,Element::I8), sd(dev,s.hidden,1,Element::FP16),
+            bound{g,sg,u,su,d,sd} {}
         size_t bytes() const { return g.bytes()+sg.bytes()+u.bytes()+su.bytes()+d.bytes()+sd.bytes(); }
     };
     std::array<std::unique_ptr<Bank>, 2> banks;
@@ -245,6 +248,9 @@ struct PublicW8Graph::Impl {
             gsel.activation_group_size==0 && usel.activation_group_size==0 && dsel.activation_group_size==0,
             "W8 source projection selection/recipe mismatch");
         auto &b = *banks[target]; b.ready = false;
+        // Reset ONLY this retired execution slot to its original writable
+        // scratch. A cached binding is immutable and must never be refilled.
+        b.bound={b.g,b.sg,b.u,b.su,b.d,b.sd};
         std::array<std::optional<gpu::QuantStage>,3> producers;
         struct ProducerDrain {
             decltype(producers) &tickets;
@@ -256,9 +262,9 @@ struct PublicW8Graph::Impl {
                 }
             }
         } drain{producers,disabled};
-        producers[0]=device.stage_w8(weights[0].source,gsel,b.g,b.sg);
-        producers[1]=device.stage_w8(weights[1].source,usel,b.u,b.su);
-        producers[2]=device.stage_w8(weights[2].source,dsel,b.d,b.sd);
+        producers[0]=device.bind_w8(weights[0].source,gsel,b.bound[0],b.bound[1]);
+        producers[1]=device.bind_w8(weights[1].source,usel,b.bound[2],b.bound[3]);
+        producers[2]=device.bind_w8(weights[2].source,dsel,b.bound[4],b.bound[5]);
         // Wait ALL producers even on the first failure; source owners and slot
         // leases must not be released while another GPU encoder still uses them.
         const auto gr = producers[0]->finish(), ur = producers[1]->finish(), dr = producers[2]->finish();
@@ -323,12 +329,12 @@ struct PublicW8Graph::Impl {
             for (;;) {
                 check(timeline <= UINT64_MAX-2, "W8 timeline exhausted");
                 const auto ready = ++timeline, done = ++timeline;
-                std::vector<std::pair<std::string,Surface>> inputs{{"x",*x[slot]},{"tx",*tx[slot]},{"wg",b.g},{"sg",b.sg},{"wu",b.u},{"su",b.su},{"wd",b.d}};
+                std::vector<std::pair<std::string,Surface>> inputs{{"x",*x[slot]},{"tx",*tx[slot]},{"wg",b.bound[0]},{"sg",b.bound[1]},{"wu",b.bound[2]},{"su",b.bound[3]},{"wd",b.bound[4]}};
                 std::vector<gpu::Upload> uploads;
                 if (s.lora_inputs) { inputs.emplace_back("dg",*dg); inputs.emplace_back("du",*du);
                     if (adapter) { uploads.push_back({adapter->gate,*dg,row}); uploads.push_back({adapter->up,*du,row}); } }
                 auto norm = y->slice_rows(0,s.hidden), hs = y->slice_rows(s.hidden,1);
-                std::vector<gpu::Download> downloads{{norm,output,row,output.dtype,headroom,b.sd,hs}};
+                std::vector<gpu::Download> downloads{{norm,output,row,output.dtype,headroom,b.bound[5],hs}};
                 if(basis==W8Basis::ComfyH256)downloads[0].row_scale_policy=gpu::RowScalePolicy::SignedFinite;
                 if (s.lora_inputs) downloads.push_back({y->slice_rows(s.hidden+1,s.width),adapter ? std::optional<DeviceMatrixView>(adapter->hidden) : std::nullopt,
                     row,adapter?adapter->hidden.dtype:output.dtype==DType::FP32?input.dtype:output.dtype,headroom});
@@ -385,7 +391,8 @@ PublicW8Graph::PublicW8Graph(const std::filesystem::path &manifest,size_t budget
                           (!expected->require_lora_inputs || shape.lora_inputs),"Public W8 model geometry/LoRA ABI mismatch");
         const int rotation_block=p.basis==W8Basis::ComfyH256?256:512;
         p.estimate=uint64_t(shape.hidden)*shape.width*6+uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden)+
-                   uint64_t(shape.width)*rotation_block*4+(128ull<<20)+gpu::scale_cache_budget_bytes;
+                   uint64_t(shape.width)*rotation_block*4+(128ull<<20)+gpu::scale_cache_budget_bytes+
+                   p.device.weight_code_cache_budget_bytes();
         if(p.estimate>budget || !admit_memory(observe_runtime_memory(0),{uint64_t(4)<<30,budget},0,p.estimate).allowed())
             throw MemoryBudgetError("Public W8 graph/banks/system memory admission denied");
         for(auto &bank:p.banks){bank=std::make_unique<Impl::Bank>(p.device,shape);p.allocated+=bank->bytes();}
@@ -414,6 +421,7 @@ std::string PublicW8Graph::weight_recipe() const {
 }
 std::string PublicW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PublicW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
+WeightCodeCacheReport PublicW8Graph::weight_code_cache_stats() const{return impl_->device.weight_code_cache_stats();}
 StagePipelineStats PublicW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 bool PublicW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PublicW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}

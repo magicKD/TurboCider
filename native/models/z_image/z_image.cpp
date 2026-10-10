@@ -5,6 +5,7 @@
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
 #include "ffn.hpp"
+#include "convrot_partial_config.hpp"
 #include "padding.hpp"
 #include "hybrid_stream.hpp"
 #include "vae.hpp"
@@ -21,6 +22,7 @@
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/canonical_encoding.hpp"
 #include "../../runtime/streaming/context.hpp"
+#include "runtime_bucket_config.hpp"
 #include "../../runtime/streaming/gguf_packed_bank.hpp"
 #include "../../runtime/streaming/resolved_request.hpp"
 #include "streaming_descriptor.hpp"
@@ -340,15 +342,33 @@ void z_capture_runtime_ffn_input(const Tensor &input,int block) {
 // Restore the process-wide setting before another request or model starts.
 struct RequestCacheLimit {
     std::optional<size_t> previous;
-    RequestCacheLimit(bool enabled, size_t limit) {
+    bool retain=false;
+    size_t selected_limit=0;
+    RequestCacheLimit(bool enabled, size_t limit,bool retain_bins=false):retain(retain_bins),selected_limit(limit) {
         if (enabled) {
             previous = mx::set_cache_limit(limit);
-            mx::clear_cache();
+            if(!retain) mx::clear_cache();
         }
     }
     ~RequestCacheLimit() {
         if (previous) {
-            mx::clear_cache();
+            if(!retain) mx::clear_cache();
+            else {
+                // Finish deferred GPU temporary releases while the selected
+                // limit still applies, then trim again BEFORE restoring the
+                // caller's (possibly larger) hint. On unwind retain no cache
+                // if completion cannot be established; active claims remain
+                // owned by the backend, not by this cache scope.
+                try {
+                    mx::synchronize();mx::set_cache_limit(selected_limit);
+                    // The allocator hint itself is not a strict capacity
+                    // reservation. Never carry an over-hint bin population
+                    // into another request just because the caller permits
+                    // a larger hint. Active arrays are unaffected.
+                    if(mx::get_cache_memory()>selected_limit) mx::clear_cache();
+                }
+                catch (...) {mx::clear_cache();}
+            }
             mx::set_cache_limit(*previous);
         }
     }
@@ -1268,12 +1288,57 @@ Tensor z_compiled_packed_block(const Tensor &x, const Weights &weights, const st
     return (*graph)(args)[0];
 }
 
-std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string &ffn) {
+const std::vector<std::string> &z_convrot_block_fields() {
+    static const auto fields=[] {
+        auto result=z_packed_block_fields();
+        for(const auto *stem:{"adaLN_modulation.0","attention.qkv","attention.out","feed_forward.w1","feed_forward.w3","feed_forward.w2"})
+            result.push_back(std::string(stem)+".comfy_quant");
+        return result;
+    }();return fields;
+}
+Tensor z_compiled_convrot_block(const Tensor &x,const Weights &weights,const std::string &prefix,
+                               const Tensor &freqs,const Tensor &temb,bool butterfly) {
+    require(x.dtype()==mx::bfloat16 && temb.dtype()==mx::bfloat16,"ConvRot compiled source graph requires BF16 activations");
+    for(const auto *stem:{"adaLN_modulation.0","attention.qkv","attention.out","feed_forward.w1","feed_forward.w3","feed_forward.w2"}) {
+        const auto name=prefix+"."+stem;
+        require(weights.convrot(name) && weights.at(name+".weight").dtype()==mx::uint32 &&
+            weights.at(name+".scales").dtype()==mx::bfloat16 && weights.at(name+".biases").dtype()==mx::bfloat16,
+            "ConvRot compiled graph requires legacy BF16-scale packed Q8 projections");
+    }
+    std::vector<Tensor> args{x,freqs,temb};
+    for(const auto &field:z_convrot_block_fields()) args.push_back(weights.at(prefix+"."+field));
+    auto make_graph=[](bool metal) {return new ZImageGpuGraph(mx::compile([metal](const std::vector<Tensor> &a) {
+        std::vector<std::string> keys;
+        for(const auto &field:z_convrot_block_fields()) keys.push_back("rot."+field);
+        Weights w;w.bind_arrays(keys,a,3);w.set_metal_convrot(metal);
+        auto mod=mx::split(mx::expand_dims(linear_compat(a[2],w,"rot.adaLN_modulation.0"),1),4,-1);
+        auto input=rms(a[0],w.at("rot.attention_norm1.weight"),1e-5f)*(Tensor(1.f,mod[0].dtype())+mod[0]);
+        auto attention=z_attention(input,w,"rot",a[1]);
+        auto value=a[0]+mx::tanh(mod[1])*rms(attention,w.at("rot.attention_norm2.weight"),1e-5f);
+        auto feed_input=rms(value,w.at("rot.ffn_norm1.weight"),1e-5f)*(Tensor(1.f,mod[2].dtype())+mod[2]);
+        auto feed=z_image::feed_forward(feed_input,w,"rot.feed_forward",true);
+        return std::vector<Tensor>{value+mx::tanh(mod[3])*rms(feed,w.at("rot.ffn_norm2.weight"),1e-5f)};
+    }));};
+    // Separate immutable math keys. All layer contents/backings are arguments.
+    if(butterfly){static auto *graph=make_graph(true);return (*graph)(args)[0];}
+    static auto *graph=make_graph(false);return (*graph)(args)[0];
+}
+
+std::vector<ane::FfnWeight> z_runtime_sources(const Weights &w,const std::string &ffn,
+        streaming::GgufPackedBank *raw_source=nullptr,const std::atomic<bool> *cancel=nullptr) {
     auto source=[&](const std::string &name,int input_width)->ane::FfnWeight {
         const bool rotated=w.convrot(name);
         require(!w.nvfp4(name)&&!w.has(name+".bias"),"runtime FFN requires bias-free projections: "+name);
         const auto &weight=w.at(name+".weight");
         if(!rotated&&!w.quantized(name))return {weight,std::nullopt,std::nullopt};
+        if(raw_source) {
+            require(!rotated,"raw GGUF source cannot replace ConvRot weights");
+            auto raw=raw_source->raw_matrix(name+".weight",cancel);
+            require(raw.columns==input_width && raw.values.shape(0)==weight.shape(0),
+                    "raw GGUF source logical projection mismatch");
+            ane::FfnWeight result{std::move(raw.values),std::nullopt,std::nullopt};
+            result.raw_gguf=ane::FfnWeight::RawGguf{raw.type,raw.columns,std::move(raw.logical_content_identity)};return result;
+        }
         const auto &scales=w.at(name+".scales");const auto geometry=z_quantized_geometry(weight,scales,input_width);
         return {weight,scales,w.has(name+".biases")?std::optional<Tensor>(w.at(name+".biases")):std::nullopt,
             geometry.group_size,geometry.bits,rotated?ane::FfnWeight::Transform::ComfyH256Inverse:ane::FfnWeight::Transform::None};
@@ -1330,7 +1395,8 @@ ane::RowPlacement z_runtime_row_placement() {
 }
 Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &prefix,
                        const Tensor &freqs, const Tensor &temb, ane::HybridFfn &runtime,
-                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility,int caption_rows=0) {
+                       int block, std::atomic<bool> &cancelled, bool gguf_compatibility,int caption_rows=0,
+                       streaming::GgufPackedBank *raw_source=nullptr) {
     const auto placement=caption_rows?z_runtime_row_placement():ane::RowPlacement::Suffix;
     const ane::RowPolicy policy{placement,placement==ane::RowPlacement::Suffix?0:caption_rows};
     const auto plan = runtime.plan_block(block, x.shape(1),policy);
@@ -1359,7 +1425,7 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
     ane::HybridFfn::NextWeights next_weights=[&](int next) {
         if(next>=32)return std::vector<ane::FfnWeight>{};
         const auto stem=next<2?"noise_refiner."+std::to_string(next):"layers."+std::to_string(next-2);
-        return z_runtime_sources(w,stem+".feed_forward");
+        return z_runtime_sources(w,stem+".feed_forward",raw_source,&cancelled);
     };
     auto capture_input = [&](const Tensor &value) {
         if (auto *capture = ane::calibration::ScopedCapture::current(); capture && capture->wants(block)) {
@@ -1373,7 +1439,17 @@ Tensor z_runtime_block(const Tensor &x, const Weights &w, const std::string &pre
         // GGUF can mix packed affine and floating projections, including
         // modulation/attention. Keep the baseline's native GPU projections
         // and dtype promotion; never feed packed uint32 into a dense graph.
-        runtime.stage_weights(block,x.shape(1),z_runtime_sources(w,ffn));
+        // An optional raw source read/admission failure is an ANE staging
+        // failure. Recompute the complete block on its original GPU path;
+        // do not abort generation or silently substitute affine ANE input.
+        std::vector<ane::FfnWeight> sources;
+        try { sources=z_runtime_sources(w,ffn,raw_source,&cancelled); }
+        catch(const Cancelled &) { throw; }
+        catch(const std::exception &error) {
+            runtime.fail_staging(block,x.shape(1),error.what());
+            return complete(z_block(x,w,prefix,freqs,temb,nullptr,block,nullptr,false,nullptr));
+        }
+        runtime.stage_weights(block,x.shape(1),std::move(sources));
         auto modulation = mx::expand_dims(linear_compat(temb, w, prefix + ".adaLN_modulation.0"), 1);
         auto parts = mx::split(modulation, 4, -1);
         auto attention = z_attention(rms(x, w.at(prefix + ".attention_norm1.weight"), 1e-5f) *
@@ -1888,7 +1964,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
                      ane::HybridFfn *runtime = nullptr, bool runtime_gguf_compatibility = false,
                      ZImageGgufStream *gguf_stream = nullptr, bool serial_refiner_eval = false,
                      bool compile_packed = false, bool gpu_f16 = false, bool f16_mpp = false, bool qmm_f16 = false,
-                     bool f16_refiners = false,bool ref_mpp_dynamic=false,const ZImageBlockObserver &observe={}) {
+                     bool f16_refiners = false,bool ref_mpp_dynamic=false,const ZImageBlockObserver &observe={},
+                     const std::string &convrot_recipe="legacy",streaming::GgufPackedBank *raw_source=nullptr) {
     require(!gguf_stream || (!weight_stream && !exact_stream && !hybrid_stream && !runtime && !hybrid),
             "GGUF bounded execution conflicts with another transformer backend");
     require(!hybrid_stream || (!weight_stream && !exact_stream), "hybrid/exact stream conflict");
@@ -1936,7 +2013,7 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
         auto block_input = bf16_fallback ? mx::astype(image, mx::bfloat16) : image;
         image = f16_refiners ? z_compiled_f16_refiner(block_input,w,"noise_refiner."+std::to_string(i),image_freqs,temb,true,ref_mpp_dynamic)
             : runtime ? z_runtime_block(block_input, w, "noise_refiner." + std::to_string(i),
-                                          image_freqs, temb, *runtime, i, cancelled, runtime_gguf_compatibility)
+                                          image_freqs, temb, *runtime, i, cancelled, runtime_gguf_compatibility,0,raw_source)
             : hybrid_stream ? hybrid_stream->encode_noise(uint32_t(i), image, image_freqs, temb)
             : z_block(block_input, w, "noise_refiner." + std::to_string(i), image_freqs, temb,
                         bf16_fallback ? nullptr : hybrid,
@@ -1966,7 +2043,8 @@ Tensor z_transformer(const Tensor &latent, const Tensor &caption, float sigma, i
             const bool bf16_fallback = hybrid && z_hybrid_bf16_block(2 + i);
             auto block_input = bf16_fallback ? mx::astype(unified, mx::bfloat16) : unified;
             unified = runtime ? z_runtime_block(block_input, w, "layers." + std::to_string(i),
-                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility,caption_emb.shape(1))
+                                                 unified_freqs, temb, *runtime, 2 + i, cancelled, runtime_gguf_compatibility,caption_emb.shape(1),raw_source)
+                : convrot_recipe!="legacy" ? z_compiled_convrot_block(block_input,w,"layers."+std::to_string(i),unified_freqs,temb,convrot_recipe=="compiled_butterfly")
                 : gpu_f16 ? z_compiled_packed_block(block_input,w,"layers."+std::to_string(i),unified_freqs,temb,true,f16_mpp,qmm_f16)
                 : z_block(block_input, weight_stream ? streamed : w,
                               "layers." + std::to_string(i), unified_freqs, temb,
@@ -2875,6 +2953,28 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
     (void)z_dense_split_gpu_control(); // Reject unsupported builds before loading weights.
     (void)z_runtime_ffn_capture_config();
     (void)z_runtime_row_placement();
+    if(const char *raw=std::getenv("TURBOCIDER_Z_CONVROT_GPU_RECIPE")) {
+        convrot_gpu_recipe_=raw;
+        require(convrot_gpu_recipe_=="legacy" || convrot_gpu_recipe_=="compiled_dense" || convrot_gpu_recipe_=="compiled_butterfly",
+                "qe_config_conflict: unknown ConvRot GPU recipe");
+#ifndef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+        require(convrot_gpu_recipe_=="legacy","qe_capability_unqualified: ConvRot compiled GPU requires experimental build");
+#endif
+    }
+    if(const char *raw=std::getenv("TURBOCIDER_Z_CONVROT_VALIDATE_BLOCKS")) {
+        require(std::string_view(raw)=="0" || std::string_view(raw)=="1","qe_config_conflict: ConvRot source validation requires 0 or 1");
+        convrot_validate_blocks_=std::string_view(raw)=="1";
+        require(!convrot_validate_blocks_ || convrot_gpu_recipe_!="legacy","qe_config_conflict: ConvRot validation requires compiled GPU recipe");
+    }
+    if(std::getenv("TURBOCIDER_Z_CONVROT_CACHE_BYTES")) {
+        require(convrot_gpu_recipe_!="legacy","qe_config_conflict: ConvRot cache hint requires explicit compiled GPU recipe");
+        convrot_cache_bytes_=z_qwen3_gguf_integer("TURBOCIDER_Z_CONVROT_CACHE_BYTES",0,4ull<<30);
+    }
+    if(const char *raw=std::getenv("TURBOCIDER_Z_CONVROT_CACHE_RETAIN")) {
+        require(std::string_view(raw)=="0" || std::string_view(raw)=="1","qe_config_conflict: ConvRot cache retention requires 0 or 1");
+        convrot_cache_retain_=std::string_view(raw)=="1";
+        require(!convrot_cache_retain_ || convrot_cache_bytes_.has_value(),"qe_config_conflict: retained allocator bins require explicit ConvRot cache hint");
+    }
     if (const char *raw=std::getenv("TURBOCIDER_Z_RUNTIME_CONVROT")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1",
                 "qe_config_conflict: TURBOCIDER_Z_RUNTIME_CONVROT requires 0 or 1");
@@ -2901,6 +3001,13 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                 "qe_config_conflict: affine packing control requires CPU-direct and legacy/fused");
         gguf_fused_affine_=std::string_view(raw)=="fused";
     }
+    if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_ANE_SOURCE")) {
+        require(std::string_view(raw)=="affine" || std::string_view(raw)=="raw",
+                "qe_config_conflict: GGUF ANE source requires affine or raw");
+        gguf_raw_ane_source_=std::string_view(raw)=="raw";
+        require(!gguf_raw_ane_source_ || gguf_direct_import_,
+                "qe_config_conflict: raw GGUF ANE source requires CPU-direct verified import");
+    }
     if (const char *raw = std::getenv("TURBOCIDER_Z_GGUF_COMPILE_PACKED")) {
         require(std::string_view(raw)=="0" || std::string_view(raw)=="1", "qe_config_conflict: packed compile requires 0 or 1");
         gguf_compile_packed_ = std::string_view(raw)=="1";
@@ -2923,7 +3030,7 @@ ZImage::ZImage(const std::filesystem::path &root, std::string model_id,
                 "qe_config_conflict: GPU FP16 compute requires CPU-direct and compiled packed opt-ins");
     }
     if (std::getenv("TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES")) {
-        require(gguf_direct_import_ && gguf_gpu_f16_,"qe_config_conflict: GGUF cache experiment requires explicit CPU-direct FP16 compute");
+        require(gguf_direct_import_,"qe_config_conflict: GGUF cache experiment requires explicit CPU-direct import");
         gguf_allocator_cache_bytes_=z_qwen3_gguf_integer("TURBOCIDER_Z_GGUF_ALLOCATOR_CACHE_BYTES",0,1ull<<30);
     }
     if (const char *raw=std::getenv("TURBOCIDER_Z_GGUF_VALIDATE_BLOCKS")) {
@@ -3299,7 +3406,8 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
             gguf_packed_ledger_=std::make_unique<MemoryLedger>(z_qwen3_gguf_integer(
                 "TURBOCIDER_Z_GGUF_PACKED_WEIGHT_LIMIT_BYTES",std::min<uint64_t>(10ull<<30,device_info().physical_memory/2),
                 device_info().physical_memory));
-            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_,1ull<<20,gguf_fused_affine_);
+            gguf_packed_bank_=std::make_unique<streaming::GgufPackedBank>(std::move(lease),"transformer",*gguf_packed_ledger_,1ull<<20,gguf_fused_affine_,
+                gguf_raw_ane_source_ ? 256ull<<20 : 0);
             z_image::validate_gguf_model_directory(gguf_packed_bank_->directory());
             gguf_packed_bank_->load(transformer_,&cancelled,event);
         } else if (gguf_transformer_)
@@ -3324,9 +3432,10 @@ LoadResult ZImage::load(const Event &event, std::atomic<bool> &cancelled) {
             transformer_.apply_loras(active_loras_, "transformer", event, cancelled,
                                      active_lora_strategy_ == "inference_time");
     if (transformer_cold && convrot_transformer_) {
-        // Apply LoRA against the original ConvRot representation first. The
-        // touched projections are deliberately materialized as dense BF16;
-        // only untouched projections take the packed affine-Q8 fast path.
+        // Apply LoRA against the original ConvRot representation before packing.
+        // A load-time merge materializes touched projections as dense BF16.
+        // Inference-time adapters remain separate; every original ConvRot
+        // base can still be packed without writing LoRA into its codes/scales.
         const auto packed = transformer_.pack_convrot_q8();
         if (active_loras_.empty())
             require(packed > 0, "ConvRot checkpoint contains no packable INT8 projections");
@@ -3528,8 +3637,8 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
                                         std::atomic<bool> &cancelled) {
     if (r.hybrid_mlp_mode == "runtime") {
         require(!nvfp4_transformer_ && (!convrot_transformer_ || runtime_convrot_) && !diffusers_layout_ &&
-                    (active_loras_.empty() || (!gguf_transformer_ && active_lora_strategy_ == "inference_time")),
-                "runtime-weight Z-Image requires BF16 Comfy or base native GGUF; LoRA requires unmerged BF16 base weights");
+                    (active_loras_.empty() || active_lora_strategy_ == "inference_time"),
+                "runtime-weight Z-Image requires BF16 Comfy or native GGUF; LoRA requires unmerged base weights and GPU activation corrections");
         hybrid_.reset(); hybrid_gpu_graph_ = {}; hybrid_gpu_mlp_start_ = -1;
         return runtime_convrot_
             ? "gpu_ane experimental legacy ConvRot packed inverse-H256 FP16 FFN; source rounded scales retained; physical placement/arithmetic unverified"
@@ -3686,6 +3795,20 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     require(runtime_gpu_layers.empty() || (r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" && !load_only),
             "explicit Z runtime GPU blocks require a gpu_ane runtime generation request");
     auto plan = make_plan(r);
+    const bool convrot_runtime_lora=z_image::configured_convrot_runtime_lora(r);
+    const bool convrot_mpp_partial=z_image::configured_convrot_partial_mpp(r);
+    const bool convrot_bf16_partial=z_image::configured_convrot_partial_bf16(r);
+    require(!convrot_mpp_partial || (convrot_transformer_ && runtime_convrot_ && !load_only),
+            "ConvRot MPP partial requires the explicit loaded ConvRot runtime source");
+    require(!convrot_bf16_partial || (convrot_transformer_ && runtime_convrot_ && !load_only),
+            "ConvRot BF16 partial requires the explicit loaded ConvRot runtime source");
+    if(transformer_.affine_fp32_mpp()!=convrot_mpp_partial || transformer_.affine_bf16_fp32_partial()!=convrot_bf16_partial) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        mx::synchronize();
+        transformer_.set_affine_fp32_mpp(false);transformer_.set_affine_bf16_fp32_partial(false);
+        transformer_.set_affine_fp32_mpp(convrot_mpp_partial);
+        transformer_.set_affine_bf16_fp32_partial(convrot_bf16_partial);
+    }
     require(!r.prompt.empty() && (warmup || load_only || !r.output.empty()),
             "prompt and output are required");
     require(warmup || load_only || std::filesystem::path(r.output).extension() == ".png",
@@ -3727,6 +3850,14 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 !std::getenv("TURBOCIDER_Z_PROFILE"),
                 "qe_config_conflict: dense split GPU control requires resident dense GPU without LoRA/ANE/streaming/detail overrides");
     }
+    if(convrot_gpu_recipe_!="legacy") {
+        require(convrot_transformer_ && !gguf_transformer_ && !quantized && !public_stream_lease_ && !load_only &&
+                r.execution=="gpu" && r.residency=="resident" && r.loras.empty() && r.ane_manifest.empty() &&
+                r.encoder_ane_manifest.empty() && r.allow_approximation && !r.memory_constrained.enabled && !r.streaming.active() &&
+                !std::getenv("TURBOCIDER_Z_CONVROT_FP32_SCALES") && !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS") &&
+                !std::getenv("TURBOCIDER_Z_FFN_CAPTURE_DIR") && !std::getenv("TURBOCIDER_Z_PROFILE") && !runtime_convrot_,
+                "qe_config_conflict: ConvRot compiled GPU requires explicit private resident GPU approximation without LoRA/ANE/guard/detail overrides");
+    }
     require(!gguf_validate_blocks_ || gguf_gpu_f16_ || quantized_raw_gpu,
             "qe_config_conflict: source validation requires explicit FP16 experiment or raw GPU profile");
     uint64_t raw_gpu_cache_bytes=0;
@@ -3739,15 +3870,19 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             "qe_config_conflict: dense BF16 compiled profile conflicts with eager/capture overrides");
     if (runtime_convrot_) {
         require(convrot_transformer_ && r.hybrid_mlp_mode=="runtime" && r.execution=="gpu_ane" &&
-                r.allow_approximation && r.loras.empty() && !quantized && !public_stream_lease_ &&
+                r.allow_approximation && (r.loras.empty() || convrot_runtime_lora) && !quantized && !public_stream_lease_ &&
                 !r.memory_constrained.enabled && r.residency=="resident",
-                "qe_config_conflict: runtime ConvRot requires explicit resident GPU+ANE approximation without LoRA/guard/quantized execution");
+                "qe_config_conflict: runtime ConvRot requires explicit resident GPU+ANE approximation, separate full-LoRA opt-in, no guard/quantized execution");
     }
     if (gguf_direct_import_) {
+        const bool runtime_route=r.execution=="gpu_ane" && r.hybrid_mlp_mode=="runtime" &&
+            r.allow_approximation && !r.ane_manifest.empty();
         require(!quantized && !public_stream_lease_ && !r.memory_constrained.enabled &&
-                r.residency=="resident" && r.execution=="gpu" && r.loras.empty() &&
-                r.ane_manifest.empty() && r.encoder_ane_manifest.empty(),
-                "qe_config_conflict: experimental direct packed import supports only private resident GPU without LoRA/ANE/guard");
+                r.residency=="resident" && ((r.execution=="gpu" && r.ane_manifest.empty()) || runtime_route) &&
+                (r.loras.empty() || effective_lora_strategy(r)=="inference_time") && r.encoder_ane_manifest.empty(),
+                "qe_config_conflict: direct packed import requires resident GPU or explicit runtime ANE, inference-time LoRA and no guard/encoder ANE");
+        require(!runtime_route || (!gguf_gpu_f16_ && !gguf_compile_packed_ && !gguf_validate_blocks_),
+                "qe_config_conflict: direct packed runtime ANE conflicts with GPU-only compute/validation recipes");
         if (gguf_packed_bank_ && transformer_.bytes()) gguf_packed_bank_->check_unchanged();
         if (gguf_retain_packed_ && gguf_packed_ledger_)
             require(gguf_packed_ledger_->snapshot().budget_bytes == z_qwen3_gguf_integer(
@@ -3860,8 +3995,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         stream_configuration_ = configuration;
     }
     RequestCacheLimit cache_limit(
-        streamed || constrained_memory || gguf_direct_import_,
-        quantized_raw_gpu ? raw_gpu_cache_bytes : (tight_exact || quantized) ? 0 : gguf_direct_import_ ? gguf_allocator_cache_bytes_ : r.allocator_cache_bytes);
+        streamed || constrained_memory || gguf_direct_import_ || convrot_cache_bytes_.has_value(),
+        convrot_cache_bytes_.value_or(quantized_raw_gpu ? raw_gpu_cache_bytes : (tight_exact || quantized) ? 0 : gguf_direct_import_ ? gguf_allocator_cache_bytes_ : r.allocator_cache_bytes),convrot_cache_retain_);
     mx::reset_peak_memory();
     select_loras(r);
     auto text_start = Clock::now();
@@ -3886,6 +4021,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const double text_seconds = std::chrono::duration<double>(Clock::now() - text_start).count();
     const int image_rows = ((r.height / 16) * (r.width / 16) + 31) / 32 * 32;
     const int caption_rows = (cached_conditioning_->shape(0) + 31) / 32 * 32;
+    const bool match_runtime_rows=z_image::configured_runtime_match_rows(r);
+    const std::optional<int> runtime_bucket=match_runtime_rows ?
+        std::optional<int>(z_image::matched_runtime_bucket(image_rows,caption_rows,ane::runtime_template_shape(r.ane_manifest).rows)) : std::nullopt;
     auto selection = select_acceleration(r, image_rows + caption_rows, event, cancelled);
     // An opted-in image-only W8A8 manifest needs the full BF16 GPU weights
     // for caption rows. Preserve the original explicit W8 ablation for all
@@ -3928,7 +4066,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     !nvfp4_transformer_ && active_lora_strategy_ != "inference_time",
                 "routed Z-Image BF16 GPU + W8A8 ANE requires resident BF16 weights");
     event(r.execution == "gpu_ane" ? "route_gpu_ane" : "route_gpu", 1, 1);
-    r.compile_gpu = quantized_bf16 || quantized_raw_gpu || gguf_compile_packed_ || (!exact_streaming && r.execution == "gpu" &&
+    r.compile_gpu = convrot_gpu_recipe_!="legacy" || quantized_bf16 || quantized_raw_gpu || gguf_compile_packed_ || (!exact_streaming && r.execution == "gpu" &&
                     !gguf_transformer_ && !convrot_transformer_ && !nvfp4_transformer_ &&
                     active_lora_strategy_ != "inference_time" &&
                     !std::getenv("TURBOCIDER_Z_EAGER_BLOCKS"));
@@ -4076,12 +4214,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         const std::string identity = manifest.string() + ":" + sha256_file(manifest) + ":" +
             (std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") ? std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS") : "auto")+
             ane::HybridFfn::executor_configuration_identity()+
-            (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "");
+            (runtime_convrot_ ? ":convrot-legacy-packed-scale-inverse-h256-f16-v1" : "")+
+            (gguf_raw_ane_source_ ? ":raw-gguf-source-window-v1" : "")+
+            (convrot_mpp_partial ? ":convrot-gpu-f32-mpp-shared-word-m64-n64-k64-tail32-v2" : "")+
+            (convrot_bf16_partial ? ":convrot-gpu-bf16-qmm-f32-widen-partial-v1" : "");
         const bool native_channel_auto = ane::private_channel_count(10240) < 0;
         std::string gpu_policy;
         for(int layer:runtime_gpu_layers)gpu_policy+=':'+std::to_string(layer);
         const std::string request_identity = identity + ":row-placement="+ane::row_placement_name(z_runtime_row_placement())+
-            ":gpu-layers="+gpu_policy + (native_channel_auto ?
+            ":gpu-layers="+gpu_policy + (runtime_bucket ? ":matched-native-rows-v2-keep-fit="+std::to_string(*runtime_bucket) : "") + (native_channel_auto ?
             ":rows=" + std::to_string(image_rows+caption_rows) + ":adapter=" + cached_lora_identity_ : "");
         if (!runtime_ffn_ || !runtime_ffn_->usable_configuration() || runtime_manifest_ != request_identity ||
             (runtime_ffn_->available() && !active_loras_.empty() && !runtime_ffn_->supports_lora_inputs())) {
@@ -4096,7 +4237,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                 calibration->model_sha256 = sha256_file(transformer_checkpoint_);
                 calibration->adapter_identity = active_loras_.empty() ? std::string{} : cached_lora_identity_;
                 calibration->rows = image_rows+caption_rows;
-                calibration->encoding = gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
+                calibration->encoding = gguf_raw_ane_source_ ? "raw-gguf-source-window-v1" :
+                    gguf_transformer_ ? "mlx-affine-gguf" : convrot_transformer_ ? "convrot" : "dense-bf16";
                 calibration->dtype = gguf_transformer_ ? mx::float16 : mx::bfloat16;
                 calibration->gpu_configuration="explicit-gpu-layers="+gpu_policy+";";
                 auto stem = [](int ordinal) {return (ordinal<2?"noise_refiner."+std::to_string(ordinal):
@@ -4114,7 +4256,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     const auto *value=std::getenv(key);
                     calibration->gpu_configuration += std::string(key)+"="+(value?value:"<unset>")+";";
                 }
-                calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal));};
+                calibration->weights = [&,stem](int ordinal) {return z_runtime_sources(transformer_,stem(ordinal),
+                    gguf_raw_ane_source_ ? gguf_packed_bank_.get() : nullptr,&cancelled);};
                 if(transformer_.has_runtime_loras())calibration->adapter=[&,stem](int ordinal) {
                     const auto prefix=stem(ordinal);
                     return ane::HybridFfn::Adapter{
@@ -4155,7 +4298,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 3840, 10240, budget, cancelled,
                                                          !active_loras_.empty(),std::nullopt,
-                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_),calibration?&*calibration:nullptr);
+                ane::HybridFfn::scheduler_source_identity(transformer_checkpoint_),calibration?&*calibration:nullptr,std::nullopt,std::nullopt,runtime_bucket);
             runtime_manifest_ = request_identity;
             if(native_channel_auto)event("calibrate_native_ane_channels",1,1);
         }
@@ -4215,6 +4358,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
             result.precision = runtime_ffn_->precision_label(gguf_transformer_);
             result.hybrid = runtime_ffn_->metrics();
             if (!runtime_convrot_) result.selection = runtime_ffn_->resolve_selection(result.selection);
+            if(runtime_bucket)result.selection+="; experimental request-matched Private FFN rows="+std::to_string(*runtime_bucket)+
+                "; checkpoint-independent template unchanged; not profitability calibration";
         }
         result.encoder_hybrid = cached_encoder_hybrid_metrics_;
         result.encoder_quantized_execution = cached_encoder_gguf_metrics_;
@@ -4259,12 +4404,15 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         source_reference_stream=std::make_unique<ZImageGgufStream>(transformer_path_,1,uint32_t(r.width),uint32_t(r.height),
             uint32_t(caption_rows),uint32_t(r.steps),budget,source_reference_weights,event,cancelled,
             "z-mlx-compat-affine-v1","packed_streamed",true);
-    std::optional<Tensor> reference_latent=gguf_validate_blocks_ ? std::optional<Tensor>(z) : std::nullopt;
+    std::optional<Tensor> reference_latent=(gguf_validate_blocks_ || convrot_validate_blocks_) ? std::optional<Tensor>(z) : std::nullopt;
     std::vector<QuantizedSourceComparison> source_comparisons;
     auto compare=[&](const std::string &name,uint32_t step,const Tensor &candidate,const Tensor &reference,bool final=false) {
-        require(candidate.shape()==reference.shape() && candidate.dtype()==mx::float32 && reference.dtype()==mx::float32,
+        require(candidate.shape()==reference.shape() &&
+                (convrot_validate_blocks_ ? candidate.dtype()==reference.dtype() &&
+                    (candidate.dtype()==mx::bfloat16 || candidate.dtype()==mx::float32) :
+                    candidate.dtype()==mx::float32 && reference.dtype()==mx::float32),
                 "qe_adapter_mismatch: source validation tensor geometry/dtype mismatch");
-        auto a=mx::contiguous(candidate),b=mx::contiguous(reference);mx::eval({a,b});
+        auto a=mx::contiguous(mx::astype(candidate,mx::float32)),b=mx::contiguous(mx::astype(reference,mx::float32));mx::eval({a,b});
         Float32ComparisonAccumulator metrics;
         if (final) metrics.add({a.data<float>(),a.size()},{b.data<float>(),b.size()});
         else {
@@ -4323,6 +4471,8 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     const double denoise_seconds = std::chrono::duration<double>(Clock::now() - dit_start).count();
     std::optional<streaming::GgufPackedBankMetrics> packed_import_metrics;
     if (gguf_direct_import_ && gguf_packed_bank_) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        gguf_packed_bank_->clear_raw_window();
         mx::synchronize();gguf_packed_bank_->check_unchanged();
         packed_import_metrics=gguf_packed_bank_->metrics();
         packed_import_metrics->session_packed_retention=gguf_retain_packed_;
@@ -4475,6 +4625,9 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.actual_steps = r.steps;
     result.quantized_execution = quantized_metrics;
     result.quantized_source_comparisons=std::move(source_comparisons);
+    result.convrot_allocator_cache_bytes=convrot_cache_bytes_;
+    result.convrot_allocator_cache_retained=convrot_cache_retain_;
+    if(convrot_validate_blocks_) result.source_comparison_profile="convrot-legacy-packed-bf16-scale-v1";
     if (packed_import_metrics) {
         result.gguf_import=packed_import_metrics;
         result.selection += "; experimental CPU direct affine packed import, allocator cache=0";
@@ -4491,6 +4644,10 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     } else if (convrot_transformer_) {
         result.backend = "mlx_cpp_metal_convrot_packed_q8";
         result.precision = "int8_tensorwise_convrot_g256";
+        if(convrot_gpu_recipe_!="legacy") {
+            result.backend="mlx_cpp_metal_convrot_compiled_experimental";
+            result.precision="convrot-legacy-packed-bf16-scale-v1:"+convrot_gpu_recipe_;
+        }
         result.checkpoint = transformer_checkpoint_.filename().string();
     } else {
         result.backend = hybrid_ ? "mlx_cpp_metal+coreml" : "mlx_cpp_metal";
@@ -4542,7 +4699,12 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                     "convrot-legacy-packed-scale-inverse-h256-f16-v1";
             }
             result.selection=runtime_ffn_->resolve_selection(result.selection);
+            if(convrot_runtime_lora)result.selection+="; experimental full ConvRot runtime LoRA; base-only W8 banks, pre-SiLU gate/up and ONE joined-hidden down";
+            if(convrot_mpp_partial)result.selection+="; experimental MPP shared-word ConvRot GPU F32 partial (m64/n64/k64; tail-k32)";
+            if(convrot_bf16_partial)result.selection+="; experimental BF16-rounded packed ConvRot GPU base-down partial widened to F32; ONE joined-hidden down-LoRA";
         }
+        if(runtime_bucket)result.selection+="; experimental request-matched Private FFN rows="+std::to_string(*runtime_bucket)+
+            "; checkpoint-independent template unchanged; not profitability calibration";
     }
     if (quantized) {
         result.backend = r.quantized_execution.precision_profile == "z-source-native-affine-v1" || r.quantized_execution.precision_profile == "z-mlx-compat-affine-v1"
@@ -4550,7 +4712,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         if (quantized_raw_gpu) result.backend="mlx_cpp_metal_gguf_raw_cpu_io_gpu_affine";
         result.precision = r.quantized_execution.precision_profile.value_or("z-source-mixed-v1");
     }
-    if (gguf_direct_import_) {
+    if (gguf_direct_import_ && !runtime_ffn_) {
         result.backend="mlx_cpp_metal_gguf_cpu_direct_packed";
         result.precision="z-mlx-compat-affine-v1";
         if (gguf_gpu_f16_) {
@@ -4646,8 +4808,9 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                        std::vector<Tensor> *context_cache,bool source_reference,const ZImageBlockObserver &observe,
                        ZImageGgufStream *reference_stream,const Weights *reference_weights) {
     require(bool(reference_stream)==bool(reference_weights) && (!reference_stream || source_reference),"source reference bindings incomplete");
-    require(!source_reference || (gguf_validate_blocks_ && !hybrid_ && !runtime_ffn_ &&
-                ((gguf_direct_import_ && !gguf_stream_) || (gguf_stream_ && reference_stream && reference_stream!=gguf_stream_.get()))),
+    require(!source_reference || (!hybrid_ && !runtime_ffn_ &&
+                ((gguf_validate_blocks_ && ((gguf_direct_import_ && !gguf_stream_) || (gguf_stream_ && reference_stream && reference_stream!=gguf_stream_.get()))) ||
+                 (convrot_validate_blocks_ && convrot_transformer_ && convrot_gpu_recipe_!="legacy"))),
             "source reference conflicts with another execution route");
     auto model_input = mx::astype(latent, mx::bfloat16);
     const bool experimental_compiled_a8 = hybrid_ && hybrid_->activation_precision == "int8" &&
@@ -4662,7 +4825,9 @@ Tensor ZImage::denoise(const Tensor &latent, const Tensor &caption, float sigma,
                       optimizations_.z_image_hybrid_segments || experimental_compiled_a8,
                       nullptr, context_cache, runtime_ffn_.get(), gguf_transformer_, source_reference ? reference_stream : gguf_stream_.get(),gguf_direct_import_ || source_reference,gguf_compile_packed_,
                       !source_reference && gguf_gpu_f16_,!source_reference && gguf_gpu_f16_mpp_,!source_reference && gguf_qmm_f16_,
-                      !source_reference && gguf_f16_refiners_,!source_reference && gguf_ref_mpp_dynamic_,observe),
+                      !source_reference && gguf_f16_refiners_,!source_reference && gguf_ref_mpp_dynamic_,observe,
+                      source_reference ? "legacy" : convrot_gpu_recipe_,
+                      !source_reference && gguf_raw_ane_source_ ? gguf_packed_bank_.get() : nullptr),
         mx::float32);
 }
 

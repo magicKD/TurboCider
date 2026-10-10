@@ -29,6 +29,7 @@ class Weights {
             Tensor input, down, low;
             int column_start, column_end;
             mx::Dtype rank_dtype;
+            bool bf16_operands;
         };
         std::vector<Entry> entries_;
       public:
@@ -48,9 +49,26 @@ class Weights {
     // descriptors alive until every array owned by this weight set is gone.
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
     bool metal_convrot_ = false;
+    bool affine_fp32_mpp_ = false;
+    bool affine_bf16_fp32_partial_ = false;
+    bool qwen_affine_shared_down_ = false;
     bool runtime_lora_fp16_ = false;
     Tensor runtime_lora_low(const Tensor &, const RuntimeLoRA &, int, int,
                             LoRAWorkspace *) const;
+    bool runtime_lora_bf16_fp32_ranks_ = false;
+    bool runtime_lora_b_epilogue_ = false;
+    bool runtime_lora_b_eligible(const Tensor &,const Tensor &) const;
+    Tensor runtime_lora_scaled_b(const Tensor &,const Tensor &,int,int,float) const;
+    Tensor runtime_lora_add_b(const Tensor &,const Tensor &,int,int,float,const Tensor &,int) const;
+    Tensor runtime_lora_rank(const Tensor &,const Tensor &,int,int) const;
+    Tensor add_runtime_projection_loras(const Tensor &,Tensor,const std::string &) const;
+    Tensor project_slice_rank_impl(const Tensor &,const std::string &,int,int,int,int,bool,
+                                  const std::vector<Tensor> *, LoRAWorkspace * = nullptr, const Tensor * = nullptr) const;
+    Tensor lora_delta_slice_rank_impl(const Tensor *,const mx::Shape &,mx::Dtype,const std::string &,int,int,int,int,
+                                     std::optional<mx::Dtype>,const std::vector<Tensor> *, LoRAWorkspace * = nullptr) const;
+    size_t apply_loras_impl(const std::vector<LoRAAsset> &,const std::string &,const Event &,
+        std::atomic<bool> &,bool,const std::shared_ptr<const streaming::SourceLease> &,
+        const std::vector<std::string> &, bool strict_targets = false);
 
   public:
     void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
@@ -67,9 +85,34 @@ class Weights {
     void cast_unquantized_float32(mx::Dtype);
     void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
     bool metal_convrot() const { return metal_convrot_; }
+    // Owner-thread request snapshot; never mutate while a compiled closure or
+    // submitted projection is reading this Weights generation. Default off.
+    void set_affine_fp32_mpp(bool enabled) {
+        require(!enabled || !affine_bf16_fp32_partial_,"affine partial recipes are mutually exclusive");
+        affine_fp32_mpp_=enabled;
+    }
+    bool affine_fp32_mpp() const { return affine_fp32_mpp_; }
+    // Explicit approximate ConvRot base-down only: preserve original BF16
+    // packed QMM, then widen its rounded output to F32 for the channel join.
+    // No widened metadata/weights or per-shard down-LoRA is introduced.
+    void set_affine_bf16_fp32_partial(bool enabled) {
+        require(!enabled || !affine_fp32_mpp_,"affine partial recipes are mutually exclusive");
+        affine_bf16_fp32_partial_=enabled;
+    }
+    bool affine_bf16_fp32_partial() const { return affine_bf16_fp32_partial_; }
+    // Request-scoped mixed-GGUF FFN down kernel; other projections/defaults
+    // remain MLX QMM. The producer and all metadata stay immutable.
+    void set_qwen_affine_shared_down(bool enabled) { qwen_affine_shared_down_=enabled; }
+    bool qwen_affine_shared_down() const { return qwen_affine_shared_down_; }
     // Experimental Qwen21 student only: narrow LoRA matmuls while retaining
     // FP32 accumulation with the BF16 base projection.
     void set_runtime_lora_fp16(bool enabled) { runtime_lora_fp16_ = enabled; }
+    // Request-owner snapshot. Original BF16 operands, F32 rank output and
+    // unchanged F32 B/delta arithmetic; never an FP16-rank substitution.
+    void set_runtime_lora_bf16_fp32_ranks(bool enabled) { runtime_lora_bf16_fp32_ranks_=enabled; }
+    bool runtime_lora_bf16_fp32_ranks() const { return runtime_lora_bf16_fp32_ranks_; }
+    void set_runtime_lora_b_epilogue(bool enabled) { runtime_lora_b_epilogue_=enabled; }
+    bool runtime_lora_b_epilogue() const { return runtime_lora_b_epilogue_; }
     std::vector<std::string> sorted_keys() const;
     void bind_arrays(const std::vector<std::string> &,
                      const std::vector<Tensor> &, size_t offset = 0);
@@ -94,6 +137,9 @@ class Weights {
     void select_dense_indices(const std::string &prefix,
                               const std::vector<int> &channel_indexes, int axis);
     void dequantize(const std::vector<std::string> &);
+    // Gather token rows before affine decode; never expand a full vocabulary.
+    // Host-side vocabulary validation belongs to the prompt assembler.
+    Tensor embedding_rows(const Tensor &ids,const std::string &prefix) const;
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;
     void erase(const std::string &);
@@ -136,6 +182,25 @@ class Weights {
                             int row_end, int col_start, int col_end,
                             std::optional<mx::Dtype> output_dtype = std::nullopt,
                             LoRAWorkspace * = nullptr) const;
+    // Request/operation-local ranks over the SAME bound adapter generation.
+    // Do not retain across adapter rebinds or input/column-range changes.
+    std::vector<Tensor> lora_input_ranks(const Tensor &,const std::string &,int col_start,int col_end) const;
+    size_t lora_rank_count(const std::string &prefix) const {
+        auto found=runtime_loras_.find(prefix);return found==runtime_loras_.end()?0:found->second.size();
+    }
+    size_t lora_rank_width(const std::string &prefix) const {
+        size_t width=0;auto found=runtime_loras_.find(prefix);
+        if(found!=runtime_loras_.end())for(const auto &adapter:found->second)width+=adapter.down.shape(0);
+        return width;
+    }
+    Tensor project_slice_with_ranks(const Tensor &,const std::string &,const std::vector<Tensor> &,
+        int row_start,int row_end,int col_start,int col_end,bool add_bias=false) const;
+    Tensor lora_delta_slice_with_ranks(const Tensor &,const std::string &,const std::vector<Tensor> &,
+        int row_start,int row_end,int col_start,int col_end,std::optional<mx::Dtype> output_dtype=std::nullopt) const;
+    // Metadata-only logical input: no concatenated full-hidden allocation.
+    // Same operation/adapter generation and full column interval as the ranks.
+    Tensor lora_delta_from_ranks(const mx::Shape &,mx::Dtype,const std::string &,const std::vector<Tensor> &,
+        int row_start,int row_end,int col_start,int col_end,std::optional<mx::Dtype> output_dtype=std::nullopt) const;
     Tensor project_range(const Tensor &, const std::string &, int row_start, int row_end,
                         int col_start, int col_end) const;
     Tensor project_range_fp32(const Tensor &, const std::string &, int row_start, int row_end,
@@ -146,6 +211,12 @@ class Weights {
     size_t apply_loras(const std::vector<LoRAAsset> &, const std::string &, const Event &,
                       std::atomic<bool> &, bool inference_time = false,
                       bool strict_targets = false);
+    // Content-verified, held-fd adapter inputs. Logical ids match adapters in
+    // order; readers never reopen a mutable path. Materialize bound low-rank
+    // sources and revalidate the lease before publishing a successful bind.
+    size_t apply_loras_leased(const std::vector<LoRAAsset> &,const std::string &,const Event &,
+        std::atomic<bool> &,bool,const std::shared_ptr<const streaming::SourceLease> &,
+        const std::vector<std::string> &, bool strict_targets = false);
 };
 Tensor linear(const Tensor &, const Weights &, const std::string &);
 Tensor silu(const Tensor &);

@@ -57,6 +57,15 @@ class Transformer {
     void set_layer_release(std::function<void(const std::string &)> fn) {
         release_layer_ = std::move(fn);
     }
+    using LayerWeights=std::function<const Weights &(int)>;
+    using RetireWeights=std::function<void(int)>;
+    // Explicit private streaming: W is a dynamic graph argument, never a
+    // captured slot value. ALL block/KV outputs complete before retirement.
+    void set_layer_weights(LayerWeights acquire,RetireWeights retire) {
+        require(bool(acquire)==bool(retire),"Qwen streamed source/retirement callbacks must be paired");
+        layer_weights_=std::move(acquire);retire_weights_=std::move(retire);
+        prefill_blocks_.clear();decode_blocks_.clear();
+    }
     // Decode-only FFN split: prefill remains exact GPU so cached
     // conditioning is unchanged. Caller owns the callback's runtime.
     using DecodeMLP = std::function<Tensor(int, const Tensor &)>;
@@ -104,10 +113,16 @@ class Transformer {
     // immediately following denoise step. Never enabled by default.
     enum class FFNCacheMode { Off, Capture, Reuse, ReuseLast16, ReuseEvenAndCapture };
     void set_ffn_cache_mode(FFNCacheMode mode) { ffn_cache_mode_ = mode; }
+    int last_ffn_captured_blocks() const { return last_ffn_captured_blocks_; }
+    int last_ffn_reused_blocks() const { return last_ffn_reused_blocks_; }
+    uint64_t ffn_cache_logical_bytes() const {
+        uint64_t bytes=0;for(const auto &value:cached_ffn_)bytes+=value.nbytes();return bytes;
+    }
     void clear_step_cache() {
         cached_ffn_.clear(); ffn_cache_mode_ = FFNCacheMode::Off;
         clear_db_residuals();
         db_cached_steps_ = 0; db_step_ = -1;
+        last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     }
     // Request-local decode-only DBCache. Presets retain F8/W8; a restricted
     // diagnostic can compare F1/W4 without changing the ordinary route.
@@ -144,6 +159,7 @@ class Transformer {
     std::vector<KV> prefix_;
     FFNCacheMode ffn_cache_mode_ = FFNCacheMode::Off;
     std::vector<Tensor> cached_ffn_;
+    int last_ffn_captured_blocks_=0,last_ffn_reused_blocks_=0;
     bool db_cache_enabled_ = false;
     float db_threshold_ = 0.08f;
     int db_max_consecutive_ = 2;
@@ -177,6 +193,8 @@ class Transformer {
     ObserveMLP observe_mlp_;
     StageMLP stage_mlp_;
     DecodeMLP prefill_mlp_;
+    LayerWeights layer_weights_;
+    RetireWeights retire_weights_;
     int prefill_first_block_ = 0, decode_first_block_ = 0;
     Tensor embedding(float timestep, mx::Dtype) const;
     bool plain_prefix_route() const;

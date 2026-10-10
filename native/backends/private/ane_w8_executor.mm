@@ -5,6 +5,7 @@
 #include "../ane_w8a8_math.hpp"
 #include "../ane_w8_stage.hpp"
 #include "../ane_backend.hpp"
+#include "../ane_weight_identity.hpp"
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include <array>
@@ -73,9 +74,11 @@ struct PrivateW8Graph::Impl {
         // Exactly the S1 that produced this bank's gate/up codes, retained
         // through every A8 launch, including future-bank activation.
         std::optional<DeviceMatrixView> input_column_scale;
+        std::array<Surface,6> bound;
         bool ready = false;
         Bank(private_api::Device &dev, const GraphShape &s) : g(dev,s.width,s.hidden,Element::I8), sg(dev,s.width,1,Element::FP16),
-            u(dev,s.width,s.hidden,Element::I8), su(dev,s.width,1,Element::FP16), d(dev,s.hidden,s.width,Element::I8), sd(dev,s.hidden,1,Element::FP16) {}
+            u(dev,s.width,s.hidden,Element::I8), su(dev,s.width,1,Element::FP16), d(dev,s.hidden,s.width,Element::I8), sd(dev,s.hidden,1,Element::FP16),
+            bound{g,sg,u,su,d,sd} {}
         size_t bytes() const { return g.bytes()+sg.bytes()+u.bytes()+su.bytes()+d.bytes()+sd.bytes(); }
     };
     std::array<std::unique_ptr<Bank>, 2> banks;
@@ -124,22 +127,23 @@ struct PrivateW8Graph::Impl {
             "W8 source projection selection/recipe mismatch");
         w8_stage::validate_swiglu_column_scales(weights, s.hidden);
         auto &b = *banks[target]; b.ready = false; b.input_column_scale.reset();
+        b.bound={b.g,b.sg,b.u,b.su,b.d,b.sd};
         std::array<std::optional<private_api::QuantStage>, 3> producers;
         // A later binding/submission can throw after an earlier producer was
         // committed. Drain those tickets before this bank can be reused.
-        struct WeightDrain {
+        struct ProducerDrain {
             decltype(producers) &tickets;
             std::atomic<bool> &disabled;
-            ~WeightDrain() {
+            ~ProducerDrain() {
                 for (auto &ticket : tickets) if (ticket) {
                     try { if (ticket->finish().timed_out) disabled = true; }
                     catch (...) { disabled = true; }
                 }
             }
-        } drain{producers, disabled};
-        producers[0] = device.stage_w8(weights[0].source, gsel, b.g,b.sg);
-        producers[1] = device.stage_w8(weights[1].source, usel, b.u,b.su);
-        producers[2] = device.stage_w8(weights[2].source, dsel, b.d,b.sd);
+        } drain{producers,disabled};
+        producers[0]=device.bind_w8(weights[0].source,gsel,b.bound[0],b.bound[1]);
+        producers[1]=device.bind_w8(weights[1].source,usel,b.bound[2],b.bound[3]);
+        producers[2]=device.bind_w8(weights[2].source,dsel,b.bound[4],b.bound[5]);
         // Wait ALL producers even on the first failure; source owners and slot
         // leases must not be released while another GPU encoder still uses them.
         std::array<private_api::Completion, 3> completed;
@@ -216,12 +220,12 @@ struct PrivateW8Graph::Impl {
             for (;;) {
                 check(timeline <= UINT64_MAX-2, "W8 timeline exhausted");
                 const auto ready = ++timeline, done = ++timeline;
-                std::vector<std::pair<std::string,Surface>> inputs{{"x",*x[slot]},{"tx",*tx[slot]},{"wg",b.g},{"sg",b.sg},{"wu",b.u},{"su",b.su},{"wd",b.d}};
+                std::vector<std::pair<std::string,Surface>> inputs{{"x",*x[slot]},{"tx",*tx[slot]},{"wg",b.bound[0]},{"sg",b.bound[1]},{"wu",b.bound[2]},{"su",b.bound[3]},{"wd",b.bound[4]}};
                 std::vector<private_api::Upload> uploads;
                 if (s.lora_inputs) { inputs.emplace_back("dg",*dg); inputs.emplace_back("du",*du);
                     if (adapter) { uploads.push_back({adapter->gate,*dg,row}); uploads.push_back({adapter->up,*du,row}); } }
                 auto norm = y->slice_rows(0,s.hidden), hs = y->slice_rows(s.hidden,1);
-                std::vector<private_api::Download> downloads{{norm,output,row,output.dtype,headroom,b.sd,hs}};
+                std::vector<private_api::Download> downloads{{norm,output,row,output.dtype,headroom,b.bound[5],hs}};
                 if(basis==W8Basis::ComfyH256)downloads[0].row_scale_policy=private_api::RowScalePolicy::SignedFinite;
                 if (s.lora_inputs) downloads.push_back({y->slice_rows(s.hidden+1,s.width),adapter ? std::optional<DeviceMatrixView>(adapter->hidden) : std::nullopt,
                     row,adapter?adapter->hidden.dtype:output.dtype==DType::FP32?input.dtype:output.dtype,headroom});
@@ -283,7 +287,8 @@ PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesys
         check(!lookahead || std::string(lookahead)=="0" || std::string(lookahead)=="1", "private ANE A8 lookahead requires 0 or 1");
         p.a8_lookahead=lookahead && std::string(lookahead)=="1";
         auto spec=private_api::w8_swiglu_program(shape,basis==W8Basis::ComfyH256?0:20260930,1.f,basis,p.activation_group_size,p.hidden_group_size,p.bf16_value_boundaries);
-        p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes;
+        p.estimate=uint64_t(shape.hidden)*shape.width*6 + uint64_t(shape.rows)*(8ull*shape.width+12ull*shape.hidden) + spec.constants.size()*2 + (128ull<<20) + private_api::scale_cache_budget_bytes+
+            p.device.weight_code_cache_budget_bytes();
         // Extra compiler/pointwise workspace allowance, not a physical ANE
         // scratch-size observation. End-to-end footprint still needs audit.
         if(p.bf16_value_boundaries)p.estimate+=uint64_t(shape.rows)*shape.width*2*16+(64ull<<20);
@@ -326,6 +331,7 @@ std::string PrivateW8Graph::data_path() const{return impl_->basis==W8Basis::Comf
 WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
 A8SinglePassStats PrivateW8Graph::activation_stage_stats() const{return impl_->device.a8_single_pass_stats();}
+WeightCodeCacheReport PrivateW8Graph::weight_code_cache_stats() const{return impl_->device.weight_code_cache_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
 bool PrivateW8Graph::supports_fp32_device_output() const{return true;}

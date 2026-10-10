@@ -1,0 +1,890 @@
+{
+  "schema": "tc-local512-weight-code-cache-v1",
+  "time_utc": "2026-10-08T01:54:27.044702+00:00",
+  "date_local": "2026-10-08",
+  "hardware": "M4 Max 64GB / macOS26.6.2",
+  "overall_goal_status": "active",
+  "qualification_passed": false,
+  "default_cache_bytes": 0,
+  "model_downloads": 0,
+  "model_files_modified": false,
+  "cache_policy": "first-admitted live weak generations; completed GPU code/normalized-scale copies; leased capacity accounted",
+  "scopes": [
+    "component format/lifetime tests",
+    "one/two-reference real Qwen LoRA request diagnostics; not strict load qualification",
+    "Public actual CoreML W8 fixture"
+  ],
+  "next_action": "zero-copy cached bank/surface binding and actual full-model profitability; not implemented in this turn",
+  "builds": {
+    "private": {
+      "directory": "build/local512-weight-code-cache-v1-private",
+      "library_sha256": "03975198ab74865756374d7e1f0040904f83775181523fcc28188e74803387d3",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "c8ce15f6801f0d92548c894142b7d29883e9268224856195ce35bbc7c4fc420b",
+      "runtime_build_id": "tc-runtime-build-v1-3b4d221fbd766d318e567476b9124d3273ce47c0bafeb96a0d33109d037105a9",
+      "source_count": 491,
+      "source_mismatches": [],
+      "includes_original_uncommitted_convrot_drafts": true,
+      "selected_regression_count": 19,
+      "skips": 0,
+      "regression_log": "outputs/local512-weight-code-cache-v1-private-regression-20261008.log"
+    },
+    "public": {
+      "directory": "build/local512-weight-code-cache-v1-public",
+      "library_sha256": "0775a86959a970affe46c03ef12196defc8d70e2be945aa1004f50ad3dd126f6",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "e737651fc9c84f890283a0479f6eb49cb2442589f73d1a6c04084e838c948f8d",
+      "runtime_build_id": "tc-runtime-build-v1-9ff7bae0f4ab285f405de45b8754fbea3e945e5247d2712b960889c10036cbbf",
+      "source_count": 491,
+      "source_mismatches": [],
+      "includes_original_uncommitted_convrot_drafts": true,
+      "selected_regression_count": 18,
+      "skips": 0,
+      "regression_log": "outputs/local512-weight-code-cache-v1-public-regression-20261008.log",
+      "release_binary_guard_passed": true
+    }
+  },
+  "additional_tests": {
+    "private_cache_enabled_channel": {
+      "count": 1,
+      "log": "outputs/local512-weight-code-cache-v1-private-active-cache-20261008.log"
+    },
+    "public_coreml26": {
+      "count": 5,
+      "cache_budget_bytes": 1048576,
+      "actual_completed_cache_hits_asserted": true,
+      "log": "outputs/local512-weight-code-cache-v1-public-coreml26-20261008.log"
+    },
+    "shared_gpu_formats": 11,
+    "scope": "selected tests, not full repository/model matrix"
+  },
+  "screens": [
+    {
+      "directory": "outputs/local512-qwen-edit1-weight-code-cache-v1-diagnostic-20261008",
+      "summary_sha256": "18089c4d64cb6edcc73faba9195e604f65398d882c855366e1e4780b870f2778",
+      "order": [
+        "code_cache_on",
+        "code_cache_off",
+        "gpu_weights"
+      ],
+      "reference_count": 1,
+      "status": "complete_diagnostic",
+      "cache_budget_bytes": 1342177280,
+      "qualification_passed": false,
+      "trials": [
+        {
+          "mode": "code_cache_on",
+          "cold_seconds": 17.849612125,
+          "warm_seconds": [
+            12.275616083,
+            11.67554975
+          ],
+          "warm_median_seconds": 11.975582916499999,
+          "text_seconds": [
+            3.069126583,
+            1.42368475,
+            0.677933417
+          ],
+          "denoise_seconds": [
+            10.805695667,
+            9.484609833,
+            9.617359042
+          ],
+          "png_sha256": [
+            "4e2f5cf7c3e37536e195fff371fb94881ff902236e8dfc0b49e30bcc690475b8",
+            "bb139b4eb5409890a9e9d3fbf586017d814ff4ce7146265b6726dc78e5a48151",
+            "3c967a6b6e4da168663746183d3dc11e4df28418d9b2a969a4ddca4d49718b2d"
+          ],
+          "stdout_sha256": "c85de19757f4bf41294af5e0b75817edb8f539452a7a1f7af9a6927e07e72fb8",
+          "load_qualification_requested": false,
+          "memory": {
+            "complete": true,
+            "sample_count": 423,
+            "max_gap_ns": 110013042,
+            "tree_peak_phys_footprint_bytes": 39602089752,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "13c5030ebe04ee625be678555c3a9a3f5cb7ffc67f5dd3ac51df30e4e1228579",
+          "requests": [
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 224,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 1342177280,
+                "declines_session_total": 198,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 315,
+                "ineligible_session_total": 236,
+                "live_capacity_bytes": 1321807872,
+                "misses_session_total": 261,
+                "peak_capacity_bytes": 1321816064,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1321807872,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 1.2498879129999994,
+                "stage_wait_seconds_session_total": 0.0001304940000000001,
+                "pre_ffn_seconds_session_total": 5.121361416999999,
+                "post_join_seconds_session_total": 0.7204042899999995,
+                "async_ane_wait_seconds_session_total": 4.426120374999999
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 448,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 1342177280,
+                "declines_session_total": 396,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 693,
+                "ineligible_session_total": 460,
+                "live_capacity_bytes": 1321807872,
+                "misses_session_total": 459,
+                "peak_capacity_bytes": 1321816064,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1321807872,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 2.603126199999998,
+                "stage_wait_seconds_session_total": 0.000248548,
+                "pre_ffn_seconds_session_total": 9.696009412999997,
+                "post_join_seconds_session_total": 1.413535243,
+                "async_ane_wait_seconds_session_total": 8.259049039999992
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 672,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 1342177280,
+                "declines_session_total": 594,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 1071,
+                "ineligible_session_total": 684,
+                "live_capacity_bytes": 1321807872,
+                "misses_session_total": 657,
+                "peak_capacity_bytes": 1321816064,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1321807872,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 4.073393694,
+                "stage_wait_seconds_session_total": 0.00036217299999999927,
+                "pre_ffn_seconds_session_total": 14.319762622999983,
+                "post_join_seconds_session_total": 2.246575991999998,
+                "async_ane_wait_seconds_session_total": 12.046006202999992
+              }
+            }
+          ]
+        },
+        {
+          "mode": "code_cache_off",
+          "cold_seconds": 16.453356417,
+          "warm_seconds": [
+            11.865729125,
+            11.509238
+          ],
+          "warm_median_seconds": 11.687483562499999,
+          "text_seconds": [
+            2.994238875,
+            1.347910417,
+            0.680661583
+          ],
+          "denoise_seconds": [
+            9.517400375,
+            9.122384666,
+            9.441199667
+          ],
+          "png_sha256": [
+            "4e2f5cf7c3e37536e195fff371fb94881ff902236e8dfc0b49e30bcc690475b8",
+            "bb139b4eb5409890a9e9d3fbf586017d814ff4ce7146265b6726dc78e5a48151",
+            "3c967a6b6e4da168663746183d3dc11e4df28418d9b2a969a4ddca4d49718b2d"
+          ],
+          "stdout_sha256": "ae793b3d31682241ebe2ec74f660c82df85bb67a05fd2eff0826a152e83a4e38",
+          "load_qualification_requested": false,
+          "memory": {
+            "complete": true,
+            "sample_count": 402,
+            "max_gap_ns": 110031042,
+            "tree_peak_phys_footprint_bytes": 38298168392,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "85deff76f876f2349664fa2b0d8624f8c0bda5a98a3f078ec1cf4ecd26173603",
+          "requests": [
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 224,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 1.6692065330000008,
+                "stage_wait_seconds_session_total": 0.001997078999999996,
+                "pre_ffn_seconds_session_total": 4.677858425000002,
+                "post_join_seconds_session_total": 0.5606638369999999,
+                "async_ane_wait_seconds_session_total": 3.907609665999998
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 448,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 3.2974124140000027,
+                "stage_wait_seconds_session_total": 0.002159944999999991,
+                "pre_ffn_seconds_session_total": 9.267820915999998,
+                "post_join_seconds_session_total": 1.055577175,
+                "async_ane_wait_seconds_session_total": 7.600624915000002
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 672,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 5.432140699000012,
+                "stage_wait_seconds_session_total": 0.0030979839999999846,
+                "pre_ffn_seconds_session_total": 14.116447129999989,
+                "post_join_seconds_session_total": 1.5765798419999986,
+                "async_ane_wait_seconds_session_total": 11.36715403
+              }
+            }
+          ]
+        },
+        {
+          "mode": "gpu_weights",
+          "cold_seconds": 15.928699375,
+          "warm_seconds": [
+            11.309120209,
+            10.613343709
+          ],
+          "warm_median_seconds": 10.961231959,
+          "text_seconds": [
+            2.968594167,
+            1.440992084,
+            0.672472667
+          ],
+          "denoise_seconds": [
+            9.04631825,
+            8.967493792,
+            9.026031291
+          ],
+          "png_sha256": [
+            "11801263ca6ef0bf8402bfe1121169726ecebeeba4989c9366a84cb9148d1179",
+            "9d8cde134b05849e76aa76b2cc69c8c8a360da010d832b7496d35833c24ba1d0",
+            "15f83afd561844b662f414d99b9eee01bf6c7d4882ee1eda06d40659a125a6c7"
+          ],
+          "stdout_sha256": "99470ac231d160668076fc2e978367e54db3cd401935cac7440d216f579f4647",
+          "load_qualification_requested": false,
+          "memory": {
+            "complete": true,
+            "sample_count": 383,
+            "max_gap_ns": 110016959,
+            "tree_peak_phys_footprint_bytes": 40478354000,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "ab9564514977eeb71d960789d386ef1ada201bcd07aa129d8b02964948a00139",
+          "requests": [
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": null,
+              "runtime_calls_session_total": null,
+              "runtime_failed": null,
+              "fallback_blocks_session_total": null,
+              "weight_code_cache": null,
+              "cumulative_spans": {}
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": null,
+              "runtime_calls_session_total": null,
+              "runtime_failed": null,
+              "fallback_blocks_session_total": null,
+              "weight_code_cache": null,
+              "cumulative_spans": {}
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": null,
+              "runtime_calls_session_total": null,
+              "runtime_failed": null,
+              "fallback_blocks_session_total": null,
+              "weight_code_cache": null,
+              "cumulative_spans": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "directory": "outputs/local512-qwen-edit2-weight-code-cache-v1-diagnostic-20261008",
+      "summary_sha256": "f33ea6d60a6f69ea52d29d618a61fa8250a7f55a34319e7b4598c3dfb925db11",
+      "order": [
+        "gpu_weights",
+        "code_cache_off",
+        "code_cache_on"
+      ],
+      "reference_count": 2,
+      "status": "complete_diagnostic",
+      "cache_budget_bytes": 1342177280,
+      "qualification_passed": false,
+      "trials": [
+        {
+          "mode": "gpu_weights",
+          "cold_seconds": 17.790975833,
+          "warm_seconds": [
+            13.447898292,
+            12.835386667
+          ],
+          "warm_median_seconds": 13.1416424795,
+          "text_seconds": [
+            3.199386709,
+            1.704734541,
+            1.150792667
+          ],
+          "denoise_seconds": [
+            10.554195541,
+            10.590043833,
+            10.572819375
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "stdout_sha256": "450d692738c0696816cc44e4a84fa02b0b61428b75b8cf333f45c73a6fc52760",
+          "load_qualification_requested": false,
+          "memory": {
+            "complete": true,
+            "sample_count": 445,
+            "max_gap_ns": 109992584,
+            "tree_peak_phys_footprint_bytes": 41014503776,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "90a33110fc9b377124b6628d23f22a7f5f1425bcbe072fa586cfbef301b2f491",
+          "requests": [
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": null,
+              "runtime_calls_session_total": null,
+              "runtime_failed": null,
+              "fallback_blocks_session_total": null,
+              "weight_code_cache": null,
+              "cumulative_spans": {}
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": null,
+              "runtime_calls_session_total": null,
+              "runtime_failed": null,
+              "fallback_blocks_session_total": null,
+              "weight_code_cache": null,
+              "cumulative_spans": {}
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": null,
+              "runtime_calls_session_total": null,
+              "runtime_failed": null,
+              "fallback_blocks_session_total": null,
+              "weight_code_cache": null,
+              "cumulative_spans": {}
+            }
+          ]
+        },
+        {
+          "mode": "code_cache_off",
+          "cold_seconds": 18.186051167,
+          "warm_seconds": [
+            14.768716625,
+            14.24830525
+          ],
+          "warm_median_seconds": 14.508510937499999,
+          "text_seconds": [
+            3.16276675,
+            1.714269875,
+            1.157350791
+          ],
+          "denoise_seconds": [
+            10.913844292,
+            11.452884292,
+            11.490342125
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "61a67b4a977386eed6856e93da488cd244e07d1f8a52c92fff0a386207991696",
+          "load_qualification_requested": false,
+          "memory": {
+            "complete": true,
+            "sample_count": 476,
+            "max_gap_ns": 109977625,
+            "tree_peak_phys_footprint_bytes": 38886354280,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "703742cb4a6a6cdd6852d47656f3530830e004df433fd160f094172fcff86cb5",
+          "requests": [
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 256,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 1.4687968710000003,
+                "stage_wait_seconds_session_total": 0.000142713,
+                "pre_ffn_seconds_session_total": 5.280668172,
+                "post_join_seconds_session_total": 0.7459410069999995,
+                "async_ane_wait_seconds_session_total": 4.4229391609999995
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 512,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 3.9151695799999997,
+                "stage_wait_seconds_session_total": 0.00024471700000000014,
+                "pre_ffn_seconds_session_total": 11.050673790999998,
+                "post_join_seconds_session_total": 1.613684632999999,
+                "async_ane_wait_seconds_session_total": 8.931498412
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 768,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 0,
+                "declines_session_total": 0,
+                "enabled": false,
+                "entries": 0,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 0,
+                "hits_session_total": 0,
+                "ineligible_session_total": 0,
+                "live_capacity_bytes": 0,
+                "misses_session_total": 0,
+                "peak_capacity_bytes": 0,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 0,
+                "retained_bytes": 0,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 6.323935592,
+                "stage_wait_seconds_session_total": 0.00034726299999999913,
+                "pre_ffn_seconds_session_total": 16.733336121000004,
+                "post_join_seconds_session_total": 2.556393836999999,
+                "async_ane_wait_seconds_session_total": 13.453782531999996
+              }
+            }
+          ]
+        },
+        {
+          "mode": "code_cache_on",
+          "cold_seconds": 18.585168,
+          "warm_seconds": [
+            14.886829042,
+            14.313351583
+          ],
+          "warm_median_seconds": 14.6000903125,
+          "text_seconds": [
+            3.161540541,
+            1.75962325,
+            1.156889667
+          ],
+          "denoise_seconds": [
+            11.307134792,
+            11.5048945,
+            11.550111459
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "stdout_sha256": "1f5e2776c8081d60083cb7dbe1b11a08dcb51885e1da636954c03819191bdf40",
+          "load_qualification_requested": false,
+          "memory": {
+            "complete": true,
+            "sample_count": 482,
+            "max_gap_ns": 109980334,
+            "tree_peak_phys_footprint_bytes": 40215539744,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          },
+          "memory_report_sha256": "5f3bc658db0719346a0ebc2f113d0d76906e3bbed5365c6825cddeb462ca2762",
+          "requests": [
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 256,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 1342177280,
+                "declines_session_total": 198,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 315,
+                "ineligible_session_total": 268,
+                "live_capacity_bytes": 1321807872,
+                "misses_session_total": 261,
+                "peak_capacity_bytes": 1321816064,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1321807872,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 1.3949688220000003,
+                "stage_wait_seconds_session_total": 0.00010900600000000006,
+                "pre_ffn_seconds_session_total": 5.330251798,
+                "post_join_seconds_session_total": 0.936674335,
+                "async_ane_wait_seconds_session_total": 4.666803245000001
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 512,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 1342177280,
+                "declines_session_total": 396,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 693,
+                "ineligible_session_total": 524,
+                "live_capacity_bytes": 1321807872,
+                "misses_session_total": 459,
+                "peak_capacity_bytes": 1321816064,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1321807872,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 2.8072346529999987,
+                "stage_wait_seconds_session_total": 0.00020313200000000013,
+                "pre_ffn_seconds_session_total": 10.703502628,
+                "post_join_seconds_session_total": 2.0214272960000015,
+                "async_ane_wait_seconds_session_total": 9.307337996000012
+              }
+            },
+            {
+              "actual_steps": 6,
+              "lora_projections": 227,
+              "condition_cache_hit": false,
+              "source_loads": 1,
+              "shared_lora_ranks": {
+                "completed_adapter_rank_arrays_this_request": 384,
+                "completed_hybrid_blocks_this_request": 192,
+                "enabled": true,
+                "prepared_sets_this_request": 192,
+                "scope": "operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+              },
+              "runtime_calls_session_total": 768,
+              "runtime_failed": false,
+              "fallback_blocks_session_total": 0,
+              "weight_code_cache": {
+                "budget_bytes": 1342177280,
+                "declines_session_total": 594,
+                "enabled": true,
+                "entries": 63,
+                "evictions_session_total": 0,
+                "failed_fills_session_total": 0,
+                "fills_session_total": 63,
+                "hits_session_total": 1071,
+                "ineligible_session_total": 780,
+                "live_capacity_bytes": 1321807872,
+                "misses_session_total": 657,
+                "peak_capacity_bytes": 1321816064,
+                "policy": "first-admitted-live-generations-v1",
+                "ready_entries": 63,
+                "retained_bytes": 1321807872,
+                "scope": "successful completed GPU copies of cached converted W8 codes/normalized scales; weak source generations; live capacity includes producer leases; not whole-process RAM"
+              },
+              "cumulative_spans": {
+                "stage_seconds_session_total": 4.137306246999999,
+                "stage_wait_seconds_session_total": 0.00029804799999999954,
+                "pre_ffn_seconds_session_total": 16.086081717999996,
+                "post_join_seconds_session_total": 3.152186422000003,
+                "async_ane_wait_seconds_session_total": 14.011681455000009
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "directories": [
+      "build/local512-weight-code-cache-v1-private",
+      "build/local512-weight-code-cache-v1-public"
+    ],
+    "objects_removed": 423,
+    "logical_bytes_removed": 32939424,
+    "empty_module_cache_directories_removed": 2,
+    "binaries_logs_manifests_pngs_models_retained": true,
+    "recoverable_by_rebuilding": true
+  }
+}

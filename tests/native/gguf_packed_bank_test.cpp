@@ -19,7 +19,7 @@ std::shared_ptr<const SourceLease> lease(const char *path) {
 }
 int main(int argc,char **argv) {
     try {
-        ensure(argc==6,"five owned fixtures required");configure_streams();mx::set_cache_limit(0);
+        ensure(argc==8,"seven owned fixtures required");configure_streams();mx::set_cache_limit(0);
         auto source=lease(argv[1]);
         const auto content=source->file("weights").content_digest;
         Weights golden;golden.load_gguf_file(argv[1]);golden.materialize();
@@ -90,7 +90,7 @@ int main(int argc,char **argv) {
         }
         // Nonfinite float conversion fails transactionally; output alias
         // collisions, unsupported K and oversized source rows fail metadata.
-        for (int i=2;i<argc;++i) {
+        for (int i=2;i<6;++i) {
             MemoryLedger budget(32ull<<20);Weights partial;
             rejects([&]{GgufPackedBank invalid(lease(argv[i]),"weights",budget,16384);invalid.load(partial);});
             ensure(partial.sorted_keys().empty() && !budget.snapshot().storage_bytes,"invalid source published output or allocated leaked backing");
@@ -99,12 +99,109 @@ int main(int argc,char **argv) {
             auto metadata=SourceLease::capture({source->file("weights")});MemoryLedger budget(32ull<<20);
             rejects([&]{GgufPackedBank unverified(metadata,"weights",budget,16384);});
         }
+        // Mixed-K worker counts must change only the schedule/plan identity,
+        // never any packed bit. All escaped readers and failed tasks drain.
+        for(auto dtype:{mx::float16,mx::bfloat16}) {
+            auto mixed_source=lease(argv[6]);MemoryLedger serial_budget(32ull<<20);Weights serial;
+            GgufKImportOptions options;options.enabled=true;options.floating_dtype=dtype;
+            GgufPackedBank serial_bank(mixed_source,"weights",serial_budget,16384,true,0,6,options);
+            serial_bank.load(serial);
+            for(uint32_t workers:{2u,3u,4u,8u}) {
+                options.decode_workers=workers;
+                MemoryLedger budget(32ull<<20);Weights concurrent;
+                GgufPackedBank parallel(mixed_source,"weights",budget,16384,true,0,6,options);
+                parallel.load(concurrent);
+                ensure(parallel.metrics().decode_workers==workers && parallel.metrics().plan_digest!=serial_bank.metrics().plan_digest,
+                    "worker recipe missing from native receipt/identity");
+                ensure(concurrent.sorted_keys()==serial.sorted_keys(),"parallel K binding keys changed");
+                for(const auto &key:serial.sorted_keys()) {
+                    const auto &a=concurrent.at(key),&b=serial.at(key);
+                    ensure(a.shape()==b.shape() && a.dtype()==b.dtype() &&
+                        std::memcmp(a.data<std::byte>(),b.data<std::byte>(),a.nbytes())==0,"parallel K affine fields differ");
+                }
+                ensure(parallel.metrics().source_read_bytes==serial_bank.metrics().source_read_bytes &&
+                    parallel.metrics().read_buffer_capacity_bytes==16384 &&
+                    parallel.metrics().managed_peak_bytes<=parallel.metrics().planned_packed_capacity_bytes+16384,
+                    "parallel K import reread source or allocated per-worker payload buffers");
+                for(const auto &prefix:{"q4k","q5k","q6k"}) {
+                    const auto ids=Tensor(std::vector<int>{36,0,5,5,1}.data(),{5},mx::int32);
+                    auto gathered=concurrent.embedding_rows(ids,prefix);
+                    auto dense=mx::dequantize(serial.at(std::string(prefix)+".weight"),serial.at(std::string(prefix)+".scales"),
+                        serial.at(std::string(prefix)+".biases"),32,std::string(prefix)=="q4k" ? 4 : 8,"affine",std::nullopt,mx::float16);
+                    auto expected=mx::take(dense,ids,0);mx::eval({gathered,expected});
+                    ensure(gathered.shape()==mx::Shape{5,512} && gathered.dtype()==mx::float16 &&
+                        mx::all(gathered==expected).item<bool>(),"gathered embedding differs from full-table decode");
+                }
+                concurrent.clear();mx::synchronize();
+                ensure(!budget.snapshot().storage_bytes && !budget.snapshot().reserved_bytes,"parallel K backing leaked");
+                std::atomic<bool> cancelled{false};Weights untouched;
+                GgufPackedBank cancelled_bank(mixed_source,"weights",budget,16384,true,0,6,options);
+                rejects([&]{cancelled_bank.load(untouched,&cancelled,[&](const std::string &,int,int){cancelled.store(true);});});
+                ensure(untouched.sorted_keys().empty() && !budget.snapshot().storage_bytes,"parallel cancellation published partial bank");
+                GgufPackedBank invalid(lease(argv[7]),"weights",budget,16384,true,0,6,options);
+                rejects([&]{invalid.load(untouched);});
+                ensure(untouched.sorted_keys().empty() && !budget.snapshot().storage_bytes,"parallel packer failure published/leaked bank");
+            }
+            for(uint32_t workers:{0u,9u}) {
+                MemoryLedger budget(32ull<<20);options.decode_workers=workers;
+                rejects([&]{GgufPackedBank invalid(mixed_source,"weights",budget,16384,true,0,6,options);});
+            }
+            serial.clear();mx::synchronize();ensure(!serial_budget.snapshot().storage_bytes,"serial K control backing leaked");
+        }
+        // Raw source window is separate from affine GPU masters. One cache
+        // slot makes eviction deterministic; escaped readers stay charged.
+        {
+            MemoryLedger budget(32ull<<20);Weights affine;
+            auto raw_bank=std::make_unique<GgufPackedBank>(source,"weights",budget,16384,true,98304,1);
+            raw_bank->load(affine);
+            auto q8=raw_bank->raw_matrix("q8.weight");
+            ensure(q8.type==8 && q8.columns==64 && q8.values.dtype()==mx::uint8 &&
+                q8.values.shape()==mx::Shape{512,68},"raw window returned affine/logical dense layout");
+            const auto id=q8.values.data_shared_ptr();
+            const auto content_id=q8.logical_content_identity;ensure(bool(content_id),"verified raw source has no logical identity");
+            ensure(raw_bank->raw_matrix("q8.weight").values.data_shared_ptr()==id,"raw cache hit changed generation");
+            {auto q4=raw_bank->raw_matrix("q4.weight");ensure(q4.type==2 && q4.values.shape()==mx::Shape{512,36},"raw Q4 geometry changed");}
+            auto m=raw_bank->metrics();
+            ensure(m.raw_window_entries==1 && m.raw_window_hits==1 && m.raw_window_misses==2 && m.raw_window_evictions==1 &&
+                m.raw_window_source_read_bytes==512*(68+36) && m.raw_window_live_bytes==81920 &&
+                m.raw_window_peak_bytes<=98304,"raw source traffic/cache/escaped accounting mismatch");
+            rejects([&]{raw_bank->raw_matrix("q41.weight");});
+            rejects([&]{raw_bank->raw_matrix("f32");});
+            std::atomic<bool> cancel{true};rejects([&]{raw_bank->raw_matrix("q4.weight",&cancel);});
+            std::thread intruder([&]{rejects([&]{raw_bank->raw_matrix("q8.weight");});});intruder.join();
+            raw_bank->clear_raw_window();
+            ensure(raw_bank->metrics().raw_window_live_bytes==49152,"raw eviction lost escaped owner's claim");
+            {
+                auto refill=raw_bank->raw_matrix("q8.weight");
+                ensure(refill.values.data_shared_ptr()!=id && refill.logical_content_identity==content_id,
+                    "raw refill changed immutable content identity or reused an escaped physical backing");
+            }
+            raw_bank->clear_raw_window();
+            auto *data=q8.values.data<uint8_t>();ensure(data[0]==0 && data[1]==0x30,"raw source payload changed");
+            raw_bank.reset();affine.clear();
+            ensure(data[0]==0 && data[1]==0x30,"raw reader died with producer");
+            // Allocation admission includes a live evicted reader, even when
+            // the cache is empty. Releasing it permits a clean refill.
+            GgufPackedBank floor(source,"weights",budget,16384,true,49152,1);floor.load(affine);
+            auto held=floor.raw_matrix("q8.weight");
+            ensure(held.logical_content_identity!=content_id,"new bank/source proof reused an old logical content identity");
+            rejects([&]{floor.raw_matrix("q4.weight");});
+            ensure(floor.metrics().raw_window_entries==0 && floor.metrics().raw_window_live_bytes==49152,
+                "raw floor published partial destination or forgot escaped claim");
+            held.values=mx::zeros({1},mx::uint8);mx::synchronize();
+            ensure(!floor.metrics().raw_window_live_bytes,"content identity retained packed payload after reader release");
+            ensure(floor.raw_matrix("q4.weight").type==2,"raw source clean refill failed");
+            floor.clear_raw_window();ensure(!floor.metrics().raw_window_live_bytes,"raw refill leaked storage");
+        }
         // Only the test-owned file is changed; model fixtures are never writable.
         const auto path=std::filesystem::canonical(argv[1]);
         ensure(path.filename()=="fixture.gguf" && path.parent_path().filename().string().starts_with("tc-gguf-bank-"),
                "refusing to mutate a non-owned source");
         {
             MemoryLedger budget(32ull<<20);Weights partial;GgufPackedBank changed(source,"weights",budget,16384);
+            MemoryLedger raw_budget(32ull<<20);Weights raw_affine;
+            GgufPackedBank raw_changed(source,"weights",raw_budget,16384,true,98304,1);
+            raw_changed.load(raw_affine);raw_changed.raw_matrix("q8.weight");
             rejects([&]{changed.load(partial,nullptr,[&](const std::string &,int current,int){
                 if (current!=1) return;
                 const int fd=::open(path.c_str(),O_WRONLY|O_CLOEXEC);ensure(fd>=0,"cannot open owned fault fixture");
@@ -112,8 +209,9 @@ int main(int argc,char **argv) {
             });});
             ensure(partial.sorted_keys().empty() && !budget.snapshot().storage_bytes,"source change published partial bank");
             rejects([&]{changed.check_unchanged();});
+            rejects([&]{raw_changed.raw_matrix("q8.weight");}); // even a cached hit revalidates generation
         }
-        std::cout<<"PASS GGUF packed bank Metal: native field/projection exact, bounded chunks/claims, cancellation/floors/source change\n";
+        std::cout<<"PASS GGUF packed bank Metal: native field/projection exact, bounded chunks/claims, cancellation/floors/source change; mixed-K 1/2/3/4/8 workers and gathered embeddings byte/numeric parity\n";
         return 0;
     } catch (const std::exception &error) { std::cerr<<error.what()<<'\n';return 1; }
 }

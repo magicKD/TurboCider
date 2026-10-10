@@ -2281,7 +2281,9 @@ class ContractTests(unittest.TestCase):
         begin=source.index('size_t Weights::apply_loras(')
         end=source.index('Tensor linear(',begin)
         implementation=source[begin:end]
-        self.assertIn('std::atomic<bool> &cancelled,\n                            bool inference_time, bool strict_targets) try {',implementation)
+        self.assertIn('return apply_loras_impl(adapters,role,event,cancelled,inference_time,{},{},strict_targets);',implementation)
+        implementation=implementation[implementation.index('size_t Weights::apply_loras_impl('):]
+        self.assertIn('bool strict_targets) try {',implementation)
         self.assertIn('catch (...) {',implementation)
         self.assertIn('clear();',implementation)
         self.assertIn('throw;',implementation)
@@ -2545,12 +2547,9 @@ class ContractTests(unittest.TestCase):
         # The optional Viggle FP16 low-rank path changes only the rank-sized
         # matmuls; accumulation back into the base output remains FP32.
         self.assertIn('const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;',source)
-        self.assertIn('auto input = mx::astype(x, rank_dtype);',source)
-        self.assertIn('auto down = mx::astype(adapter.down, rank_dtype);',source)
-        self.assertIn('auto up = mx::astype(adapter.up, rank_dtype);',source)
-        self.assertIn('auto low = mx::matmul(input, mx::transpose(down));',source)
-        self.assertIn('mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32)',source)
-        self.assertIn('Tensor(adapter.scale, mx::float32)',source)
+        self.assertIn('auto low = runtime_lora_rank(x, adapter.down, col_start, col_end);',source)
+        self.assertIn('mx::matmul(mx::astype(x,dtype),mx::transpose(mx::astype(slice_axis(down,1,cs,ce),dtype)))',source)
+        self.assertIn('mx::astype(mx::matmul(low,mx::transpose(mx::astype(slice_axis(up,0,first,last),dtype))),mx::float32)*Tensor(scale,mx::float32)',source)
         self.assertIn('if (!values_.count(key) && target.ends_with(".attention.to_out.0"))',source)
         self.assertIn('target_key_counts[resolve_target_key(target)]',source)
         self.assertIn('const bool shared_projection = target_key_counts[key] > 1;',source)
@@ -2776,6 +2775,7 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(model['gpu_ane_policy'], expected)
         encoder_models = {
             'flux2-klein-4b', 'flux2-klein-9b',
+            'qwen-image-2.1',
             'z-image-turbo', 'z-image-turbo-gguf',
             'ltx-2.5-distilled',
             'minimax-h3-fasth3-mlx-int6',

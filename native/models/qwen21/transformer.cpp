@@ -299,6 +299,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     // synchronization/hash of a many-megabyte conditioning tensor each step.
     if (!cache_prefix || !cached_text_ || cached_text_->id() != text.id() || !same_references) reset();
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
+    last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
     require(bool(stage_qkv_) == bool(project_qkv_),
             "Qwen21 QKV stage and projection callbacks must be paired");
@@ -440,6 +441,17 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         const bool measured_qkv = bool(project_qkv_) && !trace &&
             (qkv_plan == QKVPlan::HybridTimed || qkv_plan == QKVPlan::GpuProbe);
         const bool measured_block = plan_mlp_ && (plan == MLPPlan::Split || plan == MLPPlan::GpuProbe);
+        std::vector<std::string> dynamic_keys;
+        std::vector<Tensor> dynamic_sources;
+        if(layer_weights_) {
+            require(!split_this && !external_qkv && !fused_qkv_ && !trace && !capture_ffn && !reuse_ffn_block &&
+                !db_cache_enabled_,"Qwen streamed blocks require complete GPU arithmetic without temporal/ANE experiments");
+            const auto &source=layer_weights_(i);const auto p="transformer_blocks."+std::to_string(i)+".";
+            for(const auto &key:source.sorted_keys())if(key.starts_with(p)) {
+                dynamic_keys.push_back(key);dynamic_sources.push_back(source.at(key));
+            }
+            require(!dynamic_keys.empty(),"Qwen streamed layer has no dynamic original weights");
+        }
         auto &functions = half_reuse_ffn ? half_reuse_blocks_ : reuse_last16_ffn ? reuse_last16_blocks_ :
                                reuse_ffn ? reuse_blocks_ : capture_ffn ? capture_blocks_
                                : reuse ? decode_blocks_ : prefill_blocks_;
@@ -454,7 +466,11 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                           profile_ops, profile_segments,
                           metal_rope = metal_qk_rope_, fused_norm_rope = metal_qk_norm_rope_,
                           local_references = reference_local_attention_,
+                          dynamic_keys,
                           tracing = trace != nullptr](const std::vector<Tensor> &args) {
+                Weights dynamic;
+                if(!dynamic_keys.empty())dynamic.bind_arrays(dynamic_keys,args,args.size()-dynamic_keys.size());
+                const Weights &weights=dynamic_keys.empty() ? weights_ : dynamic;
                 // The last prefill block exports only target queries. Without
                 // a fused QKV/RoPE kernel, avoid projecting and rotating Q for
                 // the discarded text/reference rows; K/V still cover every
@@ -489,29 +505,29 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     v = heads(args.back(), config_.heads, config_.head_dim);
                 } else if (fused_qkv_) {
                     auto all = metal::project_prepare_qkv(input, fused_qkv_->at(i),
-                        weights_.at(p + ".attn.norm_q.weight"),
-                        weights_.at(p + ".attn.norm_k.weight"),
+                        weights.at(p + ".attn.norm_q.weight"),
+                        weights.at(p + ".attn.norm_k.weight"),
                         cosine, sine, 32);
                     q = all[0]; k = all[1]; v = all[2];
                 } else {
                     q = linear(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
-                               weights_, p + ".attn.to_q");
-                    k = linear(input, weights_, p + ".attn.to_k");
-                    v = heads(linear(input, weights_, p + ".attn.to_v"), config_.heads, config_.head_dim);
+                               weights, p + ".attn.to_q");
+                    k = linear(input, weights, p + ".attn.to_k");
+                    v = heads(linear(input, weights, p + ".attn.to_v"), config_.heads, config_.head_dim);
                 }
                 mark("qkv_projection", {q, k, v});
                 if (fused_qkv_) {
                     // Q/K normalization and RoPE are part of the projection.
                 } else if (fused_norm_rope) {
                     auto pair = metal::prepare_qk(q, k,
-                        weights_.at(p + ".attn.norm_q.weight"), weights_.at(p + ".attn.norm_k.weight"),
+                        weights.at(p + ".attn.norm_q.weight"), weights.at(p + ".attn.norm_k.weight"),
                         cosine, sine, config_.epsilon);
                     q = pair[0]; k = pair[1];
                 } else {
                     q = mx::fast::rms_norm(heads(q, config_.heads, config_.head_dim),
-                                           weights_.at(p + ".attn.norm_q.weight"), config_.epsilon);
+                                           weights.at(p + ".attn.norm_q.weight"), config_.epsilon);
                     k = mx::fast::rms_norm(heads(k, config_.heads, config_.head_dim),
-                                           weights_.at(p + ".attn.norm_k.weight"), config_.epsilon);
+                                           weights.at(p + ".attn.norm_k.weight"), config_.epsilon);
                 }
                 if (!fused_qkv_ && !fused_norm_rope && metal_rope) {
                     auto pair = rope_pairs_pair(q, k, cosine, sine);
@@ -589,7 +605,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     for (int gate = 1; gate < 4; ++gate)
                         mods[gate] = slice_axis(mods[gate], 1, prefix_length, mods[gate].shape(1));
                 }
-                auto projected = linear(output, weights_, p + ".attn.to_out.0");
+                auto projected = linear(output, weights, p + ".attn.to_out.0");
                 mark("attention_output_projection", {projected});
                 hidden = hidden + mx::tanh(mods[1]) * projected;
                 auto after_attention = hidden;
@@ -601,15 +617,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 if (reuse_ffn_block) {
                     feed = args[9];
                 } else {
-                    if (weights_.has(p + ".img_mlp.gate_up.weight")) {
-                        auto gate_up = linear(input, weights_, p + ".img_mlp.gate_up");
+                    if (weights.has(p + ".img_mlp.gate_up.weight")) {
+                        auto gate_up = linear(input, weights, p + ".img_mlp.gate_up");
                         const int half = gate_up.shape(-1) / 2;
                         ff = silu(slice_axis(gate_up, -1, 0, half)) *
                              slice_axis(gate_up, -1, half, gate_up.shape(-1));
                     } else {
-                        ff = silu(linear(input, weights_, p + ".img_mlp.gate_layer")) * linear(input, weights_, p + ".img_mlp.proj");
+                        ff = silu(linear(input, weights, p + ".img_mlp.gate_layer")) * linear(input, weights, p + ".img_mlp.proj");
                     }
-                    feed = linear(ff, weights_, p + ".img_mlp.out");
+                    feed = linear(ff, weights, p + ".img_mlp.out");
                 }
                 mark("ffn_gate_up", {ff});
                 hidden = hidden + mx::tanh(mods[3]) * feed;
@@ -626,8 +642,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             args.push_back(prefix_[i].key);
             args.push_back(prefix_[i].value);
         }
-        if (reuse_ffn_block)
+        if (reuse_ffn_block) {
             args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
+            ++last_ffn_reused_blocks_;
+        }
         // Probe complete blocks from the same materialized upstream inputs,
         // including staging, QKV join, attention and GPU FFN. The GPU probe
         // uses the ordinary fused/lazy block rather than an external QKV ABI.
@@ -645,6 +663,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             auto three = mx::split(projected, 3, -1);
             args.insert(args.end(), three.begin(), three.end());
         }
+        args.insert(args.end(),dynamic_sources.begin(),dynamic_sources.end());
         // Diagnostic only: force each pure-GPU block boundary so the elapsed
         // time can be attributed to that block. This destroys normal lazy
         // scheduling and must never be used as a production speed benchmark.
@@ -730,6 +749,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             functions[i] = {};
             release_layer_("transformer_blocks." + std::to_string(i) + ".");
         }
+        if(retire_weights_) {
+            mx::eval(outputs);mx::eval(hidden);
+            retire_weights_(i);
+        }
         if (db_decode && i == config_.layers - db_back_blocks - 1) {
             require(db_middle_input.has_value(), "Qwen21 DBCache middle-block input is missing");
             db_middle_residual_ = mx::copy(hidden - *db_middle_input);
@@ -754,7 +777,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         cached_text_ = text;
         for (const auto &r : references) cached_references_.push_back(r.latents);
     }
-    if (capture_ffn) mx::eval(cached_ffn_);
+    if (capture_ffn) {
+        mx::eval(cached_ffn_);
+        last_ffn_captured_blocks_=int(cached_ffn_.size());
+    }
     if (trace) { prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
                  reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear(); }
     if (db_cache_enabled_ && !trace) db_last_step_ = db_step_;

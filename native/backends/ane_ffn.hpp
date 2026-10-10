@@ -19,14 +19,19 @@ inline bool configured_fp32_channel_join() {
     return raw && std::string(raw)=="1";
 }
 
-// Explicit representation, never inferred from checkpoint filenames. Packed
-// matrices use MLX affine uint32 codes; scales/offsets stay owned until drain.
+// Explicit representation, never inferred from checkpoint filenames. Raw GGML
+// bytes and MLX affine planes are distinct; all owners stay alive until drain.
 struct FfnWeight {
     enum class Transform { None, ComfyH256Inverse };
+    struct RawGguf {
+        uint32_t type; int columns;
+        std::shared_ptr<void> logical_content_identity{};
+    };
     Tensor values;
     std::optional<Tensor> scales, offsets;
     int group_size = 32, bits = 4;
     Transform transform = Transform::None;
+    std::optional<RawGguf> raw_gguf = std::nullopt;
 };
 
 // Explicit runtime-weight FFN route. The caller supplies its optimized GPU
@@ -34,6 +39,20 @@ struct FfnWeight {
 // No adapter or model weights are embedded in the Core ML graph.
 class HybridFfn {
   public:
+    // Declare AFTER the borrowed source owners. A retained executor can
+    // outlive those owners, including when attention throws after staging.
+    // finish() drains and disarms on success; unwinding preserves the primary
+    // exception while still waiting for all submitted source readers.
+    class SourceScope {
+      public:
+        explicit SourceScope(HybridFfn *runtime) : runtime_(runtime) {}
+        SourceScope(const SourceScope &) = delete;
+        SourceScope &operator=(const SourceScope &) = delete;
+        ~SourceScope() noexcept { if(runtime_)try { runtime_->drain(); } catch(...) {} }
+        void finish() { if(runtime_)runtime_->drain();runtime_=nullptr; }
+      private:
+        HybridFfn *runtime_;
+    };
     using Gpu = std::function<Tensor(const Tensor &)>;
     // Base-down partial and corrected hidden for a logical channel range.
     // Explicit fp32_channel_join() uses an F32 base partial; hidden retains
@@ -42,6 +61,15 @@ class HybridFfn {
     using ChannelGpu = std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)>;
     using NextWeights = std::function<std::vector<FfnWeight>(int)>;
     struct Adapter {
+        struct ChannelDownRanks {
+            uint64_t scratch_bytes_per_row = 0;
+            // Return lazy GPU-head rank partials only; the wrapper owns their
+            // submission/drain. No adapter mutation or hidden-dtype change.
+            std::function<std::vector<Tensor>(const Tensor &)> prepare_gpu;
+            // Restore the ANE hidden shard, sum rank partials in FP32, then
+            // ONE B projection/delta rounding/base add. No full concatenation.
+            std::function<Tensor(const Tensor &,const std::vector<Tensor> &,const Tensor &)> finish;
+        };
         std::function<std::pair<Tensor, Tensor>(const Tensor &)> gate_up;
         // Complete the ANE tail from corrected/restored hidden and base-down
         // output. Keeping the add inside the callback lets a family's GPU
@@ -52,6 +80,7 @@ class HybridFfn {
         // each logical gate/up half. Row executors keep the full callback;
         // channel callers without this extension remain compatible.
         std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> channel_gate_up = {};
+        std::optional<ChannelDownRanks> channel_down_ranks = std::nullopt;
     };
     struct CalibrationWorkload {
         std::string model_sha256, adapter_identity, source_generation, encoding, gpu_configuration;
@@ -69,13 +98,17 @@ class HybridFfn {
               std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared = std::nullopt,
               std::string scheduler_identity = {},
               const CalibrationWorkload *calibration = nullptr,
-              std::optional<int> calibrated_channels = std::nullopt);
+              std::optional<int> calibrated_channels = std::nullopt,
+              std::optional<int> channel_override = std::nullopt,
+              std::optional<int> bucket_override = std::nullopt);
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
               const CalibrationWorkload *calibration,
-              std::optional<int> calibrated_channels = std::nullopt)
+              std::optional<int> calibrated_channels = std::nullopt,
+              std::optional<int> channel_override = std::nullopt,
+              std::optional<int> bucket_override = std::nullopt)
         : HybridFfn(manifest, hidden, width, memory_budget, cancelled, require_lora_inputs,
-                    std::nullopt, {}, calibration, calibrated_channels) {}
+                    std::nullopt, {}, calibration, calibrated_channels, channel_override, bucket_override) {}
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
@@ -102,6 +135,9 @@ class HybridFfn {
     // Called BEFORE attention submission. Own references until staging joins.
     void stage(int layer, int rows, std::vector<Tensor> weights);
     void stage_weights(int layer, int rows, std::vector<FfnWeight> weights);
+    // Model-supplied source acquisition failed before an executor could stage.
+    // Match stage_weights' sticky fallback/metrics and end the planned block.
+    void fail_staging(int layer,int rows,const std::string &reason);
     Tensor run(int layer, const Tensor &input, const Gpu &gpu,
                std::atomic<bool> &cancelled, const Adapter *adapter = nullptr,
                const ChannelGpu &channel_gpu = {}, const NextWeights &next_weights = {});
@@ -171,10 +207,12 @@ class HybridFfn {
     int layer_ = -1, rows_ = 0, chunks_ = 0;
     bool profile_ = false;
     bool prefetch_ = false;
+    bool prefetch_after_gpu_ = true;
     bool fp32_channel_join_ = false;
     bool lora_channel_range_ = true;
     bool fixed_async_ = false;
     bool defer_channel_join_ = false;
+    bool channel_gpu_first_ = false;
     int prefetched_layer_ = -1;
     size_t memory_budget_ = 0;
     std::string reason_;

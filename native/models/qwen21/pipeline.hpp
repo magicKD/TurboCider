@@ -4,6 +4,10 @@
 #include "../../runtime/streaming/source_lease.hpp"
 #include "hybrid.hpp"
 #include "transformer.hpp"
+#include "conditioning_cache.hpp"
+#include "encoder_residency.hpp"
+#include "gguf_weights.hpp"
+#include "encoder_prefill.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "../../backends/ane_qkv.hpp"
 
@@ -16,22 +20,22 @@ class Session final : public ModelSession {
     RunResult prepare(const Request &, bool, const Event &, std::atomic<bool> &) override;
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
   private:
-    struct CachedEditCondition {
-        std::string prompt;
-        int reference_size = 0;
-        std::vector<std::string> image_sha256;
-        Tensor text;
-        std::vector<int> image_slots;
-        std::vector<ReferenceLatents> reference_latents;
-    };
     std::filesystem::path root_;
+    std::filesystem::path transformer_source_,encoder_source_;
     Weights transformer_, vae_;
+    std::unique_ptr<GgufComponent> transformer_gguf_,encoder_gguf_;
     // Diagnostic shallow views of QKV matrices replacing their three source
     // weights in transformer_. Never retained on a route without opt-in.
     std::vector<Tensor> fused_qkv_weights_;
-    std::optional<Tensor> cached_text_;
-    std::string cached_prompt_;
-    std::optional<CachedEditCondition> cached_edit_;
+    ConditioningCache conditioning_cache_;
+    std::unique_ptr<Weights> encoder_weights_;
+    std::string encoder_weight_identity_;
+    uint64_t encoder_weight_loads_ = 0;
+    std::unique_ptr<VerifiedEncoderTokenizer> encoder_tokenizer_;
+    // Optional one-entry executor only; never retains the complete encoder
+    // weights. Drain before request-owned text sources die or identity changes.
+    std::unique_ptr<ane::HybridFfn> encoder_runtime_;
+    std::string encoder_runtime_identity_;
     // Explicit resident experiment; owns one prefix KV bank at most. The
     // transformer must be destroyed before its referenced weights are cleared.
     std::unique_ptr<Transformer> cached_prefix_transformer_;
@@ -56,6 +60,9 @@ class Session final : public ModelSession {
     // owners, and discard the identity used to admit cross-request KV reuse.
     void clear_prefix_cache();
     void clear_prefix_snapshot();
+    void prepare_transformer(const Request &, const Event &, std::atomic<bool> &,
+                             bool experimental_adapter, bool fused_qkv, bool lora_fp16);
     RunResult run(const Request &, const Event &, std::atomic<bool> &, bool warmup, bool prepare_only);
+    RunResult run_bf16_streamed(const Request &,const Event &,std::atomic<bool> &,bool warmup,bool prepare_only);
 };
 } // namespace tc::qwen21

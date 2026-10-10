@@ -17,6 +17,20 @@
 | `runtime_ane_swiglu_int8_probe.py` | 完整动态 SwiGLU/LoRA 的 FP16/QDQ 对照，包含 CPU 准备、FP32桥接、数值/设备计划与严格 Python 输出边界检查 | 两个小几何的诊断不是生产加速或图像质量资格；不接入 App |
 | `runtime_gpu_swiglu_a8w8_probe.py` | 两个受限小尺寸的完整动态 SwiGLU/LoRA GPU 对照：FP16、INT8 存储后 FP16、普通整数 ALU；含准备/同步/回读和独立 CPU 数值校验 | 整数 ALU 不是原生 INT8 矩阵加速；不接入 App，不与不同输入边界的旧 Core ML 跑分直接相除 |
 | `qwen21_ane_placement.py` | 冻结/runtime manifest的离线设备计划、嵌套算子与artifact身份 | preferred设备不等于实际硬件执行或重叠 |
+| `qwen_ffn_phase_screen.py` | 同库生成/编辑GPU、prefill/decode/all与已有frozen-base对照；验证实际phase/calls及统一encoder source生命周期 | frozen仅base生成；Private callback计数不等于Core ML prediction计数，busy诊断不等于正式性能资格 |
+
+Qwen base三路对照可用 `--generation --frozen-manifest <existing compiled
+manifest> --request-local-encoder --modes gpu,all,frozen`；以显式disabled
+native source record检查每请求loads1/2/3、retained0，不改写raw retention
+metadata。反序须另起fresh output；完整条件和保留的失败见
+[当前base对照](../../docs/status/local512-qwen-frozen-base-2026-10-10.md)。
+
+Qwen原LoRA编辑首步缓存对照用 `--prefill-code-cache-bytes <budget>
+--joint-ab`，默认GPU/prefill/cache-copy/cache-surface四臂；可选三臂反序。
+仅缓存首步原W，decode保持完整GPU；验证actual cold fills/zero hits和warm进度、
+96 W producers及Shared Device的12 bootstrap/每prediction一个不可缓存A8。
+不把预算标记或ineligible误当未执行，也不追认memory fallback为混合。
+完整边界见[首步cache筛选](../../docs/status/local512-qwen-prefill-weight-cache-2026-10-10.md)。
 
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
 screen现有helper重导出和switch兼容接口保留，避免破坏已保存的复核脚本。

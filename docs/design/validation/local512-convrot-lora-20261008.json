@@ -1,0 +1,77 @@
+{
+  "schema": "tc-local512-convrot-runtime-lora-evidence-v1",
+  "local_date": "2026-10-08",
+  "hardware": "Apple M4 Max 64GB / macOS26.6.2",
+  "new_flag": "TURBOCIDER_Z_RUNTIME_CONVROT_LORA",
+  "default_enabled": false,
+  "full_goal_complete": false,
+  "qualification_passed": false,
+  "math_policy": "base-only original ConvRot codes/scales, pre-SiLU GPU LoRA gate/up, corrected GPU/ANE hidden, ONE full joined-hidden down LoRA, original source basis/dtypes/alpha and complete GPU recompute",
+  "shared_rotation_policy": "only base uses shared XH; LoRA consumes original unrotated X, sequential per-adapter output cast then original bias",
+  "builds": {
+    "private": {"library": "build/local512-convrot-lora-v1-private/libturbocider.dylib", "sha256": "8eedfe6b13d6dce4f6682aabb1293fa8beb1c16e03967d7d62628ce840d09182", "source_input_count": 493, "source_mismatches_at_verification": 0},
+    "public": {"library": "build/local512-convrot-lora-v1-public/libturbocider.dylib", "sha256": "0cddcef7dbb505971c6b9f93bab447ed24e34a27dd3a6b96ef405fa50c952a32", "source_input_count": 493, "source_mismatches_at_verification": 0, "release_binary_guard_passed": true},
+    "scope": "native-only builds exit0 and thin CLI compiled, include pre-existing working-tree ConvRot drafts, not clean staged-only build/App release"
+  },
+  "tests": {
+    "shared_lora_cases": 72,
+    "shared_lora_byte_exact_and_master_identity_unchanged": true,
+    "independent_known_adapter_arithmetic_passed": true,
+    "private_selected": {"count": 16, "skips": 0, "passed": true, "log": "outputs/local512-convrot-lora-v1-private-test-20261008.log"},
+    "public_selected": {"count": 29, "skips": 0, "passed": true, "log": "outputs/local512-convrot-lora-v1-public-final-test-20261008.log"},
+    "independent_and_host_final": {"count": 7, "skips": 0, "passed": true, "log": "outputs/local512-convrot-lora-v1-final-independent-test-20261008.log"},
+    "direct_private_comfy_driver": {"cases": 4, "passed": true, "log": "outputs/local512-convrot-lora-v1-driver-test-v2-20261008.log"},
+    "initial_driver_symlink_rejection_preserved": "outputs/local512-convrot-lora-v1-driver-test-20261008.log",
+    "scope": "selected compatibility/math/gates/actual-driver/failure/encoder/channel tests, not full suite or all models/adapters"
+  },
+  "model_diagnostics": [
+    {
+      "directory": "outputs/local512-convrot-lora-v1-forward-diagnostic-20261008",
+      "order": ["gpu", "original", "mpp"],
+      "cold_seconds": {"gpu": 10.622371292, "original": 13.38175025, "mpp": 10.587852458},
+      "warm_median_seconds": {"gpu": 9.520813271, "original": 11.995366229, "mpp": 9.1515894585},
+      "peak_phys_footprint_bytes": {"gpu": 19460278024, "original": 19276646392, "mpp": 19294439512},
+      "qualification_passed": false
+    },
+    {
+      "directory": "outputs/local512-convrot-lora-v1-reverse-diagnostic-20261008",
+      "order": ["mpp", "original", "gpu"],
+      "cold_seconds": {"gpu": 10.537796167, "original": 13.237225666, "mpp": 10.303101375},
+      "warm_median_seconds": {"gpu": 9.507781875, "original": 11.9899491045, "mpp": 9.1127080835},
+      "peak_phys_footprint_bytes": {"gpu": 19460949912, "original": 19276449760, "mpp": 19291408160},
+      "qualification_passed": false
+    }
+  ],
+  "model_scope": "same library/local original ConvRot + original distill patch rank32/strength1, fox seed42,512sq/eight steps; complete shared-rotation GPU and equal policy original/MPP hybrids; Fa4096, complete GPU ordinal2, fixed async/F32 join, no prefetch/lookahead/W-code cache; first then two same-prompt hot requests, not strict load qualified",
+  "actual_lora_projections_per_request": 238,
+  "actual_hybrid_calls_and_channel_blocks_cumulative": [248, 496, 744],
+  "actual_narrow_lora_corrections_cumulative": [248, 496, 744],
+  "actual_full_gpu_policy_blocks_cumulative": [8, 16, 24],
+  "failure_fallback_retry_count": 0,
+  "headroom_scale": 1,
+  "memory_complete_reports": 6,
+  "system_swap_in_out_bytes": 0,
+  "matching_original_mpp_pngs_byte_equal_both_orders": true,
+  "gpu_png_sha256": "e50a74b9e8e829f699d87e834feecf27816f9d01ed2411715b90b41ab10ca542",
+  "hybrid_png_sha256": "d259e962d5c80ef480cf464a4de1e768752c1e2b478df96e5d9f135d71ff4062",
+  "visual_review": {"whole_pairs_inspected": 2, "same_coordinate_crops_inspected": 6, "agent_observation": "very similar fox pose/layout/color/tail/snow; subtle eye/fur detail differences, no observed new breaks/color blocks", "scope": "one scene/seed, original sheet caption GPU actually Private control, automatic manifests pending, not user or latent quality approval"},
+  "state_switch": {
+    "directory": "outputs/local512-convrot-lora-v1-state-switch-diagnostic-20261008",
+    "sequence": ["base", "original_adapter_strength1", "same_original_adapter_strength0.5", "base"],
+    "state_restore_passed": true,
+    "actual_calls_cumulative": [248, 496, 744, 992],
+    "actual_lora_corrections_cumulative": [0, 248, 496, 496],
+    "actual_adapter_projections": [0, 238, 238, 0],
+    "same_load_seconds": 0.022637792,
+    "headroom_scale": 1,
+    "base_png_sha256": "de07fcac207a52fdb8a213108990d2ddaef9f6e6b35ad86d0d4ee9dc8edd1887",
+    "half_strength_png_sha256": "e149ac8b3a50fe5b51906d8fb1cedfdbca9c40a64b7e82be42b406c8f39b2f0c",
+    "memory_complete": true,
+    "peak_phys_footprint_bytes": 19282315136,
+    "scope": "same executor/content generation handoff/state diagnostic, not speed/second trained adapter/physical overlap qualification"
+  },
+  "no_master_merge_or_model_download": true,
+  "no_physical_native_int8_mac_or_overlap_claim": true,
+  "no_old_numerical_or_memory_load_gate_relaxed": true,
+  "cleanup": {"objects_removed": 425, "logical_object_bytes": 33127816, "empty_module_cache_dirs_removed": 2, "temporary_driver_cache_files_removed": 12, "temporary_driver_cache_logical_bytes": 1083000, "recoverable": "rebuild", "libraries_cli_probe_logs_media_models_adapters_retained": true}
+}

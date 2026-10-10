@@ -1,6 +1,7 @@
 #pragma once
 #include "../../core/contracts.hpp"
 #include "viggle_adapter.hpp"
+#include "../../core/common.hpp"
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -18,6 +19,59 @@ inline bool option_enabled(const char *value) {
 
 inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
+}
+inline bool compiled_encoder_gpu(const Request &r) {
+    const char *raw=std::getenv("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU");
+    const char *prefill=std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");
+    require(binary_option_or_unset(prefill),"Qwen fused GPU encoder prefill requires 0 or 1");
+    require(binary_option_or_unset(raw),"Qwen compiled encoder GPU requires 0 or1");
+    const bool enabled=option_enabled(raw) || option_enabled(prefill);
+    if(option_enabled(prefill))require(r.encoder_ane_manifest.empty(),"fused encoder prefill is GPU-only");
+    if(enabled)require(r.model=="qwen-image-2.1" && r.allow_approximation && r.residency=="resident" &&
+        r.width==512 && r.height==512 && !r.prompt_enhance && !r.streaming.active() &&
+        !r.memory_constrained.enabled && !r.memory_budget_bytes &&
+        (r.operation=="image.generate" || (r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2 &&
+            r.qwen21_reference_size==512)),
+        "compiled Qwen encoder GPU requires approximate unconstrained resident512 generation/editing and at most two ref512");
+    return enabled;
+}
+inline bool joint_bf16_lora_ab(const Request &request) {
+    return request.model=="qwen-image-2.1" && !request.loras.empty() &&
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_AB"));
+}
+
+enum class RuntimeFfnPhase { Invalid, All, Prefill, Decode };
+inline RuntimeFfnPhase runtime_ffn_phase(const char *value) {
+    if (!value || std::string_view(value) == "all") return RuntimeFfnPhase::All;
+    if (std::string_view(value) == "prefill") return RuntimeFfnPhase::Prefill;
+    if (std::string_view(value) == "decode") return RuntimeFfnPhase::Decode;
+    return RuntimeFfnPhase::Invalid;
+}
+inline const char *runtime_ffn_phase_name(RuntimeFfnPhase phase) {
+    return phase == RuntimeFfnPhase::Prefill ? "prefill" :
+           phase == RuntimeFfnPhase::Decode ? "decode" :
+           phase == RuntimeFfnPhase::All ? "all" : "invalid";
+}
+inline bool runtime_ffn_phase_runs(RuntimeFfnPhase phase, bool prefix_reused) {
+    return phase == RuntimeFfnPhase::All ||
+           (prefix_reused ? phase == RuntimeFfnPhase::Decode : phase == RuntimeFfnPhase::Prefill);
+}
+inline std::string runtime_ffn_phase_identity(RuntimeFfnPhase phase) {
+    // Preserve the unflagged executor identity. Nondefault request snapshots
+    // must not borrow an executor/calibration/prefix bank from another policy.
+    return phase == RuntimeFfnPhase::All ? "" :
+        std::string(":ffn-phase-v1=") + runtime_ffn_phase_name(phase);
+}
+
+inline int student_ffn_reuse_layers(const char *value) {
+    if(!value || std::string_view(value)=="0")return 0;
+    if(std::string_view(value)=="1" || std::string_view(value)=="32")return 32;
+    if(std::string_view(value)=="16")return 16;
+    return -1;
+}
+inline bool student_final_ffn_reuse(const Request &request) {
+    return request.model=="qwen-image-2.1" && !request.loras.empty() &&
+        student_ffn_reuse_layers(std::getenv("TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE"))>0;
 }
 
 inline bool lora_base_ane(const Request &request) {

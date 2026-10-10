@@ -147,6 +147,40 @@ int main() {
                         auto changed=spec;changed.rotation_seed++;
                         auto other=device.stage_w8(immutable,changed,codes,scales);if(!other.finish().ok||device.scale_cache_stats().misses!=after.misses+1)
                             throw std::runtime_error("scale cache ignored rotation identity");
+                        if(!affine && encoding!=DeviceWeightEncoding::Dense) {
+                            auto content=std::make_shared<int>(1);std::weak_ptr<void> weak_content=content;
+                            immutable.logical_content_identity=content;
+                            const auto start=device.scale_cache_stats();
+                            {auto initial=device.stage_w8(immutable,spec,codes,scales);if(!initial.finish().ok)
+                                throw std::runtime_error("raw content initial stage failed");}
+                            const size_t new_offset=257,new_pitch=packed+35;
+                            Buffer refilled(gpu,new_offset+rows*new_pitch+256);
+                            for(int r=0;r<rows;++r)std::memcpy(static_cast<uint8_t*>(refilled.value.contents)+new_offset+r*new_pitch,
+                                static_cast<const uint8_t*>(src.value.contents)+offset+r*pitch,packed);
+                            auto next=immutable;next.buffer=(__bridge void*)refilled.value;next.buffer_bytes=refilled.value.length;
+                            next.offset_bytes=new_offset;next.row_stride_bytes=new_pitch;next.owner=refilled.owner;next.allocation_identity=refilled.owner;
+                            {auto refill=device.stage_w8(next,spec,codes,scales);if(!refill.finish().ok)
+                                throw std::runtime_error("raw content refill stage failed");}
+                            if(std::memcmp(expected_codes.data(),codes.data(),expected_codes.size()) ||
+                                std::memcmp(expected_scales.data(),scales.data(),expected_scales.size()))
+                                throw std::runtime_error("raw content cache changed codes/scales/padding across refill");
+                            const auto hit=device.scale_cache_stats();
+                            if(hit.hits!=start.hits+1 || hit.misses!=start.misses+1)
+                                throw std::runtime_error("raw content refill did not reuse verified scales");
+                            content.reset();if(!weak_content.expired())throw std::runtime_error("scale cache retained raw content/source owner");
+                            {auto expired=device.stage_w8(next,spec,codes,scales);if(!expired.finish().ok)
+                                throw std::runtime_error("expired raw content uncached refill failed");}
+                            if(device.scale_cache_stats().hits!=hit.hits || device.scale_cache_stats().misses!=hit.misses)
+                                throw std::runtime_error("expired logical content reused a cache entry");
+                            auto newer=std::make_shared<int>(2);next.logical_content_identity=newer;
+                            {auto fresh=device.stage_w8(next,spec,codes,scales);if(!fresh.finish().ok)
+                                throw std::runtime_error("new raw content generation stage failed");}
+                            if(device.scale_cache_stats().misses!=hit.misses+1)
+                                throw std::runtime_error("new raw content generation hit old scales");
+                            next.immutable_generation=false;
+                            try {device.stage_w8(next,spec,codes,scales);throw std::runtime_error("mutable raw content tag accepted");}
+                            catch(const CapabilityError &) {}
+                        }
                     }
                     // Padding is not part of the representation and must not be overwritten.
                     if (transpose) for (int c = 0; c < spec.columns; ++c) for (size_t i = spec.rows; i < codes.pitch(); ++i)
@@ -283,6 +317,7 @@ int main() {
         std::cout<<"PASS W8 dense typed loads: FP16/BF16/FP32 aligned and independently unaligned offset/pitch, H128/H512 W/A bit-exact\n";
         std::cout<<"PASS W8 packed register loads: raw Q4_0/Q4_K/Q8_0/Q6_K and affine Q4/Q8, unaligned source offset/pitch and nonzero row/column slices, independent CPU code/scale oracle, nonfinite/overflow rejection and clean refill\n";
         std::cout<<"PASS W8 compact scale cache: 9 encodings/dtypes H128/H512 bit-exact, recipe identity, weak generations/address reuse, mutable bypass, bounded metadata\n";
+        std::cout<<"PASS W8 raw content scale cache: four raw encodings/H128/H512, unaligned physical refills, weak content lifetime/new generation, mutable rejection\n";
       } catch (const std::exception &error) { std::cerr << error.what() << "\n"; return 1; }
     }
 }

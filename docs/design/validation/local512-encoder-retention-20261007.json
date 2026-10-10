@@ -1,0 +1,689 @@
+{
+  "schema": "tc-local512-encoder-retention-evidence-v1",
+  "date_utc": "2026-10-07",
+  "artifact_suffix_date_basis": "20261008 is Asia/Singapore local date",
+  "qualification_passed": false,
+  "builds": {
+    "private": {
+      "root": "build/local512-encoder-retain-v2-private",
+      "runtime_build_id": "tc-runtime-build-v1-a3304778f2778c9ca99bdd60eb5c109954f3757302b081487786891c19cbcbeb",
+      "sources": 488,
+      "source_mismatches": [],
+      "library_sha256": "86954839affea8381cc05240496131a87c2a7529fc6d4feca0c1111ad279c154",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "8b85a409d24e3dc2922a31c7109e87ee8ff9c699b3b0079f675a2866802f91c3",
+      "includes_preserved_convrot_drafts": true
+    },
+    "public": {
+      "root": "build/local512-encoder-retain-v2-public",
+      "runtime_build_id": "tc-runtime-build-v1-95637b015ad388423c81c7b4fbe9b8c4591faa9447b57a03128fbbb8787154b2",
+      "sources": 488,
+      "source_mismatches": [],
+      "library_sha256": "5678b3d76a66b73ab42923afecd1bf7de2e53c02b535315c89b79650e4e32d31",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "c5da0bc21c35ea504bf3a4cbd380c9a640489561dda25f7fb56a9147746a79c2",
+      "includes_preserved_convrot_drafts": true
+    }
+  },
+  "fresh_condition_screens": [
+    {
+      "references": 1,
+      "direction": "forward",
+      "summary": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/summary.json",
+      "summary_sha256": "d9b3691b7b324a61edfa934e8ca5795a81fece437fc79549f2da57c61ed7427c",
+      "status": "complete_diagnostic",
+      "model_snapshot_recorded": false,
+      "arms": [
+        {
+          "mode": "gpu",
+          "cold_seconds": 12.772647416,
+          "warm_fresh_seconds": [
+            10.847082334,
+            10.689104875
+          ],
+          "warm_fresh_median_seconds": 10.768093604499999,
+          "text_seconds": [
+            0.863982375,
+            1.078190458,
+            0.892733041
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/gpu.stdout.jsonl",
+          "stdout_sha256": "f13d90657d186581997780e55d0ac343f4676e95404f6634fab3982f7ee8de8a",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79",
+            "2211a79e66037c54b8ff2e12a2602e8e4c1b183c3472042e29328220670d9ac5",
+            "bbcf5db84c9d2fa4ceb287c0632ef75b267bca02dd31684c972aa86bf7666bad"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/gpu-memory-report.json",
+          "memory_report_sha256": "5b39764299a8199426e77b1d8777f8965730903548d25d699486b0163dcb5df8",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31922232216,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_local",
+          "cold_seconds": 13.500241833,
+          "warm_fresh_seconds": [
+            11.311127166,
+            11.214622583
+          ],
+          "warm_fresh_median_seconds": 11.2628748745,
+          "text_seconds": [
+            1.3463205,
+            1.507448542,
+            1.403238917
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/encoder_local.stdout.jsonl",
+          "stdout_sha256": "ef489af4b9c6a57c04d2527b0a18a57d07968b061a761c9122c61c93cdb818ab",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "cumulative_calls": [
+            36,
+            36,
+            36
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/encoder_local-memory-report.json",
+          "memory_report_sha256": "dde1a82f39992991aae767c936787940c62ba42305767485a71146dcb3109f4e",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 32058907640,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_retained",
+          "cold_seconds": 13.386908,
+          "warm_fresh_seconds": [
+            11.246687875,
+            11.049655834
+          ],
+          "warm_fresh_median_seconds": 11.1481718545,
+          "text_seconds": [
+            1.271139875,
+            1.468309833,
+            1.248625167
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/encoder_retained.stdout.jsonl",
+          "stdout_sha256": "f0417e80b242defe781832ac74a15d08b6b8bfdcd5403b96f8c9521686c052c5",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "cumulative_calls": [
+            36,
+            72,
+            108
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/encoder_retained-memory-report.json",
+          "memory_report_sha256": "9d8fa405cc75f23851d16d6f6da3f1300f28c96f4f8680e868f6fdbf482dc9ae",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31688891144,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ],
+      "all_local_retained_pngs_exact": true
+    },
+    {
+      "references": 1,
+      "direction": "reverse",
+      "summary": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/summary.json",
+      "summary_sha256": "3a67bdaae4bd5ac2d6ed08df4c93306ff750b649f39c87e9b72e668f1ee1dd5e",
+      "status": "complete_diagnostic",
+      "model_snapshot_recorded": true,
+      "arms": [
+        {
+          "mode": "encoder_retained",
+          "cold_seconds": 13.393172584,
+          "warm_fresh_seconds": [
+            11.234566375,
+            11.125894959
+          ],
+          "warm_fresh_median_seconds": 11.180230667,
+          "text_seconds": [
+            1.296890083,
+            1.441650708,
+            1.29744
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/encoder_retained.stdout.jsonl",
+          "stdout_sha256": "2f464ed71ce49a0bcb0c2a664afaa2aeb20df78d8d6a11a1dc38356288c700cf",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "cumulative_calls": [
+            36,
+            72,
+            108
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/encoder_retained-memory-report.json",
+          "memory_report_sha256": "d7293a29d277937409dc46b891a0cfd11c924caa471bc79ffa227e7489054a5f",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 32082467808,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_local",
+          "cold_seconds": 13.379918833,
+          "warm_fresh_seconds": [
+            11.347697625,
+            11.184166416
+          ],
+          "warm_fresh_median_seconds": 11.2659320205,
+          "text_seconds": [
+            1.242280042,
+            1.565360541,
+            1.370955333
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/encoder_local.stdout.jsonl",
+          "stdout_sha256": "0dfd0017873fd34f58387f7781a11bdf962dfa664f546386cb4d493fa26a7c75",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            36,
+            36,
+            36
+          ],
+          "cumulative_calls": [
+            36,
+            36,
+            36
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278",
+            "d6f042921b43b8391c0377909f3acfdaa215e86441472e2ef1849f93c3b3dc5d",
+            "1b4c7e84ab14c3beecafd194b34b29e8ec8aa8a76165a397ad1c62691426476b"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/encoder_local-memory-report.json",
+          "memory_report_sha256": "c5b3a222c654fab23ce29bdfa9c10d891373d1f107fc11eedc725dc6d90bc40f",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 32088890360,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "gpu",
+          "cold_seconds": 12.937682375,
+          "warm_fresh_seconds": [
+            10.837968917,
+            10.600148167
+          ],
+          "warm_fresh_median_seconds": 10.719058541999999,
+          "text_seconds": [
+            0.799956875,
+            1.057071584,
+            0.853627834
+          ],
+          "stdout": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/gpu.stdout.jsonl",
+          "stdout_sha256": "b597f9bca7dfab05c3356c19fc27c308e24171f820839a35154c97465998453f",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79",
+            "2211a79e66037c54b8ff2e12a2602e8e4c1b183c3472042e29328220670d9ac5",
+            "bbcf5db84c9d2fa4ceb287c0632ef75b267bca02dd31684c972aa86bf7666bad"
+          ],
+          "memory_report": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-reverse-20261008/gpu-memory-report.json",
+          "memory_report_sha256": "d925fe2662936ac0776099bbf99934a9eebf8cb7d75af265fb57f4efdad482ad",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31120021944,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ],
+      "all_local_retained_pngs_exact": true
+    },
+    {
+      "references": 2,
+      "direction": "forward",
+      "summary": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/summary.json",
+      "summary_sha256": "ba5448f77fbb0550887f6877dc0c46a9dd7f2990b774e5f8c7c5963834a51044",
+      "status": "complete_diagnostic",
+      "model_snapshot_recorded": true,
+      "arms": [
+        {
+          "mode": "gpu",
+          "cold_seconds": 15.157446334,
+          "warm_fresh_seconds": [
+            13.00058375,
+            12.793230958
+          ],
+          "warm_fresh_median_seconds": 12.896907354,
+          "text_seconds": [
+            1.239968875,
+            1.481605708,
+            1.295935334
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/gpu.stdout.jsonl",
+          "stdout_sha256": "06a734dc49bb538e437b1ea87e5d4b1f01f3235d95a27b49f8735ca8e65b5d11",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            0,
+            0,
+            0
+          ],
+          "cumulative_calls": [
+            0,
+            0,
+            0
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/gpu-memory-report.json",
+          "memory_report_sha256": "24b6026383f788ee72f13aa6bcea5f51bd463839a5f6ed3fc9aeb5de09f9f7f4",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31778626744,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_local",
+          "cold_seconds": 15.692786042,
+          "warm_fresh_seconds": [
+            13.65977475,
+            13.316657916
+          ],
+          "warm_fresh_median_seconds": 13.488216333,
+          "text_seconds": [
+            1.836081875,
+            2.1232725,
+            1.784576917
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/encoder_local.stdout.jsonl",
+          "stdout_sha256": "23356a47d1368ae30e05fd780ef44677447e8fcf6087e75370bc8fb7ae0c516a",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            72,
+            72,
+            72
+          ],
+          "cumulative_calls": [
+            72,
+            72,
+            72
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "3d6284522a75c55c836d4145cfbdb92e333c7f57bc468a9eef930614302a3e61",
+            "be8f530f61e700923992f2291afa0e78088025f77c9fef25aee4694c1ab74cdd",
+            "462f727fe15165f0d99af3f8bde28c127e07335d113e34e1fb5d2cc6724771cd"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/encoder_local-memory-report.json",
+          "memory_report_sha256": "64dc8b8ff66e51fc5a6dbe63ddb408002232b95c146822167bd4ad27d978d298",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 31517645480,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "encoder_retained",
+          "cold_seconds": 15.655089708,
+          "warm_fresh_seconds": [
+            13.48612,
+            13.256287917
+          ],
+          "warm_fresh_median_seconds": 13.3712039585,
+          "text_seconds": [
+            1.722998291,
+            1.93664525,
+            1.737276084
+          ],
+          "stdout": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/encoder_retained.stdout.jsonl",
+          "stdout_sha256": "cab1be41dcc8ec97c40ce5b88d9ab273fb0b28be61add2baa051ab946b1e04ff",
+          "all_condition_cache_misses": true,
+          "calls_this_request": [
+            72,
+            72,
+            72
+          ],
+          "cumulative_calls": [
+            72,
+            144,
+            216
+          ],
+          "weight_scale_cache_hits": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "3d6284522a75c55c836d4145cfbdb92e333c7f57bc468a9eef930614302a3e61",
+            "be8f530f61e700923992f2291afa0e78088025f77c9fef25aee4694c1ab74cdd",
+            "462f727fe15165f0d99af3f8bde28c127e07335d113e34e1fb5d2cc6724771cd"
+          ],
+          "memory_report": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/encoder_retained-memory-report.json",
+          "memory_report_sha256": "4dea624a2909bbc5ef2dfa1725fc511ceecbac6a762e51cfa8afe827c3186549",
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 32086072312,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ],
+      "all_local_retained_pngs_exact": true
+    }
+  ],
+  "z_base_screens": [
+    {
+      "direction": "forward",
+      "summary": "outputs/local512-z-base-retain-v2-diagnostic-forward-20261008/summary.json",
+      "summary_sha256": "a5d1a52a49ab299b19d7d766262987094666df6bba2a9758a0080cde874fcf96",
+      "status": "complete",
+      "continuous_load_observation": false,
+      "library_sha256": "86954839affea8381cc05240496131a87c2a7529fc6d4feca0c1111ad279c154",
+      "arms": [
+        {
+          "route": "gpu",
+          "request_seconds": [
+            10.225514167,
+            6.993651,
+            6.99184175
+          ],
+          "warm_median_seconds": 6.992746374999999,
+          "actual_calls_per_request": [],
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 22946391712,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "route": "runtime",
+          "request_seconds": [
+            6.535483666,
+            5.682392,
+            5.676025375
+          ],
+          "warm_median_seconds": 5.6792086875,
+          "actual_calls_per_request": [
+            256,
+            256,
+            256
+          ],
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 22746031800,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ]
+    },
+    {
+      "direction": "reverse",
+      "summary": "outputs/local512-z-base-retain-v2-diagnostic-reverse-20261008/summary.json",
+      "summary_sha256": "aadcc07f72c0799c535de2f43d40b3befcc2d59792ce1a11b8917ec219b34c50",
+      "status": "complete",
+      "continuous_load_observation": false,
+      "library_sha256": "86954839affea8381cc05240496131a87c2a7529fc6d4feca0c1111ad279c154",
+      "arms": [
+        {
+          "route": "runtime",
+          "request_seconds": [
+            9.114554542,
+            5.685309625,
+            5.683903709
+          ],
+          "warm_median_seconds": 5.684606667000001,
+          "actual_calls_per_request": [
+            256,
+            256,
+            256
+          ],
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 22744360584,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "route": "gpu",
+          "request_seconds": [
+            7.639621917,
+            6.991230125,
+            6.989795583
+          ],
+          "warm_median_seconds": 6.990512854,
+          "actual_calls_per_request": [],
+          "memory_complete": true,
+          "process_tree_peak_phys_footprint_bytes": 22947981056,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "passed": 16,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-retain-v2-private-regression-20261008.log",
+      "log_sha256": "9b606fd3603aaba4f7795dc664ec054fac9712b4985966fab74149b87173636f"
+    },
+    {
+      "passed": 16,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-retain-v2-public-regression-20261008.log",
+      "log_sha256": "7346aa0eea551701254055a2e81505924494406145cf5741e37d133e0cd88324"
+    },
+    {
+      "passed": 1,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-retain-v2-session-20261008.log",
+      "log_sha256": "911477d7a6624ee5093ea426167e39babe3a88e9b51e308df6650d84cdb0ef54"
+    },
+    {
+      "passed": 5,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-retain-screen-host-tests-v2-20261008.log",
+      "log_sha256": "74a38e377f6af8ae0e0399462e4b0d6969fa7a6d1072d301eeec46c11158a580"
+    },
+    {
+      "passed": 3,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-retain-v2-private-kernel-regression-20261008.log",
+      "log_sha256": "3f67c2106db1f89bfb856c80803bf24516e19d6196917f953b98374755d3dc94"
+    }
+  ],
+  "visual_reviews": [
+    {
+      "manifest": "outputs/local512-qwen-edit1-lora-encoder-retain-v2-fresh-forward-20261008/visual-1/manifest.json",
+      "sha256": "58531267dc100229de3e4299e2ff10072104ce4b8a3954002bfd8f365b1bfbe6",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited inspected pairs, not user approval",
+        "whole_image": "Gentle-light LoRA edit: shape, handle, layout and lighting are very close; subtle glaze/texture and highlight differences.",
+        "detail_crops": "Inspected center, top-left and bottom-right at original pixel scale; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing or gross shape/lighting inconsistency in these pairs; not broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-qwen-edit2-lora-encoder-retain-v2-fresh-forward-20261008/visual-2/manifest.json",
+      "sha256": "877e71ab1af3173e6431cb10386436a668254c6984ba2ad5892588ab93d25f52",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited inspected pairs, not user approval",
+        "whole_image": "Golden-light two-reference LoRA edit: both recognizable teapots and composition are very close; small lid/glaze/highlight differences. Blue teapot remains opaque in both arms.",
+        "detail_crops": "Inspected center, top-left and bottom-right at original pixel scale; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing or gross shape/lighting inconsistency in these pairs; not broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-qwen-edit2-lora-public-encoder-retain-v2-20261008/visual/manifest.json",
+      "sha256": "01e4282ba6019a0a684a3e2323c8641acc330585c1cfaac2672d7d0c496f806e",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited inspected pairs, not user approval",
+        "whole_image": "Actual Public FP16 encoder two-reference LoRA edit: very close teapot shapes, placement and sunlight; minor texture/highlight differences. No new obvious structural artifact.",
+        "detail_crops": "Inspected center, top-left and bottom-right at original pixel scale; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing or gross shape/lighting inconsistency in these pairs; not broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-z-base-retain-v2-diagnostic-forward-20261008/visual/manifest.json",
+      "sha256": "2ef6b4a5befb743c6cde9c073e23e4fdce4a6b71908efb451acaad284ca04eb7",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited inspected pairs, not user approval",
+        "whole_image": "Z512 base: fox pose, eyes, ears, framing and snowy pine scene remain very close; finer fur/branch/snow textures differ slightly.",
+        "detail_crops": "Inspected center, top-left and bottom-right at original pixel scale; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing or gross shape/lighting inconsistency in these pairs; not broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    }
+  ],
+  "cleanup": {
+    "object_files_deleted": 637,
+    "logical_bytes_deleted": 49580808,
+    "scope": "three validated completed encoder-retain v1/v2 builds; binaries/manifests/logs/media/models retained",
+    "rebuildable": true
+  },
+  "strict_z_screen": {
+    "directory": "outputs/local512-z-base-retain-v2-strict-reverse-20261008",
+    "load_sha256": "f15d0d5c597e7fa60dd71ae99355a3761e14e3b615e49c45781b959c26c91983",
+    "samples": 40,
+    "busy_samples": 1,
+    "status": "rejected competing CPU load; runtime only, GPU not started; no accepted ratio"
+  },
+  "public_actual_edit": {
+    "references": 2,
+    "arms": [
+      {
+        "mode": "gpu",
+        "receipt": "outputs/local512-qwen-edit2-lora-public-encoder-retain-v2-20261008/gpu/generation-receipt.json",
+        "receipt_sha256": "887403024d512d054bcb286650d28410a8b7a9281675afb73ea1f21b26c681ac",
+        "library_sha256": "5678b3d76a66b73ab42923afecd1bf7de2e53c02b535315c89b79650e4e32d31",
+        "exit_code": 0,
+        "timings_seconds": {
+          "denoise": 10.543616333,
+          "hybrid_setup": 0,
+          "image_encode": 0.294452625,
+          "request_wall": 16.554298917,
+          "text_encode": 2.147265666,
+          "vae_decode": 0.628871291
+        },
+        "encoder_reuse": null,
+        "actual_lora_projections": 227,
+        "encoder_failed": null,
+        "encoder_backend": null,
+        "png_sha256": "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680"
+      },
+      {
+        "mode": "encoder",
+        "receipt": "outputs/local512-qwen-edit2-lora-public-encoder-retain-v2-20261008/encoder/generation-receipt.json",
+        "receipt_sha256": "b33bca0952a214e0c619631dfe37847e7b35ecdaff4700e59a53460ac5524730",
+        "library_sha256": "5678b3d76a66b73ab42923afecd1bf7de2e53c02b535315c89b79650e4e32d31",
+        "exit_code": 0,
+        "timings_seconds": {
+          "denoise": 10.548110917,
+          "hybrid_setup": 0,
+          "image_encode": 0.282325125,
+          "request_wall": 17.567945458,
+          "text_encode": 5.108388084,
+          "vae_decode": 0.606611416
+        },
+        "encoder_reuse": {
+          "actual_calls_this_request": 36,
+          "enabled": true,
+          "executor_retained": true,
+          "executor_reused": false,
+          "retained_estimated_bytes": 705183744,
+          "scope": "request-local execution evidence; HybridMetrics remain cumulative; estimate is not a RAM cap",
+          "weight_residency": "request_local"
+        },
+        "actual_lora_projections": 227,
+        "encoder_failed": false,
+        "encoder_backend": "public_coreml",
+        "png_sha256": "eb441a6b63c6ec3f89b5826f756fecb83f179d3e5c4feab615d7de6acd79e69f"
+      }
+    ]
+  },
+  "public_release_guard": "passed"
+}

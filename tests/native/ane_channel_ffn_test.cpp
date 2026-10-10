@@ -115,6 +115,32 @@ int main(int argc,char**argv) {
             catch(const std::exception&) {invalid_defer=true;}
             check(invalid_defer,"malformed defer flag accepted");
             unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+            const auto launch_identity=ane::HybridFfn::executor_configuration_identity();
+            setenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST","0",1);
+            check(launch_identity==ane::HybridFfn::executor_configuration_identity(),"disabled launch order changed old identity");
+            setenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST","1",1);
+            check(launch_identity!=ane::HybridFfn::executor_configuration_identity(),"GPU-first launch order absent from identity");
+            bool invalid_launch=false;
+            try { ane::HybridFfn bad(argv[1],h,f,1,cancelled,true); }
+            catch(const std::exception&) {invalid_launch=true;}
+            check(invalid_launch,"GPU-first without fixed async accepted");
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            for(const auto &setting:std::vector<std::pair<std::string,std::string>>{
+                    {"TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST","2"},
+                    {"TURBOCIDER_ANE_BACKEND","public"},
+                    {"TURBOCIDER_ANE_BACKEND","auto"},
+                    {"TURBOCIDER_ALLOW_PRIVATE_ANE","0"},
+                    {"TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU","0"}}) {
+                const char *previous=std::getenv(setting.first.c_str());
+                const std::optional<std::string> saved=previous?std::optional<std::string>(previous):std::nullopt;
+                setenv(setting.first.c_str(),setting.second.c_str(),1);invalid_launch=false;
+                try { ane::HybridFfn bad(argv[1],h,f,1,cancelled,true); }
+                catch(const std::exception&) {invalid_launch=true;}
+                if(saved)setenv(setting.first.c_str(),saved->c_str(),1);else unsetenv(setting.first.c_str());
+                check(invalid_launch,"invalid GPU-first configuration accepted");
+            }
+            unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST");
             ane::HybridFfn unavailable(argv[1],h,f,1,cancelled,true);
             check(!unavailable.available() && unavailable.metrics().runtime_failed &&
                   unavailable.backend_label()=="mlx_cpp_metal" && unavailable.precision_label()=="bf16" &&
@@ -235,6 +261,13 @@ int main(int argc,char**argv) {
         auto metrics=runtime.metrics();check(metrics.runtime_weight_channel_blocks==12&&metrics.runtime_weight_device_io_calls>=12,"channel execution counters missing");
         check(metrics.runtime_weight_lora_channel_range_calls==4&&metrics.runtime_weight_lora_channel_full_calls==4,
               "actual narrow/full LoRA correction receipts missing");
+        if(metrics.runtime_weight_code_cache.enabled && metrics.runtime_weight_code_cache.native_surface_storage) {
+            const auto &cache=metrics.runtime_weight_code_cache;
+            check(cache.surface_bind_hits>0 && cache.copy_hits==0 && cache.ready_entries>0 &&
+                  cache.live_capacity_bytes<=cache.budget_bytes && cache.peak_capacity_bytes<=cache.budget_bytes,
+                  "Private channel lacks real native-surface binding/capacity evidence");
+            std::cout<<"PASS Private native cached bindings: base/A/B/base, no cache copies and bounded readers\n";
+        }
         std::cout<<"PASS channel LoRA range callback: base/A/B/base, exact legacy parity, all-row tails and ONE full-hidden down correction\n";
         // Model-level producer/consumer path: first block prefetches layer 1,
         // then stage(1) must consume that source-matched bank rather than refill.
@@ -246,6 +279,42 @@ int main(int argc,char**argv) {
         auto partial=[&](const Tensor&input,int first,int count){auto g=w.project_base_slice(input,p+"gate_up",first,first+count,0,h,false);
             auto u=w.project_base_slice(input,p+"gate_up",f+first,f+first+count,0,h,false);auto hidden=silu(g)*u;
             return std::make_pair(w.project_base_slice(hidden,p+"out",0,h,first,first+count,false),hidden);};
+        {
+            const auto original_rows=ane::runtime_template_shape(argv[1]).rows;
+            check(original_rows==33,"bucket fixture template unexpectedly changed");
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+            for(int selected_rows:{64,96}) {
+                ane::HybridFfn resized(argv[1],h,f,512u<<20,cancelled,true,nullptr,std::nullopt,std::nullopt,selected_rows);
+                check(resized.available() && resized.metrics().bucket==selected_rows && resized.ane_channels()==512,
+                    "Private actual bucket override not selected");
+                resized.plan_block(0,67);resized.stage(0,67,sources);
+                auto actual=resized.run(0,px,full,cancelled,nullptr,partial);auto expected=full(px);mx::eval({actual,expected});
+                const float error=mx::sqrt(mx::sum(mx::square(mx::astype(actual,mx::float32)-mx::astype(expected,mx::float32)))/
+                    mx::sum(mx::square(mx::astype(expected,mx::float32)))).item<float>();
+                check(error<.05f && resized.metrics().runtime_calls==uint64_t((67+selected_rows-1)/selected_rows) &&
+                    resized.metrics().runtime_weight_channel_blocks==1 && !resized.metrics().runtime_failed,
+                    "resized private bucket lost actual all-row computation/call geometry");
+                auto bad=mx::concatenate({mx::full({1,64,h},.1f,mx::bfloat16),
+                    mx::full({1,3,h},NAN,mx::bfloat16)},1);
+                resized.plan_block(0,67);resized.stage(0,67,sources);int full_calls=0;
+                auto recovered=resized.run(0,bad,[&](const Tensor&x){++full_calls;return mx::full(x.shape(),7.f,x.dtype());},cancelled,nullptr,partial);
+                check(full_calls==1 && mx::all(recovered==Tensor(7.f,mx::bfloat16)).item<bool>() && resized.metrics().runtime_failed,
+                    "resized late chunk failure published partial scratch");
+            }
+            for(int invalid_rows:{-1,0,33,8193}) {
+                bool rejected=false;try{ane::HybridFfn invalid(argv[1],h,f,1,cancelled,true,nullptr,std::nullopt,std::nullopt,invalid_rows);}
+                catch(const std::exception&){rejected=true;}
+                check(rejected,"invalid bucket override reported successful fallback");
+            }
+            setenv("TURBOCIDER_ANE_BACKEND","public",1);
+            bool rejected=false;try{ane::HybridFfn invalid(argv[1],h,f,1,cancelled,true,nullptr,std::nullopt,512,64);}
+            catch(const std::exception&){rejected=true;}
+            check(rejected,"Public compiled artifact was resized/relabelled");
+            setenv("TURBOCIDER_ANE_BACKEND","private",1);
+            unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+            check(ane::runtime_template_shape(argv[1]).rows==original_rows,"override changed checkpoint-independent template");
+            std::cout<<"PASS Private bucket override: unchanged template/full geometry, actual64/96-row native programs and call count, bounded policy and full late-chunk recovery\n";
+        }
         {
             setenv("TURBOCIDER_RUNTIME_ANE_LORA_CHANNEL_RANGE","0",1);
             ane::HybridFfn legacy_policy(argv[1],h,f,512u<<20,cancelled,true);
@@ -307,12 +376,14 @@ int main(int argc,char**argv) {
         auto after_prefetch=runtime.metrics();
         check(after_prefetch.runtime_weight_prefetch_submissions==before_prefetch.runtime_weight_prefetch_submissions+1&&
               after_prefetch.runtime_weight_prefetch_hits==before_prefetch.runtime_weight_prefetch_hits+1,"model did not consume prefetched bank");
-        for(bool deferred:{false,true}) {
+        for(bool gpu_first:{false,true}) for(bool deferred:{false,true}) {
             setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
             setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN",deferred?"1":"0",1);
+            setenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST",gpu_first?"1":"0",1);
             ane::HybridFfn asynchronous(argv[1],h,f,512u<<20,cancelled,true);
             unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
             unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST");
             auto execute=[&](const Tensor&input,const ane::HybridFfn::Gpu&fallback) {
                 auto plan=asynchronous.plan_block(0,input.shape(1));
                 check(plan.mode==ane::RowScheduler::Mode::HybridUntimed&&!plan.measured()&&plan.chunks==1,
@@ -335,6 +406,9 @@ int main(int argc,char**argv) {
             check(counters.runtime_weight_deferred_join_enabled==deferred&&
                   counters.runtime_weight_deferred_join_blocks==(deferred?2u:0u),
                   "deferred join policy/actual counter mismatch");
+            check(counters.runtime_weight_channel_gpu_first_enabled==gpu_first&&
+                  counters.runtime_weight_channel_gpu_first_blocks==(gpu_first?2u:0u),
+                  "GPU-first snapshot/actual successful blocks mismatch");
             // Do not consume the first result before the next ANE request
             // reuses y. Returned joins retain independent head/tail owners.
             auto retained=execute(px,full);
@@ -352,18 +426,23 @@ int main(int argc,char**argv) {
             check(mx::all(saved==got).item<bool>(),"failed async channel invalidated retained output");
             check(asynchronous.metrics().runtime_weight_deferred_join_blocks==(deferred?4u:0u),
                   "failed ANE chunk counted as a deferred successful join");
+            check(asynchronous.metrics().runtime_weight_channel_gpu_first_blocks==(gpu_first?4u:0u),
+                  "failed ANE chunk counted as a successful GPU-first block");
             std::cout<<"PASS fixed async channel: identical output, untimed receipts, ownership and full late-chunk GPU recomputation\n";
             if(deferred)std::cout<<"PASS deferred channel join: delayed consumption after y reuse and complete failure fallback\n";
+            if(gpu_first)std::cout<<"PASS GPU-first channel submission: snapshotted order, exact output, ownership and late full-GPU recovery\n";
         }
         // Exercise cleanup while work is in flight, not only constructor
         // gates or failures before ANE submission. Failed attempts must never
         // publish/count a deferred join, even with full-hidden down-LoRA.
-        for(bool deferred:{false,true}) for(int failure=0;failure<5;++failure) {
+        for(bool gpu_first:{false,true}) for(bool deferred:{false,true}) for(int failure=0;failure<5;++failure) {
             setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
             setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN",deferred?"1":"0",1);
+            setenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST",gpu_first?"1":"0",1);
             ane::HybridFfn op(argv[1],h,f,512u<<20,cancelled,true);
             unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
             unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST");
             int down_calls=0,full_calls=0;
             ane::HybridFfn::Adapter correction{
                 [&](const Tensor&input){return std::make_pair(mx::zeros({1,input.shape(1),f},input.dtype()),
@@ -403,7 +482,8 @@ int main(int argc,char**argv) {
             cancelled.store(false);op.drain();
             check(caught==(failure!=3)&&full_calls==(failure>=3?1:0)&&down_calls==(failure==2?1:0),
                   "channel failure callback counts changed");
-            check(op.metrics().runtime_weight_deferred_join_blocks==0&&op.metrics().runtime_weight_channel_blocks==0,
+            check(op.metrics().runtime_weight_deferred_join_blocks==0&&op.metrics().runtime_weight_channel_blocks==0&&
+                  op.metrics().runtime_weight_channel_gpu_first_blocks==0,
                   "failed channel operation counted a successful join");
             if(failure<3) {
                 op.plan_block(0,67);op.stage(0,67,sources);
@@ -419,7 +499,7 @@ int main(int argc,char**argv) {
         std::cout<<"PASS channel failure cleanup: eager/deferred cancellation, GPU/down exceptions, late LoRA full fallback and fallback exception\n";
         // Independent lazy output lifetime: neither executor destruction nor
         // later GPU work may invalidate a pending join/full-hidden down-LoRA.
-        for(auto dtype:{mx::bfloat16,mx::float16,mx::float32}) for(bool adapter_enabled:{false,true}) {
+        for(bool gpu_first:{false,true}) for(auto dtype:{mx::bfloat16,mx::float16,mx::float32}) for(bool adapter_enabled:{false,true}) {
             auto fused=mx::astype(wg,dtype),down=mx::astype(wd,dtype);mx::eval({fused,down});
             auto halves=mx::split(fused,2,0);mx::eval(halves);
             std::vector<Tensor> typed_sources{halves[0],halves[1],down};
@@ -447,6 +527,7 @@ int main(int argc,char**argv) {
             auto expected=execute(eager,adapter_enabled?&correction:nullptr);mx::eval(expected);
             std::optional<Tensor> retained;
             setenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN","1",1);
+            setenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST",gpu_first?"1":"0",1);
             {
                 ane::HybridFfn lazy(argv[1],h,f,512u<<20,cancelled,true);
                 retained=execute(lazy,adapter_enabled?&correction:nullptr);
@@ -454,6 +535,7 @@ int main(int argc,char**argv) {
             }
             unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
             unsetenv("TURBOCIDER_RUNTIME_ANE_DEFER_CHANNEL_JOIN");
+            unsetenv("TURBOCIDER_RUNTIME_ANE_CHANNEL_GPU_FIRST");
             mx::eval(*retained);
             check(mx::all(*retained==expected).item<bool>()&&down_calls==(adapter_enabled?2:0),
                   "deferred typed output changed or lost owners after executor destruction");

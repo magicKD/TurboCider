@@ -84,6 +84,9 @@ class PublicW8IntegrationTests(unittest.TestCase):
                 result=subprocess.run([str(build/name),str(graph/"manifest.json")],cwd=ROOT,check=True,
                     capture_output=True,text=True,timeout=120)
                 self.assertIn("PASS",result.stdout)
+                if name=="ane-public-w8-executor-test" and int(os.environ.get("TURBOCIDER_RUNTIME_ANE_WEIGHT_CODE_CACHE_BYTES","0"))>0:
+                    self.assertIn("PASS Public converted weight cache",result.stdout)
+                print(result.stdout)
                 strings=subprocess.check_output(["strings",str(build/name)],text=True)
                 for private in ("_ANEClient","_ANERequest","_ANEIOSurfaceObject","_ANESharedEvents"):
                     self.assertNotIn(private,strings)

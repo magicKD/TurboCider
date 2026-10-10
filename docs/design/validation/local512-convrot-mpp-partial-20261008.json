@@ -1,0 +1,88 @@
+{
+  "schema": "tc-convrot-mpp-partial-evidence-v1",
+  "local_date": "2026-10-08",
+  "hardware": "Apple M4 Max 64GB / macOS26.6.2",
+  "feature": "TURBOCIDER_Z_CONVROT_FP32_MPP",
+  "default_enabled": false,
+  "qualification_passed": false,
+  "full_goal_complete": false,
+  "builds": {
+    "private": {"library": "build/local512-convrot-mpp-v1-private/libturbocider.dylib", "sha256": "251195d0c540386d5fb911b23629beb9adcd42180d7196040c6363b9ecf7978c", "source_inputs": 493, "source_mismatches_at_verification": 0, "experimental_probes": true},
+    "public": {"library": "build/local512-convrot-mpp-v1-public/libturbocider.dylib", "sha256": "fce969491c97710ac427e6a07e14e8ff54505585ea311bfddb21aa0dfdbe7fc6", "source_inputs": 493, "source_mismatches_at_verification": 0, "experimental_probes": false, "release_binary_guard_passed": true},
+    "scope": "native-only builds exit0, thin CLI separately compiled, both contain existing working-tree ConvRot drafts; not clean staged-only builds/App release"
+  },
+  "tests": {
+    "typed_mpp_cases": 200,
+    "weights_profile_cases": 8,
+    "private_kernel_selected": {"count": 10, "skips": 0, "passed": true, "log": "outputs/local512-convrot-mpp-v1-private-test-20261008.log"},
+    "private_final": {"count": 16, "skips": 0, "passed": true, "log": "outputs/local512-convrot-mpp-v1-private-final-test-20261008.log"},
+    "public_final": {"count": 26, "skips": 0, "passed": true, "log": "outputs/local512-convrot-mpp-v1-public-final-test-20261008.log"},
+    "host_final": {"count": 9, "skips": 0, "passed": true, "log": "outputs/local512-convrot-mpp-v1-host-final-20261008.log"},
+    "scope": "selected kernels/Weights/default paths/Qwen LoRA/encoder/channel/failure recovery/contracts, not full suite/model matrix"
+  },
+  "negative_tile": {"SM": 16, "BK": 64, "SN": 64, "relative_l2": 0.943846, "max_abs": 1.477373, "compile_succeeded": true, "finally_rejected": true, "log": "outputs/local512-affine-mpp-v1-test-20261008.log"},
+  "components": {
+    "binary_sha256": "d8a5bc854c409afbaae9fdd1812bad041a65baa3d4cf1428594ab0b7e953139d",
+    "scope": "real layer0 weights, synthetic prepared input, serial operator host spans with final dtype cast; 3 warm/15 cyclic hot per recipe, not full-model/GPU timestamps",
+    "selected_recipe": "one SIMD output M64/N32/K32; TG M128/N64, original typed decode, F32 accumulate, no explicit global dense bank",
+    "results": [
+      {"source": "GGUF Q4 gate", "packed_ms": 6.089250, "original_f32_ms": 26.979500, "mpp_f32_ms": 12.907417, "evidence": "outputs/local512-affine-mpp-v3-q4-gate1056-component-20261008.json"},
+      {"source": "GGUF Q8 gate", "packed_ms": 6.107000, "original_f32_ms": 29.727958, "mpp_f32_ms": 12.957667, "evidence": "outputs/local512-affine-mpp-v3-q8-gate1056-component-20261008.json"},
+      {"source": "ConvRot down", "packed_ms": 6.751458, "original_f32_ms": 34.799500, "mpp_f32_ms": 13.874458, "evidence": "outputs/local512-affine-mpp-v3-convrot-down1056-component-20261008.json"}
+    ],
+    "all_tested_narrow_outputs_byte_equal": true,
+    "independent_f32_oracle_relative_l2": 0,
+    "standalone_actual_loaded_image_trace": false,
+    "still_slower_than_packed_qmm": true,
+    "default_pure_gpu_route_changed": false
+  },
+  "rejected_zero_retry_window": {"directory": "outputs/local512-convrot-mpp-v1-forward-diagnostic-20261008", "status": "incomplete", "cold_original_retries": 2, "mpp_started": false, "qualification_passed": false, "original_evidence_preserved": true},
+  "model_diagnostics": [
+    {
+      "directory": "outputs/local512-convrot-mpp-v1-cold-retry2-forward-diagnostic-20261008",
+      "order": ["gpu", "original", "mpp"],
+      "cold_seconds": {"gpu": 5.460725041, "original": 7.016661583, "mpp": 5.672136834},
+      "warm_median_seconds": {"gpu": 4.4867113955, "original": 5.7057878125, "mpp": 4.081826521},
+      "peak_phys_footprint_bytes": {"gpu": 11644257864, "original": 17353901808, "mpp": 17370056360},
+      "status": "complete_diagnostic",
+      "qualification_passed": false
+    },
+    {
+      "directory": "outputs/local512-convrot-mpp-v1-cold-retry2-reverse-diagnostic-20261008",
+      "order": ["mpp", "original", "gpu"],
+      "cold_seconds": {"gpu": 5.506020958, "original": 6.9403405, "mpp": 5.348020708},
+      "warm_median_seconds": {"gpu": 4.512016396, "original": 5.69579825, "mpp": 4.0862233545},
+      "peak_phys_footprint_bytes": {"gpu": 13026739904, "original": 17353016880, "mpp": 17369876280},
+      "status": "complete_diagnostic",
+      "qualification_passed": false
+    }
+  ],
+  "model_scope": "same library/local original ConvRot/fox seed42/512sq/4steps/Fa4096, stage specialize/launch fence/fixed async/F32 join, no prefetch/lookahead/W-code cache; complete compiled-dense GPU retained3GiB hint; first then two conditioning-hit hot requests",
+  "cold_retry_policy": {
+    "default_cap": 0,
+    "new_diagnostics_explicit_cap": 2,
+    "both_hybrid_arms_cold_retries": 2,
+    "both_headroom_transitions": [1, 4, 16],
+    "warm_headroom": 16,
+    "warm_new_retries": 0,
+    "rejected_zero_retry_run_reclassified": false
+  },
+  "actual_hybrid_channel_blocks_cumulative": [128, 256, 384],
+  "actual_hybrid_calls_cumulative": [130, 258, 386],
+  "failure_fallback_count": 0,
+  "memory_complete_reports": 6,
+  "system_swap_in_out_bytes": 0,
+  "visual_review": {
+    "original_mpp_matching_pngs_byte_equal_both_orders": true,
+    "cold_png_sha256": "1f998d4fc662eea2f10da40263708e646532a6ee1002f214bf8d783546611bef",
+    "warm_png_sha256": "1c741a984f626983625f7dc54a33acc6f9e6479e2ca70a430bb79f83b4a4070c",
+    "gpu_png_sha256": "86ed0a9392bc6fab063b849e4c8ec7b7c5a587b74223eeb115c8cfa374e094d2",
+    "whole_pairs_inspected": 3,
+    "detail_crops_inspected": 9,
+    "scope": "original/MPP hot plus GPU/MPP cold/hot whole and three same-coordinate crops; very similar fox/layout, subtle eye/fur/snow detail changes, no observed new breaks/color blocks; one scene/seed, not user/latent approval",
+    "automatic_manifests_remain_pending": true
+  },
+  "no_physical_gpu_ane_overlap_or_native_int8_mac_claim": true,
+  "no_old_numerical_or_load_memory_gate_relaxed": true,
+  "cleanup": {"objects_removed": 425, "logical_object_bytes": 33111200, "empty_module_cache_dirs_removed": 2, "recoverable": "rebuild", "libraries_cli_probes_logs_manifests_media_models_adapters_retained": true}
+}
