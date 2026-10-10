@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+2026-10-10 新的[Qwen2.1 Q4_K_M完整目标接续](qwen21-q4km-support-2026-10-10.md)：
+两份固定source已下载验证，混合Q4/Q5/Q6导入、42次实Metal投影与首个完整
+GPU生成已运行；encoder/DiT对Unsloth、GPU/ANE和同预算BF16 streaming仍待
+完成，不将烟测或有缺口的参考采样当最终加速资格。
+
 2026-10-10 [ConvRot编译GPU实验的工作区收尾](convrot-compiled-commit-2026-10-10.md)
 单独收好此前保留的六个tracked改动和七个untracked实验文件；原历史
 screen重放及当前Private实模型/Public拒绝门禁通过，不改变默认或资格。

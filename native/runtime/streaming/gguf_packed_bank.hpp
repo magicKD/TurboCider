@@ -8,6 +8,14 @@
 
 namespace tc::streaming {
 
+struct GgufKImportOptions {
+    bool enabled=false;
+    mx::Dtype floating_dtype=mx::bfloat16;
+    // Explicit component pruning only (e.g. unused decoder output.weight).
+    // Directory/source verification still covers the complete original file.
+    std::function<bool(std::string_view)> include_tensor;
+};
+
 // Immutable, compute-ready MLX affine packed bank. Only Q4_0/Q4_1/Q8_0 and
 // floating tensors are accepted; raw packed source never becomes a second
 // resident model. This is NOT an all-model dense expansion or a RAM guard.
@@ -17,6 +25,9 @@ class GgufPackedBank final {
     GgufPackedBank(std::shared_ptr<const SourceLease>, std::string logical_id,
                    MemoryLedger &, uint64_t read_buffer_bytes = 1ull << 20,bool fused_affine=true,
                    uint64_t raw_window_bytes=0,uint32_t raw_window_entries=6);
+    GgufPackedBank(std::shared_ptr<const SourceLease>,std::string logical_id,MemoryLedger &,
+                  uint64_t read_buffer_bytes,bool fused_affine,uint64_t raw_window_bytes,
+                  uint32_t raw_window_entries,GgufKImportOptions);
     ~GgufPackedBank();
     GgufPackedBank(const GgufPackedBank &) = delete;
     GgufPackedBank &operator=(const GgufPackedBank &) = delete;

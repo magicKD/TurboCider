@@ -143,4 +143,127 @@ uint64_t pack_native_affine_all(const PackedMatrix &source,const std::array<std:
     check_cancel(cancel);
     return checked_add(checked_add(bytes[0],bytes[1]),bytes[2]);
 }
+
+uint64_t pack_k_affine_all(const PackedMatrix &source,const std::array<std::span<std::byte>,3> &target,
+                          const std::atomic<bool> *cancel,DecodeDType metadata,DecodeOptions options) {
+    if(metadata!=DecodeDType::f16 && metadata!=DecodeDType::bf16)
+        throw DecodeError("K affine metadata requires FP16 or BF16");
+    if(source.type!=12 && source.type!=13 && source.type!=14)
+        throw DecodeError("K affine packing supports Q4_K/Q5_K/Q6_K only");
+    if(!source.rows || !source.columns || source.columns%256)
+        throw DecodeError("invalid K affine source geometry");
+    const auto &type=type_info(source.type);
+    const uint64_t blocks=checked_mul(source.rows,source.columns/256);
+    const uint64_t groups=checked_mul(blocks,8),bits=source.type==12 ? 4 : 8;
+    const std::array<uint64_t,3> bytes{checked_mul(groups,bits*4),checked_mul(groups,2),checked_mul(groups,2)};
+    if(source.bytes.size()<checked_mul(blocks,type.bytes)) throw DecodeError("K affine source too short");
+    const uintptr_t begin=reinterpret_cast<uintptr_t>(source.bytes.data());
+    if(!begin || source.bytes.size()>UINTPTR_MAX-begin) throw DecodeError("invalid K affine source span");
+    std::array<uintptr_t,3> starts{};
+    for(size_t i=0;i<3;++i) {
+        starts[i]=reinterpret_cast<uintptr_t>(target[i].data());
+        if(!starts[i] || target[i].size()<bytes[i] || bytes[i]>UINTPTR_MAX-starts[i])
+            throw DecodeError("K affine target too short");
+        if(!(begin+source.bytes.size()<=starts[i] || starts[i]+bytes[i]<=begin))
+            throw DecodeError("K affine source overlaps target");
+        for(size_t j=0;j<i;++j) if(!(starts[j]+bytes[j]<=starts[i] || starts[i]+bytes[i]<=starts[j]))
+            throw DecodeError("K affine targets overlap");
+    }
+    check_cancel(cancel);
+    const auto *input=reinterpret_cast<const uint8_t *>(source.bytes.data());
+    auto half=[](const uint8_t *p) {return fp16_to_float(uint16_t(p[0])|uint16_t(p[1])<<8);};
+    auto store_half=[metadata](std::byte *p,float value) {
+        if(!std::isfinite(value)) throw DecodeError("nonfinite K affine metadata");
+        const uint16_t packed=metadata==DecodeDType::f16 ? float_to_fp16_rne(value) : float_to_bf16_rne(value);
+        const float decoded=metadata==DecodeDType::f16 ? fp16_to_float(packed) : std::bit_cast<float>(uint32_t(packed)<<16);
+        if(!std::isfinite(decoded)) throw DecodeError("K affine typed metadata overflow");
+        std::memcpy(p,&packed,2);return decoded;
+    };
+    for(uint64_t block=0;block<blocks;++block) {
+        if(!(block%128))check_cancel(cancel);
+        const auto *p=input+block*type.bytes;
+        const float d=half(p+(source.type==14 ? 208 : 0));
+        const float minimum=source.type!=14 ? half(p+2) : 0.f;
+        if(!std::isfinite(d) || !std::isfinite(minimum)) throw DecodeError("nonfinite K affine source scale");
+        for(uint32_t group=0;group<8;++group) {
+            const auto index=block*8+group;
+            auto *codes=target[0].data()+index*bits*4;
+            if(source.type!=14) {
+                const auto *scales=p+4;
+                const uint8_t scale=group<4 ? scales[group]&63 :
+                    (scales[group+4]&15)|((scales[group-4]>>6)<<4);
+                const uint8_t bias=group<4 ? scales[group+4]&63 :
+                    (scales[group+4]>>4)|((scales[group]>>6)<<4);
+                store_half(target[1].data()+index*2,d*scale);
+                store_half(target[2].data()+index*2,-minimum*bias);
+                const auto *q=p+(source.type==13 ? 48 : 16)+(group/2)*32;
+#if defined(__aarch64__)
+                if(options.use_simd) {
+                    const auto first=vld1q_u8(q),second=vld1q_u8(q+16);
+                    if(source.type==12) {
+                        const auto even=vuzp1q_u8(first,second),odd=vuzp2q_u8(first,second);
+                        const auto packed=(group&1) ? vorrq_u8(vshrq_n_u8(even,4),vandq_u8(odd,vdupq_n_u8(0xf0))) :
+                            vorrq_u8(vandq_u8(even,vdupq_n_u8(15)),vshlq_n_u8(odd,4));
+                        vst1q_u8(reinterpret_cast<uint8_t *>(codes),packed);
+                    } else {
+                        const auto mask=vdupq_n_u8(uint8_t(1)<<group);
+                        const auto shift=vdupq_n_s8(int8_t(4-int(group)));
+                        const auto low0=(group&1) ? vshrq_n_u8(first,4) : vandq_u8(first,vdupq_n_u8(15));
+                        const auto low1=(group&1) ? vshrq_n_u8(second,4) : vandq_u8(second,vdupq_n_u8(15));
+                        vst1q_u8(reinterpret_cast<uint8_t *>(codes),vorrq_u8(low0,vshlq_u8(vandq_u8(vld1q_u8(p+16),mask),shift)));
+                        vst1q_u8(reinterpret_cast<uint8_t *>(codes)+16,vorrq_u8(low1,vshlq_u8(vandq_u8(vld1q_u8(p+32),mask),shift)));
+                    }
+                    continue;
+                }
+#else
+                (void)options;
+#endif
+                if(source.type==13) {
+                    for(uint32_t j=0;j<32;++j) {
+                        const uint8_t low=(group&1) ? q[j]>>4 : q[j]&15;
+                        codes[j]=std::byte(low|((p[16+j]&(uint8_t(1)<<group)) ? 16 : 0));
+                    }
+                    continue;
+                }
+                for(uint32_t word=0;word<4;++word) {
+                    uint32_t packed=0;
+                    for(uint32_t j=0;j<8;++j) {
+                        const uint8_t code=(group&1) ? q[word*8+j]>>4 : q[word*8+j]&15;
+                        packed|=uint32_t(code)<<(j*4);
+                    }
+                    std::memcpy(codes+word*4,&packed,4);
+                }
+            } else {
+                // At most 128 bytes of dense stack scratch, never a row/model.
+                std::array<float,32> values{};float maximum=0.f;
+                const uint32_t half_index=group/4,local=group%4;
+                const auto *low=p+half_index*64,*high=p+128+half_index*32;
+                const auto *scales=p+192+half_index*8;
+                for(uint32_t j=0;j<32;++j) {
+                    const uint8_t q=low[j+(local&1)*32];
+                    const int code=int((local<2 ? q&15 : q>>4)|(((high[j]>>(2*local))&3)<<4))-32;
+                    const uint8_t raw_scale=scales[j/16+local*2];
+                    const int scale=raw_scale<128 ? int(raw_scale) : int(raw_scale)-256;
+                    values[j]=(d*float(scale))*float(code);
+                    if(!std::isfinite(values[j])) throw DecodeError("nonfinite K affine decoded source");
+                    maximum=std::max(maximum,std::abs(values[j]));
+                }
+                const float scale=store_half(target[1].data()+index*2,maximum/127.f);
+                const float precision=metadata==DecodeDType::f16 ? .002f : .005f;
+                if(maximum>0 && (scale==0 || std::abs(scale-maximum/127.f)/(maximum/127.f)>precision))
+                    throw DecodeError("Q6_K affine scale precision insufficient; no publication");
+                store_half(target[2].data()+index*2,-128.f*scale);
+                // Explicit ties-to-even, independent of process rounding mode.
+                for(uint32_t j=0;j<32;++j) {
+                    const float value=scale==0 ? 128.f : values[j]/scale+128.f;
+                    const float floor=std::floor(value),fraction=value-floor;
+                    int code=int(floor)+(fraction>.5f || (fraction==.5f && (int(floor)&1)));
+                    codes[j]=std::byte(std::clamp(code,0,255));
+                }
+            }
+        }
+    }
+    check_cancel(cancel);
+    return checked_add(checked_add(bytes[0],bytes[1]),bytes[2]);
+}
 } // namespace tc::gguf

@@ -1,0 +1,292 @@
+{
+  "schema": "tc-qwen21-q4km-first-native-validation-v1",
+  "date": "2026-10-10",
+  "qualification_passed": false,
+  "full_goal_complete": false,
+  "scope": "same v2 library, 512 squared, 40 steps, seed29; one cold and two distinct fresh-condition warm requests; only GPU base routes",
+  "assets": [
+    {
+      "repository": "unsloth/Qwen-Image-2.1-GGUF",
+      "revision": "2c31ccd392b367a6637841a143813320a02dff55",
+      "filename": "qwen-image-2.1-Q4_K_M.gguf",
+      "relative_path": "diffusion_models/qwen-image-2.1-Q4_K_M.gguf",
+      "bytes": 4199565024,
+      "sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+      "status": "downloaded_verified"
+    },
+    {
+      "repository": "unsloth/Qwen3-VL-8B-Instruct-GGUF",
+      "revision": "b93a7ee713758252c555be4210c00540df954dc2",
+      "filename": "Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+      "relative_path": "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+      "bytes": 5027785568,
+      "sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+      "status": "downloaded_verified"
+    }
+  ],
+  "library_sha256": "d1476b12ac4bccaf739c6f534eb4345a80b4a023c1bdf8b7bc990295492f07c5",
+  "native_trials": [
+    {
+      "mode": "gguf",
+      "raw_stdout": "outputs/qwen21-q4km-v2-40step-native-screen-20261010/gguf.stdout.jsonl",
+      "raw_sha256": "3cbdae160ccde9825dc4f69ab4a38f8128565f6f525b3e71d19d6f2ba2283126",
+      "timings": [
+        {
+          "denoise": 43.719586375,
+          "hybrid_setup": 0,
+          "image_encode": 2.08e-7,
+          "request_wall": 52.142410208,
+          "text_encode": 4.76776,
+          "vae_decode": 0.566835458
+        },
+        {
+          "denoise": 43.737906959,
+          "hybrid_setup": 0,
+          "image_encode": 3.33e-7,
+          "request_wall": 44.521683708,
+          "text_encode": 0.223733459,
+          "vae_decode": 0.545544375
+        },
+        {
+          "denoise": 43.724831542,
+          "hybrid_setup": 0,
+          "image_encode": 1.66e-7,
+          "request_wall": 44.528971583,
+          "text_encode": 0.23556475,
+          "vae_decode": 0.553848833
+        }
+      ],
+      "warm_medians": {
+        "request_wall": 44.5253276455,
+        "text_encode": 0.22964910449999998,
+        "denoise": 43.731369250499995,
+        "vae_decode": 0.549696604
+      },
+      "encoder_receipts": [
+        {
+          "decline_reason": "",
+          "enabled": true,
+          "loads_session_total": 1,
+          "logical_capacity_upper_bytes": 21474836480,
+          "retained_bytes": 6077114368,
+          "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+          "source_bytes": 6077114368,
+          "weights_retained": true,
+          "weights_reused": false
+        },
+        {
+          "decline_reason": "",
+          "enabled": true,
+          "loads_session_total": 1,
+          "logical_capacity_upper_bytes": 21474836480,
+          "retained_bytes": 6077114368,
+          "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+          "source_bytes": 6077114368,
+          "weights_retained": true,
+          "weights_reused": true
+        },
+        {
+          "decline_reason": "",
+          "enabled": true,
+          "loads_session_total": 1,
+          "logical_capacity_upper_bytes": 21474836480,
+          "retained_bytes": 6077114368,
+          "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+          "source_bytes": 6077114368,
+          "weights_retained": true,
+          "weights_reused": true
+        }
+      ],
+      "png_sha256": [
+        "bd8341e9122549b08ff99e9dd7315883d3c972ffde48d80fdd7cf47924166f8e",
+        "596b54af87846cfe28cc1b9f56684b1c55426c0331bfad2e4acdf08372d9b6a8",
+        "7cd2276380b7a23508e9fe1fa3f6ccbc571069c1255894d571946c6ed83e5fd2"
+      ],
+      "memory": {
+        "schema": "turbocider-process-tree-verification-v1",
+        "status": "complete",
+        "complete": true,
+        "correlation_id": "0bfe66674e154ecfa68fefae3768f385",
+        "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+        "root_identity": {
+          "pid": 20737,
+          "start_seconds": 1791614219,
+          "start_microseconds": 463632
+        },
+        "record_count": 1439,
+        "sample_count": 1435,
+        "final_evidence_digest": "a5fdfa9cced9655f287d3afeb63db44c9540a7c8e2ca3d62faaa63e1ca7777e9",
+        "max_gap_ns": 109990958,
+        "allowed_max_gap_ns": 500000000,
+        "tree_peak_rss_bytes": 10834477056,
+        "tree_peak_phys_footprint_bytes": 16035176656,
+        "swap_in_bytes": 65536,
+        "swap_out_bytes": 0,
+        "compression_bytes": 0,
+        "decompression_bytes": 16384,
+        "reasons": [],
+        "command_exit_code": 0
+      },
+      "memory_evidence_sha256": "46597ec439cdf970a9871d313311fb916f87dc76a3fde77a94c845cc074ba321"
+    },
+    {
+      "mode": "bf16",
+      "raw_stdout": "outputs/qwen21-q4km-v2-40step-native-screen-20261010/bf16.stdout.jsonl",
+      "raw_sha256": "7143fed043c7cfcf665a79b63870f11080a1795f88d9b31274452109e3457b42",
+      "timings": [
+        {
+          "denoise": 42.2450995,
+          "hybrid_setup": 0,
+          "image_encode": 2.08e-7,
+          "request_wall": 48.001991209,
+          "text_encode": 2.881597292,
+          "vae_decode": 0.647764792
+        },
+        {
+          "denoise": 42.053102792,
+          "hybrid_setup": 0,
+          "image_encode": 2.91e-7,
+          "request_wall": 43.631478042,
+          "text_encode": 0.910110625,
+          "vae_decode": 0.644855459
+        },
+        {
+          "denoise": 42.092009791,
+          "hybrid_setup": 0,
+          "image_encode": 1.66e-7,
+          "request_wall": 43.056237292,
+          "text_encode": 0.287139334,
+          "vae_decode": 0.654389042
+        }
+      ],
+      "warm_medians": {
+        "request_wall": 43.343857666999995,
+        "text_encode": 0.5986249795,
+        "denoise": 42.0725562915,
+        "vae_decode": 0.6496222505
+      },
+      "encoder_receipts": [
+        {
+          "decline_reason": "",
+          "enabled": true,
+          "loads_session_total": 1,
+          "logical_capacity_upper_bytes": 21474836480,
+          "retained_bytes": 17534247392,
+          "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+          "source_bytes": 17534247392,
+          "weights_retained": true,
+          "weights_reused": false
+        },
+        {
+          "decline_reason": "",
+          "enabled": true,
+          "loads_session_total": 1,
+          "logical_capacity_upper_bytes": 21474836480,
+          "retained_bytes": 17534247392,
+          "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+          "source_bytes": 17534247392,
+          "weights_retained": true,
+          "weights_reused": true
+        },
+        {
+          "decline_reason": "",
+          "enabled": true,
+          "loads_session_total": 1,
+          "logical_capacity_upper_bytes": 21474836480,
+          "retained_bytes": 17534247392,
+          "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+          "source_bytes": 17534247392,
+          "weights_retained": true,
+          "weights_reused": true
+        }
+      ],
+      "png_sha256": [
+        "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+        "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+        "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1"
+      ],
+      "memory": {
+        "schema": "turbocider-process-tree-verification-v1",
+        "status": "complete",
+        "complete": true,
+        "correlation_id": "a9c8707185a042169b13f2527b49a6f6",
+        "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+        "root_identity": {
+          "pid": 20816,
+          "start_seconds": 1791614363,
+          "start_microseconds": 28050
+        },
+        "record_count": 1355,
+        "sample_count": 1351,
+        "final_evidence_digest": "308c1df32235e829e04df3e7a143e7066b575e85e793bf1fd14f5a86d1b23169",
+        "max_gap_ns": 109978292,
+        "allowed_max_gap_ns": 500000000,
+        "tree_peak_rss_bytes": 27224883200,
+        "tree_peak_phys_footprint_bytes": 36863172152,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0,
+        "compression_bytes": 8045346816,
+        "decompression_bytes": 6503858176,
+        "reasons": [],
+        "command_exit_code": 0
+      },
+      "memory_evidence_sha256": "d03db6ddf87cccb2c00e5d49fdc6c0722a5e5310c280edf48f1aea7347911ac1"
+    }
+  ],
+  "relative_to_bf16": {
+    "warm_wall_ratio": 1.0272580716644315,
+    "warm_denoise_ratio": 1.0394274345373002,
+    "observed_process_peak_ratio": 0.43499177417182794,
+    "warning": "sequential first screen, source lifecycles matched; compression and few prompts make this diagnostic, not causal attribution/quiet-window qualification"
+  },
+  "reference_first_screen": {
+    "artifact": "master-813-bfbef5b-u1d02858",
+    "source": "actual local Unsloth sd_cpp_args builder, max diffusion-fa/conv-direct; direct model child, default clip-on-cpu",
+    "steps": 4,
+    "resolution": [
+      512,
+      512
+    ],
+    "seed": 29,
+    "cfg_scale": 1,
+    "log": "outputs/qwen21-q4km-unsloth-v3-max-direct-20261010/reference.stdout.txt",
+    "log_sha256": "23fb4c86d97b0c4094b299a613578a5323645ccec8fa1e6ae89337e086b51bca",
+    "condition_seconds_from_log": 1.49,
+    "sampling_seconds_from_log": 11.9,
+    "vae_seconds_from_log": 18.14,
+    "generation_seconds_from_log": 31.53,
+    "memory": {
+      "schema": "turbocider-process-tree-verification-v1",
+      "status": "complete",
+      "complete": true,
+      "correlation_id": "b84cf234dce44960bb9bd27ae1f353cd",
+      "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+      "root_identity": {
+        "pid": 20623,
+        "start_seconds": 1791613913,
+        "start_microseconds": 419415
+      },
+      "record_count": 323,
+      "sample_count": 319,
+      "final_evidence_digest": "dad4d2d7e6d094f673749cade877da5fe95737abde765c89e49887fb783bf058",
+      "max_gap_ns": 109699125,
+      "allowed_max_gap_ns": 500000000,
+      "tree_peak_rss_bytes": 10867998720,
+      "tree_peak_phys_footprint_bytes": 11026178424,
+      "swap_in_bytes": 0,
+      "swap_out_bytes": 0,
+      "compression_bytes": 0,
+      "decompression_bytes": 49152,
+      "reasons": [],
+      "command_exit_code": 0
+    },
+    "matched_40_step_complete": false
+  },
+  "remaining_requirements": [
+    "Native encoder and DiT faster than matched strongest Unsloth cold/warm workloads",
+    "Mixed-K GPU kernel optimization",
+    "GPU/ANE parallel FFN support and whole-request benefit",
+    "BF16 same-footprint constrained streaming implementation and comparison",
+    "More scenes/seeds and final quality/performance audit"
+  ]
+}

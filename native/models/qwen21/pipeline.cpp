@@ -53,16 +53,21 @@ std::string read_utf8_file(const std::filesystem::path &path) {
 }
 }
 Session::Session(const std::filesystem::path &root) : root_(root) {
-    for (const char *relative : {"diffusion_models/qwen_image_2.1_bf16.safetensors",
-                                "text_encoders/qwen3vl_8b_bf16.safetensors",
-                                "vae/qwen_image_2.1_vae_bf16.safetensors", "processor/tokenizer.json"})
+    transformer_source_=component_source(root,"diffusion_models/qwen_image_2.1_bf16.safetensors",
+        "diffusion_models/qwen-image-2.1-Q4_K_M.gguf");
+    encoder_source_=component_source(root,"text_encoders/qwen3vl_8b_bf16.safetensors",
+        "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf");
+    for (const char *relative : {"vae/qwen_image_2.1_vae_bf16.safetensors", "processor/tokenizer.json"})
         require(std::filesystem::is_regular_file(root / relative), std::string("missing Qwen Image 2.1 asset: ") + relative);
 }
 LoadResult Session::load(const Event &event, std::atomic<bool> &cancelled) {
     checkpoint(cancelled);
+    if(transformer_gguf_)transformer_gguf_->bank->check_unchanged();
     if (!transformer_.bytes()) {
         emit(event, "load_qwen21_transformer", 0, 1);
-        transformer_.load_file(root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors");
+        if(transformer_source_.extension()==".gguf")
+            transformer_gguf_=load_gguf_component(transformer_source_,transformer_,false,event,cancelled);
+        else transformer_.load_file(transformer_source_);
         transformer_.materialize();
         emit(event, "load_qwen21_transformer", 1, 1);
     }
@@ -134,6 +139,7 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
 void Session::unload() {
     encoder_runtime_.reset(); encoder_runtime_identity_.clear();
     encoder_weights_.reset();encoder_weight_identity_.clear();encoder_weight_loads_=0;
+    encoder_gguf_.reset();
     runtime_ffn_.reset(); runtime_manifest_.clear();
     runtime_qkv_.reset(); qkv_manifest_.clear();
     clear_prefix_cache();
@@ -144,6 +150,7 @@ void Session::unload() {
     hybrid_runtime_options_.clear();
     conditioning_cache_.clear();
     transformer_.clear();
+    transformer_gguf_.reset();
     vae_.clear();
     active_lora_identity_.clear();
     lora_applied_projections_ = 0;
@@ -196,6 +203,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
     require(binary_option_or_unset(encoder_weights_flag),"Qwen encoder weight retention requires 0 or 1");
     const bool retain_encoder_weights=option_enabled(encoder_weights_flag);
+    const bool gguf_transformer=transformer_source_.extension()==".gguf";
+    const bool gguf_encoder=encoder_source_.extension()==".gguf";
+    if(gguf_transformer || gguf_encoder)
+        require(r.operation=="image.generate" && r.inputs.empty() && r.execution=="gpu" &&
+            r.allow_approximation && r.loras.empty() && r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
+            !r.prompt_enhance && !r.qwen21_gpu_w8a16 && !r.qwen21_w8a8,
+            "Qwen21 mixed GGUF initial route requires explicit GPU base generation approximation; hybrid/edit/LoRA qualification pending");
     const bool compile_encoder_gpu=compiled_encoder_gpu(r);
     if(retain_encoder_weights)
         require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&
@@ -210,6 +224,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(!retain_encoder_weights && encoder_weights_) {
         if(encoder_runtime_)encoder_runtime_->drain();
         encoder_weights_.reset();encoder_weight_identity_.clear();
+        encoder_gguf_.reset();
     }
     const char *encoder_retain_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME");
     require(binary_option_or_unset(encoder_retain_flag),"Qwen encoder runtime retention requires 0 or 1");
@@ -226,7 +241,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         auto charge=[&](uint64_t value) {
             require(value<=UINT64_MAX-bytes,"Qwen encoder retention growth overflow");bytes+=value;
         };
-        if(!transformer_.bytes())charge(std::filesystem::file_size(root_/"diffusion_models/qwen_image_2.1_bf16.safetensors"));
+        if(!transformer_.bytes())charge(std::filesystem::file_size(transformer_source_));
         if(!vae_.bytes())charge(std::filesystem::file_size(root_/"vae/qwen_image_2.1_vae_bf16.safetensors"));
         if(!r.loras.empty() && active_lora_identity_.empty())charge(std::filesystem::file_size(r.loras.front().path));
         if(r.execution=="gpu_ane" && !(runtime_requested && runtime_ffn_ && runtime_ffn_->available()))charge(uint64_t(2)<<30);
@@ -236,10 +251,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     encoder_weight_metrics.enabled=retain_encoder_weights;
     std::optional<EncoderSourceGeneration> encoder_source;
     if(retain_encoder_weights) {
-        encoder_source=encoder_source_generation(root_/"text_encoders/qwen3vl_8b_bf16.safetensors");
+        encoder_source=encoder_source_generation(encoder_source_);
         if(encoder_weights_ && encoder_weight_identity_!=encoder_source->identity) {
             encoder_runtime_.reset();encoder_runtime_identity_.clear();
             encoder_weights_.reset();encoder_weight_identity_.clear();
+            encoder_gguf_.reset();
         }
         if(encoder_weights_) {
             const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
@@ -248,6 +264,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 encoder_weight_metrics.decline_reason=ane::memory_denial_reason(decision.denial,observed);
                 encoder_runtime_.reset();encoder_runtime_identity_.clear();
                 encoder_weights_.reset();encoder_weight_identity_.clear();
+                encoder_gguf_.reset();
             }
         }
     }
@@ -440,11 +457,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             transformer_.clear(); vae_.clear(); mx::clear_cache();
         }
         std::unique_ptr<Weights> request_encoder_weights;
+        std::unique_ptr<GgufComponent> request_encoder_gguf;
         encoder_weight_metrics.reused=bool(encoder_weights_);
         if(!encoder_weights_) {
             request_encoder_weights=std::make_unique<Weights>();
             emit(event, "load_qwen21_text", 0, 1);
-            request_encoder_weights->load_file(root_ / "text_encoders/qwen3vl_8b_bf16.safetensors");
+            if(gguf_encoder)request_encoder_gguf=load_gguf_component(encoder_source_,*request_encoder_weights,true,event,cancelled);
+            else request_encoder_weights->load_file(encoder_source_);
             ++encoder_weight_loads_;
             emit(event, "load_qwen21_text", 1, 1);
         }
@@ -518,18 +537,26 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 observed=ane::observe_runtime_memory(mx::get_active_memory());
                 decision=admit_encoder_weights(observed,weights.bytes(),upcoming_encoder_growth());
             }
-            require(encoder_source_generation(root_/"text_encoders/qwen3vl_8b_bf16.safetensors").identity==encoder_source->identity,
+            require(encoder_source_generation(encoder_source_).identity==encoder_source->identity,
                 "Qwen encoder source changed during retained encoding");
             if(decision.allowed()) {
-                if(!encoder_weights_)encoder_weights_=std::move(request_encoder_weights);
+                if(!encoder_weights_) {
+                    encoder_weights_=std::move(request_encoder_weights);
+                    encoder_gguf_=std::move(request_encoder_gguf);
+                }
                 encoder_weight_identity_=encoder_source->identity;
                 encoder_weight_metrics.decline_reason.clear();
             } else {
                 encoder_weight_metrics.decline_reason=ane::memory_denial_reason(decision.denial,observed);
-                if(encoder_weights_)request_encoder_weights=std::move(encoder_weights_);
+                if(encoder_weights_) {
+                    request_encoder_weights=std::move(encoder_weights_);
+                    request_encoder_gguf=std::move(encoder_gguf_);
+                }
                 encoder_weight_identity_.clear();
             }
         }
+        if(request_encoder_gguf)request_encoder_gguf->bank->check_unchanged();
+        if(encoder_gguf_)encoder_gguf_->bank->check_unchanged();
         slots = assembled.image_slots;
         if (r.inputs.empty()) { conditioning_cache_.text = text; conditioning_cache_.prompt = r.prompt; }
     }
@@ -946,7 +973,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (norm_rope && std::string_view(norm_rope) == "1")
         result.selection += "; experimental fused Metal Q/K norm-RoPE";
     result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
-    result.checkpoint = "qwen_image_2.1_bf16.safetensors";
+    result.checkpoint = transformer_source_.filename().string();
+    if(gguf_transformer || gguf_encoder) {
+        result.backend="mlx_cpp_metal_qwen21_gguf";
+        result.precision=std::string(gguf_transformer ? "q4_k_m_dit" : "bf16_dit")+"+"+
+            (gguf_encoder ? "q4_k_m_text" : "bf16_text")+"+bf16_vae";
+        result.selection+="; explicit mixed K affine Q4/Q8 GPU, FP16 typed coefficients/I/O; Q6_K group requantization; dense embedding only";
+    }
     result.text_tokens = result.valid_text_tokens = text.shape(1);
     for (const auto &ref : references) result.reference_tokens += ref.latents.shape(1);
     result.total_tokens = result.text_tokens + result.reference_tokens + r.height / 16 * (r.width / 16);
@@ -958,13 +991,14 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                       viggle_v021_sigmas(r.width, r.height);
         mx::eval(schedule);
         auto latents = mx::astype(mx::random::normal({1, r.height / 16 * (r.width / 16), 64},
-            mx::float32, mx::random::key(r.seed)), mx::bfloat16);
+            mx::float32, mx::random::key(r.seed)), gguf_transformer ? mx::float16 : mx::bfloat16);
+        text=mx::astype(text,latents.dtype());mx::eval(text);
         if (!r.noise_path.empty()) {
             auto [values, metadata] = mx::load_safetensors(r.noise_path);
             require(values.count("tensor") || values.count("initial"), "Qwen21 noise file requires tensor or initial");
             const auto &noise = values.at(values.count("tensor") ? "tensor" : "initial");
             require(noise.shape() == latents.shape(), "Qwen21 noise tensor shape mismatch");
-            latents = mx::astype(noise, mx::bfloat16);
+            latents = mx::astype(noise, latents.dtype());
         }
         dump("qwen21_initial", latents);
         // A 32-layer BF16 K/V bank costs roughly 512 KiB per prefix token.
@@ -1310,6 +1344,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         result.db_cache_steps = dit.db_cached_steps();
         result.timings.denoise = seconds(dit_start); result.actual_steps = r.steps;
+        if(transformer_gguf_)transformer_gguf_->bank->check_unchanged();
         if (r.qwen21_w8a8) {
             const W8A8CallBudget budget{
                 .steps = r.steps,
@@ -1372,6 +1407,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
 } catch (...) {
     encoder_runtime_.reset();encoder_runtime_identity_.clear();
     encoder_weights_.reset();encoder_weight_identity_.clear();
+    encoder_gguf_.reset();
     if (runtime_ffn_) runtime_ffn_->drain();
     if (runtime_qkv_) runtime_qkv_->drain();
     try { mx::synchronize(); } catch (...) {}

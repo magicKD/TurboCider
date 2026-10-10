@@ -5,6 +5,7 @@
 #include "transformer.hpp"
 #include "conditioning_cache.hpp"
 #include "encoder_residency.hpp"
+#include "gguf_weights.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "../../backends/ane_qkv.hpp"
 
@@ -18,7 +19,9 @@ class Session final : public ModelSession {
     RunResult generate(const Request &, const Event &, std::atomic<bool> &) override;
   private:
     std::filesystem::path root_;
+    std::filesystem::path transformer_source_,encoder_source_;
     Weights transformer_, vae_;
+    std::unique_ptr<GgufComponent> transformer_gguf_,encoder_gguf_;
     // Diagnostic shallow views of QKV matrices replacing their three source
     // weights in transformer_. Never retained on a route without opt-in.
     std::vector<Tensor> fused_qkv_weights_;
