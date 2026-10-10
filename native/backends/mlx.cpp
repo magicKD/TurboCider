@@ -6,6 +6,7 @@
 #include "dense_gpu_projection.hpp"
 #include "dense_gpu_lora_b.hpp"
 #include "mlx_fd_reader.hpp"
+#include "gguf_read_snapshot.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
 #include "../platform/apple/platform.hpp"
@@ -235,8 +236,10 @@ void Weights::load_gguf_file(const std::filesystem::path &path) {
     require(std::filesystem::is_regular_file(path) && path.extension() == ".gguf",
             "GGUF checkpoint missing: " + path.string());
     try {
-        validate_native_gguf(path);
-        auto data = mx::load_gguf(path.string());
+        GgufReadSnapshot snapshot(path);
+        validate_native_gguf(snapshot.path());
+        auto data = mx::load_gguf(snapshot.path().string());
+        snapshot.check_unchanged();
         for (auto &[name, value] : data.first) {
             require(!values_.count(name), "duplicate GGUF tensor: " + name);
             values_.emplace(std::move(name), std::move(value));
