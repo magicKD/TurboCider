@@ -1,0 +1,1011 @@
+{
+  "schema": "tc-qwen-prefill-share-validation-v1",
+  "date": "2026-10-10",
+  "hardware": "M4 Max 64GB / macOS 26.6.2",
+  "resolution": [
+    512,
+    512
+  ],
+  "qualification_passed": false,
+  "production_route_changed": false,
+  "windows": [
+    {
+      "references": 1,
+      "version": 1,
+      "summary": "outputs/local512-qwen-edit1-prefill-shares-v1-diagnostic-20261010/summary.json",
+      "summary_sha256": "8520eb709a1c76aee77c3a0789ed1a959bd06c2bb8b45337c3512fa2c9faa97d",
+      "order": [
+        "gpu",
+        "prefill_a4096",
+        "prefill",
+        "prefill_a6144",
+        "prefill_a7168"
+      ],
+      "deferred_join": false,
+      "source_identities": {
+        "build/local512-qwen-generation-phases-v1-private/turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+        "build/local512-qwen-generation-phases-v1-private/libturbocider.dylib": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+        "outputs/runtime-ane/private-channel-qwen-c2112-k1024-n512-v2/manifest.json": "2251fc5248f52c7d5d8db8fd39368d8c57417c6857031439ccf935f0f98e408f",
+        "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+        "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803"
+      },
+      "model_snapshot": {
+        "diffusion_models/qwen_image_2.1_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405483,
+          "bytes": 14230280616,
+          "mtime_ns": 1789985794528055600,
+          "ctime_ns": 1789985794528055600,
+          "header_sha256": "c43378af5fb061aee50cfc245837a6d897685da018b5a6e13e8fb31fac56f378"
+        },
+        "text_encoders/qwen3vl_8b_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405886,
+          "bytes": 17534334616,
+          "mtime_ns": 1789987346476369700,
+          "ctime_ns": 1789987346476369700,
+          "header_sha256": "df60bbf5f944a8e9b8424e305422d17176cee3d4928c62b2eb7151316a30866b"
+        },
+        "vae/qwen_image_2.1_vae_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405733,
+          "bytes": 675509688,
+          "mtime_ns": 1789985708545789400,
+          "ctime_ns": 1789985708545789400,
+          "header_sha256": "c091c3d231f352db5fb44840e22388d2abe9c2c37b4daf97bdc6cc3448387759"
+        }
+      },
+      "model_identity_scope": "file-generation stamps and bounded headers, not immutable full-payload signatures",
+      "load_report": "outputs/local512-qwen-edit1-prefill-shares-v1-busy-load-report-20261010.json",
+      "load_report_sha256": "e893dc16c824762573ac476717fb1d31605d50940b9979c9b447f6a3e35cad09",
+      "load_check_passed": false,
+      "trials": [
+        {
+          "mode": "gpu",
+          "ane_channels": 0,
+          "cold_request_seconds": 15.381030083,
+          "warm_request_seconds": [
+            10.918035167,
+            10.107722583
+          ],
+          "warm_request_median_seconds": 10.512878874999998,
+          "warm_prefill_median_seconds": 2.4360027915,
+          "warm_decode_total_median_seconds": 6.0888961035,
+          "request_time_reduction_vs_same_window_gpu_pct": 0,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 0,
+          "raw_sha256": "df06c25633b2b4d858f75bea6b7a9893f7ae1609d5988f23f7edd49ce1fefbeb",
+          "png_sha256": [
+            "0e3044705ddbadd03235357bac26e4290dff41f3746aee387d87bd0f187dbed5",
+            "9918ca9762c4f8f8e221368a3a1b0015dafb486745430320e538562d6953b8cc",
+            "0dee769f8c56a291cf4571eb8267e9ae68007ff920143e186804490531a6a78d"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "0d2abbacc5ab46ddbf7cb2ac6147ce42",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 96325,
+              "start_seconds": 1791585536,
+              "start_microseconds": 563425
+            },
+            "record_count": 372,
+            "sample_count": 368,
+            "final_evidence_digest": "bdde1a0ec4711b9d22fb3cbff16caedd5fb8e81a1226bf26e2ec1349ff012769",
+            "max_gap_ns": 110019416,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24671043584,
+            "tree_peak_phys_footprint_bytes": 40166255088,
+            "swap_in_bytes": 65536,
+            "swap_out_bytes": 0,
+            "compression_bytes": 15908651008,
+            "decompression_bytes": 14035255296,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "df0516b7647948dfd5e9d8f60c5e6ee8822663875e81937153ac6cbe489d4444",
+          "memory_report_sha256": "4cf89fcc88b2271a83c84c273f38d0320098f0d8727029215c36bf531fc6f537"
+        },
+        {
+          "mode": "prefill_a4096",
+          "ane_channels": 4096,
+          "cold_request_seconds": 18.104473459,
+          "warm_request_seconds": [
+            10.604084958,
+            9.91380675
+          ],
+          "warm_request_median_seconds": 10.258945854,
+          "warm_prefill_median_seconds": 2.2545742085000002,
+          "warm_decode_total_median_seconds": 6.0976462495,
+          "request_time_reduction_vs_same_window_gpu_pct": 2.4154470342453993,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 7.447798649207737,
+          "raw_sha256": "7a60dc4cb4bf5aba95764736d8f241b7ba1d6b6524d52552ed54ffead5b77243",
+          "png_sha256": [
+            "7a27317f3c305418c04ba48c10c29f570be92d01f522ca54e57691194eb3cdec",
+            "792770cc57204dfd45eb8c8d4bf276e05c74537c9892b82047618599b9cb4c3b",
+            "4c14e2ffb00863de750cc3c805ba5cda1e543ea8269f063c6f86804c4c634e73"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "ceb73012b3eb4eb6a2eddd3307016c7b",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 96478,
+              "start_seconds": 1791585573,
+              "start_microseconds": 884672
+            },
+            "record_count": 395,
+            "sample_count": 391,
+            "final_evidence_digest": "1c2534da08134ba3c0aae64b0ed19171d7037015e02b391f77d945f13e3735a0",
+            "max_gap_ns": 110013916,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24638521344,
+            "tree_peak_phys_footprint_bytes": 39321986008,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 13710131200,
+            "decompression_bytes": 12558188544,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "ef325f903e7ceb346681f9633521e23c7841c5fbaf7a0944e2e88d7367280d85",
+          "memory_report_sha256": "028d5f1915bfd9b56c1450077cc8f967a063813137455788ac39b060911db1c1"
+        },
+        {
+          "mode": "prefill",
+          "ane_channels": 5120,
+          "cold_request_seconds": 15.6096035,
+          "warm_request_seconds": [
+            10.697328958,
+            9.923323
+          ],
+          "warm_request_median_seconds": 10.310325979,
+          "warm_prefill_median_seconds": 2.259001938,
+          "warm_decode_total_median_seconds": 6.1127002715,
+          "request_time_reduction_vs_same_window_gpu_pct": 1.9267119730797644,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 7.266036562749978,
+          "raw_sha256": "011f81d959ffbbb89c4697a67af0b9e6139f8340743f7abbcab4204c28b81ff7",
+          "png_sha256": [
+            "53403142f6c48dd82adca4b43b9203baa795fbe4da087601b76887b7cdc37598",
+            "a5f4432e56a5ac91d3a13a6cca7e7533f479514c99d9964a055e3e11b7c4d84c",
+            "419df81a6882cad0ae761ba6e9f1610863d0dff449eba420707961c1dbd82829"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "150341763d0f43a58b3daaf1b27b9767",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 96650,
+              "start_seconds": 1791585613,
+              "start_microseconds": 543012
+            },
+            "record_count": 371,
+            "sample_count": 367,
+            "final_evidence_digest": "a4269c7984c94eeaa9a30dbf35115d4c9887013f079b2a9a87b4637bb5abeb1d",
+            "max_gap_ns": 109944708,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24712101888,
+            "tree_peak_phys_footprint_bytes": 38905881536,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 13927776256,
+            "decompression_bytes": 13275856896,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "ec8324cbcce4c0d482fd3cad0e39b81f6ea4ba8612f267109f1e1aebada84f42",
+          "memory_report_sha256": "26fe5bfa1c1f3c0abdfd66129767773be67b7657955cb8e473a5d7a680cc545d"
+        },
+        {
+          "mode": "prefill_a6144",
+          "ane_channels": 6144,
+          "cold_request_seconds": 19.614529791,
+          "warm_request_seconds": [
+            10.635902375,
+            10.082267083
+          ],
+          "warm_request_median_seconds": 10.359084729,
+          "warm_prefill_median_seconds": 2.3522871875,
+          "warm_decode_total_median_seconds": 6.089433333000001,
+          "request_time_reduction_vs_same_window_gpu_pct": 1.4629118039752864,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 3.436597211304959,
+          "raw_sha256": "99e1f6bae43a5182b92b18ed3a8527a807526e1ed69fb3ac053f3bd9bed4e260",
+          "png_sha256": [
+            "9bceb5e9e7076d1ff798f7eeacd4ce6be10cc0cd23c20dd2c5f99c337f88d44b",
+            "965ee8b20a0af5a9a9854376c157211b595dcab7d72055420de086de4a86db01",
+            "6bee0ad4ad227f7487684c683430ac283ff0a4d50a157c8a9d71962666ff318e"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "3411bad4bda944d8bc16a0dc61eca41f",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 96798,
+              "start_seconds": 1791585650,
+              "start_microseconds": 830891
+            },
+            "record_count": 412,
+            "sample_count": 408,
+            "final_evidence_digest": "a67ed1656584a015f4cd9904acd5e9fd7e603f9d9f2f82a02903ea25ac590481",
+            "max_gap_ns": 110019875,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24784896000,
+            "tree_peak_phys_footprint_bytes": 39399908360,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 13279559680,
+            "decompression_bytes": 12696305664,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "d89dbdedcca2be71787354cb4e6ce2a6c6de986c08fb26a5478df8166ea1eb16",
+          "memory_report_sha256": "2755985e710282ab6b7b1c1fdec39dbbbb9d2159a71a9e20175261f65118b862"
+        },
+        {
+          "mode": "prefill_a7168",
+          "ane_channels": 7168,
+          "cold_request_seconds": 16.167682833,
+          "warm_request_seconds": [
+            10.998946667,
+            10.159709541
+          ],
+          "warm_request_median_seconds": 10.579328104,
+          "warm_prefill_median_seconds": 2.515393375,
+          "warm_decode_total_median_seconds": 6.0862355635,
+          "request_time_reduction_vs_same_window_gpu_pct": -0.6320745229741132,
+          "prefill_time_reduction_vs_same_window_gpu_pct": -3.2590514172241125,
+          "raw_sha256": "6cee66d8f788ec9655f41e7c1ef6049ec085cfc0131443eac5b24c19ec655ce9",
+          "png_sha256": [
+            "05f8c97cc7dc79c23e3049987ff9c405d621051bb685297528848e8d4eae6d50",
+            "a8ce2ed5c648edc50ca31abbbb3c488478be2b714c88cc3ac50a7ec4e10b9ed7",
+            "b5592c90ecea6716b62f735476f70224be9267aa35f9879d775ed6f851d4677c"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "cf29c5936b7d4fb0ad5593b92632c625",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 96965,
+              "start_seconds": 1791585692,
+              "start_microseconds": 204057
+            },
+            "record_count": 382,
+            "sample_count": 378,
+            "final_evidence_digest": "9a4b0975ce0103b6ba3bd7869d050a74dd907b7c594e448168cb1ca8383079c5",
+            "max_gap_ns": 110016583,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24650612736,
+            "tree_peak_phys_footprint_bytes": 39389733872,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 14227652608,
+            "decompression_bytes": 13619249152,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "32fb036172fb184f0f10cf27f1a6fc75d8fb5f4c7fa997d0f026c2996861f987",
+          "memory_report_sha256": "d924c438a9191ad7f871f34d77cb8b75a66b4c46b8a0fd022abb50febd21c6ba"
+        }
+      ]
+    },
+    {
+      "references": 1,
+      "version": 2,
+      "summary": "outputs/local512-qwen-edit1-prefill-shares-v2-diagnostic-20261010/summary.json",
+      "summary_sha256": "667e5f77e2865a8244e86ecdc56239838c95795f4637fdbca49dc2a5b65baa4c",
+      "order": [
+        "prefill",
+        "prefill_a4096",
+        "gpu"
+      ],
+      "deferred_join": false,
+      "source_identities": {
+        "build/local512-qwen-generation-phases-v1-private/turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+        "build/local512-qwen-generation-phases-v1-private/libturbocider.dylib": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+        "outputs/runtime-ane/private-channel-qwen-c2112-k1024-n512-v2/manifest.json": "2251fc5248f52c7d5d8db8fd39368d8c57417c6857031439ccf935f0f98e408f",
+        "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+        "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803"
+      },
+      "model_snapshot": {
+        "diffusion_models/qwen_image_2.1_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405483,
+          "bytes": 14230280616,
+          "mtime_ns": 1789985794528055600,
+          "ctime_ns": 1789985794528055600,
+          "header_sha256": "c43378af5fb061aee50cfc245837a6d897685da018b5a6e13e8fb31fac56f378"
+        },
+        "text_encoders/qwen3vl_8b_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405886,
+          "bytes": 17534334616,
+          "mtime_ns": 1789987346476369700,
+          "ctime_ns": 1789987346476369700,
+          "header_sha256": "df60bbf5f944a8e9b8424e305422d17176cee3d4928c62b2eb7151316a30866b"
+        },
+        "vae/qwen_image_2.1_vae_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405733,
+          "bytes": 675509688,
+          "mtime_ns": 1789985708545789400,
+          "ctime_ns": 1789985708545789400,
+          "header_sha256": "c091c3d231f352db5fb44840e22388d2abe9c2c37b4daf97bdc6cc3448387759"
+        }
+      },
+      "model_identity_scope": "file-generation stamps and bounded headers, not immutable full-payload signatures",
+      "load_report": "outputs/local512-qwen-edit1-prefill-shares-v2-busy-load-report-20261010.json",
+      "load_report_sha256": "56c23ce61fc9ec9f050b01752c514f655896ba81c8516a23c2af4b4e268f28ef",
+      "load_check_passed": false,
+      "trials": [
+        {
+          "mode": "prefill",
+          "ane_channels": 5120,
+          "cold_request_seconds": 15.412091292,
+          "warm_request_seconds": [
+            10.570616792,
+            9.943323958
+          ],
+          "warm_request_median_seconds": 10.256970375,
+          "warm_prefill_median_seconds": 2.236887063,
+          "warm_decode_total_median_seconds": 6.0991805,
+          "request_time_reduction_vs_same_window_gpu_pct": 3.116059667241833,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 7.927335592619444,
+          "raw_sha256": "3f196eb03057b1c01e88805f1a867d507b896a873a423be647eca4042c7e0aec",
+          "png_sha256": [
+            "53403142f6c48dd82adca4b43b9203baa795fbe4da087601b76887b7cdc37598",
+            "a5f4432e56a5ac91d3a13a6cca7e7533f479514c99d9964a055e3e11b7c4d84c",
+            "419df81a6882cad0ae761ba6e9f1610863d0dff449eba420707961c1dbd82829"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "af5ea9eaa6134a1ea3c362b87d57f5f8",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 98222,
+              "start_seconds": 1791586284,
+              "start_microseconds": 354122
+            },
+            "record_count": 368,
+            "sample_count": 364,
+            "final_evidence_digest": "1bd0f582fc4970271eed7850f9e2d55feaa52d9ef42e2cdf8d4bcd2f22d2fa2e",
+            "max_gap_ns": 110016625,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25328009216,
+            "tree_peak_phys_footprint_bytes": 39236559808,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 13198721024,
+            "decompression_bytes": 12524765184,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "23f69b5b1f9e205fe9f26be73b1169c9cc8e8fa4ed19a9b5dc60d36a7abb3a0f",
+          "memory_report_sha256": "04df61a138c0b223050b897daeec04df14a7db556ded9317865497a66b62f34c"
+        },
+        {
+          "mode": "prefill_a4096",
+          "ane_channels": 4096,
+          "cold_request_seconds": 15.375470583,
+          "warm_request_seconds": [
+            10.665038042,
+            9.934451541
+          ],
+          "warm_request_median_seconds": 10.2997447915,
+          "warm_prefill_median_seconds": 2.3009823745,
+          "warm_decode_total_median_seconds": 6.0954988745000005,
+          "request_time_reduction_vs_same_window_gpu_pct": 2.7120267155570588,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 5.289104005767964,
+          "raw_sha256": "dfb722eb6275a7c2f80c9058cce9f58f1a08f83a954168b2e8c41644854c1bb2",
+          "png_sha256": [
+            "7a27317f3c305418c04ba48c10c29f570be92d01f522ca54e57691194eb3cdec",
+            "792770cc57204dfd45eb8c8d4bf276e05c74537c9892b82047618599b9cb4c3b",
+            "4c14e2ffb00863de750cc3c805ba5cda1e543ea8269f063c6f86804c4c634e73"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "e0f71fe9fb5e43578b8e4a4cda93d1db",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 98374,
+              "start_seconds": 1791586321,
+              "start_microseconds": 309740
+            },
+            "record_count": 368,
+            "sample_count": 364,
+            "final_evidence_digest": "9cbc1182955658d189ac856601b5960de18cf68572b023220eafcf226d52ff11",
+            "max_gap_ns": 110012500,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25325060096,
+            "tree_peak_phys_footprint_bytes": 39015523312,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 13107462144,
+            "decompression_bytes": 12448088064,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "39a2026208e3b31fe3585a6bb30869e6fd041ecc57a1669942900e481eca3bce",
+          "memory_report_sha256": "e353cf87cab21da346509668cb0ea3016b0130b280d65ec65135430699873e0f"
+        },
+        {
+          "mode": "gpu",
+          "ane_channels": 0,
+          "cold_request_seconds": 15.319217625,
+          "warm_request_seconds": [
+            10.973676292,
+            10.200050416
+          ],
+          "warm_request_median_seconds": 10.586863354,
+          "warm_prefill_median_seconds": 2.429480104,
+          "warm_decode_total_median_seconds": 6.1142175835,
+          "request_time_reduction_vs_same_window_gpu_pct": 0,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 0,
+          "raw_sha256": "05fd85008ae0c4f5acedbb1af477524f9c420fa7207ef414b98767724a9fa307",
+          "png_sha256": [
+            "0e3044705ddbadd03235357bac26e4290dff41f3746aee387d87bd0f187dbed5",
+            "9918ca9762c4f8f8e221368a3a1b0015dafb486745430320e538562d6953b8cc",
+            "0dee769f8c56a291cf4571eb8267e9ae68007ff920143e186804490531a6a78d"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "cd0038442d3342ed9573cb769fa09d54",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 98518,
+              "start_seconds": 1791586358,
+              "start_microseconds": 289705
+            },
+            "record_count": 373,
+            "sample_count": 369,
+            "final_evidence_digest": "1fb4d5b0cc48374d15a758dcc3e6fefe26333ff070cdfaf882e866f6313f0400",
+            "max_gap_ns": 110016000,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25416908800,
+            "tree_peak_phys_footprint_bytes": 39913318872,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 14638284800,
+            "decompression_bytes": 12788187136,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "56c578cf0522e0845422bcf1561c7547588ffe2ed8e86714c951da244ac63568",
+          "memory_report_sha256": "5f93e211940bd4fb071a050ed65ce2db14b4b0fc74cbd5c0f1c0c1986268f068"
+        }
+      ]
+    },
+    {
+      "references": 2,
+      "version": 1,
+      "summary": "outputs/local512-qwen-edit2-prefill-shares-v1-diagnostic-20261010/summary.json",
+      "summary_sha256": "5e92044c97c8c98a460be96582bc67946770254a5c9b365a2ed0eab8037c83bd",
+      "order": [
+        "prefill_a7168",
+        "prefill_a6144",
+        "prefill",
+        "prefill_a4096",
+        "gpu"
+      ],
+      "deferred_join": true,
+      "source_identities": {
+        "build/local512-qwen-generation-phases-v1-private/turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+        "build/local512-qwen-generation-phases-v1-private/libturbocider.dylib": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+        "outputs/runtime-ane/private-channel-qwen-c3168-k1024-n512-v2-20261009/manifest.json": "50530c535aef726b9ef4add2fefe4250894e431b00c52cf5b1f7e1278fccb36a",
+        "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+        "results/qwen21/teapot-rgba-blue-native-1024.png": "2240ab7e7d67df1776fdae38b853dc57fea2e077cb259a7926c25fe640212192",
+        "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803"
+      },
+      "model_snapshot": {
+        "diffusion_models/qwen_image_2.1_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405483,
+          "bytes": 14230280616,
+          "mtime_ns": 1789985794528055600,
+          "ctime_ns": 1789985794528055600,
+          "header_sha256": "c43378af5fb061aee50cfc245837a6d897685da018b5a6e13e8fb31fac56f378"
+        },
+        "text_encoders/qwen3vl_8b_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405886,
+          "bytes": 17534334616,
+          "mtime_ns": 1789987346476369700,
+          "ctime_ns": 1789987346476369700,
+          "header_sha256": "df60bbf5f944a8e9b8424e305422d17176cee3d4928c62b2eb7151316a30866b"
+        },
+        "vae/qwen_image_2.1_vae_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405733,
+          "bytes": 675509688,
+          "mtime_ns": 1789985708545789400,
+          "ctime_ns": 1789985708545789400,
+          "header_sha256": "c091c3d231f352db5fb44840e22388d2abe9c2c37b4daf97bdc6cc3448387759"
+        }
+      },
+      "model_identity_scope": "file-generation stamps and bounded headers, not immutable full-payload signatures",
+      "load_report": "outputs/local512-qwen-edit2-prefill-shares-v1-busy-load-report-20261010.json",
+      "load_report_sha256": "7b7f4c3fc40b0cf9e3f7d9f289e7c5168a66a4ad814266247145d5cdb10c5475",
+      "load_check_passed": false,
+      "trials": [
+        {
+          "mode": "prefill_a7168",
+          "ane_channels": 7168,
+          "cold_request_seconds": 24.405069458,
+          "warm_request_seconds": [
+            12.795898917,
+            12.552561708
+          ],
+          "warm_request_median_seconds": 12.6742303125,
+          "warm_prefill_median_seconds": 3.9467185415,
+          "warm_decode_total_median_seconds": 6.3625951464999995,
+          "request_time_reduction_vs_same_window_gpu_pct": 0.16855800236810214,
+          "prefill_time_reduction_vs_same_window_gpu_pct": -5.392015872211364,
+          "raw_sha256": "0030cfa807fcbbbf4b344f67881473a14de5ea1d6664f20eb2830941f98aadbb",
+          "png_sha256": [
+            "b2a2701085e06be4a58a40b9ba48caa0dc381a5a542edae93cb22c86ca91f91f",
+            "53cdae6f6ed7ea0e5e2239953525a7b4b60110b720abd6e5079b3cd67b0254aa",
+            "78a426b969398134ff70be4f6b707f3c19e95d0695b7be945753e50e28eabbdf"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "5bb2763b7cdd448dad081023f5582cda",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 97161,
+              "start_seconds": 1791585834,
+              "start_microseconds": 377715
+            },
+            "record_count": 506,
+            "sample_count": 502,
+            "final_evidence_digest": "a14ccd83c4e92caf225a3ac1a328f18e85a7b77c1a38b58650f8710ce230c391",
+            "max_gap_ns": 110014041,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 28407005184,
+            "tree_peak_phys_footprint_bytes": 39270163584,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 7686144000,
+            "decompression_bytes": 7311491072,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "0876d1ef9eed274d162d77202f58b9fb9d412b0fa13a1fa4ead7e7ebe207a91e",
+          "memory_report_sha256": "02eaa4d9f42b407786303e18f413c8d5cd978fca29313ae842a303a70f7334b2"
+        },
+        {
+          "mode": "prefill_a6144",
+          "ane_channels": 6144,
+          "cold_request_seconds": 23.535170084,
+          "warm_request_seconds": [
+            12.687987166,
+            12.234082375
+          ],
+          "warm_request_median_seconds": 12.4610347705,
+          "warm_prefill_median_seconds": 3.6376389165,
+          "warm_decode_total_median_seconds": 6.3408821025,
+          "request_time_reduction_vs_same_window_gpu_pct": 1.8478409142728802,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 2.861555899186552,
+          "raw_sha256": "0ff9988934927c87462a395e1ef3b23b3c25bdc194f506f6e6bdc7bcb2968ae1",
+          "png_sha256": [
+            "a1744f913ae6b1aa49ed53246d5808ee8196af033bc75aaec1b5dea6d5ce5c3f",
+            "176b6d2fff08a73265eec10ca89ea0502705d9203ca2f287377eb04580052193",
+            "5dc53ee3463e9f0043348be050148f5f291f890dff23488defd5009233ecdcd1"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "b567e24bc7204394922f81bc487afcee",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 97368,
+              "start_seconds": 1791585885,
+              "start_microseconds": 121980
+            },
+            "record_count": 493,
+            "sample_count": 489,
+            "final_evidence_digest": "d4106548fa357281de2909746a5640a1bc9ad4b34877c1acada31701f0f0ba57",
+            "max_gap_ns": 110020459,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24965775360,
+            "tree_peak_phys_footprint_bytes": 39739303064,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 13408157696,
+            "decompression_bytes": 12687409152,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "386610661e20149989917469acba326e47aaab66bdb416d443e6de0c897c0096",
+          "memory_report_sha256": "ce082c319a0e269ee4c6b7c0cfb0638d5324b192970f5c74a85e439e5eae3a15"
+        },
+        {
+          "mode": "prefill",
+          "ane_channels": 5120,
+          "cold_request_seconds": 17.165162042,
+          "warm_request_seconds": [
+            12.501572416,
+            11.95797125
+          ],
+          "warm_request_median_seconds": 12.229771833000001,
+          "warm_prefill_median_seconds": 3.3465690204999996,
+          "warm_decode_total_median_seconds": 6.3594668535,
+          "request_time_reduction_vs_same_window_gpu_pct": 3.669435753721484,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 10.634201142719924,
+          "raw_sha256": "a8bfb51c41c3af946e48206bb7dcfe38e674d17b094c693df9d1e8767a8a9479",
+          "png_sha256": [
+            "09e05b649c37c53b5fc0b42c57170c8afc4edf98e6c06a8e901cfc64294ca1eb",
+            "a976927911fab26ff556690b45b42ec4553ffa998cd6319411540c7ba5b81578",
+            "4cc73b8fc7b72fa60d9170a867ad1524564dfe29ac8c8cc80a7c9d45d3f18103"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "44bf29f1d1184bc6895424f2887ac8a6",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 97581,
+              "start_seconds": 1791585934,
+              "start_microseconds": 559589
+            },
+            "record_count": 425,
+            "sample_count": 421,
+            "final_evidence_digest": "b0503605f1230cc09d81a9582e703eed61b7eaa0445200b8c0ed78fd250fb5de",
+            "max_gap_ns": 109898708,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25011290112,
+            "tree_peak_phys_footprint_bytes": 39898686568,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 12919029760,
+            "decompression_bytes": 12324601856,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "287ecd8833b6cd6ec84c70285bd69e6481f2aa10ddb9836add8e75b30c227dc6",
+          "memory_report_sha256": "575ff25f2317cf3ceb757f34ef9008c166e73403d222d746655e71da252614a1"
+        },
+        {
+          "mode": "prefill_a4096",
+          "ane_channels": 4096,
+          "cold_request_seconds": 21.317507084,
+          "warm_request_seconds": [
+            12.410893917,
+            11.872539125
+          ],
+          "warm_request_median_seconds": 12.141716521,
+          "warm_prefill_median_seconds": 3.2531519995,
+          "warm_decode_total_median_seconds": 6.3571568124999995,
+          "request_time_reduction_vs_same_window_gpu_pct": 4.363023337011784,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 13.128781908092868,
+          "raw_sha256": "769824b98c5b76cbd5a4f35c051464539537f2f47ff73cdeda7805d2fce2856b",
+          "png_sha256": [
+            "0501bbcd812f9476ea20c37ae881754fc68671295a4f2dce10c70ea5cd377566",
+            "ecbe344f62406c37344bc849a65702f45688d6cad9ccc1cfd3844d88d87b0aab",
+            "c47edb4526c337e6256ae08caf5f4ac99c721047c1aacf9d0e3c9a5c7eed45a9"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "dad3d444cb9140dc905d9c25c0c9e028",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 97754,
+              "start_seconds": 1791585977,
+              "start_microseconds": 249697
+            },
+            "record_count": 465,
+            "sample_count": 461,
+            "final_evidence_digest": "62678056003c66a6444f8d489af899d651857cd01f9da7d08eb849843dce0a08",
+            "max_gap_ns": 110013625,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25249251328,
+            "tree_peak_phys_footprint_bytes": 39931323496,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 12687114240,
+            "decompression_bytes": 12100435968,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "c9d6b3d1a6867c41cf437fac3b83ef45305be35c3a941d3277bbb08a483a50ef",
+          "memory_report_sha256": "922dff0c96ce28106056af59fcd02664fc354ebaa63b3d96622af4b65e9e9368"
+        },
+        {
+          "mode": "gpu",
+          "ane_channels": 0,
+          "cold_request_seconds": 17.339989208,
+          "warm_request_seconds": [
+            13.009944333,
+            12.381315292
+          ],
+          "warm_request_median_seconds": 12.6956298125,
+          "warm_prefill_median_seconds": 3.7447984165,
+          "warm_decode_total_median_seconds": 6.361439020500001,
+          "request_time_reduction_vs_same_window_gpu_pct": 0,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 0,
+          "raw_sha256": "bea0138b88a1ec989a16e21663f1d634a1efa491cfbcd0d1278589e5316525ec",
+          "png_sha256": [
+            "d229e8ffc635997b9932d3782f5e1754ba3056e9889df5c72fe175fc4075da0d",
+            "b07b93ae5c8f80eb6a5bf81a73b4b4cfb834b9bd46c071dcb507f202b222c113",
+            "822aa6f1f1310e9329c17e527c8332535889f4c71f54730df31a7f0469033906"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "e973ab30d10d4709abfab4f60c3717d9",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 97938,
+              "start_seconds": 1791586023,
+              "start_microseconds": 919498
+            },
+            "record_count": 436,
+            "sample_count": 432,
+            "final_evidence_digest": "da80d26797d3f08cc674f941fdecca71a2806066b72958acd5f260559fae994b",
+            "max_gap_ns": 110016541,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25298894848,
+            "tree_peak_phys_footprint_bytes": 40351066632,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 12753321984,
+            "decompression_bytes": 11076468736,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "78183ffe6922569eb8edd8e899d71245c2dfabb53c30d405b6ec4f1416f53f27",
+          "memory_report_sha256": "5ed01557ce46f67c14525c937dc605c36e807379f7f40ffbc6cdc95d5c9e38da"
+        }
+      ]
+    },
+    {
+      "references": 2,
+      "version": 2,
+      "summary": "outputs/local512-qwen-edit2-prefill-shares-v2-diagnostic-20261010/summary.json",
+      "summary_sha256": "f1d9f76281c78a258e9a256f9546e45789e1bb1ef8d54b53c0c023b8550895c9",
+      "order": [
+        "gpu",
+        "prefill_a4096",
+        "prefill"
+      ],
+      "deferred_join": true,
+      "source_identities": {
+        "build/local512-qwen-generation-phases-v1-private/turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+        "build/local512-qwen-generation-phases-v1-private/libturbocider.dylib": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+        "outputs/runtime-ane/private-channel-qwen-c3168-k1024-n512-v2-20261009/manifest.json": "50530c535aef726b9ef4add2fefe4250894e431b00c52cf5b1f7e1278fccb36a",
+        "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+        "results/qwen21/teapot-rgba-blue-native-1024.png": "2240ab7e7d67df1776fdae38b853dc57fea2e077cb259a7926c25fe640212192",
+        "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803"
+      },
+      "model_snapshot": {
+        "diffusion_models/qwen_image_2.1_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405483,
+          "bytes": 14230280616,
+          "mtime_ns": 1789985794528055600,
+          "ctime_ns": 1789985794528055600,
+          "header_sha256": "c43378af5fb061aee50cfc245837a6d897685da018b5a6e13e8fb31fac56f378"
+        },
+        "text_encoders/qwen3vl_8b_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405886,
+          "bytes": 17534334616,
+          "mtime_ns": 1789987346476369700,
+          "ctime_ns": 1789987346476369700,
+          "header_sha256": "df60bbf5f944a8e9b8424e305422d17176cee3d4928c62b2eb7151316a30866b"
+        },
+        "vae/qwen_image_2.1_vae_bf16.safetensors": {
+          "device": 16777232,
+          "inode": 9405733,
+          "bytes": 675509688,
+          "mtime_ns": 1789985708545789400,
+          "ctime_ns": 1789985708545789400,
+          "header_sha256": "c091c3d231f352db5fb44840e22388d2abe9c2c37b4daf97bdc6cc3448387759"
+        }
+      },
+      "model_identity_scope": "file-generation stamps and bounded headers, not immutable full-payload signatures",
+      "load_report": "outputs/local512-qwen-edit2-prefill-shares-v2-busy-load-report-20261010.json",
+      "load_report_sha256": "381f057c72c4cf3ae55a04a00e9d3643cb2781c71b2299ce1674eb5b50d9228e",
+      "load_check_passed": false,
+      "trials": [
+        {
+          "mode": "gpu",
+          "ane_channels": 0,
+          "cold_request_seconds": 17.366170875,
+          "warm_request_seconds": [
+            13.071130625,
+            12.409780833
+          ],
+          "warm_request_median_seconds": 12.740455729,
+          "warm_prefill_median_seconds": 3.7449543545,
+          "warm_decode_total_median_seconds": 6.3723704375,
+          "request_time_reduction_vs_same_window_gpu_pct": 0,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 0,
+          "raw_sha256": "2b0350adf02927a96e4f6c6e01b7c25c950390ad1e7902e0a9abd077bc2ee5e8",
+          "png_sha256": [
+            "d229e8ffc635997b9932d3782f5e1754ba3056e9889df5c72fe175fc4075da0d",
+            "b07b93ae5c8f80eb6a5bf81a73b4b4cfb834b9bd46c071dcb507f202b222c113",
+            "822aa6f1f1310e9329c17e527c8332535889f4c71f54730df31a7f0469033906"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "9d4e52334cd248ed815f5678df30d014",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 98676,
+              "start_seconds": 1791586396,
+              "start_microseconds": 324180
+            },
+            "record_count": 437,
+            "sample_count": 433,
+            "final_evidence_digest": "321c7fc67e12c6b4b7721a004e8f2f419f324d754b118ed02669a4dbf9ab3db1",
+            "max_gap_ns": 109997334,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25346244608,
+            "tree_peak_phys_footprint_bytes": 40722409896,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 12564414464,
+            "decompression_bytes": 10907598848,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "4e37b3835ec034ad471b7c18203f9cdfc480da292d123e0c87d09dc64a7f9ea9",
+          "memory_report_sha256": "ce099383a1300b72eac8ae7e6ff8e5a789206e190162bed6883cccbb8231f704"
+        },
+        {
+          "mode": "prefill_a4096",
+          "ane_channels": 4096,
+          "cold_request_seconds": 20.886055916,
+          "warm_request_seconds": [
+            12.4520155,
+            11.897171334
+          ],
+          "warm_request_median_seconds": 12.174593417,
+          "warm_prefill_median_seconds": 3.250798729,
+          "warm_decode_total_median_seconds": 6.359313354999999,
+          "request_time_reduction_vs_same_window_gpu_pct": 4.4414605257171225,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 13.195237611006238,
+          "raw_sha256": "882bb133950176e7971ba077d7c75c0316366910adb5e685989ff5500b08cfa7",
+          "png_sha256": [
+            "0501bbcd812f9476ea20c37ae881754fc68671295a4f2dce10c70ea5cd377566",
+            "ecbe344f62406c37344bc849a65702f45688d6cad9ccc1cfd3844d88d87b0aab",
+            "c47edb4526c337e6256ae08caf5f4ac99c721047c1aacf9d0e3c9a5c7eed45a9"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "685e437627cb4a7dbbc008566cc6af78",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 98850,
+              "start_seconds": 1791586440,
+              "start_microseconds": 158588
+            },
+            "record_count": 461,
+            "sample_count": 457,
+            "final_evidence_digest": "4747a8c72230426b4f1547f838ee9d30db4b59c8c1a758aba53e4b1a5b6e337d",
+            "max_gap_ns": 110014875,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 24918310912,
+            "tree_peak_phys_footprint_bytes": 39905109048,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 12324651008,
+            "decompression_bytes": 11773280256,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "2e7e640c9e0e0d5e7734bb3dc42cea39d37cf3712376dbe0d649e19b6a6c0d26",
+          "memory_report_sha256": "fe9ddb4d32d27d1612c9b737a86d7977070c1584cf0eefd2093a92e49e2116e0"
+        },
+        {
+          "mode": "prefill",
+          "ane_channels": 5120,
+          "cold_request_seconds": 17.198463042,
+          "warm_request_seconds": [
+            12.428396875,
+            12.020914541
+          ],
+          "warm_request_median_seconds": 12.224655708,
+          "warm_prefill_median_seconds": 3.356028979,
+          "warm_decode_total_median_seconds": 6.3367290005,
+          "request_time_reduction_vs_same_window_gpu_pct": 4.048520963233127,
+          "prefill_time_reduction_vs_same_window_gpu_pct": 10.38531684725772,
+          "raw_sha256": "64cc86ba994e5919c8eaec2d3d6c9573a5bc5dc45dd472cd9aa427b9b88c713c",
+          "png_sha256": [
+            "09e05b649c37c53b5fc0b42c57170c8afc4edf98e6c06a8e901cfc64294ca1eb",
+            "a976927911fab26ff556690b45b42ec4553ffa998cd6319411540c7ba5b81578",
+            "4cc73b8fc7b72fa60d9170a867ad1524564dfe29ac8c8cc80a7c9d45d3f18103"
+          ],
+          "memory": {
+            "schema": "turbocider-process-tree-verification-v1",
+            "status": "complete",
+            "complete": true,
+            "correlation_id": "55ff5f24bcaf4dfa824e1dbb830d51a2",
+            "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+            "root_identity": {
+              "pid": 99034,
+              "start_seconds": 1791586486,
+              "start_microseconds": 423388
+            },
+            "record_count": 425,
+            "sample_count": 421,
+            "final_evidence_digest": "726e67e4de5ee45b6fb7867c5a127fa13b18ca747e450dd1d122ab2ed52d7bc6",
+            "max_gap_ns": 109965667,
+            "allowed_max_gap_ns": 500000000,
+            "tree_peak_rss_bytes": 25277530112,
+            "tree_peak_phys_footprint_bytes": 39520150608,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "compression_bytes": 11963793408,
+            "decompression_bytes": 11416535040,
+            "reasons": [],
+            "command_exit_code": 0
+          },
+          "memory_evidence_sha256": "72bd92a9dcf51892179cabfc138a111490028d8e628c082330f1025b2e60a878",
+          "memory_report_sha256": "4c517df19dc0184f773a259eec73bcfef65aea69f156f59c78a767c1dd7d65e0"
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "native_requests": 48,
+    "raw_phase_source_joint_rank_png_memory_replay_passed": true,
+    "memory_reports": 16,
+    "tree_peak_phys_footprint_max_bytes": 40722409896,
+    "system_swap_in_sum_bytes": 65536,
+    "system_swap_out_sum_bytes": 0,
+    "scope": "16 process-tree intervals; system counters not attributable to ANE or a single process; no physical overlap proof"
+  },
+  "decisions": {
+    "single_reference": "Keep existing ANE5120 prefill candidate: ANE4096/5120 order flips on the same workload.",
+    "double_reference": "ANE4096 has same-sign nominal warm benefit in both orders; keep explicit candidate, no default promotion.",
+    "larger_shares": "ANE6144/7168 are not selected: prefill loses to the smaller splits in both reference workloads.",
+    "phase_route": "All32 first-step FFNs split intermediate channels between GPU/ANE; subsequent five KV-hit steps complete GPU.",
+    "cache": "Keep weight-code cache off; original source, shape, finite, admission and complete-GPU fallback guards unchanged.",
+    "qualification": "All four continuous CPU-load checks failed. Host receipts establish actual software work, not physical overlap or universal quality."
+  },
+  "visual_review": {
+    "scope": "v1 limited review from preceding run; v2 warm case1 whole512 GPU/ANE4096/ANE5120, single and double references.",
+    "result": "Recognizable shapes, colors, placement, sunlight and shadows close; minor texture/highlight differences, no obvious new block artifacts or fractures.",
+    "all_scenes_seeds_accepted": false
+  },
+  "tests": [
+    {
+      "path": "outputs/local512-qwen-prefill-shares-cleanup-host-test-20261010.log",
+      "tests": 44,
+      "skips": 0,
+      "kind": "host"
+    },
+    {
+      "path": "outputs/local512-qwen-rank-pair-cleanup-native-test-20261010.log",
+      "tests": 1,
+      "skips": 0,
+      "kind": "Metal opt-in"
+    }
+  ]
+}

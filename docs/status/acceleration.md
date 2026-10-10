@@ -13,6 +13,10 @@
 ## 当前进度摘要
 
 2026-10-10 的512²接续以[状态索引](README.md)和各专项证据为准。
+最新[完整性能进度摘要](performance-progress-2026-10-10.md)区分已测整请求、
+kernel组件和默认选择；[首步share正反序](local512-qwen-prefill-shares-2026-10-10.md)
+显示单ref4096/5120排名翻转、双ref4096有约4.4% GPU-relative整请求信号。
+保持显式候选、cache off、KV-hit完整GPU；所有load checks失败，不默认推广。
 [当前库同任务正反序base三路对照](local512-qwen-frozen-base-2026-10-10.md)
 中，GPU/Private/frozen四热中位43.353/34.542/33.121s；两个CPU load
 checks失败，frozen有系统compression/swap-out，保持显式诊断/默认不变。

@@ -2,6 +2,14 @@
 
 ## 当前加速结论
 
+2026-10-10 [当前512²性能与代码整理总览](performance-progress-2026-10-10.md)
+汇总Qwen/Z的base/原LoRA、编辑/encoder、GPU kernels与GGUF/ahead边界。
+[编辑首步通道比例正反序](local512-qwen-prefill-shares-2026-10-10.md)
+单图4096/5120排名翻转，双图4096首步约3.25s、整请求约12.17s有同方向
+信号；全部load checks失败，不升默认。另保留
+[LoRA paired-rank实Metal负结果](local512-qwen-paired-ranks-2026-10-10.md)，
+不把减少dispatch直接当整请求收益。
+
 2026-10-10 [Qwen首步GPU/ANE＋W缓存的完整单/双图正反序](local512-qwen-prefill-weight-cache-2026-10-10.md)
 已核对真实cold fill/warm hit及后五步GPU；surface几十ms优势在同任务
 反序翻转，继续cache off，避免额外1.0–1.3GB。保留双图大budget准入
