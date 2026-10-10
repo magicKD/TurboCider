@@ -1,4 +1,5 @@
 #include "text_encoder.hpp"
+#include "metal/encoder_prefill.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include <chrono>
 #include <cmath>
@@ -22,12 +23,26 @@ Tensor rotate_half(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
 using BlockFunction=std::function<std::vector<Tensor>(const std::vector<Tensor>&)>;
 std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,const Tensor &sine,
     const Tensor &mask,const Weights &weights,const TextConfig &config,const std::string &p) {
-    auto input=vl_norm(hidden,weights.at(p+".input_layernorm.weight"),config.epsilon);
-    auto q=heads(linear(input,weights,p+".self_attn.q_proj"),config.heads,config.head_dim);
-    auto k=heads(linear(input,weights,p+".self_attn.k_proj"),config.kv_heads,config.head_dim);
-    auto v=heads(linear(input,weights,p+".self_attn.v_proj"),config.kv_heads,config.head_dim);
-    q=rotate_half(vl_norm(q,weights.at(p+".self_attn.q_norm.weight"),config.epsilon),cosine,sine);
-    k=rotate_half(vl_norm(k,weights.at(p+".self_attn.k_norm.weight"),config.epsilon),cosine,sine);
+    auto normalize=[&](const Tensor &x,const std::string &key) {
+        return config.fused_gpu_prefill ? metal::encoder_rms(x,weights.at(key),config.epsilon) : vl_norm(x,weights.at(key),config.epsilon);
+    };
+    auto input=normalize(hidden,p+".input_layernorm.weight");
+    std::vector<Tensor> raw;
+    if(weights.has(p+".self_attn.qkv_proj.weight"))raw=mx::split(linear(input,weights,p+".self_attn.qkv_proj"),
+        mx::Shape{config.heads*config.head_dim,(config.heads+config.kv_heads)*config.head_dim},-1);
+    else if(weights.has(p+".self_attn.qk_proj.weight")) {
+        raw=mx::split(linear(input,weights,p+".self_attn.qk_proj"),mx::Shape{config.heads*config.head_dim},-1);
+        raw.push_back(linear(input,weights,p+".self_attn.v_proj"));
+    }
+    else raw={linear(input,weights,p+".self_attn.q_proj"),linear(input,weights,p+".self_attn.k_proj"),linear(input,weights,p+".self_attn.v_proj")};
+    auto q=raw[0],k=raw[1],v=heads(raw[2],config.kv_heads,config.head_dim);
+    if(config.fused_gpu_prefill) {
+        auto pair=metal::encoder_qk(q,k,weights.at(p+".self_attn.q_norm.weight"),weights.at(p+".self_attn.k_norm.weight"),cosine,sine,config.epsilon);
+        q=pair[0];k=pair[1];
+    }else {
+        q=rotate_half(vl_norm(heads(q,config.heads,config.head_dim),weights.at(p+".self_attn.q_norm.weight"),config.epsilon),cosine,sine);
+        k=rotate_half(vl_norm(heads(k,config.kv_heads,config.head_dim),weights.at(p+".self_attn.k_norm.weight"),config.epsilon),cosine,sine);
+    }
     if(!config.compiled_gpu_blocks) {
         k=mx::repeat(k,config.heads/config.kv_heads,1);
         v=mx::repeat(v,config.heads/config.kv_heads,1);
@@ -38,9 +53,13 @@ std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,co
     // attention/repeated K/V unchanged outside the opt-in profile.
     auto attention_mask=config.compiled_gpu_blocks ? mx::astype(mask,q.dtype()) : mask;
     auto residual=hidden+linear(attend(q,k,v,!config.compiled_gpu_blocks,attention_mask),weights,p+".self_attn.o_proj");
-    return {residual,vl_norm(residual,weights.at(p+".post_attention_layernorm.weight"),config.epsilon)};
+    return {residual,normalize(residual,p+".post_attention_layernorm.weight")};
 }
 Tensor full_ffn(const Tensor &x,const Weights &weights,const std::string &mlp) {
+    if(weights.has(mlp+".gate_up.weight")) {
+        auto gu=mx::split(linear(x,weights,mlp+".gate_up"),2,-1);
+        return linear(silu(gu[0])*gu[1],weights,mlp+".down_proj");
+    }
     return linear(silu(linear(x,weights,mlp+".gate_proj"))*linear(x,weights,mlp+".up_proj"),weights,mlp+".down_proj");
 }
 BlockFunction compiled_block(const std::vector<std::string> &keys,const TextConfig &config,
@@ -77,6 +96,8 @@ TextEncoder::TextEncoder(const Weights &weights, TextConfig config,ane::HybridFf
             config.head_dim % 2 == 0 && config.theta > 0,
             "invalid Qwen21 text encoder geometry");
     require(!config.compiled_gpu_blocks || config.layers<=128,"compiled Qwen encoder layer count exceeds request-local graph bound");
+    require(!config.fused_gpu_prefill || (config.compiled_gpu_blocks && !runtime && config.heads==32 && config.kv_heads==8 && config.head_dim==128),
+        "fused Qwen GPU prefill requires compiled32Q/8KV/128 original GPU encoder");
     require(config.mrope_sections[0] + config.mrope_sections[1] + config.mrope_sections[2] == config.head_dim / 2,
             "invalid Qwen21 text mRoPE sections");
     for (int axis = 1; axis <= 2; ++axis)
@@ -143,6 +164,7 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             "compiled Qwen encoder requires original base language weights, not encoder LoRA");
     const auto source_keys=config_.compiled_gpu_blocks ? weights_.sorted_keys() : std::vector<std::string>{};
     uint64_t full_blocks=0,attention_segments=0,channel_segments=0,full_ffn_segments=0;
+    uint64_t fused_qkv_blocks=0,fused_qk_blocks=0,fused_gate_up_blocks=0;
     // One encode owns the cache. Canonical layer names let structurally equal
     // blocks share a traced function while EVERY original W remains an input.
     // No retained/global graph cache, checkpoint constants or source owners.
@@ -152,6 +174,9 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
         checkpoint(cancelled);
         const Weights &layer_weights=layer_weights_ ? layer_weights_(i) : weights_;
         auto p = language_prefix_ + "layers." + std::to_string(i);
+        if(layer_weights.has(p+".self_attn.qkv_proj.weight"))++fused_qkv_blocks;
+        if(layer_weights.has(p+".self_attn.qk_proj.weight"))++fused_qk_blocks;
+        if(layer_weights.has(p+".mlp.gate_up.weight"))++fused_gate_up_blocks;
         auto plan=runtime_ ? runtime_->plan_block(i,count) : ane::RowScheduler::Plan{ane::RowScheduler::Mode::Gpu,0};
         if(plan.measured())mx::eval(hidden);
         const auto block_start=std::chrono::steady_clock::now();
@@ -233,6 +258,9 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             <<",\"channel_ffn_segments\":"<<channel_segments<<",\"full_ffn_segments\":"<<full_ffn_segments
             <<",\"block_graphs\":"<<block_graphs.size()<<",\"ffn_graphs\":"<<ffn_graphs.size()
             <<",\"native_gqa_attention\":true"
+            <<",\"fused_gpu_prefill\":"<<(config_.fused_gpu_prefill?"true":"false")
+            <<",\"fused_qkv_blocks\":"<<fused_qkv_blocks<<",\"fused_gate_up_blocks\":"<<fused_gate_up_blocks
+            <<",\"fused_qk_blocks\":"<<fused_qk_blocks
             <<",\"scope\":\"evaluated language hidden; dynamic original array arguments; graph invocations, not physical kernels\"}}\n";
     }
     return config_.final_norm ? vl_norm(hidden, weights_.at(language_prefix_ + "norm.weight"), config_.epsilon) : hidden;

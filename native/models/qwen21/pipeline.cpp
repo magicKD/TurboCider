@@ -145,6 +145,7 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
 void Session::unload() {
     encoder_runtime_.reset(); encoder_runtime_identity_.clear();
     encoder_weights_.reset();encoder_weight_identity_.clear();encoder_weight_loads_=0;
+    encoder_tokenizer_.reset();
     encoder_gguf_.reset();
     runtime_ffn_.reset(); runtime_manifest_.clear();
     runtime_qkv_.reset(); qkv_manifest_.clear();
@@ -227,6 +228,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             !r.prompt_enhance && !r.qwen21_gpu_w8a16 && !r.qwen21_w8a8,
             "Qwen21 mixed GGUF requires approximate GPU/fixed Private FP16 channel base generation; encoder hybrid/edit/LoRA qualification pending");
     const bool compile_encoder_gpu=compiled_encoder_gpu(r);
+    const bool encoder_prefill=option_enabled(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"));
+    if(encoder_prefill && encoder_tokenizer_)encoder_tokenizer_->check_unchanged();
     if(retain_encoder_weights)
         require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&
             !r.memory_constrained.enabled && !r.streaming.active() && !r.memory_budget_bytes,
@@ -268,7 +271,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::optional<EncoderSourceGeneration> encoder_source;
     if(retain_encoder_weights) {
         encoder_source=encoder_source_generation(encoder_source_);
-        if(encoder_weights_ && encoder_weight_identity_!=encoder_source->identity) {
+        if(encoder_weights_ && encoder_weight_identity_!=encoder_source->identity+(encoder_prefill?":fused-prefill-v1":"")) {
             encoder_runtime_.reset();encoder_runtime_identity_.clear();
             encoder_weights_.reset();encoder_weight_identity_.clear();
             encoder_gguf_.reset();
@@ -437,6 +440,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(encoder_channels)encoder_identity+=":encoder-channels-"+std::to_string(*encoder_channels);
     if(encoder_source)encoder_identity+=":retained-source-"+encoder_source->identity;
     if(compile_encoder_gpu)encoder_identity+=":compiled-gpu-blocks-v3-canonical-native-gqa";
+    if(encoder_prefill) {
+        encoder_identity+=":fused-prefill-v1";
+        if(encoder_tokenizer_)encoder_identity+=":tokenizer="+encoder_tokenizer_->identity();
+    }
     if(encoder_runtime_identity_!=encoder_identity) {encoder_runtime_.reset();encoder_runtime_identity_.clear();}
     conditioning_cache_.select_encoder(encoder_identity);
     const bool edit_hit = !r.inputs.empty() && conditioning_cache_.edit_hit(
@@ -457,6 +464,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::vector<int> slots;
     std::optional<HybridMetrics> encoder_metrics; // this request only; never replayed by a cache hit
     std::optional<EncoderRuntimeReuseMetrics> encoder_reuse;
+    std::optional<QwenEncoderPrefillMetrics> prefill_metrics;
+    if(encoder_prefill) {
+        prefill_metrics.emplace();
+        prefill_metrics->tokenizer_reused=bool(encoder_tokenizer_);
+        if(encoder_tokenizer_)prefill_metrics->processor_sha256=encoder_tokenizer_->sha256();
+    }
     if(!r.encoder_ane_manifest.empty()) {
         encoder_reuse.emplace();encoder_reuse->enabled=retain_encoder_runtime;
     }
@@ -480,13 +493,32 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             emit(event, "load_qwen21_text", 0, 1);
             if(gguf_encoder)request_encoder_gguf=load_gguf_component(encoder_source_,*request_encoder_weights,true,event,cancelled);
             else request_encoder_weights->load_file(encoder_source_);
+            if(encoder_prefill) {
+                const auto pack_start=Clock::now();pack_encoder_prefill(*request_encoder_weights,cancelled);
+                prefill_metrics->pack_seconds_this_request=seconds(pack_start);
+            }
             ++encoder_weight_loads_;
             emit(event, "load_qwen21_text", 1, 1);
         }
         Weights &weights=encoder_weights_ ? *encoder_weights_ : *request_encoder_weights;
         encoder_weight_metrics.source_bytes=weights.bytes();
-        Tokenizer tokenizer(root_ / "processor");
-        auto tokens = tokenizer.raw_bounded(reference_prompt_template(r.prompt, images.size()), Tokenizer::qwen21_limit);
+        std::unique_ptr<Tokenizer> request_tokenizer;
+        const Tokenizer *tokenizer=nullptr;
+        if(encoder_prefill) {
+            prefill_metrics->tokenizer_reused=bool(encoder_tokenizer_);
+            if(!encoder_tokenizer_) {
+                encoder_tokenizer_=std::make_unique<VerifiedEncoderTokenizer>(root_/"processor",cancelled);
+                encoder_identity+=":tokenizer="+encoder_tokenizer_->identity();conditioning_cache_.select_encoder(encoder_identity);
+            }
+            encoder_tokenizer_->check_unchanged();tokenizer=&encoder_tokenizer_->tokenizer();
+            prefill_metrics->processor_sha256=encoder_tokenizer_->sha256();
+            for(const auto &key:weights.sorted_keys()) {
+                if(key.ends_with(".self_attn.qkv_proj.weight"))++prefill_metrics->qkv_fused_layers;
+                if(key.ends_with(".self_attn.qk_proj.weight"))++prefill_metrics->qk_fused_layers;
+                if(key.ends_with(".mlp.gate_up.weight"))++prefill_metrics->gate_up_fused_layers;
+            }
+        }else {request_tokenizer=std::make_unique<Tokenizer>(root_/"processor");tokenizer=request_tokenizer.get();}
+        auto tokens = tokenizer->raw_bounded(reference_prompt_template(r.prompt, images.size()), Tokenizer::qwen21_limit);
         std::vector<VisualReference> refs;
         VisionEncoder vision(weights);
         for (const auto &pixels : images) {
@@ -499,6 +531,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         auto assembled = assemble_prompt(tokens, weights, refs);
         TextConfig config;
         config.compiled_gpu_blocks=compile_encoder_gpu;
+        config.fused_gpu_prefill=encoder_prefill;
         config.final_norm = false; // official checkpoint's pre-final-RMSNorm hidden state
         std::unique_ptr<ane::HybridFfn> request_encoder_runtime;
         ane::HybridFfn *encoder_runtime=nullptr;
@@ -534,6 +567,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         text = assembled.retain(encoder.encode_embeddings(assembled.embeddings, assembled.positions,
             assembled.embeddings.shape(1), event, cancelled, assembled.deepstack_deltas));
         mx::eval(text);
+        if(encoder_prefill) {
+            prefill_metrics->encoder_evaluated_this_request=true;
+            prefill_metrics->input_rows=assembled.embeddings.shape(1);
+            prefill_metrics->retained_rows=text.shape(1);
+        }
         encoder_sources.finish();
         if(encoder_runtime) {
             encoder_metrics=encoder_runtime->metrics();
@@ -560,7 +598,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     encoder_weights_=std::move(request_encoder_weights);
                     encoder_gguf_=std::move(request_encoder_gguf);
                 }
-                encoder_weight_identity_=encoder_source->identity;
+                encoder_weight_identity_=encoder_source->identity+(encoder_prefill?":fused-prefill-v1":"");
                 encoder_weight_metrics.decline_reason.clear();
             } else {
                 encoder_weight_metrics.decline_reason=ane::memory_denial_reason(decision.denial,observed);
@@ -573,6 +611,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         if(request_encoder_gguf)request_encoder_gguf->bank->check_unchanged();
         if(encoder_gguf_)encoder_gguf_->bank->check_unchanged();
+        if(encoder_prefill)encoder_tokenizer_->check_unchanged();
         slots = assembled.image_slots;
         if (r.inputs.empty()) { conditioning_cache_.text = text; conditioning_cache_.prompt = r.prompt; }
     }
@@ -894,6 +933,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             : "; experimental penultimate-step even-layer FFN reuse";
     result.backend = "mlx_cpp_metal"; result.precision = "bf16";
     result.encoder_hybrid=std::move(encoder_metrics);
+    result.qwen_encoder_prefill=std::move(prefill_metrics);
     encoder_weight_metrics.retained=bool(encoder_weights_);
     if(encoder_weights_ && !encoder_weight_metrics.source_bytes)encoder_weight_metrics.source_bytes=encoder_weights_->bytes();
     encoder_weight_metrics.retained_bytes=encoder_weights_ ? encoder_weights_->bytes() : 0;
@@ -1441,6 +1481,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         clear_prefix_cache(); fused_qkv_weights_.clear();
         transformer_.clear(); vae_.clear(); mx::clear_cache();
     }
+    if(encoder_prefill)encoder_tokenizer_->check_unchanged();
     result.timings.wall = seconds(start);
     result.active_bytes = mx::get_active_memory(); result.peak_bytes = mx::get_peak_memory();
     return result;
@@ -1448,6 +1489,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     encoder_runtime_.reset();encoder_runtime_identity_.clear();
     encoder_weights_.reset();encoder_weight_identity_.clear();
     encoder_gguf_.reset();
+    encoder_tokenizer_.reset();
     if (runtime_ffn_) runtime_ffn_->drain();
     if (runtime_qkv_) runtime_qkv_->drain();
     try { mx::synchronize(); } catch (...) {}

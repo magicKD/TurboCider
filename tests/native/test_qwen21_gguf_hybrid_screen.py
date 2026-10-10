@@ -38,6 +38,23 @@ def receipts(channels=4096, steps=40):
 
 
 class MixedKHybridScreenTests(unittest.TestCase):
+    def test_encoder_prefill_actual_fusions_and_processor_reuse(self):
+        rows = receipts()
+        for index, row in enumerate(rows):
+            row["qwen_encoder_prefill"] = dict(encoder_execution="gpu", tokenizer_reused=index > 0,
+                encoder_evaluated_this_request=True, input_rows=38, retained_rows=24,
+                native_gqa_attention=True, fused_rms_qk_neox_rope=True, dense_checkpoint_expansion=False,
+                qkv_fused_layers=18, qk_fused_layers=18, gate_up_fused_layers=36,
+                processor_sha256="a" * 64, pack_seconds_this_request=.08 if index == 0 else 0)
+        validate_receipts(rows, 4096, encoder_prefill=True)
+        for field, value in (("qkv_fused_layers", 36), ("qk_fused_layers", False), ("tokenizer_reused", True),
+                             ("gate_up_fused_layers", 0), ("processor_sha256", ""), ("pack_seconds_this_request", 0),
+                             ("encoder_evaluated_this_request", False), ("input_rows", False), ("retained_rows", 39)):
+            invalid = copy.deepcopy(rows)
+            invalid[0]["qwen_encoder_prefill"][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_receipts(invalid, 4096, encoder_prefill=True)
+
     def test_actual_complete_gpu_and_hybrid_work(self):
         validate_receipts(receipts(0), 0)
         for channels in (4096, 5120):

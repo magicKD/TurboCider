@@ -114,6 +114,16 @@ static id encoder_weight_dictionary(const RunResult &result) {
         @"decline_reason":@(m.decline_reason.c_str()),@"logical_capacity_upper_bytes":@(uint64_t(20)<<30),
         @"scope":@"admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures"};
 }
+static id qwen_encoder_prefill_dictionary(const QwenEncoderPrefillMetrics &m) {
+    return @{ @"processor_sha256":@(m.processor_sha256.c_str()),@"tokenizer_reused":@(m.tokenizer_reused),
+        @"encoder_evaluated_this_request":@(m.encoder_evaluated_this_request),
+        @"input_rows":@(m.input_rows),@"retained_rows":@(m.retained_rows),
+        @"qkv_fused_layers":@(m.qkv_fused_layers),@"gate_up_fused_layers":@(m.gate_up_fused_layers),
+        @"qk_fused_layers":@(m.qk_fused_layers),
+        @"pack_seconds_this_request":@(m.pack_seconds_this_request),@"encoder_execution":@"gpu",@"native_gqa_attention":@(m.encoder_evaluated_this_request),
+        @"fused_rms_qk_neox_rope":@(m.encoder_evaluated_this_request),@"dense_checkpoint_expansion":@NO,
+        @"scope":@"explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified"};
+}
 static id shared_lora_rank_dictionary(const RunResult &result) {
     if (!result.shared_lora_ranks) return NSNull.null;
     const auto &m = *result.shared_lora_ranks;
@@ -1590,6 +1600,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         } mutableCopy];
         prepared[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
         prepared[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+        if(result.qwen_encoder_prefill)
+            prepared[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
         if (result.shared_lora_ranks)
             prepared[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
         if (result.memory_admission)
@@ -1663,6 +1675,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"qwen_ffn_phases"] = qwen_ffn_phase_dictionary(result);
     if(result.qwen_bf16_streaming)
         value[@"qwen_bf16_streaming"] = qwen_bf16_stream_dictionary(*result.qwen_bf16_streaming);
+    if(result.qwen_encoder_prefill)
+        value[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
     if(result.backend=="mlx_cpp_metal_convrot_compiled_experimental") {
         value[@"convrot_experiment"]=@{@"experimental":@YES,@"whole_request_bounded_certified":@NO,
             @"source_profile":@"convrot-legacy-packed-bf16-scale-v1",@"execution_recipe":@(result.precision.c_str()),

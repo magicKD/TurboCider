@@ -1,5 +1,5 @@
 #pragma once
-#include "../../core/contracts.hpp"
+#include "../../core/common.hpp"
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -18,8 +18,11 @@ inline bool binary_option_or_unset(const char *value) {
 }
 inline bool compiled_encoder_gpu(const Request &r) {
     const char *raw=std::getenv("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU");
+    const char *prefill=std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");
+    require(binary_option_or_unset(prefill),"Qwen fused GPU encoder prefill requires 0 or 1");
     require(binary_option_or_unset(raw),"Qwen compiled encoder GPU requires 0 or1");
-    const bool enabled=option_enabled(raw);
+    const bool enabled=option_enabled(raw) || option_enabled(prefill);
+    if(option_enabled(prefill))require(r.encoder_ane_manifest.empty(),"fused encoder prefill is GPU-only");
     if(enabled)require(r.model=="qwen-image-2.1" && r.allow_approximation && r.residency=="resident" &&
         r.width==512 && r.height==512 && !r.prompt_enhance && !r.streaming.active() &&
         !r.memory_constrained.enabled && !r.memory_budget_bytes &&

@@ -15,6 +15,7 @@ struct TextConfig {
     std::array<int, 3> mrope_sections{24, 20, 20};
     bool final_norm = true; // mflux T2I; edit callers can explicitly select the raw final hidden state
     bool compiled_gpu_blocks = false; // explicit request snapshot, dynamic original source arguments
+    bool fused_gpu_prefill = false; // explicit GPU-only RMS/QK/packed projection profile
 };
 
 // Accept HF model.language_model.* and Comfy model.* language weights. The visual tower is

@@ -6,6 +6,7 @@
 #include "conditioning_cache.hpp"
 #include "encoder_residency.hpp"
 #include "gguf_weights.hpp"
+#include "encoder_prefill.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "../../backends/ane_qkv.hpp"
 
@@ -29,6 +30,7 @@ class Session final : public ModelSession {
     std::unique_ptr<Weights> encoder_weights_;
     std::string encoder_weight_identity_;
     uint64_t encoder_weight_loads_ = 0;
+    std::unique_ptr<VerifiedEncoderTokenizer> encoder_tokenizer_;
     // Optional one-entry executor only; never retains the complete encoder
     // weights. Drain before request-owned text sources die or identity changes.
     std::unique_ptr<ane::HybridFfn> encoder_runtime_;

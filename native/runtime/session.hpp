@@ -189,6 +189,13 @@ struct EncoderWeightResidencyMetrics {
 struct Timings {
     double wall = 0, text = 0, image = 0, hybrid = 0, denoise = 0, decode = 0;
 };
+struct QwenEncoderPrefillMetrics {
+    std::string processor_sha256;
+    bool tokenizer_reused=false, encoder_evaluated_this_request=false;
+    uint32_t input_rows=0, retained_rows=0;
+    uint32_t qkv_fused_layers=0,qk_fused_layers=0,gate_up_fused_layers=0;
+    double pack_seconds_this_request=0;
+};
 struct BlockResidencyMetrics {
     bool enabled = false, fully_resident = false, quantized = false;
     unsigned active_blocks = 0, pinned_blocks = 0, streamed_blocks = 0;
@@ -335,6 +342,7 @@ struct RunResult {
     std::optional<SharedLoraRankMetrics> shared_lora_ranks;
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
+    std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;

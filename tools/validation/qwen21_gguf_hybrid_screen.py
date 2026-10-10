@@ -24,7 +24,7 @@ def counter(record, name):
     return value
 
 
-def validate_receipts(rows, channels, steps=40, phase="all"):
+def validate_receipts(rows, channels, steps=40, phase="all", encoder_prefill=False):
     if len(rows) != 3 or phase not in ("all", "prefill", "decode"):
         raise ValueError("three original fresh-condition GPU/base receipts required")
     expected_blocks = (steps if phase == "all" else 1 if phase == "prefill" else steps - 1) * 32
@@ -40,6 +40,18 @@ def validate_receipts(rows, channels, steps=40, phase="all"):
         if (source.get("enabled") is not True or source.get("weights_retained") is not True or
             source.get("weights_reused") is not (index > 0) or counter(source,"loads_session_total") != 1):
             raise ValueError("same real retained original encoder lifecycle required")
+        if encoder_prefill:
+            p = row.get("qwen_encoder_prefill") or {}
+            if (p.get("encoder_execution") != "gpu" or p.get("tokenizer_reused") is not (index > 0) or
+                p.get("encoder_evaluated_this_request") is not True or counter(p, "input_rows") <= 0 or
+                not 0 < counter(p, "retained_rows") <= p["input_rows"] or
+                p.get("native_gqa_attention") is not True or p.get("fused_rms_qk_neox_rope") is not True or
+                p.get("dense_checkpoint_expansion") is not False or counter(p, "qkv_fused_layers") != 18 or counter(p, "qk_fused_layers") != 18 or
+                counter(p, "gate_up_fused_layers") != 36 or not isinstance(p.get("processor_sha256"), str) or
+                len(p["processor_sha256"]) != 64 or type(p.get("pack_seconds_this_request")) not in (float, int) or
+                not math.isfinite(p["pack_seconds_this_request"]) or
+                (p["pack_seconds_this_request"] <= 0 if index == 0 else p["pack_seconds_this_request"] != 0)):
+                raise ValueError("encoder prefill actual packed/kernel/tokenizer lifecycle differs")
         for field in ("request_wall", "text_encode", "denoise"):
             value = (row.get("timings_seconds") or {}).get(field)
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
@@ -83,6 +95,8 @@ def main():
     parser.add_argument("--shared-down", action="store_true", help="same explicit typed shared-word down kernel on all arms")
     parser.add_argument("--decode-workers", type=int, choices=range(1, 9), default=1,
                         help="same bounded CPU import schedule on all arms; no GPU/ANE overlap claim")
+    parser.add_argument("--encoder-prefill", action="store_true", help="explicit GPU prefill packed fusions and verified processor reuse")
+    parser.add_argument("--dump-tensors", action="store_true", help="explicit matching numerical evidence; not a no-dump performance trial")
     parser.add_argument("--order", help="gpu,a4096,a5120 or exact reverse/subset")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -102,11 +116,14 @@ def main():
               model / "diffusion_models/qwen-image-2.1-Q4_K_M.gguf",
               model / "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
               model / "vae/qwen_image_2.1_vae_bf16.safetensors"]
+    if args.encoder_prefill:
+        inputs.append(model / "processor/tokenizer.json")
     identities = {str(p): sha256_file(p) for p in inputs}
     args.output.mkdir(parents=True)
     summary = dict(schema="tc-qwen21-gguf-hybrid-screen-v1", status="running", qualification_passed=False,
                    source_identities=identities, steps=args.steps, phase=args.phase, shared_down=args.shared_down,
-                   decode_workers=args.decode_workers, order=order, trials=[])
+                   decode_workers=args.decode_workers, encoder_prefill=args.encoder_prefill,
+                   dump_tensors=args.dump_tensors, order=order, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
@@ -115,6 +132,7 @@ def main():
         env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1", TURBOCIDER_QWEN21_PROFILE_STEPS="1")
         env["TURBOCIDER_QWEN21_GGUF_SHARED_DOWN"] = "1" if args.shared_down else "0"
         env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"] = str(args.decode_workers)
+        env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if args.encoder_prefill else "0"
         if channels:
             env.update(TURBOCIDER_ANE_BACKEND="private", TURBOCIDER_ALLOW_PRIVATE_ANE="1",
                        TURBOCIDER_PRIVATE_ANE_CHANNELS=str(channels), TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",
@@ -131,6 +149,8 @@ def main():
                            output=str((args.output / f"{mode}-{index}.png").resolve()))
             if channels:
                 request.update(hybrid_mlp_mode="runtime", ane_manifest=str(manifest))
+            if args.dump_tensors:
+                request["dump_tensors"] = str((args.output / f"{mode}-{index}-dump").resolve())
             path = args.output / f"{mode}-{index}.json"
             path.write_text(json.dumps(request, indent=2) + "\n")
             requests.append(str(path.resolve()))
@@ -140,7 +160,9 @@ def main():
                                  stem=mode, env=env, stdout=stdout, stderr=stderr,
                                  timeout=900, interval_ms=100, max_gap_ms=500)
         rows = [json.loads(line) for line in (args.output / f"{mode}.stdout.jsonl").read_text().splitlines()]
-        validate_receipts(rows, channels, args.steps, args.phase)
+        validate_receipts(rows, channels, args.steps, args.phase, args.encoder_prefill)
+        if args.encoder_prefill and any(r["qwen_encoder_prefill"]["processor_sha256"] != identities[str(inputs[-1])] for r in rows):
+            raise ValueError("actual processor proof differs from original source")
         if any(sha256_file(p) != identities[str(p)] for p in inputs):
             raise ValueError("model/runtime source changed during screen")
         trial = dict(mode=mode, channels=channels, timings=[r["timings_seconds"] for r in rows], memory=memory,
