@@ -489,7 +489,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             refs.push_back({vision.encode(input.patches, input.grid_height, input.grid_width, event, cancelled),
                             input.grid_height, input.grid_width});
         }
-        auto assembled = assemble_prompt(tokens, weights.at("model.embed_tokens.weight"), refs);
+        auto assembled = assemble_prompt(tokens, weights, refs);
         TextConfig config;
         config.compiled_gpu_blocks=compile_encoder_gpu;
         config.final_norm = false; // official checkpoint's pre-final-RMSNorm hidden state
@@ -993,7 +993,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.backend="mlx_cpp_metal_qwen21_gguf";
         result.precision=std::string(gguf_transformer ? "q4_k_m_dit" : "bf16_dit")+"+"+
             (gguf_encoder ? "q4_k_m_text" : "bf16_text")+"+bf16_vae";
-        result.selection+="; explicit mixed K affine Q4/Q8 GPU, FP16 typed coefficients/I/O; Q6_K group requantization; dense embedding only";
+        result.selection+="; explicit mixed K affine Q4/Q8 GPU, FP16 typed coefficients/I/O; Q6_K group requantization; gathered packed embedding";
         if(shared_down)result.selection+="; experimental typed shared-word MPP FFN down kernel";
     }
     result.text_tokens = result.valid_text_tokens = text.shape(1);

@@ -9,6 +9,8 @@
 #include <thread>
 #include <list>
 #include <map>
+#include <condition_variable>
+#include <mutex>
 
 namespace tc::streaming {
 namespace {
@@ -38,6 +40,63 @@ uint64_t actual(const Tensor &tensor) {
 double seconds(Clock::time_point start) {
     return std::chrono::duration<double>(Clock::now() - start).count();
 }
+
+// Only CPU packers run here, over disjoint rows of the same admitted arrays.
+// run() drains every reader before the owner can refill/release the buffer or
+// publish a bank. Exceptions/cancellation are rethrown after that drain.
+class RowDecodePool final {
+    const uint32_t count_;
+    std::vector<std::thread> threads_;
+    std::mutex mutex_;
+    std::condition_variable work_,done_;
+    std::function<void(uint64_t,uint64_t)> decode_;
+    std::exception_ptr error_;
+    uint64_t rows_=0,generation_=0;
+    uint32_t pending_=0;
+    bool stop_=false;
+    void decode(uint32_t index) noexcept {
+        try {
+            const auto begin=rows_*index/count_,end=rows_*(index+1)/count_;
+            if(end>begin)decode_(begin,end-begin);
+        } catch(...) {
+            std::lock_guard lock(mutex_);
+            if(!error_)error_=std::current_exception();
+        }
+    }
+    void stop() noexcept {
+        {std::lock_guard lock(mutex_);stop_=true;}
+        work_.notify_all();
+        for(auto &thread:threads_)if(thread.joinable())thread.join();
+    }
+  public:
+    explicit RowDecodePool(uint32_t count):count_(count) {
+        try {
+            for(uint32_t index=1;index<count_;++index)threads_.emplace_back([this,index] {
+                uint64_t seen=0;
+                std::unique_lock lock(mutex_);
+                for(;;) {
+                    work_.wait(lock,[&]{return stop_ || generation_!=seen;});
+                    if(stop_)return;
+                    seen=generation_;lock.unlock();decode(index);lock.lock();
+                    if(!--pending_)done_.notify_one();
+                }
+            });
+        } catch(...) {stop();throw;}
+    }
+    ~RowDecodePool(){stop();}
+    void run(uint64_t rows,const std::function<void(uint64_t,uint64_t)> &decode_rows) {
+        if(count_==1 || rows<count_) {decode_rows(0,rows);return;}
+        {
+            std::lock_guard lock(mutex_);
+            rows_=rows;decode_=decode_rows;error_=nullptr;pending_=count_-1;++generation_;
+        }
+        work_.notify_all();decode(0);
+        std::unique_lock lock(mutex_);
+        done_.wait(lock,[&]{return pending_==0;});
+        decode_={};
+        if(error_)std::rethrow_exception(error_);
+    }
+};
 }
 
 struct GgufPackedBank::State {
@@ -85,7 +144,11 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
     require(!options.enabled || (fused_affine && (options.floating_dtype==mx::float16 || options.floating_dtype==mx::bfloat16)),
             "gguf_packed_bank: mixed K import requires fused typed FP16/BF16 recipe");
     require(options.enabled || !options.include_tensor,"gguf_packed_bank: pruning requires explicit K component recipe");
+    require(options.decode_workers>=1 && options.decode_workers<=8 &&
+            (options.enabled || options.decode_workers==1),
+            "gguf_packed_bank: row workers require explicit mixed K recipe and bound 1..8");
     s.k_import=std::move(options);
+    s.metrics.decode_workers=s.k_import.decode_workers;
     require(s.lease && s.lease->has_verified_content(), "gguf_packed_bank: native content proof required");
     require(raw_window_entries>0 && raw_window_entries<=6,"gguf_packed_bank: raw source window exceeds two three-matrix FFNs");
     if(raw_window_bytes) {
@@ -130,6 +193,7 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
     encoding.unsigned_field("read_bytes", read_bytes);
     encoding.unsigned_field("raw_window_bytes",raw_window_bytes);
     encoding.unsigned_field("raw_window_limit",s.raw_window_limit);
+    if(s.k_import.enabled)encoding.unsigned_field("decode_workers",s.k_import.decode_workers);
     encoding.begin_list("tensors", s.directory.tensors.size());
     std::set<std::string> keys;
     for (size_t index = 0; index < s.directory.tensors.size(); ++index) {
@@ -254,6 +318,7 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             upper <= snapshot.budget_bytes-snapshot.committed_bytes-snapshot.reserved_bytes,
             "qe_budget_floor: prepared packed bank and read buffer exceed managed weight ceiling");
     const auto start = Clock::now();
+    RowDecodePool decode_pool(s.k_import.decode_workers);
     // No output binding is published until ALL tensors and source generation
     // checks succeed. Fail/cancel only leaves local arrays, which are released.
     auto buffer = gguf_storage::allocate(s.ledger,s.read_bytes,s.read_bytes,{int(s.read_bytes)},mx::uint8,
@@ -306,21 +371,24 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             } else if (bf16_alias) gguf::bf16_to_fp16_inplace({destination,size_t(bytes)},cancel);
             else if (s.fused_affine && task.fields.size()==3 && task.fields[0].part==gguf::AffinePart::codes &&
                 task.fields[1].part==gguf::AffinePart::scales && task.fields[2].part==gguf::AffinePart::biases) {
-                std::array<std::span<std::byte>,3> target;
-                for(size_t i=0;i<3;++i) {
-                    const auto stride=task.fields[i].bytes/tensor.rows();
-                    target[i]={pointers[i]+row*stride,size_t(rows*stride)};
-                }
-                if(tensor.type==12 || tensor.type==13 || tensor.type==14)
-                    gguf::pack_k_affine_all(source,target,cancel,task.fields[1].dtype==mx::bfloat16 ? gguf::DecodeDType::bf16 : gguf::DecodeDType::f16);
-                else {
-                    gguf::pack_native_affine_all(source,target,cancel);
-                    if(task.fields[1].dtype==mx::bfloat16)for(size_t field:{1u,2u})for(size_t i=0;i<target[field].size();i+=2) {
-                        uint16_t old;std::memcpy(&old,target[field].data()+i,2);
-                        const uint16_t value=gguf::float_to_bf16_rne(gguf::fp16_to_float(old));
-                        std::memcpy(target[field].data()+i,&value,2);
+                decode_pool.run(rows,[&](uint64_t begin,uint64_t count) {
+                    const gguf::PackedMatrix slice{{read+begin*task.row_bytes,size_t(count*task.row_bytes)},tensor.type,count,tensor.columns()};
+                    std::array<std::span<std::byte>,3> target;
+                    for(size_t i=0;i<3;++i) {
+                        const auto stride=task.fields[i].bytes/tensor.rows();
+                        target[i]={pointers[i]+(row+begin)*stride,size_t(count*stride)};
                     }
-                }
+                    if(tensor.type==12 || tensor.type==13 || tensor.type==14)
+                        gguf::pack_k_affine_all(slice,target,cancel,task.fields[1].dtype==mx::bfloat16 ? gguf::DecodeDType::bf16 : gguf::DecodeDType::f16);
+                    else {
+                        gguf::pack_native_affine_all(slice,target,cancel);
+                        if(task.fields[1].dtype==mx::bfloat16)for(size_t field:{1u,2u})for(size_t i=0;i<target[field].size();i+=2) {
+                            uint16_t old;std::memcpy(&old,target[field].data()+i,2);
+                            const uint16_t value=gguf::float_to_bf16_rne(gguf::fp16_to_float(old));
+                            std::memcpy(target[field].data()+i,&value,2);
+                        }
+                    }
+                });
             } else for (size_t i = 0; i < task.fields.size(); ++i) {
                 const auto &f = task.fields[i]; const auto stride = f.bytes/tensor.rows();
                 auto target = std::span<std::byte>(pointers[i]+row*stride,size_t(rows*stride));

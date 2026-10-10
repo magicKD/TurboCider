@@ -26,6 +26,12 @@ int main(int argc, char **argv) {
                 std::stoi(metadata.at(key + "_h")), std::stoi(metadata.at(key + "_w"))});
         }
         auto prompt = tc::qwen21::assemble_prompt(tokens, inputs.at("table"), refs);
+        tc::Weights dense_weights;dense_weights.bind_arrays({"model.embed_tokens.weight"},{inputs.at("table")});
+        auto from_weights=tc::qwen21::assemble_prompt(tokens,dense_weights,refs);
+        tc::require(tc::mx::all(prompt.embeddings==from_weights.embeddings).item<bool>() &&
+            tc::mx::all(prompt.positions==from_weights.positions).item<bool>() &&
+            prompt.retained_indices==from_weights.retained_indices && prompt.image_slots==from_weights.image_slots,
+            "weight-backed prompt gather changed dense conditioning layout");
         std::unordered_map<std::string, tc::Tensor> outputs{
             {"patches", pixels.patches}, {"embeddings", prompt.embeddings}, {"positions", prompt.positions},
             {"retained", prompt.retain(prompt.embeddings)}};

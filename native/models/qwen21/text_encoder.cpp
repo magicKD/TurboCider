@@ -99,9 +99,10 @@ Tensor TextEncoder::encode(const Tokens &tokens, const Event &event, std::atomic
     const auto &embedding = weights_.at(language_prefix_ + "embed_tokens.weight");
     for (int id : tokens.ids) require(id >= 0 && id < embedding.shape(0), "Qwen21 token ID out of vocabulary");
     int count = int(tokens.ids.size());
-    auto ids = Tensor(tokens.ids.data(), {1, count}, mx::int32);
+    auto ids = Tensor(tokens.ids.data(), {count}, mx::int32);
     auto positions = mx::broadcast_to(mx::reshape(mx::arange(count, mx::int32), {1, count}), {3, count});
-    return encode_embeddings(mx::take(embedding, ids, 0), positions, tokens.valid, event, cancelled);
+    return encode_embeddings(mx::expand_dims(weights_.embedding_rows(ids,language_prefix_+"embed_tokens"),0),
+        positions, tokens.valid, event, cancelled);
 }
 
 Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &positions,

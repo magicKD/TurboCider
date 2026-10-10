@@ -976,6 +976,21 @@ Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefi
     return dense_gpu::projection_range(x,weight,rb,re,cb,ce,32,true);
 }
 
+Tensor Weights::embedding_rows(const Tensor &ids,const std::string &prefix) const {
+    require(ids.ndim()==1 && ids.dtype()==mx::int32 && ids.size()>0,
+            "embedding gather requires nonempty rank1 int32 IDs");
+    const auto &weight=at(prefix+".weight");
+    require(weight.ndim()==2 && !convrot(prefix) && !nvfp4(prefix),
+            "embedding gather requires dense or affine rank2 source");
+    if(!quantized(prefix))return mx::take(weight,ids,0);
+    const auto &scales=at(prefix+".scales");
+    const auto geometry=quantized_geometry(weight,scales,scales.shape(1)*32);
+    std::optional<Tensor> biases;
+    if(has(prefix+".biases"))biases=mx::take(at(prefix+".biases"),ids,0);
+    return mx::dequantize(mx::take(weight,ids,0),mx::take(scales,ids,0),biases,
+        geometry.group_size,geometry.bits,"affine",std::nullopt,mx::float16);
+}
+
 void Weights::dequantize(const std::vector<std::string> &prefixes) {
     for (const auto &prefix : prefixes) {
         if (convrot(prefix)) {

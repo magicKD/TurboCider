@@ -67,23 +67,23 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
     auto result=std::make_unique<GgufComponent>();
     result->ledger=std::make_unique<MemoryLedger>(uint64_t(16)<<30);
     streaming::GgufKImportOptions options;options.enabled=true;options.floating_dtype=mx::float16;
+    if(const char *workers=std::getenv("TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS")) {
+        const auto value=std::string_view(workers);
+        require(value.size()==1 && value[0]>='1' && value[0]<='8',"Qwen GGUF decode workers must be 1..8");
+        options.decode_workers=uint32_t(value[0]-'0');
+    }
     if(text)options.include_tensor=[](std::string_view key){return !key.starts_with("output.");};
     result->bank=std::make_unique<streaming::GgufPackedBank>(lease,"qwen21-component",*result->ledger,
         uint64_t(1)<<20,true,0,6,options);
     const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
     uint64_t growth=result->bank->metrics().planned_packed_capacity_bytes+(uint64_t(1)<<20);
-    if(text) {
-        const auto &embedding=result->bank->directory().tensor("token_embd.weight");
-        growth=gguf::checked_add(growth,gguf::checked_mul(embedding.elements,2));
-    }
     const auto decision=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,growth);
     require(decision.allowed(),"Qwen21 GGUF source admission declined: "+ane::memory_denial_reason(decision.denial,observed));
     result->bank->load(weights,&cancelled,event);
     if(text) {
         weights.remap_keys(gguf_text_key);
-        // Only this table is expanded for the current prompt assembler;
-        // attention/FFN matrices stay packed. Not a full dense checkpoint.
-        weights.dequantize({"model.embed_tokens"});
+        // Embedding stays packed too. Prompt assembly gathers only consumed
+        // codes/scales/biases rows before GPU decode, not the full vocabulary.
     } else {
         weights.remap_keys([](const std::string &key) {
             constexpr std::string_view p="model.diffusion_model.";

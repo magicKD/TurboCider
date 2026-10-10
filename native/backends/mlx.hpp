@@ -116,6 +116,9 @@ class Weights {
     void select_dense_indices(const std::string &prefix,
                               const std::vector<int> &channel_indexes, int axis);
     void dequantize(const std::vector<std::string> &);
+    // Gather token rows before affine decode; never expand a full vocabulary.
+    // Host-side vocabulary validation belongs to the prompt assembler.
+    Tensor embedding_rows(const Tensor &ids,const std::string &prefix) const;
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;
     void erase(const std::string &);

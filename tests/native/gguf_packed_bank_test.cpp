@@ -19,7 +19,7 @@ std::shared_ptr<const SourceLease> lease(const char *path) {
 }
 int main(int argc,char **argv) {
     try {
-        ensure(argc==6,"five owned fixtures required");configure_streams();mx::set_cache_limit(0);
+        ensure(argc==8,"seven owned fixtures required");configure_streams();mx::set_cache_limit(0);
         auto source=lease(argv[1]);
         const auto content=source->file("weights").content_digest;
         Weights golden;golden.load_gguf_file(argv[1]);golden.materialize();
@@ -90,7 +90,7 @@ int main(int argc,char **argv) {
         }
         // Nonfinite float conversion fails transactionally; output alias
         // collisions, unsupported K and oversized source rows fail metadata.
-        for (int i=2;i<argc;++i) {
+        for (int i=2;i<6;++i) {
             MemoryLedger budget(32ull<<20);Weights partial;
             rejects([&]{GgufPackedBank invalid(lease(argv[i]),"weights",budget,16384);invalid.load(partial);});
             ensure(partial.sorted_keys().empty() && !budget.snapshot().storage_bytes,"invalid source published output or allocated leaked backing");
@@ -98,6 +98,55 @@ int main(int argc,char **argv) {
         {
             auto metadata=SourceLease::capture({source->file("weights")});MemoryLedger budget(32ull<<20);
             rejects([&]{GgufPackedBank unverified(metadata,"weights",budget,16384);});
+        }
+        // Mixed-K worker counts must change only the schedule/plan identity,
+        // never any packed bit. All escaped readers and failed tasks drain.
+        for(auto dtype:{mx::float16,mx::bfloat16}) {
+            auto mixed_source=lease(argv[6]);MemoryLedger serial_budget(32ull<<20);Weights serial;
+            GgufKImportOptions options;options.enabled=true;options.floating_dtype=dtype;
+            GgufPackedBank serial_bank(mixed_source,"weights",serial_budget,16384,true,0,6,options);
+            serial_bank.load(serial);
+            for(uint32_t workers:{2u,3u,4u,8u}) {
+                options.decode_workers=workers;
+                MemoryLedger budget(32ull<<20);Weights concurrent;
+                GgufPackedBank parallel(mixed_source,"weights",budget,16384,true,0,6,options);
+                parallel.load(concurrent);
+                ensure(parallel.metrics().decode_workers==workers && parallel.metrics().plan_digest!=serial_bank.metrics().plan_digest,
+                    "worker recipe missing from native receipt/identity");
+                ensure(concurrent.sorted_keys()==serial.sorted_keys(),"parallel K binding keys changed");
+                for(const auto &key:serial.sorted_keys()) {
+                    const auto &a=concurrent.at(key),&b=serial.at(key);
+                    ensure(a.shape()==b.shape() && a.dtype()==b.dtype() &&
+                        std::memcmp(a.data<std::byte>(),b.data<std::byte>(),a.nbytes())==0,"parallel K affine fields differ");
+                }
+                ensure(parallel.metrics().source_read_bytes==serial_bank.metrics().source_read_bytes &&
+                    parallel.metrics().read_buffer_capacity_bytes==16384 &&
+                    parallel.metrics().managed_peak_bytes<=parallel.metrics().planned_packed_capacity_bytes+16384,
+                    "parallel K import reread source or allocated per-worker payload buffers");
+                for(const auto &prefix:{"q4k","q5k","q6k"}) {
+                    const auto ids=Tensor(std::vector<int>{36,0,5,5,1}.data(),{5},mx::int32);
+                    auto gathered=concurrent.embedding_rows(ids,prefix);
+                    auto dense=mx::dequantize(serial.at(std::string(prefix)+".weight"),serial.at(std::string(prefix)+".scales"),
+                        serial.at(std::string(prefix)+".biases"),32,std::string(prefix)=="q4k" ? 4 : 8,"affine",std::nullopt,mx::float16);
+                    auto expected=mx::take(dense,ids,0);mx::eval({gathered,expected});
+                    ensure(gathered.shape()==mx::Shape{5,512} && gathered.dtype()==mx::float16 &&
+                        mx::all(gathered==expected).item<bool>(),"gathered embedding differs from full-table decode");
+                }
+                concurrent.clear();mx::synchronize();
+                ensure(!budget.snapshot().storage_bytes && !budget.snapshot().reserved_bytes,"parallel K backing leaked");
+                std::atomic<bool> cancelled{false};Weights untouched;
+                GgufPackedBank cancelled_bank(mixed_source,"weights",budget,16384,true,0,6,options);
+                rejects([&]{cancelled_bank.load(untouched,&cancelled,[&](const std::string &,int,int){cancelled.store(true);});});
+                ensure(untouched.sorted_keys().empty() && !budget.snapshot().storage_bytes,"parallel cancellation published partial bank");
+                GgufPackedBank invalid(lease(argv[7]),"weights",budget,16384,true,0,6,options);
+                rejects([&]{invalid.load(untouched);});
+                ensure(untouched.sorted_keys().empty() && !budget.snapshot().storage_bytes,"parallel packer failure published/leaked bank");
+            }
+            for(uint32_t workers:{0u,9u}) {
+                MemoryLedger budget(32ull<<20);options.decode_workers=workers;
+                rejects([&]{GgufPackedBank invalid(mixed_source,"weights",budget,16384,true,0,6,options);});
+            }
+            serial.clear();mx::synchronize();ensure(!serial_budget.snapshot().storage_bytes,"serial K control backing leaked");
         }
         // Raw source window is separate from affine GPU masters. One cache
         // slot makes eviction deterministic; escaped readers stay charged.
@@ -162,7 +211,7 @@ int main(int argc,char **argv) {
             rejects([&]{changed.check_unchanged();});
             rejects([&]{raw_changed.raw_matrix("q8.weight");}); // even a cached hit revalidates generation
         }
-        std::cout<<"PASS GGUF packed bank Metal: native field/projection exact, bounded chunks/claims, cancellation/floors/source change\n";
+        std::cout<<"PASS GGUF packed bank Metal: native field/projection exact, bounded chunks/claims, cancellation/floors/source change; mixed-K 1/2/3/4/8 workers and gathered embeddings byte/numeric parity\n";
         return 0;
     } catch (const std::exception &error) { std::cerr<<error.what()<<'\n';return 1; }
 }

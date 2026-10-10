@@ -14,6 +14,9 @@ struct GgufKImportOptions {
     // Explicit component pruning only (e.g. unused decoder output.weight).
     // Directory/source verification still covers the complete original file.
     std::function<bool(std::string_view)> include_tensor;
+    // Explicit bounded CPU row parallelism; MLX allocation/publication and
+    // source ownership remain on the caller. One shared fixed read buffer.
+    uint32_t decode_workers=1;
 };
 
 // Immutable, compute-ready MLX affine packed bank. Only Q4_0/Q4_1/Q8_0 and

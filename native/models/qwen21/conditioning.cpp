@@ -118,9 +118,11 @@ std::string reference_prompt_template(const std::string &prompt, size_t count) {
     return TextEncoder::prompt_template(refs + prompt);
 }
 
-MultimodalPrompt assemble_prompt(const Tokens &tokens, const Tensor &table,
-                                const std::vector<VisualReference> &refs, int max_tokens) {
-    require(table.ndim() == 2 && table.shape(1) > 0, "invalid Qwen21 embedding table");
+namespace {
+MultimodalPrompt assemble_token_rows(const Tokens &tokens,const Tensor &table,int vocabulary,
+                                    const std::vector<VisualReference> &refs,int max_tokens) {
+    require(table.ndim() == 2 && table.shape(0)==int(tokens.ids.size()) && table.shape(1) > 0,
+            "invalid Qwen21 gathered embedding rows");
     require(tokens.valid > 0 && tokens.valid == int(tokens.ids.size()), "multimodal prompt must be unpadded");
     require(refs.size() <= 10 && max_tokens > 0, "invalid Qwen21 reference/token limit");
     constexpr int image_pad = 151655, im_start = 151644;
@@ -142,7 +144,7 @@ MultimodalPrompt assemble_prompt(const Tokens &tokens, const Tensor &table,
     int starts = 0, drop = -1;
     for (size_t i = 0; i < tokens.ids.size(); ++i) {
         int id = tokens.ids[i];
-        require(id >= 0 && id < table.shape(0), "Qwen21 prompt token out of vocabulary");
+        require(id >= 0 && id < vocabulary, "Qwen21 prompt token out of vocabulary");
         if (id == im_start && ++starts == 2) { drop = int(i); break; }
     }
     require(drop >= 0 && std::find(tokens.ids.begin(), tokens.ids.begin() + drop, image_pad) == tokens.ids.begin() + drop,
@@ -155,9 +157,8 @@ MultimodalPrompt assemble_prompt(const Tokens &tokens, const Tensor &table,
     auto append_text = [&](int begin, int end) {
         if (begin == end) return;
         for (int i = begin; i < end; ++i)
-            require(tokens.ids[i] >= 0 && tokens.ids[i] < table.shape(0), "Qwen21 prompt token out of vocabulary");
-        auto ids = Tensor(tokens.ids.data() + begin, {end - begin}, mx::int32);
-        chunks.push_back(mx::take(table, ids, 0));
+            require(tokens.ids[i] >= 0 && tokens.ids[i] < vocabulary, "Qwen21 prompt token out of vocabulary");
+        chunks.push_back(slice_axis(table,0,begin,end));
         for (auto &level : deltas) level.push_back(mx::zeros({end - begin, table.shape(1)}, table.dtype()));
         for (int i = begin; i < end; ++i, ++cursor, ++position) {
             for (int axis = 0; axis < 3; ++axis) positions[size_t(axis) * count + cursor] = position;
@@ -188,6 +189,24 @@ MultimodalPrompt assemble_prompt(const Tokens &tokens, const Tensor &table,
     return {mx::expand_dims(mx::concatenate(chunks, 0), 0),
             Tensor(positions.data(), {3, int(count)}, mx::int32), std::move(expanded_deltas),
             std::move(retained), std::move(slots)};
+}
+}
+
+MultimodalPrompt assemble_prompt(const Tokens &tokens,const Tensor &table,
+                                const std::vector<VisualReference> &refs,int max_tokens) {
+    require(table.ndim()==2 && table.shape(1)>0,"invalid Qwen21 embedding table");
+    for(int id:tokens.ids)require(id>=0 && id<table.shape(0),"Qwen21 prompt token out of vocabulary");
+    auto ids=Tensor(tokens.ids.data(),{int(tokens.ids.size())},mx::int32);
+    return assemble_token_rows(tokens,mx::take(table,ids,0),table.shape(0),refs,max_tokens);
+}
+
+MultimodalPrompt assemble_prompt(const Tokens &tokens,const Weights &weights,
+                                const std::vector<VisualReference> &refs,int max_tokens) {
+    const auto &table=weights.at("model.embed_tokens.weight");
+    require(table.ndim()==2 && table.shape(1)>0,"invalid Qwen21 embedding table");
+    for(int id:tokens.ids)require(id>=0 && id<table.shape(0),"Qwen21 prompt token out of vocabulary");
+    auto ids=Tensor(tokens.ids.data(),{int(tokens.ids.size())},mx::int32);
+    return assemble_token_rows(tokens,weights.embedding_rows(ids,"model.embed_tokens"),table.shape(0),refs,max_tokens);
 }
 
 Tensor MultimodalPrompt::retain(const Tensor &hidden) const {

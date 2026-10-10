@@ -81,6 +81,8 @@ def main():
     parser.add_argument("--steps", type=int, default=40)
     parser.add_argument("--phase", choices=("all", "prefill", "decode"), default="all")
     parser.add_argument("--shared-down", action="store_true", help="same explicit typed shared-word down kernel on all arms")
+    parser.add_argument("--decode-workers", type=int, choices=range(1, 9), default=1,
+                        help="same bounded CPU import schedule on all arms; no GPU/ANE overlap claim")
     parser.add_argument("--order", help="gpu,a4096,a5120 or exact reverse/subset")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -103,7 +105,8 @@ def main():
     identities = {str(p): sha256_file(p) for p in inputs}
     args.output.mkdir(parents=True)
     summary = dict(schema="tc-qwen21-gguf-hybrid-screen-v1", status="running", qualification_passed=False,
-                   source_identities=identities, steps=args.steps, phase=args.phase, shared_down=args.shared_down, order=order, trials=[])
+                   source_identities=identities, steps=args.steps, phase=args.phase, shared_down=args.shared_down,
+                   decode_workers=args.decode_workers, order=order, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
@@ -111,6 +114,7 @@ def main():
         env = benchmark_environment()
         env.update(TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS="1", TURBOCIDER_QWEN21_PROFILE_STEPS="1")
         env["TURBOCIDER_QWEN21_GGUF_SHARED_DOWN"] = "1" if args.shared_down else "0"
+        env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"] = str(args.decode_workers)
         if channels:
             env.update(TURBOCIDER_ANE_BACKEND="private", TURBOCIDER_ALLOW_PRIVATE_ANE="1",
                        TURBOCIDER_PRIVATE_ANE_CHANNELS=str(channels), TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",

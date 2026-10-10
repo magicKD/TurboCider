@@ -2,6 +2,12 @@
 
 ## 当前加速结论
 
+2026-10-10 [Qwen Q4_K_M有界并行导入与局部embedding](qwen21-q4km-encoder-import-2026-10-10.md)：
+同binary正反序encoder bank导入2.08→.68s（8 workers），完整SHA保留；
+40步cold text2.70–2.96s、混合warm请求36.98s，对GPU44.62s少17.12%。
+六张PNG与改动前SHA一致；新Unsloth cold condition1.48s仍更快，不能
+宣布encoder冷端到端或同预算BF16 streaming完整目标完成。
+
 2026-10-10 [Qwen Q4_K_M实际GPU/ANE正反序与GPU down kernel](qwen21-q4km-hybrid-2026-10-10.md)：
 5120通道混合40步热请求约36.97–37.01s，匹配GPU约44.55–44.58s；typed
 source/1280 actual calls/GPU fallback已接通。kernel额外收益约1%，冷encoder
