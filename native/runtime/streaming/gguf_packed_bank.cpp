@@ -114,7 +114,13 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
 #else
     s.metrics.affine_packing_backend=fused_affine ? "scalar" : "legacy_scalar";
 #endif
-    if(s.k_import.enabled)s.metrics.affine_packing_backend="cpu_mixed_k_scalar";
+    if(s.k_import.enabled) {
+#if defined(__aarch64__)
+        s.metrics.affine_packing_backend="cpu_mixed_k_arm_neon";
+#else
+        s.metrics.affine_packing_backend="cpu_mixed_k_scalar";
+#endif
+    }
     CanonicalEncoder encoding("gguf-mlx-compat-affine-packed-bank-v1");
     encoding.string_field("affine_packing",s.metrics.affine_packing_recipe);
     encoding.string_field("float_import",s.metrics.float_import_recipe);

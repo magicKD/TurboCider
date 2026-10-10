@@ -2,6 +2,11 @@
 
 ## 当前加速结论
 
+2026-10-10 [Qwen Q4_K_M实际GPU/ANE正反序与GPU down kernel](qwen21-q4km-hybrid-2026-10-10.md)：
+5120通道混合40步热请求约36.97–37.01s，匹配GPU约44.55–44.58s；typed
+source/1280 actual calls/GPU fallback已接通。kernel额外收益约1%，冷encoder
+与同预算BF16 streaming完整要求仍未完成，保持显式实验与安全边界。
+
 2026-10-10 新的[Qwen2.1 Q4_K_M完整目标接续](qwen21-q4km-support-2026-10-10.md)：
 两份固定source已下载验证，混合Q4/Q5/Q6导入、42次实Metal投影与首个完整
 GPU生成已运行；encoder/DiT对Unsloth、GPU/ANE和同预算BF16 streaming仍待

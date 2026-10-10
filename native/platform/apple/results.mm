@@ -152,7 +152,7 @@ static NSString *encoder_backend_label(const RunResult &result) {
     return encoder_backend_label(result.request, encoder_executed(result));
 }
 static NSString *encoder_precision_label(const RunResult &result) {
-    if(result.backend=="mlx_cpp_metal_qwen21_gguf" && result.precision.find("q4_k_m_text")!=std::string::npos)
+    if(result.request.model=="qwen-image-2.1" && result.precision.find("q4_k_m_text")!=std::string::npos)
         return @"q4_k_m_affine_fp16_io";
     if (!encoder_executed(result)) return @"bf16";
     const auto &metrics = *result.encoder_hybrid;

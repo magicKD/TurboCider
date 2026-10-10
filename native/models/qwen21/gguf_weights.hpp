@@ -1,6 +1,7 @@
 #pragma once
 #include "../../runtime/streaming/gguf_packed_bank.hpp"
 #include "../../backends/ane_memory.hpp"
+#include "../../backends/ane_ffn.hpp"
 #include <map>
 
 namespace tc::qwen21 {
@@ -36,6 +37,28 @@ struct GgufComponent {
     std::unique_ptr<MemoryLedger> ledger;
     std::unique_ptr<streaming::GgufPackedBank> bank;
 };
+
+// Preserve all three immutable affine planes when presenting a fused FFN to
+// the runtime stager. Splitting only codes would reinterpret UINT32 as dense
+// weights and silently discard the decoded K subgroup coefficients.
+inline std::vector<ane::FfnWeight> gguf_ffn_sources(const Weights &weights,const std::string &prefix) {
+    auto matrix=[&](const std::string &name,int rows,int columns) {
+        require(weights.quantized(name) && !weights.convrot(name) && !weights.nvfp4(name),
+                "Qwen GGUF FFN requires explicit affine packed source");
+        const auto &values=weights.at(name+".weight"),&scales=weights.at(name+".scales"),&biases=weights.at(name+".biases");
+        require(values.ndim()==2 && scales.shape()==mx::Shape{rows,columns/32} && biases.shape()==scales.shape() &&
+            values.shape(0)==rows && values.dtype()==mx::uint32 && scales.dtype()==mx::float16 && biases.dtype()==mx::float16,
+            "Qwen GGUF FFN packed geometry/typed coefficient mismatch");
+        const int bits=values.shape(1)*32/columns;
+        require((bits==4 || bits==8) && values.shape(1)*32==columns*bits,
+                "Qwen GGUF FFN requires aligned original Q4/Q8 affine planes");
+        return ane::FfnWeight{values,scales,biases,32,bits};
+    };
+    auto fused=matrix(prefix+"gate_up",24576,4096);
+    auto values=mx::split(fused.values,2,0),scales=mx::split(*fused.scales,2,0),biases=mx::split(*fused.offsets,2,0);
+    return {{values[0],scales[0],biases[0],32,fused.bits},
+            {values[1],scales[1],biases[1],32,fused.bits},matrix(prefix+"out",4096,12288)};
+}
 
 inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem::path &path,
         Weights &weights,bool text,const Event &event,std::atomic<bool> &cancelled) {

@@ -32,6 +32,7 @@ class Weights {
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
     bool affine_bf16_fp32_partial_ = false;
+    bool qwen_affine_shared_down_ = false;
     bool runtime_lora_fp16_ = false;
     bool runtime_lora_bf16_fp32_ranks_ = false;
     bool runtime_lora_b_epilogue_ = false;
@@ -78,6 +79,10 @@ class Weights {
         affine_bf16_fp32_partial_=enabled;
     }
     bool affine_bf16_fp32_partial() const { return affine_bf16_fp32_partial_; }
+    // Request-scoped mixed-GGUF FFN down kernel; other projections/defaults
+    // remain MLX QMM. The producer and all metadata stay immutable.
+    void set_qwen_affine_shared_down(bool enabled) { qwen_affine_shared_down_=enabled; }
+    bool qwen_affine_shared_down() const { return qwen_affine_shared_down_; }
     // Experimental Qwen21 student only: narrow LoRA matmuls while retaining
     // FP32 accumulation with the BF16 base projection.
     void set_runtime_lora_fp16(bool enabled) { runtime_lora_fp16_ = enabled; }

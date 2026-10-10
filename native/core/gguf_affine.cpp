@@ -239,6 +239,29 @@ uint64_t pack_k_affine_all(const PackedMatrix &source,const std::array<std::span
                 const uint32_t half_index=group/4,local=group%4;
                 const auto *low=p+half_index*64,*high=p+128+half_index*32;
                 const auto *scales=p+192+half_index*8;
+#if defined(__aarch64__)
+                if(options.use_simd) {
+                    for(uint32_t half=0;half<2;++half) {
+                        const auto q=vld1q_u8(low+half*16+(local&1)*32);
+                        const auto qh=vld1q_u8(high+half*16);
+                        const auto low_codes=local<2 ? vandq_u8(q,vdupq_n_u8(15)) : vshrq_n_u8(q,4);
+                        const auto high_codes=vshlq_n_u8(vandq_u8(vshlq_u8(qh,vdupq_n_s8(-int8_t(2*local))),vdupq_n_u8(3)),4);
+                        const auto signed_codes=vreinterpretq_s8_u8(vsubq_u8(vorrq_u8(low_codes,high_codes),vdupq_n_u8(32)));
+                        const uint8_t raw_scale=scales[half+local*2];
+                        const int signed_scale=raw_scale<128 ? int(raw_scale) : int(raw_scale)-256;
+                        const auto multiplier=vdupq_n_f32(d*float(signed_scale));
+                        const auto lo=vmovl_s8(vget_low_s8(signed_codes)),hi=vmovl_s8(vget_high_s8(signed_codes));
+                        const int16x4_t lanes[]{vget_low_s16(lo),vget_high_s16(lo),vget_low_s16(hi),vget_high_s16(hi)};
+                        for(uint32_t lane=0;lane<4;++lane) {
+                            const auto decoded=vmulq_f32(vcvtq_f32_s32(vmovl_s16(lanes[lane])),multiplier);
+                            vst1q_f32(values.data()+half*16+lane*4,decoded);
+                            maximum=std::max(maximum,vmaxvq_f32(vabsq_f32(decoded)));
+                        }
+                    }
+                    // Finite half d, signed-byte scales and bounded six-bit
+                    // codes cannot overflow F32; max magnitude is <2^29.
+                } else
+#endif
                 for(uint32_t j=0;j<32;++j) {
                     const uint8_t q=low[j+(local&1)*32];
                     const int code=int((local<2 ? q&15 : q>>4)|(((high[j]>>(2*local))&3)<<4))-32;
@@ -253,6 +276,22 @@ uint64_t pack_k_affine_all(const PackedMatrix &source,const std::array<std::span
                 if(maximum>0 && (scale==0 || std::abs(scale-maximum/127.f)/(maximum/127.f)>precision))
                     throw DecodeError("Q6_K affine scale precision insufficient; no publication");
                 store_half(target[2].data()+index*2,-128.f*scale);
+#if defined(__aarch64__)
+                if(options.use_simd) {
+                    for(uint32_t half=0;half<2;++half) {
+                        uint16x4_t narrowed[4];
+                        for(uint32_t lane=0;lane<4;++lane) {
+                            const auto v=vld1q_f32(values.data()+half*16+lane*4);
+                            const auto shifted=scale==0 ? vdupq_n_f32(128.f) : vaddq_f32(vdivq_f32(v,vdupq_n_f32(scale)),vdupq_n_f32(128.f));
+                            narrowed[lane]=vqmovun_s32(vcvtnq_s32_f32(shifted));
+                        }
+                        const auto lo=vqmovn_u16(vcombine_u16(narrowed[0],narrowed[1]));
+                        const auto hi=vqmovn_u16(vcombine_u16(narrowed[2],narrowed[3]));
+                        vst1q_u8(reinterpret_cast<uint8_t *>(codes)+half*16,vcombine_u8(lo,hi));
+                    }
+                    continue;
+                }
+#endif
                 // Explicit ties-to-even, independent of process rounding mode.
                 for(uint32_t j=0;j<32;++j) {
                     const float value=scale==0 ? 128.f : values[j]/scale+128.f;

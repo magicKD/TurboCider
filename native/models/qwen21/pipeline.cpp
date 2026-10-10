@@ -205,11 +205,20 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool retain_encoder_weights=option_enabled(encoder_weights_flag);
     const bool gguf_transformer=transformer_source_.extension()==".gguf";
     const bool gguf_encoder=encoder_source_.extension()==".gguf";
+    const char *shared_down_flag=std::getenv("TURBOCIDER_QWEN21_GGUF_SHARED_DOWN");
+    require(binary_option_or_unset(shared_down_flag),"Qwen GGUF shared down requires0 or1");
+    const bool shared_down=option_enabled(shared_down_flag);
+    require(!shared_down || (gguf_transformer && r.allow_approximation && r.residency=="resident" &&
+        r.width==512 && r.height==512 && !r.streaming.active() && !r.memory_constrained.enabled),
+        "Qwen GGUF shared down requires approximate resident512 mixed-K source");
     if(gguf_transformer || gguf_encoder)
-        require(r.operation=="image.generate" && r.inputs.empty() && r.execution=="gpu" &&
-            r.allow_approximation && r.loras.empty() && r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
+        require(r.operation=="image.generate" && r.inputs.empty() &&
+            (r.execution=="gpu" || (gguf_transformer && r.execution=="gpu_ane" && runtime_requested &&
+                ane::configured_backend().preferred==ane::BackendPreference::Private && ane::private_channel_count(12288)>0 &&
+                !ane::configured_fp32_channel_join())) &&
+            r.allow_approximation && r.loras.empty() && (r.execution!="gpu" || r.ane_manifest.empty()) && r.encoder_ane_manifest.empty() &&
             !r.prompt_enhance && !r.qwen21_gpu_w8a16 && !r.qwen21_w8a8,
-            "Qwen21 mixed GGUF initial route requires explicit GPU base generation approximation; hybrid/edit/LoRA qualification pending");
+            "Qwen21 mixed GGUF requires approximate GPU/fixed Private FP16 channel base generation; encoder hybrid/edit/LoRA qualification pending");
     const bool compile_encoder_gpu=compiled_encoder_gpu(r);
     if(retain_encoder_weights)
         require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&
@@ -599,6 +608,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // Original request-local path still releases its encoder before loading
     // and binding the separate low-rank adapter. No BF16/disk merge is added.
     if(!retain_encoder_weights)prepare_transformer(r,event,cancelled,fused_lora_ane || runtime_requested,fused_qkv,lora_fp16);
+    // Transactional bank load replaces the complete Weights dictionary, so
+    // snapshot the requested math recipe AFTER loading, including cold runs.
+    if(transformer_.qwen_affine_shared_down()!=shared_down) {
+        if(runtime_ffn_)runtime_ffn_->drain();
+        clear_prefix_cache();mx::synchronize();transformer_.set_qwen_affine_shared_down(shared_down);
+    }
     if (fused_qkv && fused_qkv_weights_.empty()) {
         clear_prefix_cache();
         fused_qkv_weights_.reserve(32);
@@ -979,6 +994,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.precision=std::string(gguf_transformer ? "q4_k_m_dit" : "bf16_dit")+"+"+
             (gguf_encoder ? "q4_k_m_text" : "bf16_text")+"+bf16_vae";
         result.selection+="; explicit mixed K affine Q4/Q8 GPU, FP16 typed coefficients/I/O; Q6_K group requantization; dense embedding only";
+        if(shared_down)result.selection+="; experimental typed shared-word MPP FFN down kernel";
     }
     result.text_tokens = result.valid_text_tokens = text.shape(1);
     for (const auto &ref : references) result.reference_tokens += ref.latents.shape(1);
@@ -1060,19 +1076,27 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 return std::vector<Tensor>{mx::matmul(silu(gu[0]) * gu[1], mx::transpose(a[2]))};
             });
             std::vector<std::vector<Tensor>> runtime_weights;
+            std::vector<std::vector<ane::FfnWeight>> runtime_packed_sources;
             using RuntimeFunction = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>;
+            std::vector<RuntimeFunction> runtime_packed_gpu;
             RuntimeFunction gpu_qkv;
             std::vector<RuntimeFunction> runtime_lora_gpu, runtime_lora_gate_up, runtime_lora_down_add;
             std::vector<RuntimeFunction> runtime_lora_gate_up_channels;
             std::vector<RuntimeFunction> runtime_lora_channel_gpu;
             std::vector<RuntimeFunction> runtime_lora_input_ranks;
             std::vector<RuntimeFunction> runtime_lora_down_gpu_ranks,runtime_lora_down_split_add;
+            ane::HybridFfn::SourceScope runtime_sources_scope(runtime_requested ? runtime_ffn_.get() : nullptr);
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
-                    auto gu = mx::split(transformer_.at(p + "gate_up.weight"), 2, 0);
-                    runtime_weights.push_back({gu[0], gu[1], transformer_.at(p + "out.weight")});
-                    mx::eval(runtime_weights.back());
+                    if(gguf_transformer) {
+                        runtime_packed_sources.push_back(gguf_ffn_sources(transformer_,p));
+                        runtime_packed_gpu.push_back(runtime_ffn::full(transformer_,p));
+                    } else {
+                        auto gu = mx::split(transformer_.at(p + "gate_up.weight"), 2, 0);
+                        runtime_weights.push_back({gu[0], gu[1], transformer_.at(p + "out.weight")});
+                        mx::eval(runtime_weights.back());
+                    }
                     if (transformer_.has_runtime_loras()) {
                         // The ordinary GPU Transformer compiles this same
                         // projection/low-rank arithmetic inside its blocks.
@@ -1113,7 +1137,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 });
                 dit.set_stage_mlp([&](int block, int rows) {
                     checkpoint(cancelled);
-                    runtime_ffn_->stage(block, rows, runtime_weights.at(block));
+                    if(gguf_transformer)runtime_ffn_->stage_weights(block,rows,runtime_packed_sources.at(block));
+                    else runtime_ffn_->stage(block, rows, runtime_weights.at(block));
                 });
                 auto run_ffn = [&](int block, const Tensor &input) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
@@ -1151,6 +1176,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     }
                     auto output = runtime_ffn_->run(block, input, [&](const Tensor &x) {
                         used_fallback = true;
+                        if(gguf_transformer)return runtime_packed_gpu.at(block)({x})[0];
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
                         return runtime_gpu({x, transformer_.at(p + "gate_up.weight"),
                                               transformer_.at(p + "out.weight")})[0];
@@ -1170,6 +1196,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
                         return std::make_pair(base,hidden);
                     },[&](int next) {
+                        if(gguf_transformer)return next<32 ? runtime_packed_sources.at(next) : std::vector<ane::FfnWeight>{};
                         std::vector<ane::FfnWeight> sources;
                         if(next<32)for(const auto &weight:runtime_weights.at(next))sources.push_back({weight,std::nullopt,std::nullopt});
                         return sources;
@@ -1326,6 +1353,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 dit.set_observe_mlp({});
                 dit.set_decode_mlp({}); dit.set_prefill_mlp({});
                 runtime_ffn_->drain();
+                runtime_sources_scope.finish();
             }
             if (qkv_requested) {
                 dit.set_stage_qkv({}); dit.set_project_qkv({});
@@ -1389,6 +1417,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (hybrid_requested) result.hybrid = hybrid_->metrics(); // session-cumulative, including preparation
     if (runtime_requested) {
         result.hybrid = runtime_ffn_->metrics();
+        if(gguf_transformer) {
+            result.backend=runtime_ffn_->backend_label(true);
+            result.precision="q4_k_m_dit+"+std::string(gguf_encoder ? "q4_k_m_text" : "bf16_text")+"+bf16_vae+runtime_w8a8_ffn_fp16_io";
+            result.selection+="; mixed-K affine source GPU/ANE intermediate-channel FFN with complete packed GPU fallback";
+        }
         if (!runtime_ffn_->available()) result.selection += "; GPU fallback: " + runtime_ffn_->reason();
     }
     if (qkv_requested) {

@@ -568,8 +568,12 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
         std::optional<Tensor> biases;
         if (has(prefix + ".biases"))
             biases = at(prefix + ".biases");
-        output = mx::quantized_matmul(x, weight, scales, biases, true,
-                                      geometry.group_size, geometry.bits, "affine");
+        if(qwen_affine_shared_down_ && prefix.ends_with(".img_mlp.out") && x.ndim()==3 && x.shape(0)==1 && x.shape(1)>=32) {
+            require(bool(biases),"Qwen shared packed down requires explicit affine bias plane");
+            output=affine_gpu::projection_shared(x,weight,scales,*biases,geometry.bits,
+                0,weight.shape(0),0,x.shape(-1),64,64,64,x.dtype());
+        } else output = mx::quantized_matmul(x, weight, scales, biases, true,
+                                            geometry.group_size, geometry.bits, "affine");
     } else {
         auto dense = weight;
         if (dense.ndim() != 2)
@@ -719,9 +723,12 @@ Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
             biases = slice_axis(*biases, 1, col_start / geometry.group_size,
                                 col_end / geometry.group_size);
         }
-        output = mx::quantized_matmul(x, q, scales, biases, true,
-                                      geometry.group_size, geometry.bits,
-                                      "affine");
+        if(qwen_affine_shared_down_ && prefix.ends_with(".img_mlp.out") && x.ndim()==3 && x.shape(0)==1 && x.shape(1)>=32) {
+            require(has(prefix+".biases"),"Qwen shared packed down requires original affine planes");
+            output=affine_gpu::projection_shared(x,weight,all_scales,at(prefix+".biases"),geometry.bits,
+                row_start,row_end,col_start,col_end,64,64,64,x.dtype());
+        } else output = mx::quantized_matmul(x, q, scales, biases, true,
+                                            geometry.group_size, geometry.bits,"affine");
     } else {
         require(!convrot(prefix) && !nvfp4(prefix),
                 "sliced projection supports dense or affine MLX weights: " + prefix);
