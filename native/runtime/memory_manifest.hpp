@@ -182,6 +182,7 @@ std::string memory_sha256_hex(std::string_view value);
 // Uses pread so callers' offsets are preserved. The caller must revalidate the
 // file generation after hashing before treating this as an artifact identity.
 std::string memory_sha256_fd(int fd, uint64_t bytes,
-                             const std::atomic<bool> *cancelled = nullptr);
+                             const std::atomic<bool> *cancelled = nullptr,
+                             const std::atomic<bool> *stopped = nullptr);
 
 } // namespace tc

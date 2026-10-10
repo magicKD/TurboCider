@@ -3,6 +3,7 @@
 #include "../../backends/ane_memory.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include <map>
+#include <iostream>
 
 namespace tc::qwen21 {
 
@@ -62,8 +63,8 @@ inline std::vector<ane::FfnWeight> gguf_ffn_sources(const Weights &weights,const
 
 inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem::path &path,
         Weights &weights,bool text,const Event &event,std::atomic<bool> &cancelled) {
+    const auto import_start=Clock::now();
     streaming::SourceFileIdentity source;source.logical_id="qwen21-component";source.path=path;
-    auto lease=streaming::SourceLease::capture_verified({source},&cancelled);
     auto result=std::make_unique<GgufComponent>();
     result->ledger=std::make_unique<MemoryLedger>(uint64_t(16)<<30);
     streaming::GgufKImportOptions options;options.enabled=true;options.floating_dtype=mx::float16;
@@ -73,13 +74,26 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
         options.decode_workers=uint32_t(value[0]-'0');
     }
     if(text)options.include_tensor=[](std::string_view key){return !key.starts_with("output.");};
-    result->bank=std::make_unique<streaming::GgufPackedBank>(lease,"qwen21-component",*result->ledger,
-        uint64_t(1)<<20,true,0,6,options);
-    const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
-    uint64_t growth=result->bank->metrics().planned_packed_capacity_bytes+(uint64_t(1)<<20);
-    const auto decision=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,growth);
-    require(decision.allowed(),"Qwen21 GGUF source admission declined: "+ane::memory_denial_reason(decision.denial,observed));
-    result->bank->load(weights,&cancelled,event);
+    const char *flag=std::getenv("TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP");
+    require(!flag || std::string_view(flag)=="0" || std::string_view(flag)=="1",
+            "Qwen GGUF verify/import overlap requires 0 or 1");
+    const bool overlap=flag && std::string_view(flag)=="1";
+    auto admission=[&](const streaming::GgufPackedBankMetrics &metrics) {
+        const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
+        const uint64_t growth=metrics.planned_packed_capacity_bytes+((overlap ? uint64_t(2) : uint64_t(1))<<20);
+        const auto decision=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,growth);
+        require(decision.allowed(),"Qwen21 GGUF source admission declined: "+ane::memory_denial_reason(decision.denial,observed));
+    };
+    if(overlap) {
+        streaming::PendingSourceVerification pending({source},&cancelled);
+        result->bank=streaming::GgufPackedBank::load_verifying(pending,"qwen21-component",*result->ledger,
+            weights,uint64_t(1)<<20,options,admission,&cancelled,event);
+    } else {
+        auto lease=streaming::SourceLease::capture_verified({source},&cancelled);
+        result->bank=std::make_unique<streaming::GgufPackedBank>(lease,"qwen21-component",*result->ledger,
+            uint64_t(1)<<20,true,0,6,options);
+        admission(result->bank->metrics());result->bank->load(weights,&cancelled,event);
+    }
     if(text) {
         weights.remap_keys(gguf_text_key);
         // Embedding stays packed too. Prompt assembly gathers only consumed
@@ -90,7 +104,17 @@ inline std::unique_ptr<GgufComponent> load_gguf_component(const std::filesystem:
             require(key.starts_with(p),"unsupported Qwen21 GGUF denoiser tensor namespace");return key.substr(p.size());
         });
     }
-    weights.materialize();result->bank->check_unchanged();return result;
+    weights.materialize();result->bank->check_unchanged();
+    if(overlap) {
+        const auto m=result->bank->metrics();
+        std::cerr<<"{\"qwen_gguf_verified_import\":{\"component\":\""<<(text ? "encoder" : "dit")
+            <<"\",\"source_sha256\":\""<<m.source_sha256<<"\",\"verification_bytes\":"<<m.verification_bytes
+            <<",\"verification_cache_hits\":"<<m.verification_cache_hits<<",\"cpu_verify_import_schedule\":true"
+            <<",\"verified_before_publication\":true,\"physical_overlap_proved\":false"
+            <<",\"verification_seconds\":"<<m.verification_seconds<<",\"import_wall_seconds\":"
+            <<std::chrono::duration<double>(Clock::now()-import_start).count()<<"}}\n";
+    }
+    return result;
 }
 
 } // namespace tc::qwen21

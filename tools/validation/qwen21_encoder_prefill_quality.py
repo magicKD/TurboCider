@@ -59,14 +59,19 @@ def main():
     parser.add_argument("--optimized", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--png-only", action="store_true", help="whole image diagnostic for matching no-dump performance screens")
+    parser.add_argument("--verified-import-overlap", action="store_true", help="same prefill recipe; compare serial/parallel import and require exact outputs")
     args = parser.parse_args()
     if args.output.exists() or args.output.is_symlink():
         parser.error("fresh quality evidence file required")
     roots = [args.baseline.resolve(strict=True), args.optimized.resolve(strict=True)]
     summaries = [json.loads((p / "summary.json").read_text()) for p in roots]
     a, b = summaries
+    profile_matched = ((a.get("encoder_prefill") is True and b.get("encoder_prefill") is True and
+                        a.get("verified_import_overlap") is False and b.get("verified_import_overlap") is True)
+                       if args.verified_import_overlap else
+                       (a.get("encoder_prefill") is False and b.get("encoder_prefill") is True))
     if (any(s["status"] != "complete_diagnostic" or s.get("dump_tensors") is not (not args.png_only) for s in summaries) or
-        a.get("encoder_prefill") is not False or b.get("encoder_prefill") is not True or
+        not profile_matched or
         any(a[k] != b[k] for k in ("steps", "phase", "shared_down", "decode_workers")) or
         any(b["source_identities"].get(k) != v for k, v in a["source_identities"].items())):
         raise ValueError("original runtime/source/protocol is not matched")
@@ -84,15 +89,20 @@ def main():
                     raise ValueError("same seed did not produce the same complete native initial noise")
                 if name == "text" and metrics["relative_l2"] >= .08:
                     raise ValueError("conditioning exceeds explicit8% screening budget")
+                if args.verified_import_overlap and (hashes[0] != hashes[1] or metrics["max_abs"] != 0):
+                    raise ValueError("parallel verification/import altered complete native tensor values")
                 row["tensors"][name] = dict(**metrics, baseline_sha256=hashes[0], optimized_sha256=hashes[1])
             paths = [p / f"{mode}-{index}.png" for p in roots]
             images = [np.asarray(Image.open(p).convert("RGB"), dtype=np.float64) / 255 for p in paths]
             row["png"] = dict(**difference(*images), baseline_sha256=sha256_file(paths[0]), optimized_sha256=sha256_file(paths[1]))
+            if args.verified_import_overlap and (row["png"]["baseline_sha256"] != row["png"]["optimized_sha256"] or row["png"]["max_abs"] != 0):
+                raise ValueError("parallel verification/import altered complete PNG")
             rows.append(row)
     report = dict(schema="tc-qwen21-encoder-prefill-quality-v1", status="complete_diagnostic", qualification_passed=False,
                   steps=a["steps"], samples=rows,
                   summaries={str(p / "summary.json"): sha256_file(p / "summary.json") for p in roots},
                   png_only=args.png_only,
+                  verified_import_overlap=args.verified_import_overlap,
                   scope=("all six matched native request pairs, complete RGB PNGs only; no tensor/semantic quality/physical placement certification" if args.png_only else
                          "all six matched native request pairs, complete tensors/RGB PNGs; identical initial noise, hidden8% screen; not semantic quality/physical placement certification"))
     args.output.write_text(json.dumps(report, indent=2) + "\n")

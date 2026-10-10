@@ -64,6 +64,18 @@ class NativeGGUFTests(unittest.TestCase):
         metadata += string('numbers') + struct.pack('<IIQ2I', 9, 4, 2, 4, 8)
         self.assertEqual(self.inspect(fixture([8], metadata, 4)).returncode, 0)
 
+    def test_directory_buffer_boundaries_large_string_and_skipped_array(self):
+        metadata = string('general.name') + struct.pack('<I', 8) + string('x' * 5003)
+        metadata += string('tokens') + struct.pack('<IIQ', 9, 8, 1203)
+        metadata += b''.join(string('symbol' * (1 + i % 19)) for i in range(1203))
+        data = fixture([8], metadata, 2)
+        self.assertEqual(self.inspect(data).returncode, 0)
+        # Remove the directory, not only an ignored payload tail. Cached
+        # windows must never hide an incomplete length/string/tensor table.
+        for boundary in (4095, 4096, 4097, 8191, 8192, 8193):
+            with self.subTest(boundary=boundary):
+                self.assertNotEqual(self.inspect(data[:boundary]).returncode, 0)
+
     def test_invalid_header_truncation_and_overflow(self):
         valid = fixture([8])
         invalid = [b'', b'nope', valid[:23], valid[:35],

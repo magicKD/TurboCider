@@ -168,6 +168,39 @@ int main(int argc, char **argv) {
         {source_file("large", large_path)});
     const auto large_sha = tc::memory_sha256_hex(large);
     assert(large_lease->file("large").content_digest == large_sha);
+    const auto pending_path=root/"pending.bin";
+    write_file(pending_path,large);
+    {
+        PendingSourceVerification pending({source_file("large",pending_path)});
+        const auto metadata=pending.metadata();
+        assert(!metadata->has_verified_content());
+        const auto finished=pending.finish();
+        assert(finished->has_verified_content() && finished->generation()==metadata->generation());
+        assert(finished->file("large").content_digest==large_sha && finished->verification_bytes_read()==large.size());
+        assert(!metadata->has_verified_content()); // The exposed metadata never becomes a proof.
+        assert(pending.verification_seconds()>0);
+        assert(SourceLease::capture_preverified({source_file("large",pending_path)})->artifact_digest()==finished->artifact_digest());
+    }
+    {
+        PendingSourceVerification pending({source_file("large",pending_path)});
+        const auto finished=pending.finish();
+        assert(finished->verification_bytes_read()==0 && finished->verification_cache_hits()==1);
+    }
+    {
+        PendingSourceVerification pending({source_file("large",pending_path)});
+        pending.cancel_and_drain();
+        assert(rejects([&]{pending.finish();},"cancelled"));
+    }
+    {
+        auto wrong=source_file("large",pending_path);wrong.content_digest=digest('f');
+        PendingSourceVerification pending({wrong});
+        assert(rejects([&]{pending.finish();},"digest mismatch"));
+    }
+    {
+        PendingSourceVerification pending({source_file("large",pending_path)});
+        write_file(pending_path,"replacement");
+        assert(rejects([&]{pending.finish();},"source"));
+    }
     // App worker stacks are small: the 1 MiB read buffer must stay on the heap.
     const auto large_fd = large_lease->duplicate_fd("large");
     struct HashWorker {

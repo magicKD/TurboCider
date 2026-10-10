@@ -1708,6 +1708,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"managed_peak_bytes":@(m.managed_peak_bytes),@"output_bytes":@(m.output_bytes),
             @"source_read_bytes":@(m.source_read_bytes),@"logical_source_bytes":@(m.logical_source_bytes),
             @"verification_bytes":@(m.verification_bytes),@"tensor_count":@(m.tensor_count),@"field_count":@(m.field_count),
+            @"verification_overlap_schedule":@(m.verification_overlap),@"verification_cache_hits":@(m.verification_cache_hits),
+            @"verification_seconds":@(m.verification_seconds),@"verified_import_seconds":@(m.verified_import_seconds),
             @"load_seconds":@(m.load_seconds),@"read_seconds":@(m.read_seconds),@"decode_seconds":@(m.decode_seconds),
             @"affine_decode_seconds":@(m.affine_decode_seconds),@"float_decode_seconds":@(m.float_decode_seconds),
             @"request_load_seconds":@(m.reused_packed_bank ? 0 : m.load_seconds),

@@ -108,8 +108,26 @@ class Reader {
         auto *output = static_cast<uint8_t *>(destination);
         uint64_t done = 0;
         while (done != bytes) {
+            const uint64_t position=start+done;
+            if(position>=window_start_ && position-window_start_<window_size_) {
+                const uint64_t n=std::min<uint64_t>(bytes-done,window_size_-(position-window_start_));
+                std::copy_n(window_.data()+size_t(position-window_start_),size_t(n),output+done);
+                done+=n;continue;
+            }
+            // Directory arrays can contain hundreds of thousands of short
+            // length fields. Bound read-ahead to one4KiB window, not a copy of
+            // the tokenizer/whole directory; original parse limits still apply.
+            if(bytes-done<window_.size()) {
+                window_start_=position;window_size_=0;
+                const uint64_t limit=std::min(bytes_,limits_.directory_bytes);
+                const size_t amount=size_t(std::min<uint64_t>(window_.size(),limit-position));
+                const ssize_t n=::pread(fd_,window_.data(),amount,off_t(position));
+                if(n<0 && errno==EINTR)continue;
+                check(n>0,"directory read failed or source changed");
+                window_size_=uint64_t(n);continue;
+            }
             const auto amount = std::min<uint64_t>(bytes - done, 1ull << 20);
-            const ssize_t n = ::pread(fd_, output + done, size_t(amount), off_t(start + done));
+            const ssize_t n = ::pread(fd_, output + done, size_t(amount), off_t(position));
             if (n < 0 && errno == EINTR) continue;
             check(n > 0, "directory read failed or source changed");
             done += uint64_t(n);
@@ -171,6 +189,8 @@ class Reader {
     }
     int fd_;
     uint64_t bytes_, cursor_ = 0, retained_ = 0;
+    std::array<uint8_t,4096> window_{};
+    uint64_t window_start_=0,window_size_=0;
     const ParseLimits &limits_;
 };
 } // namespace detail

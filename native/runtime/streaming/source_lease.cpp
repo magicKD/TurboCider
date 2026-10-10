@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <tuple>
+#include <thread>
 #include <unistd.h>
 
 namespace tc::streaming {
@@ -281,11 +282,32 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         state->indexes.emplace(file.logical_id, index);
         state->files.push_back({std::move(file), std::move(fd)});
     }
+    return seal_state(std::move(state), verify_content, allow_hash, cancelled);
+}
+
+std::shared_ptr<const SourceLease> SourceLease::verify_held_capture(
+        const SourceLease &captured, const std::atomic<bool> *cancelled,
+        const std::atomic<bool> *stopped) {
+    check_cancelled(cancelled);check_cancelled(stopped);
+    captured.revalidate_after_drain();
+    auto state=std::make_unique<State>();
+    state->generation=captured.generation();
+    for(const auto &entry:captured.state_->files) {
+        state->indexes.emplace(entry.identity.logical_id,state->files.size());
+        state->files.push_back({entry.identity,captured.duplicate_fd(entry.identity.logical_id)});
+    }
+    return seal_state(std::move(state),true,true,cancelled,stopped);
+}
+
+std::shared_ptr<const SourceLease> SourceLease::seal_state(
+        std::unique_ptr<State> state, bool verify_content, bool allow_hash,
+        const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped) {
+    check_cancelled(cancelled);check_cancelled(stopped);
     if (verify_content) {
         CanonicalEncoder artifact("tc-streaming-artifact-content-v1");
         artifact.begin_list("files", state->files.size());
         for (auto &entry : state->files) {
-            check_cancelled(cancelled);
+            check_cancelled(cancelled);check_cancelled(stopped);
             std::string verified;
             {
                 std::lock_guard lock(content_cache_mutex);
@@ -295,7 +317,7 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
             if (verified.empty()) {
                 if (!allow_hash) throw ArtifactVerificationRequired();
                 verified = memory_sha256_fd(entry.fd.get(), entry.identity.bytes,
-                                             cancelled);
+                                             cancelled,stopped);
                 state->verification_bytes_read += entry.identity.bytes;
             } else {
                 ++state->verification_cache_hits;
@@ -315,13 +337,13 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         state->descriptor.files.push_back(file.identity);
     state->descriptor.source_snapshot_digest =
         observed_digest(state->descriptor.files);
-    state->generation = allocate_generation();
+    if(!state->generation)state->generation = allocate_generation();
     auto result = std::shared_ptr<const SourceLease>(
         new SourceLease(std::move(state)));
     // Includes earlier files in a multi-artifact capture. Never publish hashes
     // if any held fd or named path changed while another artifact was read.
     result->revalidate_after_drain();
-    check_cancelled(cancelled);
+    check_cancelled(cancelled);check_cancelled(stopped);
     if (verify_content) {
         std::lock_guard lock(content_cache_mutex);
         for (const auto &entry : result->state_->files) {
@@ -330,6 +352,55 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         }
     }
     return result;
+}
+
+struct PendingSourceVerification::State {
+    std::shared_ptr<const SourceLease> metadata,verified;
+    const std::atomic<bool> *cancelled;
+    std::atomic<bool> stopped{false};
+    std::thread worker;
+    std::exception_ptr error;
+    double seconds=0;
+    const std::thread::id owner=std::this_thread::get_id();
+    explicit State(const std::atomic<bool> *cancel):cancelled(cancel) {}
+    void owner_check() const {
+        lease_require(owner==std::this_thread::get_id(),"pending verification owner violation");
+    }
+};
+PendingSourceVerification::PendingSourceVerification(std::vector<SourceFileIdentity> files,
+        const std::atomic<bool> *cancelled):state_(std::make_unique<State>(cancelled)) {
+    check_cancelled(cancelled);
+    state_->metadata=SourceLease::capture(std::move(files));
+    auto *state=state_.get();
+    state->worker=std::thread([state] {
+        const auto start=std::chrono::steady_clock::now();
+        try {state->verified=SourceLease::verify_held_capture(*state->metadata,state->cancelled,&state->stopped);}
+        catch(...) {state->error=std::current_exception();}
+        state->seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
+    });
+}
+PendingSourceVerification::~PendingSourceVerification() {cancel_and_drain();}
+std::shared_ptr<const SourceLease> PendingSourceVerification::metadata() const {
+    state_->owner_check();return state_->metadata;
+}
+std::shared_ptr<const SourceLease> PendingSourceVerification::finish() {
+    state_->owner_check();
+    if(state_->worker.joinable())state_->worker.join();
+    check_cancelled(state_->cancelled);check_cancelled(&state_->stopped);
+    if(state_->error)std::rethrow_exception(state_->error);
+    lease_require(state_->verified && state_->verified->has_verified_content(),"pending verification produced no native proof");
+    state_->verified->revalidate_after_drain();
+    return state_->verified;
+}
+void PendingSourceVerification::cancel_and_drain() noexcept {
+    if(!state_)return;
+    state_->stopped.store(true,std::memory_order_release);
+    if(state_->worker.joinable())state_->worker.join();
+}
+double PendingSourceVerification::verification_seconds() const {
+    state_->owner_check();
+    lease_require(!state_->worker.joinable(),"pending verification timing before drain");
+    return state_->seconds;
 }
 
 std::shared_ptr<const SourceLease> SourceLease::open_and_verify(

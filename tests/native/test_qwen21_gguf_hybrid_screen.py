@@ -5,7 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from qwen21_gguf_hybrid_screen import validate_receipts
+from qwen21_gguf_hybrid_screen import validate_receipts, validate_verified_imports
 
 
 def receipts(channels=4096, steps=40):
@@ -38,6 +38,22 @@ def receipts(channels=4096, steps=40):
 
 
 class MixedKHybridScreenTests(unittest.TestCase):
+    def test_original_whole_file_verified_before_candidate_publication(self):
+        records = [dict(component=k, source_sha256="a" * 64, verification_bytes=1057,
+                        verification_cache_hits=0, cpu_verify_import_schedule=True, verified_before_publication=True,
+                        physical_overlap_proved=False, verification_seconds=.1, import_wall_seconds=.2)
+                   for k in ("encoder", "dit")]
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        validate_verified_imports(records, expected)
+        for key, value in (("verification_bytes", 0), ("verification_cache_hits", 1),
+                           ("verified_before_publication", False), ("physical_overlap_proved", True),
+                           ("cpu_verify_import_schedule", 1), ("verification_seconds", float("nan"))):
+            invalid = copy.deepcopy(records);invalid[0][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                validate_verified_imports(invalid, expected)
+        with self.assertRaises(ValueError):
+            validate_verified_imports(records[:1], expected)
+
     def test_encoder_prefill_actual_fusions_and_processor_reuse(self):
         rows = receipts()
         for index, row in enumerate(rows):

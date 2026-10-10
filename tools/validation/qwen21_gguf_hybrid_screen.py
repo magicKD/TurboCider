@@ -84,6 +84,21 @@ def validate_receipts(rows, channels, steps=40, phase="all", encoder_prefill=Fal
             raise ValueError("native hybrid failed, retried, fell back or performed different work")
 
 
+def validate_verified_imports(records, expected):
+    if len(records) != 2 or {r.get("component") for r in records} != {"encoder", "dit"}:
+        raise ValueError("one actual encoder/DiT import proof per fresh process required")
+    for record in records:
+        digest, size = expected[record["component"]]
+        if (record.get("source_sha256") != digest or counter(record, "verification_bytes") != size or
+            counter(record, "verification_cache_hits") != 0 or record.get("cpu_verify_import_schedule") is not True or
+            record.get("verified_before_publication") is not True or record.get("physical_overlap_proved") is not False):
+            raise ValueError("original native whole-file proof/publication schedule changed")
+        for key in ("verification_seconds", "import_wall_seconds"):
+            value = record.get(key)
+            if type(value) not in (float, int) or not math.isfinite(value) or value <= 0:
+                raise ValueError("invalid actual verification/import span")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", type=Path, required=True)
@@ -97,6 +112,7 @@ def main():
                         help="same bounded CPU import schedule on all arms; no GPU/ANE overlap claim")
     parser.add_argument("--encoder-prefill", action="store_true", help="explicit GPU prefill packed fusions and verified processor reuse")
     parser.add_argument("--dump-tensors", action="store_true", help="explicit matching numerical evidence; not a no-dump performance trial")
+    parser.add_argument("--verified-import-overlap", action="store_true", help="CPU native full-SHA/import candidates; proof required before publication")
     parser.add_argument("--order", help="gpu,a4096,a5120 or exact reverse/subset")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -123,7 +139,7 @@ def main():
     summary = dict(schema="tc-qwen21-gguf-hybrid-screen-v1", status="running", qualification_passed=False,
                    source_identities=identities, steps=args.steps, phase=args.phase, shared_down=args.shared_down,
                    decode_workers=args.decode_workers, encoder_prefill=args.encoder_prefill,
-                   dump_tensors=args.dump_tensors, order=order, trials=[])
+                   dump_tensors=args.dump_tensors, verified_import_overlap=args.verified_import_overlap, order=order, trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
@@ -133,6 +149,7 @@ def main():
         env["TURBOCIDER_QWEN21_GGUF_SHARED_DOWN"] = "1" if args.shared_down else "0"
         env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"] = str(args.decode_workers)
         env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if args.encoder_prefill else "0"
+        env["TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP"] = "1" if args.verified_import_overlap else "0"
         if channels:
             env.update(TURBOCIDER_ANE_BACKEND="private", TURBOCIDER_ALLOW_PRIVATE_ANE="1",
                        TURBOCIDER_PRIVATE_ANE_CHANNELS=str(channels), TURBOCIDER_PRIVATE_ANE_DATA_PATH="w8a8",
@@ -161,11 +178,19 @@ def main():
                                  timeout=900, interval_ms=100, max_gap_ms=500)
         rows = [json.loads(line) for line in (args.output / f"{mode}.stdout.jsonl").read_text().splitlines()]
         validate_receipts(rows, channels, args.steps, args.phase, args.encoder_prefill)
+        imports = []
+        if args.verified_import_overlap:
+            for line in (args.output / f"{mode}.stderr.txt").read_text().splitlines():
+                if line.startswith('{"qwen_gguf_verified_import":'):
+                    imports.append(json.loads(line)["qwen_gguf_verified_import"])
+            validate_verified_imports(imports, dict(dit=(identities[str(inputs[3])], inputs[3].stat().st_size),
+                                                    encoder=(identities[str(inputs[4])], inputs[4].stat().st_size)))
         if args.encoder_prefill and any(r["qwen_encoder_prefill"]["processor_sha256"] != identities[str(inputs[-1])] for r in rows):
             raise ValueError("actual processor proof differs from original source")
         if any(sha256_file(p) != identities[str(p)] for p in inputs):
             raise ValueError("model/runtime source changed during screen")
         trial = dict(mode=mode, channels=channels, timings=[r["timings_seconds"] for r in rows], memory=memory,
+                     verified_imports=imports,
                      warm_medians={k: statistics.median(r["timings_seconds"][k] for r in rows[1:])
                                    for k in ("request_wall", "text_encode", "denoise")},
                      png_sha256=[sha256_file(args.output / f"{mode}-{i}.png") for i in range(3)])

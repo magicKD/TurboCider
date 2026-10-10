@@ -11,6 +11,8 @@
 
 namespace tc::streaming {
 
+class PendingSourceVerification;
+
 class ArtifactVerificationRequired final : public std::invalid_argument {
   public:
     ArtifactVerificationRequired()
@@ -138,11 +140,37 @@ class SourceLease final {
     size_t file_count() const noexcept;
 
   private:
+    friend class PendingSourceVerification;
     struct State;
     static std::shared_ptr<const SourceLease> capture_impl(
         std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
         const std::atomic<bool> *cancelled);
+    static std::shared_ptr<const SourceLease> seal_state(
+        std::unique_ptr<State>, bool verify_content, bool allow_hash,
+        const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped = nullptr);
+    static std::shared_ptr<const SourceLease> verify_held_capture(
+        const SourceLease &, const std::atomic<bool> *cancelled,
+        const std::atomic<bool> *stopped);
     explicit SourceLease(std::unique_ptr<State> state);
+    std::unique_ptr<State> state_;
+};
+
+// One native full-hash worker over the original held descriptors. metadata()
+// never grants content trust: only finish() returns a verified immutable lease.
+// The owner must drain the worker before destroying candidate import buffers.
+class PendingSourceVerification final {
+  public:
+    PendingSourceVerification(std::vector<SourceFileIdentity>,
+                              const std::atomic<bool> *cancelled = nullptr);
+    ~PendingSourceVerification();
+    PendingSourceVerification(const PendingSourceVerification &) = delete;
+    PendingSourceVerification &operator=(const PendingSourceVerification &) = delete;
+    std::shared_ptr<const SourceLease> metadata() const;
+    std::shared_ptr<const SourceLease> finish();
+    void cancel_and_drain() noexcept;
+    double verification_seconds() const;
+  private:
+    struct State;
     std::unique_ptr<State> state_;
 };
 

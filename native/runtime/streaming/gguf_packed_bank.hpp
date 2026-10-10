@@ -36,6 +36,14 @@ class GgufPackedBank final {
     GgufPackedBank &operator=(const GgufPackedBank &) = delete;
     const gguf::Directory &directory() const;
     void load(Weights &, const std::atomic<bool> *cancel = nullptr, const Event & = {});
+    // CPU candidate import may overlap a native hash worker. No dictionary,
+    // bank or native proof is returned until BOTH tasks finish and all held-fd
+    // generations pass. Ordinary metadata-only construction still fails.
+    static std::unique_ptr<GgufPackedBank> load_verifying(
+        PendingSourceVerification &, std::string logical_id, MemoryLedger &, Weights &,
+        uint64_t read_buffer_bytes, GgufKImportOptions,
+        const std::function<void(const GgufPackedBankMetrics &)> &admit,
+        const std::atomic<bool> *cancel = nullptr, const Event & = {});
     void check_unchanged() const;
     GgufPackedBankMetrics metrics() const;
     struct RawMatrix {
@@ -48,6 +56,12 @@ class GgufPackedBank final {
     RawMatrix raw_matrix(const std::string &,const std::atomic<bool> *cancel=nullptr);
     void clear_raw_window();
   private:
+    enum class ProofMode { Required, PendingNative };
+    GgufPackedBank(std::shared_ptr<const SourceLease>, std::string logical_id, MemoryLedger &,
+                  uint64_t read_buffer_bytes, bool fused_affine, uint64_t raw_window_bytes,
+                  uint32_t raw_window_entries, GgufKImportOptions, ProofMode);
+    void load_candidate(Weights &, const std::atomic<bool> *, const Event &,
+                        const std::function<void()> &before_publication);
     struct State;
     std::unique_ptr<State> state_;
 };

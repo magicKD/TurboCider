@@ -106,6 +106,62 @@ int main(int argc,char **argv) {
             GgufKImportOptions options;options.enabled=true;options.floating_dtype=dtype;
             GgufPackedBank serial_bank(mixed_source,"weights",serial_budget,16384,true,0,6,options);
             serial_bank.load(serial);
+            {
+                // Own a fresh inode so the native worker actually hashes all
+                // original bytes. No serialized/cached expectation is proof.
+                const auto fresh=std::filesystem::path(argv[6]).parent_path()/"async-mixed.gguf";
+                std::filesystem::copy_file(argv[6],fresh,std::filesystem::copy_options::overwrite_existing);
+                SourceFileIdentity identity;identity.logical_id="weights";identity.path=fresh;
+                identity.content_digest=mixed_source->file("weights").content_digest;
+                PendingSourceVerification pending({identity});
+                MemoryLedger candidate_budget(32ull<<20);Weights candidate;
+                auto parallel_options=options;parallel_options.decode_workers=8;
+                auto imported=GgufPackedBank::load_verifying(pending,"weights",candidate_budget,candidate,16384,
+                    parallel_options,[](const GgufPackedBankMetrics &m){ensure(m.plan_digest.empty(),"candidate exposed a verified plan before hash join");});
+                const auto m=imported->metrics();
+                ensure(m.verification_overlap && m.verification_bytes==std::filesystem::file_size(fresh) &&
+                    m.verification_cache_hits==0 && m.verification_seconds>0 && m.verified_import_seconds>0 &&
+                    m.source_sha256==identity.content_digest,"actual full native verification/import receipt missing");
+                MemoryLedger matched_budget(32ull<<20);Weights matched;
+                GgufPackedBank matched_bank(lease(fresh.c_str()),"weights",matched_budget,16384,true,0,6,parallel_options);
+                matched_bank.load(matched);
+                ensure(m.plan_digest==matched_bank.metrics().plan_digest,"overlap altered final verified source/layout/worker identity");
+                for(const auto &key:serial.sorted_keys()) {
+                    const auto &a=candidate.at(key),&b=serial.at(key);
+                    ensure(a.shape()==b.shape() && a.dtype()==b.dtype() &&
+                        std::memcmp(a.data<std::byte>(),b.data<std::byte>(),a.nbytes())==0,"verify/import changed original packed field bits");
+                }
+                auto escaped=linear(mx::ones({3,512},mx::float16),candidate,"q6k");
+                imported.reset();candidate.clear();ensure(candidate_budget.snapshot().storage_bytes>0,"verifying bank lost lazy reader claim");
+                mx::eval(escaped);escaped=mx::zeros({1});mx::synchronize();
+                ensure(!candidate_budget.snapshot().storage_bytes,"verifying bank retained candidate claims");
+                matched.clear();mx::synchronize();
+                for(int fault=0;fault<5;++fault) {
+                    PendingSourceVerification rejected({identity});MemoryLedger failed_budget(32ull<<20);Weights untouched;
+                    std::atomic<bool> cancel{false};
+                    rejects([&]{GgufPackedBank::load_verifying(rejected,"weights",failed_budget,untouched,16384,
+                        parallel_options,[&](const GgufPackedBankMetrics &){if(fault==0)throw std::invalid_argument("admission denied");},
+                        &cancel,[&](const std::string &,int current,int total) {
+                            ensure(untouched.sorted_keys().empty(),"candidate weights published before all proof/parse checks");
+                            if(fault==1)cancel.store(true);
+                            if(fault==4 && current==total)cancel.store(true);
+                            if(fault==2) {
+                                const int fd=::open(fresh.c_str(),O_WRONLY|O_CLOEXEC);ensure(fd>=0,"owned async mutation open failed");
+                                ensure(::ftruncate(fd,0)==0,"owned async mutation failed");::close(fd);
+                            }
+                            if(fault==3)throw std::runtime_error("owned event failure");
+                        });});
+                    ensure(untouched.sorted_keys().empty() && !failed_budget.snapshot().storage_bytes &&
+                        !failed_budget.snapshot().reserved_bytes,"verify/import failure published output or leaked candidate backing");
+                    if(fault==2)std::filesystem::copy_file(argv[6],fresh,std::filesystem::copy_options::overwrite_existing);
+                }
+                SourceFileIdentity bad;bad.logical_id="weights";bad.path=argv[7];
+                PendingSourceVerification nonfinite({bad});MemoryLedger failed_budget(32ull<<20);Weights untouched;
+                rejects([&]{GgufPackedBank::load_verifying(nonfinite,"weights",failed_budget,untouched,16384,
+                    parallel_options,[](const GgufPackedBankMetrics &){});});
+                ensure(untouched.sorted_keys().empty() && !failed_budget.snapshot().storage_bytes,
+                    "concurrent nonfinite source published output or retained candidate backing");
+            }
             for(uint32_t workers:{2u,3u,4u,8u}) {
                 options.decode_workers=workers;
                 MemoryLedger budget(32ull<<20);Weights concurrent;
