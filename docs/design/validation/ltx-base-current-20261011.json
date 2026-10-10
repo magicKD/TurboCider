@@ -1,0 +1,2078 @@
+{
+  "schema": "tc-ltx-base-current-validation-v1",
+  "status": "complete_diagnostic",
+  "date": "2026-10-11",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "hardware": "M4 Max64 GiB/macOS26.6.2",
+  "sweeps": [
+    {
+      "evidence": "outputs/ltx-base-current-v2-three-20261011/summary.json",
+      "evidence_sha256": "6371937a705e81bb4961235b8eac7a552c855a98c2c3896f3a86b07cdd7ccc9b",
+      "order": [
+        "gpu",
+        "int8",
+        "fp16"
+      ],
+      "trials": [
+        {
+          "mode": "gpu",
+          "rows": [
+            {
+              "index": 0,
+              "timings_seconds": {
+                "audio_decode": 0.597114083,
+                "audio_mux": 0.045324709,
+                "conditioning_and_rng": 3.677867459,
+                "latent_upsample": 0.384499792,
+                "model_load": 4.476048,
+                "pre_model_load": 2.020746541,
+                "request_wall": 72.19562925,
+                "rgb_convert": 0.011142125,
+                "stage1": 24.753117958,
+                "stage2": 30.163054041,
+                "video_export": 0.16561775,
+                "video_vae_decode": 5.900639917
+              },
+              "conditioning_cache_hit": false,
+              "execution": "gpu",
+              "gpu_parallel_av": true,
+              "gpu_batch_audio_commands": true,
+              "ane_profile": null,
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu",
+                "allow_approximation": false,
+                "output": "outputs/ltx-base-current-v2-three-20261011/0-gpu/0.mp4"
+              },
+              "media": {
+                "sha256": "ae24addc43b0e52669080d461519769a74d0527f01cceb3932d344e58f3764ee",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            },
+            {
+              "index": 1,
+              "timings_seconds": {
+                "audio_decode": 0.583997458,
+                "audio_mux": 0.033484292,
+                "conditioning_and_rng": 0.000617333,
+                "latent_upsample": 0.216947208,
+                "model_load": 3.787377917,
+                "pre_model_load": 0.162287833,
+                "request_wall": 64.192436708,
+                "rgb_convert": 0.008920958,
+                "stage1": 23.480313625,
+                "stage2": 30.0911775,
+                "video_export": 0.077473167,
+                "video_vae_decode": 5.749386917
+              },
+              "conditioning_cache_hit": true,
+              "execution": "gpu",
+              "gpu_parallel_av": true,
+              "gpu_batch_audio_commands": true,
+              "ane_profile": null,
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu",
+                "allow_approximation": false,
+                "output": "outputs/ltx-base-current-v2-three-20261011/0-gpu/1.mp4"
+              },
+              "media": {
+                "sha256": "e225c807ce09074ab6e5d8df34955ece51e7cd588e557af5b723c8a66d909bf2",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            }
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 50579630792,
+            "compression_bytes": 22912843776,
+            "decompression_bytes": 15952642048,
+            "swap_in_bytes": 16580608,
+            "swap_out_bytes": 0
+          },
+          "memory_evidence_sha256": "f2cd977f6ac52c913ae5958b25142f11f37368b5c3f89d774b1dd30d5d598a5a",
+          "memory_report_sha256": "aa2ff4996c0c7fa1cc806596d7adfe434cb06d2cf6f213ca7dcb4a13a214c681"
+        },
+        {
+          "mode": "int8",
+          "rows": [
+            {
+              "index": 0,
+              "timings_seconds": {
+                "audio_decode": 0.592578958,
+                "audio_mux": 0.045112625,
+                "conditioning_and_rng": 3.53556675,
+                "latent_upsample": 0.36956325,
+                "model_load": 23.374688292,
+                "pre_model_load": 3.132243083,
+                "request_wall": 87.101623042,
+                "rgb_convert": 0.011287,
+                "stage1": 22.964113708,
+                "stage2": 26.983393209,
+                "video_export": 0.166564875,
+                "video_vae_decode": 5.926052583
+              },
+              "conditioning_cache_hit": false,
+              "execution": "gpu_ane",
+              "gpu_parallel_av": false,
+              "gpu_batch_audio_commands": false,
+              "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu_ane",
+                "allow_approximation": true,
+                "output": "outputs/ltx-base-current-v2-three-20261011/1-int8/0.mp4",
+                "ane_manifest": "outputs/ltx-base-current-v2-three-20261011/int8-profile.json"
+              },
+              "media": {
+                "sha256": "010c9b1bbcbd257b71dc6d4edef2f6ce021c977073c5127e2ba0bdbe8ad06a3d",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            },
+            {
+              "index": 1,
+              "timings_seconds": {
+                "audio_decode": 0.582972541,
+                "audio_mux": 0.035612292,
+                "conditioning_and_rng": 0.000592292,
+                "latent_upsample": 0.361586666,
+                "model_load": 8.954670041,
+                "pre_model_load": 0.168113459,
+                "request_wall": 64.103796125,
+                "rgb_convert": 0.008564209,
+                "stage1": 21.318018167,
+                "stage2": 26.671878792,
+                "video_export": 0.08257625,
+                "video_vae_decode": 5.918687833
+              },
+              "conditioning_cache_hit": true,
+              "execution": "gpu_ane",
+              "gpu_parallel_av": false,
+              "gpu_batch_audio_commands": false,
+              "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu_ane",
+                "allow_approximation": true,
+                "output": "outputs/ltx-base-current-v2-three-20261011/1-int8/1.mp4",
+                "ane_manifest": "outputs/ltx-base-current-v2-three-20261011/int8-profile.json"
+              },
+              "media": {
+                "sha256": "c7273b90e99815f442f0c815173bc54cace718b60832227e56b65385638f4cbf",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            }
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 50584087216,
+            "compression_bytes": 29268885504,
+            "decompression_bytes": 15517990912,
+            "swap_in_bytes": 393216,
+            "swap_out_bytes": 0
+          },
+          "memory_evidence_sha256": "f2b56fac578d793942ef1c8aecb512cbc76f2a5193496342551014cb8da447d6",
+          "memory_report_sha256": "39448a3b79e0265acdc9ec8358dfbef01cdbd9264b03ca0424c373eddfec64aa"
+        },
+        {
+          "mode": "fp16",
+          "rows": [
+            {
+              "index": 0,
+              "timings_seconds": {
+                "audio_decode": 0.668175125,
+                "audio_mux": 0.045676625,
+                "conditioning_and_rng": 3.696283167,
+                "latent_upsample": 0.395379666,
+                "model_load": 38.454524333,
+                "pre_model_load": 3.175587459,
+                "request_wall": 115.819748209,
+                "rgb_convert": 0.012065458,
+                "stage1": 27.854987,
+                "stage2": 35.052427334,
+                "video_export": 0.189357834,
+                "video_vae_decode": 6.274868208
+              },
+              "conditioning_cache_hit": false,
+              "execution": "gpu_ane",
+              "gpu_parallel_av": false,
+              "gpu_batch_audio_commands": false,
+              "ane_profile": "39d85d62bcc8f177e5a4af6e4e1be61face1ea7d1d211f76e31490aa009a97a0:fp16:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu_ane",
+                "allow_approximation": true,
+                "output": "outputs/ltx-base-current-v2-three-20261011/2-fp16/0.mp4",
+                "ane_manifest": "outputs/ltx-base-current-v2-three-20261011/fp16-profile.json"
+              },
+              "media": {
+                "sha256": "613d0a5a5dd2577d642b502489fafd9504c77e0d7a182c13b0d3128763ff43c5",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            },
+            {
+              "index": 1,
+              "timings_seconds": {
+                "audio_decode": 0.585005416,
+                "audio_mux": 0.034701042,
+                "conditioning_and_rng": 0.000628333,
+                "latent_upsample": 0.43250925,
+                "model_load": 10.032461958,
+                "pre_model_load": 0.175410167,
+                "request_wall": 78.114022625,
+                "rgb_convert": 0.011389,
+                "stage1": 26.19286025,
+                "stage2": 34.672676834,
+                "video_export": 0.081776709,
+                "video_vae_decode": 5.894196791
+              },
+              "conditioning_cache_hit": true,
+              "execution": "gpu_ane",
+              "gpu_parallel_av": false,
+              "gpu_batch_audio_commands": false,
+              "ane_profile": "39d85d62bcc8f177e5a4af6e4e1be61face1ea7d1d211f76e31490aa009a97a0:fp16:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu_ane",
+                "allow_approximation": true,
+                "output": "outputs/ltx-base-current-v2-three-20261011/2-fp16/1.mp4",
+                "ane_manifest": "outputs/ltx-base-current-v2-three-20261011/fp16-profile.json"
+              },
+              "media": {
+                "sha256": "7b846f7a03467609c703175b4eb521f9c63240b53fdcb4e9bd0df3d2e97683f3",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            }
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 50618034864,
+            "compression_bytes": 43388551168,
+            "decompression_bytes": 19206062080,
+            "swap_in_bytes": 23216128,
+            "swap_out_bytes": 56164352
+          },
+          "memory_evidence_sha256": "00d31262bc1584e54ef73cffef0f8996ee56155c12dadd0933ccfadf1006e072",
+          "memory_report_sha256": "8b6c62b437d3c9db3df9fd0e8d52da4b3dde348a79fee7909754fccfbced24c7"
+        }
+      ]
+    },
+    {
+      "evidence": "outputs/ltx-base-current-v3-reverse-20261011/summary.json",
+      "evidence_sha256": "691781b7400822bb434d806fe5f0cb820757c0d45a9d819836c4a14de37f186f",
+      "order": [
+        "int8",
+        "gpu"
+      ],
+      "trials": [
+        {
+          "mode": "int8",
+          "rows": [
+            {
+              "index": 0,
+              "timings_seconds": {
+                "audio_decode": 0.593537166,
+                "audio_mux": 0.046878417,
+                "conditioning_and_rng": 4.633563375,
+                "latent_upsample": 0.386761208,
+                "model_load": 10.542956625,
+                "pre_model_load": 2.008804292,
+                "request_wall": 75.202053958,
+                "rgb_convert": 0.011284542,
+                "stage1": 24.0101835,
+                "stage2": 26.869615417,
+                "video_export": 0.170717167,
+                "video_vae_decode": 5.927288666
+              },
+              "conditioning_cache_hit": false,
+              "execution": "gpu_ane",
+              "gpu_parallel_av": false,
+              "gpu_batch_audio_commands": false,
+              "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu_ane",
+                "allow_approximation": true,
+                "output": "outputs/ltx-base-current-v3-reverse-20261011/0-int8/0.mp4",
+                "ane_manifest": "outputs/ltx-base-current-v3-reverse-20261011/int8-profile.json"
+              },
+              "media": {
+                "sha256": "d85e25847eaa9a25f63514f0330e325e770c63922398ecea15609b04cb072e9f",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            },
+            {
+              "index": 1,
+              "timings_seconds": {
+                "audio_decode": 0.582462709,
+                "audio_mux": 0.034947458,
+                "conditioning_and_rng": 0.0006525,
+                "latent_upsample": 0.308074042,
+                "model_load": 8.336102708,
+                "pre_model_load": 0.165669084,
+                "request_wall": 63.046127875,
+                "rgb_convert": 0.009254834,
+                "stage1": 21.003877583,
+                "stage2": 26.730396583,
+                "video_export": 0.079469291,
+                "video_vae_decode": 5.794813375
+              },
+              "conditioning_cache_hit": true,
+              "execution": "gpu_ane",
+              "gpu_parallel_av": false,
+              "gpu_batch_audio_commands": false,
+              "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu_ane",
+                "allow_approximation": true,
+                "output": "outputs/ltx-base-current-v3-reverse-20261011/0-int8/1.mp4",
+                "ane_manifest": "outputs/ltx-base-current-v3-reverse-20261011/int8-profile.json"
+              },
+              "media": {
+                "sha256": "01c2c3bed9131d7a06a823fef2d821d775fb9e8d91e46267ea8fe766c5ff8139",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            }
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 50550680168,
+            "compression_bytes": 37602607104,
+            "decompression_bytes": 17444257792,
+            "swap_in_bytes": 837713920,
+            "swap_out_bytes": 2506948608
+          },
+          "memory_evidence_sha256": "60f0fb57817193e8b0b6c988e17c271d6d437f5f6e1b74fec342735d2d8e0ab4",
+          "memory_report_sha256": "635e5dc1e723f26cc1ee22ad88144718b0a6ea4aa687ea0661c479b10c5c2e64"
+        },
+        {
+          "mode": "gpu",
+          "rows": [
+            {
+              "index": 0,
+              "timings_seconds": {
+                "audio_decode": 0.5907135,
+                "audio_mux": 0.044241584,
+                "conditioning_and_rng": 3.500470875,
+                "latent_upsample": 0.370606834,
+                "model_load": 4.113439958,
+                "pre_model_load": 3.129767542,
+                "request_wall": 72.958291375,
+                "rgb_convert": 0.0112815,
+                "stage1": 24.901612708,
+                "stage2": 30.211314,
+                "video_export": 0.16711125,
+                "video_vae_decode": 5.917312166
+              },
+              "conditioning_cache_hit": false,
+              "execution": "gpu",
+              "gpu_parallel_av": true,
+              "gpu_batch_audio_commands": true,
+              "ane_profile": null,
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu",
+                "allow_approximation": false,
+                "output": "outputs/ltx-base-current-v3-reverse-20261011/1-gpu/0.mp4"
+              },
+              "media": {
+                "sha256": "ab7561334bdc19ec775a52320a64d06fb1ee6b0796441c50313d53369818a489",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            },
+            {
+              "index": 1,
+              "timings_seconds": {
+                "audio_decode": 0.580390834,
+                "audio_mux": 0.033633666,
+                "conditioning_and_rng": 0.000632583,
+                "latent_upsample": 0.215534167,
+                "model_load": 3.605371583,
+                "pre_model_load": 0.165199417,
+                "request_wall": 64.060235167,
+                "rgb_convert": 0.008738875,
+                "stage1": 23.50602975,
+                "stage2": 30.103220958,
+                "video_export": 0.079875375,
+                "video_vae_decode": 5.761138875
+              },
+              "conditioning_cache_hit": true,
+              "execution": "gpu",
+              "gpu_parallel_av": true,
+              "gpu_batch_audio_commands": true,
+              "ane_profile": null,
+              "video_vae_isolation": "process",
+              "request": {
+                "model": "ltx-2.5-distilled",
+                "operation": "video.generate",
+                "prompt": "A cinematic red fox running through a snowy forest",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": 24,
+                "steps": 11,
+                "seed": 42,
+                "audio": true,
+                "ltx_backend": "c_metal",
+                "ltx_fast_av": true,
+                "residency": "component_staged",
+                "execution": "gpu",
+                "allow_approximation": false,
+                "output": "outputs/ltx-base-current-v3-reverse-20261011/1-gpu/1.mp4"
+              },
+              "media": {
+                "sha256": "1a91dbef974fce82900869e886d9e88ec059be6fd076382b8d097d13c057b3ee",
+                "width": 704,
+                "height": 448,
+                "frames": 97,
+                "fps": "24/1",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "sample_rate": 48000,
+                "channels": 2,
+                "video_duration": "4.041667",
+                "audio_duration": "4.041667"
+              }
+            }
+          ],
+          "memory": {
+            "complete": true,
+            "tree_peak_phys_footprint_bytes": 50661272456,
+            "compression_bytes": 22753247232,
+            "decompression_bytes": 17293148160,
+            "swap_in_bytes": 24903680,
+            "swap_out_bytes": 0
+          },
+          "memory_evidence_sha256": "373b64741655ff6636f38e7eea9332da9770ce4736e83232f0dd7ebdf3152651",
+          "memory_report_sha256": "7ea585ea09c7079712c5901095a77c1317d977727b31942a94aa28f64aeec3ac"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "build/z-base-formats-v2-readonly-private/libturbocider.dylib": "dc4eaad2879985c3190d9c2a2d63ea5f23446432cdb88f2e4c837b46b89d4a12",
+    "build/z-base-formats-v2-readonly-private/ltx-video-vae-decode": "e1d6ec890c4f23d4d8e6d8bb5ec871d098fb6edd160e47040f1e8dc8bee08abd",
+    "build/z-base-formats-v2-readonly-private/turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+    "models/LTX-2.5/config.json": "8a2b961cd343473ad73915dbca041a1257aca86807e36c4922dec97337333568",
+    "models/LTX-2.5/connector.safetensors": "028792ba757f509fef60b364a72976a86990930f29757f616a29149150476243",
+    "models/LTX-2.5/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors": "c4279eeff115cbeaca494bd2183e7d768c38fe85a184dc6afbb7159157c44334",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/model-00001-of-00003.safetensors": "8df4b6af847f62d8766600b8f30997dc977cd3f89967e7661f5a706c04c19435",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/model-00002-of-00003.safetensors": "44c3d0b2309a0182c78f9cdb9f7077f6ce019b41cb6e6fae4afe2f72397e14c1",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/model-00003-of-00003.safetensors": "05a72ace62325e5947b012160e8c401dc8881b2755d2fe52348541942c038178",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/tokenizer.json": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+    "models/LTX-2.5/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors": "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8",
+    "models/LTX-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors": "09a89e084de1a149c3de60cfe9dfd3e5161967eb09eea39e806fcdeffdd568de",
+    "models/LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors": "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5",
+    "models/LTX-2.5/vae/ltx-2.5-video-vae-conv-bf16.safetensors": "685b06ee3d9b2039647698fc4ea33175112462fc374e2777312c907897dfce8d",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-0/manifest.json": "39f06fda86af5fb7234a7d80bca4c83310666a06633113142b089d102582d920",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-1/manifest.json": "09daea54b98a89b2c7a9df9d0f39004a452bb2e762a8e2ee8a7f3d810629c664",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-10/manifest.json": "1817ab91f3f570d0db9e3f1cb069c73fe11a2862fb84b20ef12e6ced1a948065",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-11/manifest.json": "4178ac0fdd22ff0cf5f68473c0cd4f05d075f8cf503a7df6d4f1b527bac42be0",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-12/manifest.json": "7dc6484d7a2625410976570974d89b0e8acfbd27c19e2917e54cff595c0f6b38",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-13/manifest.json": "82ffdec99d2fc7b7d14cca6d7da980f383079c328f200ff0d47097193f5e43de",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-14/manifest.json": "b58b0eab8a36cd4f8afcb984709f8c8cd2fa2f3b5764d694d3fdefa803a93560",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-15/manifest.json": "ca92f13dae34d1078ba3e7d33e5e1df511d3531861feb52cc57c7e501efdffbd",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-16/manifest.json": "8e38c4ea0e6b81fccdff4ddad649789235b91bd758c5538d8f2ac004c29e64af",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-17/manifest.json": "7aa8d45771f1cf0ecb9252f6026ddfbf6cf841830bced304e033906d5664a3cf",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-18/manifest.json": "8c139b5c478708507c9621d08c1a270a17ec8aca235a0a14c6b3845c34652a5e",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-19/manifest.json": "94b2abd2081485c5a0aba1e3b24b2e3e35c91968176f4a2a7cc0b1d3b864da6b",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-2/manifest.json": "127bcd0a8972d22b5a65ed7a6043e41cc8fc6ee833b8e75db91098edf26e5c72",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-20/manifest.json": "0168cc6b84281c0d6b5351bbc7cdec676dbdd3172476b2ff52f9218147d1b5bc",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-21/manifest.json": "1512bebf4392ecc098582875ceaa7f71a948926ce909449e97ed37b8169e7c2a",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-22/manifest.json": "528fa6591a7bc1d199c818527ca0964496bf4308aa7837f98dc111a19fcea095",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-23/manifest.json": "1f6415229536b070472da06e6eb74a45a4d6f007138baf9149f47f19bd356131",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-24/manifest.json": "4a7cd67db0a83de1499ee35659f5559e092bfaeb483b279e19ddc66ca98e39d3",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-25/manifest.json": "8bfe57c6b93a22883104e35025eab9a6031bdc89ed661cf60c562b76f315545b",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-26/manifest.json": "b740e4c6e184a74c2836e094c20545b05a9b53d83bd1f0177702d414b46b8cc3",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-27/manifest.json": "bce359fefb78c0ce34b2877e3b1517808eee21237cc5c9e7f1006e511f727e75",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-28/manifest.json": "5e813e6fe64c5185ff4214a9c5bb6e88545d3d54428c7548358c1038f02d457a",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-29/manifest.json": "a1b4cce0183ff45f01b233115aa62d1d4d144f5ad1a30d68ddd09c7714cf0e41",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-3/manifest.json": "1389a355f889f687e2ddb11dff5380ab5563e004849a97e66b1923709e8ed48a",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-30/manifest.json": "32dbca8a5e67adedebc883270e8f94f5a1a2db79541c60a50daf4da13b4fc5f4",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-31/manifest.json": "bf7edd8c561d04e927b2d6a679d50cdf1629700a4b5b7acf5c117cff188f53f7",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-32/manifest.json": "e6145d78c4684862508a958f1c66d454b1477a99b8ac270508a68f4855c5020e",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-33/manifest.json": "791bf434b4078c15ffc56eb1314076aa928e3488e0293d412ab7bdfda20cd3a4",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-34/manifest.json": "bf269e28359577d45d1a8609226f57696e19d2d5c8ca9613b21b778ebab60fce",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-35/manifest.json": "dc3891495c18466fbab22b28319364f8986013b672b43ba64918623e45306df5",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-36/manifest.json": "83861a45f3e0cc9796d752d714019d0587b18a18864a6adbdaf643a755431436",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-37/manifest.json": "cb2829c673287a9658f24b3aaf48aee3cdc1902c3b52ae383e6f084f3ad019a1",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-38/manifest.json": "e28447fe56a4a261f22ca346bd1d0a0818b6dbaa3208b82a28bd22a939671ebd",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-39/manifest.json": "8beea2aa065442d8facde573fdcd14d0b61ea968de03d62479c8cb4515fa6a7d",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-4/manifest.json": "dfb725eb020fe8bdbda04d0de8ad147d4992202038275472402dd439be6e41ac",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-40/manifest.json": "8c2063e109faf4df6092d81a325e59efc376c1f2a293ee5da86b75cb6f6e0d6e",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-41/manifest.json": "074671871c0b64dd73bdcd9ed1c352e0b125f2eb51bd24f16430fe00e679985f",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-42/manifest.json": "408475f093527016bf85d79619fcfb165d2e55a6c612d958ef70edff1ff16657",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-43/manifest.json": "ed201d3e8fbb4e38c724e30f0930e5488f9f59cd8e271a7164abad01e1af45fa",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-44/manifest.json": "a778f1b3c50d2d380d200b1c343c24f4d018f09df7c6fd6a24102a81ca8970b6",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-45/manifest.json": "5c33b9902dea01e4cd25df7651c8613bcd0908a1d85e01c1f86a89273bf7602d",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-46/manifest.json": "7202f0120af29d716de7bff5f7217a4ea15d8af6df6e78d9efc5b845b993f021",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-47/manifest.json": "b26bcda45f42a86c5a850845802708371f4cc1c4d8bda75b06e3f419efa2affa",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-5/manifest.json": "8d4e2b58a64b00207337177b0cb97ce0a6a8efa1101a011fcde1ff58b5ef1bba",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-6/manifest.json": "7683620d0c5290ac865e63d3334f22cfc4210e8382944ea433934b32db4d44b8",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-7/manifest.json": "e65a6445ed8790e3e12e2334f766b17513dbf6a307f78e0f44c21c4280178019",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-8/manifest.json": "c4c09ad703dfb7f3455b0bed6f9f0ec8e12f8d8f4242301311389bdfb81335ce",
+    "models/coreml/ltx_mlp_a6912_dual_fp16_20260913/block-9/manifest.json": "019411bfd2a7cf64a057019d7e197ec910570f6cb43873187df6553d76749514",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-0/manifest.json": "1c3a50e8a04810873ee0dcbb8a4229bfa782df8c8ac6b181be7f3107d8df266c",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-1/manifest.json": "2cf60e64f63018f1275f526cb7a9ac917c8bb74d2f2b85059b992ca5c4c1b965",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-10/manifest.json": "06a2c1bcfa41e77c312e2b5d2d4262fbdd6f6cc806596563f340fc64a05b624c",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-11/manifest.json": "d4c7b9635c9dd520ce45713d5c48e8679dae05658993d32a969dc484ac1aede6",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-12/manifest.json": "991979485b40a17439d96a848f8a084afc1722f39c5020fd8e29d82d369b2b6d",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-13/manifest.json": "55ba74c4e4a97ffbf5560776b5b778ff01a225ae6fb923cfa3b65e927ec96f32",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-14/manifest.json": "02fe33d8cafc2834efc94891b03aa8b334c1ba3493b31fa54b070261b1a66f6a",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-15/manifest.json": "122e808738f9bdc7a91b487a0e3d2f05e01804377c5b6bd3b1de8dc2fc95af00",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-16/manifest.json": "09166ee449e4ced4fcfada194d240fd147dcf55512696e0b79ce814108f8236e",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-17/manifest.json": "596734a3c186b697b2e92d1affc9c48787c28ed4f689f34500f59fdccf84e07c",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-18/manifest.json": "67db4595ab56da1002f7acc738a5f6374204d7e6e6f80df6aa8cc6a2302f886b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-19/manifest.json": "d4853be66e2277419687885fa3369d8c056b5a5b00987100a0f1a8f492681764",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-2/manifest.json": "de1310402bc9a917f8302e7dd583963ddf48308d6f36b4b0ce4f5a99bad9b860",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-20/manifest.json": "e68c2d81f30b33c31f4e456ea810ddd46a862c031bea07dfe01607a75f012d4e",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-21/manifest.json": "ddc27cddbb5e190b36a3de85f83c73c57de9f7b621e8c380580a592ba8a7f39b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-22/manifest.json": "6d6c605ef5fea14dd1c87f52323d450777e7113ba11d3accc7be91b1618fa592",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-23/manifest.json": "5652f4c493c99313fdb12d45f201d320e187bc89b382df17ac9624c43e5333a6",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-24/manifest.json": "7bf7c7281cbf854b5aade5ca18ac0f3d4c914874192a7aaf6b2a88d33c560537",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-25/manifest.json": "77e9d492707f259673fb5b6db51345e5d9a6103805e333e235cbcbf20ea8ee96",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-26/manifest.json": "0e7529a2c4a6f8cc2e90d4d46b71dde35df826e8e3b7948517b13c65f7e1cdf5",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-27/manifest.json": "db050773f1c25adafe98b6ccbbd7ce6350b2f831e17265514bb93db21f8e4a40",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-28/manifest.json": "d65e737431f4d24a127f222e4ed45fe941d7f7aeb3ea43f114c40cf7070de25f",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-29/manifest.json": "1bd33e21e0e2a07a3e1040e455eb2a56187bfa9d42f22f8ebfd5a04337da5bbe",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-3/manifest.json": "9e059e5a1beecf1c692b8405c773a77c1d1fa22de858f8e3ccc76938dfe480e7",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-30/manifest.json": "15e115bc101273e51131dd2b75b4bff0017abe198a03114de4a50269f5629768",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-31/manifest.json": "7a8d59ef064624b2f563684bca59ebc37d89ae3cc41cee8b614441f4f0e6df8b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-32/manifest.json": "b3d009847dcb5d547c2420254353f6eb791979d3bddfe7e6ed53250a52bc0e0e",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-33/manifest.json": "49aece6a4915d61899c75b17dc84d7628475c15299091563fdbf74422caf07a0",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-34/manifest.json": "13e7d83fbc371592640c0866a94250fcd20a327ca3cf55e61d67c17de1c3ce9b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-35/manifest.json": "f3ecac0b2dd43523ae074285f5f09c70e5915ee9b588e808c765a40fefa52262",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-36/manifest.json": "b385dd19774bd3330f32405ba9dfff800c50fddecba55209066d9d42b447d898",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-37/manifest.json": "538b49a67bfe8f186b936480bf3fcc1171ab0a8237fc66796e8dd2cc4aa9b4cf",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-38/manifest.json": "a1f17915a99d9ad88aa57583eea38d49ac332757977ecae0436a7d8982aaf583",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-39/manifest.json": "cc4c4eccca233932d7369f3f57563532159e0e5733978727dc276432aaa07c26",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-4/manifest.json": "871877756e04049c514c24185ab40b5d63f5cf89f5c07bbe4ab3a33269a9589b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-40/manifest.json": "3b716372accd8ad3d7e322f5b93569d227fd6ab50cb23ca7c6b93c6009d9ffa1",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-41/manifest.json": "d75396ceeb0355b43a8893d45a29688749da3ac36e5078be9f41d4947db1128f",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-42/manifest.json": "b75c1e63c6af8f185e6bd16723a0b1884c20dd1123d230d970199e65d5bf5bfd",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-43/manifest.json": "04e3ffdca7a52c519fc55c1cbce9a248b2e370c9780f5ba23dd39d35274d1c86",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-44/manifest.json": "176a3de20e12ba7fef6ce2772b64a3254f935b19495955b4e6db70b1b9f1657b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-45/manifest.json": "9bd7c7fbe770b05ac7cf12966e3c4f6e5de40fbc65a6c1b3c6e994bb49a66776",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-46/manifest.json": "528c01c3ec9373bb272e15207c152d6506b8625e4622dae9f32cd1e17c8bcbdf",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-47/manifest.json": "d5a0b7bc73686de30fdbb655dcad0ec769573918eac4eac16d9321201b4973f0",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-5/manifest.json": "02809ca12ca7f78946cbb9cfde88e6432b79f8b8c90d7dfa9ef5b83a6f9302ab",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-6/manifest.json": "351002f08fde65af0b2127a3483ebfa96bc488dde1eb058f181350f0f31a2c1f",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-7/manifest.json": "8a540c3b47808d0132bad71a994af8cb5530c217f3cb391e66da87c24c6a7335",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-8/manifest.json": "9822613aba8415f60185391cce42de65e67317c95f07f4c6e02d37f225e163e8",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-9/manifest.json": "e47d3e0e91b5effc2421083b0eae28bc087fdfa34244852a5b9e623a8e9a51a3",
+    "outputs/ltx-base-current-v2-three-20261011/fp16-profile.json": "39d85d62bcc8f177e5a4af6e4e1be61face1ea7d1d211f76e31490aa009a97a0",
+    "outputs/ltx-base-current-v2-three-20261011/int8-profile.json": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a"
+  },
+  "routes": [
+    {
+      "mode": "gpu",
+      "cold_seconds": [
+        72.19562925,
+        72.958291375
+      ],
+      "warm_seconds": [
+        64.192436708,
+        64.060235167
+      ],
+      "warm_median": 64.1263359375,
+      "physical_peaks": [
+        50579630792,
+        50661272456
+      ]
+    },
+    {
+      "mode": "int8",
+      "cold_seconds": [
+        87.101623042,
+        75.202053958
+      ],
+      "warm_seconds": [
+        64.103796125,
+        63.046127875
+      ],
+      "warm_median": 63.574962,
+      "physical_peaks": [
+        50584087216,
+        50550680168
+      ]
+    },
+    {
+      "mode": "fp16",
+      "cold_seconds": [
+        115.819748209
+      ],
+      "warm_seconds": [
+        78.114022625
+      ],
+      "warm_median": 78.114022625,
+      "physical_peaks": [
+        50618034864
+      ]
+    }
+  ],
+  "scope": "current original local distilled ConvRot base; 704x448x97/24fps/11 steps/stereo; configured C/Metal+CoreML artifact route, not physical ANE-residency/call-count trace",
+  "video_quality": {
+    "int8": {
+      "shape_equal": true,
+      "frame_count_equal": true,
+      "fps_equal": true,
+      "finite": true,
+      "reference": {
+        "width": 704,
+        "height": 448,
+        "fps": 24.0,
+        "declared_frames": 97,
+        "duration": 4.041667,
+        "decoded_frames": 97
+      },
+      "candidate": {
+        "width": 704,
+        "height": 448,
+        "fps": 24.0,
+        "declared_frames": 97,
+        "duration": 4.041667,
+        "decoded_frames": 97
+      },
+      "frame_count_compared": 97,
+      "frame_metrics": [
+        {
+          "correlation": 0.8993299080767028,
+          "cosine": 0.983817800307468,
+          "mae_255": 16.507072679924242,
+          "rmse_255": 32.56261645603225
+        },
+        {
+          "correlation": 0.8861362248891744,
+          "cosine": 0.9823751720048164,
+          "mae_255": 17.904350776176948,
+          "rmse_255": 34.196887489697396
+        },
+        {
+          "correlation": 0.8760858487842725,
+          "cosine": 0.9811292063158037,
+          "mae_255": 18.47904195413961,
+          "rmse_255": 35.74521631818814
+        },
+        {
+          "correlation": 0.8844402094597505,
+          "cosine": 0.982374035565208,
+          "mae_255": 18.288019353693183,
+          "rmse_255": 34.63812464493549
+        },
+        {
+          "correlation": 0.8466245047228209,
+          "cosine": 0.9762457064281448,
+          "mae_255": 20.342366536458332,
+          "rmse_255": 40.12992001878334
+        },
+        {
+          "correlation": 0.8352876005537643,
+          "cosine": 0.9747519716607355,
+          "mae_255": 20.898367745535715,
+          "rmse_255": 41.44733078601127
+        },
+        {
+          "correlation": 0.8435723002177179,
+          "cosine": 0.9764344232275183,
+          "mae_255": 20.85205606567911,
+          "rmse_255": 40.25910327387751
+        },
+        {
+          "correlation": 0.8513625786312209,
+          "cosine": 0.977665217899894,
+          "mae_255": 20.844215029761905,
+          "rmse_255": 39.287411815204194
+        },
+        {
+          "correlation": 0.8101439701117571,
+          "cosine": 0.9717975800263028,
+          "mae_255": 22.805713736133658,
+          "rmse_255": 44.24429300982281
+        },
+        {
+          "correlation": 0.836624621272797,
+          "cosine": 0.976339526176263,
+          "mae_255": 21.353197502367426,
+          "rmse_255": 40.5804198741562
+        },
+        {
+          "correlation": 0.8423761121507299,
+          "cosine": 0.9773215665042221,
+          "mae_255": 20.861477145900974,
+          "rmse_255": 39.75308291609863
+        },
+        {
+          "correlation": 0.8572163626251401,
+          "cosine": 0.9792173983056744,
+          "mae_255": 19.96297940340909,
+          "rmse_255": 37.97699088747764
+        },
+        {
+          "correlation": 0.8365497245450116,
+          "cosine": 0.9763100692206094,
+          "mae_255": 21.142168053300868,
+          "rmse_255": 40.485891091660505
+        },
+        {
+          "correlation": 0.8246696424749023,
+          "cosine": 0.9746820443760335,
+          "mae_255": 21.72364549512987,
+          "rmse_255": 41.73794940809561
+        },
+        {
+          "correlation": 0.8241518450572688,
+          "cosine": 0.9744387287112782,
+          "mae_255": 22.02285198525433,
+          "rmse_255": 41.82347113977735
+        },
+        {
+          "correlation": 0.8121067905403456,
+          "cosine": 0.9723385335573617,
+          "mae_255": 22.779815805938853,
+          "rmse_255": 43.27904347749975
+        },
+        {
+          "correlation": 0.8082754746407204,
+          "cosine": 0.9717259718157994,
+          "mae_255": 22.938141529694263,
+          "rmse_255": 43.545025993796266
+        },
+        {
+          "correlation": 0.8433017381336455,
+          "cosine": 0.9772257792144525,
+          "mae_255": 21.478824235660174,
+          "rmse_255": 39.09722782590679
+        },
+        {
+          "correlation": 0.8458848861254955,
+          "cosine": 0.9777895484235208,
+          "mae_255": 21.143078031994047,
+          "rmse_255": 38.62973126150338
+        },
+        {
+          "correlation": 0.8202258861999128,
+          "cosine": 0.9739013586568933,
+          "mae_255": 22.733109907670453,
+          "rmse_255": 41.65465134269887
+        },
+        {
+          "correlation": 0.8167607596311085,
+          "cosine": 0.9734858115503898,
+          "mae_255": 22.897550772794915,
+          "rmse_255": 41.95387450760189
+        },
+        {
+          "correlation": 0.8264222596630052,
+          "cosine": 0.9747015442412073,
+          "mae_255": 22.494316068046537,
+          "rmse_255": 40.81631678166978
+        },
+        {
+          "correlation": 0.8391328819016367,
+          "cosine": 0.9759250357527053,
+          "mae_255": 21.746701459347943,
+          "rmse_255": 39.61582990429483
+        },
+        {
+          "correlation": 0.833485764616436,
+          "cosine": 0.974090388982729,
+          "mae_255": 21.887044270833332,
+          "rmse_255": 40.75912953713561
+        },
+        {
+          "correlation": 0.8281199797415792,
+          "cosine": 0.9726636889140157,
+          "mae_255": 22.245202795251622,
+          "rmse_255": 41.46058074065135
+        },
+        {
+          "correlation": 0.8465394989298424,
+          "cosine": 0.9756601926284338,
+          "mae_255": 21.266124906994047,
+          "rmse_255": 39.0762882726781
+        },
+        {
+          "correlation": 0.855352827737001,
+          "cosine": 0.9774963704096172,
+          "mae_255": 20.694033668154763,
+          "rmse_255": 37.69767162489185
+        },
+        {
+          "correlation": 0.8661787711726173,
+          "cosine": 0.9792634244413306,
+          "mae_255": 19.94070764847132,
+          "rmse_255": 36.31301171104067
+        },
+        {
+          "correlation": 0.8668656449523388,
+          "cosine": 0.9792724301646409,
+          "mae_255": 19.945494284361473,
+          "rmse_255": 36.25993231643245
+        },
+        {
+          "correlation": 0.868162797862798,
+          "cosine": 0.9790396339539336,
+          "mae_255": 20.082707656926406,
+          "rmse_255": 36.31666193430124
+        },
+        {
+          "correlation": 0.8677751109906043,
+          "cosine": 0.9790872981369971,
+          "mae_255": 20.267210328733768,
+          "rmse_255": 36.33924166886697
+        },
+        {
+          "correlation": 0.8661050056757248,
+          "cosine": 0.9788708269820502,
+          "mae_255": 20.298610406520563,
+          "rmse_255": 36.50496517248467
+        },
+        {
+          "correlation": 0.8726629398378262,
+          "cosine": 0.980192719983889,
+          "mae_255": 19.761569729099026,
+          "rmse_255": 35.344607952863946
+        },
+        {
+          "correlation": 0.8755572789763947,
+          "cosine": 0.9807009221756059,
+          "mae_255": 19.73617276278409,
+          "rmse_255": 34.85299029814911
+        },
+        {
+          "correlation": 0.8716668757321806,
+          "cosine": 0.9800643362135905,
+          "mae_255": 20.132536652800326,
+          "rmse_255": 35.50505258178849
+        },
+        {
+          "correlation": 0.8630703307208429,
+          "cosine": 0.9787883298591282,
+          "mae_255": 20.58487744352002,
+          "rmse_255": 36.68465032349464
+        },
+        {
+          "correlation": 0.867731717122591,
+          "cosine": 0.9797531446000595,
+          "mae_255": 20.0626173143263,
+          "rmse_255": 35.937600858013
+        },
+        {
+          "correlation": 0.8673713049549844,
+          "cosine": 0.9797959701908894,
+          "mae_255": 19.85226532907197,
+          "rmse_255": 36.027479860777234
+        },
+        {
+          "correlation": 0.8646560283450195,
+          "cosine": 0.9790710584354769,
+          "mae_255": 20.091221929112553,
+          "rmse_255": 36.63282332265348
+        },
+        {
+          "correlation": 0.8627051490952657,
+          "cosine": 0.9784160530777531,
+          "mae_255": 20.398977568655305,
+          "rmse_255": 37.10586748632271
+        },
+        {
+          "correlation": 0.8576269944982426,
+          "cosine": 0.9771952902202568,
+          "mae_255": 20.824803207859848,
+          "rmse_255": 38.051315609282156
+        },
+        {
+          "correlation": 0.861837411957577,
+          "cosine": 0.9778892207650052,
+          "mae_255": 20.96508683373918,
+          "rmse_255": 37.48634218163938
+        },
+        {
+          "correlation": 0.8585453923833006,
+          "cosine": 0.9777417864455175,
+          "mae_255": 20.999855206642316,
+          "rmse_255": 37.9123076099127
+        },
+        {
+          "correlation": 0.8450037384996015,
+          "cosine": 0.9755010513422577,
+          "mae_255": 21.648983909970237,
+          "rmse_255": 39.83487392910021
+        },
+        {
+          "correlation": 0.8429497199442044,
+          "cosine": 0.9749310476892192,
+          "mae_255": 21.74612334280303,
+          "rmse_255": 40.265151263010175
+        },
+        {
+          "correlation": 0.8358723844231513,
+          "cosine": 0.9736964017143233,
+          "mae_255": 22.09424673633658,
+          "rmse_255": 41.29747387043189
+        },
+        {
+          "correlation": 0.8551503561092674,
+          "cosine": 0.9770756719761007,
+          "mae_255": 20.97521602746212,
+          "rmse_255": 38.76367521686143
+        },
+        {
+          "correlation": 0.8688217614969116,
+          "cosine": 0.9791955911921085,
+          "mae_255": 19.961461715367964,
+          "rmse_255": 36.99168054489156
+        },
+        {
+          "correlation": 0.86580434336429,
+          "cosine": 0.978602765053918,
+          "mae_255": 20.397564512310606,
+          "rmse_255": 37.454945173300274
+        },
+        {
+          "correlation": 0.8737179211515679,
+          "cosine": 0.9802123889214586,
+          "mae_255": 19.947120831642316,
+          "rmse_255": 36.114556707238926
+        },
+        {
+          "correlation": 0.866544393454803,
+          "cosine": 0.9795269263712297,
+          "mae_255": 20.388489033752705,
+          "rmse_255": 37.02701814790278
+        },
+        {
+          "correlation": 0.8675412708155997,
+          "cosine": 0.9795221058837179,
+          "mae_255": 20.439061020359848,
+          "rmse_255": 37.146064654866834
+        },
+        {
+          "correlation": 0.8756397725529108,
+          "cosine": 0.9809039899511032,
+          "mae_255": 19.979431945008116,
+          "rmse_255": 36.0849080588473
+        },
+        {
+          "correlation": 0.8692180478648047,
+          "cosine": 0.9799680375725761,
+          "mae_255": 20.33279749222132,
+          "rmse_255": 36.99773461014614
+        },
+        {
+          "correlation": 0.858336904938257,
+          "cosine": 0.9783269308163799,
+          "mae_255": 20.95691287878788,
+          "rmse_255": 38.536877124671776
+        },
+        {
+          "correlation": 0.8525662470105938,
+          "cosine": 0.9775363212348178,
+          "mae_255": 21.21161919135552,
+          "rmse_255": 39.31118293353681
+        },
+        {
+          "correlation": 0.8685144029696926,
+          "cosine": 0.9801893527249608,
+          "mae_255": 20.033831972064394,
+          "rmse_255": 37.065678505739534
+        },
+        {
+          "correlation": 0.8780799144845964,
+          "cosine": 0.9817743306490608,
+          "mae_255": 19.487487528747295,
+          "rmse_255": 35.555710660367694
+        },
+        {
+          "correlation": 0.873919035197112,
+          "cosine": 0.9813433925307742,
+          "mae_255": 19.669549851190474,
+          "rmse_255": 36.01580308092342
+        },
+        {
+          "correlation": 0.8714111144051494,
+          "cosine": 0.9809173353263938,
+          "mae_255": 19.838036475243506,
+          "rmse_255": 36.33887084761775
+        },
+        {
+          "correlation": 0.8695495457000051,
+          "cosine": 0.9805076257378332,
+          "mae_255": 19.932313861268938,
+          "rmse_255": 36.676958305418474
+        },
+        {
+          "correlation": 0.8724839302027724,
+          "cosine": 0.9810559178935742,
+          "mae_255": 19.793934743641774,
+          "rmse_255": 36.138899214577954
+        },
+        {
+          "correlation": 0.8680483697972612,
+          "cosine": 0.980367096409528,
+          "mae_255": 20.030620096049784,
+          "rmse_255": 36.780167819200834
+        },
+        {
+          "correlation": 0.8717387667556189,
+          "cosine": 0.9806589002793292,
+          "mae_255": 19.845253948525432,
+          "rmse_255": 36.41451575584964
+        },
+        {
+          "correlation": 0.8813967163944905,
+          "cosine": 0.9814982470928361,
+          "mae_255": 19.128686417748916,
+          "rmse_255": 35.33598111199385
+        },
+        {
+          "correlation": 0.8775313963921331,
+          "cosine": 0.9806404424700734,
+          "mae_255": 19.205432181750542,
+          "rmse_255": 35.97988141547634
+        },
+        {
+          "correlation": 0.8831802027314887,
+          "cosine": 0.9815833588938496,
+          "mae_255": 18.810535249255953,
+          "rmse_255": 35.06818815401654
+        },
+        {
+          "correlation": 0.8801763489991519,
+          "cosine": 0.9813253453990521,
+          "mae_255": 18.759337586241884,
+          "rmse_255": 35.48591989051224
+        },
+        {
+          "correlation": 0.8863721393664851,
+          "cosine": 0.9824851138850403,
+          "mae_255": 18.28849072477002,
+          "rmse_255": 34.515465313703885
+        },
+        {
+          "correlation": 0.8859017083343698,
+          "cosine": 0.9824065449792617,
+          "mae_255": 18.36096984070617,
+          "rmse_255": 34.63592702464695
+        },
+        {
+          "correlation": 0.8792468013883811,
+          "cosine": 0.981031973394704,
+          "mae_255": 19.113880504261363,
+          "rmse_255": 35.837177620578814
+        },
+        {
+          "correlation": 0.881458890530266,
+          "cosine": 0.9812826737797885,
+          "mae_255": 19.01561231737013,
+          "rmse_255": 35.488308411431746
+        },
+        {
+          "correlation": 0.8828299915344212,
+          "cosine": 0.9816137817867854,
+          "mae_255": 18.954157577448594,
+          "rmse_255": 35.121553179529116
+        },
+        {
+          "correlation": 0.8848122267022916,
+          "cosine": 0.9820604323226745,
+          "mae_255": 18.766456769142316,
+          "rmse_255": 34.6904439971533
+        },
+        {
+          "correlation": 0.8858025396436976,
+          "cosine": 0.9822495337986848,
+          "mae_255": 18.73375143736472,
+          "rmse_255": 34.52006562130478
+        },
+        {
+          "correlation": 0.87884554597467,
+          "cosine": 0.9811956074084096,
+          "mae_255": 18.993667140151516,
+          "rmse_255": 35.58207926546587
+        },
+        {
+          "correlation": 0.8680744396119369,
+          "cosine": 0.9794525127624392,
+          "mae_255": 19.52128779423701,
+          "rmse_255": 37.19289153865956
+        },
+        {
+          "correlation": 0.866053400334024,
+          "cosine": 0.9794083426899023,
+          "mae_255": 19.56660283076299,
+          "rmse_255": 37.30838680562702
+        },
+        {
+          "correlation": 0.8728937080730463,
+          "cosine": 0.9809049933188528,
+          "mae_255": 19.093700326366342,
+          "rmse_255": 36.0602676854766
+        },
+        {
+          "correlation": 0.879189491711771,
+          "cosine": 0.9819362101953442,
+          "mae_255": 18.68949434354708,
+          "rmse_255": 35.05764811753744
+        },
+        {
+          "correlation": 0.8810285850636447,
+          "cosine": 0.982061408278538,
+          "mae_255": 18.779774587391774,
+          "rmse_255": 34.80905996078838
+        },
+        {
+          "correlation": 0.8784672653654391,
+          "cosine": 0.9814814839886773,
+          "mae_255": 19.02369855079816,
+          "rmse_255": 35.2657466451475
+        },
+        {
+          "correlation": 0.8710980186454865,
+          "cosine": 0.9807252701843244,
+          "mae_255": 19.478424732819263,
+          "rmse_255": 35.98595847107564
+        },
+        {
+          "correlation": 0.8654568379370928,
+          "cosine": 0.9798887504342537,
+          "mae_255": 19.960934329342532,
+          "rmse_255": 36.73334705424067
+        },
+        {
+          "correlation": 0.8714972761583571,
+          "cosine": 0.9806604927084374,
+          "mae_255": 19.910860135957794,
+          "rmse_255": 35.95591892826625
+        },
+        {
+          "correlation": 0.8632673957486722,
+          "cosine": 0.979380800583151,
+          "mae_255": 20.591571758319805,
+          "rmse_255": 37.123489341363296
+        },
+        {
+          "correlation": 0.8375520174127689,
+          "cosine": 0.9754438892248638,
+          "mae_255": 21.98419850006764,
+          "rmse_255": 40.5180313772603
+        },
+        {
+          "correlation": 0.8270715651720921,
+          "cosine": 0.9739286451612471,
+          "mae_255": 22.456794507575758,
+          "rmse_255": 41.72067581527119
+        },
+        {
+          "correlation": 0.8373584082668031,
+          "cosine": 0.9757979528852161,
+          "mae_255": 22.118709415584416,
+          "rmse_255": 40.16530214688201
+        },
+        {
+          "correlation": 0.8641435542073217,
+          "cosine": 0.9798415816035847,
+          "mae_255": 20.828880673363095,
+          "rmse_255": 36.69755203774645
+        },
+        {
+          "correlation": 0.858604728533869,
+          "cosine": 0.9789513769500394,
+          "mae_255": 21.085531655844157,
+          "rmse_255": 37.60502701458212
+        },
+        {
+          "correlation": 0.8544624184595351,
+          "cosine": 0.9784253354064087,
+          "mae_255": 21.20902982109037,
+          "rmse_255": 38.07046303945649
+        },
+        {
+          "correlation": 0.838232349873063,
+          "cosine": 0.975708389754563,
+          "mae_255": 22.347790474499458,
+          "rmse_255": 40.217395336981795
+        },
+        {
+          "correlation": 0.8329731625000278,
+          "cosine": 0.9741506898962619,
+          "mae_255": 22.92948669169372,
+          "rmse_255": 41.32056186115631
+        },
+        {
+          "correlation": 0.834309388370606,
+          "cosine": 0.9739091033479832,
+          "mae_255": 23.272157611268938,
+          "rmse_255": 41.37332955025413
+        },
+        {
+          "correlation": 0.8174227165000785,
+          "cosine": 0.9713332939157586,
+          "mae_255": 24.15193579207251,
+          "rmse_255": 43.2575440406242
+        },
+        {
+          "correlation": 0.8302935152778846,
+          "cosine": 0.9733482574648434,
+          "mae_255": 23.914654356060606,
+          "rmse_255": 41.49330433010759
+        }
+      ],
+      "mean_correlation": 0.8585218108047998,
+      "minimum_correlation": 0.8082754746407204,
+      "mean_cosine": 0.9784017745748429,
+      "minimum_cosine": 0.9713332939157586,
+      "mean_mae_255": 20.49477046357583,
+      "maximum_mae_255": 24.15193579207251,
+      "mean_motion_energy_reference": 32.406619469668804,
+      "mean_motion_energy_candidate": 32.73377640629227,
+      "maximum_motion_relative_error": 0.0534469445631216,
+      "vision_feature_print": null
+    },
+    "fp16": {
+      "shape_equal": true,
+      "frame_count_equal": true,
+      "fps_equal": true,
+      "finite": true,
+      "reference": {
+        "width": 704,
+        "height": 448,
+        "fps": 24.0,
+        "declared_frames": 97,
+        "duration": 4.041667,
+        "decoded_frames": 97
+      },
+      "candidate": {
+        "width": 704,
+        "height": 448,
+        "fps": 24.0,
+        "declared_frames": 97,
+        "duration": 4.041667,
+        "decoded_frames": 97
+      },
+      "frame_count_compared": 97,
+      "frame_metrics": [
+        {
+          "correlation": 0.9184684285173783,
+          "cosine": 0.9871492718904767,
+          "mae_255": 15.634472867627165,
+          "rmse_255": 29.046364324654938
+        },
+        {
+          "correlation": 0.9129105646321496,
+          "cosine": 0.9867909222912795,
+          "mae_255": 16.5002018651921,
+          "rmse_255": 29.649360130536206
+        },
+        {
+          "correlation": 0.9074653332592041,
+          "cosine": 0.986248369896379,
+          "mae_255": 16.82516149215368,
+          "rmse_255": 30.55692774558304
+        },
+        {
+          "correlation": 0.8989269062886287,
+          "cosine": 0.9848324091339661,
+          "mae_255": 17.442726300392316,
+          "rmse_255": 32.16246437294658
+        },
+        {
+          "correlation": 0.8863257464906458,
+          "cosine": 0.9827261568551009,
+          "mae_255": 18.2447462205763,
+          "rmse_255": 34.264141005710904
+        },
+        {
+          "correlation": 0.8745166794196061,
+          "cosine": 0.9811193661698688,
+          "mae_255": 18.910751276718074,
+          "rmse_255": 35.90699844029021
+        },
+        {
+          "correlation": 0.8663098545054054,
+          "cosine": 0.9802527225872238,
+          "mae_255": 19.686437829748378,
+          "rmse_255": 36.90729997651888
+        },
+        {
+          "correlation": 0.8590007221750852,
+          "cosine": 0.9792591931732852,
+          "mae_255": 20.2323891115395,
+          "rmse_255": 37.923834076915426
+        },
+        {
+          "correlation": 0.8742235369908601,
+          "cosine": 0.9816833749358138,
+          "mae_255": 19.412393677286257,
+          "rmse_255": 35.716204314249595
+        },
+        {
+          "correlation": 0.882731105113657,
+          "cosine": 0.9834840036504462,
+          "mae_255": 18.710169144007036,
+          "rmse_255": 33.97811696000722
+        },
+        {
+          "correlation": 0.875542428517973,
+          "cosine": 0.982235331939808,
+          "mae_255": 19.15636308678301,
+          "rmse_255": 35.2141654241809
+        },
+        {
+          "correlation": 0.8589917037544706,
+          "cosine": 0.9798342155531762,
+          "mae_255": 19.900079900568183,
+          "rmse_255": 37.48135984913597
+        },
+        {
+          "correlation": 0.8673102729647109,
+          "cosine": 0.9812357899408528,
+          "mae_255": 19.61518681513799,
+          "rmse_255": 36.1452723157103
+        },
+        {
+          "correlation": 0.8440871140585886,
+          "cosine": 0.9780824562974816,
+          "mae_255": 20.855612486471863,
+          "rmse_255": 38.953058810826356
+        },
+        {
+          "correlation": 0.8266000276424819,
+          "cosine": 0.9753338336962019,
+          "mae_255": 21.83383324032738,
+          "rmse_255": 41.184101210054905
+        },
+        {
+          "correlation": 0.8158897619498916,
+          "cosine": 0.9735115019355031,
+          "mae_255": 22.72565674885011,
+          "rmse_255": 42.42783062520974
+        },
+        {
+          "correlation": 0.8343517204738534,
+          "cosine": 0.9759886930548839,
+          "mae_255": 21.750676406926406,
+          "rmse_255": 40.16090662061586
+        },
+        {
+          "correlation": 0.865363860786451,
+          "cosine": 0.9807347064917517,
+          "mae_255": 19.9765202245671,
+          "rmse_255": 35.98299203993233
+        },
+        {
+          "correlation": 0.8701615327377425,
+          "cosine": 0.981605285760934,
+          "mae_255": 19.478668873444263,
+          "rmse_255": 35.22782512238618
+        },
+        {
+          "correlation": 0.8655614922090169,
+          "cosine": 0.9808251794349331,
+          "mae_255": 19.9060481348079,
+          "rmse_255": 35.811868873133186
+        },
+        {
+          "correlation": 0.8657572683297436,
+          "cosine": 0.9808739605042602,
+          "mae_255": 19.80302607548701,
+          "rmse_255": 35.73276568018157
+        },
+        {
+          "correlation": 0.8632732999273757,
+          "cosine": 0.9803075254281212,
+          "mae_255": 20.0119533786526,
+          "rmse_255": 36.10538642281135
+        },
+        {
+          "correlation": 0.8660125984429228,
+          "cosine": 0.9801002870757529,
+          "mae_255": 19.79898348721591,
+          "rmse_255": 36.08629245812847
+        },
+        {
+          "correlation": 0.8670173296330257,
+          "cosine": 0.9795709219677541,
+          "mae_255": 19.65263545048701,
+          "rmse_255": 36.261120377592924
+        },
+        {
+          "correlation": 0.8613598488804408,
+          "cosine": 0.9782646944626469,
+          "mae_255": 19.99156922179383,
+          "rmse_255": 37.049327785422285
+        },
+        {
+          "correlation": 0.8725621533036628,
+          "cosine": 0.9801392976856573,
+          "mae_255": 19.583750803233226,
+          "rmse_255": 35.40976041076062
+        },
+        {
+          "correlation": 0.8693261279556114,
+          "cosine": 0.9800266813036659,
+          "mae_255": 19.6456769142316,
+          "rmse_255": 35.64396926167746
+        },
+        {
+          "correlation": 0.8718730963670784,
+          "cosine": 0.9805382486339413,
+          "mae_255": 19.313910942573052,
+          "rmse_255": 35.30418276196259
+        },
+        {
+          "correlation": 0.8729786369924523,
+          "cosine": 0.980543868470978,
+          "mae_255": 19.435246719426406,
+          "rmse_255": 35.24346592114068
+        },
+        {
+          "correlation": 0.8669275547260369,
+          "cosine": 0.9791831466425637,
+          "mae_255": 20.1408596286526,
+          "rmse_255": 36.28837773164033
+        },
+        {
+          "correlation": 0.8616363928236995,
+          "cosine": 0.9783832935671561,
+          "mae_255": 20.489583333333332,
+          "rmse_255": 37.070716492348616
+        },
+        {
+          "correlation": 0.8638841064201429,
+          "cosine": 0.9788328140485538,
+          "mae_255": 20.32988154423701,
+          "rmse_255": 36.65706006474931
+        },
+        {
+          "correlation": 0.8725795749720477,
+          "cosine": 0.9803869156357097,
+          "mae_255": 19.657215993641774,
+          "rmse_255": 35.26594047034399
+        },
+        {
+          "correlation": 0.8805838501821723,
+          "cosine": 0.9816056985477486,
+          "mae_255": 19.192781258455085,
+          "rmse_255": 34.08122287114694
+        },
+        {
+          "correlation": 0.8721713493014771,
+          "cosine": 0.9802317409630114,
+          "mae_255": 19.710170200892858,
+          "rmse_255": 35.38124342591193
+        },
+        {
+          "correlation": 0.8639740277532545,
+          "cosine": 0.9790470822447781,
+          "mae_255": 20.06685331270292,
+          "rmse_255": 36.47112466452772
+        },
+        {
+          "correlation": 0.871822038391893,
+          "cosine": 0.9804500889916322,
+          "mae_255": 19.3454494724026,
+          "rmse_255": 35.33549735046331
+        },
+        {
+          "correlation": 0.874659965954909,
+          "cosine": 0.9810038523021065,
+          "mae_255": 19.25048299682089,
+          "rmse_255": 34.940009890780175
+        },
+        {
+          "correlation": 0.8653648236258251,
+          "cosine": 0.9793111378569653,
+          "mae_255": 20.005182968073594,
+          "rmse_255": 36.42582068196367
+        },
+        {
+          "correlation": 0.8577802086353457,
+          "cosine": 0.97774856737506,
+          "mae_255": 20.621037735051406,
+          "rmse_255": 37.68802517920622
+        },
+        {
+          "correlation": 0.8612792414638689,
+          "cosine": 0.9778743176477828,
+          "mae_255": 20.490173075622295,
+          "rmse_255": 37.483547527245506
+        },
+        {
+          "correlation": 0.8700669890768652,
+          "cosine": 0.9793528091788675,
+          "mae_255": 20.049133565002705,
+          "rmse_255": 36.26214196364203
+        },
+        {
+          "correlation": 0.867677990864991,
+          "cosine": 0.9792929607238043,
+          "mae_255": 19.955912007913962,
+          "rmse_255": 36.58785304423541
+        },
+        {
+          "correlation": 0.8586905541775787,
+          "cosine": 0.97787251985965,
+          "mae_255": 20.37283972537879,
+          "rmse_255": 37.87627535718151
+        },
+        {
+          "correlation": 0.8540665042907254,
+          "cosine": 0.9769463853315733,
+          "mae_255": 20.498040533685064,
+          "rmse_255": 38.666665728224935
+        },
+        {
+          "correlation": 0.8511440525429967,
+          "cosine": 0.976385259506738,
+          "mae_255": 20.512032645089285,
+          "rmse_255": 39.1873654061179
+        },
+        {
+          "correlation": 0.8675066969865567,
+          "cosine": 0.9792304957617392,
+          "mae_255": 19.501706870603353,
+          "rmse_255": 36.94091985982889
+        },
+        {
+          "correlation": 0.8878860719690492,
+          "cosine": 0.9823652689876505,
+          "mae_255": 18.24565091484037,
+          "rmse_255": 34.08988621723722
+        },
+        {
+          "correlation": 0.8806502794169124,
+          "cosine": 0.9811753858200795,
+          "mae_255": 18.69697815205628,
+          "rmse_255": 35.179228992106
+        },
+        {
+          "correlation": 0.8912414832067246,
+          "cosine": 0.983139975238518,
+          "mae_255": 17.85078463203463,
+          "rmse_255": 33.39024613717185
+        },
+        {
+          "correlation": 0.8827646625708265,
+          "cosine": 0.9822496441181588,
+          "mae_255": 18.375109916125542,
+          "rmse_255": 34.535446191977556
+        },
+        {
+          "correlation": 0.8826975171058326,
+          "cosine": 0.9820902624253497,
+          "mae_255": 18.59460079308712,
+          "rmse_255": 34.788102320813664
+        },
+        {
+          "correlation": 0.891085189428677,
+          "cosine": 0.9834903186565346,
+          "mae_255": 17.990345348011363,
+          "rmse_255": 33.60754116708251
+        },
+        {
+          "correlation": 0.8861531382439324,
+          "cosine": 0.982748271248226,
+          "mae_255": 18.298738289705085,
+          "rmse_255": 34.392544270305784
+        },
+        {
+          "correlation": 0.8805843920748071,
+          "cosine": 0.9819018827389113,
+          "mae_255": 18.587859975311147,
+          "rmse_255": 35.27029552479803
+        },
+        {
+          "correlation": 0.878631996822773,
+          "cosine": 0.9816206648365462,
+          "mae_255": 18.709604766977815,
+          "rmse_255": 35.594001691968394
+        },
+        {
+          "correlation": 0.8926393377953492,
+          "cosine": 0.9839711959432211,
+          "mae_255": 17.70873494994589,
+          "rmse_255": 33.36753329165083
+        },
+        {
+          "correlation": 0.895258915413969,
+          "cosine": 0.9845496329726375,
+          "mae_255": 17.46887259875541,
+          "rmse_255": 32.777879366440985
+        },
+        {
+          "correlation": 0.8943429854720919,
+          "cosine": 0.9845798605067645,
+          "mae_255": 17.51978067505411,
+          "rmse_255": 32.786190461127504
+        },
+        {
+          "correlation": 0.8943401816782361,
+          "cosine": 0.984540195139458,
+          "mae_255": 17.607659674310064,
+          "rmse_255": 32.75966352890172
+        },
+        {
+          "correlation": 0.8937649221397544,
+          "cosine": 0.984328145944148,
+          "mae_255": 17.796501919304653,
+          "rmse_255": 32.946334092001784
+        },
+        {
+          "correlation": 0.8929523362517009,
+          "cosine": 0.9843193825971791,
+          "mae_255": 17.87082424411526,
+          "rmse_255": 32.943306143301896
+        },
+        {
+          "correlation": 0.8936297814470268,
+          "cosine": 0.9844148189923199,
+          "mae_255": 17.663604868438853,
+          "rmse_255": 32.83750218280911
+        },
+        {
+          "correlation": 0.8929314457529903,
+          "cosine": 0.9840880187646559,
+          "mae_255": 17.79031279592803,
+          "rmse_255": 33.08885838287229
+        },
+        {
+          "correlation": 0.9017318313192529,
+          "cosine": 0.9849016155364743,
+          "mae_255": 17.102270613501084,
+          "rmse_255": 31.997196025120193
+        },
+        {
+          "correlation": 0.8990551247052198,
+          "cosine": 0.9842975295415451,
+          "mae_255": 17.24917879971591,
+          "rmse_255": 32.477043925847966
+        },
+        {
+          "correlation": 0.8978429580224047,
+          "cosine": 0.9840937402771526,
+          "mae_255": 17.10623921976461,
+          "rmse_255": 32.67397007982853
+        },
+        {
+          "correlation": 0.8899314103858781,
+          "cosine": 0.9832160312551708,
+          "mae_255": 17.579941786728895,
+          "rmse_255": 33.73218799492135
+        },
+        {
+          "correlation": 0.8954771964390109,
+          "cosine": 0.984193275679604,
+          "mae_255": 17.208902994791668,
+          "rmse_255": 32.871919423295495
+        },
+        {
+          "correlation": 0.8970968265036606,
+          "cosine": 0.9844125215359695,
+          "mae_255": 17.235823990462663,
+          "rmse_255": 32.655882262345685
+        },
+        {
+          "correlation": 0.8896743554236265,
+          "cosine": 0.9829567438065991,
+          "mae_255": 17.988305558373916,
+          "rmse_255": 34.03893748402848
+        },
+        {
+          "correlation": 0.8911507978149367,
+          "cosine": 0.9830517964367883,
+          "mae_255": 17.924460142721863,
+          "rmse_255": 33.85722605223855
+        },
+        {
+          "correlation": 0.8952968281550459,
+          "cosine": 0.9838522812302061,
+          "mae_255": 17.60559980384199,
+          "rmse_255": 33.009312156146414
+        },
+        {
+          "correlation": 0.8980409113329524,
+          "cosine": 0.9843896727415502,
+          "mae_255": 17.463629388189936,
+          "rmse_255": 32.45439907552893
+        },
+        {
+          "correlation": 0.8962643604717522,
+          "cosine": 0.9841690519846272,
+          "mae_255": 17.592396129261363,
+          "rmse_255": 32.68052403551898
+        },
+        {
+          "correlation": 0.8925118114627522,
+          "cosine": 0.9835851880143212,
+          "mae_255": 17.86110934963474,
+          "rmse_255": 33.304356756315045
+        },
+        {
+          "correlation": 0.8818946145155598,
+          "cosine": 0.9818757853362549,
+          "mae_255": 18.502364253584958,
+          "rmse_255": 34.96914059410604
+        },
+        {
+          "correlation": 0.876040244831889,
+          "cosine": 0.9812365853788585,
+          "mae_255": 18.70551567573052,
+          "rmse_255": 35.65755942507089
+        },
+        {
+          "correlation": 0.8811710031730889,
+          "cosine": 0.9823928926084557,
+          "mae_255": 18.254576315611473,
+          "rmse_255": 34.67928836199847
+        },
+        {
+          "correlation": 0.8875124843094987,
+          "cosine": 0.9833974295084358,
+          "mae_255": 17.858863467261905,
+          "rmse_255": 33.65071236554039
+        },
+        {
+          "correlation": 0.8891623558328935,
+          "cosine": 0.9835085341409906,
+          "mae_255": 17.819577964353353,
+          "rmse_255": 33.407966267304516
+        },
+        {
+          "correlation": 0.8913102096726808,
+          "cosine": 0.9836984797462645,
+          "mae_255": 17.891733673227815,
+          "rmse_255": 33.13157764359164
+        },
+        {
+          "correlation": 0.8872990612712977,
+          "cosine": 0.983489381363025,
+          "mae_255": 18.20890405167749,
+          "rmse_255": 33.37435401880032
+        },
+        {
+          "correlation": 0.8845178700887187,
+          "cosine": 0.9831393139418431,
+          "mae_255": 18.487482244318183,
+          "rmse_255": 33.71317915010481
+        },
+        {
+          "correlation": 0.8836788003293005,
+          "cosine": 0.9829005744544445,
+          "mae_255": 18.64892049682089,
+          "rmse_255": 33.88175607924108
+        },
+        {
+          "correlation": 0.8677170433419114,
+          "cosine": 0.9805809444641481,
+          "mae_255": 19.767712349499458,
+          "rmse_255": 36.089491855066896
+        },
+        {
+          "correlation": 0.8513883292042439,
+          "cosine": 0.9781273311203461,
+          "mae_255": 20.4666795606737,
+          "rmse_255": 38.30860931780538
+        },
+        {
+          "correlation": 0.8471403440568687,
+          "cosine": 0.9775043828659367,
+          "mae_255": 20.639308120265152,
+          "rmse_255": 38.8287259631692
+        },
+        {
+          "correlation": 0.8601178958404301,
+          "cosine": 0.9797734112594113,
+          "mae_255": 19.968584068925868,
+          "rmse_255": 36.77669223198726
+        },
+        {
+          "correlation": 0.8836898001102949,
+          "cosine": 0.9832612126257895,
+          "mae_255": 18.855605088271105,
+          "rmse_255": 33.542086251652535
+        },
+        {
+          "correlation": 0.8819223257024565,
+          "cosine": 0.9828374007820306,
+          "mae_255": 18.797744817031926,
+          "rmse_255": 34.029795181582365
+        },
+        {
+          "correlation": 0.8752866738031102,
+          "cosine": 0.9819178513451025,
+          "mae_255": 19.271264542748916,
+          "rmse_255": 34.892424671585324
+        },
+        {
+          "correlation": 0.8746008732790053,
+          "cosine": 0.981691559713882,
+          "mae_255": 19.26069568452381,
+          "rmse_255": 35.00519263839451
+        },
+        {
+          "correlation": 0.8732508146107845,
+          "cosine": 0.980785290984909,
+          "mae_255": 19.67109924580628,
+          "rmse_255": 35.696043767747796
+        },
+        {
+          "correlation": 0.8696503961971802,
+          "cosine": 0.9797540701800063,
+          "mae_255": 20.223165668966452,
+          "rmse_255": 36.49128468976749
+        },
+        {
+          "correlation": 0.8573362978299406,
+          "cosine": 0.9778407927733244,
+          "mae_255": 21.230534276920995,
+          "rmse_255": 38.064438678378366
+        },
+        {
+          "correlation": 0.862922860785034,
+          "cosine": 0.9788094434076728,
+          "mae_255": 21.31848514441288,
+          "rmse_255": 37.10518064129445
+        }
+      ],
+      "mean_correlation": 0.8764943754858131,
+      "minimum_correlation": 0.8158897619498916,
+      "mean_cosine": 0.9814190968801968,
+      "minimum_cosine": 0.9735115019355031,
+      "mean_mae_255": 19.018214686241336,
+      "maximum_mae_255": 22.72565674885011,
+      "mean_motion_energy_reference": 32.406619469668804,
+      "mean_motion_energy_candidate": 32.3210239603062,
+      "maximum_motion_relative_error": 0.05991050668655782,
+      "vision_feature_print": null
+    }
+  },
+  "video_quality_scope": "full decoded RGB/motion comparison of the first sweep's warm MP4s; no resize; not broad perceptual/semantic or latent equivalence",
+  "video_quality_evidence_sha256": "13a4bde072eb70f397e006558d0de1e7bdc11bb7ffeb8923ea465f84f3382980",
+  "mlxserve": {
+    "result": {
+      "schema": "tc-mlxserve-local-compatibility-v1",
+      "status": "startup_rejected",
+      "version": "[mem] MLX buffer-pool cap 4096 MB (was 62259 MB)\nmlx-serve 26.10.1\nmlx 0.32.3\nmlx-c 56b2d39fc831\nnax off (requires M5-class GPU)\nggml 0.23.0 (5266f24da)\nllama.cpp b10809\ngguf 3\nds4 unknown\n",
+      "binary_sha256": "46d017b5f6e49890e654dbefd2b750eda44b627a20f4ec7a01015a4d0d8ea1e0",
+      "model_layout": "original local LTX2.5 INT8 ConvRot component layout",
+      "modality": "video",
+      "qualification_passed": false,
+      "latency_comparison_valid": false,
+      "requests": [],
+      "scope": "owned server over loopback; original unmodified model; no precision/layout conversion",
+      "startup_seconds": 0.26296908291988075,
+      "exit_code": 1,
+      "server_terminal": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "f398b50404d4c30d3a5c76ed9f88088ee0b9123f6ae461cf640e30a976c6fe4d"
+    },
+    "reason": "stock media-memory preflight rejected original local LTX pack before generation",
+    "evidence": "outputs/mlxserve-ltx25-original-probe-20261011/summary.json",
+    "evidence_sha256": "7687645ca0327569deffdd4f95d6b77c6c4f7bba87527f46be27ab92e85df28c"
+  },
+  "retained_failed_window": {
+    "evidence": "outputs/ltx-base-current-v1-gpu-20261011/summary.json",
+    "reason": "native produced two complete clips but decoder child was unknown to sampler; inconclusive, not promoted"
+  }
+}

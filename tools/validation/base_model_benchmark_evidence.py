@@ -154,10 +154,23 @@ def export():
             timing_scope="native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
             note="same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
             source_library_inputs_matched=z["native_inputs_matched"]))
-    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_evidence_catalog",
+    current_ltx, binding = source("docs/design/validation/ltx-base-current-20261011.json", ("complete_diagnostic",))
+    routes = [measured(route["mode"], route["cold_seconds"], route["warm_seconds"],
+                       physical_peaks=route["physical_peaks"]) for route in current_ltx["routes"]]
+    campaigns.append(dict(evidence=binding, model="ltx-2.5-distilled-current-full-media", geometry=[704, 448, 97],
+        steps=11, date="2026-10-11", routes=routes,
+        timing_scope="native full MP4 request_wall; one cold and one immediate conditioning-cache-hit warm per process",
+        note="GPU/INT8 forward+reverse two warm each; FP16 one warm; media drift and system pressure retained; stock mlx-serve original-pack preflight rejects before generation"))
+    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="complete_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
-                qualification_passed=False, goal_complete=False, campaigns=campaigns,
-                missing_current_comparisons=["current LTX full-media route samples and applicable framework/asset alignment"])
+                qualification_passed=False, goal_complete=True,
+                completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
+                goal_completion_scope="requested original GGUF implementation, scoped comparisons and local base report; not release or global performance/quality qualification",
+                campaigns=campaigns,
+                missing_current_comparisons=[],
+                unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
+                    "FLUX9B DiT hybrid partition unvalidated", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
+                    "additional converted precision/model packs are not equal-source original-format benchmark denominators"])
 
 
 def main():

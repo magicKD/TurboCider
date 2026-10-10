@@ -16,12 +16,15 @@ class BaseBenchmarkReportTests(unittest.TestCase):
     def setUp(self):
         self.report = json.loads((ROOT / "docs/benchmark/results-20261011.json").read_text())
 
-    def test_report_remains_partial_with_unmeasured_frameworks(self):
-        self.assertEqual(self.report["status"], "partial_evidence_catalog")
-        self.assertIs(self.report["goal_complete"], False)
+    def test_report_catalog_complete_but_does_not_promote_unsupported_frameworks(self):
+        self.assertEqual(self.report["status"], "complete_evidence_catalog")
+        self.assertIs(self.report["goal_complete"], True)
+        self.assertTrue((ROOT / self.report["completion_audit"]).is_file())
+        self.assertIn("not release", self.report["goal_completion_scope"])
         self.assertIs(self.report["qualification_passed"], False)
-        self.assertIn("current LTX full-media route samples and applicable framework/asset alignment", self.report["missing_current_comparisons"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 17)
+        self.assertEqual(self.report["missing_current_comparisons"], [])
+        self.assertTrue(self.report["unmeasured_or_inapplicable"])
+        self.assertGreaterEqual(len(self.report["campaigns"]), 18)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -51,11 +54,14 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertIn("both CPU load checks failed", busy["note"])
 
     def test_docs_local_links_and_no_machine_specific_paths(self):
-        doc = ROOT / "docs/benchmark/README.md"
-        for link in re.findall(r"\]\(([^)]+)\)", doc.read_text()):
-            self.assertTrue((doc.parent / link.split("#")[0]).exists(), link)
-        for path in (doc, ROOT / "docs/benchmark/results-20261011.json",
-                     ROOT / "docs/benchmark/local-model-inventory-20261011.json"):
+        for doc in sorted((ROOT / "docs/benchmark").glob("*.md")):
+            for link in re.findall(r"\]\(([^)]+)\)", doc.read_text()):
+                if "://" not in link:
+                    self.assertTrue((doc.parent / link.split("#")[0]).exists(), (str(doc), link))
+            self.assertNotIn("/Users/", doc.read_text())
+        for path in (ROOT / "docs/benchmark/results-20261011.json",
+                     ROOT / "docs/benchmark/local-model-inventory-20261011.json",
+                     ROOT / "docs/design/validation/ltx-base-current-20261011.json"):
             self.assertNotIn("/Users/", path.read_text())
 
     def test_inventory_component_availability_never_grants_runtime_proof(self):

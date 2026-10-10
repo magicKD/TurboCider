@@ -1,10 +1,12 @@
 {
   "schema": "tc-local-base-benchmark-samples-v1",
   "date": "2026-10-11",
-  "status": "partial_evidence_catalog",
+  "status": "complete_evidence_catalog",
   "hardware": "Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
   "qualification_passed": false,
-  "goal_complete": false,
+  "goal_complete": true,
+  "completion_audit": "docs/benchmark/COMPLETION_AUDIT.md",
+  "goal_completion_scope": "requested original GGUF implementation, scoped comparisons and local base report; not release or global performance/quality qualification",
   "campaigns": [
     {
       "evidence": {
@@ -1334,9 +1336,81 @@
       "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
       "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
       "source_library_inputs_matched": 514
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/ltx-base-current-20261011.json",
+        "sha256": "a6309bb91c646e588d9d0151acea2daffffef70e40487382f712a4d0892fb6e8",
+        "status": "complete_diagnostic"
+      },
+      "model": "ltx-2.5-distilled-current-full-media",
+      "geometry": [
+        704,
+        448,
+        97
+      ],
+      "steps": 11,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            72.19562925,
+            72.958291375
+          ],
+          "warm_seconds": [
+            64.192436708,
+            64.060235167
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 64.1263359375,
+          "physical_peaks": [
+            50579630792,
+            50661272456
+          ]
+        },
+        {
+          "route": "int8",
+          "cold_seconds": [
+            87.101623042,
+            75.202053958
+          ],
+          "warm_seconds": [
+            64.103796125,
+            63.046127875
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 63.574962,
+          "physical_peaks": [
+            50584087216,
+            50550680168
+          ]
+        },
+        {
+          "route": "fp16",
+          "cold_seconds": [
+            115.819748209
+          ],
+          "warm_seconds": [
+            78.114022625
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 78.114022625,
+          "physical_peaks": [
+            50618034864
+          ]
+        }
+      ],
+      "timing_scope": "native full MP4 request_wall; one cold and one immediate conditioning-cache-hit warm per process",
+      "note": "GPU/INT8 forward+reverse two warm each; FP16 one warm; media drift and system pressure retained; stock mlx-serve original-pack preflight rejects before generation"
     }
   ],
-  "missing_current_comparisons": [
-    "current LTX full-media route samples and applicable framework/asset alignment"
+  "missing_current_comparisons": [],
+  "unmeasured_or_inapplicable": [
+    "current FastH3 INT6 DiT and original H3 video VAE assets absent",
+    "FLUX9B DiT hybrid partition unvalidated",
+    "NVFP4 runtime GPU-only",
+    "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
+    "additional converted precision/model packs are not equal-source original-format benchmark denominators"
   ]
 }

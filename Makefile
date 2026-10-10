@@ -6,6 +6,7 @@ export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-model doctor h3-quant-cache test-library test-api test-video-preview
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
 .PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-acceleration-contract
+.PHONY: test-base-benchmark
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -17,6 +18,7 @@ help:
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
 	@echo 'make test                         Verify repository boundaries and request contracts'
+	@echo 'make test-base-benchmark          Verify published base evidence and framework boundaries (no inference)'
 	@echo 'make test-streaming-host           Verify layout/executor/LTX metadata with synthetic fixtures'
 	@echo 'make test-streaming-contract       Verify streaming API/snapshot contracts (requires native build)'
 	@echo 'make test-streaming-metal          Verify synthetic GPU slots (requires Metal access)'
@@ -179,6 +181,13 @@ build-runtime-ane-probe:
 	@bash tools/native/build_ane_runtime_probe.sh
 # Keep no-inference contracts separate from opt-in GPU/Core ML micrographs.
 # CLI checks report SKIP if a native CLI has not been built.
+test-base-benchmark:
+	@"$(PYTHON)" -B tests/native/test_base_model_benchmark_report.py
+	@"$(PYTHON)" -B tests/native/test_z_base_formats_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_base_formats_evidence.py
+	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_screen.py
+	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_evidence.py
+	@"$(PYTHON)" -B tests/native/test_mlxserve_local_model_probe.py
 test-acceleration-contract: test-runtime-ane-host
 	@"$(PYTHON)" -B tests/native/test_ane_placement.py
 	@"$(PYTHON)" -B tests/native/test_runtime_ane_model_screen.py
