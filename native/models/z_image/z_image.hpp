@@ -24,6 +24,10 @@ class ZImage final : public ModelSession {
     bool diffusers_layout_ = false, gguf_transformer_ = false, convrot_transformer_ = false;
     bool nvfp4_transformer_ = false;
     bool runtime_convrot_ = false;
+    std::string convrot_gpu_recipe_="legacy";
+    bool convrot_validate_blocks_=false;
+    std::optional<uint64_t> convrot_cache_bytes_;
+    bool convrot_cache_retain_=false;
     bool gguf_direct_import_ = false;
     bool gguf_raw_ane_source_ = false;
     bool gguf_fused_affine_ = true;

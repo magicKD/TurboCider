@@ -82,3 +82,6 @@ research工具，补齐两份机器记录和状态入口。44项host回归、1�
 原先六个tracked草稿及ConvRot未跟踪草稿未改写、未夹带提交；日志/PNG/
 模型/build binary不加入Git。本轮owned jobs已结束，临时测试build已回收，
 无需删除用户缓存或保留的已验证库。
+
+后续用户要求收好剩余工作区代码，原ConvRot实验组已另行核对并单独
+提交，见[工作区收尾与当前库回归](convrot-compiled-commit-2026-10-10.md)。

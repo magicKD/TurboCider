@@ -1,0 +1,142 @@
+{
+  "schema": "tc-convrot-bf16-local-screen-v1",
+  "production_qualified": false,
+  "whole_request_memory": "unknown",
+  "formal_performance": "not_run",
+  "quality": "not_run",
+  "identity": {
+    "components": {
+      "vae": [
+        {
+          "bytes": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "tokenizer": [
+        {
+          "bytes": 11422654,
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        }
+      ],
+      "encoder": [
+        {
+          "bytes": 8044982048,
+          "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+        }
+      ]
+    },
+    "libraries": {
+      "libturbocider.dylib": "ba157e4abfd511626c1845d30ed3ebef277dfe48f0921ea2e1fa7d9edf82715c",
+      "libmlx.dylib": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51",
+      "libjaccl.dylib": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+    },
+    "device": {
+      "gpu": "Apple M4 Max",
+      "physical_memory_bytes": 68719476736,
+      "os": "Version 26.6.2 (Build 25G83)",
+      "mlx_version": "0.32.0"
+    },
+    "cache": "hit",
+    "gpu_controls": {
+      "TURBOCIDER_Z_MPP_SWIGLU": "1",
+      "TURBOCIDER_Z_MPP_PROJECTIONS": "1",
+      "TURBOCIDER_Z_MPP_QKV_PREPARE": "1",
+      "TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS": "128",
+      "TURBOCIDER_Z_CACHE_CONTEXT": "1"
+    }
+  },
+  "workload": {
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture."
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 4
+    },
+    "operation": "image.generate",
+    "parameters": {
+      "dynamic_text": true
+    },
+    "outputs": [
+      {
+        "kind": "image",
+        "width": 512,
+        "height": 512,
+        "audio": false
+      }
+    ],
+    "tokens": 34
+  },
+  "baseline": {
+    "samples_seconds": [
+      3.7442420000443235,
+      3.735049292037729,
+      3.734404791961424,
+      3.7339656249969266
+    ],
+    "median_seconds": 3.7347270419995766,
+    "denoise_median_seconds": 3.4991416875,
+    "observed_peak_bytes": 23010797360,
+    "maximum_memory_gap_seconds": 0.01530800003092736,
+    "recipe": {
+      "config": null,
+      "import": null,
+      "controls": {},
+      "layout": null,
+      "consumer": null,
+      "graph": null,
+      "affine_packing": null,
+      "affine_packing_backend": null,
+      "float_import": null,
+      "allocator_cache_limit_bytes": null,
+      "retention": null
+    },
+    "source_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "png_sha256": "633e96cff5e02dcc95fc43ea5e29609a9616fe7d44d21b87d9cc6e254f135cc9"
+  },
+  "candidate": {
+    "source_sha256": "be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    "recipe": "convrot-legacy-packed-bf16-scale-v1:compiled_dense",
+    "allocator_cache_limit_bytes": null,
+    "allocator_cache_retention": "request-cleanup-v1",
+    "samples_seconds": [
+      4.448106584022753,
+      4.499136500002351,
+      4.44883516599657,
+      4.458898583019618
+    ],
+    "median_seconds": 4.453866874508094,
+    "observed_peak_bytes": 18333910648,
+    "maximum_memory_gap_seconds": 0.015646583982743323,
+    "png_sha256": "7b96c1db843582153e5e9bd7e113664415ca5f3b54e7ddd86dd29a2edf69fc59"
+  },
+  "warm_wall_ratio": 1.1925548572683613,
+  "observed_process_memory_ratio": 0.7967525140988856,
+  "hard_20pct_latency_pass": true,
+  "preferred_10pct_latency_pass": false,
+  "empirical_speed_memory_target_pass": true,
+  "scope": "local matched warm screen; no formal performance/quality/cold/whole-request qualification",
+  "raw_reports": [
+    {
+      "id": "release-final-bf16-timing",
+      "sha256": "b0ceef8cbfc8e0db27298670f04ebe1cf5dac756b9d4ff630d9936d465a8fe86"
+    },
+    {
+      "id": "release-final-bf16-memory",
+      "sha256": "c2ac9c958ef652783fbb659fd65257d36fd49b480f25882499580b9554e0718f"
+    },
+    {
+      "id": "release-final-dense-timing",
+      "sha256": "4b0d1c7df8977f1e9f40eb7bf161677649ccb985939286753102eb5ddaa18cc9"
+    },
+    {
+      "id": "release-final-dense-memory",
+      "sha256": "e0f9271a2d29f3618c1738dc4a6aa31b1c1c0ab433d01d45cc82741d3e8229a8"
+    }
+  ],
+  "verifier_sha256": "f2225dc49a250d2946975ed7bf351368a2459832b612421f50465c03ccf4c121"
+}

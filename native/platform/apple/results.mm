@@ -52,6 +52,8 @@ static NSString *gpu_graph_label(const RunResult &result) {
         if (m.runtime_weight_partition_axis == "intermediate_channels")
             return @"runtime_weight_intermediate_channel_ffn";
     }
+    if(result.backend=="mlx_cpp_metal_convrot_compiled_experimental")
+        return @"convrot_parameterized_packed_bf16_blocks";
     if (result.request.model == "minimax-h3-vdn")
         return @"h3_vdn_int6_window_delta";
     if (result.backend == "mlx_cpp_metal" &&
@@ -1635,6 +1637,17 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
     if (result.qwen_ffn_phases)
         value[@"qwen_ffn_phases"] = qwen_ffn_phase_dictionary(result);
+    if(result.backend=="mlx_cpp_metal_convrot_compiled_experimental") {
+        value[@"convrot_experiment"]=@{@"experimental":@YES,@"whole_request_bounded_certified":@NO,
+            @"source_profile":@"convrot-legacy-packed-bf16-scale-v1",@"execution_recipe":@(result.precision.c_str()),
+            @"allocator_cache_limit_bytes":result.convrot_allocator_cache_bytes ? (id)@(*result.convrot_allocator_cache_bytes) : (id)NSNull.null,
+            @"allocator_cache_retention":result.convrot_allocator_cache_retained ? @"bounded-global-bins-between-requests-v1" : @"request-cleanup-v1",
+            @"dense_scope":@"none",@"activation_quantization":@"none",@"physical_int8_arithmetic":@"not_claimed"};
+        NSMutableDictionary *private_plan=[value[@"plan"] mutableCopy];
+        private_plan[@"executable"]=@NO;private_plan[@"validation"]=@"experimental ConvRot compiled GPU; not qualified";
+        private_plan[@"weight_validation"]=@"same-source numerical screen required; no new product qualification";
+        value[@"plan"]=private_plan;
+    }
     if (result.gguf_import) {
         const auto &m=*result.gguf_import;
         value[@"gguf_import"]=@{
@@ -1713,7 +1726,7 @@ NSDictionary *to_dictionary(const RunResult &result) {
             [rows addObject:@{@"name":@(row.name.c_str()),@"step":@(row.step),@"rel_l2":@(m.rel_l2),@"cosine":@(m.cosine),
                 @"max_abs":@(m.max_abs),@"max_norm_error":@(m.max_norm_error),@"n1_pass":@(pass),@"final_latent":@(row.final_latent)}];
         }
-        value[@"quantized_source_validation"]=@{@"source_profile":@"z-mlx-compat-affine-v1",
+        value[@"quantized_source_validation"]=@{@"source_profile":@(result.source_comparison_profile.c_str()),
             @"scope":@"diagnostic dual-forward independent source trajectory; FP64 valid-row metrics excluding padding; not timing/media/qualification",
             @"all_block_n1_pass":@(layers_pass),@"final_latent_n1_pass":@(final_pass),@"comparisons":rows};
     }

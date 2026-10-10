@@ -304,6 +304,9 @@ struct QwenFfnPhaseMetrics {
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
+    std::string source_comparison_profile="z-mlx-compat-affine-v1";
+    std::optional<uint64_t> convrot_allocator_cache_bytes;
+    bool convrot_allocator_cache_retained=false;
     std::string original_prompt, enhanced_prompt, enhanced_wh_ratio;
     std::string enhanced_ratio_follow;
     double prompt_enhance_seconds = 0;

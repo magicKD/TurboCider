@@ -2,6 +2,10 @@
 
 ## 当前加速结论
 
+2026-10-10 [ConvRot编译GPU实验的工作区收尾](convrot-compiled-commit-2026-10-10.md)
+单独收好此前保留的六个tracked改动和七个untracked实验文件；原历史
+screen重放及当前Private实模型/Public拒绝门禁通过，不改变默认或资格。
+
 2026-10-10 [当前512²性能与代码整理总览](performance-progress-2026-10-10.md)
 汇总Qwen/Z的base/原LoRA、编辑/encoder、GPU kernels与GGUF/ahead边界。
 [编辑首步通道比例正反序](local512-qwen-prefill-shares-2026-10-10.md)
