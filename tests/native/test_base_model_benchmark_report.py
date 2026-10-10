@@ -20,7 +20,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertEqual(self.report["status"], "partial_evidence_catalog")
         self.assertIs(self.report["goal_complete"], False)
         self.assertIs(self.report["qualification_passed"], False)
-        self.assertIn("mlx-serve media", self.report["missing_current_comparisons"])
+        self.assertIn("mlx-serve matched converted media precision if applicable", self.report["missing_current_comparisons"])
         self.assertGreaterEqual(len(self.report["campaigns"]), 11)
 
     def test_complete_actual_sample_arrays_and_medians(self):

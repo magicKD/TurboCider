@@ -129,10 +129,22 @@ def export():
         status="retained-structured-validation"), model="ltx-2.5-distilled", geometry=[704, 448, 97], steps=11,
         date="2026-09-13", routes=routes, timing_scope="warm request wall; single sample",
         note="INT8 small latency win failed quality; FP16 slower and failed quality; not automatically selected"))
+    flux, binding = source("docs/design/validation/flux9-bf16-framework-20261011.json", ("complete_diagnostic",))
+    routes = []
+    for engine in ("native", "mflux"):
+        median = flux["medians"][engine]
+        routes.append(measured(engine, median["cold_seconds"], median["samples"],
+                               repeated_prompt_seconds=median["repeated_prompt_seconds"],
+                               constructor_seconds=median["constructor_seconds"]))
+    campaigns.append(dict(evidence=binding, model="flux2-klein-9b-BF16", geometry=[512, 512], steps=4,
+        date="2026-10-11", routes=routes, timing_scope=flux["timing_scope"],
+        note="same BF16 files; native/mflux ABBA; compression/swap retained; mlx-serve rejects original key/layout, no latency denominator",
+        unsupported_same_layout_frameworks=["mlx-serve26.10.1"],
+        native_hybrid_status="9B DiT partition unvalidated; no automatic/claimed mixed benchmark"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False, campaigns=campaigns,
-                missing_current_comparisons=["FLUX9B GPU and applicable frameworks", "mlx-serve media",
+                missing_current_comparisons=["mlx-serve matched converted media precision if applicable",
                     "Z Q4_0/NVFP4/ConvRot full matched routes", "current applicable video framework/asset alignment"])
 
 

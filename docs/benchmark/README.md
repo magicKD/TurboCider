@@ -16,8 +16,9 @@ override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
 12对PNG与显式组合一致。它使既有加速可直接使用，不是再一次新kernel
 倍率。[默认条件、关闭开关与真实session回归](../status/qwen21-fast-defaults-2026-10-11.md)。
 
-报告仍在补全：FLUX 9B 与 mlx-serve 等本地适用框架的新同任务实测尚未
-完成；表中的“未测”不是不支持，也不拿第三方宣传值替代本机测量。
+报告仍在补全：FLUX 9B 原 BF16 的 native/mflux 正反序已完成；mlx-serve
+26.10.1 对该原布局实际拒绝加载，单列格式边界。Z 其它本地格式与适用
+视频对照还未齐；“未测”不是不支持，也不拿第三方宣传值替代本机测量。
 
 ## 1. 当前本地资产
 
@@ -32,7 +33,7 @@ override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
 | Z-Image Turbo BF16 | 19.27 | 完整组合在 | 512²/1024² GPU 与混合有历史同库实测 |
 | Z-Image NVFP4 / INT8 ConvRot | 12.00 / 13.58 | 完整组合在 | 尚缺本报告的新完整多路对照 |
 | Z-Image GGUF Q4_0 / Q8_0 | 12.00 / 14.53 | DiT + 共用原 BF16 encoder/VAE 在 | Q8 有 1024² GPU/runtime 对照；Q4 待补 |
-| FLUX.2 Klein 9B BF16 | 32.32 | 两个 DiT、四个 encoder shards 与 VAE 在 | 新 GPU/framework 对照待补；9B DiT 混合未验证 |
+| FLUX.2 Klein 9B BF16 | 32.32 | 两个 DiT、四个 encoder shards 与 VAE 在 | native/mflux同源BF16 ABBA完成；9B DiT混合未验证 |
 | LTX 2.5 distilled INT8 ConvRot | 42.87 | 含外部软链接目标、connector、两个 VAE 在 | 有 GPU/实验 ANE 历史实测，见第 5 节 |
 | MiniMax H3 原 BF16 源 | 62.29（仅现存组件） | 缺原 video VAE 权重 | 不能按完整本地可执行模型报告 |
 | FastH3 独立四步 INT6 | 72.40（仅现存组件） | encoder/VAEs 在，缺预期 INT6 DiT | 只保留历史结果，不标为本次可复跑 |
@@ -55,6 +56,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | --- | ---: | ---: | --- | --- |
 | 10-10 Qwen 原 Q4_K_M，512²，40 步 | 44.428 | 36.870，Private W8A8 通道分割 | 1.205× / 17.0% | 每路两 fresh warm；相同 BF16 I/O 前置负载 |
 | 10-10 Qwen BF16，512²，40 步 | 43.353 | 33.121，checkpoint-bound frozen Core ML | 1.309× / 23.6% | 四 fresh warm/路；CPU busy diagnostic，非独占资格 |
+| 10-11 FLUX9B BF16，512²，4步 | 8.221 | N/A，9B DiT分区未验证 | mflux对照见第5节 | 四fresh warm/路；同源BF16 stock ABBA |
 | 09-30 Qwen BF16，1024²，40 步 | 183.086 | 144.564，Public runtime v1 | 1.266× / 21.0% | 正反序两 warm/路；不是上一行的 encoder 生命周期 |
 | 09 月 Z BF16，512²，8 步 | 6.997 | 5.344，frozen image-only W8A8 | 1.309× / 23.6% | 同库回文顺序四 warm/路；单狐狸 prompt |
 | 09-30 Z BF16，1024²，8 步 | 31.429 | 28.400，Public runtime v1 | 1.107× / 9.6% | 灯塔四 warm/路；肖像为 31.401 / 28.388 |
@@ -149,8 +151,16 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
   40 s 跨源算 kernel 倍率。auto runtime 肖像正反序 PNG 不同，不能
   宣称完全确定性。Q4/NVFP4/ConvRot 新整请求对照还未齐。
 - FLUX 9B：native 有 GPU module，DiT `gpu_ane` 明确拒绝未验证分区。
-  历史 FLUX **4B** 的 2.266 / 1.628 s 与 direct MLX 2.264 s 不属于
-  本地 **9B**；不偷换模型或声称纯 GPU 全面胜过 MLX。
+  新同源BF16、512²/4步、native→mflux→mflux→native对照，四fresh warm
+  中位8.220596 /11.263455s，native省27.02%（1.370×）。cold分别
+  8.163/10.132和8.792/9.947s，不是所有cold领先。重复prompt另列
+  7.023124 /11.821010s，不能把native条件cache hit混进fresh排名。
+  reference主计时无额外GPU同步，token校对在全部计时结束后。
+  native/reference tree peak约30.1–30.5/40.5GB，两边系统compression、
+  reference swap-out都保留；默认组件/allocator生命周期不同，不能全部
+  归因kernel。warm图RGB correlation0.998518、SSIM0.990202，非byte-exact。
+  [完整样本、阶段、压力和格式拒绝](../status/flux9-bf16-framework-2026-10-11.md)。
+  历史 **4B** 2.266 /1.628s与direct MLX2.264s仍不属于本地 **9B**。
 - LTX：704×448×97 的 INT8 混合仅快 2.7%，latent rel-L2=0.3306、
   RGB correlation=0.8586，原质量门失败；FP16 混合 84.924 s 更慢。
   速度和误差都保留，当前推荐 GPU。720p 同 latent tiled VAE 的
@@ -169,8 +179,8 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
 | 框架 | 本地适用任务与来源 | 当前已有同任务证据 | 未完成项 |
 | --- | --- | --- | --- |
 | 原 Unsloth diffusion / stable-diffusion.cpp | 原 Qwen GGUF、GPU conditioner；只读参考代码 | 第 3 节 encoder/DiT/完整生成 | 不推广到所有 GGUF 或编辑 |
-| mlx-serve | 本地 commit `805807669565d359188b329c659f9f45d6358cd7` 有 FLUX、LTX、MiniMax media 源码；官方 v26.10.1 CLI 已下载到忽略目录 | 尚无本报告本机同 checkpoint 新计时 | FLUX 9B 接口/格式兼容检查与完整请求对照；视频同资产边界 |
-| direct MLX / mflux | 原 FLUX 4B 历史 GPU engine | 09-07 M4 Max 2.264 s，非当前9B | 当前9B新对照 |
+| mlx-serve | 官方26.10.1/release commit`02bee553f48cd3bc7d82aba0f8073820bd924738`；本地参考commit另记 | 原FLUX9B BF16实际MissingFluxWeight，无生成，N/A；不是成功latency | affine转换精度需另列匹配对照；视频同资产边界 |
+| direct MLX / mflux | 只读mflux0.19.2 /commit`8c00dab2505a96019df9d30bc9c223bf20d733c4`，原FLUX9B BF16 | 当前512²/4步stock fresh native8.221 /mflux11.263s；第5节完整记录 | 不外推所有尺寸/prompt/低内存设备 |
 | FastVideo MLX | 独立 FastH3 INT6/g64、完整 VAE | 上节历史单 cold/warm 配对与 shared-input parity | 当前资产补齐后才能新复跑 |
 | ComfyUI | 官方 Z workflow 历史观察 | 09-07 1024²/9步 40.110 s，但 seeds/边界不同 | 不作本报告公平框架排名 |
 
@@ -193,10 +203,10 @@ process-tree physical peak、系统 compression/swap 和输出/质量证据。
 首次完整模型 SHA 持久化，后续 generation 未变时只做轻量身份检查；
 不要在每个 inference 前重扫模型、用 I/O 预热制造冷启动优势。
 
-尚需完成当前 FLUX9B/framework 新实测、Z 其它本地格式的完整对照与
+尚需完成Z其它本地格式的完整对照、适用mlx-serve转换精度与
 适用视频框架资产/输出口径核对。报告与整个优化目标继续 active；
 未测或失败条目不会变成隐含通过。
 
-[11 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[12 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是 partial evidence catalog，不把缺少当前对照的条目伪标为 complete。

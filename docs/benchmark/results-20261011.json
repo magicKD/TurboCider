@@ -787,11 +787,78 @@
       ],
       "timing_scope": "warm request wall; single sample",
       "note": "INT8 small latency win failed quality; FP16 slower and failed quality; not automatically selected"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-bf16-framework-20261011.json",
+        "sha256": "3186efb4e7dfccbc3ccffd2b8e4229f5afbbee9e9e5343aff57b8b33b41c34d6",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-BF16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            8.162578957970254,
+            10.132145292009227
+          ],
+          "warm_seconds": [
+            8.904479666030966,
+            7.6031698329607025,
+            8.838021583971567,
+            7.593341958010569
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.220595708466135,
+          "repeated_prompt_seconds": [
+            6.969681040965952,
+            7.076567208976485
+          ],
+          "constructor_seconds": [
+            0.1269702920690179,
+            0.13753745798021555
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            8.792366583016701,
+            9.946850707987323
+          ],
+          "warm_seconds": [
+            10.865964874974452,
+            11.66838779207319,
+            10.556265625054948,
+            11.66094604099635
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 11.263455457985401,
+          "repeated_prompt_seconds": [
+            11.742383291944861,
+            11.89963712496683
+          ],
+          "constructor_seconds": [
+            0.3697369589935988,
+            0.3610091250156984
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "same BF16 files; native/mflux ABBA; compression/swap retained; mlx-serve rejects original key/layout, no latency denominator",
+      "unsupported_same_layout_frameworks": [
+        "mlx-serve26.10.1"
+      ],
+      "native_hybrid_status": "9B DiT partition unvalidated; no automatic/claimed mixed benchmark"
     }
   ],
   "missing_current_comparisons": [
-    "FLUX9B GPU and applicable frameworks",
-    "mlx-serve media",
+    "mlx-serve matched converted media precision if applicable",
     "Z Q4_0/NVFP4/ConvRot full matched routes",
     "current applicable video framework/asset alignment"
   ]
