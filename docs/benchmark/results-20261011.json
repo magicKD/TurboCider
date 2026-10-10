@@ -855,11 +855,488 @@
         "mlx-serve26.10.1"
       ],
       "native_hybrid_status": "9B DiT partition unvalidated; no automatic/claimed mixed benchmark"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-base-formats-20261011.json",
+        "sha256": "0d2b5a679a1f40fbc22d33a1f3c2e4d008ab4e26e79f124b2ecf0e2f73d52cd2",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-local-bf16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "bf16-gpu",
+          "cold_seconds": [
+            8.341063209,
+            8.030635542
+          ],
+          "warm_seconds": [
+            7.541439833,
+            7.477191875,
+            7.68508,
+            7.560739666
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.5510897495,
+          "repeated_prompt_seconds": [
+            6.998122708,
+            6.992771958
+          ],
+          "physical_peaks": [
+            31739346232,
+            31390465168
+          ],
+          "route_kind": "gpu"
+        },
+        {
+          "route": "bf16-frozen",
+          "cold_seconds": [
+            11.620489417,
+            11.70241
+          ],
+          "warm_seconds": [
+            6.2599295,
+            6.114796,
+            6.506282084,
+            5.818650375
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.18736275,
+          "repeated_prompt_seconds": [
+            5.352482,
+            5.340600375
+          ],
+          "physical_peaks": [
+            32105676760,
+            31580880496
+          ],
+          "route_kind": "frozen"
+        },
+        {
+          "route": "bf16-private",
+          "cold_seconds": [
+            7.009717791,
+            8.244345833
+          ],
+          "warm_seconds": [
+            6.621487792,
+            6.613821875,
+            6.459768542,
+            6.242370625
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.5367952085,
+          "repeated_prompt_seconds": [
+            5.772485875,
+            5.754404209
+          ],
+          "physical_peaks": [
+            31748079264,
+            31390039400
+          ],
+          "route_kind": "private"
+        }
+      ],
+      "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
+      "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
+      "source_library_inputs_matched": 514
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-base-formats-20261011.json",
+        "sha256": "0d2b5a679a1f40fbc22d33a1f3c2e4d008ab4e26e79f124b2ecf0e2f73d52cd2",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-local-nvfp4",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "nvfp4-gpu",
+          "cold_seconds": [
+            9.692126625,
+            9.715145208
+          ],
+          "warm_seconds": [
+            8.837100084,
+            8.838063542,
+            8.855149125,
+            8.849817333
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.8439404375,
+          "repeated_prompt_seconds": [
+            8.490695167,
+            8.497675125
+          ],
+          "physical_peaks": [
+            24525168944,
+            24108883648
+          ],
+          "route_kind": "gpu"
+        }
+      ],
+      "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
+      "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
+      "source_library_inputs_matched": 514
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-base-formats-20261011.json",
+        "sha256": "0d2b5a679a1f40fbc22d33a1f3c2e4d008ab4e26e79f124b2ecf0e2f73d52cd2",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-local-convrot",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "convrot-gpu",
+          "cold_seconds": [
+            10.283646625,
+            9.562205959
+          ],
+          "warm_seconds": [
+            8.851079208,
+            8.837342167,
+            8.855493042,
+            8.836744833
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.844210687499999,
+          "repeated_prompt_seconds": [
+            8.486339167,
+            8.490044334
+          ],
+          "physical_peaks": [
+            25840885104,
+            25453075176
+          ],
+          "route_kind": "gpu"
+        },
+        {
+          "route": "convrot-fast",
+          "cold_seconds": [
+            9.682271916,
+            9.635441334
+          ],
+          "warm_seconds": [
+            8.862068834,
+            8.9309235,
+            8.85558325,
+            8.868768833
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.865418833500001,
+          "repeated_prompt_seconds": [
+            8.580465,
+            8.58977575
+          ],
+          "physical_peaks": [
+            17565162768,
+            15257394136
+          ],
+          "route_kind": "fast"
+        },
+        {
+          "route": "convrot-private",
+          "cold_seconds": [
+            8.286907584,
+            8.385969625
+          ],
+          "warm_seconds": [
+            7.309445125,
+            7.310674709,
+            7.34515975,
+            7.294112667
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.310059917,
+          "repeated_prompt_seconds": [
+            6.95458,
+            6.946972584
+          ],
+          "physical_peaks": [
+            26292510328,
+            26395336216
+          ],
+          "route_kind": "private"
+        },
+        {
+          "route": "convrot-public",
+          "cold_seconds": [
+            9.801579834,
+            10.405899917
+          ],
+          "warm_seconds": [
+            7.506724375,
+            7.510749833,
+            7.525614583,
+            7.507964583
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.509357208,
+          "repeated_prompt_seconds": [
+            7.157645459,
+            7.159373875
+          ],
+          "physical_peaks": [
+            26419584416,
+            25955392616
+          ],
+          "route_kind": "public"
+        }
+      ],
+      "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
+      "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
+      "source_library_inputs_matched": 514
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-base-formats-20261011.json",
+        "sha256": "0d2b5a679a1f40fbc22d33a1f3c2e4d008ab4e26e79f124b2ecf0e2f73d52cd2",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-local-q4",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "q4-gpu",
+          "cold_seconds": [
+            16.227939708,
+            16.621122792
+          ],
+          "warm_seconds": [
+            9.51263525,
+            9.466573625,
+            9.474475458,
+            9.460539083
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.470524541500001,
+          "repeated_prompt_seconds": [
+            9.120851417,
+            9.114760417
+          ],
+          "physical_peaks": [
+            25905734944,
+            27246962936
+          ],
+          "route_kind": "gpu"
+        },
+        {
+          "route": "q4-fast",
+          "cold_seconds": [
+            11.2441095,
+            10.874697833
+          ],
+          "warm_seconds": [
+            9.352222708,
+            9.376381708,
+            9.354799875,
+            9.338892125
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.353511291499998,
+          "repeated_prompt_seconds": [
+            8.301504,
+            8.308671208
+          ],
+          "physical_peaks": [
+            9211548088,
+            9462288872
+          ],
+          "route_kind": "fast"
+        },
+        {
+          "route": "q4-private",
+          "cold_seconds": [
+            10.721449417,
+            10.717417209
+          ],
+          "warm_seconds": [
+            9.020890875,
+            9.011204,
+            9.004141834,
+            8.995366833
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.007672917,
+          "repeated_prompt_seconds": [
+            7.942098,
+            7.947968916
+          ],
+          "physical_peaks": [
+            9160151552,
+            9808007680
+          ],
+          "route_kind": "private"
+        },
+        {
+          "route": "q4-public",
+          "cold_seconds": [
+            12.76749175,
+            12.739613625
+          ],
+          "warm_seconds": [
+            9.751532375,
+            9.773335041,
+            9.767664542,
+            9.753782375
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.7607234585,
+          "repeated_prompt_seconds": [
+            8.643770875,
+            8.613879667
+          ],
+          "physical_peaks": [
+            9701134920,
+            9560937008
+          ],
+          "route_kind": "public"
+        }
+      ],
+      "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
+      "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
+      "source_library_inputs_matched": 514
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-base-formats-20261011.json",
+        "sha256": "0d2b5a679a1f40fbc22d33a1f3c2e4d008ab4e26e79f124b2ecf0e2f73d52cd2",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-local-q8",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "q8-gpu",
+          "cold_seconds": [
+            19.218576583,
+            19.254118291
+          ],
+          "warm_seconds": [
+            9.571551083,
+            9.580769958,
+            9.551887667,
+            9.570919625
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.571235353999999,
+          "repeated_prompt_seconds": [
+            9.201526041,
+            9.179318625
+          ],
+          "physical_peaks": [
+            29011259032,
+            28540398848
+          ],
+          "route_kind": "gpu"
+        },
+        {
+          "route": "q8-fast",
+          "cold_seconds": [
+            12.196447375,
+            11.859938042
+          ],
+          "warm_seconds": [
+            9.509572667,
+            9.549009375,
+            9.498857541,
+            9.499291375
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.504432021,
+          "repeated_prompt_seconds": [
+            8.239812625,
+            8.196223
+          ],
+          "physical_peaks": [
+            11474213248,
+            11909404984
+          ],
+          "route_kind": "fast"
+        },
+        {
+          "route": "q8-private",
+          "cold_seconds": [
+            12.006255709,
+            11.8440555
+          ],
+          "warm_seconds": [
+            9.30764625,
+            9.2963015,
+            9.30981475,
+            9.274174083
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.301973875,
+          "repeated_prompt_seconds": [
+            7.994042125,
+            7.979929042
+          ],
+          "physical_peaks": [
+            12023404952,
+            12187769264
+          ],
+          "route_kind": "private"
+        },
+        {
+          "route": "q8-public",
+          "cold_seconds": [
+            13.989153292,
+            13.784969875
+          ],
+          "warm_seconds": [
+            10.02622075,
+            10.060289791,
+            9.999789792,
+            10.042044375
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 10.0341325625,
+          "repeated_prompt_seconds": [
+            8.673698125,
+            8.668962708
+          ],
+          "physical_peaks": [
+            12167780808,
+            12646046080
+          ],
+          "route_kind": "public"
+        }
+      ],
+      "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
+      "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
+      "source_library_inputs_matched": 514
     }
   ],
   "missing_current_comparisons": [
-    "mlx-serve matched converted media precision if applicable",
-    "Z Q4_0/NVFP4/ConvRot full matched routes",
-    "current applicable video framework/asset alignment"
+    "current LTX full-media route samples and applicable framework/asset alignment"
   ]
 }

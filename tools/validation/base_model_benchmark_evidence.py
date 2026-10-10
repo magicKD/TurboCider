@@ -141,11 +141,23 @@ def export():
         note="same BF16 files; native/mflux ABBA; compression/swap retained; mlx-serve rejects original key/layout, no latency denominator",
         unsupported_same_layout_frameworks=["mlx-serve26.10.1"],
         native_hybrid_status="9B DiT partition unvalidated; no automatic/claimed mixed benchmark"))
+    z, binding = source("docs/design/validation/z-base-formats-20261011.json", ("complete_diagnostic",))
+    for format_name in ("bf16", "nvfp4", "convrot", "q4", "q8"):
+        routes = []
+        for route in z["routes"]:
+            if route["format"] == format_name:
+                routes.append(measured(route["name"], route["cold_seconds"], route["fresh_warm_seconds"],
+                    repeated_prompt_seconds=route["repeat_seconds"], physical_peaks=route["physical_peaks"],
+                    route_kind=route["mode"]))
+        campaigns.append(dict(evidence=binding, model="z-image-turbo-local-" + format_name, geometry=[512, 512],
+            steps=8, date="2026-10-11", routes=routes,
+            timing_scope="native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
+            note="same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
+            source_library_inputs_matched=z["native_inputs_matched"]))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False, campaigns=campaigns,
-                missing_current_comparisons=["mlx-serve matched converted media precision if applicable",
-                    "Z Q4_0/NVFP4/ConvRot full matched routes", "current applicable video framework/asset alignment"])
+                missing_current_comparisons=["current LTX full-media route samples and applicable framework/asset alignment"])
 
 
 def main():

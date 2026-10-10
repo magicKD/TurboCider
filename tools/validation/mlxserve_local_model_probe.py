@@ -43,11 +43,21 @@ def request(port, route, payload=None, timeout=5):
         return error.code, error.read().decode()
 
 
+def generation_request(modality):
+    route = "/v1/images/generations" if modality == "image" else "/v1/video/generations"
+    payload = dict(prompt="A red fox sitting in a snowy forest.", seed=42)
+    payload.update(dict(size="512x512", steps=4) if modality == "image" else
+                   dict(width=704, height=448, frames=97, steps=11, fps=24))
+    return route, payload
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--layout-label", default="original local FLUX9B BF16 diffusers shards")
+    parser.add_argument("--modality", choices=("image", "video"), default="image")
     args = parser.parse_args()
     binary, model = args.binary.resolve(strict=True), args.model.resolve(strict=True)
     if args.output.exists():
@@ -60,7 +70,7 @@ def main():
     command = [str(binary), "--serve", "--host", "127.0.0.1", "--port", str(port),
                "--model", str(model), "--log-file", "off"]
     report = dict(schema="tc-mlxserve-local-compatibility-v1", status="running", version=version,
-                  binary_sha256=sha256_file(binary), model_layout="original local FLUX9B BF16 diffusers shards",
+                  binary_sha256=sha256_file(binary), model_layout=args.layout_label, modality=args.modality,
                   qualification_passed=False, latency_comparison_valid=False, requests=[],
                   scope="owned server over loopback; original unmodified model; no precision/layout conversion")
     start = time.perf_counter()
@@ -83,8 +93,8 @@ def main():
             if ready:
                 if listener_pid(port) != {process.pid}:
                     raise RuntimeError("listener identity changed")
-                code, text = request(port, "/v1/images/generations", dict(
-                    prompt="A red fox sitting in a snowy forest.", size="512x512", steps=4, seed=42), timeout=120)
+                route, payload = generation_request(args.modality)
+                code, text = request(port, route, payload, timeout=120)
                 report["requests"].append(dict(http_status=code, response_bytes=len(text.encode()),
                                                 response=text if code != 200 else "image payload retained separately"))
                 if code == 200:

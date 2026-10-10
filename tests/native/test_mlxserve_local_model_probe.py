@@ -6,10 +6,17 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from mlxserve_local_model_probe import listener_pid, stop_owned
+from mlxserve_local_model_probe import listener_pid, stop_owned, generation_request
 
 
 class MlxserveProbeTests(unittest.TestCase):
+    def test_video_probe_not_mislabeled_as_image_workload(self):
+        route, payload = generation_request("video")
+        self.assertEqual(route, "/v1/video/generations")
+        self.assertEqual((payload["width"], payload["height"], payload["frames"], payload["steps"]), (704, 448, 97, 11))
+        self.assertNotIn("size", payload)
+        self.assertEqual(generation_request("image")[1]["size"], "512x512")
+
     def test_exact_listener_pid_set(self):
         with patch("mlxserve_local_model_probe.subprocess.run", return_value=SimpleNamespace(stdout="p42\np43\nf9\n")) as run:
             self.assertEqual(listener_pid(12345), {42, 43})

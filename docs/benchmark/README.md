@@ -16,9 +16,9 @@ override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
 12对PNG与显式组合一致。它使既有加速可直接使用，不是再一次新kernel
 倍率。[默认条件、关闭开关与真实session回归](../status/qwen21-fast-defaults-2026-10-11.md)。
 
-报告仍在补全：FLUX 9B 原 BF16 的 native/mflux 正反序已完成；mlx-serve
-26.10.1 对该原布局实际拒绝加载，单列格式边界。Z 其它本地格式与适用
-视频对照还未齐；“未测”不是不支持，也不拿第三方宣传值替代本机测量。
+报告仍在补全视频边界：FLUX9B原BF16 native/mflux与Z五格式16配置的
+正反序已完成；mlx-serve26.10.1对原FLUX布局拒绝、对原LTX组合在默认
+memory preflight阶段拒绝，均不作成功性能分母。不拿第三方宣传值补数。
 
 ## 1. 当前本地资产
 
@@ -30,9 +30,9 @@ override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
 | --- | ---: | --- | --- |
 | Qwen Image 2.1 BF16 | 30.21 | encoder/DiT/VAE/tokenizer 在 | 40 步 resident/streaming/混合有实测 |
 | Qwen Image 2.1 原 Q4_K_M | 9.22 | 原 GGUF encoder/DiT + 原 BF16 VAE 在 | GPU/Private W8A8/原 Unsloth 有同任务实测 |
-| Z-Image Turbo BF16 | 19.27 | 完整组合在 | 512²/1024² GPU 与混合有历史同库实测 |
-| Z-Image NVFP4 / INT8 ConvRot | 12.00 / 13.58 | 完整组合在 | 尚缺本报告的新完整多路对照 |
-| Z-Image GGUF Q4_0 / Q8_0 | 12.00 / 14.53 | DiT + 共用原 BF16 encoder/VAE 在 | Q8 有 1024² GPU/runtime 对照；Q4 待补 |
+| Z-Image Turbo BF16 | 19.27 | 完整组合在 | 当前512² GPU/frozen/Private正反序；1024²另保留历史 |
+| Z-Image NVFP4 / INT8 ConvRot | 12.00 /13.58 | 完整组合在 | 当前GPU/ConvRot Public+Private正反序；NVFP4 GPU-only |
+| Z-Image GGUF Q4_0 / Q8_0 | 12.00 /14.53 | DiT + 共用原BF16 encoder/VAE在 | 当前stock/fast GPU/Public/Private正反序；Q8另有1024²历史 |
 | FLUX.2 Klein 9B BF16 | 32.32 | 两个 DiT、四个 encoder shards 与 VAE 在 | native/mflux同源BF16 ABBA完成；9B DiT混合未验证 |
 | LTX 2.5 distilled INT8 ConvRot | 42.87 | 含外部软链接目标、connector、两个 VAE 在 | 有 GPU/实验 ANE 历史实测，见第 5 节 |
 | MiniMax H3 原 BF16 源 | 62.29（仅现存组件） | 缺原 video VAE 权重 | 不能按完整本地可执行模型报告 |
@@ -57,6 +57,10 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-10 Qwen 原 Q4_K_M，512²，40 步 | 44.428 | 36.870，Private W8A8 通道分割 | 1.205× / 17.0% | 每路两 fresh warm；相同 BF16 I/O 前置负载 |
 | 10-10 Qwen BF16，512²，40 步 | 43.353 | 33.121，checkpoint-bound frozen Core ML | 1.309× / 23.6% | 四 fresh warm/路；CPU busy diagnostic，非独占资格 |
 | 10-11 FLUX9B BF16，512²，4步 | 8.221 | N/A，9B DiT分区未验证 | mflux对照见第5节 | 四fresh warm/路；同源BF16 stock ABBA |
+| 10-11 Z BF16，512²，8步 | 7.551 | 6.187，frozen image-only W8A8 | 1.220× /18.1% | 四fresh warm/配置；完整正反序 |
+| 10-11 Z INT8 ConvRot，512²，8步 | 8.844 | 7.310，Private Comfy W8A8 | 1.210× /17.3% | fastest measured GPU denominator，非慢control |
+| 10-11 Z Q4_0 GGUF，512²，8步 | 9.354 | 9.008，Private Sylvester W8A8 | 1.038× /3.7% | CPU-direct packed；GPU FP16 recipe另记 |
+| 10-11 Z Q8_0 GGUF，512²，8步 | 9.504 | 9.302，Private Sylvester W8A8 | 1.022× /2.1% | 四fresh warm，非repeat cache hit |
 | 09-30 Qwen BF16，1024²，40 步 | 183.086 | 144.564，Public runtime v1 | 1.266× / 21.0% | 正反序两 warm/路；不是上一行的 encoder 生命周期 |
 | 09 月 Z BF16，512²，8 步 | 6.997 | 5.344，frozen image-only W8A8 | 1.309× / 23.6% | 同库回文顺序四 warm/路；单狐狸 prompt |
 | 09-30 Z BF16，1024²，8 步 | 31.429 | 28.400，Public runtime v1 | 1.107× / 9.6% | 灯塔四 warm/路；肖像为 31.401 / 28.388 |
@@ -71,6 +75,8 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 [Z Q8 1024](../status/runtime-ane-z-gguf-q8-1024-2026-09-30.md)、
 [LTX 机器记录](../design/validation/ltx-ane-and-720p-tiled-2026-09-13.json)。
 历史行不是 10 月 11 日新构建的速度承诺；不得把 M4 Pro/M5 数据并入本表。
+Z五格式的新同库配置、完整16路线、cold/fresh/repeat/peak/source/calls
+和图像差异见 [Z详细结果](Z_IMAGE_FORMATS.md)。NVFP4 GPU8.844s，无ANE列。
 
 ## 3. Qwen GGUF 与原 Unsloth：encoder 到完整生成
 
@@ -149,7 +155,12 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
   少调用却只让完整请求名义省 0.38%，未替换 c352。
 - Z Q8：混合可省约 14%，但另一组 BF16 GPU 的约 31 s 不应与它的
   40 s 跨源算 kernel 倍率。auto runtime 肖像正反序 PNG 不同，不能
-  宣称完全确定性。Q4/NVFP4/ConvRot 新整请求对照还未齐。
+  宣称完全确定性。这是历史1024²，不与当前512²结果混池。
+  当前16配置新窗口中，BF16 fastest fresh6.187s；Q4/Q8的主要价值是
+  fast packed GPU/混合的约8.5–11.8GiB tree peak，而非超过BF16时延。
+  ConvRot compiled-dense仅名义比stock慢0.24%，未选作最快GPU；其低
+  peak单列。全部32memory verifier complete，64对正反序RGB exact，
+  BF16窗口的compression和一条ConvRot-fast swap-in保留，不声称无压力。
 - FLUX 9B：native 有 GPU module，DiT `gpu_ane` 明确拒绝未验证分区。
   新同源BF16、512²/4步、native→mflux→mflux→native对照，四fresh warm
   中位8.220596 /11.263455s，native省27.02%（1.370×）。cold分别
@@ -203,10 +214,11 @@ process-tree physical peak、系统 compression/swap 和输出/质量证据。
 首次完整模型 SHA 持久化，后续 generation 未变时只做轻量身份检查；
 不要在每个 inference 前重扫模型、用 I/O 预热制造冷启动优势。
 
-尚需完成Z其它本地格式的完整对照、适用mlx-serve转换精度与
-适用视频框架资产/输出口径核对。报告与整个优化目标继续 active；
+尚需完成当前LTX完整音视频路线样本与适用视频框架资产/输出口径核对。
+原格式不兼容或stock memory preflight拒绝的框架已明确N/A；额外转换
+不同精度不是本地原模型排名的隐含分母。报告与整个目标继续active；
 未测或失败条目不会变成隐含通过。
 
-[12 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[17 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是 partial evidence catalog，不把缺少当前对照的条目伪标为 complete。

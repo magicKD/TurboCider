@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import statistics
 import sys
 import unittest
 
@@ -8,6 +10,20 @@ from z_base_formats_evidence import best_routes, controls
 
 
 class ZBaseEvidenceTests(unittest.TestCase):
+    def test_current_complete_sweeps_and_actual_config_winners(self):
+        data = json.loads((ROOT / "docs/design/validation/z-base-formats-20261011.json").read_text())
+        self.assertEqual(data["status"], "complete_diagnostic")
+        self.assertEqual(len(data["routes"]), 16)
+        self.assertEqual(len(data["sweeps"]), 2)
+        self.assertEqual(data["sweeps"][0]["order"], list(reversed(data["sweeps"][1]["order"])))
+        self.assertTrue(all(trial["memory"]["complete"] is True for sweep in data["sweeps"] for trial in sweep["trials"]))
+        for row in data["routes"]:
+            self.assertEqual(len(row["fresh_warm_seconds"]), 4)
+            self.assertEqual(row["fresh_warm_median"], statistics.median(row["fresh_warm_seconds"]))
+        for best in data["best_per_format"]:
+            self.assertEqual(best, best_routes(data["routes"], best["format"]))
+        self.assertNotIn("/Users/", json.dumps(data))
+
     def test_gpu_control_is_best_measured_gpu_not_slow_stock_denominator(self):
         rows = [dict(name=name, format="q4", mode=mode, fresh_warm_median=seconds)
                 for name, mode, seconds in (("stock", "gpu", 10), ("compiled", "fast", 8),
