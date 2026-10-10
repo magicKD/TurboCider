@@ -1,0 +1,318 @@
+{
+  "schema": "turbocider.native_lora_paired_base_screen_status.v1",
+  "date": "2026-10-08",
+  "status": "NoGain",
+  "conclusion": {
+    "numerical_screening_passed": true,
+    "stable_full_ffn_speedup_observed": false,
+    "both_recorded_orders_slightly_slower": true,
+    "dispatch_reduction_is_speedup_proof": false,
+    "dominant_bottleneck_identified": false,
+    "performance_qualified": false,
+    "general_model_quality_qualified": false,
+    "native_block_integration_performed": false,
+    "request_route_or_default_changed": false,
+    "app_integration_or_acceptance_performed": false,
+    "e2e_performed": false,
+    "extra_e2e_recommended_for_this_candidate": false,
+    "ane_or_hybrid_lora_qualified": false,
+    "full_request_memory_certified": false,
+    "historical_results_requalified": false
+  },
+  "build": {
+    "runtime_build_id": "tc-runtime-build-v1-e6ea19097dc565035bf6a6fc3a554308a6f1c9d968042098f847c1430aa7f160",
+    "source_count": 570,
+    "source_mismatches": [],
+    "before_after_unchanged": true,
+    "artifacts_from_bound_preverification": {
+      "build/native-lora-paired-runtime-20261008/runtime-build/runtime-build-manifest.json": "06bdc6e1a9772a23bed58317da57cba8bd06dea974ac3339c5a40b6326603b30",
+      "build/native-lora-paired-runtime-20261008/turbocider": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+      "build/native-lora-paired-runtime-20261008/libturbocider.dylib": "aa04b56b89f01891ab004729a57f9e78979829b00dc549c74f1f5d6c61e61ee3",
+      "build/native-lora-paired-replay-20261008/native-qwen-lora-paired-ffn-replay": "0da891317d4c14abd2337a90e084f55c0f1d36a2b2619400eb3a0ee89fe873b0",
+      "tools/native/native_qwen_lora_paired_ffn_replay.cpp": "988ca1c8b3dabf15ad32bdb8238b83e613bc1691bc4ba77a5268f4ba57ff3d97",
+      "tools/native/build_native_qwen_lora_paired_ffn_replay.sh": "d04e1ad977d1a23414c32431af2a156c4c053beece7a4d5f7219f6692eab1580"
+    },
+    "native_package_build_passed": true,
+    "full_build_warnings": {
+      "count": 3,
+      "scope": "existing ane_gpu.mm fastMathEnabled deprecation"
+    },
+    "full_test_suite_run_by_package_build": false
+  },
+  "configuration": {
+    "device": "Apple M4 Pro",
+    "model": "qwen-image-2.1",
+    "base_dtype": "bf16",
+    "adapter": "Viggle v0.2.1 six-step r128",
+    "strength": 1,
+    "layer": 0,
+    "step": 5,
+    "rows": 1024,
+    "hidden": 4096,
+    "ffn_width": 12288,
+    "rank": 128,
+    "captured_input_count": 1,
+    "native_full_ffn_calls": 6,
+    "mlx_full_oracle_calls": 1,
+    "sequence": "warm AB, record AB, record BA",
+    "A": "split-base",
+    "B": "paired-base",
+    "model_downloads": 0,
+    "checkpoint_copies": 0,
+    "automatic_retries": 0,
+    "new_captures": 0
+  },
+  "execution": {
+    "base_gate_up_kernel": {
+      "A": "two-native-linear",
+      "B": "paired-native-gate-up"
+    },
+    "base_gate_up_recipe": {
+      "A": "dense-bf16-mpp32x128-fp32-accum-cast-before-bias-v2",
+      "B": "dense-bf16-mpp32x128-paired-base-separate-bf16-gate-up-v1"
+    },
+    "schedule_id": {
+      "A": "split-base-gate-then-up-before-ordered-corrections-v1",
+      "B": "paired-base-gate-up-before-ordered-corrections-v1"
+    },
+    "shared_lora_recipe": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2",
+    "shared_down_recipe": "dense-bf16-mpp32x128-fp32-accum-cast-before-bias-v2",
+    "shared_tail_order": [
+      "gate-low",
+      "gate-apply",
+      "up-low",
+      "up-apply",
+      "silu-up",
+      "down-base",
+      "down-low",
+      "down-apply"
+    ],
+    "full_ffn_dispatches": {
+      "A": 10,
+      "B": 9
+    },
+    "same_sources_same_instances": "Both arms reuse identical input/base/factor views, one SGMMA NativeLoRA, one down NativeLinear, one FP32 low view and all six scratch backings",
+    "baseline_schedule_scope": "A encodes gate-base then up-base before either correction. Historical SGMMA replay interleaved gate-base/gate-correction/up-base/up-correction; these timings do not reproduce that historical schedule or qualify E2E",
+    "new_primitive_default_extra_pso_count": 0,
+    "explicit_paired_prepare_pso_count": 1,
+    "paired_primitive_does_not_apply_lora_or_silu": true
+  },
+  "timing": {
+    "recorded_pairs": [
+      {
+        "numeric_screening_pass": true,
+        "order": "AB",
+        "paired_full_ffn_wall_seconds": 0.051881042,
+        "paired_over_split_wall": 1.0009703120251974,
+        "round": 1,
+        "scope": "Each arm is the complete base+ordered-LoRA+SiLU+down FFN through physical completion; excludes snapshot/validation and cold preparation",
+        "split_full_ffn_wall_seconds": 0.05183075,
+        "time_saved_fraction": -0.0009703120251973729,
+        "warmup": false
+      },
+      {
+        "numeric_screening_pass": true,
+        "order": "BA",
+        "paired_full_ffn_wall_seconds": 0.0518855,
+        "paired_over_split_wall": 1.005690503915381,
+        "round": 2,
+        "scope": "Each arm is the complete base+ordered-LoRA+SiLU+down FFN through physical completion; excludes snapshot/validation and cold preparation",
+        "split_full_ffn_wall_seconds": 0.051591916,
+        "time_saved_fraction": -0.005690503915380951,
+        "warmup": false
+      }
+    ],
+    "warmup_pairs_excluded": [
+      {
+        "numeric_screening_pass": true,
+        "order": "AB",
+        "paired_full_ffn_wall_seconds": 0.051153625,
+        "paired_over_split_wall": 0.7839465769762517,
+        "round": 0,
+        "scope": "Each arm is the complete base+ordered-LoRA+SiLU+down FFN through physical completion; excludes snapshot/validation and cold preparation",
+        "split_full_ffn_wall_seconds": 0.065251417,
+        "time_saved_fraction": 0.2160534230237483,
+        "warmup": true
+      }
+    ],
+    "timing_scope": "encode/submit/physical completion; no allocation, PSO, oracle, CPU comparison or provenance hashing in arm timings",
+    "pair_validation_scope": "finite/RRMS comparisons, stat revalidation, padding and memory checkpoint after both arms; only an explicitly timed 8-MiB output snapshot between arms",
+    "gpu_span_scope": "ticket first GPUStartTime to last GPUEndTime; zero unavailable, not kernel busy time",
+    "prepare_seconds": {
+      "adapter_verification_included": 0.242930167,
+      "one_mlx_oracle": 0.065767041,
+      "paired_base_pso": 0.203250042,
+      "shared_sgmma_pso": 0.000280708,
+      "source_including_adapter_verification": 0.296885375,
+      "split_and_down_linear_pso": 0.000463166
+    },
+    "cold_scope": "split/down Linear, then paired base, then shared SGMMA prepared on one Backend; OS/driver compiler cache shared and not reset",
+    "independent_cold_pso_ranking_valid": false,
+    "oracle_scope": "One actual compiled runtime_ffn::full MLX projection graph on the same retained Weights; oracle preparation includes first execution and is not a warmed MLX timing arm",
+    "paired_slower_percent_by_order": {
+      "AB": 0.09703120251973729,
+      "BA": 0.5690503915380951
+    }
+  },
+  "numerics": {
+    "screening_rrms_limit": 0.005,
+    "all_arms_vs_actual_mlx_full_oracle": {
+      "bf16_differences": 95,
+      "finite_elements": 4194304,
+      "max_abs": 0.001953125,
+      "passes_rrms_limit": true,
+      "rrms": 9.935683191904662e-07
+    },
+    "all_pairs_split_vs_paired_bf16_bit_identical": true,
+    "pair_rrms": 0,
+    "pair_max_abs": 0,
+    "pair_bf16_differences": 0,
+    "scope": "One layer0/step5 full FFN output, not final latent/image or all adapters/rows"
+  },
+  "memory": {
+    "framework_guard_certified": false,
+    "ledger_pending_release_count_after_release": 0,
+    "ledger_reservation_count_after_release": 0,
+    "ledger_storage_bytes_after_release": 0,
+    "ledger_storage_count_after_release": 0,
+    "ledger_unknown_bytes_after_release": 0,
+    "manifest_digest": "186daa204778b20c9de32f9773045659e1cfe0fcb13010ac99d712616ab1ebd7",
+    "mlx_active_after_oracle": 331350016,
+    "native_owned_bytes_before_release": 93192192,
+    "native_scratch_backings": 6,
+    "process_baseline_bytes": 876053416,
+    "process_observed_after_bytes": 535020528,
+    "same_phase_peak_committed_bytes": 969245608,
+    "source_payload_bytes": 322961408,
+    "whole_request_certified": false,
+    "source_payload_mib": 308.0,
+    "owned_native_scratch_mib": 88.875,
+    "baseline_scope": "Produced original MLX base/factor/input/oracle backings retained before phase; not claimed as newly native-owned imports",
+    "ledger_peak_scope": "same_phase_peak_committed_bytes includes retained process baseline; not scratch alone",
+    "entire_process_memory_returned_to_zero": false
+  },
+  "correctness_and_lifetimes": {
+    "source_immutable": true,
+    "actual_mlx_data_owner_verified": true,
+    "padding_intact": true,
+    "all_work_physically_complete": true,
+    "same_ledger_released": true
+  },
+  "physical_completion": {
+    "source": "Each native Ticket reports physically_complete and completed_buffers == submitted_buffers == 1",
+    "completed_native_ffns": 6,
+    "supervisor_exit_is_physical_proof": false
+  },
+  "sources": {
+    "capture_id": "75991-1226054446574458",
+    "model_stat_fingerprint": "4c9828dbea7037e9967e357d6f69cba56f10703f071994bc5f2cbf2bf1efcae0",
+    "base_source_proof": "same held descriptor and canonical stat generation; no full-checkpoint hash",
+    "adapter_source_proof": "verified-held-fd",
+    "adapter_sha256": "bafb91d0047df3f9b8a5a850b0c967f051164314d8aad778dfa34d9c24ec345b",
+    "adapter_artifact_digest": "b2720b99dd5c883f0d1eec37274ecc5ea96864ecbb6417676bd72e021101b2b3",
+    "adapter_source_generation": 2,
+    "adapter_verification_bytes_read": 679604800,
+    "adapter_verification_cache_hits": 0,
+    "capture_complete_sha256": "ad8192c7d56af5b21c56e4011dc90f4d2938941800e2df7afd85857d46658145",
+    "input_file_sha256": "c3374d9c7eb725a1721bf2027acec7f2eb253f988cd077738597e2328deacc51",
+    "supervisor_source_stat_count": 4,
+    "supervisor_source_stats_unchanged": true,
+    "produced_tensor_digest_order": [
+      "gate",
+      "up",
+      "down",
+      "input",
+      "gate.A",
+      "gate.B",
+      "up.A",
+      "up.B",
+      "down.A",
+      "down.B",
+      "mlx_oracle"
+    ],
+    "produced_tensor_pre_post_sha256": [
+      "a64f445d9dc5d3c6ff4888d18605eb32cc4d4abf1bba4a2d191eef002f3194a2",
+      "41f2381489bad58208272e46d88409c0a212746ab603ea7883feaedfee76e715",
+      "09ecd39bf22ad4e8ed88b45deb01f65d78d643a17ee18b0fa3d4f848e46a999c",
+      "66fa43b6d9a60682bfd2959ef8f5fd16f09c91ca1aa3521ec08b5182a345296e",
+      "37ba9cacb9941206501639f4409a0a7110c980a27435ce2ddb1213bcc61cd9ff",
+      "9167d425a1780cb463435508bd2e6b80299e6e90c175cbf01b44ca23ad295bb7",
+      "54296f1e326957682db967108cce73f070d6b663bff0e34eece31d6cdfe8f22c",
+      "0a5e516f9def96a548ec7b19a67f05b7d6c2c649486199f53986cba46b5f3e13",
+      "77e9ae4aa86cfa69c9fa51dfda9eca608dd56421692c6ba3e380d4a71eea64c1",
+      "8192203e9ab081c01f081f995279935485801821538615fac0ebe036c116d5d3",
+      "7a4f2544d963f255c897968a600ef107e596e128ddbe50c34497c4a1c4b90399"
+    ],
+    "large_checkpoint_content_hash_added": false
+  },
+  "cpu_validation": {
+    "gate_up_contract_checks": 122,
+    "gate_up_source_checks": 33,
+    "gate_up_host_passed": true,
+    "replay_cpu_passed": true,
+    "replay_rejections": 6,
+    "eligible_r128_terms": 3,
+    "split_dispatches": 10,
+    "paired_dispatches": 9,
+    "shared_tail_dispatches": 8,
+    "device_execution": 0,
+    "model_loads": 0
+  },
+  "supervision": {
+    "exit_code": 0,
+    "wall_seconds": 3.430348499910906,
+    "timeout_seconds": 45,
+    "supervisor_timeout": false,
+    "signals": [],
+    "swap_before": "vm.swapusage: total = 4096.00M  used = 3297.75M  free = 798.25M  (encrypted)",
+    "swap_after": "vm.swapusage: total = 4096.00M  used = 3297.75M  free = 798.25M  (encrypted)",
+    "swap_usage_unchanged": true,
+    "thermal_before": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "thermal_after": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "hardware_frequency_or_pressure_proven": false
+  },
+  "evidence": [
+    {
+      "path": "outputs/native-lora-paired-20261008/real-ffn.json",
+      "sha256": "d1ee8ec22781790675dfc676000a5317d3316d5c95d9c5350b5452ad530cd8df"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/pre-device-verification.json",
+      "sha256": "f000cbc31530a769de8d0544c58bd2c4ca9592d5e83491d847dcbbda5f57b672"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/real-ffn-supervisor.json",
+      "sha256": "a0d3d0d2487dd41e3578afb4667e7429bba9814fa88666347034b3072c94fa30"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/full-build.log",
+      "sha256": "6da8316860b399860c5d9055ded373123b8f408ee7b7eb497fa8b17f068baa73"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/gate-up-cpu.log",
+      "sha256": "3664ff8a54d87223bfef8457d40cd4891589b35f7ec1481584a8a1130354156b"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/replay-cpu.log",
+      "sha256": "8dd681aab66210c2959cdb7d04fa87fb2f6c2e4cf3a5c35cd38cf2273eb2dd14"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/real-ffn-device.log",
+      "sha256": "6c0d714305f61002c046aee3d7cb6526398d64d4d5653a2bf874d991119840ee"
+    },
+    {
+      "path": "outputs/native-lora-paired-20261008/owned-cleanup.json",
+      "sha256": "92b68429fec342fd3c3a4ad2087127346c7b55ee580e50ef6e3c00f91e61b260"
+    }
+  ],
+  "cleanup": {
+    "status": "complete",
+    "owner": "root",
+    "scope": "Only newly owned build object/static archive/module caches and supervisor bytecode; no native binaries, manifests, receipts, images, original models, captures, or system/Apple driver caches",
+    "receipt": "outputs/native-lora-paired-20261008/owned-cleanup.json",
+    "receipt_sha256": "92b68429fec342fd3c3a4ad2087127346c7b55ee580e50ef6e3c00f91e61b260",
+    "deleted_bytes": 20721076,
+    "deleted_mib": 19.761157989501953,
+    "deleted_files": 241
+  }
+}

@@ -146,9 +146,12 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
                      std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared,
                      std::string scheduler_identity,
                      const CalibrationWorkload *calibration, std::optional<int> calibrated_channels,
-                     std::optional<int> channel_override, std::optional<int> bucket_override)
+                     std::optional<int> channel_override, std::optional<int> bucket_override,
+                     int request_rows, int fixed_bucket_rows)
     : memory_budget_(budget) {
     checkpoint(cancelled);
+    require(!configured_request_rows() || ((channel_override.value_or(private_channel_count(width)) > 0) && !prepared && !bucket_override && !fixed_bucket_rows),
+            "request rows require explicit Private channels without other bucket modes or public preparation");
     const char *prefetch_after=std::getenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
     require(!prefetch_after || std::string(prefetch_after)=="0" || std::string(prefetch_after)=="1",
             "runtime ANE prefetch placement requires 0 or 1");
@@ -224,7 +227,7 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
             graph_ = std::make_unique<RuntimeGraph>(std::move(prepared->value), budget);
         } else {
             auto built = build_runtime_executor(manifest, budget,
-                GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs}, configured_backend(), calibrated_channels,channel_override,bucket_override);
+                GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs, request_rows}, configured_backend(), calibrated_channels,channel_override,bucket_override,fixed_bucket_rows);
             graph_ = std::move(built.executor); verified = built.self_test_passed;
             verified_seconds = built.self_test_seconds;
             metrics_.runtime_weight_backend_fallback_reason = std::move(built.fallback_reason);
@@ -330,6 +333,7 @@ std::string HybridFfn::executor_configuration_identity() {
                            "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE","TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE",
                            "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD","TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE",
                            "TURBOCIDER_PRIVATE_ANE_A8_SINGLE_PASS",
+                           "TURBOCIDER_PRIVATE_ANE_ROWS",
                            "TURBOCIDER_RUNTIME_ANE_PROFILE","TURBOCIDER_PRIVATE_ANE_CACHE_DIR",
                            "TURBOCIDER_PRIVATE_ANE_S1_PROFILE",
                            "TURBOCIDER_Z_RUNTIME_LORA_MPP","TURBOCIDER_Z_MPP_PROJECTIONS",
@@ -366,7 +370,8 @@ uint64_t HybridFfn::smoothquant_bank_margin() const {
         ? uint64_t(2) * metrics_.hidden * sizeof(float) : 0;
 }
 void HybridFfn::set_smoothquant(const std::string &digest,
-                              const std::function<std::vector<Tensor>()> &make_scales) {
+                              const std::function<std::vector<Tensor>()> &make_scales,int layers) {
+    require(layers==32 || layers==36,"runtime S1 requires an explicit DiT32 or encoder36 profile");
     require(bool(make_scales) == !digest.empty(), "runtime S1 producer and digest must be supplied together");
     if (!digest.empty()) {
         require(digest.size() == 64 && digest.find_first_not_of("0123456789abcdef") == std::string::npos &&
@@ -377,7 +382,10 @@ void HybridFfn::set_smoothquant(const std::string &digest,
                 "runtime S1 requires the private W8A8 device channel executor");
     }
     if (digest == metrics_.runtime_weight_s1_digest &&
-            (digest.empty() || !smoothquant_.empty())) return;
+            (digest.empty() || !smoothquant_.empty())) {
+        require(digest.empty() || smoothquant_.size()==size_t(layers),"cached S1 family layer coverage changed");
+        return;
+    }
     // Current and prefetched banks borrow these vectors until completion.
     drain();
     smoothquant_.clear();
@@ -387,7 +395,7 @@ void HybridFfn::set_smoothquant(const std::string &digest,
     metrics_.runtime_weight_s1_stage_submissions = 0;
     metrics_.runtime_weight_s1_hybrid_blocks = 0;
     if (digest.empty() || !graph_) return;
-    const uint64_t growth = uint64_t(32) * metrics_.hidden * sizeof(float);
+    const uint64_t growth = uint64_t(layers) * metrics_.hidden * sizeof(float);
     const auto observed = observe_runtime_memory(mx::get_active_memory());
     const auto decision = admit_memory(observed, {uint64_t(4) << 30, memory_budget_},
         graph_->estimated_bytes() + retained_bytes(), growth);
@@ -399,7 +407,7 @@ void HybridFfn::set_smoothquant(const std::string &digest,
     // MLX's host-vector constructor allocates immediately. The factory must
     // run AFTER admission, and a same-digest hit must never call it.
     auto scales = make_scales();
-    require(scales.size() == 32, "runtime S1 requires a complete 32-layer profile");
+    require(scales.size() == size_t(layers), "runtime S1 requires complete family layer coverage");
     for (const auto &scale : scales)
         require(scale.ndim() == 2 && scale.shape(0) == 1 && scale.shape(1) == metrics_.hidden &&
                 scale.dtype() == mx::float32 && scale.flags().row_contiguous,
@@ -484,6 +492,74 @@ void HybridFfn::begin_request(const std::string &adapter_identity,
     planned_ = false;
     block_plan_.reset();
     row_policy_={};
+}
+void HybridFfn::reset_phase_metrics(bool reused) {
+    require(!planned_ && !pending_ && !block_plan_,"phase metrics reset requires a drained request boundary");
+    // Keep backend/geometry/capability and device-cache state; clear only
+    // model-phase work. Constructor/self-test cost belongs to a cold phase.
+    metrics_.runtime_weight_row_suffix_blocks=0;
+    metrics_.runtime_weight_row_prefix_blocks=0;
+    metrics_.runtime_weight_row_image_tail_blocks=0;
+    metrics_.runtime_weight_row_protected_rows=0;
+    metrics_.runtime_weight_row_pack_peak_bytes=0;
+    metrics_.runtime_weight_channel_blocks=0;
+    metrics_.runtime_weight_prefetch_submissions=0;
+    metrics_.runtime_weight_prefetch_hits=0;
+    metrics_.runtime_weight_prefetch_discards=0;
+    metrics_.runtime_weight_prefetch_failures=0;
+    metrics_.runtime_weight_prefetch_wait_seconds=0;
+    metrics_.runtime_weight_a8_prefetches=0;
+    metrics_.runtime_weight_a8_wait_seconds=0;
+    metrics_.runtime_weight_device_io_calls=0;
+    metrics_.runtime_weight_lora_channel_range_calls=0;
+    metrics_.runtime_weight_lora_channel_full_calls=0;
+    metrics_.runtime_weight_hybrid_blocks=0;
+    metrics_.runtime_weight_gpu_blocks=0;
+    metrics_.runtime_weight_untimed_hybrid_blocks=0;
+    metrics_.runtime_weight_async_hybrid_blocks=0;
+    metrics_.runtime_weight_deferred_join_blocks=0;
+    metrics_.runtime_weight_unsplit_gpu_blocks=0;
+    metrics_.runtime_weight_full_gpu_probe_blocks=0;
+    metrics_.runtime_weight_full_gpu_probe_seconds=0;
+    metrics_.runtime_weight_fallback_blocks=0;
+    metrics_.runtime_weight_ane_rows=0;
+    metrics_.runtime_weight_overflow_retries=0;
+    metrics_.runtime_weight_forced_gpu_blocks=0;
+    metrics_.runtime_weight_stage_seconds=0;
+    metrics_.runtime_weight_stage_wait_seconds=0;
+    metrics_.runtime_weight_join_seconds=0;
+    metrics_.runtime_weight_gpu_seconds=0;
+    metrics_.runtime_weight_async_ane_wait_seconds=0;
+    metrics_.runtime_weight_lora_gate_up_seconds=0;
+    metrics_.runtime_weight_post_join_seconds=0;
+    metrics_.runtime_weight_lora_input_ready_seconds=0;
+    metrics_.runtime_weight_wall_seconds=0;
+    metrics_.runtime_weight_pre_seconds=0;
+    metrics_.runtime_weight_convrot_stage_submissions=0;
+    metrics_.runtime_weight_s1_stage_submissions=0;
+    metrics_.runtime_weight_s1_hybrid_blocks=0;
+    metrics_.prediction_seconds=0;
+    metrics_.feature_binding_seconds=0;
+    metrics_.model_prediction_seconds=0;
+    metrics_.output_handling_seconds=0;
+    metrics_.first_runtime_prediction_seconds=0;
+    metrics_.subsequent_runtime_prediction_seconds=0;
+    metrics_.calls=0;
+    metrics_.copied_bytes=0;
+    metrics_.warmup_calls=0;
+    metrics_.runtime_calls=0;
+    metrics_.first_runtime_prediction_calls=0;
+    metrics_.subsequent_runtime_prediction_calls=0;
+    metrics_.runtime_failures=0;
+    metrics_.runtime_weight_overflow_events={};
+    metrics_.runtime_weight_session_released=false;
+    if(reused) {
+        metrics_.load_seconds=0;
+        metrics_.manifest_validation_seconds=0;
+        metrics_.model_load_seconds=0;
+        metrics_.output_backing_setup_seconds=0;
+        metrics_.zero_input_warmup_seconds=0;
+    }
 }
 void HybridFfn::set_gpu_layers(std::vector<int> layers) {
     layers=normalized_gpu_layers(std::move(layers));

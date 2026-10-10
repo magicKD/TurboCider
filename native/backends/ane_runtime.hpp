@@ -27,6 +27,9 @@ struct GraphGeometry {
     Kind kind;
     int hidden, width;
     bool require_lora_inputs = false;
+    // Actual steady-state FFN rows, supplied by the model after tokenization.
+    // Used only by the explicit Private request-row policy.
+    int request_rows = 0;
 };
 
 // Borrowed immutable row-major matrix. Sources must remain alive and readable

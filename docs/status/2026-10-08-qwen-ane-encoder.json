@@ -1,0 +1,549 @@
+{
+  "schema": "qwen21-ane-encoder-status-v1",
+  "date": "2026-10-08",
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_gib": 48
+  },
+  "branch": "dev-graph",
+  "implementation": {
+    "default": "GPU",
+    "runtime_route": "explicit process diagnostic; GPU vision/attention plus private W8A8 language FFN channels",
+    "frozen_encoder_manifest_supported": false,
+    "native_metal_graph_encoder_implemented": false,
+    "app_user_option_added": false
+  },
+  "splash_head": "0d5a035ea26d1cc566e3c7ee4e08e5e06fa68cf7",
+  "measured_runtime_build_id": "tc-runtime-build-v1-c1abbbebeaddff7c93e643d423ab90f675ae3a3d6ea5ac25ee4ce1a4a11ec9ca",
+  "final_runtime_build_id": "tc-runtime-build-v1-4cdbf278d012f5cc99b17a2d34559a1cfdb46ecb2fda72ca8671e5b012642772",
+  "final_source_change": "encoder precision/report labels only; no new device test on final reporting build",
+  "first_configuration_failure": {
+    "reason": "private W8A8 K tile too small",
+    "wall_seconds": 5.440252791973762,
+    "retained_receipt": "outputs/qwen21-ane-encoder-20261008/screen-supervisor.json",
+    "ane_program_launched": false
+  },
+  "components": {
+    "cache_limit_bytes": 268435456,
+    "candidates": [
+      {
+        "ane_channels": 3072,
+        "ane_evaluations": 18,
+        "async_ane_host_wait_seconds": 0.6575278339999999,
+        "estimated_slot_bytes": 305135872,
+        "gpu_submit_seconds": 0,
+        "owner_destroyed_after_drain": true,
+        "pairs": [
+          {
+            "error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0053158662023949175
+            },
+            "gpu_compile_vs_original": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.044389708,
+            "hybrid_seconds": 0.040399958,
+            "order": "AB",
+            "references": 1,
+            "rows": 1071,
+            "saving_percent": 8.988006859608088,
+            "warm_error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0053158662023949175
+            }
+          },
+          {
+            "error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0053158662023949175
+            },
+            "gpu_compile_vs_original": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.044815875,
+            "hybrid_seconds": 0.040233875,
+            "order": "BA",
+            "references": 1,
+            "rows": 1071,
+            "saving_percent": 10.22405564992315,
+            "warm_error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0053158662023949175
+            }
+          },
+          {
+            "error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005266855093262229
+            },
+            "gpu_compile_vs_original": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.08548625,
+            "hybrid_seconds": 0.082943667,
+            "order": "AB",
+            "references": 2,
+            "rows": 2101,
+            "saving_percent": 2.974259603152555,
+            "warm_error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005266855093262229
+            }
+          },
+          {
+            "error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005266855093262229
+            },
+            "gpu_compile_vs_original": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.086477709,
+            "hybrid_seconds": 0.082000209,
+            "order": "BA",
+            "references": 2,
+            "rows": 2101,
+            "saving_percent": 5.177634851543067,
+            "warm_error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005266855093262229
+            }
+          },
+          {
+            "error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005265216974727279
+            },
+            "gpu_compile_vs_original": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.126537875,
+            "hybrid_seconds": 0.123432875,
+            "order": "AB",
+            "references": 3,
+            "rows": 3131,
+            "saving_percent": 2.453810766144126,
+            "warm_error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005265216974727279
+            }
+          },
+          {
+            "error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005265216974727279
+            },
+            "gpu_compile_vs_original": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.12852175,
+            "hybrid_seconds": 0.1229585,
+            "order": "BA",
+            "references": 3,
+            "rows": 3131,
+            "saving_percent": 4.328644762462379,
+            "warm_error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.005265216974727279
+            }
+          }
+        ],
+        "post_join_seconds": 0.038463375,
+        "setup_seconds": 0.983296583,
+        "stage_seconds": 0.026740875,
+        "stage_wait_seconds": 0.004502625,
+        "successful_ffns": 9
+      },
+      {
+        "ane_channels": 6144,
+        "ane_evaluations": 18,
+        "async_ane_host_wait_seconds": 0.592713958,
+        "estimated_slot_bytes": 415236352,
+        "gpu_submit_seconds": 0,
+        "owner_destroyed_after_drain": true,
+        "pairs": [
+          {
+            "error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0074827730472113736
+            },
+            "gpu_compile_vs_original": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.044367375,
+            "hybrid_seconds": 0.04469275,
+            "order": "AB",
+            "references": 1,
+            "rows": 1071,
+            "saving_percent": -0.7333654515282969,
+            "warm_error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0074827730472113736
+            }
+          },
+          {
+            "error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0074827730472113736
+            },
+            "gpu_compile_vs_original": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.044358958,
+            "hybrid_seconds": 0.044736541,
+            "order": "BA",
+            "references": 1,
+            "rows": 1071,
+            "saving_percent": -0.8511989844306099,
+            "warm_error": {
+              "elements": 4386816,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0074827730472113736
+            }
+          },
+          {
+            "error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.007448130544308472
+            },
+            "gpu_compile_vs_original": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.085465083,
+            "hybrid_seconds": 0.082140875,
+            "order": "AB",
+            "references": 2,
+            "rows": 2101,
+            "saving_percent": 3.8895510111421707,
+            "warm_error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.007448130544308472
+            }
+          },
+          {
+            "error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.007448130544308472
+            },
+            "gpu_compile_vs_original": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.085523417,
+            "hybrid_seconds": 0.068281166,
+            "order": "BA",
+            "references": 2,
+            "rows": 2101,
+            "saving_percent": 20.160853722671064,
+            "warm_error": {
+              "elements": 8605696,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.007448130544308472
+            }
+          },
+          {
+            "error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0073989698995402375
+            },
+            "gpu_compile_vs_original": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.126568542,
+            "hybrid_seconds": 0.106264167,
+            "order": "AB",
+            "references": 3,
+            "rows": 3131,
+            "saving_percent": 16.042197120355546,
+            "warm_error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0073989698995402375
+            }
+          },
+          {
+            "error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0073989698995402375
+            },
+            "gpu_compile_vs_original": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0
+            },
+            "gpu_seconds": 0.126606583,
+            "hybrid_seconds": 0.106015833,
+            "order": "BA",
+            "references": 3,
+            "rows": 3131,
+            "saving_percent": 16.26356980189568,
+            "warm_error": {
+              "elements": 12824576,
+              "finite": true,
+              "limit": 0.05,
+              "rrms": 0.0073989698995402375
+            }
+          }
+        ],
+        "post_join_seconds": 0.014218373,
+        "setup_seconds": 1.42305975,
+        "stage_seconds": 0.05144958499999999,
+        "stage_wait_seconds": 0.012426874999999999,
+        "successful_ffns": 9
+      }
+    ],
+    "downloaded_models": 0,
+    "mlx_peak_bytes": 2801297680,
+    "model_exports": 0,
+    "physical_completion": "mx::eval+synchronize; existing private executor finish/drain before owner release",
+    "scope": "real layer-0 prefill FFN for 1..3 references; two candidates, warm+AB+BA per shape; no full encoder/denoising qualification",
+    "source_stat_revalidated": true,
+    "status": "pass"
+  },
+  "full_encoder": {
+    "schema": "qwen21-ane-encoder-pair-audit-v1",
+    "raw_receipt_status": "fail",
+    "raw_failure": "complete conditioning exceeds predeclared 5% screen",
+    "conditioning_comparison": {
+      "rrms": 0.05753988586277748,
+      "limit": 0.05,
+      "elements": 184320,
+      "finite": true
+    },
+    "measured_savings_percent": {
+      "total_encoder_seconds": -10.032633116016429,
+      "vision_seconds": 0.4911010419571219,
+      "language_seconds": -13.695807065827701
+    },
+    "source_after": [
+      {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors",
+        "bytes": 17534334616,
+        "device": 16777229,
+        "inode": 75695072,
+        "mtime_ns": 1790743602406676647,
+        "ctime_ns": 1790743602408073402
+      },
+      {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/processor/tokenizer.json",
+        "bytes": 11422654,
+        "device": 16777229,
+        "inode": 75719522,
+        "mtime_ns": 1790746650872939059,
+        "ctime_ns": 1790746650872939059
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-ane-encoder-20261008/runtime-shape-v2.json",
+        "bytes": 264,
+        "device": 16777229,
+        "inode": 76629889,
+        "mtime_ns": 1791433578679074821,
+        "ctime_ns": 1791433578679074821
+      }
+    ],
+    "source_generation_unchanged": true,
+    "pinned_binary_and_probe_source_match": true,
+    "physical_completion": "both native arm receipts explicitly passed eval+synchronize and source revalidation after private drain; overall failure is numerical screen",
+    "runtime_build_id": "tc-runtime-build-v1-c1abbbebeaddff7c93e643d423ab90f675ae3a3d6ea5ac25ee4ce1a4a11ec9ca",
+    "current_source_changes_after_test": [
+      "native/platform/apple/results.mm"
+    ],
+    "current_source_change_scope": "encoder precision reporting only; final build is separate; no additional device experiment",
+    "gpu": {
+      "ane_channels": 0,
+      "ane_evaluations": 0,
+      "assembly_seconds": 0.126627583,
+      "async_ane_host_wait_seconds": 0,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "hybrid_ffns": 0,
+      "language_seconds": 7.222504875,
+      "load_seconds": 0.138695708,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0,
+      "program_setup_seconds": 0,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-ane-encoder-20261008/gpu-full-encoder.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 0,
+      "stage_wait_seconds": 0,
+      "status": "pass",
+      "total_encoder_seconds": 11.998434958,
+      "vision_seconds": 4.503206084
+    },
+    "hybrid": {
+      "ane_channels": 6144,
+      "ane_evaluations": 108,
+      "assembly_seconds": 0.111791334,
+      "async_ane_host_wait_seconds": 3.537877459999999,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "hybrid_ffns": 36,
+      "language_seconds": 8.211685208,
+      "load_seconds": 0.12744325,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0.05822133300000001,
+      "program_setup_seconds": 0.26428725,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-ane-encoder-20261008/hybrid-full-encoder.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 0.649196626,
+      "stage_wait_seconds": 3.5919000000000006e-05,
+      "status": "pass",
+      "total_encoder_seconds": 13.202193917,
+      "vision_seconds": 4.481090792
+    },
+    "qualification": false,
+    "next_action": "default GPU; no image generation or automatic route for this candidate"
+  },
+  "quality_gate": {
+    "rrms_limit": 0.05,
+    "full_conditioning_rrms": 0.05753988586277748,
+    "passed": false,
+    "shape_dtype_finite_passed": true
+  },
+  "qualification": {
+    "performance": false,
+    "quality": false,
+    "hardware_int8_arithmetic_proved": false,
+    "default_auto_route": false,
+    "final_image_e2e_run": false,
+    "reason": "complete encoder is slower and fails predeclared 5% conditioning screen"
+  },
+  "device_budget": {
+    "successful_groups": 2,
+    "failed_geometry_setup_seconds": 5.440252791973762,
+    "component_wall_seconds": 11.340012957924046,
+    "complete_encoder_pair_wall_seconds": 25.38198437402025,
+    "autoretries_or_sweeps": 0
+  },
+  "models_downloaded": 0,
+  "checkpoint_copies": 0,
+  "full_model_exports": 0,
+  "owned_cleanup": {
+    "files": 1149,
+    "bytes": 455197160,
+    "private_cache_removed_bytes": 9454474,
+    "receipt": "outputs/qwen21-ane-encoder-20261008/owned-cleanup.json"
+  },
+  "final_cpu_and_app_verification": {
+    "schema": "qwen21-ane-encoder-final-verification-v1",
+    "runtime_build_id": "tc-runtime-build-v1-4cdbf278d012f5cc99b17a2d34559a1cfdb46ecb2fda72ca8671e5b012642772",
+    "native_identity_sources": 574,
+    "source_mismatches": [],
+    "private_backend_compiled": true,
+    "native_library_cli_build": "pass",
+    "swift_app_helper_build": "pass",
+    "cpu_policy_checks": 51,
+    "cpu_shape_mil": "pass",
+    "actual_encoder_result_and_fallback_labels": "pass",
+    "generated_same_measured_build": "12 pairs pass",
+    "device_tests_on_final_reporting_build": 0,
+    "measured_build_id": "tc-runtime-build-v1-c1abbbebeaddff7c93e643d423ab90f675ae3a3d6ea5ac25ee4ce1a4a11ec9ca",
+    "complete_encoder_performance": "NoGain; 10.03% slower",
+    "complete_conditioning_quality": "fail predeclared5%; actual5.754%",
+    "default": "GPU",
+    "ui_install_and_complete_session_image_request_tested": false,
+    "local_links_checked": 372,
+    "missing_links": [],
+    "git_diff_check": "pass",
+    "artifact_sha256": {
+      "build/qwen21-ane-encoder-final-20261008/libturbocider.dylib": "7ce67cee7c5c0523115c0fe3cf18b8e1df4856d3a985fd54f79833f4ab4d8d4a",
+      "build/qwen21-ane-encoder-final-20261008/turbocider": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+      "build/qwen21-ane-encoder-final-20261008/TurboCiderNativeApp": "a8859bc470008e4a581480195e1c433105e2015580ab83648e0319b73919769a",
+      "build/qwen21-ane-encoder-final-20261008/turbocider-library": "a173ac5462e3333c6bb6cf032d0966b2feda683b9b2bc91e406e064440efa036",
+      "build/qwen21-ane-encoder-probe-final-20261008/qwen21-ane-encoder-probe": "f1458f9899fc9c6c365e6b2aa489a18f9423444d19bbbd8ebb164ebe5abadcca",
+      "build/qwen21-encoder-result-test-v2-20261008/qwen21-encoder-result-test": "6e6d13ba1f6302ab19fe2a8d4feeb9ee75254525ee7d4d5ad0e6a06c6fd5d912"
+    },
+    "cleanup_removed_bytes": 455197160,
+    "model_downloads": 0,
+    "model_exports": 0
+  }
+}

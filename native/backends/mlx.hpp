@@ -18,6 +18,29 @@ namespace mx = mlx::core;
 using Tensor = mx::array;
 class Weights {
   public:
+    struct ResolvedLoRATerm {
+        Tensor down, up;
+        mx::Dtype down_dtype, up_dtype;
+        float scale;
+        int output_start, output_end;
+        size_t source_adapter_ordinal;
+        bool lease_backed;
+        std::string source_logical_id, source_role;
+        std::shared_ptr<const streaming::SourceLease> source_lease;
+        float source_strength = 0.f; // Original request bits, before alpha/rank.
+    };
+    struct ResolvedLoRABinding {
+        std::string prefix;
+        std::vector<ResolvedLoRATerm> ordered_terms;
+    };
+    // Owning immutable snapshot, sorted by prefix; each term preserves the
+    // existing runtime addition order and actual factor dtype. No eval/copy.
+    struct RuntimeLoRASnapshot {
+        std::vector<ResolvedLoRABinding> bindings;
+        bool native_metadata_compatible = true;
+        std::string native_rejection_reason;
+        bool fp16_rank_math = false;
+    };
     // One FFN invocation only. Sharing the rank-sized x @ A result between
     // ANE correction and GPU channel ranges avoids repeating it after the
     // correction's readiness fence. Retained input/A values prevent identity
@@ -42,12 +65,19 @@ class Weights {
         float scale = 1.f;
         int output_start = 0;
         int output_end = 0;
+        size_t source_adapter_ordinal = 0;
+        std::shared_ptr<const streaming::SourceLease> source_lease;
+        std::string source_logical_id, source_role;
+        float source_strength = 0.f;
     };
     std::unordered_map<std::string, Tensor> values_;
     std::unordered_map<std::string, std::vector<RuntimeLoRA>> runtime_loras_;
     // Lease-backed MLX load primitives may read lazily. Keep their duplicate
     // descriptors alive until every array owned by this weight set is gone.
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
+    std::vector<std::shared_ptr<const streaming::SourceLease>> source_leases_;
+    size_t lora_source_count_ = 0;
+    std::string native_lora_rejection_;
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
     bool affine_bf16_fp32_partial_ = false;
@@ -148,6 +178,7 @@ class Weights {
     bool convrot(const std::string &) const;
     bool nvfp4(const std::string &) const;
     bool has_runtime_loras() const { return !runtime_loras_.empty(); }
+    RuntimeLoRASnapshot runtime_lora_snapshot() const;
     Tensor project(const Tensor &, const std::string &) const;
     std::vector<Tensor> project_many(const Tensor &,
                                      const std::vector<std::string> &) const;
@@ -217,6 +248,14 @@ class Weights {
     size_t apply_loras_leased(const std::vector<LoRAAsset> &,const std::string &,const Event &,
         std::atomic<bool> &,bool,const std::shared_ptr<const streaming::SourceLease> &,
         const std::vector<std::string> &, bool strict_targets = false);
+    // logical_ids and adapters have identical indices. Unmatched roles retain
+    // their ordinal but do not open a reader. Same parser as the pathname API.
+    // Caller materializes AFTER binding, synchronizes, and retains/revalidates
+    // the held generation through all native consumers' physical completion.
+    size_t apply_loras_lease(const std::shared_ptr<const streaming::SourceLease>&,
+        const std::vector<std::string>& logical_ids, const std::vector<LoRAAsset>&,
+        const std::string& role, const Event&, std::atomic<bool>&,
+        bool inference_time = true, bool strict_targets = true);
 };
 Tensor linear(const Tensor &, const Weights &, const std::string &);
 Tensor silu(const Tensor &);

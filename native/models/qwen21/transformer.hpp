@@ -2,6 +2,7 @@
 #include "../../backends/mlx.hpp"
 #include <array>
 #include "sequence.hpp"
+#include "diagnostic_block_observer.hpp"
 
 namespace tc::qwen21 {
 struct ReferenceLatents {
@@ -40,6 +41,10 @@ class Transformer {
     Transformer(const Weights &, TransformerConfig = {}, const std::vector<Tensor> *fused_qkv = nullptr);
     Transformer(const Transformer &) = delete;
     Transformer &operator=(const Transformer &) = delete;
+    // Idle, opt-in diagnostic only. Borrowed observations never escape forward.
+    void set_diagnostic_block_observer(DiagnosticBlockObserver observer) {
+        diagnostic_block_observer_ = std::move(observer);
+    }
     void reset();
     bool prefix_matches(const Tensor &text, int height, int width,
                         const std::vector<ReferenceLatents> &references) const;
@@ -144,6 +149,7 @@ class Transformer {
   private:
     struct KV { Tensor key, value; };
     const Weights &weights_;
+    DiagnosticBlockObserver diagnostic_block_observer_;
     std::function<void(const std::string &)> release_layer_;
     TransformerConfig config_;
     // Session-owned diagnostic bank; Q/K/V are concatenated once per model

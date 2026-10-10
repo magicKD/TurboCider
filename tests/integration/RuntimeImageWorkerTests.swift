@@ -53,6 +53,7 @@ import Darwin
         let environment = try RuntimeImageWorker.environment(options: options, model: "z-image-turbo", inherited: [
             "PATH": "/usr/bin", "TURBOCIDER_ANE_BACKEND": "gpu", "TURBOCIDER_CAPTURE": "1", "TURBOCIDER_QWEN21_RUNTIME_STAGED_DIAGNOSTIC": "1"])
         try check(environment["PATH"] == "/usr/bin" && environment["TURBOCIDER_ANE_BACKEND"] == "auto" &&
+                  environment["TURBOCIDER_PRIVATE_ANE_ROWS"] == "request" &&
                   environment["TURBOCIDER_CAPTURE"] == nil && environment["TURBOCIDER_QWEN21_RUNTIME_STAGED_DIAGNOSTIC"] == nil, "Ambient flags escaped child allowlist")
         let qwenOptions = try RuntimeImageWorker.options(model: "qwen-image-2.1", store: root)
         let qwenEnvironment = try RuntimeImageWorker.environment(options: qwenOptions, model: "qwen-image-2.1", inherited: [:])

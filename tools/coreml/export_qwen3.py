@@ -330,6 +330,8 @@ def main():
                         help="explicit dual activation Q/DQ with SmoothQuant (Qwen21 only)")
     parser.add_argument("--calibration-dir", type=Path,
                         help="real decode FFN inputs: block0/step1.npy ... block31/step1.npy")
+    parser.add_argument("--calibration-corrections-dir", type=Path,
+                        help="experimental native pre-SiLU LoRA delta samples bound to the calibration inputs")
     parser.add_argument("--sq-alpha1", type=float, default=0.5)
     parser.add_argument("--sq-alpha2", type=float, default=0.5)
     parser.add_argument("--activation-scale", type=float, default=8.0)
@@ -346,12 +348,15 @@ def main():
     parser.add_argument("--qwen21-gate-up-only", action="store_true",
                         help="Qwen21 LoRA-compatible W8A8 gate/up GEMM; host applies LoRA, SiLU and down projection")
     parser.add_argument("--qwen21-fused-lora", action="store_true",
-                        help="experimental complete fused W8A8 FFN with runtime pre-SiLU LoRA input and hidden tap")
+                        help="experimental FP16 or W8A8 FFN with runtime pre-SiLU LoRA input and hidden tap")
     parser.add_argument("--down-op", choices=["conv", "linear"], default="conv",
                         help="research-only Core ML down-projection lowering")
     parser.add_argument("--output-scale", type=float, default=1.0,
                         help="divide the ANE branch before FP16 down projection")
     args = parser.parse_args()
+    if args.calibration_corrections_dir is not None and not (
+            args.qwen21_fused_lora and args.activation_precision == "int8" and args.calibration_dir is not None):
+        raise ValueError("LoRA calibration corrections require fused Qwen21 W8A8 with real inputs")
     if bool(args.bucket) == bool(args.buckets):
         raise ValueError("select exactly one of --bucket or --buckets")
     buckets = ([args.bucket] if args.bucket else
@@ -438,13 +443,14 @@ def main():
         raise ValueError("Qwen21 LoRA gate/up requires fixed 1024-row 6144-channel W8A8 input-only graph")
     if args.qwen21_fused_lora and (args.qwen21_gate_up_only or args.tap_hidden or
                                   args.tensor_layout != "qwen21" or args.layer_count > 32 or
-                                  args.activation_precision != "int8" or
-                                  args.variant != "int8_pc" or args.a8_boundary != "both" or
-                                  args.projected_weight_granularity != "per_tensor" or
+                                  not ((args.activation_precision == "int8" and
+                                        args.variant == "int8_pc" and args.a8_boundary == "both" and
+                                        args.projected_weight_granularity == "per_tensor") or
+                                       (args.activation_precision == "fp16" and args.variant == "fp16")) or
                                   args.down_op not in ("conv", "linear") or
                                   args.ane_mlp_width not in (4096, 6144, 8192) or
                                   buckets != [1024] or args.output_scale != 1):
-        raise ValueError("fused Qwen21 runtime LoRA needs fixed 1024-row, 4096/6144/8192-channel dual-A8 FFN")
+        raise ValueError("fused Qwen21 runtime LoRA needs fixed 1024-row, 4096/6144/8192-channel FP16 or dual-A8 FFN")
     if args.down_op != "conv" and (args.activation_precision != "int8" or len(buckets) != 1):
         raise ValueError("linear down projection requires fixed-shape Qwen21 A8 calibration")
 
@@ -474,6 +480,13 @@ def main():
     with os.fdopen(descriptor, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         provenance = source.provenance()
+        correction_identity = {}
+        if args.calibration_corrections_dir is not None:
+            from qwen21_calibration_corrections import load_corrections
+            for layer in range(args.layer_count):
+                _, digest, adapter = load_corrections(args.calibration_corrections_dir, args.calibration_dir,
+                    layer, buckets[0], args.ane_mlp_width, provenance["checkpoint_sha256"], np)
+                correction_identity[str(layer)] = {"sha256": digest, "adapter_identity": adapter}
         identity = {
             "owner": ("turbocider.qwen21.dit.coreml.v1" if args.tensor_layout == "qwen21"
                       else "turbocider.qwen3.encoder.coreml.v1"),
@@ -488,6 +501,7 @@ def main():
             **({"mlp_output_kind": "fused_lora"} if args.qwen21_fused_lora else {}),
             "output_scale": args.output_scale,
             "variant": args.variant,
+            **({"calibration_corrections": correction_identity} if correction_identity else {}),
             **({"activation_precision": "int8", "calibration_sha256": calibration,
                 "sq_alpha1": args.sq_alpha1, "sq_alpha2": (0.0 if args.qwen21_gate_up_only else args.sq_alpha2),
                 "activation_scale": args.activation_scale, "a8_graph": "sq_v1_" + args.a8_boundary}
@@ -547,9 +561,16 @@ def main():
                                                             buckets[0], args.hidden, np)
                         if digest != calibration[str(layer)]:
                             raise ValueError("Qwen21 calibration changed during export")
+                        corrections = None
+                        if correction_identity:
+                            corrections, correction_digest, adapter = load_corrections(args.calibration_corrections_dir,
+                                args.calibration_dir, layer, buckets[0], width, provenance["checkpoint_sha256"], np)
+                            if correction_identity[str(layer)] != {"sha256": correction_digest, "adapter_identity": adapter}:
+                                raise ValueError("LoRA corrections changed during export")
                         gate, up, down, s1, s2 = smooth_partial_ffn(
                             gate[:width], up[:width], down[:, :width], samples,
-                            args.sq_alpha1, 0.0 if args.qwen21_gate_up_only else args.sq_alpha2, np)
+                            args.sq_alpha1, 0.0 if args.qwen21_gate_up_only else args.sq_alpha2, np,
+                            corrections=corrections)
                         if args.qwen21_gate_up_only:
                             # Only the input-channel rescale is legal across the
                             # Core ML/GPU boundary. Undo the hidden-channel
@@ -570,7 +591,7 @@ def main():
                             search_scale = max(1., args.activation_scale)
                             hidden_a8_scale, search = calibrate_hidden_a8(
                                 gate, up, down, s1, samples, float(input_a8_scale),
-                                search_scale, np, outlier_rows=True)
+                                search_scale, np, outlier_rows=True, corrections=corrections, correction_s2=s2)
                             hidden_a8_scale = np.float16(
                                 float(hidden_a8_scale) * (search_scale / args.activation_scale) ** 2)
                         activation_receipts[str(layer)] = {
@@ -612,7 +633,8 @@ def main():
                         if lora_gate_up is not None:
                             gate_delta, up_delta = mb.split(x=lora_gate_up, num_splits=2, axis=1)
                             gate_value = mb.add(x=gate_value, y=gate_delta, name="lora_gate")
-                            up_delta = mb.mul(x=up_delta,
+                            if inverse_s1 is not None:
+                                up_delta = mb.mul(x=up_delta,
                                               y=np.ascontiguousarray((1 / s2).astype(np.float16).reshape(1, width, 1, 1)),
                                               name="lora_up_rescale")
                             up_value = mb.add(x=up_value, y=up_delta, name="lora_up")
@@ -625,7 +647,7 @@ def main():
                         if lora_gate_up is not None:
                             # The down LoRA consumes the *pre*-A8 SwiGLU value.
                             # Undo SmoothQuant's hidden scale for the GPU tap.
-                            hidden = mb.mul(x=activation,
+                            hidden = activation if inverse_s1 is None else mb.mul(x=activation,
                                 y=np.ascontiguousarray((s2 * args.activation_scale ** 2).astype(np.float16).reshape(1, width, 1, 1)),
                                 name="lora_hidden_unscale")
                         if hidden_a8_scale is not None:

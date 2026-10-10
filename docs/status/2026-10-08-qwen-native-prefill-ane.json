@@ -1,0 +1,124 @@
+{
+  "schema": "qwen-native-encoder-prefill-ane-v1",
+  "date": "2026-10-08",
+  "status": "experimental-qualified-only-for-tested-prepared-phases",
+  "runtime_build_id": "tc-runtime-build-v1-92e9f729b0b148f96db11e4c004c87d4435b3d8ca774331dce9bfcb388a6a0f4",
+  "source_count": 581,
+  "models_downloaded": 0,
+  "model_exports": 0,
+  "encoder_phase_build_id": "tc-runtime-build-v1-b1bfdab145c73016430effbc227d7125e45edc80f1418127210195653f0abc6c",
+  "encoder_comparisons": [
+    {
+      "preparation_reused": false,
+      "conditioning_rrms": 0.045098866295012585,
+      "encoder_gain_percent": 2.5099755635393444,
+      "gpu_seconds": 4.734319,
+      "hybrid_seconds": 4.61548875
+    },
+    {
+      "preparation_reused": true,
+      "conditioning_rrms": 0.045098866295012585,
+      "encoder_gain_percent": 16.56113761361158,
+      "gpu_seconds": 3.939192459,
+      "hybrid_seconds": 3.286817375
+    }
+  ],
+  "cold_edit": {
+    "build_id": "tc-runtime-build-v1-b1bfdab145c73016430effbc227d7125e45edc80f1418127210195653f0abc6c",
+    "gain_percent": {
+      "denoise": -8.618377187690323,
+      "request_wall": -1.7140717537279988,
+      "text_encode": 11.113705593608616
+    },
+    "metrics": {
+      "base_only": true,
+      "branch_seconds": 3.4319445809999993,
+      "bucket_rows": 2688,
+      "calls": 32,
+      "chunks": 64,
+      "consumer_seconds": 0.16797507999999997,
+      "experimental": true,
+      "first_step_only": true,
+      "input_ready_seconds": 5.32663929,
+      "padded_rows": 7296,
+      "physically_complete": true,
+      "precision": "bf16_gpu+w8a8_h128_h512_fp16_io+fp32_join",
+      "preparation_seconds": 2.648134125,
+      "producer_seconds": 1.3460511240000004,
+      "release_qualified": false,
+      "runtime": "native_metal+private_ane_w1",
+      "total_seconds": 4.960849962999999,
+      "valid_rows": 164736
+    }
+  },
+  "prewarmed_edit": {
+    "build_id": "tc-runtime-build-v1-92e9f729b0b148f96db11e4c004c87d4435b3d8ca774331dce9bfcb388a6a0f4",
+    "gain_percent": {
+      "denoise": 13.222870478817056,
+      "request_wall": 6.621083010425924,
+      "text_encode": -7.749557711016413
+    },
+    "cold_model_prepare_generate_gain_percent": 4.671891366937859,
+    "image_comparison": {
+      "pixel_rrms": 0.009495854295590486,
+      "mean_absolute_pixel_delta": 0.8985430399576823,
+      "limit": 0.08,
+      "base1_step_diagnostic_only": true,
+      "quality_qualified": false
+    },
+    "metrics": {
+      "base_only": true,
+      "branch_seconds": 3.8857624210000004,
+      "bucket_rows": 2688,
+      "calls": 32,
+      "chunks": 64,
+      "consumer_seconds": 0.18263683499999997,
+      "experimental": true,
+      "first_step_only": true,
+      "input_ready_seconds": 5.652373916000001,
+      "padded_rows": 7296,
+      "physically_complete": true,
+      "precision": "bf16_gpu+w8a8_h128_h512_fp16_io+fp32_join",
+      "preparation_reused": true,
+      "preparation_seconds": 0,
+      "prewarm_seconds": 0.048012875,
+      "producer_seconds": 1.5163791229999999,
+      "release_qualified": false,
+      "runtime": "native_metal+private_ane_w1",
+      "total_seconds": 5.619868457000001,
+      "valid_rows": 164736
+    }
+  },
+  "tests": {
+    "api_contract": 129,
+    "skipped": 3,
+    "stage_contract_checks": 102,
+    "result_metadata": "pass",
+    "generated_tail_source_failure": "pass",
+    "non_private_prefill_syntax": "pass"
+  },
+  "cleanup": {
+    "removed_bytes": 79535142,
+    "retained_program_bytes": 12600964
+  },
+  "receipts": {
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/component-supervisor.json": "895eb6fbf5a61dff0425cd7d9f949252cae832fa17d8c2f5ac8eb92c78891e67",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/component-r3-supervisor.json": "ff0b453fddc236041d3614cd4718eba2b6b3531225135fc100b2895403a86163",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/component-r4-supervisor.json": "43c695dac61447e2d61acd332280342f5e20d17c281f94f773974d79eabfaab0",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/generated-final.json": "8420477a86641bfd7cb5bf707d7f92f71616db007d28dbfba7a9f31a9da36fbd",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/phases/receipt.json": "2f64448d283dd62f0e31325c27c5938f70c686e738258e6de1f5f787b8badb7a",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/edit-phases/receipt.json": "0a21006d1e7744818e1387109a654a648e7dd39e61fed77f8a0b2fb27d5686ea",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/edit-hybrid/receipt.json": "04368efd01f2b5f48400307bf564a9700bcf36e1c54735a5419620af52ad5b30",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/edit-hybrid/image-comparison.json": "30b53d71d79f2e74313ab304ca41e79f580a02afcc89ee3c5d4acc1614c30769",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/prewarmed/receipt.json": "28ed109e24f8765a8b9e86e6097529d1cd316065f2e0b73be0562574a45b21c6",
+    "/Users/kd/Documents/project/TurboCider/outputs/qwen21-native-prefill-ane-20261008/cleanup.json": "c47d2f4e03b3d4849d4485361220c7ac4ba53baa42117fd33f16de45803d9e85"
+  },
+  "limitations": [
+    "One prompt/reference, fixed GPU then hybrid order; shared OS/driver caches not cleared",
+    "Single-step base edit is diagnostic, no visual quality or multi-step LoRA qualification",
+    "Encoder hybrid scoped <=1152 rows, prefill bucket2688; larger/other layouts lack performance qualification",
+    "W1 + host next-source readiness; no double-bank W2 or full native edit DiT",
+    "No hardware INT8 placement certificate",
+    "Explicit prewarm C++ Session API; no App automatic selection/UI release"
+  ]
+}

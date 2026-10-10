@@ -98,7 +98,7 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
 }
 
 bool Transformer::plain_prefix_route() const {
-    return !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
+    return !diagnostic_block_observer_ && !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
         !reference_local_attention_ && !prefill_last_target_only_ &&
         !profile_gpu_blocks_ && !profile_gpu_ops_ && !profile_prefill_segments_ &&
         !decode_mlp_ && !prefill_mlp_ && !project_qkv_ && !plan_mlp_ &&
@@ -301,6 +301,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
+    if (diagnostic_block_observer_)
+        require(!trace && !split_mlp && !fused_qkv_ && !project_qkv_ &&
+                    !metal_qk_rope_ && !metal_qk_norm_rope_ && !reference_local_attention_ &&
+                    !prefill_last_target_only_ && !profile_gpu_blocks_ && !profile_gpu_ops_ &&
+                    !profile_prefill_segments_ && !db_cache_enabled_ &&
+                    ffn_cache_mode_ == FFNCacheMode::Off,
+                "Qwen block observer requires the ordinary full GPU block recipe");
     require(bool(stage_qkv_) == bool(project_qkv_),
             "Qwen21 QKV stage and projection callbacks must be paired");
     require(!plan_qkv_ || (project_qkv_ && observe_qkv_),
@@ -675,7 +682,27 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         if (measured_block) mx::eval(args);
         auto measured_start = measured_block ? Clock::now() : Clock::time_point{};
         if (split_this && stage_mlp_) stage_mlp_(i, ffn_rows);
+        // A diagnostic replay must retain the actual allocation, not merely
+        // the MTLBuffer. Pinning Data before invoking the compiled block stops
+        // MLX donation from overwriting its upstream input/modulation/cache.
+        // The ordinary path creates no owners, evals, or function copies.
+        const bool observe_block = diagnostic_block_observer_ && i == 0;
+        std::vector<std::shared_ptr<void>> diagnostic_owners;
+        if (observe_block) {
+            mx::eval(args);
+            diagnostic_owners.reserve(args.size());
+            for (const auto &argument : args) {
+                require(argument.is_available() && bool(argument.data_shared_ptr()),
+                        "diagnostic block input did not complete");
+                diagnostic_owners.push_back(argument.data_shared_ptr());
+            }
+        }
         auto outputs = function(args);
+        if (observe_block) {
+            mx::eval(outputs);
+            diagnostic_block_observer_({i, reuse, prefix_length, weights_, sequence_.segments,
+                                        args, outputs, function});
+        }
         if (profile_block) {
             mx::eval(outputs);
             std::cerr << "{\"qwen21_gpu_block\":" << i

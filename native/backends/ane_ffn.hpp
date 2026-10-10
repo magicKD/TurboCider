@@ -100,7 +100,8 @@ class HybridFfn {
               const CalibrationWorkload *calibration = nullptr,
               std::optional<int> calibrated_channels = std::nullopt,
               std::optional<int> channel_override = std::nullopt,
-              std::optional<int> bucket_override = std::nullopt);
+              std::optional<int> bucket_override = std::nullopt,
+              int request_rows = 0, int fixed_bucket_rows = 0);
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
               const CalibrationWorkload *calibration,
@@ -114,11 +115,14 @@ class HybridFfn {
     // use an owner-thread Mach observation on every resident request.
     void begin_request(const std::string &adapter_identity = {},
                        std::optional<MemoryObservation> observation = std::nullopt);
+    // Encoder-only phase reporting for a reused executor. Ordinary DiT callers
+    // retain session-cumulative metrics. Call only after begin_request/drain.
+    void reset_phase_metrics(bool reused);
     // Experimental request-bound S1 only. Values are immutable FP32 [1,H]
     // and small enough to retain alongside the current/future W8 banks.
     // Empty scales clear a previous profile after all device work is drained.
     void set_smoothquant(const std::string &content_digest = {},
-                        const std::function<std::vector<Tensor>()> &make_scales = {});
+                        const std::function<std::vector<Tensor>()> &make_scales = {}, int layers = 32);
     // Explicit family policy, not an error fallback or a precision change.
     // Install only while idle; these blocks use the family's complete GPU
     // path without staging or invoking any FFN/LoRA bridge callback.

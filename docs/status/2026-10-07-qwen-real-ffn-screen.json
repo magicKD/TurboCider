@@ -1,0 +1,649 @@
+{
+  "schema": "tc-qwen-real-ffn-local-20261007-v1",
+  "created_at": "2026-10-07T12:36:07.072978+00:00",
+  "host": "Apple M4 Pro, 48 GiB, macOS 26.6, AC power",
+  "native_runtime_build": "tc-runtime-build-v1-ec25a1634a7abf42f4e29524c8873bef4c603468f0160060a546c10eac96246f",
+  "source_hash_mismatches": [],
+  "scope": {
+    "downloaded_models": 0,
+    "new_full_model_exports": 0,
+    "capture_images": 2,
+    "paired_e2e_images": 4,
+    "prompt_count": 1,
+    "resolution": [
+      512,
+      512
+    ],
+    "seed": 42,
+    "app_ui_tested": false,
+    "full_model_or_release_qualified": false
+  },
+  "binary_sha256": {
+    "turbocider": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+    "libturbocider.dylib": "8c2d48c164b02eb37786c3610c06e8e0a0e60067d5845474f6535ea8fcf94c57",
+    "qwen21-real-ffn-probe": "582815f7da46abdf6fa32c3f1385186c7f70f5f7c45446318661a5a64f4271bc"
+  },
+  "component_provenance_note": "Component screen preceded the final base-only pipeline callback refactor. HybridFfn and shared FFN graph arithmetic were unchanged. Initial probe binaries were not archived per arm; final hash is the reproducibility tool, not a retroactive binary attestation for those arms. E2E uses the final native build.",
+  "components": [
+    {
+      "source": "outputs/qwen-real-ffn-20261007/base-hadamard-4096.jsonl",
+      "recipe": "hadamard",
+      "width": 4096,
+      "lora": false,
+      "launch_fence": false,
+      "setup_seconds": 1.290319875,
+      "gpu_mean_ms": 41.894650444444444,
+      "hybrid_mean_ms": 40.880036999999994,
+      "speedup": 1.024819288799676,
+      "per_layer_speedup": {
+        "0": 1.0248704776166597,
+        "15": 1.0225611212201273,
+        "31": 1.0270340841732395
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.00676718214527,
+      "minimum_cosine": 0.999977171421,
+      "component_gain_passed": false,
+      "eligible_for_next_e2e": false,
+      "host_spans_mean_ms": {
+        "stage_seconds": 3.584550944444444,
+        "stage_wait_seconds": 3.5556551666666665,
+        "pre_seconds": 0.06795366666666666,
+        "lora_input_ready_seconds": 0,
+        "a8_wait_seconds": 27.153689833333335,
+        "async_ane_wait_seconds": 36.61678227777778,
+        "post_join_seconds": 0.5687801111111112,
+        "wall_seconds": 37.250770777777774
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/base-hadamard-6144-fence.jsonl",
+      "recipe": "hadamard",
+      "width": 6144,
+      "lora": false,
+      "launch_fence": true,
+      "setup_seconds": 0.277846625,
+      "gpu_mean_ms": 41.88787050000001,
+      "hybrid_mean_ms": 27.883500111111108,
+      "speedup": 1.502245784535077,
+      "per_layer_speedup": {
+        "0": 1.5042305075027687,
+        "15": 1.498788580118569,
+        "31": 1.5037262268620828
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.00818813219666,
+      "minimum_cosine": 0.999966740608,
+      "component_gain_passed": true,
+      "eligible_for_next_e2e": true,
+      "host_spans_mean_ms": {
+        "stage_seconds": 5.270226888888889,
+        "stage_wait_seconds": 5.243893555555556,
+        "pre_seconds": 0.06644222222222222,
+        "lora_input_ready_seconds": 0,
+        "a8_wait_seconds": 0.6884629444444444,
+        "async_ane_wait_seconds": 14.095682777777778,
+        "post_join_seconds": 7.487585666666667,
+        "wall_seconds": 22.567051055555556
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/base-hadamard-6144.jsonl",
+      "recipe": "hadamard",
+      "width": 6144,
+      "lora": false,
+      "launch_fence": false,
+      "setup_seconds": 0.245591291,
+      "gpu_mean_ms": 41.870571722222216,
+      "hybrid_mean_ms": 39.83504388888889,
+      "speedup": 1.051098922823105,
+      "per_layer_speedup": {
+        "0": 1.0510872411443288,
+        "15": 1.0508888098027138,
+        "31": 1.0513205562192236
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.00818813219666,
+      "minimum_cosine": 0.999966740608,
+      "component_gain_passed": true,
+      "eligible_for_next_e2e": true,
+      "host_spans_mean_ms": {
+        "stage_seconds": 5.239490777777777,
+        "stage_wait_seconds": 5.214108833333333,
+        "pre_seconds": 0.06371066666666667,
+        "lora_input_ready_seconds": 0,
+        "a8_wait_seconds": 20.914643444444444,
+        "async_ane_wait_seconds": 33.950044,
+        "post_join_seconds": 0.5480046666666667,
+        "wall_seconds": 34.550747666666666
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/base-sq-hadamard-6144.jsonl",
+      "recipe": "sq-hadamard",
+      "width": 6144,
+      "lora": false,
+      "launch_fence": false,
+      "setup_seconds": 0.341901792,
+      "gpu_mean_ms": 41.89473144444444,
+      "hybrid_mean_ms": 40.572261555555556,
+      "speedup": 1.0325954195843392,
+      "per_layer_speedup": {
+        "0": 1.032938725600347,
+        "15": 1.0323686055242212,
+        "31": 1.0324789672505064
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.0089962054044,
+      "minimum_cosine": 0.999960124493,
+      "component_gain_passed": false,
+      "eligible_for_next_e2e": false,
+      "host_spans_mean_ms": {
+        "stage_seconds": 5.704879666666667,
+        "stage_wait_seconds": 5.6751388333333335,
+        "pre_seconds": 0.07643977777777777,
+        "lora_input_ready_seconds": 0,
+        "a8_wait_seconds": 21.024715333333333,
+        "async_ane_wait_seconds": 34.14972,
+        "post_join_seconds": 0.5956366111111111,
+        "wall_seconds": 34.811634500000004
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/lora-hadamard-4096-fence.jsonl",
+      "recipe": "hadamard",
+      "width": 4096,
+      "lora": true,
+      "launch_fence": true,
+      "setup_seconds": 0.236952417,
+      "gpu_mean_ms": 46.61797466666667,
+      "hybrid_mean_ms": 37.16345127777779,
+      "speedup": 1.2544038043781551,
+      "per_layer_speedup": {
+        "0": 1.2538187503069873,
+        "15": 1.25442319219079,
+        "31": 1.2549701878243926
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.00685996748507,
+      "minimum_cosine": 0.999976575375,
+      "component_gain_passed": true,
+      "eligible_for_next_e2e": true,
+      "host_spans_mean_ms": {
+        "stage_seconds": 4.428794111111111,
+        "stage_wait_seconds": 0.7626618888888889,
+        "pre_seconds": 3.697777611111111,
+        "lora_input_ready_seconds": 3.673796333333333,
+        "a8_wait_seconds": 0.6674931666666667,
+        "async_ane_wait_seconds": 10.577291722222222,
+        "post_join_seconds": 21.2272315,
+        "wall_seconds": 32.686740722222225
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/lora-hadamard-4096.jsonl",
+      "recipe": "hadamard",
+      "width": 4096,
+      "lora": true,
+      "launch_fence": false,
+      "setup_seconds": 0.210462542,
+      "gpu_mean_ms": 46.61694655555556,
+      "hybrid_mean_ms": 36.58938205555555,
+      "speedup": 1.2740566781033535,
+      "per_layer_speedup": {
+        "0": 1.2743041112194402,
+        "15": 1.2738054503454537,
+        "31": 1.2740603434651516
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.00685996748507,
+      "minimum_cosine": 0.999976575375,
+      "component_gain_passed": true,
+      "eligible_for_next_e2e": true,
+      "host_spans_mean_ms": {
+        "stage_seconds": 4.392305444444445,
+        "stage_wait_seconds": 0.7023611111111111,
+        "pre_seconds": 3.717509388888889,
+        "lora_input_ready_seconds": 3.695467444444444,
+        "a8_wait_seconds": 9.896692,
+        "async_ane_wait_seconds": 29.410777944444444,
+        "post_join_seconds": 2.6601203333333334,
+        "wall_seconds": 32.15374994444444
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/lora-hadamard-6144.jsonl",
+      "recipe": "hadamard",
+      "width": 6144,
+      "lora": true,
+      "launch_fence": false,
+      "setup_seconds": 1.620576083,
+      "gpu_mean_ms": 46.649527722222224,
+      "hybrid_mean_ms": 37.11431238888889,
+      "speedup": 1.2569147781433219,
+      "per_layer_speedup": {
+        "0": 1.2712001403021223,
+        "15": 1.2679641465953768,
+        "31": 1.2323449173436654
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.0082928892225,
+      "minimum_cosine": 0.999965786934,
+      "component_gain_passed": true,
+      "eligible_for_next_e2e": true,
+      "host_spans_mean_ms": {
+        "stage_seconds": 6.285405166666666,
+        "stage_wait_seconds": 1.1523125555555556,
+        "pre_seconds": 5.162724555555555,
+        "lora_input_ready_seconds": 5.139823944444444,
+        "a8_wait_seconds": 8.841335777777779,
+        "async_ane_wait_seconds": 28.51249766666667,
+        "post_join_seconds": 2.1778150555555555,
+        "wall_seconds": 30.788745444444444
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    },
+    {
+      "source": "outputs/qwen-real-ffn-20261007/lora-sq-hadamard-4096.jsonl",
+      "recipe": "sq-hadamard",
+      "width": 4096,
+      "lora": true,
+      "launch_fence": false,
+      "setup_seconds": 0.274520166,
+      "gpu_mean_ms": 46.627979277777776,
+      "hybrid_mean_ms": 36.95255544444444,
+      "speedup": 1.261833686925378,
+      "per_layer_speedup": {
+        "0": 1.2609489351848193,
+        "15": 1.2615513388329702,
+        "31": 1.2630011673056905
+      },
+      "quality_passed": true,
+      "stable_recipe": true,
+      "worst_relative_rmse": 0.00695754773915,
+      "minimum_cosine": 0.999975919724,
+      "component_gain_passed": true,
+      "eligible_for_next_e2e": true,
+      "host_spans_mean_ms": {
+        "stage_seconds": 4.697997777777777,
+        "stage_wait_seconds": 0.6520925555555556,
+        "pre_seconds": 4.072476833333333,
+        "lora_input_ready_seconds": 4.050247777777778,
+        "a8_wait_seconds": 10.509372722222222,
+        "async_ane_wait_seconds": 29.979370333333335,
+        "post_join_seconds": 2.1326181666666666,
+        "wall_seconds": 32.209020833333334
+      },
+      "note": "Host spans overlap and are not additive GPU/ANE engine times; no full-model export authorization."
+    }
+  ],
+  "static_smoothquant": {
+    "base": {
+      "scope": "single MLP only; CPU+ANE policy does not prove ANE placement",
+      "relative_rmse": 0.249041,
+      "gpu_median": 0.0418706,
+      "hybrid_median": 0.0216171,
+      "speedup": 1.93692,
+      "layer": 0,
+      "calibration_step": 1,
+      "heldout_step": 19,
+      "passed": false,
+      "reason": "relative RMSE exceeds 0.03",
+      "calibration_includes_native_gate_up_lora": false
+    },
+    "lora": {
+      "scope": "single MLP only; CPU+ANE policy does not prove ANE placement",
+      "relative_rmse": 0.111588,
+      "gpu_median": 0.0466025,
+      "hybrid_median": 0.0362334,
+      "speedup": 1.28618,
+      "layer": 0,
+      "calibration_step": 1,
+      "heldout_step": 5,
+      "passed": false,
+      "reason": "relative RMSE exceeds 0.03",
+      "calibration_includes_native_gate_up_lora": true
+    }
+  },
+  "e2e": {
+    "base": {
+      "gpu_seconds": {
+        "denoise": 42.155343667,
+        "hybrid_setup": 0,
+        "image_encode": 4.59e-07,
+        "request_wall": 48.400080208,
+        "text_encode": 2.693033459,
+        "vae_decode": 0.912010791
+      },
+      "candidate_seconds": {
+        "denoise": 35.267827791,
+        "hybrid_setup": 1.658049334,
+        "image_encode": 6.25e-07,
+        "request_wall": 43.043906041,
+        "text_encode": 2.7070435,
+        "vae_decode": 0.8960795
+      },
+      "wall_speedup": 1.1244351328594147,
+      "wall_reduction_percent": 11.066457212429748,
+      "denoise_reduction_percent": 16.33841709465572,
+      "ane_channels": 6144,
+      "launch_fence": true,
+      "async_blocks": 640,
+      "failures": 0,
+      "fallbacks": 0,
+      "overflow_retries": 0,
+      "headroom": 1,
+      "runtime_calls": 672,
+      "process_peak_footprint_bytes": {
+        "gpu": 16861359288,
+        "candidate": 16397102336
+      },
+      "image_difference": {
+        "psnr_db": 37.72680873791298,
+        "rmse": 3.3128345248610485,
+        "mae": 1.4093666076660156,
+        "max_abs": 135.0
+      },
+      "visual_review": "same composition; small texture changes; single sample, not general perceptual/semantic qualification",
+      "step_events": {
+        "gpu": {
+          "first_step_seconds": 2.249226417,
+          "later_step_median_seconds": 2.0967277499999994,
+          "raw_step_seconds": [
+            2.249226417,
+            2.1210350830000007,
+            2.1074717499999984,
+            2.0961036250000014,
+            2.0961828750000002,
+            2.099079207999999,
+            2.0991613340000015,
+            2.1086509159999984,
+            2.0958038750000014,
+            2.104324792,
+            2.0967277499999994,
+            2.0954884579999984,
+            2.096010291999999,
+            2.096645708000004,
+            2.1067072089999996,
+            2.0960127909999997,
+            2.101236499999999,
+            2.0972350839999976,
+            2.095988708,
+            2.0961824170000014
+          ]
+        },
+        "candidate": {
+          "first_step_seconds": 2.6273638749999995,
+          "later_step_median_seconds": 1.7211706249999992,
+          "raw_step_seconds": [
+            2.6273638749999995,
+            1.7123246250000008,
+            1.7249680420000004,
+            1.702860832999999,
+            1.756757125,
+            1.722251625000002,
+            1.7379327919999987,
+            1.727234499999998,
+            1.7475945830000015,
+            1.695186875000001,
+            1.7188455420000004,
+            1.7274050829999972,
+            1.7035735840000008,
+            1.690135541,
+            1.7259797090000042,
+            1.7211706249999992,
+            1.699677125000001,
+            1.721443457999996,
+            1.6887899999999973,
+            1.7129418750000056
+          ]
+        }
+      }
+    },
+    "lora": {
+      "gpu_seconds": {
+        "denoise": 14.182654292,
+        "hybrid_setup": 0,
+        "image_encode": 5.42e-07,
+        "request_wall": 20.664052833,
+        "text_encode": 2.681650917,
+        "vae_decode": 0.91394675
+      },
+      "candidate_seconds": {
+        "denoise": 13.6374545,
+        "hybrid_setup": 1.186992833,
+        "image_encode": 7.92e-07,
+        "request_wall": 21.29220125,
+        "text_encode": 2.761883333,
+        "vae_decode": 0.908206334
+      },
+      "wall_speedup": 0.9704986624151882,
+      "wall_reduction_percent": -3.0398122869530475,
+      "denoise_reduction_percent": 3.8441308712398814,
+      "ane_channels": 4096,
+      "launch_fence": false,
+      "async_blocks": 192,
+      "failures": 0,
+      "fallbacks": 0,
+      "overflow_retries": 0,
+      "headroom": 1,
+      "runtime_calls": 224,
+      "process_peak_footprint_bytes": {
+        "gpu": 18285851584,
+        "candidate": 18346669448
+      },
+      "image_difference": {
+        "psnr_db": 42.12992311286281,
+        "rmse": 1.9954645866119813,
+        "mae": 0.757500966389974,
+        "max_abs": 97.0
+      },
+      "visual_review": "same composition; small texture changes; single sample, not general perceptual/semantic qualification",
+      "step_events": {
+        "gpu": {
+          "first_step_seconds": 2.490908,
+          "later_step_median_seconds": 2.3270857080000003,
+          "raw_step_seconds": [
+            2.490908,
+            2.3877827919999994,
+            2.3204812500000003,
+            2.33374725,
+            2.3270857080000003,
+            2.3225824169999996
+          ]
+        },
+        "candidate": {
+          "first_step_seconds": 2.979260667,
+          "later_step_median_seconds": 2.100662208000001,
+          "raw_step_seconds": [
+            2.979260667,
+            2.097195082999999,
+            2.171489042000001,
+            2.1098395829999994,
+            2.100662208000001,
+            2.098356041999999
+          ]
+        }
+      }
+    }
+  },
+  "tests": {
+    "run": 152,
+    "skipped": 3,
+    "passed": 149,
+    "additional_tool_tests": 9,
+    "additional_shared_sq_tests": 12
+  },
+  "route_review": {
+    "public_runtime_w8": "not executed: build SDK 15.2 lacks public INT8 MLMultiArray type; local guard requires macOS 26 SDK",
+    "private_comfy": "rejected at first weight staging: Comfy route requires existing direct ConvRot Q8 codes; original dense BF16 is not this ABI; fallback is not acceleration",
+    "fixed_fp16": "previous local round lost E2E; see 2026-10-07-qwen-frozen-laptop.json",
+    "physical_int8_trace": "not collected; W8A8 data representation and device plans do not attest physical integer execution"
+  },
+  "static_compute_plan": {
+    "base": {
+      "preferred_operations": {
+        "unknown": 29,
+        "MLNeuralEngineComputeDevice": 22
+      },
+      "scope": "compile plan outside sandbox; not physical engine/INT8 trace"
+    },
+    "lora": {
+      "preferred_operations": {
+        "unknown": 29,
+        "MLNeuralEngineComputeDevice": 22
+      },
+      "scope": "compile plan outside sandbox; not physical engine/INT8 trace"
+    }
+  },
+  "raw_evidence_sha256": {
+    "outputs/qwen-real-ffn-20261007/lora-hadamard-4096-fence.jsonl": "f210ff074225e4cb0145d73861e153c0a1206b74bfcbf81ecaaaba8c6a9df6d7",
+    "outputs/qwen-real-ffn-20261007/base-capture.png": "22e33c0eb0058b09bb6a0fe3fb77a59004ff11c8221f18d05ffeb9b595483251",
+    "outputs/qwen-real-ffn-20261007/lora-sq-export.log": "e4882b2ca8710adf5ce5a6ce40eb9fb1321e551e68ec05a5792795560d3a4ef3",
+    "outputs/qwen-real-ffn-20261007/channel-screen.json": "75c1950c0182b856dbff6191979f4c9a79880bcfe143c532f7637765a7593379",
+    "outputs/qwen-real-ffn-20261007/base-hadamard-6144.log": "1876cadbfe01f2ca1bc422953ae02b7e8fb4dc89ccd1b01e75d2b24370b3cdf9",
+    "outputs/qwen-real-ffn-20261007/base-sq-hadamard-6144.log": "fda1b9aed2c1110f9905d73c878a8be2fb9f210d0c59411ff1d0383a97ba3458",
+    "outputs/qwen-real-ffn-20261007/sq-compute-plan.json": "d17c878f3eab2841c9771bcbf1b4269e3e15cd0a54e1f7b57085c389196a51b7",
+    "outputs/qwen-real-ffn-20261007/lora-sq-hadamard-4096.log": "6d175c0bab23b5092e1072c09db466b64ed661baf8a9b71b7344bc89e382387e",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-gpu-request.json": "4cace0c414e571a7b65959bc9b0c3344e443d1ee29c55ad575509789ffc152a9",
+    "outputs/qwen-real-ffn-20261007/e2e-base-gpu-load.jsonl": "3bfa2fd709e8acff589185470e657d82ef5fa1726e67b1c1eaf9ad60bae7cb1b",
+    "outputs/qwen-real-ffn-20261007/base-prepare-sq-6144.log": "4e6b530d6e68ee1080dffbd51878b41531b43262d33c2c185906d5106d72ca0a",
+    "outputs/qwen-real-ffn-20261007/e2e-base-candidate-result.json": "8a31493ccc17e5f7e495844efcb48fa0a615314ed10d430f4713bd55f1b900b7",
+    "outputs/qwen-real-ffn-20261007/base-capture-events.log": "042494443060a7f14ae9b6b4b35fa34d803e49db6984d090cea90b8a5473a2ff",
+    "outputs/qwen-real-ffn-20261007/rejected-base-capture-result.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "outputs/qwen-real-ffn-20261007/base-sq-export.log": "28f6ff99792ccdb05c95537e464437fb78adaf4340d3cd53a0adf6d3591f8477",
+    "outputs/qwen-real-ffn-20261007/base-sq-hadamard-6144.jsonl": "8043abb8f50f224f28e37ba64b89d08481f270ea4a371d3b7419f8e44fbfc827",
+    "outputs/qwen-real-ffn-20261007/e2e-base-candidate-request.json": "04adf939327826dd7fe400f91d6b19003e708d62769b86ac4a50df7e33e5ba42",
+    "outputs/qwen-real-ffn-20261007/base-hadamard-6144-fence.log": "728e5d801b98a93b5d7abc23f71ba1d62eafe4aa419bf8d02917d532d104f3fe",
+    "outputs/qwen-real-ffn-20261007/lora-prepare-sq-4096.log": "8a157ea55ff06eb2c246ae191907af0786e56f18ec5114b8111967f97425b445",
+    "outputs/qwen-real-ffn-20261007/base-hadamard-6144.jsonl": "ed552e129ab9a5ba5eccf60b0bd14c1bfc3f8fe0d962f391a6586d2c20b59aaf",
+    "outputs/qwen-real-ffn-20261007/quantization-tests.log": "56fa0545e3ce473290a8eaebeede7d7134b6003fd9cfba880ccb2fd9b4b0fc13",
+    "outputs/qwen-real-ffn-20261007/base-hadamard-4096.jsonl": "f7b3dd0f92bec6b8a7a6759044fc051c0026bcb6efa7c69351e1673a1affd535",
+    "outputs/qwen-real-ffn-20261007/e2e-base-gpu.png": "22e33c0eb0058b09bb6a0fe3fb77a59004ff11c8221f18d05ffeb9b595483251",
+    "outputs/qwen-real-ffn-20261007/refinement-screen.json": "5df4d340e400063098b96fbeaed33d0352cbca51a1201d5405d28c6d16705837",
+    "outputs/qwen-real-ffn-20261007/image-differences.json": "cd0ea8ce99ff084aa1ae4e729bc385218cb0a3a67bd15667c8cd2f8c39c4645d",
+    "outputs/qwen-real-ffn-20261007/rejected-base-capture-events.log": "713fcf07837468a7a02abd2984697991b50981873c66c9cdb5eeb33c0af2ac7a",
+    "outputs/qwen-real-ffn-20261007/lora-hadamard-4096.jsonl": "9609e08aa2296106d1b22c214a0b68e7bb489ec69dc8815e456bb9283d8c57af",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-candidate-result.json": "3e1bf3979ee73ed9c7460c545b207177bf968dbc030be3922c4ebacbc879ff5b",
+    "outputs/qwen-real-ffn-20261007/lora-hadamard-6144.jsonl": "ceb728dc46c189e89076da747422ac98a55ebb5d65728f7381e2d40735ee6b9e",
+    "outputs/qwen-real-ffn-20261007/e2e-base-gpu-events.log": "1a882f483a2d8a7ce1521818ecbc4c5a8e3c217bbee9511b1c67d8ec201476e9",
+    "outputs/qwen-real-ffn-20261007/sq-compute-plan.log": "4a2f3ac8da9251659b93dff0617018d6e0a0d5f2e64e3a13de562873ce8a9e8b",
+    "outputs/qwen-real-ffn-20261007/e2e-base-gpu-request.json": "1a3f68fe3c26fbe8e7ca7a80dfec9f4f61b543a1e0edd0cec1a2964e88a44a00",
+    "outputs/qwen-real-ffn-20261007/base-hadamard-4096.log": "d117cbd6248e93b0b3be39b2af9d9e9a4fd5513f58e0edd6387dbebbb17d21e0",
+    "outputs/qwen-real-ffn-20261007/base-sq-heldout.log": "8d0f68889e9122164946228c64565f60487b7d05d6ad92bf23976f167447428f",
+    "outputs/qwen-real-ffn-20261007/build-final.log": "b2a68d2298a9bac187002765c0602076b4b0f98ef5275896e59ed3126add6ef6",
+    "outputs/qwen-real-ffn-20261007/base-comfy-6144.log": "2e1eeff1c0b29d8683cbe3bff32af1be447cb48b2e4bea5889cc8d4f1f76cbf2",
+    "outputs/qwen-real-ffn-20261007/base-sq-compile.log": "b898c4d92299d117e6729657646ad5cf4325903776e3c5b99069c2dee8b1007f",
+    "outputs/qwen-real-ffn-20261007/e2e-base-candidate.png": "a29c40fbea3f1a6090a616aaa83bfa0467cc9f206458d095d482fb618874a6f9",
+    "outputs/qwen-real-ffn-20261007/lora-sq-compile.log": "c169b048216719e4f9f6aecdda835582e6c1fd9ad292a73653bdbc1698b7d766",
+    "outputs/qwen-real-ffn-20261007/lora-hadamard-4096.log": "b3c616282a855fc1bd067e771dc5ab18913d73bb0fff82d44c7e81beb5c54ed1",
+    "outputs/qwen-real-ffn-20261007/replay-tests.log": "9f5b8a610121973d8c646ab0c05367b602cad492ee2f289fc688d664e92b08cb",
+    "outputs/qwen-real-ffn-20261007/base-capture-result.json": "0de83d4d67e97cf3ea83b209fceacb4fda7c185608c6ad5b2e7386b642df5474",
+    "outputs/qwen-real-ffn-20261007/lora-sq-heldout.log": "c68c001b3c1db4a90d50db16ab9349ae4a330acb4087bd89c8da66c7ae6a1778",
+    "outputs/qwen-real-ffn-20261007/probe-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-gpu-events.log": "d9bd15535228343c9d7b5eaff67c04ed293c06e1a63802bba9ba9540eecec99f",
+    "outputs/qwen-real-ffn-20261007/capture-tests.log": "1764eb64a38ff02c6aa184aa4cccab9ede858c11fbe183bcdbe63d811a645165",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-candidate-load.jsonl": "17115eb87a6e8b183d8de54357689a9e902d49e5b2b40d04b87e58959914e4a3",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-gpu-result.json": "c2aa800e4a20566b7ec6c3a22f4f8b34067c7821d22db268374aacb652075326",
+    "outputs/qwen-real-ffn-20261007/base-hadamard-6144-fence.jsonl": "98cbf7dbd46c0dfdefd73c37198f1c287101bb37a117387b108759c530680b95",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-candidate.png": "d185dcdb56020f4d40a0a8d6c9f227381066caddccba58df4224403ce9cd978e",
+    "outputs/qwen-real-ffn-20261007/base-capture-request.json": "aacc039ce2f0ec587b6ffb923774af5291194573735bbc7d66156d9da1f0574a",
+    "outputs/qwen-real-ffn-20261007/lora-capture-events.log": "d2289a5983d02e7eb8d1de2202811117edabf741921f933f4fd53c8904e29afa",
+    "outputs/qwen-real-ffn-20261007/lora-capture-result.json": "970f4a89211f2c6718d538b55feb63205cc795d00ca6ab62d11feb422af1014b",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-gpu.png": "c3bd2bc24c5b8681eeff87c6144bc513530c6e1f120eefeef9859b78ad92325d",
+    "outputs/qwen-real-ffn-20261007/e2e-base-candidate-events.log": "9fc2202611c4e1a4738a0d84cd481db040fe217b93d2f45e2e14ad687afb1c64",
+    "outputs/qwen-real-ffn-20261007/final-tests.log": "709aa576d22aa7b3ca2f671b0f2acc61a88bc2219ff0eb72490e66cca5c56802",
+    "outputs/qwen-real-ffn-20261007/lora-hadamard-4096-fence.log": "63d6182b6cf7f728013ff8a7d0f848092fdbc8462f2cc4706a820823d51f6e62",
+    "outputs/qwen-real-ffn-20261007/lora-hadamard-6144.log": "bc29d493beb4364e0a4cab9591c72cab5c5b31f4a4e6ff3f1e093ce7bc96bd03",
+    "outputs/qwen-real-ffn-20261007/lora-sq-hadamard-4096.jsonl": "f36cdaab1fd1d08f1041843b4fc111c054982065ac46a4a7f49a5dd8072adf7c",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-gpu-load.jsonl": "000895288f7be4af422650ede68df9ae043689a9e901f36a9d3e42f865c183f1",
+    "outputs/qwen-real-ffn-20261007/capture-tests-host.log": "5b5644ba71e3c20488492aa6e586d62718b0cf7de1ea45c6c015413d7d93dd9b",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-candidate-request.json": "dfac7daa0eea230ea47ce305e35314666038983dcb8de6cfdeac0f9cab57bec5",
+    "outputs/qwen-real-ffn-20261007/e2e-lora-candidate-events.log": "ee3f9c799a68fa88aea7871c9fbe2e5f97771fe1d8bc5d8ad90cfa117d234f4b",
+    "outputs/qwen-real-ffn-20261007/base-comfy-6144.jsonl": "3e3d544d2d6fe6feee093117794bc7614643f5d2f1b35ce7df4f834ae1e7ffbb",
+    "outputs/qwen-real-ffn-20261007/lora-capture-request.json": "06822be5a4760659bbd7c44c8c5a8ffa1574d8f1b4d9e084abc44243409cf934",
+    "outputs/qwen-real-ffn-20261007/e2e-base-gpu-result.json": "61c680c9a77fc50828705192298b9766e719fcb174c7169dee559c1659e95d0e",
+    "outputs/qwen-real-ffn-20261007/final-tool-tests.log": "b44f2b6d4aa9239f43eae5142f8dd846789f06a2713a0f6c82b6f698c392d8be",
+    "outputs/qwen-real-ffn-20261007/lora-capture.png": "c3bd2bc24c5b8681eeff87c6144bc513530c6e1f120eefeef9859b78ad92325d",
+    "outputs/qwen-real-ffn-20261007/e2e-base-candidate-load.jsonl": "f3190f18a5d9a7bb2a2f2cf79547a39c18d53c0c91e5bdedaa7a4633e84d79ec",
+    "outputs/qwen-real-ffn-20261007/build.log": "6376796d6079c1dfbdf6a6dd4cf2604e5d0524ffc8f37692e5cde33217fcc3f9",
+    "outputs/qwen-real-ffn-20261007/shared-sq-tests.log": "ff0a6e40ea043f66ec8fe641152b48b5f5ee0eaabecfcc56017ec7e82ae7a362"
+  },
+  "cleanup": {
+    "removed": [
+      {
+        "path": "outputs/qwen-real-ffn-20261007/base-sq-source",
+        "bytes": 75552969
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/base-sq-compiled",
+        "bytes": 75550285
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/base-sq-calibration",
+        "bytes": 16777306
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/base-sq-heldout-output.safetensors",
+        "bytes": 33554977
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/lora-sq-source",
+        "bytes": 50379768
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/lora-sq-compiled",
+        "bytes": 50376634
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/lora-sq-calibration",
+        "bytes": 50332580
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/lora-sq-heldout-output.safetensors",
+        "bytes": 33554977
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/private-cache/d7f05e9f0c75d9198cfc125b028051b9a6733f2528740945d9e4131bc434c628.lock",
+        "bytes": 0
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/private-cache/9e1720c5164ff5a2af35b632d1291eb63bb7c843f117c452e604ef05c5f98b30",
+        "bytes": 4203238
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/private-cache/d7f05e9f0c75d9198cfc125b028051b9a6733f2528740945d9e4131bc434c628",
+        "bytes": 3155420
+      },
+      {
+        "path": "outputs/qwen-real-ffn-20261007/private-cache/9e1720c5164ff5a2af35b632d1291eb63bb7c843f117c452e604ef05c5f98b30.lock",
+        "bytes": 0
+      }
+    ],
+    "reclaimed_bytes": 393438154,
+    "retained_output_bytes": 168926482,
+    "retained_private_cache_key": "3683c56e3f76fbeddadad16f318a0007cabb6fdd023246f88dfa6214a725622f",
+    "retained_real_bf16_capture_bytes": 150994944,
+    "scope": "only task-created artifacts; source models and unrelated caches untouched"
+  },
+  "decisions": [
+    "Retain base 6144 launch-fence-on configuration as a local native experiment; one matched pair is not a release claim.",
+    "Keep GPU preferred for six-step LoRA: per-request setup outweighs measured denoise saving.",
+    "Do not expand static SQ W8A8 to 32 layers after failed heldout quality gates.",
+    "Keep S1 plus rotation off: no advantage over rotation alone in this sample.",
+    "Do not change App defaults or advertise these native CLI numbers as App worker numbers; current worker lacks the tested fixed-async policy."
+  ]
+}

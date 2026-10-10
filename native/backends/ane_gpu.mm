@@ -289,6 +289,7 @@ A8SinglePassStats Device::a8_single_pass_stats() const {
             impl_->a8_ineligible_submissions.load(std::memory_order_relaxed)};
 }
 bool healthy() { return gpu_process_healthy.load(); }
+void *Device::native_device() const { return (__bridge void*)impl_->device; }
 void *Device::shared_event() const { return (__bridge void*)impl_->event; }
 void Device::release_after_failure(uint64_t value) const { impl_->release(value); }
 WeightCacheStats Device::scale_cache_stats() const {
@@ -359,15 +360,28 @@ struct Surface::Impl {
     id<MTLBuffer> buffer;
     uint32_t rows = 0, columns = 0;
     Element element;
+    std::shared_ptr<void> accounting_lease;
     ~Impl() { buffer = nil; if (surface) CFRelease(surface); }
 };
-Surface::Surface(Device &device, uint32_t rows, uint32_t columns, Element element) : impl_(std::make_shared<Impl>()) {
+Surface::Surface(Device &device, uint32_t rows, uint32_t columns, Element element)
+    : Surface(device, rows, columns, element, {}, {}) {}
+Surface::Surface(Device &device, uint32_t rows, uint32_t columns, Element element,
+                 SurfaceAllocationHooks hooks, std::string_view label) : impl_(std::make_shared<Impl>()) {
     require(rows && rows <= 32768 && columns && columns <= 32768 &&
             (element == Element::FP16 || element == Element::I8), "ANE GPU invalid surface geometry");
     const size_t item = element == Element::I8 ? 1 : 2;
     const size_t pitch = (size_t(columns) * item + 63) / 64 * 64;
     const size_t page = size_t(getpagesize());
     const size_t allocation = (size_t(rows) * pitch + page - 1) / page * page;
+    require(bool(hooks.reserve) == bool(hooks.allocated), "ANE surface memory hooks must be paired");
+    // Match the native Metal allocator's fail-closed accounting granularity.
+    constexpr size_t alignment = 16384;
+    require(allocation <= SIZE_MAX - (alignment - 1), "ANE surface admission overflow");
+    const size_t upper = (allocation + alignment - 1) / alignment * alignment;
+    if (hooks.reserve) {
+        impl_->accounting_lease = hooks.reserve(upper, label);
+        require(bool(impl_->accounting_lease), "ANE surface memory admission denied");
+    }
     impl_->surface = IOSurfaceCreate((__bridge CFDictionaryRef)@{
         (id)kIOSurfaceWidth:@(columns), (id)kIOSurfaceHeight:@(rows),
         (id)kIOSurfaceBytesPerElement:@(item), (id)kIOSurfaceBytesPerRow:@(pitch),
@@ -380,6 +394,9 @@ Surface::Surface(Device &device, uint32_t rows, uint32_t columns, Element elemen
     impl_->buffer = [device.impl_->device newBufferWithBytesNoCopy:IOSurfaceGetBaseAddress(impl_->surface)
         length:IOSurfaceGetAllocSize(impl_->surface) options:MTLResourceStorageModeShared deallocator:nil];
     require(impl_->buffer != nil, "ANE GPU cannot share IOSurface with Metal");
+    require(impl_->buffer.allocatedSize <= upper, "ANE surface exceeds admitted capacity");
+    if (hooks.allocated)
+        hooks.allocated(impl_->accounting_lease, (__bridge void*)impl_->buffer, impl_->buffer.allocatedSize);
 }
 size_t Surface::bytes() const { return impl_->buffer.allocatedSize; }
 size_t Surface::cache_capacity_bytes() const {
@@ -392,6 +409,20 @@ uint32_t Surface::columns() const { return impl_->columns; }
 Element Surface::element() const { return impl_->element; }
 void *Surface::data() const { return static_cast<char *>(IOSurfaceGetBaseAddress(impl_->surface)) + size_t(row_begin_) * pitch(); }
 void *Surface::native_iosurface() const { return impl_->surface; }
+SurfaceBufferLease Surface::metal_buffer_lease() const {
+    SurfaceBufferLease lease;
+    lease.native_buffer = (__bridge void*)impl_->buffer;
+    lease.native_device = (__bridge void*)impl_->buffer.device;
+    lease.backing_bytes = impl_->buffer.length;
+    lease.allocated_bytes = impl_->buffer.allocatedSize;
+    lease.offset_bytes = size_t(row_begin_) * pitch();
+    lease.row_stride_bytes = pitch();
+    lease.rows = rows(); lease.cols = columns(); lease.element = element();
+    lease.size_bytes = size_t(lease.rows) * lease.row_stride_bytes;
+    lease.owner = impl_; lease.allocation_identity = impl_;
+    lease.validate(lease.native_device);
+    return lease;
+}
 Surface Surface::slice_rows(uint32_t begin, uint32_t count) const {
     require(count && begin <= rows() && count <= rows() - begin, "ANE GPU surface slice extent invalid");
     Surface view = *this; view.row_begin_ += begin; view.row_count_ = count; return view;

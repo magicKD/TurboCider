@@ -398,6 +398,26 @@ class ContractTests(unittest.TestCase):
             self.assertNotEqual(plan({**base, 'loras': [], 'steps': 7,
                                       'hybrid_mlp_mode': 'lora_fused'})[0], 0)
 
+    def test_qwen21_frozen_fp16_fused_request_is_explicit_and_bounded(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=20, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    hybrid_mlp_mode='lora_fused', qwen21_w8a8=False,
+                    ane_manifest='fp16-manifest-checked-at-execution.json')
+        code, result, error = plan(base)
+        self.assertEqual(code, 0, error)
+        self.assertIn('qwen21_fp16_fused_lora_pre_silu_diagnostic', result['algorithm_approximations'])
+        self.assertNotIn('qwen21_w8a8_fused_lora_pre_silu_diagnostic', result['algorithm_approximations'])
+        adapter = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',
+                       strength=1, role='transformer')
+        self.assertEqual(plan({**base, 'steps': 6, 'loras': [adapter],
+                               'lora_strategy': 'inference_time'})[0], 0)
+        for change in (dict(width=1024), dict(steps=6), dict(allow_approximation=False),
+                       dict(prompt_enhance=True), dict(qwen21_dit_cache='fast'),
+                       dict(operation='image.edit', inputs=[dict(path='/tmp/ref.png', role='reference')])):
+            with self.subTest(change=change):
+                self.assertNotEqual(plan({**base, **change})[0], 0)
+
     def test_z_image_request_local_base_and_runtime_lora_suffix(self):
         base = dict(model='z-image-turbo', operation='image.generate', prompt='A fox',
                     width=512, height=512, steps=8, audio=False, frames=1,
@@ -2553,7 +2573,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn('if (!values_.count(key) && target.ends_with(".attention.to_out.0"))',source)
         self.assertIn('target_key_counts[resolve_target_key(target)]',source)
         self.assertIn('const bool shared_projection = target_key_counts[key] > 1;',source)
-        self.assertIn('{down, up, scale, begin,',source)
+        self.assertIn('bind_runtime(fused_prefix,up,begin,begin+rows);',source)
+        self.assertIn('{down,selected,scale,first,last,',source)
         self.assertIn('!w.has_runtime_loras()',z_image)
         self.assertIn('active_lora_strategy_ == "inference_time"',z_image)
     def test_ltx_schedule_and_shape(self):

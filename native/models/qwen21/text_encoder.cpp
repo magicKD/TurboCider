@@ -2,6 +2,7 @@
 #include "metal/encoder_prefill.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include <chrono>
+#include "encoder_attention.hpp"
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -22,7 +23,7 @@ Tensor rotate_half(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
 }
 using BlockFunction=std::function<std::vector<Tensor>(const std::vector<Tensor>&)>;
 std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,const Tensor &sine,
-    const Tensor &mask,const Weights &weights,const TextConfig &config,const std::string &p) {
+    const std::optional<Tensor> &mask,const Weights &weights,const TextConfig &config,const std::string &p) {
     auto normalize=[&](const Tensor &x,const std::string &key) {
         return config.fused_gpu_prefill ? metal::encoder_rms(x,weights.at(key),config.epsilon) : vl_norm(x,weights.at(key),config.epsilon);
     };
@@ -43,7 +44,7 @@ std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,co
         q=rotate_half(vl_norm(heads(q,config.heads,config.head_dim),weights.at(p+".self_attn.q_norm.weight"),config.epsilon),cosine,sine);
         k=rotate_half(vl_norm(heads(k,config.kv_heads,config.head_dim),weights.at(p+".self_attn.k_norm.weight"),config.epsilon),cosine,sine);
     }
-    if(!config.compiled_gpu_blocks) {
+    if(!config.compiled_gpu_blocks && !(config.efficient_attention && hidden.shape(1)>=128)) {
         k=mx::repeat(k,config.heads/config.kv_heads,1);
         v=mx::repeat(v,config.heads/config.kv_heads,1);
     }
@@ -51,8 +52,8 @@ std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,co
     // original Q/K/V dtype and native GQA; its softmax remains F32. The mask
     // contains only 0/-Inf, both exact in the input dtype. Keep legacy F32
     // attention/repeated K/V unchanged outside the opt-in profile.
-    auto attention_mask=config.compiled_gpu_blocks ? mx::astype(mask,q.dtype()) : mask;
-    auto residual=hidden+linear(attend(q,k,v,!config.compiled_gpu_blocks,attention_mask),weights,p+".self_attn.o_proj");
+    auto attention_mask=config.compiled_gpu_blocks && mask ? std::optional<Tensor>(mx::astype(*mask,q.dtype())) : mask;
+    auto residual=hidden+linear(attend(q,k,v,!config.compiled_gpu_blocks,attention_mask,false,mask ? "" : "causal"),weights,p+".self_attn.o_proj");
     return {residual,normalize(residual,p+".post_attention_layernorm.weight")};
 }
 Tensor full_ffn(const Tensor &x,const Weights &weights,const std::string &mlp) {
@@ -130,7 +131,10 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
                                       int valid_tokens, const Event &event,
                                       std::atomic<bool> &cancelled,
                                       const std::vector<Tensor> &deepstack_deltas,
-                                      const std::function<void(const std::string &)> &release_layer) const {
+                                      const std::function<void(const std::string &)> &release_layer,
+                                      const TextFfnHooks *ffn) const {
+    require(!ffn || (!runtime_ && !config_.fused_gpu_prefill), "encoder FFN hooks conflict with another FFN executor");
+    require(!ffn || (bool(ffn->prepare) && bool(ffn->execute)), "incomplete Qwen encoder FFN bridge");
     require(embeddings.ndim() == 3 && embeddings.shape(0) == 1 && embeddings.shape(1) > 0,
             "Qwen21 text embeddings must be [1,sequence,hidden]");
     int count = embeddings.shape(1);
@@ -156,10 +160,14 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
     angle = mx::concatenate({angle, angle}, -1);
     auto cosine = mx::reshape(mx::astype(mx::cos(angle), embeddings.dtype()), {1, 1, count, config_.head_dim});
     auto sine = mx::reshape(mx::astype(mx::sin(angle), embeddings.dtype()), {1, 1, count, config_.head_dim});
-    auto idx = mx::arange(count, mx::int32);
-    auto key = mx::reshape(idx, {1, count}), query = mx::reshape(idx, {count, 1});
-    auto mask = mx::reshape(mx::where(mx::logical_or(key > query, key >= Tensor(valid_tokens)),
-                                      Tensor(-INFINITY), Tensor(0.f)), {1, 1, count, count});
+    const auto attention = encoder_attention::language_plan(count, valid_tokens, config_.efficient_attention);
+    std::optional<Tensor> mask;
+    if (config_.compiled_gpu_blocks || !attention.causal_without_mask) {
+        auto idx = mx::arange(count, mx::int32);
+        auto key = mx::reshape(idx, {1, count}), query = mx::reshape(idx, {count, 1});
+        mask = mx::reshape(mx::where(mx::logical_or(key > query, key >= Tensor(valid_tokens)),
+                                    Tensor(-INFINITY), Tensor(0.f)), {1, 1, count, count});
+    }
     auto hidden = embeddings;
     require(!config_.compiled_gpu_blocks || !weights_.has_runtime_loras(),
             "compiled Qwen encoder requires original base language weights, not encoder LoRA");
@@ -187,6 +195,8 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
                 {weights_.at(stem+"up_proj.weight"),std::nullopt,std::nullopt},
                 {weights_.at(stem+"down_proj.weight"),std::nullopt,std::nullopt}};
         };
+        if(ffn)ffn->prepare(i,p,count);
+        const bool split_ffn=plan.split() || ffn;
         if(plan.split())runtime_->stage_weights(i,count,source(i)); // before attention, same shared stager/banks
         Tensor input=hidden;
         std::vector<std::string> block_keys;
@@ -195,13 +205,13 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             for(const auto &key:source_keys)if(key.starts_with(p+".")) {
                 block_keys.push_back("block"+key.substr(p.size()));block_sources.push_back(weights_.at(key));
             }
-            const auto graph_key=std::make_pair(block_keys,plan.split());
+            const auto graph_key=std::make_pair(block_keys,split_ffn);
             auto found=block_graphs.find(graph_key);
-            if(found==block_graphs.end())found=block_graphs.emplace(graph_key,compiled_block(block_keys,config_,"block",plan.split())).first;
-            std::vector<Tensor> arguments{hidden,cosine,sine,mask};
+            if(found==block_graphs.end())found=block_graphs.emplace(graph_key,compiled_block(block_keys,config_,"block",split_ffn)).first;
+            std::vector<Tensor> arguments{hidden,cosine,sine,*mask};
             arguments.insert(arguments.end(),block_sources.begin(),block_sources.end());
             auto result=found->second(arguments);hidden=result[0];
-            if(plan.split()) {input=result[1];++attention_segments;} else ++full_blocks;
+            if(split_ffn) {input=result[1];++attention_segments;} else ++full_blocks;
         } else {
             auto result=attention_block(hidden,cosine,sine,mask,layer_weights,config_,p);
             hidden=result[0];input=result[1];
@@ -217,12 +227,16 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             if(found==ffn_graphs.end())found=ffn_graphs.emplace(key,compiled_ffn(block_keys,"block.mlp",first,count,width,fp32)).first;
             return found->second;
         };
-        if(config_.compiled_gpu_blocks && plan.split())compiled_full=shared_ffn(0,0,0,false);
+        if(config_.compiled_gpu_blocks && split_ffn)compiled_full=shared_ffn(0,0,0,false);
         auto gpu=[&](const Tensor &x) {
             if(compiled_full) {++full_ffn_segments;return (*compiled_full)(with_sources(x))[0];}
             return full_ffn(x,layer_weights,mlp);
         };
-        if(plan.split()) {
+        if(ffn) {
+            auto output=ffn->execute(i,input,gpu);
+            require(output.shape()==input.shape() && output.dtype()==input.dtype(),"encoder FFN bridge changed shape/dtype");
+            hidden=hidden+output;
+        } else if(plan.split()) {
             const int width=weights_.at(mlp+".gate_proj.weight").shape(0),h=input.shape(2);
             auto channel_gpu=[&](const Tensor &x,int first,int channels) {
                 if(config_.compiled_gpu_blocks) {

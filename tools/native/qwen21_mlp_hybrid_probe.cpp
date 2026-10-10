@@ -1,5 +1,6 @@
 // Experimental component benchmark, not an end-to-end hybrid qualification.
 #include "../../native/backends/coreml.hpp"
+#include "../../native/models/qwen21/runtime_ffn_graphs.hpp"
 #include <algorithm>
 #include <iostream>
 
@@ -22,13 +23,14 @@ int main(int argc, char **argv) {
         weights.load_file(checkpoint);
         const bool runtime_lora = argc == 6;
         if (runtime_lora) {
-            weights.set_runtime_lora_fp16(true);
+            // Match the production default: FP32 low-rank accumulation.
+            weights.set_runtime_lora_fp16(false);
             auto bound = weights.apply_loras({{argv[5], 1.f, "transformer"}},
                                               "transformer", event, cancelled, true);
             tc::require(bound == 227, "Qwen21 probe LoRA did not bind 227 projections");
         }
-        tc::require(ane.mlp_output_kind != "fused_lora" || runtime_lora,
-                    "fused LoRA probe requires a runtime adapter");
+        tc::require(!runtime_lora || ane.mlp_output_kind == "fused_lora" || ane.mlp_output_kind == "gate_up",
+                    "runtime LoRA requires pre-SiLU corrections in the Core ML ABI");
         auto fused = weights.at("transformer_blocks.0.img_mlp.gate_up.weight");
         auto down = weights.at("transformer_blocks.0.img_mlp.out.weight");
         int width = ane.ane_mlp_end;
@@ -39,7 +41,7 @@ int main(int argc, char **argv) {
                                                      tc::slice_axis(fused, 0, 12288, 12288 + width)}, 0));
         auto prefix_down = mx::contiguous(tc::slice_axis(down, 1, 0, width));
         auto x = mx::random::normal({1, 1024, 4096}, mx::float32, mx::random::key(42)) * .2f;
-        if (argc >= 5) {
+        if (argc >= 5 && std::string(argv[4]) != "-") {
             auto [inputs, metadata] = mx::load_safetensors(argv[4]);
             const auto &saved = inputs.at(inputs.count("mlp_input") ? "mlp_input" :
                                           inputs.count("input") ? "input" : "tensor");
@@ -52,6 +54,7 @@ int main(int argc, char **argv) {
             auto parts = mx::split(mx::matmul(a[0], mx::transpose(a[1])), 2, -1);
             return std::vector<tc::Tensor>{mx::matmul(tc::silu(parts[0]) * parts[1], mx::transpose(a[2]))};
         });
+        auto lora_reference = tc::qwen21::runtime_ffn::full(weights, "transformer_blocks.0.img_mlp.");
         auto hybrid = [&]() {
             auto packed = mx::contiguous(mx::astype(x, mx::float16));
             mx::eval(packed);
@@ -64,10 +67,10 @@ int main(int argc, char **argv) {
             if (ane.mlp_output_kind != "fused_lora") mx::async_eval(gpu);
             tc::Tensor prediction = packed;
             if (ane.mlp_output_kind == "fused_lora") {
-                auto delta = mx::contiguous(mx::astype(mx::concatenate({
+                auto delta = runtime_lora ? mx::contiguous(mx::astype(mx::concatenate({
                     weights.lora_delta_slice(x, stem + "gate_up", 0, width, 0, 4096),
                     weights.lora_delta_slice(x, stem + "gate_up", 12288, 12288 + width, 0, 4096)
-                }, -1), mx::float16));
+                }, -1), mx::float16)) : mx::zeros({1, 1024, 2 * width}, mx::float16);
                 mx::eval(delta);
                 mx::async_eval(gpu);
                 prediction = ane.predict_with_lora(0, packed, delta);
@@ -85,8 +88,8 @@ int main(int argc, char **argv) {
                     : mx::matmul(tc::silu(gate) * up, mx::transpose(prefix_down)));
             } else if (ane.mlp_output_kind == "fused_lora") {
                 auto hidden = mx::astype(tc::slice_axis(prediction, -1, 4096, ane.output_channels), x.dtype());
-                result = gpu + mx::astype(tc::slice_axis(prediction, -1, 0, 4096), x.dtype()) +
-                    weights.lora_delta_slice(hidden, stem + "out", 0, 4096, 0, width);
+                result = gpu + mx::astype(tc::slice_axis(prediction, -1, 0, 4096), x.dtype());
+                if (runtime_lora) result = result + weights.lora_delta_slice(hidden, stem + "out", 0, 4096, 0, width);
             } else {
                 result = gpu + mx::astype(prediction, gpu.dtype()) * tc::Tensor(ane.output_scale, gpu.dtype());
             }
@@ -95,17 +98,14 @@ int main(int argc, char **argv) {
         };
         auto full_reference = [&]() -> tc::Tensor {
             if (!runtime_lora) return mlp({x, fused, down})[0];
-            auto projection = weights.project(x, "transformer_blocks.0.img_mlp.gate_up");
-            return weights.project(tc::silu(tc::slice_axis(projection, -1, 0, 12288)) *
-                                   tc::slice_axis(projection, -1, 12288, 24576),
-                                   "transformer_blocks.0.img_mlp.out");
+            return lora_reference({x})[0];
         };
         auto reference = full_reference();
         auto prefix_reference = mlp({x, prefix, prefix_down})[0];
         mx::eval(reference, prefix_reference);
         auto result = hybrid();
         std::vector<float> gpu_seconds, hybrid_seconds;
-        for (int i = 0; i < 12; ++i) {
+        for (int i = 0; i < 5; ++i) {
             auto start = tc::Clock::now();
             auto gpu = full_reference();
             mx::eval(gpu);
@@ -123,13 +123,13 @@ int main(int argc, char **argv) {
         tc::require(mx::all(mx::isfinite(result)).item<bool>(), "nonfinite experimental hybrid output");
         std::sort(gpu_seconds.begin(), gpu_seconds.end());
         std::sort(hybrid_seconds.begin(), hybrid_seconds.end());
-        auto median = [](const std::vector<float> &v) { return (v[4] + v[5]) / 2; };
+        auto median = [](const std::vector<float> &v) { return v[v.size() / 2]; };
         std::cout << "{\"scope\":\"single MLP only; CPU+ANE policy does not prove ANE placement\",\"relative_rmse\":"
                   << rrms << ",\"gpu_median\":" << median(gpu_seconds) << ",\"hybrid_median\":"
                   << median(hybrid_seconds) << ",\"speedup\":" << median(gpu_seconds) / median(hybrid_seconds) << "}\n";
         mx::save_safetensors(argv[3], {{"input", x}, {"reference", reference}, {"hybrid", result},
-            {"prefix_reference", prefix_reference}, {"gpu_seconds", tc::Tensor(gpu_seconds.data(), {10}, mx::float32)},
-            {"hybrid_seconds", tc::Tensor(hybrid_seconds.data(), {10}, mx::float32)}});
+            {"prefix_reference", prefix_reference}, {"gpu_seconds", tc::Tensor(gpu_seconds.data(), {int(gpu_seconds.size())}, mx::float32)},
+            {"hybrid_seconds", tc::Tensor(hybrid_seconds.data(), {int(hybrid_seconds.size())}, mx::float32)}});
         return 0;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

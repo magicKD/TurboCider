@@ -1,0 +1,365 @@
+{
+  "schema": "native-session-e2e-status-v1",
+  "date": "2026-10-08",
+  "runtime_build_id": "tc-runtime-build-v1-c45b3ba125afd3d90aa0b5cb4f239e179b37e52f90f22ef123adc75affd130c6",
+  "scope": "Qwen21 base 512px 20-step native GPU-only, one matched prompt/seed pair",
+  "independent_native_dit": true,
+  "native_gpu_ane_parallel_implemented": false,
+  "full_request_memory_certified": false,
+  "app_release_qualified": false,
+  "performance_qualified": false,
+  "models_downloaded": 0,
+  "checkpoint_copies": 0,
+  "images": 2,
+  "tests": {
+    "new_route": {
+      "passed": 5
+    },
+    "general_contract": {
+      "run": 129,
+      "skipped": 3,
+      "passed": true,
+      "restricted_first_attempt_failure": "one GPU device-name profile match; full Metal-enabled recheck passed"
+    },
+    "memory_bridge_cpu": "agent build/run passed; static source/binary identities recorded",
+    "native_phase_cpu": "agent build/run passed: 22 sites, production backing_count 89, budget/zero-ledger/late-release checks",
+    "tiny": [
+      {
+        "case": "base",
+        "rrms": 0,
+        "max_abs": 0,
+        "max_ulp": 0,
+        "accepted": true
+      },
+      {
+        "case": "ref1",
+        "rrms": 0,
+        "max_abs": 0,
+        "max_ulp": 0,
+        "accepted": true
+      },
+      {
+        "case": "ref2",
+        "rrms": 0,
+        "max_abs": 0,
+        "max_ulp": 0,
+        "accepted": true
+      }
+    ]
+  },
+  "timings": {
+    "native": {
+      "denoise": 41.682299583,
+      "hybrid_setup": 0,
+      "image_encode": 5.83e-07,
+      "request_wall": 49.884518084,
+      "text_encode": 2.801397708,
+      "vae_decode": 1.0700665
+    },
+    "mlx": {
+      "denoise": 42.711993292,
+      "hybrid_setup": 0,
+      "image_encode": 4.59e-07,
+      "request_wall": 49.06178925,
+      "text_encode": 2.872881125,
+      "vae_decode": 0.939083208
+    },
+    "native_prepare_seconds": 1.648268833,
+    "native_denoise_drop_percent": 2.4107835519651677,
+    "native_request_drop_percent": -1.6769238272328346
+  },
+  "image_metrics": {
+    "scope": "final 8-bit RGB PNG; excludes alpha; not latent/FFN metrics",
+    "shape": [
+      512,
+      512,
+      3
+    ],
+    "rmse_0_255": 1.6244963819205775,
+    "mae_0_255": 0.713446299235026,
+    "max_abs_0_255": 76.0,
+    "relative_l2": 0.011041322431936442,
+    "psnr_db": 43.916428640256704,
+    "identical_pixel_fraction": 0.20592117309570312
+  },
+  "visual_review": "both 512x512 PNGs separately viewed; teapot geometry/reflections/table/background very close; one example only",
+  "memory": {
+    "native_phase": {
+      "allocation_ceiling_bytes": 14640524064,
+      "automatic_epoch_transition_count": 0,
+      "budget_bytes": 47244640256,
+      "cleanup_failure": null,
+      "compressed_pages_begin": 0,
+      "compressed_pages_end": 0,
+      "current_epoch": 1,
+      "execution_state": "succeeded",
+      "explicit_epoch_transition_count": 1,
+      "failure_disposition": "none",
+      "failure_reason": null,
+      "final_process_footprint_bytes": 14594419488,
+      "final_system_available_bytes": 12120784896,
+      "framework_upper_bytes": 1073741824,
+      "initial_process_footprint_bytes": 14414736160,
+      "last_phase": "native_phase_owners_released",
+      "ledger_active_bytes": 14414736160,
+      "ledger_budget_bytes": 14640524064,
+      "ledger_cached_bytes": 0,
+      "ledger_committed_bytes": 14414736160,
+      "ledger_known_bytes": 14414736160,
+      "ledger_peak_committed_bytes": 14640500512,
+      "ledger_peak_unknown_bytes": 0,
+      "ledger_pending_release_bytes": 0,
+      "ledger_process_baseline_bytes": 14414736160,
+      "ledger_reserved_bytes": 0,
+      "ledger_site_active_count": 0,
+      "ledger_site_allocation_count": 0,
+      "ledger_site_cached_count": 0,
+      "ledger_site_pending_count": 0,
+      "ledger_site_reserved_count": 0,
+      "ledger_storage_bytes": 0,
+      "ledger_storage_count": 0,
+      "ledger_unknown_bytes": 0,
+      "minimum_system_available_bytes": 11745247232,
+      "observation_count": 44,
+      "observation_source": "task_vm_info.phys_footprint+host_vm_info64",
+      "observed_within_budget": true,
+      "peak_observed_over_budget_bytes": 0,
+      "peak_process_footprint_bytes": 14651239200,
+      "peak_unattributed_process_footprint_bytes": 179683328,
+      "planned_increment_bytes": 1299529728,
+      "planned_peak_epoch": 0,
+      "planned_process_upper_bytes": 15714265888,
+      "pressure_state": "normal",
+      "pressure_transitions": 0,
+      "schedule_cursor_complete": false,
+      "schedule_cursor_state": "disabled",
+      "schedule_event_attempted_count": 0,
+      "schedule_event_count": 0,
+      "schedule_event_rejected_count": 0,
+      "schedule_expected_event_count": 0,
+      "schedule_first_failure": null,
+      "schedule_mismatch_count": 0,
+      "schedule_next_sequence": 0,
+      "swap_activity_detected": false,
+      "swap_counter_invalid": false,
+      "swap_first_observed_phase": null,
+      "swap_observation_available": false,
+      "swap_observation_source": null,
+      "swap_sample_count": 0,
+      "swapins_begin": 0,
+      "swapins_delta": 0,
+      "swapins_end": 0,
+      "swapouts_begin": 0,
+      "swapouts_delta": 0,
+      "swapouts_end": 0,
+      "system_available_bytes_at_admission": 13666009088,
+      "tainted": false,
+      "trace_dropped_events": 0,
+      "trace_event_count": 137,
+      "trace_overflowed": false,
+      "unattributed_process_footprint_bytes": 179683328,
+      "watchdog_critical": false,
+      "watchdog_dropped_samples": 0,
+      "watchdog_failure_reason": null,
+      "watchdog_sample_count": 43,
+      "worker_quarantined": false
+    },
+    "trace_kinds": {
+      "state": 4,
+      "reserve": 89,
+      "checkpoint": 43,
+      "epoch": 1
+    },
+    "actual_native_increment_peak_bytes": 225764352,
+    "whole_process_time_l_footprint_native_bytes": 15416798584,
+    "whole_process_time_l_footprint_mlx_bytes": 16913099960,
+    "swap_used_mib_begin_end": [
+      3305.75,
+      3305.75
+    ]
+  },
+  "source_metadata_unchanged": true,
+  "build_manifest": "outputs/qwen-native-session-20261008/runtime-build-manifest.json",
+  "pair_receipt": "outputs/qwen-native-session-20261008/e2e-pair/receipt.json",
+  "artifacts": [
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/build/native-session-20261008/libturbocider.dylib",
+      "bytes": 9834720,
+      "sha256": "8d25cfebde8e27b4b282ebe033d2aaa8fbd9e7fecb0b283c9550822312ad099d"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/build/native-session-20261008/turbocider",
+      "bytes": 309176,
+      "sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/build/native-session-components-20261008/native-qwen-denoiser-component",
+      "bytes": 130256,
+      "sha256": "712a4aa0b296e024b33b8e877be9c4101b1f2484614db577e4d127d6a50a4e2d"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/tools/validation/run_qwen_native_e2e.py",
+      "bytes": 6044,
+      "sha256": "b5525924e2e44aadf18f24ae24b33d785a2ed33939a67389dd7fce16b012105f"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/tests/native/test_qwen_native_route.py",
+      "bytes": 5858,
+      "sha256": "93b8ff6180d6d855ef8131b30ee76b821fecc01b216199f33adc32d68d84367b"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/native_session.hpp",
+      "bytes": 2007,
+      "sha256": "0c60395dbd6be7ae779b5f14bc7a4352771e1f1ffc7572be3ead3cbfbf8b5b88"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/native_session.cpp",
+      "bytes": 11858,
+      "sha256": "61a4d4c41d556b074da94034a3da5b4e92d8f82d5fc0fbbb6115ef830eeb9d14"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/native_memory_plan.hpp",
+      "bytes": 3296,
+      "sha256": "53852281a01978217da8f1e440914ff488c68a9bc812565f2458c9d2cd99a86d"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/native_memory_plan.cpp",
+      "bytes": 9242,
+      "sha256": "d7ec6966d75ad803c506e195d78a2d7004f6d3e12ff12aff7badbdc6b1888a6c"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/backends/metal_graph/memory_bridge.hpp",
+      "bytes": 2610,
+      "sha256": "385b8d2bf52134a63c45f66aead4637d4c6f22d1ecd05ed05ce67adfe255d687"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/backends/metal_graph/memory_bridge.cpp",
+      "bytes": 7908,
+      "sha256": "f41bfd9d151b361f790deb6536b3c27b163e6df595f338def79eb00ad4f5869b"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/runtime/session.hpp",
+      "bytes": 23341,
+      "sha256": "4024b99210e43be6237304ff01df4cbc4e614a02d4883eea394a28c599b9d893"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/core/contracts.hpp",
+      "bytes": 4919,
+      "sha256": "c7749bd8aa77e103c73f2384f511f1df3b3a9df6a9ddd29dbf18cbb9713d64f6"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/platform/apple/request.mm",
+      "bytes": 26469,
+      "sha256": "0757fa341f6f29f3f0766d090ac5bc6bff66bc6c03d63620b24257d49bd9dea4"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/platform/apple/results.mm",
+      "bytes": 106961,
+      "sha256": "969e11c2db179f60f9d2715b9c69823f9b1434a8d27a8ffe738d4837cc526c21"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/pipeline.hpp",
+      "bytes": 4168,
+      "sha256": "058c748af24fb33984e268741b1551ae30af8d8c793d13f8a9442d442df0da8b"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/pipeline.cpp",
+      "bytes": 96377,
+      "sha256": "44882ccfe1c4d5410d64c1d0317e0773d96c33c2aacc171023363a8a3212d5e5"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/native/models/qwen21/native_route.hpp",
+      "bytes": 3898,
+      "sha256": "f1e211528b498384f0f8aee116aff920d381081a5dfd7aca66200b0aa7d06216"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/tools/native/build.sh",
+      "bytes": 31106,
+      "sha256": "031a7f3aa5a2be63d355848c538db05dd02e4d13f0e11fe5ef224f1b03b4fa7b"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/tests/native/native_memory_bridge_test.cpp",
+      "bytes": 10084,
+      "sha256": "b200e9e20bc6457f0cb09d74874a058481c98a891029c6d937965c2ebe4613ce"
+    },
+    {
+      "path": "/Users/kd/Documents/project/TurboCider/tests/native/native_memory_plan_test.cpp",
+      "bytes": 10066,
+      "sha256": "26406735c95478204db35098475cbd776e22c5f5800a09c426b26a3e993dc2d2"
+    }
+  ],
+  "cleanup_receipt": "outputs/qwen-native-session-20261008/owned-cleanup.json",
+  "limitations": [
+    "fresh processes; shared OS/driver caches not reset; tiny test may warm common shaders",
+    "one sample per route; ordinary MLX oracle, not globally best optimized candidate",
+    "native prepare per request; native ANE/LoRA/edit/encoder/Z/App not qualified"
+  ],
+  "cleanup": {
+    "deleted_files": 237,
+    "deleted_bytes": 20990080,
+    "model_deletions": 0,
+    "system_cache_deletions": 0
+  },
+  "design_documents": [
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/01-evidence-and-gap-analysis.md",
+      "sha256": "ac0b76d287d2e832256880e297b60f8c3195ad9ac4e54b9246b31d47ae8de525"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/02-architecture-and-contracts.md",
+      "sha256": "cfba13c26973544bad6ba050bf8ba8738ae6421d2f2ba5ef0160a7ad7c1d0459"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/03-command-graph-and-handoff.md",
+      "sha256": "cb47c54520179bc61b320f31491d0019e8b645d55f47bb48b26509725aedfa1e"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/04-qwen-lora-and-quantization.md",
+      "sha256": "1e7aafb50189eabc5d1683fc2ea95f1c4afe56880b1ef1b02a3532965b6b7c9e"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/05-resources-cache-and-worker.md",
+      "sha256": "6b129279536d877d90eb790f1ac9ceda1e17e84a927528be79fcf338da71f65c"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/06-calibration-performance-and-validation.md",
+      "sha256": "44988ee14128db3f367d11f3e8e9b8501b76176e1ec3d984858a872517da966e"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/07-implementation-roadmap.md",
+      "sha256": "67fef347d23eef2babd555f423f21e5df3f88993be0544a6d2ce0afc68d36966"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/08-source-map-and-decisions.md",
+      "sha256": "84b7b5d3007bb0fb1ab7389bc93783720c75b810b50f3b2195a424aafd52b0e5"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/09-base-first-splash-review.md",
+      "sha256": "d39dfa9a7830cdd2fc62007094452ec693b508b2ad8a1c6040cce4295ee79560"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/10-native-metal-graph-backend.md",
+      "sha256": "53fab0046f1ac861d2b483f039a20f0ae1dd2988ec4022105aaeabec9e1b4088"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/11-native-block-and-handoff-integration.md",
+      "sha256": "c80186721b099925394bed6ac144ed5f4b2dc19c9ec5f3f515511443a82d07bb"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/12-native-denoiser-runtime.md",
+      "sha256": "43a354b09be610bed2bd4af60f598c0ba9beb87941b9b3069ce60bcaf0f3a840"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/13-native-session-and-memory-phase.md",
+      "sha256": "12251719643754c5ebfded7ab55ee8ee4a3777be0382055742ffcfe8d6ac3593"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/14-native-w1-parallel-ffn.md",
+      "sha256": "8dd2684e13e1eae4d7acf524b4dd941f2572c5ec077deb7eeed4efb65aaa0304"
+    },
+    {
+      "path": "docs/design/qwen-image-gpu-ane-command-graph/README.md",
+      "sha256": "1ad1371ef9f85c7049e60d24c9483c59ef57bc04bd5525017d900ba55ae0846a"
+    }
+  ]
+}

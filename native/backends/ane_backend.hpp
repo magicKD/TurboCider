@@ -1,10 +1,24 @@
 #pragma once
 #include "ane_runtime.hpp"
 #include <cstdlib>
+#include <algorithm>
 
 namespace tc::ane {
 enum class BackendPreference { Public, Private, Auto, Off };
 struct BackendPolicy { BackendPreference preferred = BackendPreference::Public; bool allow_private = false; };
+inline bool configured_request_rows() {
+    const char *raw = std::getenv("TURBOCIDER_PRIVATE_ANE_ROWS");
+    if (raw && std::string(raw) != "descriptor" && std::string(raw) != "request")
+        throw std::runtime_error("private ANE rows require descriptor or request");
+    return raw && std::string(raw) == "request";
+}
+inline int private_request_bucket(int rows) {
+    // Bounded 128-row buckets avoid compiling a new program for every prompt
+    // increment. Long sequences still use tiled calls; nothing is truncated.
+    if (rows < 1 || rows > 32768)
+        throw std::runtime_error("private ANE request rows outside 1...32768");
+    return std::min(2048, (rows + 127) / 128 * 128);
+}
 // Preparing a public graph must not bypass an explicit private/auto/off route.
 inline bool public_runtime_preparation_allowed(BackendPolicy policy) {
     return policy.preferred == BackendPreference::Public ||
@@ -79,5 +93,5 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
 // Explicit Private native geometry only. The original template is still
 // validated against the full model; no Public artifact is resized/relabelled.
 BuiltExecutor build_runtime_executor(const std::filesystem::path &,size_t,GraphGeometry,BackendPolicy,
-                                    std::optional<int>,std::optional<int>,std::optional<int> bucket_override);
+                                    std::optional<int>,std::optional<int>,std::optional<int> bucket_override, int fixed_bucket_rows = 0);
 }

@@ -6,6 +6,7 @@
 #include <set>
 #include <cstring>
 #include <iostream>
+#include <fstream>
 
 namespace tc::ane::calibration {
 
@@ -21,11 +22,18 @@ class ScopedCapture {
     std::string request_id_, source_identity_;
     int step_ = 0;
     bool finished_ = false;
+    bool replay_ = false;
+    std::filesystem::path replay_directory_;
+    std::unordered_map<std::string,std::string> replay_metadata_;
   public:
     ScopedCapture(const Request &request, const std::filesystem::path &checkpoint,
                   const std::string &adapter_identity) {
         const char *raw = std::getenv("TURBOCIDER_ANE_CALIBRATION_DIR");
         if (!raw || !*raw) return;
+        const char *replay = std::getenv("TURBOCIDER_ANE_CALIBRATION_REPLAY");
+        require(!replay || std::string(replay)=="0" || std::string(replay)=="1",
+                "FFN replay capture requires 0 or 1");
+        replay_ = replay && std::string(replay)=="1";
         require((request.model == "z-image-turbo" || request.model == "qwen-image-2.1") &&
                 request.hybrid_mlp_mode == "runtime" && request.width == 512 && request.height == 512,
                 "bounded calibration requires an explicit 512px Runtime FFN request");
@@ -34,6 +42,9 @@ class ScopedCapture {
         require(chunks && (std::string(chunks) == "0" || std::string(chunks) == "1") &&
                 profile && std::string(profile) == "0",
                 "bounded calibration requires fixed chunks=0 or 1 and profile=0; sampling must not train scheduler timing");
+        require(!replay_ || (request.model=="qwen-image-2.1" && request.inputs.empty() &&
+                request.steps>=3 && std::string(chunks)=="0" && request.qwen21_dit_cache=="off"),
+                "full FFN replay capture requires Qwen512 text-to-image, >=3 steps, cache off and forced GPU");
         const char *s1 = std::getenv("TURBOCIDER_PRIVATE_ANE_S1_PROFILE");
         require(!s1 || !*s1, "capture and an experimental S1 profile must use separate requests");
         parent_ = raw;
@@ -71,6 +82,19 @@ class ScopedCapture {
         config.steps = {0,request.steps / 2,request.steps - 1};
         std::sort(config.steps.begin(), config.steps.end());
         config.steps.erase(std::unique(config.steps.begin(),config.steps.end()),config.steps.end());
+        if (replay_) {
+            // At most nine original BF16 matrices (72 MiB/request), streamed
+            // to disk one at a time. Sparse FP16 statistics remain separately
+            // bounded by the existing sampler. Never tile sparse rows to
+            // manufacture a supposedly real 1024-row performance input.
+            config.layers = {0,15,31}; config.steps = {1,request.steps/2,request.steps-1};
+            config.steps.erase(std::unique(config.steps.begin(),config.steps.end()),config.steps.end());
+            replay_directory_ = parent_ / (request_id_ + "-replay");
+            replay_metadata_ = {{"capture_recipe","qwen21-real-ffn-bf16-v1"},
+                {"model_identity",source_identity_},{"adapter_identity",adapter_identity},
+                {"seed",std::to_string(request.seed)},{"total_steps",std::to_string(request.steps)},
+                {"prompt",request.prompt},{"trajectory","forced-gpu"}};
+        }
         sampler_ = std::make_unique<Sampler>(std::move(config),std::move(metadata));
         previous_ = current_; current_ = this;
     }
@@ -87,6 +111,20 @@ class ScopedCapture {
         tc::require(input.ndim() == 3 && input.shape(0) == 1,
                     "bounded calibration needs a batch-one FFN input");
         const size_t rows = input.shape(1), hidden = input.shape(2);
+        if (replay_) {
+            tc::require(input.shape()==mx::Shape({1,1024,4096}) && input.dtype()==mx::bfloat16 &&
+                        point.phase=="denoise", "full FFN replay requires original complete BF16 decode input");
+            if (!std::filesystem::exists(replay_directory_)) {
+                std::filesystem::create_directories(parent_);
+                tc::require(std::filesystem::create_directory(replay_directory_),"replay directory exists");
+                std::filesystem::permissions(replay_directory_,std::filesystem::perms::owner_all);
+            }
+            const auto path = replay_directory_ / ("layer-"+std::to_string(layer)+"-step-"+std::to_string(step_)+".safetensors");
+            tc::require(!std::filesystem::exists(path),"refusing to overwrite a replay input");
+            auto metadata=replay_metadata_;metadata["layer"]=std::to_string(layer);metadata["step"]=std::to_string(step_);
+            mx::eval(input);
+            mx::save_safetensors(path.string(),{{"input",input}},metadata);
+        }
         if (!weight_layers_.contains(layer)) {
             std::optional<Tensor> maximum;
             for (const auto &prefix : gate_up) {
@@ -125,6 +163,14 @@ class ScopedCapture {
         std::filesystem::create_directories(parent_);
         const auto directory = parent_ / request_id_;
         sampler_->write(directory);
+        if (replay_) {
+            tc::require(sampler_->complete(),"incomplete real FFN replay capture");
+            // Publish completion only after every original tensor and its
+            // matching bounded statistics have been written successfully.
+            std::ofstream receipt(replay_directory_ / "complete.json");
+            receipt << sampler_->json(); receipt.close();
+            tc::require(bool(receipt),"cannot write replay completion receipt");
+        }
         finished_ = true;
         std::cerr << "{\"ane_calibration_capture\":" << quote(directory.string())
                   << ",\"complete\":" << (sampler_->complete() ? "true" : "false")

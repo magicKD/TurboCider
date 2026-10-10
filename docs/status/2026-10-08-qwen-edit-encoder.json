@@ -1,0 +1,140 @@
+{
+  "schema": "qwen21-edit-encoder-status-v1",
+  "date": "2026-10-08",
+  "branch": "dev-graph",
+  "runtime_build_id": "tc-runtime-build-v1-769123f8797388419e24b1d4f2077583477ae2e535f4f6a1ed900ecec17901b2",
+  "model": "local Qwen-Image-2.1 / qwen3vl_8b_bf16",
+  "machine": "Apple M4 Pro / 48 GiB",
+  "implementation": {
+    "language": "native GQA for rows>=128; causal without dense mask only if all keys valid",
+    "vision": "FP32-only 72->80 zero-pad fused SDPA; original 1/sqrt(72); slice to72",
+    "runtime": "MLX C++/Metal",
+    "ane": false,
+    "private_encoder": false,
+    "vae_changed": false,
+    "default_enabled": true
+  },
+  "generated": {
+    "pairs": 12,
+    "language_pairs": 6,
+    "visual_pairs": 6,
+    "status": "pass",
+    "max_fp32_visual_rrms": 5.470492924102961e-06,
+    "bf16_visual_reference_preserved": true
+  },
+  "real_conditioning": [
+    {
+      "reference_images": 1,
+      "expanded_tokens": 1074,
+      "reference_compute_seconds": 4.783770458999999,
+      "optimized_compute_seconds": 3.8893812499999996,
+      "measured_compute_saving_percent": 18.696323677431696,
+      "conditioning_rrms": 0.02002322031354962,
+      "strict_2_percent_pass": false
+    },
+    {
+      "reference_images": 2,
+      "expanded_tokens": 2104,
+      "reference_compute_seconds": 9.554325417,
+      "optimized_compute_seconds": 7.591849375,
+      "measured_compute_saving_percent": 20.540184223871716,
+      "conditioning_rrms": 0.021505703228253393,
+      "strict_2_percent_pass": false
+    },
+    {
+      "reference_images": 3,
+      "expanded_tokens": 3134,
+      "reference_compute_seconds": 14.749431458,
+      "optimized_compute_seconds": 11.538433792,
+      "measured_compute_saving_percent": 21.770314843277404,
+      "conditioning_rrms": 0.02456362960770326,
+      "strict_2_percent_pass": false
+    }
+  ],
+  "e2e": {
+    "reference_images": 3,
+    "reference_size": 512,
+    "output_size": [
+      512,
+      512
+    ],
+    "steps": 6,
+    "seed": 42,
+    "lora": "existing Viggle v0.2.1 r128 / strength1",
+    "status": "pass",
+    "pixel_rrms": 0.027564394598422446,
+    "visual_review": "pass: teapot, fox and puffin positions, silhouette and lighting match by visual inspection; texture differences are minor",
+    "measured_savings_percent": {
+      "text_encode": -1.245595287885942,
+      "request_wall": 1.2145882886111925,
+      "denoise": 1.224037441702607,
+      "image_encode": 5.948107440317445,
+      "vae_decode": -0.7849683829971665
+    },
+    "encoder_net_gain": false,
+    "performance_qualified": false,
+    "requests": [
+      {
+        "name": "reference",
+        "timings": {
+          "denoise": 23.536616625,
+          "hybrid_setup": 0,
+          "image_encode": 0.767082916,
+          "request_wall": 32.057937875,
+          "text_encode": 3.870625834,
+          "vae_decode": 0.903528875
+        }
+      },
+      {
+        "name": "optimized",
+        "timings": {
+          "denoise": 23.248519625,
+          "hybrid_setup": 0,
+          "image_encode": 0.721456,
+          "request_wall": 31.668565916,
+          "text_encode": 3.918838167,
+          "vae_decode": 0.910621291
+        }
+      }
+    ]
+  },
+  "scope": {
+    "models_downloaded": 0,
+    "model_exports": 0,
+    "stable_performance_qualified": false,
+    "full_default_1024_edit_e2e_verified": false,
+    "quality": "user 5% tensor screening plus 8% image screening and visual review; not strict bitwise",
+    "component_cache_limit_bytes": 268435456,
+    "e2e_allocator": "production default; no explicit component cache cap"
+  },
+  "failures_retained": [
+    "initial BF16 visual fixture RRMS0.0083274 exceeded 0.005; final code keeps BF16 reference path",
+    "real probe missing Event callback fixed before vision/language execution",
+    "initial strict 2% full conditioning screen failed at 0.0200232; failure kept; follow-up uses previously user-authorized 5% and reports strict gate false"
+  ],
+  "source_files_verified": 572,
+  "app_build": {
+    "status": "pass",
+    "ui_acceptance": false,
+    "path": "/Users/kd/Documents/project/TurboCider/build/qwen21-edit-encoder-runtime-v2-20261008/TurboCiderNativeApp",
+    "log": "outputs/qwen21-edit-encoder-20261008/app-build.log",
+    "package_installed": false,
+    "sha256": "a8859bc470008e4a581480195e1c433105e2015580ab83648e0319b73919769a"
+  },
+  "owned_cleanup": {
+    "files": 810,
+    "bytes": 243333892,
+    "receipt": "outputs/qwen21-edit-encoder-20261008/owned-cleanup.json"
+  },
+  "evidence_sha256": {
+    "outputs/qwen21-edit-encoder-20261008/generated-v3.json": "b600c8e546a962a67dea15f2432ae3ee59593718cc7915866826f283301f32ad",
+    "outputs/qwen21-edit-encoder-20261008/real-encoder-v5.json": "9374cef3dd084efaee4fee52ce41fa8f9e6eae2ee0a37b20e6246d041242f2ac",
+    "outputs/qwen21-edit-encoder-20261008/components-supervisor-v5.json": "b8f92c30460d2b1c5bec67928b5a816e07a7ea93ffcb7fb35c21f35b1b0cbcfd",
+    "outputs/qwen21-edit-encoder-20261008/e2e/receipt.json": "b52458a740411e1dee9038c52c8e23fcd89137f0bc325368d5e3b71c2054bd1d",
+    "outputs/qwen21-edit-encoder-20261008/probe-v5-build-cpu.log": "439685be600ac6adc2bba56d5071df4b37a67b901d78d6fe4f31112020106fa0",
+    "outputs/qwen21-edit-encoder-20261008/full-build-v2.log": "6da8316860b399860c5d9055ded373123b8f408ee7b7eb497fa8b17f068baa73",
+    "outputs/qwen21-edit-encoder-20261008/owned-cleanup.json": "4076a4c9b5388349a37822a006fd44c6995f675036da3bc396a77b73786332f6",
+    "outputs/qwen21-edit-encoder-20261008/app-build.log": "10cf9b965a19e68eb4d7ca608d498dc01d009a5a0fbe4b1c01fed9deb8349a2f"
+  },
+  "branch_observation": "current branch observed at final verification; runtime source hashes unchanged"
+}

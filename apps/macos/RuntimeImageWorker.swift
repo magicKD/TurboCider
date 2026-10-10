@@ -6,7 +6,7 @@ import Darwin
 /// A pinned local experiment. Intent is typed, execution is isolated per child,
 /// and only the child's receipt can describe the route that actually ran.
 enum RuntimeImageWorker {
-    static let profileID = "private-w8a8-hadamard-512-v1"
+    static let profileID = "private-w8a8-hadamard-512-v2"
     struct Options: Codable, Sendable, Equatable {
         let profile_id: String
         let descriptor_path: String
@@ -319,6 +319,7 @@ enum RuntimeImageWorker {
         var result = inherited.filter { !$0.key.hasPrefix("TURBOCIDER_") }
         let values = ["ANE_BACKEND": "auto", "ALLOW_PRIVATE_ANE": "1", "PRIVATE_ANE_DATA_PATH": "w8a8",
                       "PRIVATE_ANE_GPU_IO": "1", "PRIVATE_ANE_CHANNELS": "4096", "RUNTIME_ANE_CHUNKS": "1",
+                      "PRIVATE_ANE_ROWS": "request",
                       "RUNTIME_ANE_PROFILE": "0", "PRIVATE_ANE_SCALE_CACHE": "1", "PRIVATE_ANE_PREFETCH": "0",
                       "PRIVATE_ANE_LAUNCH_FENCE": "0", "PRIVATE_ANE_A8_LOOKAHEAD": "0", "PRIVATE_ANE_STAGE_SPECIALIZE": "0",
                       "PRIVATE_ANE_CACHE_DIR": options.cache_dir]

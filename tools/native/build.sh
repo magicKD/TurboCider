@@ -143,6 +143,13 @@ SOURCES=(
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
  native/backends/ane_memory.cpp native/backends/ane_gpu.mm native/backends/ane_runtime.mm native/backends/ane_public_w8.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_channel_calibration.cpp native/backends/ane_qkv.cpp native/backends/ane_smoothquant.mm
+ native/backends/metal_graph/backend.mm native/backends/metal_graph/native_ffn.mm
+ native/backends/metal_graph/native_linear.mm native/backends/metal_graph/mlx_bridge.cpp
+ native/backends/metal_graph/native_lora.mm native/backends/metal_graph/native_gate_up.mm
+ native/backends/metal_graph/mlx_ffn_island.cpp
+ native/backends/metal_graph/native_attention.mm native/backends/metal_graph/native_qwen_ops.mm
+ native/backends/metal_graph/native_step_ops.mm
+ native/backends/metal_graph/memory_bridge.cpp
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
@@ -150,6 +157,11 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/models/qwen21/transformer.cpp
+ native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
+ native/models/qwen21/native_block.cpp
+ native/models/qwen21/native_denoiser.cpp native/models/qwen21/native_denoiser_math.cpp
+ native/models/qwen21/mlx_native_denoiser.cpp
+ native/models/qwen21/native_memory_plan.cpp native/models/qwen21/native_session.cpp
  native/models/qwen21/hybrid.cpp
  native/models/qwen21/sequence.cpp
  native/models/qwen21/text_encoder.cpp
@@ -177,7 +189,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/media/reference_preparation.mm
 )
 if [[ "$PRIVATE_ANE" == "1" ]]; then
- SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm)
+ SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm native/backends/metal_graph/native_ane_handoff.mm native/backends/metal_graph/native_ane_stages.mm native/backends/metal_graph/native_hybrid_ffn.mm native/backends/metal_graph/native_prefill_ffn.mm)
 fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories

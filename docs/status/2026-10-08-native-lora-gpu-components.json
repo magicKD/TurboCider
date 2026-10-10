@@ -1,0 +1,652 @@
+{
+  "schema": "tc-native-lora-gpu-generated-status-v1",
+  "date": "2026-10-08",
+  "runtime_build_id": "tc-runtime-build-v1-61fe967cd43710d074b7e24ead0076113e99fd2683f27ac90ecc99e736d0395f",
+  "sources_verified": 567,
+  "private_enabled_build": true,
+  "full_build": "PASS",
+  "route_cpu_tests": 9,
+  "kernel_cpu_assertions": {
+    "contract": 106,
+    "source": 78,
+    "math": 637
+  },
+  "model_cpu_contract": {
+    "accepted": 12,
+    "rejected": 32
+  },
+  "loader_cpu": "PASS; MLX shared allocator required Metal device access, no native GPU or ANE graph",
+  "operator": {
+    "submissions": 3,
+    "dispatches": 14,
+    "generated_file_bytes": 77043,
+    "bf16_bit_differences": 0,
+    "cases": 3
+  },
+  "denoiser": {
+    "geometry": {
+      "layers": 2,
+      "hidden": 128,
+      "ffn": 256,
+      "target_rows": 4,
+      "text_rows": 3
+    },
+    "steps_per_route": 2,
+    "runs": [
+      {
+        "case": "base",
+        "generation": 1,
+        "targets": 0,
+        "ranks": [
+          16,
+          128
+        ],
+        "layers": 2,
+        "steps": 2,
+        "rrms": 0,
+        "max_abs": 0,
+        "rrms_limit": 0.01,
+        "lora_scratch_bytes": 0,
+        "qualification": "generated-component-only",
+        "count": 256,
+        "reference_peak": 1.8828125,
+        "relative_denominator_floor": 1e-06,
+        "absolute_error": {
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.02,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "relative_error": {
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.05,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bf16_ulp_error": {
+          "signed_zero": "coalesced",
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "largest_abs_errors": [
+          {
+            "row": 0,
+            "column": 0,
+            "reference": -0.56640625,
+            "native": -0.56640625,
+            "reference_bf16": "0xbf11",
+            "native_bf16": "0xbf11",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "reference": -0.625,
+            "native": -0.625,
+            "reference_bf16": "0xbf20",
+            "native_bf16": "0xbf20",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "reference": 0.0888671875,
+            "native": 0.0888671875,
+            "reference_bf16": "0x3db6",
+            "native_bf16": "0x3db6",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00048828125,
+            "reference_upper_ulp_size": 0.00048828125
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "reference": 0.205078125,
+            "native": 0.205078125,
+            "reference_bf16": "0x3e52",
+            "native_bf16": "0x3e52",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0009765625,
+            "reference_upper_ulp_size": 0.0009765625
+          },
+          {
+            "row": 0,
+            "column": 4,
+            "reference": -0.41015625,
+            "native": -0.41015625,
+            "reference_bf16": "0xbed2",
+            "native_bf16": "0xbed2",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          }
+        ]
+      },
+      {
+        "case": "lora-all-targets",
+        "generation": 2,
+        "targets": 22,
+        "ranks": [
+          16,
+          128
+        ],
+        "layers": 2,
+        "steps": 2,
+        "rrms": 0,
+        "max_abs": 0,
+        "rrms_limit": 0.01,
+        "lora_scratch_bytes": 10752,
+        "qualification": "generated-component-only",
+        "count": 256,
+        "reference_peak": 2,
+        "relative_denominator_floor": 1e-06,
+        "absolute_error": {
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.02,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "relative_error": {
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.05,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bf16_ulp_error": {
+          "signed_zero": "coalesced",
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "largest_abs_errors": [
+          {
+            "row": 0,
+            "column": 0,
+            "reference": -0.455078125,
+            "native": -0.455078125,
+            "reference_bf16": "0xbee9",
+            "native_bf16": "0xbee9",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "reference": -0.458984375,
+            "native": -0.458984375,
+            "reference_bf16": "0xbeeb",
+            "native_bf16": "0xbeeb",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "reference": 0.0810546875,
+            "native": 0.0810546875,
+            "reference_bf16": "0x3da6",
+            "native_bf16": "0x3da6",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00048828125,
+            "reference_upper_ulp_size": 0.00048828125
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "reference": 0.16796875,
+            "native": 0.16796875,
+            "reference_bf16": "0x3e2c",
+            "native_bf16": "0x3e2c",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0009765625,
+            "reference_upper_ulp_size": 0.0009765625
+          },
+          {
+            "row": 0,
+            "column": 4,
+            "reference": -0.3046875,
+            "native": -0.3046875,
+            "reference_bf16": "0xbe9c",
+            "native_bf16": "0xbe9c",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          }
+        ]
+      },
+      {
+        "case": "base",
+        "generation": 3,
+        "targets": 0,
+        "ranks": [
+          16,
+          128
+        ],
+        "layers": 2,
+        "steps": 2,
+        "rrms": 0,
+        "max_abs": 0,
+        "rrms_limit": 0.01,
+        "lora_scratch_bytes": 0,
+        "qualification": "generated-component-only",
+        "count": 256,
+        "reference_peak": 1.8828125,
+        "relative_denominator_floor": 1e-06,
+        "absolute_error": {
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.02,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "relative_error": {
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.05,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bf16_ulp_error": {
+          "signed_zero": "coalesced",
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "largest_abs_errors": [
+          {
+            "row": 0,
+            "column": 0,
+            "reference": -0.56640625,
+            "native": -0.56640625,
+            "reference_bf16": "0xbf11",
+            "native_bf16": "0xbf11",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "reference": -0.625,
+            "native": -0.625,
+            "reference_bf16": "0xbf20",
+            "native_bf16": "0xbf20",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "reference": 0.0888671875,
+            "native": 0.0888671875,
+            "reference_bf16": "0x3db6",
+            "native_bf16": "0x3db6",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00048828125,
+            "reference_upper_ulp_size": 0.00048828125
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "reference": 0.205078125,
+            "native": 0.205078125,
+            "reference_bf16": "0x3e52",
+            "native_bf16": "0x3e52",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0009765625,
+            "reference_upper_ulp_size": 0.0009765625
+          },
+          {
+            "row": 0,
+            "column": 4,
+            "reference": -0.41015625,
+            "native": -0.41015625,
+            "reference_bf16": "0xbed2",
+            "native_bf16": "0xbed2",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          }
+        ]
+      }
+    ],
+    "targets": 22,
+    "ranks": [
+      16,
+      128
+    ],
+    "base_lora_base": true,
+    "physical_completion": true,
+    "zero_ledger_phases": 3,
+    "generated_adapter_bytes": 1126260
+  },
+  "real_model_loads": 0,
+  "model_downloads": 0,
+  "ane_execution": 0,
+  "e2e_images": 0,
+  "performance_qualified": false,
+  "request_domain": "BaseOnly512px20steps; native LoRA entry remains closed",
+  "limits": [
+    "one deterministic generated full DiT fixture with simultaneous targets, no independent per-target ablation",
+    "no 32-layer real LoRA request, edit, Z-image, App or hybrid-LoRA numeric/performance qualification",
+    "W1S still has per-layer host admission; W1R/W2 are design targets",
+    "historical Base and scale-cache measurements do not qualify this changed source"
+  ],
+  "artifacts": [
+    {
+      "path": "build/native-lora-gpu-20261008/libturbocider.dylib",
+      "bytes": 10119168,
+      "sha256": "fce62042cce67e7270524d9d4d247156b6778ed30858ef83fa9fa1aad5f11075"
+    },
+    {
+      "path": "build/native-lora-gpu-20261008/turbocider",
+      "bytes": 309176,
+      "sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641"
+    },
+    {
+      "path": "build/native-lora-gpu-20261008/runtime-build/runtime-build-manifest.json",
+      "bytes": 155534,
+      "sha256": "da4cadf62847bd36855e1708f3fbb5c417854fa8b666e5c0206e82afa5802317"
+    },
+    {
+      "path": "build/native-lora-gpu-20261008/operator/native-lora-component",
+      "bytes": 203528,
+      "sha256": "36e6194fbd36459b92d204f05b73a3b977b8b7c089cbbff887ca24f4b4a8eb05"
+    },
+    {
+      "path": "build/native-lora-components-20261008/native-qwen-lora-denoiser-component",
+      "bytes": 217552,
+      "sha256": "66dd21f0b29347582f7030dae67cec9da6f2a3c245bfa9ba7375f30518ba237b"
+    },
+    {
+      "path": "build/native-lora-gpu-20261008/loader-contract",
+      "bytes": 89024,
+      "sha256": "e8da31bc2a63425d61775b3e7dba11c7bd8bfa42e164f124fa6d7378d8e7fb7e"
+    },
+    {
+      "path": "tools/native/native_lora_component.cpp",
+      "bytes": 13128,
+      "sha256": "fb7816d367a3ec4cbad9d7d6a3016387f520924c3f1a9968068ee7217d2d7c7a"
+    },
+    {
+      "path": "tools/native/build_native_lora_component.sh",
+      "bytes": 1711,
+      "sha256": "61a09862a6d44757d144d1f08247d9a4c4f467f359c8421556ca669e8c6b5608"
+    },
+    {
+      "path": "tools/native/native_qwen_lora_denoiser_component.cpp",
+      "bytes": 18287,
+      "sha256": "97ae8afc9d0e3dc47aed8347786a4a7b93369b1e1bc59a90b204922e299776a6"
+    },
+    {
+      "path": "tools/native/build_native_qwen_lora_denoiser_component.sh",
+      "bytes": 1909,
+      "sha256": "20e5c99a47626cc23181093666b6e0384b30a2aa78d2b4d6e8a9eff736e1f69d"
+    },
+    {
+      "path": "tools/native/native_qwen_denoiser_component.cpp",
+      "bytes": 32879,
+      "sha256": "f860aaf1877f38237a0a799e633aede4ed60ae921ed6c6c6c94ea3e896107fcb"
+    },
+    {
+      "path": "tests/native/mlx_lora_lease_test.cpp",
+      "bytes": 5162,
+      "sha256": "9231d02177b2465c528844126651381b447699018fe3edf2a952e61b643b6441"
+    },
+    {
+      "path": "tests/native/native_memory_plan_test.cpp",
+      "bytes": 27786,
+      "sha256": "a401e879eda51f67525d039ba813af19b9ea12afaadbb1c8fe81b60bd10719ff"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/full-build.log",
+      "bytes": 2246,
+      "sha256": "6da8316860b399860c5d9055ded373123b8f408ee7b7eb497fa8b17f068baa73"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/route-cpu.log",
+      "bytes": 1507,
+      "sha256": "6728e3617c99363e81589574f0d02a9d5d67403f32983879669da49d11415a22"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/memory-contract.log",
+      "bytes": 369,
+      "sha256": "84ad47a29babcad2333081618be338311f04b0bb8a3acf29566ad1d9ecc695d4"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/loader-cpu-metal-access.log",
+      "bytes": 125,
+      "sha256": "0b65997403b31b24c0fb7220f363dd609a5b5d8657edc0bbfb45dda29af8cf2a"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/operator-device.log",
+      "bytes": 476,
+      "sha256": "6b5b14f8271be2e0ad96faf36393f3deb5891477f5f4f74909270a328fc31eef"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/denoiser-device.log",
+      "bytes": 5939,
+      "sha256": "74d2652e47d57ab7c503606b48b86eca9c12abf7a40055ee08cfe0859c54c765"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/generated-group-receipt.json",
+      "bytes": 1155,
+      "sha256": "9b34e5789dfd11100c1da774818997b469c2178dd8eca3234720845f2219dd79"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/kernel-host-cpu.log",
+      "bytes": 1329,
+      "sha256": "c20845ec38484f12ebd57bc5307d7c8816d25c38b296a48ea90549eb28436905"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/loader-importer-host.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/metadata-cpu.log",
+      "bytes": 117,
+      "sha256": "4f7a61825c48c9b8acca8c00ec76177fa41ce34c856e1da6dd4d3c7c5c4c59f6"
+    },
+    {
+      "path": "outputs/native-lora-gpu-20261008/denoiser-probe-host.log",
+      "bytes": 65,
+      "sha256": "1cb89f730bd9871ad9f7cfc379d0293f8a433cdd187e2f6b758563ac0e436ed6"
+    },
+    {
+      "path": "outputs/native-lora-model-20261008/host-cpu.log",
+      "bytes": 169,
+      "sha256": "bc8a1e44287533a6d0302f6649fdb0fe531b8d45987f8959596f431fd271fddb"
+    },
+    {
+      "path": "outputs/native-lora-model-20261008/session-public-host.log",
+      "bytes": 91,
+      "sha256": "80e186572b03cd129fd5a83d785568a72d56521ec622f32c0052ffd69e89523c"
+    },
+    {
+      "path": "outputs/native-lora-model-20261008/session-private-host.log",
+      "bytes": 92,
+      "sha256": "14131abd20f99ecdbe4181fd65f0f45f55f16554d4d88d163c64922f6b1d2ef6"
+    }
+  ],
+  "cleanup": {
+    "path": "outputs/native-lora-gpu-20261008/owned-cleanup.json",
+    "sha256": "5b45a4fd76fe92b849b1b5fe16415dd537c3f7a74c755f5c5a4a6e2651ceac14",
+    "removed_bytes": 21828889,
+    "removed_files": 243
+  }
+}

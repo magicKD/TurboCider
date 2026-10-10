@@ -5,6 +5,14 @@
 namespace tc::ane { class HybridFfn; }
 
 namespace tc::qwen21 {
+// Optional model-owned FFN bridge. Attention, VL norm, mRoPE and DeepStack
+// stay here. prepare may stage immutable weights before attention; execute
+// must return the complete FFN or invoke the supplied exact GPU fallback.
+struct TextFfnHooks {
+    using Gpu = std::function<Tensor(const Tensor&)>;
+    std::function<void(int,const std::string&,int)> prepare;
+    std::function<Tensor(int,const Tensor&,const Gpu&)> execute;
+};
 struct TextConfig {
     int layers = 36;
     int heads = 32;
@@ -16,6 +24,9 @@ struct TextConfig {
     bool final_norm = true; // mflux T2I; edit callers can explicitly select the raw final hidden state
     bool compiled_gpu_blocks = false; // explicit request snapshot, dynamic original source arguments
     bool fused_gpu_prefill = false; // explicit GPU-only RMS/QK/packed projection profile
+    // Equivalent mask/GQA layout; false retains the reference implementation
+    // for paired validation. Norm, mRoPE, FFN and DeepStack remain unchanged.
+    bool efficient_attention = true;
 };
 
 // Accept HF model.language_model.* and Comfy model.* language weights. The visual tower is
@@ -28,7 +39,8 @@ class TextEncoder {
     Tensor encode_embeddings(const Tensor &, const Tensor &positions,
                              int valid_tokens, const Event &, std::atomic<bool> &,
                              const std::vector<Tensor> &deepstack_deltas = {},
-                             const std::function<void(const std::string &)> &release_layer = {}) const;
+                             const std::function<void(const std::string &)> &release_layer = {},
+                             const TextFfnHooks *ffn = nullptr) const;
     static std::string prompt_template(const std::string &);
     static std::string system_prefix();
     using LayerWeights=std::function<const Weights &(int)>;

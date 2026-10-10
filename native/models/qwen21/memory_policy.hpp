@@ -9,6 +9,9 @@ namespace tc::qwen21 {
 // at a time, then stream DiT layers on every step, then load the VAE. Larger canvases,
 // multimodal conditioning and PE retain their existing estimate.
 inline bool layer_staged_hybrid_t2i(const Request &r, const DeviceInfo &device) {
+    // Native currently owns all dense DiT weights during the complete graph.
+    // It must never inherit the smaller per-layer MLX residency estimate.
+    if (r.qwen21_denoiser_backend != "mlx") return false;
     if (!device.optimizations().qwen21_layer_streaming ||
         (r.hybrid_mlp_mode != "auto" && r.hybrid_mlp_mode != "base_fused")) return false;
     if (lora_base_ane(r) || gate_up_ane(r) || fused_lora_ane(r) ||
@@ -31,6 +34,7 @@ inline bool layer_staged_hybrid_t2i(const Request &r, const DeviceInfo &device) 
         r.steps >= 2;
 }
 inline bool layer_staged_t2i(const Request &r, const DeviceInfo &device) {
+    if (r.qwen21_denoiser_backend != "mlx") return false;
     if (!device.optimizations().qwen21_layer_streaming) return false;
     if (layer_staged_hybrid_t2i(r, device)) return true;
     return r.model == "qwen-image-2.1" && r.residency == "component_staged" &&
