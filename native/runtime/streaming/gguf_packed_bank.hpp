@@ -17,6 +17,9 @@ struct GgufKImportOptions {
     // Explicit bounded CPU row parallelism; MLX allocation/publication and
     // source ownership remain on the caller. One shared fixed read buffer.
     uint32_t decode_workers=1;
+    // Two shared fixed buffers and ONE bounded I/O worker. No per-decoder
+    // payload buffers or all-model raw cache; default synchronous schedule.
+    bool read_ahead=false;
 };
 
 // Immutable, compute-ready MLX affine packed bank. Only Q4_0/Q4_1/Q8_0 and

@@ -1,6 +1,7 @@
 #include "gguf_packed_bank.hpp"
 #include "gguf_storage.hpp"
 #include "canonical_encoding.hpp"
+#include "read_ahead_worker.hpp"
 #include "../../core/gguf_affine.hpp"
 
 #include <chrono>
@@ -138,7 +139,11 @@ struct GgufPackedBank::State {
         encoding.unsigned_field("read_bytes",read_bytes);
         encoding.unsigned_field("raw_window_bytes",metrics.raw_window_budget_bytes);
         encoding.unsigned_field("raw_window_limit",raw_window_limit);
-        if(k_import.enabled)encoding.unsigned_field("decode_workers",k_import.decode_workers);
+        if(k_import.enabled) {
+            encoding.unsigned_field("decode_workers",k_import.decode_workers);
+            // Preserve the established synchronous plan identity.
+            if(k_import.read_ahead)encoding.string_field("read_schedule","bounded-two-slot-pread-v1");
+        }
         encoding.begin_list("tensors",directory.tensors.size());
         for(const auto &task:tasks) {
             const auto &tensor=directory.tensors[task.tensor];
@@ -182,7 +187,10 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
             (options.enabled || options.decode_workers==1),
             "gguf_packed_bank: row workers require explicit mixed K recipe and bound 1..8");
     s.k_import=std::move(options);
+    require(!s.k_import.read_ahead || s.k_import.enabled,"gguf_packed_bank: read ahead requires explicit K recipe");
     s.metrics.decode_workers=s.k_import.decode_workers;
+    s.metrics.read_ahead_enabled=s.k_import.read_ahead;
+    s.metrics.read_buffer_slots=s.k_import.read_ahead ? 2 : 1;
     require(s.lease && (s.lease->has_verified_content() || proof==ProofMode::PendingNative),
             "gguf_packed_bank: native content proof required");
     s.logical_id=logical;
@@ -369,20 +377,33 @@ void GgufPackedBank::load_candidate(Weights &output,const std::atomic<bool> *can
     require(!s.used && output.sorted_keys().empty(), "gguf_packed_bank: load requires fresh bank and empty output");
     s.used = true; cancelled(cancel); check_unchanged();
     const auto snapshot = s.ledger.snapshot();
-    const uint64_t upper = gguf::checked_add(s.metrics.planned_packed_capacity_bytes,s.read_bytes);
+    const uint64_t scratch = gguf::checked_mul(s.read_bytes,s.metrics.read_buffer_slots);
+    const uint64_t upper = gguf::checked_add(s.metrics.planned_packed_capacity_bytes,scratch);
     require(snapshot.committed_bytes <= snapshot.budget_bytes && snapshot.reserved_bytes <= snapshot.budget_bytes-snapshot.committed_bytes &&
             upper <= snapshot.budget_bytes-snapshot.committed_bytes-snapshot.reserved_bytes,
             "qe_budget_floor: prepared packed bank and read buffer exceed managed weight ceiling");
     const auto start = Clock::now();
-    RowDecodePool decode_pool(s.k_import.decode_workers);
     // No output binding is published until ALL tensors and source generation
     // checks succeed. Fail/cancel only leaves local arrays, which are released.
     auto buffer = gguf_storage::allocate(s.ledger,s.read_bytes,s.read_bytes,{int(s.read_bytes)},mx::uint8,
                                         MemoryClass::ConversionScratch,s.lease->generation());
     auto *read = buffer.data<std::byte>();
     s.metrics.read_buffer_capacity_bytes = actual(buffer);
+    std::optional<Tensor> second_buffer;
+    if(s.k_import.read_ahead) {
+        second_buffer=gguf_storage::allocate(s.ledger,s.read_bytes,s.read_bytes,{int(s.read_bytes)},mx::uint8,
+                                            MemoryClass::ConversionScratch,s.lease->generation());
+        s.metrics.read_buffer_capacity_bytes=gguf::checked_add(s.metrics.read_buffer_capacity_bytes,actual(*second_buffer));
+    }
+    std::array<std::byte *,2> reads{read,second_buffer ? second_buffer->data<std::byte>() : nullptr};
     std::vector<std::string> keys; std::vector<Tensor> arrays;
     keys.reserve(s.metrics.field_count); arrays.reserve(s.metrics.field_count);
+    RowDecodePool decode_pool(s.k_import.decode_workers);
+    // Declared AFTER both input buffers and candidate arrays: on ANY failure
+    // pread drains before their backing/ledger claims or borrowed fd can die.
+    std::unique_ptr<ReadAheadWorker> reader;
+    if(s.k_import.read_ahead)reader=std::make_unique<ReadAheadWorker>(s.fd.get(),
+        s.lease->file(s.logical_id).bytes,s.read_bytes,cancel);
     for (const auto &task : s.tasks) {
         cancelled(cancel); check_unchanged();
         if (event) event("load_gguf_direct_tensor",int(task.tensor),int(s.tasks.size()));
@@ -401,6 +422,15 @@ void GgufPackedBank::load_candidate(Weights &output,const std::atomic<bool> *can
             !task.fields[0].part && task.fields[0].dtype==mx::float16;
         const bool bf16_direct=s.k_import.enabled && tensor.type==30 && task.fields.size()==1 &&
             !task.fields[0].part && task.fields[0].dtype==mx::bfloat16;
+        const bool pipelined=bool(reader) && tensor.bytes>s.read_bytes;
+        unsigned slot=0;
+        auto submit=[&](uint64_t row,unsigned target_slot) {
+            const auto count=std::min(rows_per_chunk,tensor.rows()-row)*task.row_bytes;
+            auto *target=(bf16_alias || bf16_direct) ? pointers[0]+row*task.row_bytes : reads[target_slot];
+            reader->submit({target,size_t(count)},tensor.file_offset+row*task.row_bytes);
+            ++s.metrics.read_ahead_jobs;
+        };
+        if(pipelined)submit(0,0);
         for (uint64_t row = 0; row < tensor.rows();) {
             cancelled(cancel);
             const uint64_t rows = std::min(rows_per_chunk,tensor.rows()-row), bytes = rows*task.row_bytes;
@@ -409,14 +439,23 @@ void GgufPackedBank::load_candidate(Weights &output,const std::atomic<bool> *can
             // final backing, convert in place, and publish only after the
             // complete bank succeeds. No extra raw/dense floating checkpoint.
             auto *destination=(bf16_alias || bf16_direct) ? pointers[0]+row*task.row_bytes : read;
-            while (done < bytes) {
+            if(pipelined) {
+                const auto waited=Clock::now();const auto completed=reader->take();
+                s.metrics.read_wait_seconds+=seconds(waited);
+                require(completed.bytes==bytes,"gguf_packed_bank: read ahead returned wrong range");
+                s.metrics.source_read_bytes=gguf::checked_add(s.metrics.source_read_bytes,completed.bytes);
+                s.metrics.read_ahead_bytes=gguf::checked_add(s.metrics.read_ahead_bytes,completed.bytes);
+                s.metrics.read_seconds+=completed.seconds;
+                read=reads[slot];
+                if(row+rows<tensor.rows())submit(row+rows,slot^1);
+            } else while (done < bytes) {
                 cancelled(cancel);
                 const auto n = ::pread(s.fd.get(),destination+done,size_t(bytes-done),off_t(tensor.file_offset+row*task.row_bytes+done));
                 if (n < 0 && errno == EINTR) continue;
                 require(n > 0,"gguf_packed_bank: payload read failed or source changed");
                 done += uint64_t(n); s.metrics.source_read_bytes = gguf::checked_add(s.metrics.source_read_bytes,uint64_t(n));
             }
-            s.metrics.read_seconds += seconds(read_start);
+            if(!pipelined)s.metrics.read_seconds += seconds(read_start);
             const gguf::PackedMatrix source{{read,size_t(bytes)},tensor.type,rows,tensor.columns()};
             const auto decode_start = Clock::now();
             if(bf16_direct) {
@@ -456,9 +495,14 @@ void GgufPackedBank::load_candidate(Weights &output,const std::atomic<bool> *can
             if (task.fields[0].part) s.metrics.affine_decode_seconds+=elapsed;
             else s.metrics.float_decode_seconds+=elapsed;
             row += rows;
+            if(pipelined)slot^=1;
         }
         require(arrays.size()==first+task.fields.size(),"gguf_packed_bank: output field accounting mismatch");
         cancelled(cancel); check_unchanged();
+    }
+    if(reader) {
+        require(reader->idle(),"gguf_packed_bank: pending read at publication boundary");
+        reader->stop_and_drain();s.metrics.read_ahead_drained=true;
     }
     cancelled(cancel); check_unchanged();
     if(before_publication)before_publication();

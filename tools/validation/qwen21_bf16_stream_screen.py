@@ -103,6 +103,8 @@ def main():
     parser.add_argument("--weight-gib", type=int, default=11)
     parser.add_argument("--dump-latents", action="store_true")
     parser.add_argument("--optimized-gguf", action="store_true", help="GGUF-only explicit GPU prefill and parallel verified import; BF16 arithmetic controls unchanged")
+    parser.add_argument("--read-buffer-mib", type=int, choices=(1, 4, 8), default=1, help="GGUF-only bounded import buffer")
+    parser.add_argument("--read-ahead", action="store_true", help="GGUF-only two-buffer source pread/decode schedule")
     parser.add_argument("--source-registration", choices=("process", "first", "reuse"), default="process")
     parser.add_argument("--registration-cache", type=Path, help="private receipt root with an isolated subdirectory per arm")
     parser.add_argument("--output", type=Path, required=True)
@@ -128,7 +130,8 @@ def main():
     summary = dict(schema="tc-qwen21-bf16-stream-comparison-v1", status="running", qualification_passed=False,
                    source_identities=hashes, order=order, steps=args.steps, encoder_prefix=args.encoder_prefix,
                    dit_prefix=args.dit_prefix, managed_weight_budget_bytes=args.weight_gib << 30,
-                   optimized_gguf=args.optimized_gguf, source_registration=args.source_registration, trials=[])
+                   optimized_gguf=args.optimized_gguf, source_registration=args.source_registration,
+                   read_buffer_mib=args.read_buffer_mib,read_ahead=args.read_ahead,trials=[])
     destination = args.output / "summary.json"
     destination.write_text(json.dumps(summary, indent=2) + "\n")
     for mode in order:
@@ -151,6 +154,8 @@ def main():
         prefill = args.optimized_gguf and mode.startswith("gguf")
         env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if prefill else "0"
         env["TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP"] = "1" if prefill else "0"
+        env["TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB"] = str(args.read_buffer_mib) if mode.startswith("gguf") else "1"
+        env["TURBOCIDER_QWEN21_GGUF_READ_AHEAD"] = "1" if args.read_ahead and mode.startswith("gguf") else "0"
         env.update(TURBOCIDER_QWEN21_BF16_STREAM_ENCODER_PREFIX=str(args.encoder_prefix),
                    TURBOCIDER_QWEN21_BF16_STREAM_DIT_PREFIX=str(args.dit_prefix),
                    TURBOCIDER_QWEN21_BF16_STREAM_WEIGHT_GIB=str(args.weight_gib))
@@ -188,7 +193,7 @@ def main():
                            if line.startswith('{"qwen_gguf_verified_import":')]
                 validate_verified_imports(imports,dict(dit=(hashes[str(sources[7])],sources[7].stat().st_size),
                                                       encoder=(hashes[str(sources[6])],sources[6].stat().st_size)),
-                                          args.source_registration)
+                                          args.source_registration,args.read_buffer_mib,args.read_ahead)
                 if any(r["qwen_encoder_prefill"]["processor_sha256"] != hashes[str(sources[-1])] for r in rows):
                     raise ValueError("optimized GGUF processor proof differs")
         else:

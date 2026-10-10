@@ -152,6 +152,7 @@ test-streaming-source-identity:
 test-streaming-source-lease:
 	@"$(PYTHON)" -B tests/native/test_streaming_source_lease.py
 	@"$(PYTHON)" -B tests/native/test_source_registration.py
+	@"$(PYTHON)" -B tests/native/test_read_ahead_worker.py
 test-streaming-audit:
 	@"$(PYTHON)" -B tests/native/test_streaming_audit.py
 test-ltx-streaming-lifecycle:

@@ -84,18 +84,30 @@ def validate_receipts(rows, channels, steps=40, phase="all", encoder_prefill=Fal
             raise ValueError("native hybrid failed, retried, fell back or performed different work")
 
 
-def validate_verified_imports(records, expected, registration="process", read_buffer_mib=1):
+def validate_verified_imports(records, expected, registration="process", read_buffer_mib=1, read_ahead=False):
     if registration not in ("process", "first", "reuse"):
         raise ValueError("unknown source registration phase")
     if type(read_buffer_mib) is not int or read_buffer_mib not in (1, 4, 8):
         raise ValueError("unsupported bounded import read buffer")
+    if type(read_ahead) is not bool:
+        raise ValueError("read ahead policy must be boolean")
     if len(records) != 2 or {r.get("component") for r in records} != {"encoder", "dit"}:
         raise ValueError("one actual encoder/DiT import proof per fresh process required")
     for record in records:
         digest, size = expected[record["component"]]
-        if "read_buffer_capacity_bytes" in record or read_buffer_mib != 1:
-            if counter(record, "read_buffer_capacity_bytes") != read_buffer_mib << 20:
+        if "read_buffer_capacity_bytes" in record or read_buffer_mib != 1 or read_ahead:
+            if counter(record, "read_buffer_capacity_bytes") != (read_buffer_mib << 20) * (2 if read_ahead else 1):
                 raise ValueError("actual bounded read buffer differs from requested recipe")
+        if "read_ahead_enabled" in record or read_ahead:
+            if (record.get("read_ahead_enabled") is not read_ahead or
+                counter(record, "read_buffer_slots") != (2 if read_ahead else 1) or
+                record.get("read_ahead_drained") is not read_ahead):
+                raise ValueError("actual read schedule or drain differs")
+            jobs, bytes_read = counter(record, "read_ahead_jobs"), counter(record, "read_ahead_bytes")
+            waited = record.get("read_wait_seconds")
+            if (type(waited) not in (int, float) or not math.isfinite(waited) or waited < 0 or
+                (jobs <= 0 or not 0 < bytes_read <= size if read_ahead else jobs != 0 or bytes_read != 0 or waited != 0)):
+                raise ValueError("missing bounded actual read ahead work/wait evidence")
         reuse = registration == "reuse"
         if (record.get("source_sha256") != digest or counter(record, "verification_bytes") != (0 if reuse else size) or
             counter(record, "verification_cache_hits") != int(reuse) or record.get("cpu_verify_import_schedule") is not True or
@@ -127,6 +139,7 @@ def main():
     parser.add_argument("--decode-workers", type=int, choices=range(1, 9), default=1,
                         help="same bounded CPU import schedule on all arms; no GPU/ANE overlap claim")
     parser.add_argument("--read-buffer-mib", type=int, choices=(1, 4, 8), default=1)
+    parser.add_argument("--read-ahead", action="store_true", help="two fixed shared buffers and one bounded source pread worker")
     parser.add_argument("--encoder-prefill", action="store_true", help="explicit GPU prefill packed fusions and verified processor reuse")
     parser.add_argument("--dump-tensors", action="store_true", help="explicit matching numerical evidence; not a no-dump performance trial")
     parser.add_argument("--verified-import-overlap", action="store_true", help="CPU native full-SHA/import candidates; proof required before publication")
@@ -164,6 +177,7 @@ def main():
                    source_identities=identities, steps=args.steps, phase=args.phase, shared_down=args.shared_down,
                    decode_workers=args.decode_workers, encoder_prefill=args.encoder_prefill,
                    read_buffer_mib=args.read_buffer_mib,
+                   read_ahead=args.read_ahead,
                    dump_tensors=args.dump_tensors, verified_import_overlap=args.verified_import_overlap,
                    source_registration=args.source_registration, order=order, trials=[])
     destination = args.output / "summary.json"
@@ -182,6 +196,7 @@ def main():
         env["TURBOCIDER_QWEN21_GGUF_SHARED_DOWN"] = "1" if args.shared_down else "0"
         env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"] = str(args.decode_workers)
         env["TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB"] = str(args.read_buffer_mib)
+        env["TURBOCIDER_QWEN21_GGUF_READ_AHEAD"] = "1" if args.read_ahead else "0"
         env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = "1" if args.encoder_prefill else "0"
         env["TURBOCIDER_QWEN21_GGUF_VERIFY_IMPORT_OVERLAP"] = "1" if args.verified_import_overlap else "0"
         if channels:
@@ -219,7 +234,7 @@ def main():
                     imports.append(json.loads(line)["qwen_gguf_verified_import"])
             validate_verified_imports(imports, dict(dit=(identities[str(inputs[3])], inputs[3].stat().st_size),
                                                     encoder=(identities[str(inputs[4])], inputs[4].stat().st_size)),
-                                      args.source_registration,args.read_buffer_mib)
+                                      args.source_registration,args.read_buffer_mib,args.read_ahead)
         if args.encoder_prefill and any(r["qwen_encoder_prefill"]["processor_sha256"] != identities[str(inputs[-1])] for r in rows):
             raise ValueError("actual processor proof differs from original source")
         if any(sha256_file(p) != identities[str(p)] for p in inputs):

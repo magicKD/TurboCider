@@ -106,6 +106,38 @@ int main(int argc,char **argv) {
             GgufKImportOptions options;options.enabled=true;options.floating_dtype=dtype;
             GgufPackedBank serial_bank(mixed_source,"weights",serial_budget,16384,true,0,6,options);
             serial_bank.load(serial);
+            for(uint32_t workers:{1u,3u,8u}) {
+                auto piped=options;piped.decode_workers=workers;piped.read_ahead=true;
+                MemoryLedger budget(32ull<<20);Weights output;
+                GgufPackedBank bank(mixed_source,"weights",budget,16384,true,0,6,piped);bank.load(output);
+                const auto m=bank.metrics();
+                ensure(m.read_ahead_enabled && m.read_ahead_drained && m.read_buffer_slots==2 &&
+                    m.read_buffer_capacity_bytes==32768 && m.read_ahead_jobs>0 && m.read_ahead_bytes>0 &&
+                    m.read_ahead_bytes<=m.source_read_bytes && m.source_read_bytes==serial_bank.metrics().source_read_bytes &&
+                    m.managed_peak_bytes<=m.planned_packed_capacity_bytes+32768,
+                    "bounded read ahead jobs/drain/source/scratch changed");
+                ensure(m.plan_digest!=serial_bank.metrics().plan_digest,"read schedule absent from native identity");
+                for(const auto &key:serial.sorted_keys()) {
+                    const auto &a=output.at(key),&b=serial.at(key);
+                    ensure(a.shape()==b.shape() && a.dtype()==b.dtype() &&
+                        std::memcmp(a.data<std::byte>(),b.data<std::byte>(),a.nbytes())==0,
+                        "pipelined affine/BF16 alias fields changed");
+                }
+                output.clear();mx::synchronize();ensure(!budget.snapshot().storage_bytes,"pipelined bank retained backing");
+                MemoryLedger floor(m.planned_packed_capacity_bytes+32768-1);Weights untouched;
+                GgufPackedBank denied(mixed_source,"weights",floor,16384,true,0,6,piped);
+                rejects([&]{denied.load(untouched);});
+                ensure(untouched.sorted_keys().empty() && !floor.snapshot().storage_bytes,"two-slot floor published output");
+                std::atomic<bool> cancel{false};
+                GgufPackedBank cancelled(mixed_source,"weights",budget,16384,true,0,6,piped);
+                rejects([&]{cancelled.load(untouched,&cancel,[&](const std::string &,int current,int total){
+                    if(current==total)cancel.store(true);
+                });});
+                ensure(untouched.sorted_keys().empty() && !budget.snapshot().storage_bytes,"read ahead cancel leaked/published bank");
+                GgufPackedBank nonfinite(lease(argv[7]),"weights",budget,16384,true,0,6,piped);
+                rejects([&]{nonfinite.load(untouched);});
+                ensure(untouched.sorted_keys().empty() && !budget.snapshot().storage_bytes,"read ahead failure leaked/published bank");
+            }
             {
                 // Own a fresh inode so the native worker actually hashes all
                 // original bytes. No serialized/cached expectation is proof.
@@ -116,12 +148,13 @@ int main(int argc,char **argv) {
                 PendingSourceVerification pending({identity});
                 MemoryLedger candidate_budget(32ull<<20);Weights candidate;
                 auto parallel_options=options;parallel_options.decode_workers=8;
+                parallel_options.read_ahead=true;
                 auto imported=GgufPackedBank::load_verifying(pending,"weights",candidate_budget,candidate,16384,
                     parallel_options,[](const GgufPackedBankMetrics &m){ensure(m.plan_digest.empty(),"candidate exposed a verified plan before hash join");});
                 const auto m=imported->metrics();
                 ensure(m.verification_overlap && m.verification_bytes==std::filesystem::file_size(fresh) &&
                     m.verification_cache_hits==0 && m.verification_seconds>0 && m.verified_import_seconds>0 &&
-                    m.source_sha256==identity.content_digest,"actual full native verification/import receipt missing");
+                    m.source_sha256==identity.content_digest && m.read_ahead_drained,"actual full native verification/import receipt missing");
                 MemoryLedger matched_budget(32ull<<20);Weights matched;
                 GgufPackedBank matched_bank(lease(fresh.c_str()),"weights",matched_budget,16384,true,0,6,parallel_options);
                 matched_bank.load(matched);

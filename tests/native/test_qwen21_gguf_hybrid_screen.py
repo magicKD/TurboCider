@@ -38,6 +38,22 @@ def receipts(channels=4096, steps=40):
 
 
 class MixedKHybridScreenTests(unittest.TestCase):
+    def test_actual_two_slot_source_read_ahead_work_and_drain(self):
+        expected={k:("a"*64,1057) for k in ("encoder","dit")}
+        records=[dict(component=k,source_sha256="a"*64,verification_bytes=0,verification_cache_hits=1,
+            registration_enabled=True,registration_cache_hits=1,registration_records_written=0,
+            first_registration_seconds=0,cpu_verify_import_schedule=True,verified_before_publication=True,
+            physical_overlap_proved=False,verification_seconds=.001,import_wall_seconds=.5,
+            read_buffer_capacity_bytes=16<<20,read_buffer_slots=2,read_ahead_enabled=True,
+            read_ahead_drained=True,read_ahead_jobs=5,read_ahead_bytes=1000,read_wait_seconds=.05) for k in expected]
+        validate_verified_imports(records,expected,"reuse",8,True)
+        for key,value in (("read_buffer_slots",True),("read_buffer_capacity_bytes",8<<20),
+            ("read_ahead_drained",False),("read_ahead_enabled",False),("read_ahead_jobs",0),
+            ("read_ahead_bytes",1058),("read_wait_seconds",float("nan"))):
+            bad=copy.deepcopy(records);bad[0][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                validate_verified_imports(bad,expected,"reuse",8,True)
+
     def test_actual_bounded_import_buffer_receipt(self):
         expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
         records = [dict(component=k, source_sha256="a" * 64, verification_bytes=0,

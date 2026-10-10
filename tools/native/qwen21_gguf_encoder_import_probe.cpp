@@ -6,11 +6,13 @@ using namespace tc;
 using namespace tc::streaming;
 
 int main(int argc,char **argv) {try {
-    require(argc>=4 && argc<=6,"usage: qwen21-gguf-encoder-import-probe original-text-gguf workers packed|dense [--verify-overlap|--registered [1|4|8]]");
+    require(argc>=4 && argc<=7,"usage: qwen21-gguf-encoder-import-probe original-text-gguf workers packed|dense [--verify-overlap|--registered [1|4|8 [--read-ahead]]]");
     const bool registered=argc>=5 && std::string_view(argv[4])=="--registered";
     const bool overlap=argc>=5 && !registered;
     require(!overlap || (argc==5 && std::string_view(argv[4])=="--verify-overlap"),"invalid verification option");
-    const auto read_mib=argc==6 ? std::string_view(argv[5]) : std::string_view("1");
+    const auto read_mib=argc>=6 ? std::string_view(argv[5]) : std::string_view("1");
+    const bool ahead=argc==7;
+    require(!ahead || std::string_view(argv[6])=="--read-ahead","invalid read schedule");
     require(registered || argc<6,"read buffer screen requires registered source");
     require(read_mib=="1" || read_mib=="4" || read_mib=="8","read buffer must be 1,4 or8 MiB");
     const uint64_t read_bytes=uint64_t(read_mib[0]-'0')<<20;
@@ -23,6 +25,7 @@ int main(int argc,char **argv) {try {
     MemoryLedger ledger(uint64_t(16)<<30);Weights weights;
     GgufKImportOptions options;options.enabled=true;options.floating_dtype=mx::float16;
     options.decode_workers=uint32_t(worker[0]-'0');
+    options.read_ahead=ahead;
     options.include_tensor=[](std::string_view key){return !key.starts_with("output.");};
     std::shared_ptr<const SourceLease> lease;std::unique_ptr<GgufPackedBank> bank;double verify=0;
     if(overlap) {
@@ -63,6 +66,10 @@ int main(int argc,char **argv) {try {
         <<",\"verification_bytes\":"<<lease->verification_bytes_read()<<",\"source_read_bytes\":"<<metrics.source_read_bytes
         <<",\"registration_cache_hits\":"<<lease->registration_cache_hits()
         <<",\"packed_capacity_bytes\":"<<metrics.packed_capacity_bytes<<",\"read_buffer_capacity_bytes\":"<<metrics.read_buffer_capacity_bytes
+        <<",\"read_buffer_slots\":"<<metrics.read_buffer_slots<<",\"read_ahead_enabled\":"<<(metrics.read_ahead_enabled?"true":"false")
+        <<",\"read_ahead_drained\":"<<(metrics.read_ahead_drained?"true":"false")
+        <<",\"read_ahead_jobs\":"<<metrics.read_ahead_jobs<<",\"read_ahead_bytes\":"<<metrics.read_ahead_bytes
+        <<",\"read_wait_seconds\":"<<metrics.read_wait_seconds
         <<",\"managed_peak_bytes\":"<<metrics.managed_peak_bytes<<",\"final_weight_logical_bytes\":"<<weights.bytes()
         <<",\"native_verification_seconds\":"<<verify<<",\"bank_load_seconds\":"<<metrics.load_seconds
         <<",\"verification_overlap\":"<<(overlap ? "true" : "false")
