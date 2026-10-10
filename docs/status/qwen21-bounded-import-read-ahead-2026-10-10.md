@@ -151,3 +151,6 @@ cold/encoder验证，及更广编辑/LoRA/场景质量，不以此window代替�
 [机器记录](../design/validation/qwen21-bounded-import-read-ahead-20261010.json)
 绑定原模型/库、12次导入、三路4step、两路40step、最新完整四路、CPU/
 Metal/sanitizer/负例回归、source/drain/实际scratch与完整输出精确性。
+后续同BF16高I/O前置负载的原GPU参考结果见
+[统一前置条件窗口](qwen21-conditioned-reference-2026-10-10.md)，保留本文
+历史1.207/1.18s不匹配的边界，不改写旧数据。
