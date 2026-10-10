@@ -1,0 +1,798 @@
+{
+  "schema": "tc-local-base-benchmark-samples-v1",
+  "date": "2026-10-11",
+  "status": "partial_evidence_catalog",
+  "hardware": "Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "campaigns": [
+    {
+      "evidence": {
+        "path": "docs/design/validation/qwen21-conditioned-reference-20261010.json",
+        "sha256": "cd5de3de9d51b553423451c8ab330b312cc4428c0eef6e575f18b9e2d7d159bf",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-original-Q4_K_M",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-10",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            46.171516542
+          ],
+          "warm_seconds": [
+            44.428168834,
+            44.427294667
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 44.4277317505,
+          "cold_encoder_seconds": [
+            1.414193292
+          ],
+          "warm_encoder_seconds": [
+            0.090233667,
+            0.091909208
+          ],
+          "warm_denoise_seconds": [
+            43.709428459,
+            43.71598375
+          ],
+          "timing_scope": "native request_wall including VAE/export"
+        },
+        {
+          "route": "original-unsloth-gpu",
+          "cold_seconds": [
+            128.73
+          ],
+          "warm_seconds": [
+            125.34,
+            125.39
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 125.36500000000001,
+          "cold_encoder_seconds": [
+            1.91
+          ],
+          "warm_encoder_seconds": [
+            0.13,
+            0.13
+          ],
+          "warm_denoise_seconds": [
+            107.27,
+            107.33
+          ],
+          "warm_http_seconds": [
+            125.37033462501131,
+            125.42436012497637
+          ],
+          "timing_scope": "reference generate_image span; HTTP measured separately"
+        },
+        {
+          "route": "mixed",
+          "cold_seconds": [
+            38.906136083
+          ],
+          "warm_seconds": [
+            36.857050709,
+            36.883877
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 36.8704638545,
+          "cold_encoder_seconds": [
+            1.25446625
+          ],
+          "warm_encoder_seconds": [
+            0.089776791,
+            0.09107125
+          ],
+          "warm_denoise_seconds": [
+            36.16096275,
+            36.1763795
+          ],
+          "timing_scope": "native request_wall including VAE/export"
+        }
+      ],
+      "source_sha256": {
+        "turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+        "libturbocider.dylib": "3731509930775f1a18c3ab041dfdfffce3c924165b37ac089186fbec1ebd3731",
+        "sd-server": "cee598a019362b0f8926543599c7ff73fbc9341b86f66eef207cf68852dff790",
+        "manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+        "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+        "qwen-image-2.1-Q4_K_M.gguf": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+        "qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+        "qwen3vl_8b_bf16.safetensors": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+        "qwen_image_2.1_bf16.safetensors": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "qwen21_gguf_unsloth_encoder_screen.py": "31c9411eb781e856588d75752432cbfa75fe505bcaa6adc7a583c40ba9b75388",
+        "sd_cpp_args.py": "374f46d17cd77a0f5d8973ebfb29976135553de2c0873178e511cd6573e67f72",
+        "diffusion_memory.py": "e386058318403de82598e4cfbdf77f83518f64585946291fb2c2257634b99ecf"
+      },
+      "note": "each target preceded by actual BF16 streaming 40 steps x3; two fresh warm prompts; not identical OS page state"
+    },
+    {
+      "evidence": {
+        "path": "outputs/qwen21-read-ahead-v1-matched-40step-20261010/summary.json",
+        "sha256": "0d6121724de409f3ff7734c36b1d892295a8cee7c621806739c4cb0206ec95b9",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-format-and-residency-comparison",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-10",
+      "routes": [
+        {
+          "route": "bf16-stream",
+          "cold_seconds": [
+            45.442938083
+          ],
+          "warm_seconds": [
+            45.676917292,
+            45.388308208
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 45.53261275,
+          "warm_encoder_seconds": [
+            1.647648583,
+            1.361789584
+          ],
+          "warm_denoise_seconds": [
+            43.455298791,
+            43.451215958
+          ],
+          "memory": {
+            "tree_peak_phys_footprint_bytes": 14752016560,
+            "compression_bytes": 6455296,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "route": "gguf-gpu",
+          "cold_seconds": [
+            46.015203708
+          ],
+          "warm_seconds": [
+            44.442143875,
+            44.441925125
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 44.4420345,
+          "warm_encoder_seconds": [
+            0.090457625,
+            0.090908
+          ],
+          "warm_denoise_seconds": [
+            43.742703708,
+            43.737861125
+          ],
+          "memory": {
+            "tree_peak_phys_footprint_bytes": 14614879888,
+            "compression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "route": "gguf-ane",
+          "cold_seconds": [
+            38.484148791
+          ],
+          "warm_seconds": [
+            36.885025791,
+            36.873292292
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 36.8791590415,
+          "warm_encoder_seconds": [
+            0.089811834,
+            0.090823167
+          ],
+          "warm_denoise_seconds": [
+            36.195254125,
+            36.179889875
+          ],
+          "memory": {
+            "tree_peak_phys_footprint_bytes": 15387287208,
+            "compression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "route": "bf16-resident",
+          "cold_seconds": [
+            45.477146334
+          ],
+          "warm_seconds": [
+            43.596982125,
+            43.095047375
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 43.346014749999995,
+          "warm_encoder_seconds": [
+            0.851294292,
+            0.316950791
+          ],
+          "warm_denoise_seconds": [
+            42.039366959,
+            42.079551625
+          ],
+          "memory": {
+            "tree_peak_phys_footprint_bytes": 36965244424,
+            "compression_bytes": 13797785600,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        }
+      ],
+      "timing_scope": "native request_wall including VAE/export; one cold and two fresh warm per route",
+      "observed_memory_within_ten_percent": true,
+      "note": "physical peak is process-tree load+cold+warm+exit; not a hard RAM cap or equal-precision comparison"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/local512-qwen-frozen-base-20261010.json",
+        "sha256": "35958d4001e368d4b35765790a6844568ccc80be4024680be13028836124de70",
+        "status": "complete_busy_diagnostic"
+      },
+      "model": "qwen-image-2.1-BF16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-10",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            45.469438542,
+            44.893227875
+          ],
+          "warm_seconds": [
+            43.5600575,
+            43.3547865,
+            43.350650375,
+            43.347463334
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.3527184375
+        },
+        {
+          "route": "all",
+          "cold_seconds": [
+            36.897083958,
+            37.344383167
+          ],
+          "warm_seconds": [
+            34.709354375,
+            34.494487292,
+            34.589016667,
+            34.458913334
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 34.541751979500006
+        },
+        {
+          "route": "frozen",
+          "cold_seconds": [
+            44.791788,
+            42.076648083
+          ],
+          "warm_seconds": [
+            34.23372675,
+            32.393539417,
+            33.848961791,
+            32.141255791
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 33.121250604
+        }
+      ],
+      "library_sha256": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
+      "timing_scope": "native request_wall including VAE/export; request-local encoder on every route",
+      "note": "forward/reverse; both CPU load checks failed; busy diagnostic, not idle/default qualification"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/qwen-v1-base-40step-forward-875b/summary.json",
+        "sha256": "0d26cdbfe6c44f14f2b0ab281f75761607cad144a9b21916efe61ba2de0457ef",
+        "status": "complete"
+      },
+      "model": "qwen-image-2.1",
+      "geometry": [
+        1024,
+        1024
+      ],
+      "steps": 40,
+      "library_sha256": "875b0d3dcf5c766feeced21d71f1a366acf0a1238bc3f0ed332098aa3b27b8cd",
+      "routes": [
+        {
+          "route": "frozen",
+          "cold_seconds": [
+            170.538029583
+          ],
+          "warm_seconds": [
+            161.32035425
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 161.32035425,
+          "warm_denoise_seconds": [
+            159.242783792
+          ]
+        },
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            185.620391458
+          ],
+          "warm_seconds": [
+            183.072499708
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 183.072499708,
+          "warm_denoise_seconds": [
+            181.030223708
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            149.179702917
+          ],
+          "warm_seconds": [
+            144.835887708
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 144.835887708,
+          "warm_denoise_seconds": [
+            142.770890833
+          ]
+        }
+      ],
+      "note": "forward campaign; combine raw warm samples with reverse, not route medians",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/qwen-v1-base-40step-reverse-retry-875b/summary.json",
+        "sha256": "c33b48b6cd2d79e9d1b4687bc54fea558a2de547617150a27b4488b6372f744a",
+        "status": "complete"
+      },
+      "model": "qwen-image-2.1",
+      "geometry": [
+        1024,
+        1024
+      ],
+      "steps": 40,
+      "library_sha256": "875b0d3dcf5c766feeced21d71f1a366acf0a1238bc3f0ed332098aa3b27b8cd",
+      "routes": [
+        {
+          "route": "frozen",
+          "cold_seconds": [
+            170.212614834
+          ],
+          "warm_seconds": [
+            159.248781458
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 159.248781458,
+          "warm_denoise_seconds": [
+            157.208599583
+          ]
+        },
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            185.407633667
+          ],
+          "warm_seconds": [
+            183.099339834
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 183.099339834,
+          "warm_denoise_seconds": [
+            181.075059667
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            150.494177333
+          ],
+          "warm_seconds": [
+            144.29227025
+          ],
+          "warm_sample_count": 1,
+          "warm_median_seconds": 144.29227025,
+          "warm_denoise_seconds": [
+            142.285768084
+          ]
+        }
+      ],
+      "note": "reverse campaign; README quotes the pooled actual warm samples across both directions",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/z-base-v2-current-palindrome/summary.json",
+        "sha256": "d4288824887329493fb55f189300f79272d5a3f89e3c7188299a5015149c726a",
+        "status": "complete"
+      },
+      "model": "z-image-turbo",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "library_sha256": "b55419e636ada12e54dc197b7099811225b361d63d2c1d16e6e0560449104dba",
+      "routes": [
+        {
+          "route": "frozen",
+          "cold_seconds": [
+            11.578260417,
+            11.576078625
+          ],
+          "warm_seconds": [
+            5.345351375,
+            5.342792875,
+            5.34462975,
+            5.339089625
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.3437113125,
+          "warm_denoise_seconds": [
+            5.104494041,
+            5.102702417,
+            5.104310625,
+            5.099147917
+          ]
+        },
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            10.219442875,
+            7.603192875
+          ],
+          "warm_seconds": [
+            7.001986416,
+            6.99708525,
+            6.9964675,
+            6.991163709
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.996776375,
+          "warm_denoise_seconds": [
+            6.758407833,
+            6.753965333,
+            6.756461416,
+            6.75248825
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            7.472319417,
+            7.441823375
+          ],
+          "warm_seconds": [
+            6.456249041,
+            6.431457458,
+            6.466523083,
+            6.418767667
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.4438532495,
+          "warm_denoise_seconds": [
+            6.216177417,
+            6.192392083,
+            6.227382333,
+            6.179574792
+          ]
+        }
+      ],
+      "note": "September retained build; GPU/runtime v2/frozen palindromic order; single fox prompt",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/z-base-1024-v1-gpu-abba-875b/summary.json",
+        "sha256": "e65867e3d7af09fd4813801cb85cba87d08cf92176cebc9efd5bf2d82dbc5878",
+        "status": "complete"
+      },
+      "model": "z-image-turbo",
+      "geometry": [
+        1024,
+        1024
+      ],
+      "steps": 8,
+      "library_sha256": "875b0d3dcf5c766feeced21d71f1a366acf0a1238bc3f0ed332098aa3b27b8cd",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            33.188159958,
+            34.171423416
+          ],
+          "warm_seconds": [
+            31.440955292,
+            31.428813125,
+            31.4299655,
+            31.372099625
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 31.4293893125,
+          "warm_denoise_seconds": [
+            30.485780458,
+            30.451572542,
+            30.491860333,
+            30.434199541
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            33.030611125,
+            32.601661541
+          ],
+          "warm_seconds": [
+            28.365675042,
+            28.449742042,
+            28.432102375,
+            28.367195041
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 28.399648708,
+          "warm_denoise_seconds": [
+            27.437267,
+            27.503962875,
+            27.446921584,
+            27.41758775
+          ]
+        }
+      ],
+      "note": "2026-09-30 lighthouse; GPU/runtime v1 ABBA",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/z-base-1024-v1-portrait-abba-875b/summary.json",
+        "sha256": "9cfa20daf069a60e6e22b42ffcbf25266095cc4016fd49b9d3f4a41f5051a8c7",
+        "status": "complete"
+      },
+      "model": "z-image-turbo",
+      "geometry": [
+        1024,
+        1024
+      ],
+      "steps": 8,
+      "library_sha256": "875b0d3dcf5c766feeced21d71f1a366acf0a1238bc3f0ed332098aa3b27b8cd",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            34.027970375,
+            34.140826667
+          ],
+          "warm_seconds": [
+            31.400629834,
+            31.40074025,
+            31.389657833,
+            31.408585166
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 31.400685042,
+          "warm_denoise_seconds": [
+            30.460384125,
+            30.458922125,
+            30.460804958,
+            30.480360125
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            32.496047458,
+            32.591050875
+          ],
+          "warm_seconds": [
+            28.444992291,
+            28.401613625,
+            28.375267833,
+            28.233642334
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 28.388440729,
+          "warm_denoise_seconds": [
+            27.517487875,
+            27.465102625,
+            27.446213458,
+            27.282864708
+          ]
+        }
+      ],
+      "note": "2026-09-30 portrait; separate prompt campaign",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/z-gguf-q8-1024-v1-abba-875b/summary.json",
+        "sha256": "798eceebcae773475b5f9b9d6979bda16618474fa475174575a7d9617660783a",
+        "status": "complete"
+      },
+      "model": "z-image-turbo-gguf",
+      "geometry": [
+        1024,
+        1024
+      ],
+      "steps": 8,
+      "library_sha256": "875b0d3dcf5c766feeced21d71f1a366acf0a1238bc3f0ed332098aa3b27b8cd",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            51.644840291,
+            47.010094375
+          ],
+          "warm_seconds": [
+            40.885411458,
+            40.898266417,
+            40.861509125,
+            40.896320458
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 40.890865958,
+          "warm_denoise_seconds": [
+            39.94047075,
+            39.958901,
+            39.927629166,
+            39.961767167
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            42.942458708,
+            44.3910155
+          ],
+          "warm_seconds": [
+            35.150507916,
+            35.258620583,
+            35.154814375,
+            35.240268459
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 35.197541417,
+          "warm_denoise_seconds": [
+            34.219131042,
+            34.328862875,
+            34.223249417,
+            34.310808667
+          ]
+        }
+      ],
+      "note": "2026-09-30 Q8 lighthouse; GPU/runtime v1 ABBA; not BF16 checkpoint",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "outputs/runtime-ane/z-gguf-q8-1024-v1-portrait-abba-875b/summary.json",
+        "sha256": "85cc62991c59c41c90028b58b1ee9d60ad3518ca9a1f1fdead3dad5afee0ebd0",
+        "status": "complete"
+      },
+      "model": "z-image-turbo-gguf",
+      "geometry": [
+        1024,
+        1024
+      ],
+      "steps": 8,
+      "library_sha256": "875b0d3dcf5c766feeced21d71f1a366acf0a1238bc3f0ed332098aa3b27b8cd",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            46.780721834,
+            48.483786667
+          ],
+          "warm_seconds": [
+            40.890416875,
+            40.898663,
+            40.873875458,
+            40.898453708
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 40.8944352915,
+          "warm_denoise_seconds": [
+            39.956888125,
+            39.969422625,
+            39.945207125,
+            39.967983125
+          ]
+        },
+        {
+          "route": "runtime",
+          "cold_seconds": [
+            44.528440875,
+            46.531507417
+          ],
+          "warm_seconds": [
+            35.239593541,
+            35.345371166,
+            35.213931875,
+            35.177249625
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 35.226762707999995,
+          "warm_denoise_seconds": [
+            34.308558958,
+            34.397464583,
+            34.281898,
+            34.242466417
+          ]
+        }
+      ],
+      "note": "2026-09-30 Q8 portrait; runtime PNG differs between forward/reverse",
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/ltx-ane-and-720p-tiled-2026-09-13.json",
+        "sha256": "a732814fc5c1519a81d9b8d4e774550fa637bf2617a964e2c858cb868c4ed9ea",
+        "status": "retained-structured-validation"
+      },
+      "model": "ltx-2.5-distilled",
+      "geometry": [
+        704,
+        448,
+        97
+      ],
+      "steps": 11,
+      "date": "2026-09-13",
+      "routes": [
+        {
+          "route": "gpu",
+          "warm_sample_count": 1,
+          "warm_seconds": [
+            67.493331708
+          ],
+          "warm_median_seconds": 67.493331708,
+          "quality_status": "baseline"
+        },
+        {
+          "route": "ane-int8",
+          "warm_sample_count": 1,
+          "warm_seconds": [
+            65.646093
+          ],
+          "warm_median_seconds": 65.646093,
+          "quality_status": "experimental-quality-fail"
+        },
+        {
+          "route": "ane-fp16",
+          "warm_sample_count": 1,
+          "warm_seconds": [
+            84.923541792
+          ],
+          "warm_median_seconds": 84.923541792,
+          "quality_status": "experimental-quality-fail"
+        }
+      ],
+      "timing_scope": "warm request wall; single sample",
+      "note": "INT8 small latency win failed quality; FP16 slower and failed quality; not automatically selected"
+    }
+  ],
+  "missing_current_comparisons": [
+    "FLUX9B GPU and applicable frameworks",
+    "mlx-serve media",
+    "Z Q4_0/NVFP4/ConvRot full matched routes",
+    "current applicable video framework/asset alignment"
+  ]
+}
