@@ -1,15 +1,16 @@
 # 本轮目标逐项核验
 
-2026-10-11。按原目标核对下载/格式、GPU/ANE实现、Unsloth encoder/DiT
+更新2026-10-12。按原目标核对下载/格式、GPU/ANE实现、Unsloth encoder/DiT
 对照、BF16 resident/相近内存streaming，以及本地base模型benchmark。
 “本轮交付”不等于所有设备/尺寸/操作或生产/Public/hard-RAM发布资格。
 历史incomplete、质量fail、busy diagnostic和下载receipt均不改写成通过。
 
 下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
-再加Qwen cache0、FLUX compiled、LTX两边界和Z十四参数候选，共44个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
+hybrid四路线，共45个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。参考更多cache候选、
-更多native分区/尺寸、FLUX匹配量化/9B混合、LTX进一步加载/驻留与成功外部
+更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
 
 | 原要求 | 已核验的当前/保留权威证据 | 结论与限制 |
@@ -55,11 +56,21 @@ LTX full-config包含E5警告粘连JSON/未知文本拒绝/actual plan配置三�
 新增回归；v1 collector失败保留，新v2 32MP4/20memory完整，所有8个
 候选的97帧RGB/motion完成，batch/estimate分开，不推广旧小收益。
 
+10-12新增9B完整混合使catalog为45组。8进程/32PNG/8memory、96实际
+calls/request、原index/两shards和全部compiled partitions身份核验；
+fresh7.841/compiled7.844s差0.031%，参考7.355s仍胜，repeat收益另列。
+[新完整证据](FLUX9_HYBRID.md)不改变正式/自动/其它形状资格。
+本次设置TURBOCIDER_FLUX9_GATE_LIBRARY指向实验库运行
+make test-base-benchmark，120项全部通过，包括真实API的环境/尺寸/
+步数/dynamic-text拒绝；未设置该变量时这两项显式skip，不伪称通过。
+仍未运行全量make test；所有测试在性能实验终态后运行，没有并行干扰。
+
 ## 不是缺少结果的隐含通过
 
 当前MiniMax原video VAE、FastH3 INT6 DiT不在预期可执行资产树，只能列
 N/A与明确历史数据；不能拿VDN/蒸馏附件/其它checkpoint替代。FLUX9B
-DiT hybrid未验证、NVFP4 GPU-only；Core ML配置/成功不是physical trace。
+精确512/4实验hybrid已有完整测量，fresh无稳定收益，正式/自动/其它
+尺寸仍未qualified；NVFP4 GPU-only，Core ML成功不是physical trace。
 LTX INT8 nominal不到1%且完整媒体漂移大、FP16更慢，当前推荐GPU。
 Q4/Q8 Z的低peak比BF16优势大于其混合时延收益，不泛称量化必然更快。
 

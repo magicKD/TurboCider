@@ -49,7 +49,8 @@ make_single_gpu_graph(int hidden, int head_count) {
 
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
 make_hybrid_gpu_graph(int hidden, int head_count, int mlp_width, int gpu_mlp_start) {
-    require(hidden == 3072 && mlp_width == 9216 && head_count == 24,
+    require((hidden == 3072 && mlp_width == 9216 && head_count == 24) ||
+                (hidden == 4096 && mlp_width == 12288 && head_count == 32),
             "unsupported FLUX hybrid graph geometry");
     require(gpu_mlp_start > 0 && gpu_mlp_start <= mlp_width,
             "invalid FLUX GPU MLP complement");
@@ -1024,7 +1025,7 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
             auto packed = mx::astype(a, mx::float16);
             if (n < hybrid_->rows)
                 packed = mx::concatenate(
-                    {packed, mx::zeros({1, hybrid_->rows - n, 3072}, mx::float16)}, 1);
+                    {packed, mx::zeros({1, hybrid_->rows - n, hidden_}, mx::float16)}, 1);
             mx::eval({a, packed});
             // The ANE model may own only a prefix of the 9,216-channel MLP.
             // Compile attention plus the complementary GPU suffix as one graph,

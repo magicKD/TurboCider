@@ -1,5 +1,7 @@
 #include "../runtime/session.hpp"
 #include "flux2/flux.hpp"
+#include <cstdlib>
+#include <cstring>
 namespace tc {
 ModelModule flux_module() {
     return {"flux2-klein-4b",
@@ -92,7 +94,18 @@ ModelModule flux9_module() {
                                 input.role == (r.operation == "image.transform" ? "init_image" : "reference"),
                             "incorrect FLUX image role");
             }
-            require(r.execution != "gpu_ane", "FLUX.2 Klein 9B GPU+ANE partition is not validated");
+            if (r.execution == "gpu_ane") {
+#ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+                const char *candidate = std::getenv("TURBOCIDER_FLUX9_EXPERIMENTAL_HYBRID");
+                require(candidate && std::strcmp(candidate, "1") == 0 &&
+                            r.allow_approximation && !r.ane_manifest.empty() &&
+                            r.operation == "image.generate" && r.width == 512 &&
+                            r.height == 512 && r.steps == 4 && !r.dynamic_text && r.loras.empty(),
+                        "FLUX9B hybrid requires explicit source-bound512/4 base experimental opt-in");
+#else
+                require(false, "FLUX.2 Klein 9B GPU+ANE partition is not validated");
+#endif
+            }
             require(r.residency == "resident" || r.residency == "component_staged",
                     "FLUX block streaming is not supported");
             require(r.loras.size() <= 8, "at most eight LoRA adapters may be active");

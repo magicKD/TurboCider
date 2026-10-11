@@ -245,7 +245,28 @@ def export():
         campaigns.append(dict(evidence=binding, model=f'z-image-turbo-private-a{trial["channels"]}-{trial["join"]}',
             geometry=[512,512], steps=8, date="2026-10-11", routes=routes, timing_scope=grid["shared_source"]["timing_scope"],
             note="same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"))
-    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_expanded_evidence_catalog",
+    hybrid, binding = source("docs/design/validation/flux9-hybrid-current-20261012.json", ("complete_diagnostic",))
+    if (len(hybrid["trials"]) != 8 or hybrid["order"] != ["native", "native-compiled", "native-hybrid", "mflux", "mflux", "native-hybrid", "native-compiled", "native"] or
+            not hybrid["reference_required_weight_coverage_verified"]):
+        raise ValueError("complete source-bound9B four-route hybrid palindrome required")
+    routes = []
+    for engine in ("native", "native-compiled", "native-hybrid", "mflux"):
+        declared = hybrid["medians"][engine]
+        trials = [trial for trial in hybrid["trials"] if trial["engine"] == engine]
+        if any(trial["memory"]["complete"] is not True for trial in trials):
+            raise ValueError("complete9B hybrid cohort memory required")
+        if engine == "native-hybrid" and any(row["metrics"]["hybrid"]["runtime_calls_session_total"] != 96 * (row["index"] + 1) or
+                row["metrics"]["hybrid"]["runtime_failed"] or not row["metrics"]["hybrid"]["checkpoint_sha256_verified"]
+                for trial in trials for row in trial["report"]["runs"]):
+            raise ValueError("actual source-verified96 hybrid calls per request required")
+        routes.append(measured(engine, declared["cold_seconds"], declared["samples"],
+            repeated_prompt_seconds=declared["repeated_prompt_seconds"],
+            constructor_seconds=declared["constructor_seconds"],
+            physical_peaks=[trial["memory"]["tree_peak_phys_footprint_bytes"] for trial in trials]))
+    campaigns.append(dict(evidence=binding, model="flux2-klein-9b-experimental-hybrid-four-route-cohort",
+        geometry=[512,512], steps=4, date="2026-10-12", routes=routes, timing_scope=hybrid["timing_scope"],
+        note="eight-process same-window source-bound4096-prefix/8192-GPU complement,96 actual calls/request; INT8 weights/FP16 I/O, not W8A8/native integer MAC; hybrid7.841375/compiled7.843808s differ only0.031%, no stable fresh-request win; cache0 reference7.355288s wins; cold/repeat/pressure and all32PNG/8memory retained, automatic route unchanged"))
+    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-12", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
@@ -253,10 +274,10 @@ def export():
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
                 missing_current_comparisons=["Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
-                    "Z additional native share/join/shape candidates", "FLUX9B same-cohort matched native/reference quantization and validated hybrid partition",
+                    "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed", "FLUX9B same-cohort matched native/reference quantization and additional source-bound hybrid shares/shapes",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
-                    "FLUX9B DiT hybrid partition unvalidated", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
+                    "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
                     "additional converted precision/model packs are not equal-source original-format benchmark denominators"])
 
 

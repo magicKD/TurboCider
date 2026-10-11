@@ -1,6 +1,6 @@
 {
   "schema": "tc-local-base-benchmark-samples-v1",
-  "date": "2026-10-11",
+  "date": "2026-10-12",
   "status": "partial_expanded_evidence_catalog",
   "hardware": "Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
   "qualification_passed": false,
@@ -3794,18 +3794,144 @@
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
       "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-hybrid-current-20261012.json",
+        "sha256": "d20b2f20e422e63e210da844a31f72a4a1f4ee3833da81bb787ff6efc7f966d6",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-experimental-hybrid-four-route-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            9.053644582862034,
+            8.943698874907568
+          ],
+          "warm_seconds": [
+            8.947495458181947,
+            7.462112999986857,
+            8.81744408304803,
+            7.490274791838601
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.153859437443316,
+          "repeated_prompt_seconds": [
+            6.935379750095308,
+            6.953386708861217
+          ],
+          "constructor_seconds": [
+            0.13011324987746775,
+            0.1384913749061525
+          ],
+          "physical_peaks": [
+            30651193448,
+            30650652728
+          ]
+        },
+        {
+          "route": "native-compiled",
+          "cold_seconds": [
+            8.182401166995987,
+            8.241260000038892
+          ],
+          "warm_seconds": [
+            8.410441624931991,
+            7.337201999966055,
+            8.350413832813501,
+            7.315832291031256
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.843807916389778,
+          "repeated_prompt_seconds": [
+            6.95321683306247,
+            6.735145749989897
+          ],
+          "constructor_seconds": [
+            0.1341882918495685,
+            0.13932970794849098
+          ],
+          "physical_peaks": [
+            30652061776,
+            30651357264
+          ]
+        },
+        {
+          "route": "native-hybrid",
+          "cold_seconds": [
+            15.72805495816283,
+            16.03084379201755
+          ],
+          "warm_seconds": [
+            8.274783791042864,
+            7.407966458005831,
+            8.938289209036157,
+            6.718685582978651
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.8413751245243475,
+          "repeated_prompt_seconds": [
+            6.049851292045787,
+            6.06544812489301
+          ],
+          "constructor_seconds": [
+            0.1347811659798026,
+            0.14209562493488193
+          ],
+          "physical_peaks": [
+            31273212464,
+            31273163312
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            9.044199833879247,
+            9.16425095917657
+          ],
+          "warm_seconds": [
+            7.314393459120765,
+            7.3557123329956084,
+            7.490392165957019,
+            7.354863290907815
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.355287811951712,
+          "repeated_prompt_seconds": [
+            7.348883083090186,
+            7.366725750034675
+          ],
+          "constructor_seconds": [
+            0.37765670800581574,
+            0.36809579096734524
+          ],
+          "physical_peaks": [
+            32334618120,
+            32268082600
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "eight-process same-window source-bound4096-prefix/8192-GPU complement,96 actual calls/request; INT8 weights/FP16 I/O, not W8A8/native integer MAC; hybrid7.841375/compiled7.843808s differ only0.031%, no stable fresh-request win; cache0 reference7.355288s wins; cold/repeat/pressure and all32PNG/8memory retained, automatic route unchanged"
     }
   ],
   "missing_current_comparisons": [
     "Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
-    "Z additional native share/join/shape candidates",
-    "FLUX9B same-cohort matched native/reference quantization and validated hybrid partition",
+    "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed",
+    "FLUX9B same-cohort matched native/reference quantization and additional source-bound hybrid shares/shapes",
     "LTX best full-media native configurations and runnable reference quantized layouts",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],
   "unmeasured_or_inapplicable": [
     "current FastH3 INT6 DiT and original H3 video VAE assets absent",
-    "FLUX9B DiT hybrid partition unvalidated",
+    "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured",
     "NVFP4 runtime GPU-only",
     "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
     "additional converted precision/model packs are not equal-source original-format benchmark denominators"

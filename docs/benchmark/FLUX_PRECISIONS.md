@@ -106,9 +106,12 @@ MAE10.771/255，近似图像漂移不当成native/reference parity。
 匹配runner须验实际bits/group/embedding与完整source coverage，不只
 相信metadata，不需要为此修改参考源码。
 
-9B实际H4096/F12288、8 dual+24 single；现有4B-only hybrid graph/
-padding/export几何不能直接套用。原生9B混合仍明确拒绝未验证分区，
-不把历史4B的2.266/1.628s套到9B，也不以此N/A冒充探索已完成。
+9B实际H4096/F12288、8 dual+24 single，不能直接套用原4B几何。
+10-12已完成精确512/4实验9B混合四路线：eager8.154/compiled7.844/
+hybrid7.841/reference7.355s，32PNG/8memory完整；hybrid对compiled
+只省0.031%，无稳定fresh收益，正式build/自动路由仍未开放。
+[完整GPU补集、96次实际调用、误差与冷启动](FLUX9_HYBRID.md)。
+不把历史4B的2.266/1.628s套到9B；其它shares/shapes/匹配量化仍待补。
 
 ## 复现
 

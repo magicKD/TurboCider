@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 44)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 45)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -148,6 +148,41 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertEqual((data["best_tested_private"]["channels"], data["best_tested_private"]["join"]), (4096, "f32"))
         self.assertLess(data["best_tested_private"]["frozen_over_private"], 1)
         self.assertTrue(all(row["warm_sample_count"] == 4 for campaign in campaigns for row in campaign["routes"]))
+
+    def test_flux9_complete_hybrid_cohort_retains_no_fresh_win_and_source_receipts(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "flux2-klein-9b-experimental-hybrid-four-route-cohort")
+        self.assertEqual(campaign["date"], "2026-10-12")
+        self.assertEqual({row["route"] for row in campaign["routes"]}, {"native", "native-compiled", "native-hybrid", "mflux"})
+        self.assertTrue(all(row["warm_sample_count"] == 4 for row in campaign["routes"]))
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertEqual((len(data["trials"]), len(data["rgb_comparisons"])), (8, 24))
+        self.assertTrue(all(trial["memory"]["complete"] for trial in data["trials"]))
+        self.assertLess(abs(data["hybrid_comparison"]["hybrid_reduction_vs_compiled_percent"]), 0.1)
+        self.assertLess(data["hybrid_comparison"]["reference_over_hybrid"], 1)
+        self.assertTrue(data["reference_required_weight_coverage_verified"])
+        for trial in data["trials"]:
+            if trial["engine"] == "native-hybrid":
+                for row in trial["report"]["runs"]:
+                    actual = row["metrics"]["hybrid"]
+                    self.assertEqual(actual["runtime_calls_session_total"], 96 * (row["index"]+1))
+                    self.assertEqual((actual["hidden"], actual["block_count"], actual["bucket"]), (4096,24,1536))
+                    self.assertEqual(actual["ane_mlp_range"], [0,4096])
+                    self.assertTrue(actual["checkpoint_sha256_verified"])
+                    self.assertFalse(actual["runtime_failed"])
+        self.assertNotIn("/Users/", json.dumps(data))
+
+    def test_flux9_hybrid_candidate_does_not_replace_proven_gpu_selection(self):
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        chosen = next(row for row in configs["configurations"] if row["model"] == "flux2-klein-9b")
+        self.assertEqual(chosen["request"]["execution"], "gpu")
+        candidate = configs["experimental_configurations"][0]
+        data = json.loads((ROOT / candidate["evidence"]).read_text())
+        self.assertEqual(candidate["fresh_warm_median_seconds"], data["medians"]["native-hybrid"]["fresh_warm_seconds"])
+        self.assertEqual(candidate["compiled_gpu_control_seconds"], data["medians"]["native-compiled"]["fresh_warm_seconds"])
+        self.assertEqual(candidate["request"]["execution"], "gpu_ane")
+        self.assertTrue(candidate["request"]["allow_approximation"])
+        self.assertIn("not a new best/default", candidate["selection_note"])
+        self.assertEqual(candidate["request"]["ane_manifest"], candidate["compiled_manifest"])
 
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())

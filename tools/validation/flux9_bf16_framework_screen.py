@@ -65,23 +65,48 @@ def registered_hashes(paths, registration):
     return result
 
 
-def requests(output, compile_gpu=False):
-    return [dict(model="flux2-klein-9b", operation="image.generate", prompt=prompt, width=512,
+def requests(output, compile_gpu=False, ane_manifest=None):
+    if compile_gpu and ane_manifest:
+        raise ValueError("compiled pure GPU and experimental hybrid are distinct routes")
+    result = [dict(model="flux2-klein-9b", operation="image.generate", prompt=prompt, width=512,
                  height=512, steps=4, seed=42, audio=False, execution="gpu", residency="resident",
                  dynamic_text=False, compile_gpu=compile_gpu, output=str(output / f"{index}.png"))
             for index, prompt in enumerate(PROMPTS)]
+    if ane_manifest:
+        for request in result:
+            request.update(execution="gpu_ane", allow_approximation=True,
+                           ane_manifest=str(ane_manifest), warmup_iterations=0)
+    return result
 
 
-def validate_native(rows):
+def validate_native(rows, hybrid=False):
     if len(rows) != 4:
         raise ValueError("complete cold/two-fresh/repeat sequence required")
     for index, row in enumerate(rows):
         metrics = row["metrics"]
         if (metrics["model"] != "flux2-klein-9b" or metrics["operation"] != "image.generate" or
                 metrics["width"] != 512 or metrics["height"] != 512 or metrics["steps"] != 4 or
-                metrics["seed"] != 42 or metrics["text_tokens"] != 512 or metrics.get("hybrid") or
+                metrics["seed"] != 42 or metrics["text_tokens"] != 512 or
                 metrics["prompt_cache_hit"] is not (index == 3)):
             raise ValueError("wrong actual BF16 GPU/prompt/cache/geometry")
+        partition = metrics.get("hybrid")
+        if hybrid:
+            if (not isinstance(partition, dict) or partition.get("bucket") != 1536 or
+                    partition.get("hidden") != 4096 or partition.get("output_channels") != 4096 or
+                    partition.get("block_count") != 24 or partition.get("mlp_width") != 12288 or
+                    partition.get("ane_mlp_range") != [0, 4096] or
+                    partition.get("checkpoint_sha256_verified") is not True or
+                    partition.get("runtime_failed") is not False or
+                    partition.get("runtime_failures_session_total") != 0 or
+                    partition.get("runtime_calls_session_total") != 96 * (index + 1) or
+                    partition.get("calls_session_total") != 96 * (index + 1) or
+                    partition.get("warmup_calls_session_total") != 0 or
+                    partition.get("weight_variant") != "int8_pc" or
+                    partition.get("compute_units") != "cpuAndNeuralEngine" or
+                    row.get("native_event_counts", {}).get("acceleration_gpu_fallback", 0) != 0):
+                raise ValueError("actual complete source-bound9B hybrid partition/calls/no-fallback required")
+        elif partition:
+            raise ValueError("pure GPU must not perform hybrid work")
         if type(row["request_wall_including_export"]) not in (float, int) or not math.isfinite(row["request_wall_including_export"]) or row["request_wall_including_export"] <= 0:
             raise ValueError("missing actual complete request timing")
 
@@ -107,10 +132,13 @@ def native_child(args, output):
         raise RuntimeError(consume(failure))
     route = args.child
     compiled = route == "native-compiled"
+    hybrid = route == "native-hybrid"
     report = dict(engine=route, constructor_seconds=time.perf_counter() - start,
                   instrumentation="native branch-event observer; no added GPU fences",
                   configured_encoder_eval_interval=args.native_encoder_eval_interval,
-                  configured_encoder_fused_attention=args.native_encoder_fused_attention, runs=[])
+                  configured_encoder_fused_attention=args.native_encoder_fused_attention,
+                  experimental_hybrid=hybrid, ane_manifest_sha256=sha256_file(args.ane_manifest) if hybrid else None,
+                  runs=[])
     event_counts, event_errors = {}, []
     callback_type = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
 
@@ -123,7 +151,7 @@ def native_child(args, output):
 
     callback = callback_type(observed_event)
     try:
-        for index, request in enumerate(requests(output, compiled)):
+        for index, request in enumerate(requests(output, compiled, args.ane_manifest if hybrid else None)):
             event_counts.clear()
             event_errors.clear()
             write_json(output / f"request-{index}.json", request)
@@ -145,7 +173,7 @@ def native_child(args, output):
             write_json(output / "report.json", report)
     finally:
         lib.tc_engine_free(engine)
-    validate_native(report["runs"])
+    validate_native(report["runs"], hybrid)
     return report
 
 
@@ -244,10 +272,26 @@ def parent(args):
                             *args.model.rglob("*.jinja"), *args.model.rglob("merges.txt")])
     code_sources = sorted((args.mflux / "src").rglob("*.py")) + [args.library, Path(__file__).resolve(),
         ROOT / "tools/validation/mflux_weight_coverage.py"]
-    identities = {str(path): generation(path) for path in (*model_sources, *code_sources)}
+    ane_sources = []
+    if "native-hybrid" in args.order.split(","):
+        manifest = json.loads(args.ane_manifest.read_text())
+        sys.path.insert(0, str(ROOT / "tools/coreml"))
+        from compile_flux_manifest import validate_manifest
+        validate_manifest(manifest, "flux2-klein-9b")
+        shape = manifest["shape"]
+        if (shape.get("buckets"), shape.get("ane_mlp_start"), shape.get("ane_mlp_end")) != ([1536], 0, 4096):
+            raise ValueError("exact experimental4096-prefix1536-row manifest required")
+        ane_sources = [args.ane_manifest]
+        for block in manifest["artifacts"].values():
+            artifact = (args.ane_manifest.parent / block["int8_pc"]).resolve(strict=True)
+            if artifact.suffix != ".mlmodelc" or not artifact.is_dir():
+                raise ValueError("already-compiled retained CoreML partition required")
+            ane_sources.extend(sorted(path for path in artifact.rglob("*") if path.is_file()))
+    identities = {str(path): generation(path) for path in (*model_sources, *code_sources, *ane_sources)}
     # Initial source generation verified once across campaigns; code is small
     # and independently bound each time. No inference-time model payload scan.
     hashes = registered_hashes(model_sources, ROOT / "outputs/benchmark-source-registrations/flux9-bf16.json")
+    hashes.update(registered_hashes(ane_sources, ROOT / "outputs/benchmark-source-registrations/flux9-hybrid.json"))
     hashes.update({str(path): sha256_file(path) for path in code_sources})
     reference_sources = code_sources[:-3]
     summary = dict(schema="tc-flux9-bf16-framework-screen-v1", status="running", qualification_passed=False,
@@ -266,6 +310,8 @@ def parent(args):
                    reference_cache_mib=args.reference_cache_mib,
                    native_encoder_eval_interval=args.native_encoder_eval_interval,
                    native_encoder_fused_attention=args.native_encoder_fused_attention,
+                   ane_manifest=str(args.ane_manifest) if args.ane_manifest else None,
+                   ane_source_sha256={str(path.relative_to(ROOT)): hashes[str(path)] for path in ane_sources},
                    timing_scope="first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
                    source_policy="first source generation SHA then durable benchmark metadata reuse; unchanged canonical/stat guard at arm boundaries; no per-inference model hash or OS cache purge",
                    observer_policy="bounded-async-record-fsync-v1" if args.async_evidence else "synchronous-record-fsync-v1")
@@ -276,12 +322,17 @@ def parent(args):
             destination = args.output / f"{index}-{engine}"
             destination.mkdir()
             env = benchmark_environment()
+            for key in tuple(env):
+                if key.startswith(("TURBOCIDER_FLUX_", "TURBOCIDER_FLUX9_", "TURBOCIDER_QWEN3_")):
+                    del env[key]
             env.update(PYTHONDONTWRITEBYTECODE="1", HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
                        PYTHONPATH=str(args.extra), MPLCONFIGDIR=str(args.output / "matplotlib-cache"))
             if engine.startswith("native") and args.native_encoder_eval_interval is not None:
                 env["TURBOCIDER_QWEN3_EVAL_INTERVAL"] = str(args.native_encoder_eval_interval)
             if engine.startswith("native") and args.native_encoder_fused_attention:
                 env["TURBOCIDER_QWEN3_FUSED_SDPA"] = "1"
+            if engine == "native-hybrid":
+                env["TURBOCIDER_FLUX9_EXPERIMENTAL_HYBRID"] = "1"
             command = [str(args.python), "-B", str(Path(__file__).resolve()), "--child", engine,
                        "--model", str(args.model), "--library", str(args.library), "--mflux", str(args.mflux),
                        "--output", str(destination)]
@@ -293,6 +344,8 @@ def parent(args):
                 command += ["--native-encoder-eval-interval", str(args.native_encoder_eval_interval)]
             if args.native_encoder_fused_attention:
                 command += ["--native-encoder-fused-attention"]
+            if engine == "native-hybrid":
+                command += ["--ane-manifest", str(args.ane_manifest)]
             print(json.dumps(dict(starting=index, engine=engine)), flush=True)
             with (destination / "stdout.txt").open("x") as out, (destination / "stderr.txt").open("x") as err:
                 memory = run_sampled(command, repo=ROOT, output=destination, stem="run", env=env, stdout=out,
@@ -339,7 +392,8 @@ def main():
     parser.add_argument("--extra", type=Path)
     parser.add_argument("--order", default="native,mflux,mflux,native")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--child", choices=("native", "native-compiled", "mflux"))
+    parser.add_argument("--child", choices=("native", "native-compiled", "native-hybrid", "mflux"))
+    parser.add_argument("--ane-manifest", type=Path, help="exact source-bound9B compiled4096-prefix/r1536 candidate")
     parser.add_argument("--stage-probe", action="store_true", help="separate optional observer with eval phase fences; not default whole-request ranking")
     parser.add_argument("--async-evidence", action="store_true", help="same bounded async record writer on both arms; gap/verification gate unchanged")
     parser.add_argument("--reference-cache-mib", type=int, choices=(0, 1024, 4096),
@@ -352,13 +406,18 @@ def main():
     for field in ("model", "library", "mflux"):
         setattr(args, field, getattr(args, field).resolve(strict=True))
     args.output = args.output.absolute()
+    if args.ane_manifest:
+        args.ane_manifest = args.ane_manifest.resolve(strict=True)
+    if (args.child == "native-hybrid" or "native-hybrid" in args.order.split(",")) and not args.ane_manifest:
+        parser.error("experimental hybrid requires a retained source-bound compiled manifest")
     if args.child:
         (native_child if args.child.startswith("native") else mflux_child)(args, args.output)
     else:
         if args.output.exists() or not args.python or not args.extra or args.order.split(",") not in (
                 ["native", "mflux", "mflux", "native"], ["native", "mflux"], ["mflux", "native"],
                 ["native", "native-compiled", "mflux", "mflux", "native-compiled", "native"],
-                ["native", "native-compiled"]):
+                ["native", "native-compiled"], ["native", "native-hybrid"],
+                ["native", "native-compiled", "native-hybrid", "mflux", "mflux", "native-hybrid", "native-compiled", "native"]):
             parser.error("fresh output, reference Python/extra dependencies and exact serial arm order required")
         args.python = args.python.absolute()  # preserve venv launcher path
         args.extra = args.extra.resolve(strict=True)

@@ -197,6 +197,7 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_z_mflux_framework_evidence.py
 	@"$(PYTHON)" -B tests/native/test_flux9_mflux_quant_screen.py
 	@"$(PYTHON)" -B tests/native/test_flux9_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_flux9_hybrid_gate.py
 	@"$(PYTHON)" -B tests/native/test_flux_coreml_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_flux_coreml_manifest_compile.py
 	@"$(PYTHON)" -B tests/native/test_flux9_mflux_quant_evidence.py

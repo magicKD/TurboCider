@@ -1,6 +1,6 @@
 # 扩展 benchmark：完整目标仍在推进
 
-2026-10-11。本页对应新增要求：充分覆盖本机 FLUX、Z-Image Turbo、Qwen
+更新2026-10-12。本页对应新增要求：充分覆盖本机 FLUX、Z-Image Turbo、Qwen
 Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳路线，
 保留最快配置，并补常见框架的成功端到端对照。此前18个campaign是已
 完成的第一阶段证据，不是这份扩大目标的完成证明。
@@ -10,8 +10,8 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | 家族 | 已有权威实测 | 扩展缺口 / 下一项 |
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
-| Z-Image Turbo | 五表示16配置；最新七路线BF16/frozen/Public/Private/mflux affine4/8完整对照 | 额外尺寸、Private channel/F16/F32 join候选的完整请求筛选，不只微基准 |
-| FLUX.2 Klein 9B | stock/cache0和三组真实compiled GPU/encoder参数完整对照；最快名义native7.374/reference7.343s | 匹配g32量化与mlx-serve成功路径；9B DiT混合分区尚未验证；不把约持平称全局第一 |
+| Z-Image Turbo | 五表示16配置、七路线框架对照、14个Private channel/F16/F32候选全请求网格完成 | 额外尺寸与checkpoint，不能把有限网格当全局最优 |
+| FLUX.2 Klein 9B | stock/cache0、三组compiled参数、精确512/4实验9B混合四路线完整对照；最新compiled7.844/hybrid7.841/reference7.355s | 匹配g32量化与mlx-serve成功路径、其它shares/shapes、进一步prefill/加载；hybrid没有稳定fresh收益 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
@@ -20,6 +20,13 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 额外LoRA/PE/VDN附件仍不进入base排名；不同checkpoint不互当分母。
 
 ## 本轮实际新增证据
+
+10-12新增9B完整hybrid cohort使catalog达到45组。8进程/32PNG/8memory
+完整，实际4096-prefix/8192-GPU补集、96calls/request、无fallback、原
+index与2shards核验通过；hybrid7.841/compiled7.844s只差0.031%，参考
+7.355s胜。CoreML是INT8权重/FP16 I/O，不冒充W8A8；cold/压力/repeat
+与误差单列。[完整新结果](FLUX9_HYBRID.md)。下方保留10-11历史过程，
+当时的pending/N/A不覆盖这个精确512/4已测候选，也不变成更广资格。
 
 最新终态优先于下方历史过程：Qwen v11完整有效五路线GPU/frozen/mflux
 BF16/Q4/Q8四fresh中位43.238745/31.058807/48.511753/56.335344/55.100963s，
@@ -187,7 +194,8 @@ ANE4096/GPU8192、固定rows1536，无18GB平铺副本。受控engine-cache
 activation8/native integer MAC、完整生成加速或已通过9B混合资格。
 导出、编译和probe分别保留在outputs/flux9-ane-prefix4096-r1536-*
 及outputs/flux9-coreml-prefix4096-r1536-probe-v1-20261011.json。
-下一步仍须实现/核验正确9B GPU complement、全图与端到端请求。
+随后10-12已实现/核验9B GPU complement与完整四路线请求，见上方新
+结果；首个source-bound候选跑通，不等于其它分区/尺寸或扩大目标完成。
 
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器

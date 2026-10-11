@@ -1,9 +1,11 @@
 # 本地 base 模型 benchmark
 
-更新：2026-10-11，Asia/Singapore。当前机器为 Apple M4 Max、64 GiB unified
+更新：2026-10-12，Asia/Singapore。当前机器为 Apple M4 Max、64 GiB unified
 memory、macOS 26.6.2。本报告只比较不加载额外 LoRA 的执行；独立发布的
 Z-Image Turbo / LTX distilled checkpoint 单列为 base，不拿不同蒸馏模型
 互当分母。PE、Viggle、VDN Turbo adapter 和 distill-patch LoRA 不参加。
+
+只看当前结论与最新同窗口数字，请先读[一页摘要](SUMMARY.md)。
 
 先看结论：Qwen Image 2.1 原 Q4_K_M encoder + DiT / BF16 VAE 已有完整
 40 步 GPU、GPU/ANE、原 Unsloth GPU 对照；encoder 和 DiT 均更快。
@@ -24,8 +26,14 @@ frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 候选都保留，不为了胜率只选较慢参考，见[Qwen详细边界](QWEN_BF16_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面44组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面45组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
+
+10-12新增真实9B GPU/ANE全图四路线正反序：eager8.154/compiled7.844/
+hybrid7.841/mflux-cache0 7.355s。每hybrid请求96真实calls、无fallback，
+全部32PNG/8memory完整；hybrid对compiled只省0.031%，没有稳定fresh
+收益，参考仍胜。cold15.73–16.03s更贵，repeat-cache-hit约11.5%收益
+另列，不混入fresh排名。[完整分工、误差与复现](FLUX9_HYBRID.md)。
 
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
 override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
@@ -49,7 +57,7 @@ memory preflight阶段拒绝，均不作成功性能分母。不拿第三方宣�
 | Z-Image Turbo BF16 | 19.27 | 完整组合在 | 当前512² GPU/frozen/Private正反序；1024²另保留历史 |
 | Z-Image NVFP4 / INT8 ConvRot | 12.00 /13.58 | 完整组合在 | 当前GPU/ConvRot Public+Private正反序；NVFP4 GPU-only |
 | Z-Image GGUF Q4_0 / Q8_0 | 12.00 /14.53 | DiT + 共用原BF16 encoder/VAE在 | 当前stock/fast GPU/Public/Private正反序；Q8另有1024²历史 |
-| FLUX.2 Klein 9B BF16 | 32.32 | 两个 DiT、四个 encoder shards 与 VAE 在 | native/mflux同源BF16 ABBA完成；9B DiT混合未验证 |
+| FLUX.2 Klein 9B BF16 | 32.32 | 两个 DiT、四个 encoder shards 与 VAE 在 | native/mflux与精确512/4实验9B混合完整实测；没有稳定fresh混合收益 |
 | LTX 2.5 distilled INT8 ConvRot | 42.87 | 含外部软链接目标、connector、两个VAE在 | 当前完整GPU/INT8/FP16音视频实测，见第5节 |
 | MiniMax H3 原 BF16 源 | 62.29（仅现存组件） | 缺原 video VAE 权重 | 不能按完整本地可执行模型报告 |
 | FastH3 独立四步 INT6 | 72.40（仅现存组件） | encoder/VAEs 在，缺预期 INT6 DiT | 只保留历史结果，不标为本次可复跑 |
@@ -79,6 +87,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-11 FLUX9B BF16，最新配对 | 8.042 | N/A，9B分区仍未验证 | 最新mflux8.828s，1.098× | 四fresh/路，16PNG/4memory；同源async ABBA |
 | 10-11 FLUX9B BF16，参考cache0配对 | 7.980 | N/A，9B混合仍未验证 | mflux7.352s；native多用8.54%时间 | 四fresh/路，16PNG/4memory；负结果保留 |
 | 10-11 FLUX9B，compiled+encoder候选 | 7.374，compiled GPU | N/A，9B混合仍未验证 | 同窗口mflux7.343s，近似持平 | 四fresh/路，24PNG/6memory；对eager7.612s省3.13% |
+| 10-12 FLUX9B，实验四路线 | 7.844，compiled GPU | 7.841，CoreML INT8-weight/FP16-I/O prefix | 1.0003× /0.031%，无稳定fresh收益 | 四fresh/路，32PNG/8memory；同窗口mflux7.355s仍胜 |
 | 10-11 Z BF16，512²，8步 | 7.551 | 6.187，frozen image-only W8A8 | 1.220× /18.1% | 四fresh warm/配置；完整正反序 |
 | 10-11 Z BF16，最新七路线 | 7.363 | 5.780，frozen image-only W8A8 | 1.274× /21.5% | 四fresh/路，56PNG；mflux BF16 9.520s，cold另列 |
 | 10-11 Z INT8 ConvRot，512²，8步 | 8.844 | 7.310，Private Comfy W8A8 | 1.210× /17.3% | fastest measured GPU denominator，非慢control |
@@ -203,7 +212,7 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
   Private6.139409/Public6.537484/mflux BF16 9.519604/Q4 9.971474/Q8
   10.080610s，frozen热态对参考1.647×，cold11.61–21.59s明显更贵。
   [最新框架与实际分工](Z_IMAGE_FRAMEWORKS.md)，不混池前一窗口。
-- FLUX 9B：native 有 GPU module，DiT `gpu_ane` 明确拒绝未验证分区。
+- FLUX 9B：native 有 GPU module，正式build的DiT `gpu_ane` 拒绝未验证分区。
   新同源BF16、512²/4步、native→mflux→mflux→native对照，四fresh warm
   中位8.220596 /11.263455s，native省27.02%（1.370×）。cold分别
   8.163/10.132和8.792/9.947s，不是所有cold领先。重复prompt另列
@@ -220,6 +229,9 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
   mflux胜出，native多用8.544%时间；参考peak32.2–32.4GB、swap-out0，
   两边compression仍保留。匹配量化/9B compiled GPU与混合继续探索。
   [最新精度、表示限制与待补配对](FLUX_PRECISIONS.md)。
+  10-12精确512/4实验9B混合已完整测量，7.841s与同窗口compiled7.844s
+  持平，mflux7.355s仍胜；之前各日期的N/A保留其当时边界。
+  [真实9B混合结果](FLUX9_HYBRID.md)，不把INT8-weight/FP16-I/O称W8A8。
   历史 **4B** 2.266 /1.628s与direct MLX2.264s仍不属于本地 **9B**。
 - LTX：704×448×97 的 INT8 混合仅快 2.7%，latent rel-L2=0.3306、
   RGB correlation=0.8586，原质量门失败；FP16 混合 84.924 s 更慢。
@@ -284,7 +296,7 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 这份测量报告不是所有设备、编辑/LoRA、所有尺寸或Public/hard-RAM发布
 资格；[目标逐项审计](COMPLETION_AUDIT.md)区分已交付要求与这些限制。
 
-[44 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[45 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
 第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大

@@ -503,10 +503,21 @@ std::string Flux::select_acceleration(Request &r, int count, const Event &event,
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(r.ane_manifest, root_, count, event,
                                                       cancelled, r.warmup_iterations,
-                                                      std::filesystem::path{},
+                                                      model_id_ == "flux2-klein-9b"
+                                                          ? root_ / "transformer/diffusion_pytorch_model.safetensors.index.json"
+                                                          : std::filesystem::path{},
                                                       active_loras_,
-                                                      matched ? matched->bucket : 0);
+                                                      model_id_ == "flux2-klein-9b" ? 1536 : matched ? matched->bucket : 0,
+                                                      model_id_ == "flux2-klein-9b" ? 24 : 0);
         require(count <= hybrid_->rows, "Core ML token bucket cannot serve this request");
+        if (model_id_ == "flux2-klein-9b") {
+            require(!automatic && hidden_ == 4096 && heads_ == 32 && single_layers_ == 24 &&
+                        count == 1536 && hybrid_->hidden == hidden_ && hybrid_->block_count == 24 &&
+                        hybrid_->rows == 1536 && hybrid_->mlp_width == 12288 &&
+                        hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end == 4096 &&
+                        hybrid_->checkpoint_sha_verified && active_loras_.empty(),
+                    "FLUX9B experimental hybrid must match complete4096-prefix1536-row source geometry");
+        }
         if (automatic) {
             require(hybrid_partition_matches(*matched, hybrid_->mlp_width,
                                               hybrid_->ane_mlp_start, hybrid_->ane_mlp_end),

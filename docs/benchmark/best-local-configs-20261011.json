@@ -126,10 +126,11 @@
       "actual_compiled_single_blocks_per_request": 96
     }
   ],
+  "updated": "2026-10-12",
   "pending": [
     "Qwen reference free-cache pressure candidates and further native parameter/shape screening",
     "Z additional share/join/shape candidates and retention of other representation winners",
-    "FLUX9B matched quantized/native framework and validated hybrid partition",
+    "FLUX9B matched quantized/native framework and additional hybrid shares/shapes; exact512/4 experimental prefix now measured without stable fresh-request gain",
     "LTX complete media best configurations and successful reference layouts"
   ],
   "media_configurations": [
@@ -206,6 +207,47 @@
       ],
       "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
       "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim"
+    }
+  ],
+  "experimental_configurations": [
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-hybrid",
+      "representation": "original BF16 source; CoreML INT8 per-channel weights/FP16 I/O prefix, not activation8 or proven integer MAC",
+      "model_root": "models/FLUX.2-klein-9B",
+      "library": "build/flux9-hybrid-v1-private/libturbocider.dylib",
+      "compiled_manifest": "outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json",
+      "source_manifest": "outputs/flux9-ane-prefix4096-r1536-export-v1-20261011/manifest.json",
+      "environment": {
+        "TURBOCIDER_FLUX9_EXPERIMENTAL_HYBRID": "1",
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": false,
+        "warmup_iterations": 0,
+        "ane_manifest": "outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json"
+      },
+      "ane_channels": 4096,
+      "gpu_complement_channels": 8192,
+      "rows": 1536,
+      "actual_runtime_calls_per_request": 96,
+      "fresh_warm_median_seconds": 7.8413751245243475,
+      "compiled_gpu_control_seconds": 7.843807916389778,
+      "reference_fresh_warm_median_seconds": 7.355287811951712,
+      "evidence": "docs/design/validation/flux9-hybrid-current-20261012.json",
+      "selection_note": "Retain runnable experimental candidate, not a new best/default: fresh difference0.031% versus own compiled control is noise, tuned reference remains faster, cold15.73-16.03s; repeat-cache benefit is separate. Existing pure GPU opt-in retained; no physical ANE/overlap or broad quality qualification."
     }
   ],
   "private_configurations": [
