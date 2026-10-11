@@ -100,8 +100,10 @@ warm-light Q4相对同engine BF16：RGB correlation0.958838、SSIM0.867560、
 MAE10.771/255，近似图像漂移不当成native/reference parity。
 
 原生affine当前支持g32，stock reference默认g64、embedding行为不同。
-同源匹配g32 linear-only/dense embedding pack生成器已准备，还未完成
-真实大模型转换/匹配运行；Q4磁盘预算与Q8更大预算分别预检，不删除
+同源匹配g32 DiT-only Q4已完成真实大模型转换/匹配运行：native BF16/Q4
+7.922/7.987s、mflux BF16/Q4 7.380/8.031s，32PNG/8memory完整；Q4
+未省时，native peak降至18.16GB。[完整同payload对照](FLUX9_MATCHED_Q4.md)。
+全组件linear-only/dense embedding与其它bits仍待补；预算分别预检，不删除
 原模型腾空间。实际只读stock loader已支持由压缩planes形状恢复g32；
 匹配runner须验实际bits/group/embedding与完整source coverage，不只
 相信metadata，不需要为此修改参考源码。

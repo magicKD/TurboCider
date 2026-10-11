@@ -111,7 +111,7 @@ def validate_native(rows, hybrid=False):
             raise ValueError("missing actual complete request timing")
 
 
-def native_child(args, output):
+def native_child(args, output, request_factory=None):
     lib = C.CDLL(str(args.library))
     lib.tc_string_free.argtypes = [C.c_void_p]
     lib.tc_engine_create_model.argtypes = [C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
@@ -151,7 +151,8 @@ def native_child(args, output):
 
     callback = callback_type(observed_event)
     try:
-        for index, request in enumerate(requests(output, compiled, args.ane_manifest if hybrid else None)):
+        factory = request_factory or requests
+        for index, request in enumerate(factory(output, compiled, args.ane_manifest if hybrid else None)):
             event_counts.clear()
             event_errors.clear()
             write_json(output / f"request-{index}.json", request)
@@ -177,7 +178,7 @@ def native_child(args, output):
     return report
 
 
-def mflux_child(args, output):
+def mflux_child(args, output, stored_bits=None, coverage_provider=None):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.mflux / "src"))
     import mlx.core as mx
@@ -197,10 +198,11 @@ def mflux_child(args, output):
                   instrumentation="stage-eval-observer" if args.stage_probe else "host-step-counter-only; no extra GPU sync or encoder wrapper",
                   packages={name: importlib.metadata.version(name) for name in
                             ("mlx", "torch", "transformers", "numpy", "Pillow", "safetensors")}, runs=[])
-    report["required_weight_coverage"] = inspect_reference_coverage(args.model, Flux2KleinWeightDefinition,
+    coverage = coverage_provider or inspect_reference_coverage
+    report["required_weight_coverage"] = coverage(args.model, Flux2KleinWeightDefinition,
         dict(vae=model.vae, transformer=model.transformer, text_encoder=model.text_encoder))
-    if model.bits is not None or str(ModelConfig.precision) != "mlx.core.bfloat16":
-        raise ValueError("original BF16, no quantization, required")
+    if model.bits != stored_bits or str(ModelConfig.precision) != "mlx.core.bfloat16":
+        raise ValueError("actual requested stored precision with BF16 activations required")
 
     class Steps:
         def call_in_loop(self, t, **kwargs):
@@ -237,7 +239,7 @@ def mflux_child(args, output):
                                      height=512, width=512, guidance=1.0)
         image.save(request["output"])
         end = time.perf_counter()
-        if stages.steps != [0, 1, 2, 3] or image.lora_paths or image.quantization is not None:
+        if stages.steps != [0, 1, 2, 3] or image.lora_paths or image.quantization != stored_bits:
             raise ValueError("original actual base four-step execution differs")
         row = dict(index=index, prompt=request["prompt"], request_wall_including_export=end - start,
                    actual_steps=stages.steps, text_rows=512, actual_quantization=image.quantization,

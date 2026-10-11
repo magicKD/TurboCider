@@ -4,17 +4,74 @@ import argparse
 import ctypes
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
 import struct
 import tempfile
 
-from flux9_bf16_framework_screen import generation, check_generations, write_json
+from flux9_bf16_framework_screen import generation, check_generations, registered_hashes, write_json
 from mflux_original_layout import read_header
 from runtime_ane_common import sha256_file
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def tensor_storage_plan(name, tensor, bits, component):
+    shape, dtype = tensor["shape"], tensor["dtype"]
+    if bits not in (4,8) or dtype != "BF16" or not shape or any(type(x) is not int or x <= 0 for x in shape):
+        raise ValueError("original BF16 positive tensor shapes and supported affine bits required")
+    source_bytes = 2 * math.prod(shape)
+    if tensor["data_offsets"][1] - tensor["data_offsets"][0] != source_bytes:
+        raise ValueError("complete original BF16 payload extent required")
+    # The source language-model head is not used by the conditioning encoder.
+    if component == "text_encoder" and name == "lm_head.weight":
+        return dict(payload_bytes=0,quantized=False,excluded=True)
+    quantized = len(shape) == 2 and name.endswith(".weight") and name != "model.embed_tokens.weight"
+    if quantized:
+        rows, columns = shape
+        if columns % 32 or columns * bits % 32:
+            raise ValueError("exact g32 packed affine geometry required")
+        size = rows * columns * bits // 8 + rows * (columns // 32) * 4
+    else:
+        size = source_bytes
+    return dict(payload_bytes=size,quantized=quantized,excluded=False)
+
+
+def storage_plan(model_root, components, bits):
+    if components not in (("transformer",), ("transformer","text_encoder")):
+        raise ValueError("known bounded converted component set required")
+    result = dict(bits=bits,group_size=32,components={},reserve_bytes=2<<30,
+                  policy="header-derived complete payload, largest one-tensor serialization, two CoW headers and conservative allocation slack; originals never deleted")
+    for component in components:
+        total, largest, count, quantized, seen = 0,0,0,0,set()
+        files = sorted((model_root / component).glob("*.safetensors"))
+        if not files:
+            raise ValueError("complete original component shards required")
+        for path in files:
+            identity = generation(path)
+            header, _ = read_header(path)
+            for name, tensor in header.items():
+                if name == "__metadata__":
+                    continue
+                if name in seen:
+                    raise ValueError("duplicate original source tensor across shards")
+                seen.add(name)
+                row = tensor_storage_plan(name,tensor,bits,component)
+                if row["excluded"]:
+                    continue
+                total += row["payload_bytes"]
+                largest = max(largest,row["payload_bytes"])
+                count += 1
+                quantized += int(row["quantized"])
+            check_generations({str(path):identity})
+        result["components"][component] = dict(payload_bytes=total,largest_temporary_bytes=largest,
+            source_tensors=count,quantized_linears=quantized,header_and_allocation_slack_bytes=16<<20)
+    result["estimated_retained_bytes"] = sum(row["payload_bytes"]+row["header_and_allocation_slack_bytes"] for row in result["components"].values())
+    result["largest_temporary_bytes"] = max(row["largest_temporary_bytes"] for row in result["components"].values())
+    result["required_free_bytes"] = result["estimated_retained_bytes"]+result["largest_temporary_bytes"]+result["reserve_bytes"]
+    return result
 
 
 def native_key(name, inverse):
@@ -118,7 +175,21 @@ def main():
     parser.add_argument("--mflux", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bits", type=int, choices=(4, 8), required=True)
+    parser.add_argument("--components", choices=("all","transformer"), default="all",
+                        help="DiT-only keeps original BF16 encoder/VAE; not a full-model quantized recipe")
+    parser.add_argument("--plan-only", action="store_true", help="header-only exact storage preflight; no model load or output creation")
     args = parser.parse_args()
+    model_root, output = args.model.resolve(strict=True), args.output.absolute()
+    components = ("transformer","text_encoder") if args.components == "all" else ("transformer",)
+    plan = storage_plan(model_root,components,args.bits)
+    free = shutil.disk_usage(ROOT).free
+    if args.plan_only:
+        print(json.dumps(dict(storage=plan,free_bytes=free,fits=free >= plan["required_free_bytes"]),indent=2))
+        return
+    if output.exists():
+        parser.error("fresh matched quantized pack destination required")
+    if free < plan["required_free_bytes"]:
+        parser.error("header-derived matched pack, largest tensor and2GiB reserve unavailable; do not delete originals")
     import sys
     sys.path.insert(0, str(args.mflux.resolve() / "src"))
     import mlx.core as mx
@@ -130,19 +201,14 @@ def main():
     from mflux.models.common.weights.mapping.weight_mapper import WeightMapper
     from mflux_weight_coverage import inspect_reference_coverage
     mx.set_default_device(mx.cpu)
-    model_root, output = args.model.resolve(strict=True), args.output.absolute()
-    if output.exists():
-        parser.error("fresh matched quantized pack destination required")
-    estimate = (10 if args.bits == 4 else 18) << 30
-    if shutil.disk_usage(ROOT).free < estimate + (2 << 30):
-        parser.error("bounded matched pack plus2GiB reserve unavailable; do not delete originals")
     sources = sorted([*model_root.rglob("*.safetensors"), *model_root.rglob("*.json"), *model_root.rglob("*.jinja")])
     identities = {str(path): generation(path) for path in sources}
-    hashes = {str(path): sha256_file(path) for path in sources}
+    hashes = registered_hashes(sources,ROOT / "outputs/benchmark-source-registrations/flux9-bf16.json")
     output.mkdir(parents=True)
     report = dict(schema="tc-flux9-matched-affine-pack-v1", status="preparing", bits=args.bits, group_size=32,
-        source_sha256=hashes, source_generations=identities, components={},
-        scope="same g32 compressed planes for native and configured mflux; stock defaultg64 is separately measured; original embeddings/VAE unchanged")
+        source_sha256=hashes, source_generations=identities, components={},converted_components=list(components),
+        storage_preflight=plan,source_policy="first original generation SHA then durable metadata reuse; original sources read-only",
+        scope="same g32 compressed planes for native and configured mflux; stock defaultg64 is separately measured; original embeddings/VAE unchanged; unconverted encoder remains BF16")
     target = output / "conversion.json"
     write_json(target, report)
     try:
@@ -150,7 +216,7 @@ def main():
         definitions = Flux2KleinWeightDefinition.get_components()
         report["required_coverage"] = inspect_reference_coverage(model_root, Flux2KleinWeightDefinition,
             dict(vae=model.vae, transformer=model.transformer, text_encoder=model.text_encoder))
-        for name in ("transformer", "text_encoder"):
+        for name in components:
             module = getattr(model, name)
             nn.quantize(module, group_size=32, bits=args.bits,
                         class_predicate=lambda _, layer: isinstance(layer, nn.Linear))
@@ -167,12 +233,20 @@ def main():
             file = output / "mflux" / name / "0.safetensors"
             native_file = output / "native" / name / "0.safetensors"
             header, native, capacity = stream_component(dict(tree_flatten(module.parameters())), file, inverse, mx, args.bits)
+            actual_bytes = file.stat().st_size
+            estimated = plan["components"][name]
+            if actual_bytes > estimated["payload_bytes"] + estimated["header_and_allocation_slack_bytes"]:
+                raise ValueError("actual converted component exceeds header-derived storage preflight")
             report["components"][name] = clone_native(file, native_file, native, capacity)
+            report["components"][name].update(bytes=actual_bytes,stored_tensors=len(header)-1,
+                quantized_linears=sum(key.endswith(".scales") for key in header))
             write_json(target, report)
         for root in (output / "native", output / "mflux"):
             (root / "tokenizer").symlink_to(model_root / "tokenizer", target_is_directory=True)
             (root / "vae").symlink_to(model_root / "vae", target_is_directory=True)
-        for name in ("transformer", "text_encoder"):
+            if "text_encoder" not in components:
+                (root / "text_encoder").symlink_to(model_root / "text_encoder",target_is_directory=True)
+        for name in components:
             (output / "native" / name / "config.json").symlink_to(model_root / name / "config.json")
         check_generations(identities)
         report["status"] = "complete_conversion_only"

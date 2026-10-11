@@ -3920,12 +3920,138 @@
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
       "note": "eight-process same-window source-bound4096-prefix/8192-GPU complement,96 actual calls/request; INT8 weights/FP16 I/O, not W8A8/native integer MAC; hybrid7.841375/compiled7.843808s differ only0.031%, no stable fresh-request win; cache0 reference7.355288s wins; cold/repeat/pressure and all32PNG/8memory retained, automatic route unchanged"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-matched-dit-q4-current-20261012.json",
+        "sha256": "54db5374d10a5e61857b59bb602ef300b160dad5cfc61e49c2fd98f6a0d05be4",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-matched-dit-q4-g32-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "native-bf16",
+          "cold_seconds": [
+            7.565319332992658,
+            7.6427307080011815
+          ],
+          "warm_seconds": [
+            8.408409541007131,
+            7.435087208868936,
+            8.42032775003463,
+            7.323830292094499
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.9217483749380335,
+          "repeated_prompt_seconds": [
+            6.920857958029956,
+            6.7318359590135515
+          ],
+          "constructor_seconds": [
+            0.12852579215541482,
+            0.14081279188394547
+          ],
+          "physical_peaks": [
+            30652635216,
+            30528919560
+          ]
+        },
+        {
+          "route": "native-q4",
+          "cold_seconds": [
+            8.777091082883999,
+            9.889539833879098
+          ],
+          "warm_seconds": [
+            7.983993083005771,
+            7.971053708111867,
+            8.000069708097726,
+            7.989955208031461
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.986974145518616,
+          "repeated_prompt_seconds": [
+            7.471294583054259,
+            7.493762749945745
+          ],
+          "constructor_seconds": [
+            0.1327979580964893,
+            0.14436429203487933
+          ],
+          "physical_peaks": [
+            18164528520,
+            18163725680
+          ]
+        },
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            8.77962120785378,
+            8.808520041871816
+          ],
+          "warm_seconds": [
+            7.40217600017786,
+            7.306325207930058,
+            7.39103016583249,
+            7.36884312517941
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.37993664550595,
+          "repeated_prompt_seconds": [
+            7.3131170000415295,
+            7.3545211248565465
+          ],
+          "constructor_seconds": [
+            0.37940270896069705,
+            0.3761802911758423
+          ],
+          "physical_peaks": [
+            32267410856,
+            32279600624
+          ]
+        },
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            9.280824333894998,
+            8.135861583054066
+          ],
+          "warm_seconds": [
+            8.033573166001588,
+            8.027618250111118,
+            8.001909082988277,
+            8.04945266712457
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.030595708056353,
+          "repeated_prompt_seconds": [
+            8.04218441597186,
+            8.016196166863665
+          ],
+          "constructor_seconds": [
+            0.38275783392600715,
+            0.3880319169256836
+          ],
+          "physical_peaks": [
+            19729463912,
+            19730283040
+          ]
+        }
+      ],
+      "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
+      "note": "same byte-identical153-linear DiT Q4/g32 planes in native/reference, original BF16 encoder/VAE; all32PNG/8memory complete; nativeQ4 7.986974 versus ownBF16 7.921748s is not speedup, referenceQ4 8.030596 versus BF16 7.379937s is slower; Q4 peaks18.16/19.73GB and compression0, memory-only candidate not full-model quantization or ANE qualification"
     }
   ],
   "missing_current_comparisons": [
     "Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
     "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed",
-    "FLUX9B same-cohort matched native/reference quantization and additional source-bound hybrid shares/shapes",
+    "FLUX9B full-component/more-precision matched quantization and additional source-bound hybrid shares/shapes; DiT-only Q4/g32 matched cohort complete",
     "LTX best full-media native configurations and runnable reference quantized layouts",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],

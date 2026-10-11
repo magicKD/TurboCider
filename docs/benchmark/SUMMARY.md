@@ -11,6 +11,7 @@
 | 10-11 [Qwen原BF16源，512²/40步](QWEN_BF16_FRAMEWORKS.md) | 43.347 | 31.251，frozen CoreML | mflux BF16/cache0 45.968 | GPU1.06×、混合1.47×；四fresh/路 |
 | 10-11 [Z原BF16源，512²/8步](Z_IMAGE_FRAMEWORKS.md) | 7.363 | 5.780，frozen W8A8 | mflux BF16 9.520 | GPU1.29×、混合1.65×；四fresh/路 |
 | 10-12 [FLUX9B原BF16源，512²/4步](FLUX9_HYBRID.md) | compiled7.844 | 7.841，INT8-weight/FP16-I/O prefix | mflux BF16/cache0 7.355 | 混合对compiled仅省0.031%，参考胜；四fresh/路 |
+| 10-12 [FLUX9B DiT-only Q4/g32，512²/4步](FLUX9_MATCHED_Q4.md) | Q4 7.987 | 未验证；该候选GPU-only | 同planes mflux Q4 8.031 | GPU仅名义0.5%差异；对自身BF16 7.922s不加速，但peak降至18.16GB |
 | 10-11 [LTX原base，704×448×97/11步，含音频](LTX_VIDEO.md) | quality63.848 | INT8 quality71.333 | 暂缺成功同任务外部对照 | GPU胜；近似GPU61.869但仅省3.1%、漂移明显 |
 
 倍率为参考耗时/本路线耗时，不是“少用相同百分比时间”。混合为部分
@@ -31,7 +32,7 @@ Unsloth这里只指固定GGUF/sd-server路径，mflux为只读0.19.2，不是所
 - LTX仍推荐quality GPU。INT8加载/重编译抵消部分计算收益；batch和
   clean-exec estimate不混池，也不把较大delta当无损。
 
-[详细总览](README.md)、[45组逐请求catalog](results-20261011.json)、
+[详细总览](README.md)、[46组逐请求catalog](results-20261011.json)、
 [可复现配置](best-local-configs-20261011.json)、[完成度审计](COMPLETION_AUDIT.md)
 分别保留任务/精度/冷启动/实际调用/内存/媒体误差和缺口。更多尺寸、
 FLUX匹配量化、进一步GPU/ANE分区及LTX成功外部对照仍未完成，扩大

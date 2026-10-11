@@ -11,7 +11,7 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置、七路线框架对照、14个Private channel/F16/F32候选全请求网格完成 | 额外尺寸与checkpoint，不能把有限网格当全局最优 |
-| FLUX.2 Klein 9B | stock/cache0、三组compiled参数、精确512/4实验9B混合四路线完整对照；最新compiled7.844/hybrid7.841/reference7.355s | 匹配g32量化与mlx-serve成功路径、其它shares/shapes、进一步prefill/加载；hybrid没有稳定fresh收益 |
+| FLUX.2 Klein 9B | stock/cache0、compiled参数、9B混合及DiT-only Q4/g32匹配均完成；Q4 native7.987/reference8.031s、native peak18.16GB | 全组件/其它bits与mlx-serve成功路径、其它shares/shapes、进一步prefill/加载；Q4和hybrid没有稳定fresh收益 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
@@ -196,6 +196,12 @@ activation8/native integer MAC、完整生成加速或已通过9B混合资格。
 及outputs/flux9-coreml-prefix4096-r1536-probe-v1-20261011.json。
 随后10-12已实现/核验9B GPU complement与完整四路线请求，见上方新
 结果；首个source-bound候选跑通，不等于其它分区/尺寸或扩大目标完成。
+
+随后DiT-only Q4/g32 matched cohort已完整完成，catalog达到46组。
+native BF16/Q4为7.921748/7.986974s，mflux BF16/Q4为7.379937/
+8.030596s；32PNG/8memory、同payload与实际539参数/153linears/g32
+核验通过。Q4不加速，native peak18.16GB而不是30.53–30.65GB，保存
+memory candidate；全组件/其它bits仍待补。[新匹配结果](FLUX9_MATCHED_Q4.md)。
 
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器

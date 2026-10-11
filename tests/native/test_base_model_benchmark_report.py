@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 45)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 46)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -183,6 +183,35 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue(candidate["request"]["allow_approximation"])
         self.assertIn("not a new best/default", candidate["selection_note"])
         self.assertEqual(candidate["request"]["ane_manifest"], candidate["compiled_manifest"])
+
+    def test_flux9_matched_q4_has_all_planes_actual_groups_and_no_false_speedup(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "flux2-klein-9b-matched-dit-q4-g32-cohort")
+        self.assertEqual({row["route"] for row in campaign["routes"]},{"native-bf16","native-q4","mflux-bf16","mflux-q4"})
+        self.assertTrue(all(row["warm_sample_count"] == 4 for row in campaign["routes"]))
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertEqual((len(data["trials"]),len(data["quality"])),(8,32))
+        self.assertEqual(data["conversion"]["converted_components"],["transformer"])
+        self.assertTrue(data["conversion"]["components"]["transformer"]["full_compressed_payload_equal"])
+        self.assertLess(data["comparison"]["native_q4_reduction_percent"],0)
+        self.assertLess(data["comparison"]["mflux_q4_reduction_percent"],0)
+        for trial in data["trials"]:
+            self.assertTrue(trial["memory"]["complete"])
+            if trial["route"] == "mflux-q4":
+                loaded = trial["report"]["required_weight_coverage"]["transformer"]
+                self.assertEqual((loaded["required_targets"],loaded["quantized_linears"],loaded["bits"],loaded["group_size"]),(539,153,4,32))
+        self.assertNotIn("/Users/",json.dumps(data))
+
+    def test_flux9_memory_candidate_remains_distinct_from_fastest_gpu(self):
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        candidate = configs["memory_configurations"][0]
+        data = json.loads((ROOT / candidate["evidence"]).read_text())
+        self.assertEqual(candidate["fresh_warm_median_seconds"],data["medians"]["native-q4"]["fresh_warm_seconds"])
+        self.assertEqual(candidate["request"]["execution"],"gpu")
+        self.assertFalse(candidate["request"]["compile_gpu"])
+        self.assertTrue(candidate["request"]["allow_approximation"])
+        self.assertIn("not fastest/default",candidate["selection_note"])
+        if (ROOT / "models/FLUX.2-klein-9B").exists():
+            self.assertTrue((ROOT / candidate["model_root"] / "transformer/0.safetensors").is_file())
 
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())

@@ -8,10 +8,14 @@
 下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
 再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
-hybrid四路线，共45个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+hybrid四路线与DiT-only Q4/g32匹配四路线，共46个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。参考更多cache候选、
 更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
+
+DiT-only Q4是已完成匹配，不是全组件量化的替代完成：native7.987s比
+自身BF16 7.922s略慢、mfluxQ4 8.031s也比自身BF16 7.380s慢，但
+native peak18.16GB更低；[真实模型与payload/内存/误差审计](FLUX9_MATCHED_Q4.md)。
 
 | 原要求 | 已核验的当前/保留权威证据 | 结论与限制 |
 | --- | --- | --- |
@@ -64,6 +68,11 @@ fresh7.841/compiled7.844s差0.031%，参考7.355s仍胜，repeat收益另列。
 make test-base-benchmark，120项全部通过，包括真实API的环境/尺寸/
 步数/dynamic-text拒绝；未设置该变量时这两项显式skip，不伪称通过。
 仍未运行全量make test；所有测试在性能实验终态后运行，没有并行干扰。
+
+随后DiT-only Q4/g32的完整same-payload native/reference四路线完成，
+新增source extent/dtype/group预算、完整saved参数与真实packed/dense
+分支拒绝回归。设置同一FLUX9_GATE_LIBRARY运行定向目标，128项全部
+通过；未运行全量make test，量化weights/媒体/raw不进Git。
 
 ## 不是缺少结果的隐含通过
 

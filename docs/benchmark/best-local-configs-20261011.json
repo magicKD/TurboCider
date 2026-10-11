@@ -130,7 +130,7 @@
   "pending": [
     "Qwen reference free-cache pressure candidates and further native parameter/shape screening",
     "Z additional share/join/shape candidates and retention of other representation winners",
-    "FLUX9B matched quantized/native framework and additional hybrid shares/shapes; exact512/4 experimental prefix now measured without stable fresh-request gain",
+    "FLUX9B full-component/more-precision matched quantization and additional hybrid shares/shapes; DiT-only Q4/g32 and exact512/4 hybrid now measured",
     "LTX complete media best configurations and successful reference layouts"
   ],
   "media_configurations": [
@@ -248,6 +248,40 @@
       "reference_fresh_warm_median_seconds": 7.355287811951712,
       "evidence": "docs/design/validation/flux9-hybrid-current-20261012.json",
       "selection_note": "Retain runnable experimental candidate, not a new best/default: fresh difference0.031% versus own compiled control is noise, tuned reference remains faster, cold15.73-16.03s; repeat-cache benefit is separate. Existing pure GPU opt-in retained; no physical ANE/overlap or broad quality qualification."
+    }
+  ],
+  "memory_configurations": [
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-q4",
+      "representation": "same153-linears DiT affine Q4/g32; original BF16 encoder/VAE, not full-component Q4 or GGUF",
+      "model_root": "outputs/flux9-matched-dit-q4-g32-pack-v1-20261012/native",
+      "library": "build/flux9-hybrid-v1-private/libturbocider.dylib",
+      "conversion": "outputs/flux9-matched-dit-q4-g32-pack-v1-20261012/conversion.json",
+      "environment": {
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": false
+      },
+      "fresh_warm_median_seconds": 7.986974145518616,
+      "bf16_compiled_control_seconds": 7.9217483749380335,
+      "same_q4_reference_seconds": 8.030595708056353,
+      "physical_peak_bytes": [18164528520, 18163725680],
+      "evidence": "docs/design/validation/flux9-matched-dit-q4-current-20261012.json",
+      "selection_note": "Lower observed memory candidate, not fastest/default or hard RAM qualification: peak18.16GB versus ownBF16 30.53-30.65GB; Q4 fresh0.823% slower; same-plane reference only0.5% nominal difference; approximate output drift retained."
     }
   ],
   "private_configurations": [
