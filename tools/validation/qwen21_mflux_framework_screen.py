@@ -103,14 +103,18 @@ def mflux_child(args):
     sys.path.insert(0, str(args.mflux / "src"))
     from mflux.models.qwen21.variants.txt2img.qwen_image_21 import QwenImage21
     from mflux.models.common.config import ModelConfig
+    from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
+    from mflux_weight_coverage import inspect_reference_coverage
     import mlx.core as mx
     bits = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8}[args.child]
+    coverage = inspect_reference_coverage(args.reference_model, Qwen21WeightDefinition)
     start = time.perf_counter()
     model = QwenImage21(model_path=str(args.reference_model), quantize=bits)
     report = dict(engine=args.child, constructor_seconds=time.perf_counter() - start,
                   precision=str(ModelConfig.precision), quantization=model.bits,
                   text_embedding_dtype=str(model.text_encoder.embed_tokens.weight.dtype),
                   transformer_input_weight_dtype=str(model.transformer.img_in.weight.dtype),
+                  required_weight_coverage=coverage,
                   instrumentation="host step counter only; stock model, cache and synchronization",
                   packages={name: importlib.metadata.version(name) for name in ("mlx", "torch", "transformers", "numpy", "Pillow", "safetensors")}, runs=[])
     if str(ModelConfig.precision) != "mlx.core.bfloat16" or model.bits != bits:
@@ -174,7 +178,9 @@ def parent(args):
         cache[str(path)] = dict(generation=current, sha256=digest)
         hashes[str(path.relative_to(ROOT))] = digest
     write_json(cache_path, cache)
-    code = sorted((args.mflux / "src").rglob("*.py")) + [args.library, Path(__file__).resolve(), ROOT / "tools/validation/mflux_original_layout.py"]
+    reference_code = sorted((args.mflux / "src").rglob("*.py"))
+    code = reference_code + [args.library, Path(__file__).resolve(), ROOT / "tools/validation/mflux_original_layout.py",
+                             ROOT / "tools/validation/mflux_weight_coverage.py"]
     if args.frozen_manifest:
         files.append(args.frozen_manifest.resolve(strict=True))
     metadata_files = sorted(args.reference_model.rglob("*.json"))
@@ -183,7 +189,7 @@ def parent(args):
                    steps=args.steps, count=args.count, order=args.order.split(","), trials=[], model_sha256=hashes,
                    library_sha256=sha256_file(args.library), layout_receipt_sha256=sha256_file(args.reference_model / "layout-receipt.json"),
                    mflux_commit=subprocess.check_output(["git", "-C", str(args.mflux), "rev-parse", "HEAD"], text=True).strip(),
-                   mflux_source_snapshot=hashlib.sha256(json.dumps([(str(path.relative_to(args.mflux)), sha256_file(path)) for path in code[:-3]]).encode()).hexdigest(),
+                   mflux_source_snapshot=hashlib.sha256(json.dumps([(str(path.relative_to(args.mflux)), sha256_file(path)) for path in reference_code]).encode()).hexdigest(),
                    source_policy="first verified source generation only; persistent metadata-bound reuse; no per-inference model SHA",
                    timing_scope="constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
                    representation_scope="same original BF16 values through lossless layout; Q4/Q8 are explicitly separate mflux affine recipes, not original GGUF equality")

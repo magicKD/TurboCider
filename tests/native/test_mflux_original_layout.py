@@ -25,6 +25,14 @@ class ReferenceLayoutTests(unittest.TestCase):
             self.assertEqual(mapped[f"layers.0.attention.to_{part}.weight"],
                              dict(dtype="BF16", shape=[2, 2], data_offsets=[index * 8, (index + 1) * 8]))
 
+    def test_qwen_fused_gate_up_must_populate_both_real_reference_linears(self):
+        source = {"transformer_blocks.0.img_mlp.gate_up.weight": dict(dtype="BF16", shape=[4, 2], data_offsets=[0, 16])}
+        mapped, bindings = mapped_header(source, "qwen-dit")
+        for index, part in enumerate(("gate_layer", "proj")):
+            self.assertEqual(mapped[f"transformer_blocks.0.img_mlp.{part}.weight"],
+                             dict(dtype="BF16", shape=[2, 2], data_offsets=[index * 8, (index + 1) * 8]))
+        self.assertEqual(len(bindings), 2)
+
     def test_singleton_reshape_keeps_all_values_and_rejects_temporal_discard(self):
         header = {"decoder.conv1.weight": dict(dtype="BF16", shape=[2, 3, 1, 2, 2], data_offsets=[0, 48])}
         mapped, _ = mapped_header(header, "qwen-vae")

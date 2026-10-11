@@ -85,6 +85,15 @@ def mapped_header(header, kind):
         names = [(name, value)]
         if kind == "qwen-text" and (name.startswith("model.layers.") or name in ("model.embed_tokens.weight", "model.norm.weight")):
             names = [("model.language_model." + name[6:], value)]
+        elif kind == "qwen-dit" and name.endswith(".img_mlp.gate_up.weight"):
+            if len(value["shape"]) != 2 or value["shape"][0] % 2:
+                raise ValueError("exact contiguous gate/up split required")
+            start, end = value["data_offsets"]
+            span = (end - start) // 2
+            names = [(name.replace("gate_up.weight", part + ".weight"),
+                      dict(value, shape=[value["shape"][0] // 2, value["shape"][1]],
+                           data_offsets=[start + index * span, start + (index + 1) * span]))
+                     for index, part in enumerate(("gate_layer", "proj"))]
         elif kind == "qwen-vae":
             if len(value["shape"]) == 5 and "time_conv" not in name:
                 if value["shape"][2] != 1:
@@ -114,7 +123,7 @@ def mapped_header(header, kind):
                          for index, part in enumerate(("q", "k", "v"))]
             else:
                 names = [(target, value)]
-        elif kind not in ("qwen-text", "identity"):
+        elif kind not in ("qwen-text", "qwen-dit", "identity"):
             raise ValueError("unknown layout recipe")
         for target, tensor in names:
             if target in output:
@@ -169,7 +178,8 @@ def prepare(family, destination):
     original = ROOT / ("models/Comfy-Org-Qwen-Image-2.1" if family == "qwen21" else "models/Comfy-Org-z_image_turbo")
     specifications = (
         [(original / "text_encoders/qwen3vl_8b_bf16.safetensors", "text_encoder/model.safetensors", "qwen-text"),
-         (original / "vae/qwen_image_2.1_vae_bf16.safetensors", "vae/diffusion_pytorch_model.safetensors", "qwen-vae")]
+         (original / "vae/qwen_image_2.1_vae_bf16.safetensors", "vae/diffusion_pytorch_model.safetensors", "qwen-vae"),
+         (original / "diffusion_models/qwen_image_2.1_bf16.safetensors", "transformer/diffusion_pytorch_model.safetensors", "qwen-dit")]
         if family == "qwen21" else
         [(original / "split_files/diffusion_models/z_image_turbo_bf16.safetensors", "transformer/diffusion_pytorch_model.safetensors", "z-dit"),
          (original / "split_files/vae/ae.safetensors", "vae/diffusion_pytorch_model.safetensors", "z-vae")])
@@ -185,8 +195,7 @@ def prepare(family, destination):
             report["files"].append(rewrite(source, destination / relative, kind))
             write_json(receipt, report)
         if family == "qwen21":
-            links = [(original / "diffusion_models/qwen_image_2.1_bf16.safetensors", "transformer/diffusion_pytorch_model.safetensors"),
-                     (original / "processor/tokenizer.json", "processor/tokenizer.json")]
+            links = [(original / "processor/tokenizer.json", "processor/tokenizer.json")]
             header, _ = read_header(destination / "text_encoder/model.safetensors")
             write_json(destination / "text_encoder/model.safetensors.index.json",
                        dict(weight_map={name: "model.safetensors" for name in header if name != "__metadata__"}))

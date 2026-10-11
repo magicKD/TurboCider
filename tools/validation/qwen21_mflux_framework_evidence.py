@@ -46,12 +46,20 @@ def compare_rgba(a, b):
                     mae_255=float(np.mean(np.abs(alpha_a.astype(np.float64) - alpha_b.astype(np.float64))))))
 
 
-def audit(screen, layout, build):
+def audit(screen, layout, build, invalid_reference_reason=None):
     data = json.loads((screen / "summary.json").read_text())
     if data["status"] not in ("complete_precheck_only", "complete_diagnostic") or len(data["trials"]) != len(data["order"]):
         raise ValueError("terminal complete image experiment required")
     if data["status"] == "complete_diagnostic" and (data["steps"], data["count"]) != (40, 4):
         raise ValueError("short prechecks cannot be full benchmark evidence")
+    references = [trial for trial in data["trials"] if trial["route"].startswith("mflux-")]
+    for trial in references:
+        coverage = trial["report"].get("required_weight_coverage")
+        complete = isinstance(coverage, dict) and set(coverage) == {"transformer", "text_encoder", "vae"} and all(
+            type(item.get("required_targets")) is int and item["required_targets"] > 0 and
+            item.get("covered_targets") == item["required_targets"] and item.get("missing") == [] for item in coverage.values())
+        if not complete and not invalid_reference_reason:
+            raise ValueError("reference required weights unproven; retain explicitly invalid diagnostic, never latency ranking")
     manifest = json.loads(build.read_text())
     if any(sha256_file(ROOT / row["path"]) != row["sha256"] for row in manifest["inputs"]["sources"]):
         raise ValueError("native source/build mismatch")
@@ -70,6 +78,11 @@ def audit(screen, layout, build):
                       preparation_seconds=item["preparation_seconds"]) for item in receipt["files"]]),
                   timing_scope=data["timing_scope"], representation_scope=data["representation_scope"],
                   source_policy=data["source_policy"], trials=[], routes=[], quality=[])
+    result["reference_latency_ranking_valid"] = invalid_reference_reason is None
+    result["invalid_reference_reason"] = invalid_reference_reason
+    if invalid_reference_reason:
+        result["status"] = "complete_native_diagnostic_invalid_reference"
+        result["ranking_scope"] = "native GPU versus native frozen only; reference timings retained as invalid-output diagnostics, not speed denominators"
     for trial in data["trials"]:
         validate_runs(trial["report"], trial["route"], data["steps"], data["count"])
         directory = screen / f'{trial["index"]}-{trial["route"]}'
@@ -115,10 +128,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("screen", "layout", "build-manifest", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--invalid-reference-reason", help="retain known invalid outputs without promoting their latency")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("fresh portable evidence output required")
-    result = audit(args.screen.resolve(), args.layout.resolve(), args.build_manifest.resolve())
+    result = audit(args.screen.resolve(), args.layout.resolve(), args.build_manifest.resolve(), args.invalid_reference_reason)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as target:
         json.dump(result, target, indent=2, allow_nan=False)

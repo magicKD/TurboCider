@@ -41,6 +41,14 @@ class QwenFrameworkEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 audit(root, root, root / "missing-build.json")
 
+    def test_complete_images_without_required_weights_are_not_a_latency_rank(self):
+        with tempfile.TemporaryDirectory(prefix="tc-qwen-incomplete-weights-") as raw:
+            root = Path(raw)
+            (root / "summary.json").write_text(json.dumps(dict(status="complete_diagnostic", steps=40, count=4,
+                order=["mflux-bf16"], trials=[dict(route="mflux-bf16", report=dict(runs=[]))])))
+            with self.assertRaisesRegex(ValueError, "required weights unproven"):
+                audit(root, root, root / "missing-build.json")
+
 
 if __name__ == "__main__":
     unittest.main()

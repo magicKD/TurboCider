@@ -1,0 +1,50 @@
+{
+  "schema": "tc-best-measured-local-configs-v1",
+  "date": "2026-10-11",
+  "goal_complete": false,
+  "qualification_passed": false,
+  "selection_scope": "Completed native cohorts only; not global optimum, automatic routing or valid external-framework dominance",
+  "configurations": [
+    {
+      "model": "qwen-image-2.1",
+      "representation": "original BF16 encoder/DiT/VAE; approximate source-bound Core ML W8A8 FFN prefix",
+      "model_root": "models/Comfy-Org-Qwen-Image-2.1",
+      "library": "build/z-base-formats-v2-readonly-private/libturbocider.dylib",
+      "source_manifest": "results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json",
+      "compiled_manifest": "outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json",
+      "request": {
+        "model": "qwen-image-2.1",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 40,
+        "seed": 29,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "allow_approximation": true,
+        "qwen21_w8a8": true
+      },
+      "encoder_policy": "original GPU request-local; no new retention or prefill override",
+      "ane_prefix_channels": 6144,
+      "gpu_complement_channels": 6144,
+      "first_step": "GPU",
+      "subsequent_steps": "GPU attention/caption + parallel frozen image-only FFN prefix",
+      "actual_runtime_calls_per_request": 1248,
+      "initial_warmup_calls": 32,
+      "fresh_warm_median_seconds": 31.007694708008785,
+      "gpu_control_seconds": 43.249696666549426,
+      "reduction_percent": 28.30540536023912,
+      "evidence": "docs/design/validation/qwen21-native-cohort-current-20261011.json",
+      "reference_comparison_valid": false,
+      "reference_reason": "Previous v1 reference omitted64 FFN weights; corrected reference cohort is still running",
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/z-base-formats-v2-readonly-private/libturbocider.dylib --model qwen-image-2.1 --source results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json --cache outputs/new-qwen-frozen-cache"
+    }
+  ],
+  "pending": [
+    "Qwen corrected reference and further native parameter/shape screening",
+    "Z external-framework and additional share/join candidates",
+    "FLUX9B quantized frameworks and validated hybrid partition",
+    "LTX complete media best configurations and successful reference layouts"
+  ]
+}

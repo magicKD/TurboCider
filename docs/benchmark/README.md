@@ -12,7 +12,7 @@ Z-Image Turbo / LTX distilled checkpoint 单列为 base，不拿不同蒸馏模�
 以下每组保留自己的日期、构建、边界和样本，不拼接不同实验的最快数值。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面18组为已完成的第一
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面19组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
@@ -60,6 +60,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | --- | ---: | ---: | --- | --- |
 | 10-10 Qwen 原 Q4_K_M，512²，40 步 | 44.428 | 36.870，Private W8A8 通道分割 | 1.205× / 17.0% | 每路两 fresh warm；相同 BF16 I/O 前置负载 |
 | 10-10 Qwen BF16，512²，40 步 | 43.353 | 33.121，checkpoint-bound frozen Core ML | 1.309× / 23.6% | 四 fresh warm/路；CPU busy diagnostic，非独占资格 |
+| 10-11 Qwen BF16，512²，40步 | 43.250 | 31.008，Public Core ML frozen W6144 | 1.395× /28.3% | 原生完整ABBA；同窗口mflux噪声输出不作外部排名 |
 | 10-11 FLUX9B BF16，512²，4步 | 8.221 | N/A，9B DiT分区未验证 | mflux对照见第5节 | 四fresh warm/路；同源BF16 stock ABBA |
 | 10-11 Z BF16，512²，8步 | 7.551 | 6.187，frozen image-only W8A8 | 1.220× /18.1% | 四fresh warm/配置；完整正反序 |
 | 10-11 Z INT8 ConvRot，512²，8步 | 8.844 | 7.310，Private Comfy W8A8 | 1.210× /17.3% | fastest measured GPU denominator，非慢control |
@@ -158,6 +159,10 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
   峰值约 36.1 GB、Private/GPU 约 30.6–31.0 GB。CPU load 检查失败，
   所以保留 busy diagnostic，不将最小单样本写成“最佳”。09 月更早
   同库 campaign 的 42.672 / 36.959 / 30.193 s 只在自身 campaign 解读。
+  新10-11原生GPU/frozen正反序为43.249697 /31.007695s，四fresh/路，
+  相近构图下RGB correlation0.993641。原同窗口mflux布局遗漏64个FFN
+  权重产生噪声，不作速度分母；修复后完整加载与图像已确认，新框架
+  正反序正在重测。[当前原生结果与参考加载修复](QWEN_BF16_FRAMEWORKS.md)。
 - Z BF16：512² 已测 frozen 比 runtime v2 的 6.444 s 更快。1024²
   没有匹配的 frozen 分母，runtime v1 是该组最快已测；c704 微图
   少调用却只让完整请求名义省 0.38%，未替换 c352。
@@ -226,7 +231,7 @@ process-tree physical peak、系统 compression/swap 和输出/质量证据。
 首次完整模型 SHA 持久化，后续 generation 未变时只做轻量身份检查；
 不要在每个 inference 前重扫模型、用 I/O 预热制造冷启动优势。
 
-`make test-base-benchmark` 使用项目 Python 环境运行42项无模型推理的
+`make test-base-benchmark` 使用项目 Python 环境运行定向无模型推理的
 报告/样本/路线/质量/框架边界回归；raw目录在本机存在时还复核小型证据
 与MP4摘要，不重新扫描模型权重。另已复核24项source注册、原SourceLease
 fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
@@ -237,7 +242,7 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 这份测量报告不是所有设备、编辑/LoRA、所有尺寸或Public/hard-RAM发布
 资格；[目标逐项审计](COMPLETION_AUDIT.md)区分已交付要求与这些限制。
 
-[18 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[19 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
 第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大

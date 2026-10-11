@@ -191,6 +191,10 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_mflux_original_layout.py
 	@"$(PYTHON)" -B tests/native/test_qwen21_mflux_framework_screen.py
 	@"$(PYTHON)" -B tests/native/test_qwen21_mflux_framework_evidence.py
+	@"$(PYTHON)" -B tests/native/test_z_mflux_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_mflux_cow_text_layout.py
+	@"$(PYTHON)" -B tests/native/test_mflux_weight_coverage.py
+	@"$(PYTHON)" -B tests/native/test_qwen_native_cohort_evidence.py
 test-acceleration-contract: test-runtime-ane-host
 	@"$(PYTHON)" -B tests/native/test_ane_placement.py
 	@"$(PYTHON)" -B tests/native/test_runtime_ane_model_screen.py

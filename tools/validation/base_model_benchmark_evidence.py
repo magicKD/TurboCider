@@ -161,6 +161,15 @@ def export():
         steps=11, date="2026-10-11", routes=routes,
         timing_scope="native full MP4 request_wall; one cold and one immediate conditioning-cache-hit warm per process",
         note="GPU/INT8 forward+reverse two warm each; FP16 one warm; media drift and system pressure retained; stock mlx-serve original-pack preflight rejects before generation"))
+    native_qwen, binding = source("docs/design/validation/qwen21-native-cohort-current-20261011.json", ("complete_native_cohort",))
+    if native_qwen["reference_latency_ranking_valid"] is not False:
+        raise ValueError("invalid-reference diagnostic cannot become a speed denominator")
+    routes = [measured(route["route"], route["cold_seconds"], route["fresh_warm_seconds"],
+                       physical_peaks=route["physical_peaks"], repeated_prompt_seconds=route["repeat_seconds"])
+              for route in native_qwen["routes"]]
+    campaigns.append(dict(evidence=binding, model="qwen-image-2.1-current-BF16-native", geometry=[512, 512], steps=40,
+        date="2026-10-11", routes=routes, timing_scope="native/API full PNG wall; four actual fresh warm per route; separate repeat; request-local GPU encoder",
+        note="native GPU/frozen complete ABBA; reference omitted64 FFN weights and rendered noise, never promoted as a latency denominator"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,

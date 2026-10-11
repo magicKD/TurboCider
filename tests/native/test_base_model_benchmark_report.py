@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 18)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 19)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -53,6 +53,9 @@ class BaseBenchmarkReportTests(unittest.TestCase):
                          {"experimental-quality-fail"})
         busy = next(c for c in self.report["campaigns"] if c["evidence"]["status"] == "complete_busy_diagnostic")
         self.assertIn("both CPU load checks failed", busy["note"])
+        current = next(c for c in self.report["campaigns"] if c["model"] == "qwen-image-2.1-current-BF16-native")
+        self.assertEqual({row["route"] for row in current["routes"]}, {"native-gpu", "native-frozen"})
+        self.assertIn("rendered noise", current["note"])
 
     def test_docs_local_links_and_no_machine_specific_paths(self):
         for doc in sorted((ROOT / "docs/benchmark").glob("*.md")):

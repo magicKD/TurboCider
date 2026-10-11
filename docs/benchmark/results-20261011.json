@@ -1404,6 +1404,70 @@
       ],
       "timing_scope": "native full MP4 request_wall; one cold and one immediate conditioning-cache-hit warm per process",
       "note": "GPU/INT8 forward+reverse two warm each; FP16 one warm; media drift and system pressure retained; stock mlx-serve original-pack preflight rejects before generation"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/qwen21-native-cohort-current-20261011.json",
+        "sha256": "5daf31435663500667229c04613bbda2d780ab8ba6a8304961cadcaf3c56f8d9",
+        "status": "complete_native_cohort"
+      },
+      "model": "qwen-image-2.1-current-BF16-native",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            46.32780491595622,
+            45.30214333406184
+          ],
+          "warm_seconds": [
+            43.248464000062086,
+            43.304778457968496,
+            43.250929333036765,
+            43.20743141695857
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.249696666549426,
+          "physical_peaks": [
+            30172452416,
+            30782969840
+          ],
+          "repeated_prompt_seconds": [
+            42.594616499962285,
+            42.54767191607971
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            38.595304875052534,
+            40.722100708051585
+          ],
+          "warm_seconds": [
+            31.074130750028417,
+            30.941258665989153,
+            31.31229695805814,
+            30.883247833000496
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 31.007694708008785,
+          "physical_peaks": [
+            35534493896,
+            35098466000
+          ],
+          "repeated_prompt_seconds": [
+            30.20941374998074,
+            30.1146783339791
+          ]
+        }
+      ],
+      "timing_scope": "native/API full PNG wall; four actual fresh warm per route; separate repeat; request-local GPU encoder",
+      "note": "native GPU/frozen complete ABBA; reference omitted64 FFN weights and rendered noise, never promoted as a latency denominator"
     }
   ],
   "missing_current_comparisons": [
