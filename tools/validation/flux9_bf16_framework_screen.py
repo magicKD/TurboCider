@@ -46,6 +46,25 @@ def write_json(path, data):
     path.write_text(json.dumps(data, indent=2, allow_nan=False) + "\n")
 
 
+def registered_hashes(paths, registration):
+    """Benchmark-only generation-bound source reuse; never write model dirs."""
+    cache = json.loads(registration.read_text()) if registration.is_file() else {}
+    result = {}
+    for path in paths:
+        identity = generation(path)
+        previous = cache.get(str(path))
+        digest = previous.get("sha256") if isinstance(previous, dict) and previous.get("generation") == identity else None
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            digest = sha256_file(path)
+            if generation(path) != identity:
+                raise ValueError("source changed during initial verification")
+        result[str(path)] = digest
+        cache[str(path)] = dict(generation=identity, sha256=digest)
+    registration.parent.mkdir(parents=True, exist_ok=True)
+    write_json(registration, cache)
+    return result
+
+
 def requests(output):
     return [dict(model="flux2-klein-9b", operation="image.generate", prompt=prompt, width=512,
                  height=512, steps=4, seed=42, audio=False, execution="gpu", residency="resident",
@@ -114,14 +133,21 @@ def mflux_child(args, output):
     import numpy as np
     from mflux.models.flux2.variants import Flux2Klein
     from mflux.models.common.config import ModelConfig
+    from mflux.models.flux2.weights.flux2_weight_definition import Flux2KleinWeightDefinition
+    from mflux_weight_coverage import inspect_reference_coverage
 
+    previous_cache_limit = mx.set_cache_limit(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None
     started = time.perf_counter()
     model = Flux2Klein(model_path=str(args.model), model_config=ModelConfig.flux2_klein_9b(), quantize=None)
     report = dict(engine="mflux", constructor_seconds=time.perf_counter() - started,
                   precision=str(ModelConfig.precision), quantization=model.bits,
+                  reference_cache_limit_bytes=(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None,
+                  previous_reference_cache_limit_bytes=previous_cache_limit,
                   instrumentation="stage-eval-observer" if args.stage_probe else "host-step-counter-only; no extra GPU sync or encoder wrapper",
                   packages={name: importlib.metadata.version(name) for name in
                             ("mlx", "torch", "transformers", "numpy", "Pillow", "safetensors")}, runs=[])
+    report["required_weight_coverage"] = inspect_reference_coverage(args.model, Flux2KleinWeightDefinition,
+        dict(vae=model.vae, transformer=model.transformer, text_encoder=model.text_encoder))
     if model.bits is not None or str(ModelConfig.precision) != "mlx.core.bfloat16":
         raise ValueError("original BF16, no quantization, required")
 
@@ -193,24 +219,31 @@ def parent(args):
     args.output.mkdir(parents=True)
     model_sources = sorted([*args.model.rglob("*.safetensors"), *args.model.rglob("*.json"),
                             *args.model.rglob("*.jinja"), *args.model.rglob("merges.txt")])
-    code_sources = sorted((args.mflux / "src").rglob("*.py")) + [args.library, Path(__file__).resolve()]
+    code_sources = sorted((args.mflux / "src").rglob("*.py")) + [args.library, Path(__file__).resolve(),
+        ROOT / "tools/validation/mflux_weight_coverage.py"]
     identities = {str(path): generation(path) for path in (*model_sources, *code_sources)}
-    # One whole-window initial identity scan, never a pre-inference payload hash.
-    hashes = {str(path): sha256_file(path) for path in (*model_sources, *code_sources)}
+    # Initial source generation verified once across campaigns; code is small
+    # and independently bound each time. No inference-time model payload scan.
+    hashes = registered_hashes(model_sources, ROOT / "outputs/benchmark-source-registrations/flux9-bf16.json")
+    hashes.update({str(path): sha256_file(path) for path in code_sources})
+    reference_sources = code_sources[:-3]
     summary = dict(schema="tc-flux9-bf16-framework-screen-v1", status="running", qualification_passed=False,
                    stage_probe=args.stage_probe,
                    task=dict(model="flux2-klein-9b", size=512, steps=4, seed=42, dynamic_text=False, loras=[]),
                    model_sha256={str(path.relative_to(ROOT)): hashes[str(path)] for path in model_sources},
                    source_sha256={"libturbocider.dylib": hashes[str(args.library)],
-                                  "flux9_bf16_framework_screen.py": hashes[str(Path(__file__).resolve())]},
-                   mflux_source_files=len(code_sources)-2,
+                                  "flux9_bf16_framework_screen.py": hashes[str(Path(__file__).resolve())],
+                                  "mflux_weight_coverage.py": hashes[str(ROOT / "tools/validation/mflux_weight_coverage.py")]},
+                   mflux_source_files=len(reference_sources),
                    mflux_source_snapshot=hashlib.sha256(json.dumps(
-                       [(str(path.relative_to(args.mflux)), hashes[str(path)]) for path in code_sources[:-2]],
+                       [(str(path.relative_to(args.mflux)), hashes[str(path)]) for path in reference_sources],
                        separators=(",", ":")).encode()).hexdigest(),
                    mflux_commit=subprocess.check_output(["git", "-C", str(args.mflux), "rev-parse", "HEAD"], text=True).strip(),
                    order=args.order.split(","), trials=[],
+                   reference_cache_mib=args.reference_cache_mib,
                    timing_scope="first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
-                   source_policy="whole-window initial SHA once; unchanged canonical/stat generation at arm boundaries; no per-inference model hash or OS cache purge")
+                   source_policy="first source generation SHA then durable benchmark metadata reuse; unchanged canonical/stat guard at arm boundaries; no per-inference model hash or OS cache purge",
+                   observer_policy="bounded-async-record-fsync-v1" if args.async_evidence else "synchronous-record-fsync-v1")
     write_json(args.output / "summary.json", summary)
     try:
         for index, engine in enumerate(summary["order"]):
@@ -225,10 +258,13 @@ def parent(args):
                        "--output", str(destination)]
             if args.stage_probe:
                 command.append("--stage-probe")
+            if args.reference_cache_mib is not None:
+                command += ["--reference-cache-mib", str(args.reference_cache_mib)]
             print(json.dumps(dict(starting=index, engine=engine)), flush=True)
             with (destination / "stdout.txt").open("x") as out, (destination / "stderr.txt").open("x") as err:
                 memory = run_sampled(command, repo=ROOT, output=destination, stem="run", env=env, stdout=out,
                                      stderr=err, timeout=900, interval_ms=100, max_gap_ms=500,
+                                     async_evidence=args.async_evidence,
                                      child_roles=(("python_helper", str(args.python.resolve(strict=True))),)
                                                  if engine == "mflux" else ())
             check_generations(identities)
@@ -272,6 +308,9 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--child", choices=("native", "mflux"))
     parser.add_argument("--stage-probe", action="store_true", help="separate optional observer with eval phase fences; not default whole-request ranking")
+    parser.add_argument("--async-evidence", action="store_true", help="same bounded async record writer on both arms; gap/verification gate unchanged")
+    parser.add_argument("--reference-cache-mib", type=int, choices=(0, 1024, 4096),
+                        help="explicit process-local reference free-cache candidate; unset is stock")
     args = parser.parse_args()
     for field in ("model", "library", "mflux"):
         setattr(args, field, getattr(args, field).resolve(strict=True))

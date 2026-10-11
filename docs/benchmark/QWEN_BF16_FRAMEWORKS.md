@@ -1,41 +1,84 @@
-# Qwen BF16：本轮原生混合结果与参考加载修复
+# Qwen BF16：有效完整框架对照
 
 2026-10-11，M4 Max64GiB/macOS26.6.2。原BF16 encoder/DiT/VAE、512²、
-40步、seed29、三个fox-light prompts，无LoRA。相同当前native库，GPU/
-frozen完整正反序，每新进程cold、两fresh、一次repeat；constructor另列。
-同窗口的mflux BF16/Q4/Q8虽完成计时，却未正确加载64个FFN权重，图片
-是明显彩色噪声；它们不是成功生成对照，不作任何跨框架倍率的分母。
+40步、seed29、三个fox-light prompts，无LoRA。最新有效v11为十进程
+五路线回文顺序；每新进程cold、两fresh、一次repeat，constructor另列。
+全部40张PNG和十条独立process-tree memory证据完整；不删除慢样本。
 
-## 有效原生对照
+## 同窗口完整生成
 
-| 路线 | cold 正/反 s | 四fresh中位 s | repeat中位 s | tree peak GB（十进制） |
-| --- | --- | ---: | ---: | --- |
-| 原BF16 GPU | 46.328 /45.302 | 43.249697 | 42.571144 | 30.17–30.78 |
-| 原BF16 GPU/Core ML frozen W6144 | 38.595 /40.722 | 31.007695 | 30.162046 | 35.10–35.53 |
+| 路线 | cold 正/反 s | 四fresh中位 s | repeat 正/反 s | tree peak GB（十进制） |
+| --- | --- | ---: | --- | --- |
+| TurboCider GPU | 47.444 /45.289 | 43.238745 | 42.628 /42.620 | 30.65–30.78 |
+| TurboCider GPU/Core ML frozen W6144 | 38.798 /48.480 | 31.058807 | 30.064 /30.375 | 35.73–36.01 |
+| mflux BF16 | 51.721 /50.509 | 48.511753 | 46.267 /46.183 | 50.91–51.01 |
+| mflux affine Q4 | 57.595 /57.313 | 56.335344 | 53.802 /51.945 | 51.24–51.32 |
+| mflux affine Q8 | 57.556 /57.655 | 55.100963 | 55.138 /52.124 | 51.42–51.43 |
 
-混合对自身GPU为1.395×、省时28.305%，不是旧CPU busy窗口的33.121s，
-也不是把repeat cache hit混入fresh。原生四个独立memory verifier全部
-complete；该十进程完整窗口system compression/swap-out增量都0，
-decompression/swap-in另保留，不因此声称全设备或硬RAM资格。
+相对mflux BF16，原生GPU为1.122×、少10.870%；frozen为1.562×、少
+35.977%。frozen相对自身GPU少28.169%。这是完整框架路径比较，不是
+等组件生命周期的纯kernel倍率：原生encoder为GPU/request-local，
+mflux保留组件；混合是部分W8A8近似，而非严格BF16同精度。
+mflux Q4/Q8按stock定义保留BF16 text encoder，不等价于原GGUF
+encoder与DiT同时Q4_K_M。量化在此窗口没有带来更低延迟。
 
-已恢复的32个checkpoint-bound W6144/r1024 source graphs与compiled
-manifest放入独立benchmark cache，实际可加载。每40步请求1248次runtime
-与首次32次warmup，failure0，checkpoint SHA通过；首步仍GPU，后续
-image-only FFN分工。是Public Core ML配置，不称Private/native INT8 MAC
-trace。encoder为原GPU/request-local策略，未靠更换或跳过encoder取胜。
+## 参考cache=0：更低压力的独立完整对照
 
-已查看warm-light GPU/frozen：狐狸姿态、脸部、雪景/构图接近，局部毛发
-略有差异。完整RGB correlation0.993641、Gaussian11 SSIM0.958431、
-MAE4.609/255；alpha MAE0.05455/255。RGBA保留，白背景合成另列。
-有限图片观察和单seed不代表通用质量资格；用户允许近似，不抹掉误差。
+process-local MLX free-cache limit=0，原模型/数学/40步不变、不改OS策略。
+六进程GPU→frozen→mflux→mflux→frozen→GPU，24PNG/6memory完整，
+四fresh/route。它是单独调优候选，不与上方stock默认样本混池。
 
-## 不得用失败参考制造领先
+| 路线 | 四fresh中位 s | cold 正/反 s | tree peak GB（十进制） |
+| --- | ---: | --- | --- |
+| TurboCider GPU | 43.347453 | 47.661 /45.526 | 29.75–30.78 |
+| TurboCider frozen | 31.250897 | 39.152 /42.116 | 35.58–36.17 |
+| mflux BF16/cache0 | 45.968219 | 49.371 /47.984 | 32.92–33.84 |
 
-原Comfy DiT有32个`img_mlp.gate_up.weight`，每个包含gate/up两个连续
-矩阵。mflux0.19.2 mapping要求`gate_layer.weight`与`proj.weight`，而
-stock mapper不拒绝缺失field；v1派生布局未拆分这32个tensor，因此
-64个required linears留在random initialization。路径可读、步数40、
-完整PNG与memory complete都不能证明原模型正确执行。
+对该窗口参考，GPU为1.060×、少5.701%；frozen为1.471×、少32.016%。
+frozen对自己的GPU少27.906%。参考pressure大幅下降：compression累计
+2.65–3.36GB，swap-out0；不是完全无pressure。相比stock默认约51GB
+peak、48.512s，候选更省内存且更快，但两独立cohort不构成严格单因素
+同窗口A/B因果证明，也不把43.239/45.968跨轮拼倍率。
+
+[cache0独立便携记录](../design/validation/qwen21-cache0-framework-current-20261011.json)
+保留实际cache bytes/previous limit、全部样本、raw/PNG/内存链和输出
+差异。这使“纯GPU大幅领先参考”的结论更保守：对已调低缓存参考，
+GPU只有约6%倍率优势，GPU/ANE约47%；两者cold/setup另列。
+
+## 内存压力是结果的一部分
+
+mflux各窗口system compression累计增量约81–121GB，一个BF16窗口
+swap-out4.263GB；累计活动不是当时占用，也不是单进程独占。
+native GPU/frozen的compression/swap-out增量均0，少量swap-in/decompression
+仍保留。mflux BF16 fresh57.285204s慢样本保留在中位数中，不能因压力
+删掉它。process-tree physical peak含load+cold+warm+exit，不归因所有
+外部Core ML服务与driver，也不是硬RAM容量资格。
+
+因此目前可以说本机stock完整路径原生更快、更省观测内存，不能把全部
+收益归因Metal数学。另起同窗口cache-limit候选以核验参考内存策略，
+不改OS/wired limit、不关闭用户app，不与stock样本混池。
+
+## 实际GPU/ANE执行与输出差异
+
+32个checkpoint-bound W6144/r1024 source graphs与compiled manifest
+已经恢复到独立benchmark cache，当前实际可加载。每40步请求1248次
+runtime，首次32次warmup，failure0，checkpoint SHA通过；首步GPU，
+后续image-only FFN为ANE6144/GPU6144分工。Public Core ML配置不等于
+Private/native INT8 MAC或硬件并行occupancy trace。
+
+warm-light GPU/frozen的狐狸姿态、雪景/构图接近，局部毛发有差异：
+RGB correlation0.993641、Gaussian11 SSIM0.958431、MAE4.609/255；
+alpha MAE0.05455/255。同一prompt的native/mflux BF16 correlation0.863236、
+SSIM0.799399、MAE22.614/255，构图有差异，不能宣称跨engine画质parity。
+原生RGBA、参考RGB的opaque alpha与白背景composited RGB分别报告，
+不悄悄丢掉透明度。单seed/有限prompt不证明广泛感知资格。
+
+## 之前的无效参考仍保留，不作为速度分母
+
+原Comfy DiT有32个img_mlp.gate_up.weight，mflux0.19.2要求分别为
+gate_layer.weight与proj.weight。v1派生布局遗漏拆分，64个required
+linears留在random initialization，图片为彩色噪声。即使步数、完整PNG
+和memory通过，也不是原模型正确执行。
 
 | 原错误参考路线 | 诊断fresh中位 s | 有效排名 |
 | --- | ---: | --- |
@@ -43,29 +86,27 @@ stock mapper不拒绝缺失field；v1派生布局未拆分这32个tensor，因�
 | mflux affine Q4，v1 | 60.698671 | 否 |
 | mflux affine Q8，v1 | 61.443489 | 否 |
 
-原始图片、计时和source/memory链全部保留；不修改原失败窗口，也不
-把它称为“mflux完整模型比我们慢1.83×”。已修复的是本仓库的加载布局：
-原BF16 payload不变，只将连续gate/up byte ranges拆成两个required键。
-没有改只读参考代码、权重值、模型步数或推理数学。
+修复的是本仓库无损加载布局：连续gate/up byte ranges拆成required键，
+原BF16 payload不变；参考源码、权重值与步数未改。v2 required coverage
+297 DiT/398 encoder/226 VAE完整。旧v6原生有效43.249697/31.007695s
+单独保留，不与v11混池；v9采样gap579.013ms失败也没有追认为成功。
+v11所有路线统一bounded async证据writer，仍每sample fsync、64record
+上限、结束drain，原500ms最大gap和独立验收门槛未放宽。
 
-## 修复后的真正参考正在重测
+## 证据和复现
 
-v2完整布局所有297个DiT、398个text encoder、226个VAE required targets
-覆盖；新增header gate，拒绝缺失真实parameters或空target假通过。
-CoW encoder仅缩短不消费的352个名字，全部原payload仍保留。旧17.53GB
-重复副本在独立clone验真后移除，原模型未动、可重新生成旧诊断布局。
+[最新有效完整便携记录](../design/validation/qwen21-valid-framework-current-20261011.json)
+保留514个native source输入身份、模型/库/只读mflux源码身份、四fresh
+原始数组、cold/repeat、每请求执行/内存/PNG与完整RGBA差异。raw40张
+PNG、模型与compiled artifacts不进Git。使用mflux0.19.2、commit
+8c00dab2505a96019df9d30bc9c223bf20d733c4，不是未来版本排名。
 
-修复后4步三参考路线均输出可辨识狐狸。另一个完整40步BF16单cold为
-50.961601s，图片正常、memory complete；仍不以单cold替代warm排名。
-新五路线十进程40步回文窗口
-`outputs/qwen21-mflux-original-v9-complete-weights-five-route-20261011`正在
-运行，全部完成并检查图片后再发布真正的外部框架比较。
+入口为tools/validation/qwen21_mflux_framework_screen.py，使用v2完整
+无损布局、build/benchmark-async-v1-private与512²/40步/4request：
+native-gpu,native-frozen,mflux-bf16,mflux-q4,mflux-q8,mflux-q8,mflux-q4,mflux-bf16,native-frozen,native-gpu。
+初次源SHA验真后复用generation-bound注册，不在每次inference扫描模型。
 
-[便携原生结果/原失败参考标记](../design/validation/qwen21-native-cohort-current-20261011.json)
-绑定原source/library SHA、514个native inputs、完整各请求阶段、四树内存、
-16个原生PNG与原参考invalid-output原因。raw40张PNG、模型与compiled
-artifacts不进Git。扩大benchmark目标仍active。
-
-[本机已测最高性能配置与恢复命令](best-local-configs-20261011.json)保留
-request、source/compiled manifest、channel分工和实际调用数；不自动改变
-生产默认，也不因恢复artifact就跳过完整来源检查。
+[旧原生结果/invalid参考标记](../design/validation/qwen21-native-cohort-current-20261011.json)
+和失败raw仍保留。[本机最佳已测配置](best-local-configs-20261011.json)保留
+当前request/manifest与恢复入口，不自动改变生产默认。扩大benchmark
+仍active，额外参数/尺寸/编辑与LTX/FLUX缺口不因此标完成。

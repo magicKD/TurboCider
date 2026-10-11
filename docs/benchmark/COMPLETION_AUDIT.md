@@ -5,6 +5,13 @@
 “本轮交付”不等于所有设备/尺寸/操作或生产/Public/hard-RAM发布资格。
 历史incomplete、质量fail、busy diagnostic和下载receipt均不改写成通过。
 
+下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
+已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
+再加Qwen cache0与FLUX stock/cache0完整ABBA，共25个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+[Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。参考更多cache候选、
+更多native分区/尺寸、FLUX匹配量化/9B混合、LTX完整参数与成功外部
+对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
+
 | 原要求 | 已核验的当前/保留权威证据 | 结论与限制 |
 | --- | --- | --- |
 | 原unsloth Q4_K_M DiT与Q4_K_M encoder下载，VAE保持BF16 | 固定revision/LFS SHA下载receipt；实际各4,199,565,024 /5,027,785,568bytes；后续native imports/原BF16 VAE SHA绑定 | 已完成；原模型/参考仓库未改写，磁盘足够，未删除用户模型 |
@@ -35,10 +42,17 @@
   `source_lease.cpp`、`gguf_packed_bank.cpp`/bounded worker；source保护为
   `native/backends/gguf_read_snapshot.hpp`，不修改权重或算术。
 
-最终发布回归：`make test-base-benchmark`的30项全部通过；source注册24项、
+原阶段发布回归：`make test-base-benchmark`的30项全部通过；source注册24项、
 Qwen options1项、GGUF snapshot1项和SourceLease原生fixture通过。样本
 中位数、campaign SHA、所有benchmark Markdown本地链接、portable路径、
 97帧媒体范围与完整进程树均复核。未运行全量`make test`，未新增模型推理。
+
+扩大阶段新回归：25个campaign/有效Qwen与Z/FLUX最新配对+参考精度/cache0/
+artifact配置边界已进入定向测试；当前make test-base-benchmark的96项
+通过（包含6项FLUX源generation/SHA复用），新实验另保留raw。未运行
+全量make test，不将扩大参数、9B混合或外部LTX空缺当成通过。
+LTX full-config包含E5警告粘连JSON/未知文本拒绝/actual plan配置三项
+新增回归；v1 collector失败保留，新v2完整媒体筛选仍运行中。
 
 ## 不是缺少结果的隐含通过
 
@@ -49,6 +63,7 @@ LTX INT8 nominal不到1%且完整媒体漂移大、FP16更慢，当前推荐GPU�
 Q4/Q8 Z的低peak比BF16优势大于其混合时延收益，不泛称量化必然更快。
 
 报告只保证本机指定任务的真实保留证据，不保证未来版本、任意尺寸/
-seed、产品发布质量、LoRA/编辑/所有硬内存设备。用户要求的本轮下载/
-实现/性能对照/文档已逐项有证据；这些更大产品/研究扩展没有被偷换成本轮
-必需交付，也没有因此声称已经通过。原失败和未运行扩展继续保留。
+seed、产品发布质量、LoRA/编辑/所有硬内存设备。原阶段下载/实现/
+性能对照/文档有上述证据；随后用户明确新增的四家族精度/参数/最佳
+GPU/ANE及成功框架扩大目标是当前必须继续交付的工作，不因原阶段
+完成而缩小或标完成。原失败、参考胜出和未运行扩展继续保留。

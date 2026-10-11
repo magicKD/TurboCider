@@ -9,9 +9,9 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 
 | 家族 | 已有权威实测 | 扩展缺口 / 下一项 |
 | --- | --- | --- |
-| Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；原 BF16 frozen 历史 | BF16/mflux40步对照进行中；mflux affine Q4/Q8、匹配混合、512/1024和share/phase最佳配置再核验 |
-| Z-Image Turbo | 五表示16配置GPU/Public/Private/frozen；512/1024分开的历史 | 原 BF16 无损派生布局后对照mflux；补affine4/8、尺寸与channel候选的端到端筛选，不只微基准 |
-| FLUX.2 Klein 9B | 原 BF16 native/mflux ABBA | 4/8bit同源派生与mlx-serve成功路径；9B DiT混合分区尚未验证，不能以N/A代表探索完成 |
+| Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
+| Z-Image Turbo | 五表示16配置；最新七路线BF16/frozen/Public/Private/mflux affine4/8完整对照 | 额外尺寸、Private channel/F16/F32 join候选的完整请求筛选，不只微基准 |
+| FLUX.2 Klein 9B | stock配对8.042/8.828s；cache0配对native7.980/reference7.352s，参考胜出；stock三精度筛选 | 9B compiled GPU、匹配g32量化与mlx-serve成功路径；9B DiT混合分区尚未验证 |
 | LTX 2.5 distilled | 当前完整97帧音视频GPU/INT8/FP16；原组合mlx-serve memory preflight失败 | 本机更快GPU/混合profile、可运行的量化框架布局和完整媒体对照；不能只重用旧2.7%或新0.86%结果 |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
@@ -20,6 +20,23 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 额外LoRA/PE/VDN附件仍不进入base排名；不同checkpoint不互当分母。
 
 ## 本轮实际新增证据
+
+最新终态优先于下方历史过程：Qwen v11完整有效五路线GPU/frozen/mflux
+BF16/Q4/Q8四fresh中位43.238745/31.058807/48.511753/56.335344/55.100963s，
+40PNG/10memory完整；[完整记录与内存压力](QWEN_BF16_FRAMEWORKS.md)。
+Z v5完整七路线GPU/frozen/Private/Public/mflux BF16/Q4/Q8为7.363311/
+5.780123/6.139409/6.537484/9.519604/9.971474/10.080610s，56PNG/14memory
+完整；[七路线来源/执行/冷启动](Z_IMAGE_FRAMEWORKS.md)。
+FLUX最新stock参考BF16/Q4/Q8为8.962395/8.303592/9.466238s，24PNG/
+6memory完整；没有同窗口native，不跨轮算倍率，[精度与缺口](FLUX_PRECISIONS.md)。
+后续Qwen cache0六进程完整对照GPU43.347453/frozen31.250897/mflux
+45.968219s；参考peak32.92–33.84GB、swap-out0，原生对该参考为1.060×/
+1.471×。不能只用较慢stock数字宣传优势，也不跨轮拼倍率。
+FLUX v5最新原生/参考同窗口8.042414/8.828487s，为1.098×，16PNG/
+4memory完整；旧1.370×不当成当前优势。进一步cache0完整ABBA为
+native7.979642/mflux7.351531s，参考胜出、native多用8.544%时间。
+9B compiled GPU/混合/匹配量化缺口不因此标完成。
+扩大目标仍active/partial，不因新增成功就把参数/混合/框架空缺标完成。
 
 1. 为Qwen原BF16创建只读派生布局：encoder仅键名调整，VAE仅键名与
    已确认singleton空间轴reshape；整个payload字节逐一校验一致。
@@ -54,7 +71,8 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 7. v2完整布局已拆分全部32个gate_up，完整payload仍相同；required
    coverage297 DiT/398 encoder/226 VAE均满。三参考4步输出狐狸；另
    BF16完整40步单cold50.961601s、图片正常、memory complete。新的
-   v9五路线正反序正在运行，之后才做实际框架排名。
+   v9五路线正反序后来因采样gap失败；v11换同门槛async observer后
+   完整成功，上方最新结果才是有效框架排名。
 
 原始实验路径：
 
@@ -66,9 +84,9 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 - `outputs/qwen21-mflux-original-v6-40step-five-route-palindrome-20261011/summary.json`：
   已完成，但MF参考噪声仅作失败诊断，native两route有效。
 - `outputs/qwen21-mflux-original-v9-complete-weights-five-route-20261011/summary.json`：
-  修复后五路线十进程40步对照正在运行。
+  修复后该窗口因memory gap失败，保留，不追认为成功。
 - `outputs/z-mflux-original-v4-full-seven-route-20261011/summary.json`：
-  七路线完整8步对照串行排在Qwen之后；v9因memory gap失败，所以未启动。
+  原排队七路线；v9失败所以当时未启动，后续v5已完整完成。
 - [原生完整结果及invalid参考标记](QWEN_BF16_FRAMEWORKS.md)
 - [可携带预检/无损证明/alpha差异记录](../design/validation/qwen21-mflux-layout-precheck-20261011.json)
 
@@ -81,7 +99,7 @@ RGB；不会悄悄丢掉透明度或宣称两边输出功能完全等价。
 - `z_mflux_framework_screen.py`已加入原生GPU/frozen/Public/Private与
   mflux BF16/affine4/8；Private候选支持2048–8192的七个已声明partial
   shares、F16/F32 join，核对actual channels与join receipt，不仅记录env。
-  BF16/Q4/Q8短预检图片正常。七路线完整对照尚未启动，新增shares/
+  BF16/Q4/Q8短预检图片正常。七路线v5完整对照已完成，新增shares/
   join候选尚未硬件实测，不进入最佳配置或性能表。
 - Qwen派生encoder的大副本占用影响下一批模型布局预算。新增held-fd
   APFS clone + compact-header工具，仅缩短reference不消费的352个tensor
@@ -112,19 +130,39 @@ blocked-fsync/overflow/write-error三项、真实CPU进程独立replay均通过�
 新mflux BF16四请求窗口`qwen21-mflux-original-v10-async-memory-precheck-20261011`
 完整1953samples，actual最大gap110.011ms，allowed仍500ms，memory complete。
 新匹配库`build/benchmark-async-v1-private`已经重建，源/工具身份不借旧库。
-LTX完整配置入口也已准备：persistent与clean-exec、GPU/Sol/text256/INT8
-独立口径；尚未硬件实测，不把finalizer estimate伪称同session request_wall。
+LTX完整配置入口已启动：persistent与clean-exec、GPU/Sol/text256/INT8
+独立口径；尚未terminal完成，不把finalizer estimate伪称同session request_wall。
 
 当前owned串行任务：
 
 - `outputs/qwen21-mflux-original-v11-async-five-route-20261011`：修复后的
-  完整五路线40步正反序，使用新库与相同async observer，目前运行中。
+  完整五路线40步正反序，使用新库与相同async observer，terminal complete。
 - `outputs/z-mflux-original-v5-async-seven-route-20261011`：原生四路线与
-  三参考精度8步正反序，排在Qwen完整成功之后，未启动时不标运行。
-- `flux9_mflux_quant_screen.py`已准备stock BF16/Q4/Q8参考精度入口，
+  三参考精度8步正反序，terminal complete。
+- `outputs/qwen21-mflux-cache0-v1-20261011`：完整同窗口GPU/frozen/
+  mflux BF16 process-local cache=0候选，terminal complete；仍保留原
+  40步/4request/500ms memory门槛，不改OS策略，不与stock样本混池。
+- `flux9_mflux_quant_screen.py`已完成stock BF16/Q4/Q8参考精度入口，
   独立标精度与required parameter coverage，不与native BF16拼等精度
-  倍率；尚未实测。原生group64与quantized embedding尚未验证，后续
+  倍率；最新六进程完整实测已完成。原生group64与quantized embedding尚未验证，后续
   同源压缩表示/匹配layout仍需补齐，不因此把FLUX量化目标标完成。
+- `outputs/flux9-bf16-framework-v5-async-matched-20261011`：新同窗口BF16
+  native→mflux→mflux→native配对，使用匹配async build、完整required
+  source coverage；terminal complete，实际1.098×而非旧1.370×。
+- `outputs/flux9-bf16-framework-v6-cache0-matched-20261011`：独立同窗口
+  BF16 reference cache0候选，完整ABBA；不改模型/数学/OS策略、不混
+  stock样本，terminal complete，参考胜出，负结果保留。
+- `outputs/ltx-full-configs-v1-palindrome-20261011`：terminal failed；GPU/
+  INT8各两完整视频与memory完成，Core ML E5警告粘连JSON导致collector
+  解析失败，不推广完整排名。raw/媒体保留，显式诊断解析器已修正。
+- `outputs/ltx-full-configs-v2-explicit-diagnostics-20261011`：已确认owned进程
+  实际开始完整A/V推理。8配置/16arm正反序，quality/Sol/text256的
+  GPU与INT8 batch，另GPU/INT8 clean-exec；每arm两完整704×448×97/
+  24fps/11步/stereo MP4，目标32段，不预填成功数量或赢家。
+  batch同进程warm与clean-exec新进程conditioning-hit/estimate边界
+  分开统计；近似attention与INT8差异需完整媒体比较后报告。
+  Core ML E5 resource/recompile消息与raw stdout SHA显式保留，未知
+  文本仍拒绝；不隐去cold setup或伪造物理ANE/无warning资格。
 
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 但仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器

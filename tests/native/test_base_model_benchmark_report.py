@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 19)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 25)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -80,6 +80,66 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         for cold, warm in (([], [1]), ([1], []), ([True], [1]), ([1], [float("nan")]), ([1], [0])):
             with self.subTest(cold=cold, warm=warm), self.assertRaises(ValueError):
                 measured("test", cold, warm)
+
+    def test_new_valid_framework_cohorts_keep_distinct_precision_and_scope(self):
+        specs = (
+            ("qwen-image-2.1-valid-framework-cohort", 5, 40),
+            ("z-image-turbo-valid-framework-cohort", 7, 8),
+            ("flux2-klein-9b-stock-reference-precisions", 3, 4),
+            ("qwen-image-2.1-cache0-framework-cohort", 3, 40),
+        )
+        for model, count, steps in specs:
+            campaign = next(c for c in self.report["campaigns"] if c["model"] == model)
+            self.assertEqual((len(campaign["routes"]), campaign["steps"]), (count, steps))
+            self.assertTrue(all(row["warm_sample_count"] == 4 for row in campaign["routes"]))
+            evidence = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+            self.assertIs(evidence["qualification_passed"], False)
+            self.assertIs(evidence["goal_complete"], False)
+        flux = next(c for c in self.report["campaigns"] if c["model"] == "flux2-klein-9b-stock-reference-precisions")
+        self.assertIs(flux["native_comparison_valid"], False)
+        self.assertIn("no cross-cohort native ranking", flux["note"])
+        cached = json.loads((ROOT / "docs/design/validation/qwen21-cache0-framework-current-20261011.json").read_text())
+        self.assertEqual(cached["reference_cache_mib"], 0)
+        for trial in cached["trials"]:
+            if trial["route"].startswith("mflux-"):
+                self.assertEqual(trial["report"]["reference_cache_limit_bytes"], 0)
+
+    def test_latest_flux_pair_uses_actual_coverage_and_current_same_cohort_ratio(self):
+        campaign = next(c for c in self.report["campaigns"] if c["model"] == "flux2-klein-9b-current-BF16-native-mflux")
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertIs(data["reference_required_weight_coverage_verified"], True)
+        self.assertEqual(data["order"], ["native", "mflux", "mflux", "native"])
+        self.assertAlmostEqual(data["fresh_warm_speedup"],
+            data["medians"]["mflux"]["fresh_warm_seconds"] / data["medians"]["native"]["fresh_warm_seconds"])
+        self.assertLess(data["fresh_warm_speedup"], 1.2)
+        cached = next(c for c in self.report["campaigns"] if c["model"] == "flux2-klein-9b-cache0-BF16-native-mflux")
+        proof = json.loads((ROOT / cached["evidence"]["path"]).read_text())
+        self.assertEqual(proof["reference_cache_mib"], 0)
+        self.assertLess(proof["fresh_warm_speedup"], 1)
+        self.assertIn("retained negative result", cached["note"])
+
+    def test_retained_winners_are_from_their_actual_cohort(self):
+        data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        self.assertIs(data["goal_complete"], False)
+        self.assertIs(data["qualification_passed"], False)
+        for configuration in data["configurations"]:
+            evidence = json.loads((ROOT / configuration["evidence"]).read_text())
+            if configuration.get("selected_route") == "native":
+                self.assertEqual(configuration["request"]["execution"], "gpu")
+                self.assertIs(configuration["request"]["allow_approximation"], False)
+                self.assertEqual(configuration["fresh_warm_median_seconds"], evidence["medians"]["native"]["fresh_warm_seconds"])
+                self.assertTrue((ROOT / configuration["library"]).is_file() or not (ROOT / configuration["model_root"]).exists())
+                continue
+            routes = {row["route"]: row for row in evidence["routes"]}
+            self.assertEqual(configuration["fresh_warm_median_seconds"], routes["native-frozen"]["fresh_warm_median"])
+            self.assertEqual(configuration["gpu_control_seconds"], routes["native-gpu"]["fresh_warm_median"])
+            self.assertTrue(configuration["request"]["allow_approximation"])
+            self.assertEqual(configuration["request"]["ane_manifest"], configuration["compiled_manifest"])
+            self.assertNotIn("/Users/", json.dumps(configuration))
+            if (ROOT / configuration["model_root"]).exists():
+                self.assertTrue((ROOT / configuration["library"]).is_file())
+                self.assertTrue((ROOT / configuration["compiled_manifest"]).is_file())
+                self.assertTrue((ROOT / configuration["source_manifest"]).is_file())
 
 
 if __name__ == "__main__":

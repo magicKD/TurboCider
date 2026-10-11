@@ -63,6 +63,8 @@ def audit(screen, layout, build, invalid_reference_reason=None):
     manifest = json.loads(build.read_text())
     if any(sha256_file(ROOT / row["path"]) != row["sha256"] for row in manifest["inputs"]["sources"]):
         raise ValueError("native source/build mismatch")
+    if sha256_file(build.parent.parent / "libturbocider.dylib") != data["library_sha256"]:
+        raise ValueError("native library artifact mismatch")
     receipt = json.loads((layout / "layout-receipt.json").read_text())
     if sha256_file(layout / "layout-receipt.json") != data["layout_receipt_sha256"] or receipt["status"] != "complete_layout_only":
         raise ValueError("same verified layout conversion required")
@@ -77,7 +79,8 @@ def audit(screen, layout, build, invalid_reference_reason=None):
                       full_payload_equal=item["full_payload_equal"], tensor_bindings=len(item["tensor_bindings"]),
                       preparation_seconds=item["preparation_seconds"]) for item in receipt["files"]]),
                   timing_scope=data["timing_scope"], representation_scope=data["representation_scope"],
-                  source_policy=data["source_policy"], trials=[], routes=[], quality=[])
+                  source_policy=data["source_policy"], reference_cache_mib=data.get("reference_cache_mib"),
+                  trials=[], routes=[], quality=[])
     result["reference_latency_ranking_valid"] = invalid_reference_reason is None
     result["invalid_reference_reason"] = invalid_reference_reason
     if invalid_reference_reason:
@@ -85,6 +88,12 @@ def audit(screen, layout, build, invalid_reference_reason=None):
         result["ranking_scope"] = "native GPU versus native frozen only; reference timings retained as invalid-output diagnostics, not speed denominators"
     for trial in data["trials"]:
         validate_runs(trial["report"], trial["route"], data["steps"], data["count"])
+        if trial["route"] == "native-frozen" and any(
+                row["metrics"]["hybrid"].get("runtime_failures_session_total") != 0 for row in trial["report"]["runs"]):
+            raise ValueError("frozen route contains runtime failures")
+        if trial["route"].startswith("mflux-") and data.get("reference_cache_mib") is not None and (
+                trial["report"].get("reference_cache_limit_bytes") != data["reference_cache_mib"] << 20):
+            raise ValueError("actual reference process-local cache candidate differs")
         directory = screen / f'{trial["index"]}-{trial["route"]}'
         memory = trial["memory"]
         if memory["verified"]["complete"] is not True or memory["verified"]["command_exit_code"] != 0:

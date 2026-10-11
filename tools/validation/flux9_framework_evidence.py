@@ -45,6 +45,8 @@ def audit(screen, mlxserve, build_manifest):
     build = json.loads(build_manifest.read_text())
     if any(sha256_file(ROOT / row["path"]) != row["sha256"] for row in build["inputs"]["sources"]):
         raise ValueError("native build/source mismatch")
+    if sha256_file(build_manifest.parent.parent / "libturbocider.dylib") != data["source_sha256"]["libturbocider.dylib"]:
+        raise ValueError("native library artifact mismatch")
     output = dict(schema="tc-flux9-bf16-framework-validation-v1", status="complete_diagnostic", date="2026-10-11",
                   qualification_passed=False, goal_complete=False, hardware="M4 Max 64 GiB/macOS26.6.2",
                   task=data["task"], model_sha256=data["model_sha256"], source_sha256=data["source_sha256"],
@@ -54,6 +56,8 @@ def audit(screen, mlxserve, build_manifest):
                   evidence_sha256=sha256_file(screen / "summary.json"), order=data["order"], trials=[],
                   timing_scope=data["timing_scope"], source_policy=data["source_policy"],
                   scope="same BF16 files and native/reference templates; fresh prompt latency, not equal allocator/residency policy or strict numerical equivalence")
+    output["reference_cache_mib"] = data.get("reference_cache_mib")
+    reference_coverage_complete = True
     for trial in data["trials"]:
         report, memory = trial["report"], trial["memory"]
         if memory["verified"]["complete"] is not True or memory["verified"]["command_exit_code"] != 0:
@@ -69,6 +73,16 @@ def audit(screen, mlxserve, build_manifest):
               len(report["runs"]) != 4 or any(row["actual_steps"] != [0, 1, 2, 3] or row["loras"] or
                   row["actual_quantization"] is not None or row["text_rows"] != 512 for row in report["runs"])):
             raise ValueError("wrong actual original mflux base precision/geometry/work")
+        if report["engine"] == "mflux":
+            if data.get("reference_cache_mib") is not None and report.get("reference_cache_limit_bytes") != data["reference_cache_mib"] << 20:
+                raise ValueError("actual reference process-local cache candidate differs")
+            coverage = report.get("required_weight_coverage")
+            if coverage is None:
+                reference_coverage_complete = False  # Historical cohort; never invent its receipt.
+            elif not isinstance(coverage, dict) or set(coverage) != {"vae", "transformer", "text_encoder"} or any(
+                    type(row.get("required_targets")) is not int or row["required_targets"] <= 0 or
+                    row.get("covered_targets") != row["required_targets"] or row.get("missing") != [] for row in coverage.values()):
+                raise ValueError("incomplete actual reference source coverage")
         if trial["pngs"][2]["rgb_sha256"] != trial["pngs"][3]["rgb_sha256"]:
             raise ValueError("repeat changed output within the same engine")
         output["trials"].append(dict(index=trial["index"], engine=trial["engine"], report=portable(report),
@@ -76,6 +90,7 @@ def audit(screen, mlxserve, build_manifest):
                 "compression_bytes", "decompression_bytes", "swap_in_bytes", "swap_out_bytes")},
             memory_evidence_sha256=memory["evidence_sha256"], memory_report_sha256=memory["report_sha256"],
             pngs=trial["pngs"]))
+    output["reference_required_weight_coverage_verified"] = reference_coverage_complete
     output["medians"] = data["medians"]
     for engine, declared in data["medians"].items():
         actual = [row["request_wall_including_export"] for trial in output["trials"] if trial["engine"] == engine

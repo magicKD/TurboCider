@@ -106,6 +106,7 @@ def mflux_child(args):
     from mflux.models.qwen21.weights.qwen21_weight_definition import Qwen21WeightDefinition
     from mflux_weight_coverage import inspect_reference_coverage
     import mlx.core as mx
+    previous_cache_limit = mx.set_cache_limit(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None
     bits = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8}[args.child]
     coverage = inspect_reference_coverage(args.reference_model, Qwen21WeightDefinition)
     start = time.perf_counter()
@@ -115,6 +116,8 @@ def mflux_child(args):
                   text_embedding_dtype=str(model.text_encoder.embed_tokens.weight.dtype),
                   transformer_input_weight_dtype=str(model.transformer.img_in.weight.dtype),
                   required_weight_coverage=coverage,
+                  reference_cache_limit_bytes=(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None,
+                  previous_reference_cache_limit_bytes=previous_cache_limit,
                   instrumentation="host step counter only; stock model, cache and synchronization",
                   packages={name: importlib.metadata.version(name) for name in ("mlx", "torch", "transformers", "numpy", "Pillow", "safetensors")}, runs=[])
     if str(ModelConfig.precision) != "mlx.core.bfloat16" or model.bits != bits:
@@ -187,6 +190,7 @@ def parent(args):
     identities = {str(path): generation(path) for path in (*files, *code, *metadata_files)}
     summary = dict(schema="tc-qwen21-mflux-framework-screen-v1", status="running", qualification_passed=False,
                    steps=args.steps, count=args.count, order=args.order.split(","), trials=[], model_sha256=hashes,
+                   reference_cache_mib=args.reference_cache_mib,
                    library_sha256=sha256_file(args.library), layout_receipt_sha256=sha256_file(args.reference_model / "layout-receipt.json"),
                    mflux_commit=subprocess.check_output(["git", "-C", str(args.mflux), "rev-parse", "HEAD"], text=True).strip(),
                    mflux_source_snapshot=hashlib.sha256(json.dumps([(str(path.relative_to(args.mflux)), sha256_file(path)) for path in reference_code]).encode()).hexdigest(),
@@ -209,6 +213,8 @@ def parent(args):
                        "--mflux", str(args.mflux), "--output", str(output), "--steps", str(args.steps), "--count", str(args.count)]
             if args.frozen_manifest:
                 command += ["--frozen-manifest", str(args.frozen_manifest)]
+            if args.reference_cache_mib is not None:
+                command += ["--reference-cache-mib", str(args.reference_cache_mib)]
             print(json.dumps(dict(starting=index, route=route)), flush=True)
             with (output / "stdout.txt").open("x") as out, (output / "stderr.txt").open("x") as err:
                 memory = run_sampled(command, repo=ROOT, output=output, stem="run", env=env, stdout=out, stderr=err,
@@ -252,6 +258,8 @@ def main():
     parser.add_argument("--python", type=Path)
     parser.add_argument("--extra", type=Path)
     parser.add_argument("--frozen-manifest", type=Path)
+    parser.add_argument("--reference-cache-mib", type=int, choices=(0, 1024, 4096),
+                        help="explicit process-local MLX free-cache candidate; unset is stock reference default")
     parser.add_argument("--steps", type=int, choices=(4, 40), default=40)
     parser.add_argument("--count", type=int, choices=(1, 4), default=4)
     parser.add_argument("--order", default="native-gpu,mflux-bf16,mflux-bf16,native-gpu")

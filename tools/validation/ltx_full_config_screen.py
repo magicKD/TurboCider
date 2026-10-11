@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import re
 import statistics
 import subprocess
 import time
@@ -25,6 +26,41 @@ CASES = {
     "int8-quality-exec": dict(mode="quality", hybrid=True, single=True),
 }
 PROMPT = "A cinematic red fox running through a snowy forest"
+STDOUT_POLICY = "json-objects-with-explicit-coreml-e5-diagnostics-v1"
+E5_WARNING = re.compile(
+    re.escape("Missing E5 bundle resource required for loading ExecutionStreamOperation. Must re-compile the E5. Resource path = ") +
+    r"([^\r\n{}]+?\.anehash)" + re.escape(" @ GetANEFModel"))
+
+
+def parse_native_stdout(text):
+    """Retain known Core ML messages, including warnings glued to JSON.
+
+    This is not a startswith('{') filter: unknown/truncated text, extra JSON
+    objects and changed actual receipts remain errors at this or row validation.
+    Raw stdout is separately bound in each trial, including diagnostic bytes.
+    """
+    decoder, position, rows, diagnostics = json.JSONDecoder(), 0, [], []
+    while position < len(text):
+        if text[position].isspace():
+            position += 1
+            continue
+        warning = E5_WARNING.match(text, position)
+        if warning:
+            diagnostics.append(dict(kind="coreml_e5_missing_bundle_resource",
+                resource_path=warning.group(1), recompile_required=True, stdout_offset=position))
+            position = warning.end()
+            continue
+        if text[position] != "{":
+            raise ValueError(f"unrecognized native stdout at offset {position}; raw log retained")
+        try:
+            row, end = decoder.raw_decode(text, position)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"incomplete/invalid native JSON at offset {position}; raw log retained") from error
+        if not isinstance(row, dict):
+            raise ValueError("native receipt must be a JSON object")
+        rows.append(row)
+        position = end
+    return rows, diagnostics
 
 
 def make_request(name, output, profile=None):
@@ -67,9 +103,13 @@ def validate_rows(rows, name):
         if case["single"] and row.get("video_vae_isolation") != "exec":
             raise ValueError("clean-exec candidate actually used fallback decoder")
         if not case["single"]:
-            if row.get("ltx_sol_stage2", False) is not (case["mode"] != "quality") or row.get("ltx_stage2_text_rows", 0) != (
+            plan = row.get("plan")
+            if not isinstance(plan, dict) or plan.get("ltx_sol_stage2") is not (case["mode"] != "quality") or plan.get("ltx_stage2_text_rows") != (
                     256 if case["mode"] == "fast_approx" else 0):
                 raise ValueError("configured Sol/text-row recipe was not returned by native request")
+            if case["mode"] != "quality" and (plan.get("ltx_sol_stage1") is not False or plan.get("ltx_sol_tau") != 1.0 or
+                    plan.get("ltx_sol_dense_edge_blocks") != 1 or plan.get("ltx_sol_dense_edge_steps") != 0):
+                raise ValueError("actual configured Sol stage/tau/edge controls differ")
 
 
 def probe_media(path):
@@ -142,7 +182,7 @@ def main():
                 write_json(path, actual)
                 paths.append(str(path))
             commands = [[str(cli), "generate", str(model), path] for path in paths] if case["single"] else [[str(cli), "batch", str(model), *paths]]
-            rows, memories, parent_walls = [], [], []
+            rows, memories, parent_walls, stdout_logs = [], [], [], []
             print(json.dumps(dict(starting=arm, candidate=name)), flush=True)
             for iteration, command in enumerate(commands):
                 with (output / f"stdout-{iteration}.jsonl").open("x") as out, (output / f"stderr-{iteration}.txt").open("x") as err:
@@ -152,10 +192,16 @@ def main():
                         child_roles=tuple(("ltx_helper_" + path.stem.replace("-", "_"), str(path)) for path in executables))
                     parent_walls.append(time.perf_counter() - start)
                 memories.append(memory)
-                rows += [json.loads(line) for line in (output / f"stdout-{iteration}.jsonl").read_text().splitlines()]
+                stdout = output / f"stdout-{iteration}.jsonl"
+                actual_rows, diagnostics = parse_native_stdout(stdout.read_text())
+                rows += actual_rows
+                stdout_logs.append(dict(iteration=iteration, path=stdout.name, sha256=sha256_file(stdout),
+                    parser_policy=STDOUT_POLICY, diagnostics=diagnostics,
+                    diagnostic_scope="Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"))
             validate_rows(rows, name)
             check_generations(identities)
             summary["trials"].append(dict(index=arm, name=name, configured=case, rows=rows, memory=memories,
+                stdout_logs=stdout_logs,
                 parent_wall_including_sampler_and_verification=parent_walls,
                 hybrid_evidence_scope="configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
                 native_timing_boundary="request_wall_estimate from clean finalizer" if case["single"] else "native request_wall",

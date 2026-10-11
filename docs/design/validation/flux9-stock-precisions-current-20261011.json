@@ -1,0 +1,2453 @@
+{
+  "schema": "tc-flux9-stock-precision-cohort-v1",
+  "status": "complete_diagnostic",
+  "date": "2026-10-11",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "native_latency_ranking_valid": false,
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "steps": 4,
+  "requests_per_process": 4,
+  "geometry": [
+    512,
+    512
+  ],
+  "seed": 42,
+  "order": [
+    "bf16",
+    "q4",
+    "q8",
+    "q8",
+    "q4",
+    "bf16"
+  ],
+  "routes": [
+    {
+      "route": "mflux-bf16",
+      "fresh_warm_seconds": [
+        8.88273975008633,
+        8.763741958071478,
+        9.04205008293502,
+        9.06925883400254
+      ],
+      "fresh_warm_median": 8.962394916510675,
+      "cold_seconds": [
+        7.569471584050916,
+        9.17118270904757
+      ],
+      "repeat_seconds": [
+        8.900714083923958,
+        9.227778416010551
+      ],
+      "constructor_seconds": [
+        0.3746387920109555,
+        0.39024424995295703
+      ],
+      "physical_peaks": [
+        40480908560,
+        40478778640
+      ]
+    },
+    {
+      "route": "mflux-q4",
+      "fresh_warm_seconds": [
+        8.343525417032652,
+        8.298661791952327,
+        8.293834832962602,
+        8.308522541890852
+      ],
+      "fresh_warm_median": 8.30359216692159,
+      "cold_seconds": [
+        10.216082750004716,
+        9.93103279103525
+      ],
+      "repeat_seconds": [
+        8.324716917006299,
+        8.324505999917164
+      ],
+      "constructor_seconds": [
+        0.3813947499729693,
+        0.39059970795642585
+      ],
+      "physical_peaks": [
+        33621297944,
+        33622248432
+      ]
+    },
+    {
+      "route": "mflux-q8",
+      "fresh_warm_seconds": [
+        9.137978542014025,
+        9.553415625006892,
+        9.383281250018626,
+        9.549194833030924
+      ],
+      "fresh_warm_median": 9.466238041524775,
+      "cold_seconds": [
+        9.78053716593422,
+        10.134530916926451
+      ],
+      "repeat_seconds": [
+        9.648217207984999,
+        9.732047750032507
+      ],
+      "constructor_seconds": [
+        0.37962945795152336,
+        0.3940665000118315
+      ],
+      "physical_peaks": [
+        37008002128,
+        37007264968
+      ]
+    }
+  ],
+  "source_sha256": {
+    "models/FLUX.2-klein-9B/configuration.json": "2bdeaa1d19b71d185c88e12f91168380e72108e8f3bda429656b5a4128184eb6",
+    "models/FLUX.2-klein-9B/model_index.json": "51a76cb1cf3ed37423a1128c79c22faee8e6fbe7f5aaeb737f0a258930dbaac0",
+    "models/FLUX.2-klein-9B/scheduler/scheduler_config.json": "067afb012cef64553a763447d1efd93daeffcc0123ca7e25b09f8de20b90762e",
+    "models/FLUX.2-klein-9B/text_encoder/config.json": "57866e90a1d6328a7ed53eca732bce106f86c76ab99d7629e01f0a319fa57998",
+    "models/FLUX.2-klein-9B/text_encoder/generation_config.json": "4347b1aeed2b2b78bc059920a0b7f5fec71482e1344952b76d7665d638d71f13",
+    "models/FLUX.2-klein-9B/text_encoder/model-00001-of-00004.safetensors": "c0dc64934ae0f730ddc80d99af44968d01a89e8454df07d762096ea1356446bc",
+    "models/FLUX.2-klein-9B/text_encoder/model-00002-of-00004.safetensors": "d58533b468c31caa0222540a8aefddea1d74dc6e1fee928da8556d3d85729d6e",
+    "models/FLUX.2-klein-9B/text_encoder/model-00003-of-00004.safetensors": "74927fec432e050365bf757bb30348f560a44394efac89f492680b7c910b64fd",
+    "models/FLUX.2-klein-9B/text_encoder/model-00004-of-00004.safetensors": "cb73f466fade5716702bda38d4e3b321c9358c39889e46fb9d613fb038bfcb2f",
+    "models/FLUX.2-klein-9B/text_encoder/model.safetensors.index.json": "e7e4bdc58d3302c97357f27979b270987dd620cf0cd9b1c130e3a51c9d64df95",
+    "models/FLUX.2-klein-9B/tokenizer/added_tokens.json": "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680",
+    "models/FLUX.2-klein-9B/tokenizer/chat_template.jinja": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+    "models/FLUX.2-klein-9B/tokenizer/special_tokens_map.json": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+    "models/FLUX.2-klein-9B/tokenizer/tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "models/FLUX.2-klein-9B/tokenizer/tokenizer_config.json": "443bfa629eb16387a12edbf92a76f6a6f10b2af3b53d87ba1550adfcf45f7fa0",
+    "models/FLUX.2-klein-9B/tokenizer/vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+    "models/FLUX.2-klein-9B/transformer/config.json": "e82d0d325aff03c3b3b33a1634c47a5f88867478f53071b9c9a39c99010c5d46",
+    "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model-00001-of-00002.safetensors": "cb942a7072865a1d06e47a3361f9ba8746e68ad207c8499083bcb735869f5102",
+    "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model-00002-of-00002.safetensors": "ca568a31d19c03ddbcfd8b2d4ec7dbd16dcefbaa50b7aef1b8ceefd6e6eb0970",
+    "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model.safetensors.index.json": "96fe598b12bdfa266f54c2a6027dedc6e87016cce7e19cb2821a8b7deaf9deb9",
+    "models/FLUX.2-klein-9B/vae/config.json": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948",
+    "models/FLUX.2-klein-9B/vae/diffusion_pytorch_model.safetensors": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04",
+    "tools/validation/flux9_mflux_quant_screen.py": "40958cacc901026e046ac12480f7de9e0dd396b0b0b40e9e7498a4339051ee42",
+    "tools/validation/mflux_weight_coverage.py": "5ac4952b859c92b9c91a716c212674d5b4db10741ea634de40aea8c34c3e5a92",
+    "../references/mflux/src/mflux/__init__.py": "abd499d7f6957b33a4a4e8bf55826c1d471f8a3ff6616d31d8ad931b0ac930c2",
+    "../references/mflux/src/mflux/callbacks/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/callbacks/callback.py": "0bf6fe14ffd547c4f03eb0f28ec6da32ff486d76cf4fe77ee05d4004ff1a448c",
+    "../references/mflux/src/mflux/callbacks/callback_manager.py": "68c096dae88f8b267916bd1be1ee83dcfa2f107905a6cfaeb1a70f1169c6e043",
+    "../references/mflux/src/mflux/callbacks/callback_registry.py": "5c6a2c6f013b17edbe9591dd6e846ae67acc4bdb37cd11519177a886ea90b9b0",
+    "../references/mflux/src/mflux/callbacks/callbacks.py": "2f867c3e967376ac9990f1ba1f309caae300f9e307b089457b907b6951ca4b11",
+    "../references/mflux/src/mflux/callbacks/generation_context.py": "b6a2e5d4f291b6cc676ef7efc41be4391fc33006bfe09aefa0abb9bc73d53c7a",
+    "../references/mflux/src/mflux/callbacks/instances/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/callbacks/instances/battery_saver.py": "d4c9b30286873f297a08bf680c6a6a987255f97feb4a99b39686486aebf75382",
+    "../references/mflux/src/mflux/callbacks/instances/canny_saver.py": "0a67d852ba062e931b78a03b66ee6506c1a6a04fce4f0d92f343da9b7e85754f",
+    "../references/mflux/src/mflux/callbacks/instances/depth_saver.py": "de563b08095a77bf03f72ed60f51811cb98ae2072571c64ff9595f6e7d9fa0ba",
+    "../references/mflux/src/mflux/callbacks/instances/memory_saver.py": "07ff005e63f14f14b833517f00ab6504a1e3b59668214cbe34a653e930d4a618",
+    "../references/mflux/src/mflux/callbacks/instances/stepwise_handler.py": "72eef9e6984ba1f2128f0cf722d884494a3ad20177520adb86b825ea80f8f397",
+    "../references/mflux/src/mflux/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/cli/capabilities.py": "c1381670e1a4adc12fbe8d226c206734903d758ce2b88b54f4a16c5b33ed0422",
+    "../references/mflux/src/mflux/cli/completions/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/cli/completions/generator.py": "b0999691cd981d2fc08ae8494efc82aaf5431d4a69b8263d3d5374ae5125e8d6",
+    "../references/mflux/src/mflux/cli/completions/install.py": "7ec579474a8ac51d3927622f870374f7db1eccb75bab9146b9e3792708a0653b",
+    "../references/mflux/src/mflux/cli/defaults/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/cli/defaults/defaults.py": "e6a1f7ab6c5eb0ecc198a59eb206e75e4cfcd167a261a761d92586e80f5c5875",
+    "../references/mflux/src/mflux/cli/parser/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/cli/parser/parsers.py": "a1dd2240d22b28591878f2ed57eb41519cb8f9a848426eeb51cc0d6c2266cd64",
+    "../references/mflux/src/mflux/models/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/boogu/__init__.py": "ceac4d50348cbc6476f25b2d8f085674b9a99016d3e12c3b5bb7edfe9f2097fb",
+    "../references/mflux/src/mflux/models/boogu/boogu_initializer.py": "de80c0194f23d2f8b9ebabb2ff406508480cccb002289ce9064c2cd479f31a1d",
+    "../references/mflux/src/mflux/models/boogu/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/boogu/cli/boogu_image_generate.py": "4b5b634c4d437c90e6d092fb61a1da436ae3a0ff1b508a1d381ba61c6c667651",
+    "../references/mflux/src/mflux/models/boogu/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_text_encoder.py": "5404fb53578059a89143b7da1185db8bf75c5bc36e4c28324d7f1efaa6f41a32",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_transformer/boogu_attention.py": "520ef2f007117dd58670df9e35464059e8e8ef30093f0f75071881167c09674a",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_transformer/boogu_blocks.py": "f6c72dd77d258c1195b2b75b4e9b707e20bdcb2d0f6dae87b6d0786675d07774",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_transformer/boogu_embeddings.py": "2b43517ee4bb43e9ddd2c4e53e8dd51f569c7e5637c08bc0052f331003a5daaf",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_transformer/boogu_rope.py": "e46d7618e57a576b0c9191819c5ef5b5a18698c0406cd3cedd47d18dd3fd7a67",
+    "../references/mflux/src/mflux/models/boogu/model/boogu_transformer/boogu_transformer.py": "6ebe8eef376078e430e3390316b269418a9aeca168f1ddd4161916913f3d3b01",
+    "../references/mflux/src/mflux/models/boogu/variants/__init__.py": "8949538fb754118916bbb44981f141634231ad7f6749ebae7310183ecb21f87b",
+    "../references/mflux/src/mflux/models/boogu/variants/txt2img/__init__.py": "906f5b3596fe2086bd3513060f0e46be31d797e927a9495546f3d7118c0368a8",
+    "../references/mflux/src/mflux/models/boogu/variants/txt2img/boogu_image.py": "deb8f1f6c5707823cd3668b86907a0f30fab19fd3d59edc63fac9dfc334de068",
+    "../references/mflux/src/mflux/models/boogu/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/boogu/weights/boogu_weight_definition.py": "8e6545dc1957718129bcf38028e3ff0fc8bc2e7757c89d1538d58f339a23d17e",
+    "../references/mflux/src/mflux/models/boogu/weights/boogu_weight_mapping.py": "b071358e8cc5abf8755848702d6953db31ae58dfc9450b85d4d36484500c424a",
+    "../references/mflux/src/mflux/models/common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/cli/info.py": "cc5f749b6df63297c9f59ff6dc25ca976aefb1bb4ed70b601dcdb6bf9b5dc780",
+    "../references/mflux/src/mflux/models/common/cli/lora_library.py": "dd4a9a27977634da2d2418e91b64a43096cd44746ddb7efb265df0772f78c9f3",
+    "../references/mflux/src/mflux/models/common/cli/save.py": "1d675936fba7ade1bf4caae36728cac2c40617e79206c95cf1361a96c14be7b3",
+    "../references/mflux/src/mflux/models/common/cli/train.py": "3176c039105303c306e00297c31b9d6a9f26ea07e9a7f4f7def4d42877340d00",
+    "../references/mflux/src/mflux/models/common/config/__init__.py": "e04d65bc70a5e61ec0906c9d9fa007b47204febd7eff92ac4f86cd1efb3abca9",
+    "../references/mflux/src/mflux/models/common/config/config.py": "19a862b4414ea082a45c8142ca8932fce483121426b6efd562999eca64ff307d",
+    "../references/mflux/src/mflux/models/common/config/model_config.py": "189a7a51b2059fc52513292421c2b284c2495c71683dc2b7a2889733e1b94dc7",
+    "../references/mflux/src/mflux/models/common/latent_creator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/latent_creator/latent_creator.py": "bb09fe69eb6e1a6eaec27862d51bba0804379850d20b50fb90447ac4e945c7f5",
+    "../references/mflux/src/mflux/models/common/lora/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/lora/layer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/lora/layer/dense_weight.py": "6325b28fa813cbfa07445801ccbff93207fbd77a12fef49c3e5b66b7f16a2278",
+    "../references/mflux/src/mflux/models/common/lora/layer/fused_linear_lora_layer.py": "a7a0033018c0febf0216e4bf193a96bbce0fa74a23dbacd0705cf8adca97e04e",
+    "../references/mflux/src/mflux/models/common/lora/layer/linear_lokr_layer.py": "fe3fedaf0fc02fde21460b8a433ceca7d610cab9283d342987ed4ef81ee8e598",
+    "../references/mflux/src/mflux/models/common/lora/layer/linear_lora_layer.py": "2a67a9a03d72697493ff1109cbaddbce41dedd3bf2f2c1052b4051d2f6ef4b42",
+    "../references/mflux/src/mflux/models/common/lora/mapping/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/lora/mapping/lokr_factors.py": "0125ee8360b3ec1da657bd6c48c82ad38c5c5e34a20148acb638be89ee207dce",
+    "../references/mflux/src/mflux/models/common/lora/mapping/lora_loader.py": "f4c27f880dd8ec01c261049d4e5b4c9fcbfc19a931c4e8856d4eff9bb9d94733",
+    "../references/mflux/src/mflux/models/common/lora/mapping/lora_mapping.py": "2adba34daba7678938aa7c607f404e2998ecfbd8ee66bdc3b2d4ade6e6c7601f",
+    "../references/mflux/src/mflux/models/common/lora/mapping/lora_saver.py": "5382a5e7b55654d33e83484bad35c5e350b216a20714c030a3f210e377f0ba9c",
+    "../references/mflux/src/mflux/models/common/lora/mapping/lora_transforms.py": "15a10be25e432a9d4f501f5128fafeba96db7df733fa3c205b2cf34ce6eb9cee",
+    "../references/mflux/src/mflux/models/common/pid_decoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/pid_decoder/caption_encoder.py": "3f01c5b42506c85cae46a3e1b82fa567c7d43d7a765885463fc140705b7e730d",
+    "../references/mflux/src/mflux/models/common/pid_decoder/caption_encoder_constants.py": "adda1979729200f7faf2ad3ea56ca06144ca228ebfb6ce23f77d59350e799947",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_attention.py": "b4bc48989c9d16ef9b8228bb79fd527979fda5051f36e22c744c3b438dc9f0ba",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_config.py": "0d8126e5ffc0fb3e9edc79bba6cf5adc8b6dc5705d9acf7a24041f019a19bb56",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_mlp.py": "4a560b00afc691b1aea6d20539b1749d47e4e97bc52b1f97991a4018a9e9a65f",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_model.py": "9575328feec1752d641e54450eaf01f19e42c2b6b53e25c9ebaf7bcb6a18a4f0",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_rms_norm.py": "c65f83706515feef3b29bd1cb34a2d595066b528186e96c7c96160897cf6c3c3",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_transformer_block.py": "85fa38d4c361f680ba838b691efe0491953c4aa01bf4679f9db2da1adc98e910",
+    "../references/mflux/src/mflux/models/common/pid_decoder/gemma2/gemma2_weight_mapping.py": "eda20b191177f776341a0a625ec9a8a73209eb229ffb0b9272c9b231ef865c60",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pid_decoder.py": "7dac366f20060da2225e171c120d54160ca9f6e4e7012690b2040a3b23249906",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pid_sampler.py": "a8737275a8a164d3644284d2d004b1026dc3279a56a4bc7469103188240e09e7",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pid_weight_mapping.py": "7b4fde378bbc488626fe236f4b4e4ed188f4e51716bcb111acdc818672012350",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_attention.py": "ac61ab64a1eb15f48f9a401042a7fd95992f4503ddd22eb73ddeccea337b93e9",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_embedders.py": "44d0004193b41916973543147948f5f804439bdbb9be7055496d10958351915c",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_feed_forward.py": "44c94117a283b9ff48a80d96a6b75d73c8df6b9f9f04918923b3562ee45767eb",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_final_layer.py": "35a5ccbed7c48711858001800baf912d0fca7ea10d2aad4cd4e09d3d24891ae4",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_gates.py": "be4a0c43c1eb0742ee960dd0bdca179b155ca49ff857005b25816a773914ff38",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_lq_projection.py": "4c40ed4f02b9f056f9135cb3ede3bf62d87f91da1aa450da581c9b258bab9783",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_mmdit_block.py": "752d75de4b85c9a81bf86ec88ac2bd82816e6fe6bb8e57e0f54740e1fdbfdd06",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_network.py": "de8ff1b3b6fa208c85fe46bda3c236bede2b543fcebd4d20695240ca889f5cb9",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_pit_block.py": "eb9871e30fe572170a1131891b8b508573add5332683f997e06013d2d2a5cc02",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_rms_norm.py": "ea0355c567d6d53d6270f022c8550054b6c7f167c96a939705adc0c302dd751c",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_rope.py": "cdeecc72522943b977d3230f8d9b1d9bcfc2f0e0b3e37c1dcdcffe2501574a6f",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_sincos_pos_embed.py": "3adb4da1b2f1a83702d00349b1e90a8d4a6607a756c8b41a0bbc0e0205101ac8",
+    "../references/mflux/src/mflux/models/common/pid_decoder/pixdit/pixdit_timestep_conditioner.py": "a450ebd74777e2ebed7a825ed706cd4b411ff32e3859a0def7efebcaa5435aa3",
+    "../references/mflux/src/mflux/models/common/resolution/__init__.py": "ca9f1897b3b306e5d7549f318dce86646884cf55b1c3fdcc7e49aa0ff4d2053f",
+    "../references/mflux/src/mflux/models/common/resolution/actions.py": "e32ba8db8f028cbc8a5d032b5769225e41151abc14ecff81bcc6eb461af07b51",
+    "../references/mflux/src/mflux/models/common/resolution/config_resolution.py": "4f1539b159081ae5bf3ceae1c44cdbe2fbaed0a160581269bfd85c08f2d5df80",
+    "../references/mflux/src/mflux/models/common/resolution/lora_resolution.py": "f4e5cb80fc6bdc0705be6c5e93a310855f3714d6ffa775e42eaf37e1bbc1c2eb",
+    "../references/mflux/src/mflux/models/common/resolution/path_resolution.py": "66bd618af9b4d1af313f721a8438848c178b2f6d1f1282c876b0b4230c6048d5",
+    "../references/mflux/src/mflux/models/common/resolution/quantization_resolution.py": "da11e15ba40bcdcea59f30b4a11dc865fdb76510cfe97ebd2e9f63eadc44b8bf",
+    "../references/mflux/src/mflux/models/common/schedulers/__init__.py": "4ff3285094a6804735b15b06893d6229aafe07154f095afd30c1f8ae819a676b",
+    "../references/mflux/src/mflux/models/common/schedulers/base_scheduler.py": "e7bae4df813277d2b26be28f91bf6e8eb14e7451a55be0fc86a1fd9c15b1def5",
+    "../references/mflux/src/mflux/models/common/schedulers/flow_match_euler_discrete_scheduler.py": "b4aaf451403acc61dd3b7181f9688b00947c534d65461ab962ae35c0293b5728",
+    "../references/mflux/src/mflux/models/common/schedulers/linear_scheduler.py": "294ef867120ad30e9a96b46a541e6ed3b037c53075d2244acb164683d97569b5",
+    "../references/mflux/src/mflux/models/common/schedulers/seedvr2_euler_scheduler.py": "b5f03516e9b5d397b43f1a88c08a6032c3fe8f5a3a51d60ed74f549a34623abf",
+    "../references/mflux/src/mflux/models/common/tokenizer/__init__.py": "7593e6c30c993864937a5d44b75501e8843dbaf761ad6b3f3bcc557940727173",
+    "../references/mflux/src/mflux/models/common/tokenizer/tokenizer.py": "5ce894696666f56209cab4deae24bafc06433bd6557078ce95dbdc7260cc89f1",
+    "../references/mflux/src/mflux/models/common/tokenizer/tokenizer_loader.py": "091bbf36a3d901ab5851ab82f3630056753ff204b34c647ec5e21ffcf8873158",
+    "../references/mflux/src/mflux/models/common/tokenizer/tokenizer_output.py": "da5a3cd0eedb7f1456b287471c85e1655736bd8d95b0ded578b0152e695dd56f",
+    "../references/mflux/src/mflux/models/common/training/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/training/adapters/__init__.py": "cac6f6645ac82f0daecc72e588d14ff9a1e837f3014a77e8c4eab5f4f1e61de0",
+    "../references/mflux/src/mflux/models/common/training/adapters/base.py": "0999697b49f275f7985b9f383fe107b41c3905e2def06b00c48b1791a6d7b7f8",
+    "../references/mflux/src/mflux/models/common/training/dataset/__init__.py": "86d45b60094f28150caf222dad942cd66d22827a1e056e4b7ffeae73b8665a88",
+    "../references/mflux/src/mflux/models/common/training/dataset/batch.py": "381b7a0de0faaaa1865234a31dcb863942560d233458ee8e334b310d06cc49d7",
+    "../references/mflux/src/mflux/models/common/training/dataset/data_cache.py": "b504270024f7f90d5dedf44b423460b8ad22a0040e2a92a700ca2a9c79c2bd9b",
+    "../references/mflux/src/mflux/models/common/training/dataset/dataset.py": "9c337b08144a95cf6d4e930d998accf3c8f003ec2234809634bee389a98c1ab2",
+    "../references/mflux/src/mflux/models/common/training/dataset/disk_backed_data.py": "1016e73d182bcf0a595b69f20cda49ba3dfebb454724015a7643e569ee2d3573",
+    "../references/mflux/src/mflux/models/common/training/dataset/iterator.py": "0ced3bbead3d9427fb8bfa32e5bc771800f387e4f2c9aac2c529da5b4b2c769f",
+    "../references/mflux/src/mflux/models/common/training/lora/__init__.py": "8c926a7f8a2fdda72d75d519cbcb0a2141305aec6c6121d783f53a66859fbe6d",
+    "../references/mflux/src/mflux/models/common/training/lora/path_util.py": "f8483c1b846ad96142280d5e936369926b585128e997af91911fe53f48aa4513",
+    "../references/mflux/src/mflux/models/common/training/lora/target_injector.py": "595155af30a3442be1f688a0eaf82f46d7c03945d5ec35467e7d4b87d2c75718",
+    "../references/mflux/src/mflux/models/common/training/optimization/__init__.py": "cc68b6a096fe5781d99738bfc1b37645491acd2dd3018295a59a9dabf32ce6cb",
+    "../references/mflux/src/mflux/models/common/training/optimization/optimizer.py": "5ed1dd9dc5f4bd20dcf3988e6b0ceab1a4d314ab84ebd99a5ba6e47c4d154995",
+    "../references/mflux/src/mflux/models/common/training/runner.py": "a7fe72afa9c1b92a0ba9ccd85a19e6afd373804f45cdbbd17a57eab25ad927d7",
+    "../references/mflux/src/mflux/models/common/training/state/__init__.py": "c69c10ceb21c05deea06038ad14394e6954a051d8446b381d4812b7ed88741ac",
+    "../references/mflux/src/mflux/models/common/training/state/training_spec.py": "610953968a02cb6f679d4570a7373877bea7f8e8cac39754dc2da86f5a85ef00",
+    "../references/mflux/src/mflux/models/common/training/state/training_state.py": "5d71e55e7be6c28a9648686de90f269a1f74d35c77d298f0d4a3fde7adee214b",
+    "../references/mflux/src/mflux/models/common/training/state/zip_util.py": "e5712cb32d953a87db99194345e1aeb06e6b48a41d71a27de67398279153cda6",
+    "../references/mflux/src/mflux/models/common/training/statistics/__init__.py": "c564eddefafff259293aeef493ac36c2e7f5dc233742d2d19ac97f2d87dd6b25",
+    "../references/mflux/src/mflux/models/common/training/statistics/plotter.py": "42e53133c0d7f5252f4b9a566feab33f8118261fb88d8dd4488509d213ab5e2f",
+    "../references/mflux/src/mflux/models/common/training/statistics/statistics.py": "de14c0e3bd520fdee590af18434e44a692b335a21ce20d6bce5f19b98e44d23a",
+    "../references/mflux/src/mflux/models/common/training/trainer.py": "50a5a1c48362ef27f83189b7f0d24f5808f8247a0e186a25c5e05ec64c8d3de1",
+    "../references/mflux/src/mflux/models/common/training/utils.py": "2673d154305988f54962cdc23e4fd9866d00ca466c415671422a4dce273e3282",
+    "../references/mflux/src/mflux/models/common/vae/__init__.py": "ecc388ae11c72748e249a591d7d7f3641de79095ad5c3b03295f89a6adf7d343",
+    "../references/mflux/src/mflux/models/common/vae/tiling_config.py": "ec5660208bd620707e62a22546632b369b7560a71712ea9ab1c9a237c7a45ae5",
+    "../references/mflux/src/mflux/models/common/vae/vae_tiler.py": "8eafdb2e7a98a845a69a22e4045bb63b7a4097052562b003de18679dd4dd9f86",
+    "../references/mflux/src/mflux/models/common/vae/vae_util.py": "4cedca9900534e3d541ee434460a7717fd3136bef73d6bcb51bf9307021b26e2",
+    "../references/mflux/src/mflux/models/common/weights/__init__.py": "e43a96920524dff30e79afffcfd5bac7882de6124a4cb72a9ab0091a7f900d11",
+    "../references/mflux/src/mflux/models/common/weights/loading/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/weights/loading/loaded_weights.py": "f3075cacbe3458f2e079ab52a560e69f82dd5da199dbd7224e41cab715ac781a",
+    "../references/mflux/src/mflux/models/common/weights/loading/safetensors_reader.py": "b515ef356c1db7636b15c0877342d694f0e14d76727f4837a5bf311c3337fff7",
+    "../references/mflux/src/mflux/models/common/weights/loading/weight_applier.py": "efe179164e0397ba9c5d6d0b6943c334c5f74b30a9fa6f319a1ff23de5bce980",
+    "../references/mflux/src/mflux/models/common/weights/loading/weight_definition.py": "56ffe7deea6265526c96700e26addb114a6c2da9ba1c524d9f00525e7609f184",
+    "../references/mflux/src/mflux/models/common/weights/loading/weight_loader.py": "9cf5a56c59bdea9fc6d6c71c4b94fea8bf70fbfd43dd0d22551b32888ad91d3f",
+    "../references/mflux/src/mflux/models/common/weights/mapping/__init__.py": "5ac765e9ddfa12d2c46a88914e57e84b44a4f549c0c26b7ea092d668a49c7863",
+    "../references/mflux/src/mflux/models/common/weights/mapping/weight_mapper.py": "ade6c47cabad0287930f2616de6f55ae585a0bb75fae7d0beccf8a4e345b00c3",
+    "../references/mflux/src/mflux/models/common/weights/mapping/weight_mapping.py": "53164aec06ecd642f3c8b518d843a104cafd92ab29f2cc3f7a04174a1cb90cca",
+    "../references/mflux/src/mflux/models/common/weights/mapping/weight_transforms.py": "616c1cb44e61e8e28571143b3aab54c8f09278333a344aa0946d13b819f7e292",
+    "../references/mflux/src/mflux/models/common/weights/saving/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common/weights/saving/model_saver.py": "5ae3e82114cd7e80a4b73c4c640f296b358dad821d9b69191f53639ad18a19cf",
+    "../references/mflux/src/mflux/models/common_models/__init__.py": "445a13412be23664f419d7fdcdbd61f94ac2c8b11ae785d73e325dc747aa1fc9",
+    "../references/mflux/src/mflux/models/common_models/gpt_oss/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/common_models/gpt_oss/activations.py": "dbca5bae41ba0a8380a53903c3e98da37c1e15b46383bc2edb5806ba94fafe72",
+    "../references/mflux/src/mflux/models/common_models/gpt_oss/base_utils.py": "8c9493ff6a698554375679e51a737697afefb1042138245f897c217948f08b88",
+    "../references/mflux/src/mflux/models/common_models/gpt_oss/gpt_oss.py": "b4334c924e382bfdbd9247a09015124d6bc925206f19945ea86adbc779188e90",
+    "../references/mflux/src/mflux/models/common_models/gpt_oss/rope_utils.py": "3597b152a9202f8b86f25c730fa6a7d6f97fa44ccccda132a989167e833675fc",
+    "../references/mflux/src/mflux/models/common_models/gpt_oss/switch_layers.py": "787e4c861dada3173e8e95576af5df0bfd74e6bbc0ad13a08d0713cd2cfabd2d",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/__init__.py": "efeedc99d1bbc44299568c5e6a5873c06f63b8e7fc13f13733b134c36636c5c2",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_attention.py": "be19003115c33d122de613f79aa87f105a7b22febbb07445d29754a0d6a55a9e",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_decoder.py": "672ddd29bac20bd1ce08ae57021b0aa42738be6dc16512aa863f702dafb68d55",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_decoder_layer.py": "31becbd835a9575fc7264b04d9639194324c49b3bbbec744deef87eec928e3fb",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_mlp.py": "85b0f712813f48b114217a5b6f2a7ce65bc66db49e2b9845f32e770e7a5fa2cf",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_rms_norm.py": "f78cdc4a8fcbeaa8357438b498a0f009a01433078b3dd0e881469dbcd4cde2f9",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_rope.py": "c78279580d2c2b3a428e04308c2862255c0b7b316b8dca4d1a399a80a3c561b9",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_util.py": "4b6b8a24209bd1dd77d740e15e3d8519221bc03d077bdff19215fc9cdd4edcc0",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_attention.py": "38b32a0c5a2bdb1f79f54197b3cfe44d0e273f186c14fa1e8ebec70348fb2623",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_block.py": "c0de03622c804ab08ab7d916cab67a28834af27c0c434ee2627f2400409701bb",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_mlp.py": "f0c3f54a5d7d3e94787db94eee6671932b79426a232aed3eeae490e3040c9670",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_model.py": "739153a213074c41f7614bdb2fc089a029566566ce48be2c78c6e16ef48a55ee",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_patch_embed.py": "9344cdea3038c8ccdc9fd1febc9d288a0d49697e9050b90da5a52088b0428c74",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_patch_merger.py": "2c5e6327f05ae0c0ea6905ec3b66615fd212f4cdd5d813ea514b810be24fba3e",
+    "../references/mflux/src/mflux/models/common_models/qwen3_vl/qwen3_vl_vision_rotary_embedding.py": "32e6e8af50d8b8aad41f894ac696a4fa509f25f41d5445a5e222ce34cae55351",
+    "../references/mflux/src/mflux/models/depth_pro/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/cli/save_depth.py": "cdfd198c62b9deee49624015eaa1af7afa17676b0ebc1151ff6c2a4e6ae490a0",
+    "../references/mflux/src/mflux/models/depth_pro/depth_pro_initializer.py": "bc1df36bc838b8b5fa6421ef6cb836efebac249a30dbba69ccc87f61af60a802",
+    "../references/mflux/src/mflux/models/depth_pro/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/model/decoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/model/decoder/feature_fusion_block_2d.py": "333f8b2e77dcfc574b81002ac65dda5088e6cec984c2aad753370b7816729c29",
+    "../references/mflux/src/mflux/models/depth_pro/model/decoder/multires_conv_decoder.py": "440c8b591e2e519c01641c62b91af694f455ebaa7f12a0300c29f549c290b496",
+    "../references/mflux/src/mflux/models/depth_pro/model/decoder/residual_block.py": "8cd374cc066c88c3312ccece94e23fa4d099b4562c9ed3459821443ebaec7ffe",
+    "../references/mflux/src/mflux/models/depth_pro/model/depth_pro.py": "142495a2cede72e313ec40d7fcf5ace686cbdd2d2bae0cc7edcbd641819c1b10",
+    "../references/mflux/src/mflux/models/depth_pro/model/depth_pro_model.py": "e01ee70185d6649fc5070ffb468f089140ee63f69931510ebe7fa57dfce3e228",
+    "../references/mflux/src/mflux/models/depth_pro/model/depth_pro_util.py": "8921d48fe50fd2d676505502fffdf836ff52f7b0c123b09f6520af09e16e09e6",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/attention.py": "5574ba776b7f48453c7cf144ff869bfc24bdf66027589dbac10712bc95ea1e34",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/dino_vision_transformer.py": "d029db3e7b5e058f0e10c3ec5cf9fb14d541018ea512901fe6b67283f5256d3b",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/layer_scale.py": "f7310adfdd06d030223bae60aa72c2b6caf92b89049b31a0742f5d01e8bb0eee",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/mlp.py": "ab413a7a9fcec8253c52bd45891054b54e12b6a90932446b7cbf0a5a21308a5a",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/patch_embed.py": "3cdbe3ecdd0f3279242ed2410dc3b61d89c312a0daf5ccd9b471dae997da8074",
+    "../references/mflux/src/mflux/models/depth_pro/model/dino_v2/transformer_block.py": "a35d1e9f2ed71a412b7e9b4242ff60e08fc560a8d54e8e9a4b12ec7afae3000b",
+    "../references/mflux/src/mflux/models/depth_pro/model/encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/model/encoder/depth_pro_encoder.py": "0e9226b68d020bbf8756ca898c04546b121a3ba2c0d45a1f89011836b37c1520",
+    "../references/mflux/src/mflux/models/depth_pro/model/encoder/upsample_block.py": "1c043ee461f11e224a20f4251d905cab46179072eb9fe9e09154ab6bd9f51133",
+    "../references/mflux/src/mflux/models/depth_pro/model/head/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/model/head/fov_head.py": "ed6f1f6d7ae7c7797e1e376eedcfd7f1af0bd494e9a27dbac438ff73b9f374fc",
+    "../references/mflux/src/mflux/models/depth_pro/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/depth_pro/weights/depth_pro_weight_definition.py": "5aa166db819ff363b9775b9c7e4d2168e448c0659b78fb0e7b62b294a9031e27",
+    "../references/mflux/src/mflux/models/depth_pro/weights/depth_pro_weight_mapping.py": "e8c0c17aba33c92578e1314d225ab11db3628205ab31c7952c9b8d36cb798f2a",
+    "../references/mflux/src/mflux/models/ernie_image/__init__.py": "5d8e6a300f972251585567e864ceb64efe11564989b75b90a3e2e5b816330268",
+    "../references/mflux/src/mflux/models/ernie_image/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/ernie_image/cli/ernie_image_generate.py": "9a00d02c93586093511e9ee7852bc5233e064e71c6392e9ede731b7219778eb5",
+    "../references/mflux/src/mflux/models/ernie_image/cli/ernie_image_turbo_generate.py": "7948b5bedab5f5d70f6e50565bf717be59b5451f2675b0f3653bed704facbb25",
+    "../references/mflux/src/mflux/models/ernie_image/ernie_image_initializer.py": "bbb00abf4130746def3043095558c6ebde88cb67c5e16db6424c02e1226ac878",
+    "../references/mflux/src/mflux/models/ernie_image/latent_creator/__init__.py": "2c04a665d40ce692b6efb32a80fd368e4a94ab1db3729dc6c100497b3060de51",
+    "../references/mflux/src/mflux/models/ernie_image/latent_creator/ernie_latent_creator.py": "21d930987e22e44a099e0a9caa94d10ce81c9df56c197888d09e396bc063e2fa",
+    "../references/mflux/src/mflux/models/ernie_image/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_text_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_text_encoder/prompt_encoder.py": "902e85b4f35bb93997344bb97a542580b335e595d1faf9306815bf09fac91d5f",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_text_encoder/text_encoder.py": "bf6a761f01d4f36a6a79bd7e135589f21bd5b6f444ab7535e4735afd90fab348",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/attention.py": "795428a7dda3347cbfc2deb72b00939870af47991298384d481b9917af72ab68",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/feed_forward.py": "8e3f941c0dd05f569958caa1efe1d4e8fec3068a021e8bad361c8743ae807aad",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/rope_embedder.py": "b453e06315d85f09f96c9d90a5878ce8e5c7c6d1b08d3a20867e26787446185c",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/timestep_embedder.py": "831473c17bed965c1c6842007270485d540da95e911d24f034c38354a097e354",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/transformer.py": "3b421c12364f59196417059962965273b81aef6dde8d8cd7b7514b76f0088685",
+    "../references/mflux/src/mflux/models/ernie_image/model/ernie_transformer/transformer_block.py": "d696164e5e2fcbf358d46a57eb5e97ef05e4b6d1142fbc568bfb7730aebe68a5",
+    "../references/mflux/src/mflux/models/ernie_image/training_adapter/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/ernie_image/training_adapter/ernie_training_adapter.py": "f6e9fde9223f7c946d183ba22863265571226ecca5d03ce8894c439d7e61122a",
+    "../references/mflux/src/mflux/models/ernie_image/variants/__init__.py": "bdf3bbbaa54b29c2c94003ca3ec92665ed4ecf0dc2467c333f69139a7b8de832",
+    "../references/mflux/src/mflux/models/ernie_image/variants/txt2img/__init__.py": "bdf3bbbaa54b29c2c94003ca3ec92665ed4ecf0dc2467c333f69139a7b8de832",
+    "../references/mflux/src/mflux/models/ernie_image/variants/txt2img/ernie_image.py": "585bef0239c89391083aa4f19319a107ce71ad1db38c89b4145b33dbfde54d09",
+    "../references/mflux/src/mflux/models/ernie_image/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/ernie_image/weights/ernie_lora_mapping.py": "89050f018a80d04bd2ced5021a5bb25edcae4a61511d5d86f98b53c60cf946f7",
+    "../references/mflux/src/mflux/models/ernie_image/weights/ernie_weight_definition.py": "dc7572993dac27daffb3cd98fd7cc7f2753f9c209054941b0e0186b1f61785c2",
+    "../references/mflux/src/mflux/models/ernie_image/weights/ernie_weight_mapping.py": "39c1c8955bdc7c5cfc29456b4dedcc4ca0ed265ee1297c4a54822876465750ca",
+    "../references/mflux/src/mflux/models/fibo/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/cli/fibo_edit.py": "74c0df6e3bbb6d9f2c17a806c3ac8ce13489b9d8413ca4af154bf4bbb60a0620",
+    "../references/mflux/src/mflux/models/fibo/cli/fibo_generate.py": "a494b6ca143c3150bf59d03ea845aef707aed90c5fd4bb19407038674e4d9568",
+    "../references/mflux/src/mflux/models/fibo/fibo_initializer.py": "e4f4c826f308ae296e2cd672cb247a796b51f60d09b9630975d63fafef59f690",
+    "../references/mflux/src/mflux/models/fibo/latent_creator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/latent_creator/fibo_latent_creator.py": "644b498101e53ea9b29cf94487437969182066279762eff05c1a20b26b866f42",
+    "../references/mflux/src/mflux/models/fibo/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/__init__.py": "9d24782a937a3ffa4cb42b17ca68a4ce8304ed393b9e52ad41b256527a165dfb",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/prompt_encoder.py": "764a68781ac615d1da0d32a0ba17986f8ef0c60f7b915075e87ec53396d691bd",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_attention.py": "bbd2766528f691d5cf6c3bf9fce6716106cf795039b2c60281c4c4b159493d9f",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_encoder_layer.py": "5d473ee638a0612a5303afd33426987e7cb638d4c799a94c9e8d2853d8451ff6",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_mlp.py": "7b201963d05a407b294c4df9660f833c6f083623e74000b85f18870e415d8373",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_rms_norm.py": "0de22e86e7e42cca9625554c05fb3249f16df3d84b0c7582d78d335633b17b33",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_rope.py": "cac7807cff296359c37fb970dd78b9a211f334b52e9ab437ad0b66fd1a015be4",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_text_encoder/smol_lm3_3b_text_encoder.py": "f84ebd0878da62d31f49b498aea04d89523e6403abae43a99d047691337ba060",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/__init__.py": "4913d11df1926f785e6470f1c4ae5c317b82f88e297f54377cc60e809cbfd82d",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/bria_fibo_timesteps.py": "c1bad45437cad34062c1379a6e2b972720dcee5bed2ecdcaca55f5e31f5b2f5d",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/feed_forward.py": "5f4dc5eb2af8a8baabe72d4b946ad9b83fc2233bd2f4835f490784603cc4ebd7",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/fibo_ada_layer_norm_zero.py": "5a71ca69ec7a935323055f863fc197dcea5169084be3c856e59a2e4df049300f",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/fibo_embed_nd.py": "0a6bd89d6c881b756f717acbda5d0c70c0fb63b28a68157ebc901475568476fc",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/fibo_gelu.py": "9e4461008b457ff7b17012b4c93884e779cd66f8a3e8944033c9efb3c49474d3",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/fibo_joint_attention.py": "df91a9e75e5139ae6e2ef0df32987e75d1be0e0f9b7e28ee08e808300da1c1b3",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/fibo_single_attention.py": "1b50bc7f52a29c825baf7302a8b98ffbb2086ca72ffa9056211fa04af79328df",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/joint_transformer_block.py": "d133b99ea579bfbf2ad41207a425bccfed98ae77f8339819bf9f2bb20ce089a7",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/single_transformer_block.py": "1d101aafd7a76d18798ba3544b9432c2e6aff9e531e2f8e01a004f2b13975cab",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/text_projection.py": "927aadf80b066b08436db1bb70e60127d58a0757516ff5cbf71848816969f14a",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/time_embed.py": "dd90d41340c05ed77edd15a3dfe94f42c017213ed27a7703578e49b3e163bfc9",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_transformer/transformer.py": "92198b5bc96db59a8d387d95b72edee77be66f22fac4b930b7a54de2b0e67627",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/__init__.py": "21e4bb8de81e2d2844ddeadb82ab93246cb5778bd169e568f5fe15fe066206a1",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/wan_2_2_attention_block.py": "e826a4f386400cb0709a45c2b038244cd9eb5c55343665f2881dd3519c8ff62f",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/wan_2_2_causal_conv_3d.py": "1a04cc56b15e3f240e331250b877047aa69679f596c5003db62ba2bd29b07d08",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/wan_2_2_mid_block.py": "d9df90c36260d45bcac9bb6af5e5e228db1f955d6231494811f04d61f79ab444",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/wan_2_2_resample.py": "0e0d1ab0a64bdaf28f6b54ad647344fa5881414426a157fd3d89b1c111ba771a",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/wan_2_2_residual_block.py": "20caf78c645e4f0a96725e15a7c63b0af666924737b48e8b6ec02f4660e1eab3",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/common/wan_2_2_rms_norm.py": "907cf32fcaf254fa4a32c86d92a051854a84570547bcc731145fc9b12169775f",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/decoder/__init__.py": "93fc120679dfb3b6b156ad50e4c2451d4cff7aa6f1033457c7dec11108dfd0fb",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_decoder_3d.py": "a3b1263150d668d9e1da948cfe9eb725b72bf2423cc0c28a99cede72f0d75d1f",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_dup_up_3d.py": "53582348c9c4cd07046753ddcee83898d33bcdf879d09c7052b9b96dcdbb9b7d",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_residual_up_block.py": "4195be7b199c3a08eeea71f69493cddfed8ebbd7e7b38364fa5539520c64e4ef",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/decoder/wan_2_2_up_block.py": "9982004000a1705b8dcbfdd53a42d2f9300306bcd7e4e4a0b34b886c64c168de",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/encoder/__init__.py": "3c403ee3e90dbd85ecad00383cb5fba73259810e4f86c0c91587fe15014adb8e",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/encoder/wan_2_2_avg_down_3d.py": "d0ca7df3c6d3df18e6b422b3b4b705d6aee56fed1f8f9edb2753c60c5380db98",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/encoder/wan_2_2_down_block.py": "53abf94b6ee18de3107e6ad338a11ea929c7b47082004bd74e74a22ddffc6599",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/encoder/wan_2_2_encoder_3d.py": "c8b9070f0e14e474c16d741a8e2d32dbab39af10a37c7326b22d452d366a27e2",
+    "../references/mflux/src/mflux/models/fibo/model/fibo_vae/wan_2_2_vae.py": "ee87698a4be8c32627ffd12bd5b24fecdbff51501f77aa546fabc637678583ad",
+    "../references/mflux/src/mflux/models/fibo/variants/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/variants/edit/__init__.py": "31321311144f8fb81694ec754ee36cb8780a4594dc3db12ec15277d17ceee79d",
+    "../references/mflux/src/mflux/models/fibo/variants/edit/fibo_edit.py": "57f1c985c43730fc45e736c9f09644cc68765c0a9d5ccd6a05aa3b98ad3e553b",
+    "../references/mflux/src/mflux/models/fibo/variants/edit/util.py": "b766ca74f11f10751ee37f2a17dd68a98c97275c4e933bf0e23cd4412b451616",
+    "../references/mflux/src/mflux/models/fibo/variants/txt2img/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo/variants/txt2img/fibo.py": "53bf368bd8774055fa6f6b2439656f466710a35883d86f75d9029648abda5cdd",
+    "../references/mflux/src/mflux/models/fibo/variants/txt2img/util.py": "c7f1efcc95b73502997bec1a9d5cc6f129d32333676ec1983a1c0b9db2bb29c6",
+    "../references/mflux/src/mflux/models/fibo/weights/__init__.py": "41541f17340e30f2cf20683df31a41fee55ef76d3322b56ca3d4146e50012eee",
+    "../references/mflux/src/mflux/models/fibo/weights/fibo_weight_definition.py": "999fde62d66b90d5f0137a405000a509b79c3059b39122fddeab59671e98fabc",
+    "../references/mflux/src/mflux/models/fibo/weights/fibo_weight_mapping.py": "73334ee97d4fb2192854906f695e3705c93424c2021d52a3fbf3a058a7dd7e69",
+    "../references/mflux/src/mflux/models/fibo_vlm/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo_vlm/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo_vlm/cli/fibo_inspire.py": "df8b3e77fcfb86408903b56b1b1fe9a0b3f0361f1549f1ab8b9187921248b68f",
+    "../references/mflux/src/mflux/models/fibo_vlm/cli/fibo_refine.py": "668b10eba194166808b39197e11b167be8005b02aef343e9f3b5686294f2d540",
+    "../references/mflux/src/mflux/models/fibo_vlm/fibo_vlm_initializer.py": "1481139a8e24e5578d43f8d5e90adf7d5105121f235044f1afe5c0485861d2e5",
+    "../references/mflux/src/mflux/models/fibo_vlm/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo_vlm/model/fibo_vlm.py": "3cd3169a7414abe6af315779dcf1a725b28a6449c1f581add3ed721a92e4c8d2",
+    "../references/mflux/src/mflux/models/fibo_vlm/model/util.py": "bb7fb2cae0d30a3f1819dc6d7178fa1bdf885ea42f82df3f9cb65bd42d8734ec",
+    "../references/mflux/src/mflux/models/fibo_vlm/tokenizer/__init__.py": "572056dd09f76117185eece942bf176eddcb20c7661a6d44ebc166e7aa4128bd",
+    "../references/mflux/src/mflux/models/fibo_vlm/tokenizer/qwen2vl_image_processor.py": "afee05948632be15a5ac8b4d641560527dd1589894aa3148a1e86f28255df014",
+    "../references/mflux/src/mflux/models/fibo_vlm/tokenizer/qwen2vl_processor.py": "4b321858e34feb60f3c6bc654431006bf335309c2f6d510a8a4957c7638bf1c8",
+    "../references/mflux/src/mflux/models/fibo_vlm/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/fibo_vlm/weights/fibo_vlm_weight_definition.py": "38b492b5d1ecaebe8f315467ab9c0cec2d25e205743663b3787a559cd776e2cc",
+    "../references/mflux/src/mflux/models/fibo_vlm/weights/fibo_vlm_weight_mapping.py": "6a6d1dbf0db69a29f863830e94d2799c38dd7bbb2a7e8900607502bf7d507073",
+    "../references/mflux/src/mflux/models/flux/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/cli/flux_concept.py": "5bae942835d2a10738ba618590fd6a1ba136a9377699fe65d2c3958873e7901c",
+    "../references/mflux/src/mflux/models/flux/cli/flux_concept_from_image.py": "4a2b1b0e38e78a46c44eee0e28502c04dd4e08e0b8e4542d4dcc76392cb2c86b",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate.py": "1dd1688a98336a9395a1ead27aeb4cc8efe56de8b2e0ad094640f3bfad129414",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_controlnet.py": "f92162744943177fdd7d0bc1a4694b33d45d767b32499bc657803bed4b72fd0c",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_depth.py": "b9982973640d155fb85f08a5873695160241f27ed587c3d6c52485f2625ef094",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_fill.py": "26be2c6331775dbd402dbadd0f6e89d8e55ce203d0103e2e597219e6cda54038",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_in_context_catvton.py": "56ab0bd6a8b7bf113cf8906218846fb9b732bf777a73ade2501bb201fd5e5b76",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_in_context_dev.py": "bcee734ecf967d984ce07d69bda2f66079b02903b4480711602a4980892c7651",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_in_context_edit.py": "00ea95cef25cff04c1f91c26b0ed6a124ed7e06301be013445f3db2a6e09eaae",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_kontext.py": "9bbe47a2287e6d3390adef5c6cc7dc99c8a8fffbdd1b5c63862acd6444c04dc1",
+    "../references/mflux/src/mflux/models/flux/cli/flux_generate_redux.py": "732d1f76f5b70ffb5080aa46176a038cf881cffa32ec51e05f642d719a94a55e",
+    "../references/mflux/src/mflux/models/flux/cli/flux_upscale.py": "3b1fb6b799fff4f61bc2e517265ac939f23da330f4e96894757ed0f48df6319f",
+    "../references/mflux/src/mflux/models/flux/flux_initializer.py": "4e65a2ad72a9ad4ea729708f8f49a12a300f1bedc1d2f71045a07e24f2c33362",
+    "../references/mflux/src/mflux/models/flux/latent_creator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/latent_creator/flux_latent_creator.py": "897505135f1d411b8af4967f0b8327ca5b91f8e2b1b9ec503e3fc2ce9f270d5c",
+    "../references/mflux/src/mflux/models/flux/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_embeddings.py": "03c8ea94a1ca7b27559bcf6a25264fa040bdb14b29c0e9cba30ade1be49f4c37",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_encoder.py": "490a005f9fe545b535a5cc2c8e74dca08d07d190c7e7f5c5d37e9240ec43b72d",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_encoder_layer.py": "ce3ce70176fbae9689fac6d8a1c8efecabf11d6163dfcedca8d7e1c5533c5a9d",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_mlp.py": "82fcc7b19b14ea38d5e1943c0b847ea588d10ff22bd3a063e2b54fbac5f131ea",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_sdpa_attention.py": "a11eb55c7ca0cfc0bc503295151ac4857f2b6ea6f7ad0359e28321c689ed90b5",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/clip_text_model.py": "7213c5cca1f10b5f2b3dd02f9a517b081ba3ff3b5ac6894cab10665ae6900111",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/clip_encoder/encoder_clip.py": "2d5d775207d610c0d1cd648d60a9c4667bef344115b10dd344221ca1ce6deda3",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/prompt_encoder.py": "ed9ea4c171e0b66163c7934b4a4641d08ed1922b7dcc858f0d71fdd304e477ad",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_attention.py": "6ce7f897dad068bfd08dd95b772dd7479188ed8afd5b8e531e54597ecaca78b3",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_block.py": "ad8fa38df96de7932dd2542b916290dd65f6facefefd283a017d99f16eb6f09b",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_dense_relu_dense.py": "1ee0697fc1748c85e8884b17e6035ade3294498165bba616e1482af1d32f271a",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_encoder.py": "6fb3138c5d5eb2c487da061e0b97a643f30f8c28a0d7c4eaa80a7cd210cd0153",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_feed_forward.py": "0829e8dbd365523aa39c62d65c5eb3465fbd6186451ff7f0364250531e83b29a",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_layer_norm.py": "19b973f5fa249e235b3e15fb9c58981629e4fc8911ddf6ef72a157b5a6003830",
+    "../references/mflux/src/mflux/models/flux/model/flux_text_encoder/t5_encoder/t5_self_attention.py": "afc5b874d9227409780ba5f5b68cfb049c43cbaa715a9e0e27cdab7b3224a8e7",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/ada_layer_norm_continuous.py": "bf1db7df57e533f187f5c9a38a6330f65827304a74f6c955c3c51ce83d1f764a",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/ada_layer_norm_zero.py": "1c0a1d25dccda1a95ee45cbbeaa620f4c58968b0ec653c975b4dc41b972414c0",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/ada_layer_norm_zero_single.py": "6cec2e6115a572ab63d5e4586398f05c19bf99dc1122086a6dd7f44d051db70c",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/common/attention_utils.py": "87ce6b54bf66579ac86932fc2775dbf0c3b69baa88d76e2e51b6a8f4bd382edf",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/embed_nd.py": "62d20961fb083582d62496760596db5806aee0f739ddf63fb3906265b4abf17f",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/feed_forward.py": "3508722659c3557a60d4bcf1e7e8b8ccb162efe957585c990340afcd00918f8c",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/guidance_embedder.py": "d9c0fd9400666582e3921162590982be64ce804e9c5f1e763a627cc3c1214cfa",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/joint_attention.py": "071de6c52360f5b892c968def8c46c932fd26545d896ebe5aec743cdc5f3001e",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/joint_transformer_block.py": "93ebfc2239159ad5cefcf07230f0f28c3e9927fe02453f865815cc609b66e564",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/single_block_attention.py": "f8f75db8b33cda50a82b565dc2b06bc3b4b91b8f6d87d3039380697bc1f29ecd",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/single_transformer_block.py": "cd983cd84ab33f6718edc40055d5a72be75462dc90dc63c596a51ed4d2cebef1",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/text_embedder.py": "27c9dd65770ec9dafee4b0797cc419413b3cd8b5aed390937fd4bf3efc078ced",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/time_text_embed.py": "477789d3c25aec2a513d9f71d3ba46ceb589091b2147553e75d9381fe1bf3e64",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/timestep_embedder.py": "fbec04f90eea05e5037f04b0004e56810252a2253f923b2cd689340b5694ad75",
+    "../references/mflux/src/mflux/models/flux/model/flux_transformer/transformer.py": "80b2c8234821a81450ef897d18ed3cb2f2b1dd0ad2e1d7e50ca82140c714f73d",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/common/attention.py": "973d1bd69532280bcea12d2a7b990ca0ce07231dc8b903a2978f48627b154bfa",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/common/resnet_block_2d.py": "0477b5148d4fbc70be3aa199f160c5d0df19bd002f14b0cc3fc6251a7281e175",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/common/unet_mid_block.py": "381e397d2113b2c0f868643b310b362ba9a9eb3f01557ef50fb8347e5d6296f3",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/conv_in.py": "16aa09b811a73695b2846ffef38cb6e99d4edd985dbdbcd86058a5eeff21da22",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/conv_norm_out.py": "d7d0110494271639b00c44f91e88e0efd0b640202211e67de9d1b33d787d935d",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/conv_out.py": "8dcb7dc222a6631bf314672b877470c71c8e711150da53a279110bb1a8986547",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/decoder.py": "69602bdff6e3509e38d12b30728ac1ea32114db74cd0ec513a0b69c49706525a",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/up_block_1_or_2.py": "4497a4758b4536aa9bc65a020f30e749a22caa98de9bc40193d03817c7558730",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/up_block_3.py": "3c9bb7c5e553db37ba8bf38bf43bbf1c7fdc37dbcc712aa05724f302e1cdf8c5",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/up_block_4.py": "130a4b33422b96b50329fcf9237e77d9c2d3673e6211a9daaeed84e3e0a017a4",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/decoder/up_sampler.py": "b7fb3ec972695aa01968b40f42f8752beef4f09365071b783f2cd8bbb02297dd",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/conv_in.py": "ffcd3e73a88385898d7a407501a0c0cf94d8e278a701487caadb1b966bdd4074",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/conv_norm_out.py": "15107d0f1ca402265e0d67858c49731591bf1edead9120330d060d2f167b15ee",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/conv_out.py": "b134f743275e4e9de9ae59cfbdce26e7a26c59d759bfa6c7e2bf2cfc23c9bcdc",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/down_block_1.py": "8aa6e7673cfe0082e59728fc02da35776b120c94054ce11ab40d16cef7b2f059",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/down_block_2.py": "84e006cb7642cb0052c5c0deb9747bc4878feff309f1e35ab556830eaeea4cab",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/down_block_3.py": "ddec33d3c2b5dc75a0f05940cd7e15d2c30a383a7dca8362a496b9f95c47f375",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/down_block_4.py": "c253e1893d781d4264697afae2da1b6ac1aba817c47151edc6b695e42039d038",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/down_sampler.py": "01ac0c9ed8790348aeaf3684dfe14ff63d6ffae6aa48c4a499f413ba118587cd",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/encoder/encoder.py": "3e5891b645b0ad05694b3cdf9e6eaf07408cd7b1e789cc22e32a904aa11b1749",
+    "../references/mflux/src/mflux/models/flux/model/flux_vae/vae.py": "d566e176cbf33f45cb02a7dbd714fa2797e41151beffd33ba0718f4344179722",
+    "../references/mflux/src/mflux/models/flux/model/redux_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/redux_encoder/redux_encoder.py": "8ff38bd38306b9ffe426ff5e10352f52ba9bd6e6a558b7a2ceec2ffac1460f34",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_encoder.py": "d81b8012ef8d6a77a1a9c5e1ab2d323aa9b5145752c9a90613c95aa680bc57d9",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_encoder_layer.py": "53f7f1b90e1a08eb5600e60330f9a7d71b3390a1d3ffc71a5c4233f5a4c448a1",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_mlp.py": "6786e1b1be16b2ef8d6d41823bf79e1b16741b8be8ecd9758c688bfe3af9faef",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_multi_head_attention_pooling_head.py": "c7cb848521cee05f3b9d9368ce61725c9532ed04b5b8b67861f58d99a0b3b3b5",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_sdpa_attention.py": "665fb2a2ed0263574c293eec65f9ea5698c1c1b7ea4fa7995aeebbe1f0b5763f",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_vision_embeddings.py": "307813a0c0efadf72299628d4c3f334a9c393bb4dfdefa6955a2fc24faf29ac8",
+    "../references/mflux/src/mflux/models/flux/model/siglip_vision_transformer/siglip_vision_transformer.py": "be35100683a5aebee48001b350301860c9b53572ec96e32a1941a1be87616ced",
+    "../references/mflux/src/mflux/models/flux/variants/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/__init__.py": "3d7b0e2d2c66f154706a9021acfa9e67a3039499ab34f1d8de00b380053265ac",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/attention_data.py": "f8dca7b455f4d8bfe4bd23132972cceb0439ba69faf5547458f144868238b957",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/concept_util.py": "cd95524c796e7eb7f6fe87a22a45eba8b9f5e10e8ed3ef730af2ec2060c8fe4a",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/flux_concept.py": "2059deb05ef67527bb35395a4af1bc659e05f02d92463aa55e177382bd6e37d2",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/flux_concept_from_image.py": "15a7e11485379e8fee94725c0a902745e850cc9d00beee135a871ba1e5e1adce",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/joint_attention_concept.py": "3395723f98e95bffb75823bcc9af9ffa17bc1f2ff3caaeb3272ba0323bdbd4f4",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/joint_transformer_block_concept.py": "a3e3cf927090596b7e09a4cf7d52566a9b673cfc6ea4034c89011488f7f536d8",
+    "../references/mflux/src/mflux/models/flux/variants/concept_attention/transformer_concept.py": "4162840e1d73d7f6687a0e7bc0e3aaf4693eb06ed50ef64ef8bc433f2eebed62",
+    "../references/mflux/src/mflux/models/flux/variants/controlnet/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/controlnet/controlnet_util.py": "d6c54231e5b8906d0258470bfa36ecf2fd074834fb664a0dafd381c82e401f8c",
+    "../references/mflux/src/mflux/models/flux/variants/controlnet/flux_controlnet.py": "25e13420d15a1e1f89b4a9d4bbaf8b05c1ffb2b09aff81aa7e297b0ca848d1e4",
+    "../references/mflux/src/mflux/models/flux/variants/controlnet/transformer_controlnet.py": "05825321120f51ca0acb184c70e4304b3e494189c95a6fdc2d6e1483f626671d",
+    "../references/mflux/src/mflux/models/flux/variants/depth/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/depth/depth_util.py": "d01ea75ec744568e5db550e3cac5baf1976e71940a4c01fdbe599fc1c59f9b86",
+    "../references/mflux/src/mflux/models/flux/variants/depth/flux_depth.py": "7f74257c24b5e1e86154a39472c035726a53ca11824c65516e699922faa8871f",
+    "../references/mflux/src/mflux/models/flux/variants/fill/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/fill/flux_fill.py": "3012abf8a9541aa8600eae80bf2d8bdd6167cddd79030a6190d1df680050fe41",
+    "../references/mflux/src/mflux/models/flux/variants/fill/mask_util.py": "b6f20892105b71e1ff64f325c2a3448d534f379ef95e44bec33d9224f5d5a7e9",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/flux_in_context_dev.py": "4c706b7190499fd35699ad88487cf96bf0b5d5c0926472b5aea55226fb07de46",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/flux_in_context_fill.py": "ddf47c5d45573bc3dfb0eea1e13c1421bea21e62022882baac7b34dc91bf6d46",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/utils/in_context_fill_util.py": "66709dcb6a8a96e40fd5a6b03c54c320927d19bad14340c2d443af1e25a46e7d",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/utils/in_context_loras.py": "65b25a9a8baab9f29982ea97800ae0fc159b3e725d277f9a4aee6cb05b65abaa",
+    "../references/mflux/src/mflux/models/flux/variants/in_context/utils/in_context_mask_util.py": "d5d77d655e695a61ff714d217ed67938bc8a99c33c64e68c8b76b9c1732890d7",
+    "../references/mflux/src/mflux/models/flux/variants/kontext/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/kontext/flux_kontext.py": "a1b0be00363b375ec2cba89d462c6e7bef1670dafaa08c6e81228d63b2e44f55",
+    "../references/mflux/src/mflux/models/flux/variants/kontext/kontext_util.py": "169637eb55c34267f274b9f4dc731dcf6b1d782c8b5d242658f7940f73920097",
+    "../references/mflux/src/mflux/models/flux/variants/redux/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/redux/flux_redux.py": "0329aea75b8e03b9c2b1dbb41a49b799e7724994550003f038935dd45d4f9430",
+    "../references/mflux/src/mflux/models/flux/variants/redux/redux_util.py": "f6e2cbf27f464b184bc9d4877e841466e4f25a3d6cf1af76b1cbfeaa595c57da",
+    "../references/mflux/src/mflux/models/flux/variants/txt2img/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/flux/variants/txt2img/flux.py": "283e000210a89dace8e9331043b5fbdb20d96723aa8a27abbba07ef14491a764",
+    "../references/mflux/src/mflux/models/flux/weights/__init__.py": "78cd1c622a5d8bcf63f245fb71595c1f4f04cd43dee96ab735546ce895ec483f",
+    "../references/mflux/src/mflux/models/flux/weights/flux_lora_mapping.py": "3cb113b025d3a3794e6d8e945be7bb9242b1f8dead8eb31d5c204171c2e21f58",
+    "../references/mflux/src/mflux/models/flux/weights/flux_weight_definition.py": "c556c5d3340af3b87b9f4669ed02bc5a1e2dfa54f7e619cf9e1efd57b1e8b958",
+    "../references/mflux/src/mflux/models/flux/weights/flux_weight_mapping.py": "6cddeb057f8c82f797e2471960cd2d83241133ed107b7e8260b71bca8aecace2",
+    "../references/mflux/src/mflux/models/flux2/__init__.py": "a85186ddd8bac243181af7526936194b04874caed70a4a2b36be0c5ffef923a6",
+    "../references/mflux/src/mflux/models/flux2/cli/__init__.py": "75ad4f4c2943325f88064ad2beae890b59674be2bf0404b30afc5584dc4de4bb",
+    "../references/mflux/src/mflux/models/flux2/cli/flux2_edit_generate.py": "96ad6f67f5fad84aaa3ec8ae7e2deefd82dfc3b78f110327e43b6e339ec7d39a",
+    "../references/mflux/src/mflux/models/flux2/cli/flux2_generate.py": "6f40fb860df71bcb5f4c15b9d40dd5172590a83e9a55807e19633c5fc2f44d30",
+    "../references/mflux/src/mflux/models/flux2/flux2_initializer.py": "47e95828ddf22265196fb2ed7c5b6f0ba55b89fde493ad73b8cca4672da839b2",
+    "../references/mflux/src/mflux/models/flux2/latent_creator/__init__.py": "59883d85fd2ce3af9834dac8116a4a11df06dfb0e298aade519d4daa3c879de7",
+    "../references/mflux/src/mflux/models/flux2/latent_creator/flux2_latent_creator.py": "eec77a06180ffb839b2086aea560b64ed0dbaf4a31a747d7bf8fd699e3a09f84",
+    "../references/mflux/src/mflux/models/flux2/model/__init__.py": "d459e24e25c27da9b3e9b4e1b684212cb67d46649f9ca2c23ef9d13b838743be",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_text_encoder/__init__.py": "33d611a08bfd7777d3c8e95fbb404ef68a31ddcd76dbe67167ecb998be5acfdf",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_text_encoder/prompt_encoder.py": "81005288a5d7e159258fa0f3e0b32d2ed321459677ba12c0958c9d9cedf7f292",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_text_encoder/qwen3_text_encoder.py": "a4e8f3b221d8df0a8e7b3317881068a628454a7ca6e31bf9a056393afb56e892",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_text_encoder/qwen3_text_rotary_embedding.py": "0f6a9d88b097902113ba605d5e054983d4b3d4a0e56413345057c780e49b2944",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/__init__.py": "715d624fbb879e04a3e19076c4e26693be6436f10700e819d71ef53361b00a06",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/attention.py": "18192f2956c4d510106cf23d0b68b4b20cf6b2363afcac060d9cc8d7ff31b865",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/feed_forward.py": "0f31196f465a387b972537cbf91df841a13ee9c09b26b10915eca4baa35f94de",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/flux2_kv_cache.py": "46aa4418a352a562c4893859d61088585700211ca1692fd8b816abb4ff96e843",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/modulation.py": "cc476342e005e09f3011b5442e9961430e5535466e7fc53aa74464b0c69c47fa",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/parallel_self_attention.py": "d927cc35f54ba9a8eedf293ae0aa0e2bc214cf72714241a6e5c37e1603ec056d",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/pos_embed.py": "f8f2147f51f996e8bfb1bb0792f734906e4c5fe987d959f161823aef9d399ca2",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/single_transformer_block.py": "f437a6601921b0ad9bafd94001d817dccadfbf206f44ed7c7265e312e7fd1d25",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/timestep_guidance_embeddings.py": "357a358b70c4417d55f1a5af111bc4a8c8c0492b18f26e1f426a692517fa03d2",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/transformer.py": "7020f248978d05783e1f403f6d007c0d0cb4f2540383654bd1dbeafb36c84045",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_transformer/transformer_block.py": "f5f5da50b1c6618079b19d80ac56bb87ab48a9bce48b48a74c6b490e2012589b",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/__init__.py": "cf0b2321c4374985fa65b0a0fbcbdf4342ec752762ae1cc66b0c1834455d3e98",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/__init__.py": "eeee6e96f9bc038b7ead2408ea7f1399ba7721de5e61904e71c9f14117de540d",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/attention.py": "2d0f333cb5b095acec5baac9609017c94d96d0a33ae78757ff415cb6ac495f59",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/batch_norm_stats.py": "c8966dac8b9f55588951be1507509344864d2820747d7aebb2e0a241a9ce7517",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/downsample_2d.py": "81a4f89afb65b5a871e383d9a3743e202f030325e5ee10521cef7daa2d706811",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/resnet_block_2d.py": "19cefa03258c5eef38709da28e4ae56b8a9778c0eb79300ad6fc42f32bca1e68",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/unet_mid_block.py": "d237076e5198ff144f9ce6f51de67609cb36d99d7223dd5510ad8bbbf97bac38",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/common/upsample_2d.py": "e3939c3cb0fc4c76b398705ca2b1b6d659589567e2c160201ff708241a718c32",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/decoder/__init__.py": "e0b17c03d6ec8a9809bdc1a8ca834bf105783eed3e79a5b48fc6f6819c68d349",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/decoder/conv_in.py": "1535157b0fbb3723e91aec94a0dea8e6a607f580e19663f08f0d98aa6295f1fc",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/decoder/conv_norm_out.py": "7a30a3704af94216436cb2b76fa8eeed83308c8ba234c529a716009c0380c5fa",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/decoder/conv_out.py": "5cab8fa2330ebbbc5a04c838ce60aeacdd7bde49531af4c1b54e0900112b366d",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/decoder/decoder.py": "2b54dee4758c9df9bcfcfabb97046bd6dc4ac44ea3d1f9c849fb041c0ff9ae54",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/decoder/up_decoder_block.py": "854abc857ba1dfaff35e543860e4b6f8a127b225524f8184e8eee9c63bb42d9b",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/encoder/__init__.py": "689b0c716b75c119dcb9c130ab28faabad2da9c2ec457b5f4d5056219c719ad1",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/encoder/conv_in.py": "1535157b0fbb3723e91aec94a0dea8e6a607f580e19663f08f0d98aa6295f1fc",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/encoder/conv_norm_out.py": "004692f0432021d1e8be10a5d685bc042c7019eafd679ba34f41abd78266d8b1",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/encoder/conv_out.py": "5cab8fa2330ebbbc5a04c838ce60aeacdd7bde49531af4c1b54e0900112b366d",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/encoder/down_encoder_block.py": "5926f34f8821f5ff5461b5c3f3d14805afeb38198ae72dc7bcff25351d9a4cb5",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/encoder/encoder.py": "3dfa91d73060914b56e88afaeba80378b07c5dde519caed0dd3e1f0a50a7d322",
+    "../references/mflux/src/mflux/models/flux2/model/flux2_vae/vae.py": "025b5fb3fa4a7893b1357b567ff3369236be2c45fcaf40d2ec4d74618b172341",
+    "../references/mflux/src/mflux/models/flux2/training_adapter/flux2_base_training_adapter.py": "7e7d9dc7bb4df400343026ac6c248fb716cbe3b515edee23d5d5e779ac5021cb",
+    "../references/mflux/src/mflux/models/flux2/training_adapter/flux2_edit_training_adapter.py": "5e30e15036b03f724c823456ac2091dea99f4044da252befe1fe4a54b3966452",
+    "../references/mflux/src/mflux/models/flux2/training_adapter/flux2_training_adapter.py": "40de31fc6a3456a212fda8fcf443b44e3fad34c1ce6ae70d95bc6ac4969d52a4",
+    "../references/mflux/src/mflux/models/flux2/variants/__init__.py": "c176e7a63ab080a759dbdcc29a73902cc1b5a94704d57de12499f7bec1fc3891",
+    "../references/mflux/src/mflux/models/flux2/variants/edit/__init__.py": "bed2f2fdbf7da7e8acfcbb2615a364763d6ae17d77d71722f701b756fc8b4be5",
+    "../references/mflux/src/mflux/models/flux2/variants/edit/flux2_klein_edit.py": "0bf5383aa13616ca672baa6d1d86718bff6ef3bc56019328c9d9370ee2d2d983",
+    "../references/mflux/src/mflux/models/flux2/variants/edit/flux2_klein_edit_helpers.py": "aa6c4764a2610ad7b80639f907c6732ee5603b728d24a14e39cb5bcbf4d37f20",
+    "../references/mflux/src/mflux/models/flux2/variants/txt2img/__init__.py": "4cbb77abac43b2e63a346ac5e95ed4caca4dc9490430ba41de3ab5b44198c1ea",
+    "../references/mflux/src/mflux/models/flux2/variants/txt2img/flux2_klein.py": "3610491f06066434accba541d0fdd4c76c5e4475dcd2b5a86946cc98f99029c6",
+    "../references/mflux/src/mflux/models/flux2/weights/__init__.py": "4e9af8dac4b42ca30197353e5004f353dbb37bba87f3b1fc354d10f1660f96e2",
+    "../references/mflux/src/mflux/models/flux2/weights/flux2_lora_mapping.py": "e79fdc728fab81616d37509c3c25d16b43bcb6e35eadb96f5a66f6eab998293a",
+    "../references/mflux/src/mflux/models/flux2/weights/flux2_weight_definition.py": "f01fccc04359e92f76aec2289acd0fe9ae4bb84d0782e975fd81220ff1b8d66f",
+    "../references/mflux/src/mflux/models/flux2/weights/flux2_weight_mapping.py": "f1f73271de0a4b48c5d2932819380939ca9aa39aa93fa2811948ab3bbf3fe122",
+    "../references/mflux/src/mflux/models/hed/__init__.py": "9c02906f11331f2ec3e2b30f19ae2dbeb63226f72031714dec97b4b3d9c5ba0f",
+    "../references/mflux/src/mflux/models/hed/hed.py": "cac2ceadfcec3916a92c0ab3356cae73e2eb607c97e83b49dca4dc0b99f32cc8",
+    "../references/mflux/src/mflux/models/ideogram4/__init__.py": "05757711a0dc87ffc8695fc00670226b32196f44a77269e6c57db18b9a45da64",
+    "../references/mflux/src/mflux/models/ideogram4/cli/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "../references/mflux/src/mflux/models/ideogram4/cli/ideogram4_generate.py": "a3dbc810602b7a2ac71c7f534d6d294a81e0396275ede96ed3f325b5f3ef7315",
+    "../references/mflux/src/mflux/models/ideogram4/ideogram4_initializer.py": "4b8a9cc9e26a08ab861f3148f516b151a7e72d75c9f5f950e5fd0cc4b3c6332e",
+    "../references/mflux/src/mflux/models/ideogram4/latent_creator/__init__.py": "8020c1514700729cc4e6db993d8e9dc5736ba26900b425900791bbd841e9d882",
+    "../references/mflux/src/mflux/models/ideogram4/latent_creator/ideogram4_latent_creator.py": "47c6ee1de65e674eefbb688e0a55f1850c7c5aebc281d104056e85a32348138c",
+    "../references/mflux/src/mflux/models/ideogram4/model/__init__.py": "e47bcdbe728f33bc07c486be8a9f99ba5f5e6ed89af6bf2ca84d3e76cbef2437",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_scheduler/__init__.py": "fb0851ce1d4e5cf8248a793a1acde9360b163adb540d79e3e0c483398ecd356e",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_scheduler/scheduler.py": "102bc20afc22d5315a46883dd664aac5ab0cd22a1c5e14e2450a1aa66cd65043",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/__init__.py": "a4ea629b11f3c37bd22848fda91ba9d8150382fe5e94410042c442402741e035",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/attention.py": "ce633b7d1234bc966c43fdaf93a112fbc81edd531ee7765e89fed013d6846a03",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/caption.py": "c4464b221afc65bb49e4f47788bdd4702540c241a69279bf50719eb2d329ffa5",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/decoder_layer.py": "13eaaf0acdfc641bc343335108361c300d7fca918c09e16ae23e291061cb8522",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/feed_forward.py": "362e8bf4c20ae4305854be0ab37da59ca0d30c17b860b7fc2a1f0f25b193e64f",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/prompt_encoder.py": "db963eddddb5560578b62a0a90053a48e58fcaf47686b13e5ba0380bf1bb2c1d",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/text_encoder.py": "baf52264e0454abf3995cb81b3200f935fdc6b81d151c3c42c12a579fa91df73",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_text_encoder/tokenizer.py": "24a06109c29b435c7b2b8540cb73902317861e0ca6a4adb19a0d9ab8f1c39fed",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/__init__.py": "0f981f54cc45794fb1157f05fdbc8390ae4b22f7621a50500ae9f2cab2ede3e8",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/attention.py": "7298fa351c572f175fb1d077d1dc7449c515e73f02795937559fa1103474d793",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/config.py": "1ffe5c71df3756cea522c8a424a1a6213d37bf2fa2ab0545ea8ce148e68b61d8",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/feed_forward.py": "2179e28d4de4eeed8fc34d3be4d811525c4d5fcc2078291f4df56e609f4b4188",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/fp8_linear.py": "3caa6291bcbf9316f63722a9e4b449b28690ee2356a810497496547adc3014b7",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/modulation.py": "2061095d4d442e43cc32bd182b5ed5d8726ff43c92deb43fca884e346e7e5961",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/rope_embedder.py": "1faa237bf921120ef411015045aae4d8524ecb95062b6388c51f7644ef8de52a",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/transformer.py": "a21d67ffcd43473088eb3ddb228795ee0f607e553029c7ccf672a194b28dd9fa",
+    "../references/mflux/src/mflux/models/ideogram4/model/ideogram4_transformer/transformer_block.py": "c4fd15f1f374669bc6cbef2c7be66ded8c1c42d88f57f545a78801e8ee67c87c",
+    "../references/mflux/src/mflux/models/ideogram4/variants/__init__.py": "72d6f0fcb6d48510dd71e32ef2589b6105963c2eb817fddc83c67f21f4e5d537",
+    "../references/mflux/src/mflux/models/ideogram4/variants/txt2img/__init__.py": "72d6f0fcb6d48510dd71e32ef2589b6105963c2eb817fddc83c67f21f4e5d537",
+    "../references/mflux/src/mflux/models/ideogram4/variants/txt2img/ideogram4.py": "a7c04712459fece7e2d3de117e88340cabe4e1beb97ba19a0e2b6ca0e683b40f",
+    "../references/mflux/src/mflux/models/ideogram4/weights/__init__.py": "4a6867741b17f6099857f4d2e7619fa9a1a0de7a60dbe2f4627c5f1f392e05e5",
+    "../references/mflux/src/mflux/models/ideogram4/weights/ideogram4_lora_mapping.py": "4ca6f442010818155c0bd737da596a2c028412c554e6153b6666574ec47d4e34",
+    "../references/mflux/src/mflux/models/ideogram4/weights/ideogram4_weight_definition.py": "698544cea4f036362731116b7f930fd885cb667a827764a8c44aeb8bbea5790a",
+    "../references/mflux/src/mflux/models/ideogram4/weights/ideogram4_weight_mapping.py": "f61960b137b42885de9f4d623b63f7fcff0daeb81a56ec249ce8ca4a0f8e199c",
+    "../references/mflux/src/mflux/models/krea2/__init__.py": "f7bc7b5cfd15e4d6a4d7322ed085c0a2317e54e3630532793c273cf88478cceb",
+    "../references/mflux/src/mflux/models/krea2/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/krea2/cli/krea2_generate.py": "030f5e03e6130963281f441b3c8434a1c83384cf39884326179854a4f78f27a2",
+    "../references/mflux/src/mflux/models/krea2/krea2_initializer.py": "43d0c5a64959ed41dc856356857b55a7fbcc12b1db3864f7f72e55f4dca26877",
+    "../references/mflux/src/mflux/models/krea2/latent_creator/__init__.py": "3e3b8a26fca27d727612a50193991872df8b5082d043e26bbf786f1bd46b2b1f",
+    "../references/mflux/src/mflux/models/krea2/latent_creator/krea2_latent_creator.py": "0f29aa28d8eed0de8d1f2b7bf41bb0212f2fd8d05612ed83ddef952271885c7a",
+    "../references/mflux/src/mflux/models/krea2/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_sampler.py": "74e8c63551233a2fc576739bcb7f737ac78788142c7abc68275da62216d0f2ed",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_scheduler/__init__.py": "aed79c3722003f15e96f1e8c7108b01ea112b2a0260109ed7a585ad15f8d2cda",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_scheduler/krea2_flow_scheduler.py": "a816593367a4e9f0edf215a0a14d3ab87d6fa193f9572e49ff135892859b0426",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_text_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_text_encoder/prompt_encoder.py": "be621945ae96316c37f334ccf50cafdb810e1171ae0ddf65c6d85be2f1c4d790",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_text_encoder/text_encoder.py": "fbc609206541bb6c00214a1dd85ba1166ec32598dafa9b7e9ce66339ab06bc71",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/attention.py": "e4edf867496034af92be6a782ea8fd7ebaf7064286f7843c734730f99b838475",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/common.py": "0717fe820fcde40a3a856015171fe9fa41eeff223f3b8e413a1669e9e1513eb6",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/feed_forward.py": "4b0c0c1d1cf736333d0bf10d8c123bd114fbe6355d8a30197b35883dad250a6e",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/final_layer.py": "db96f4389ca14200087449612ffedb0187a1ede54c5c303f5d07b2b2eacb7e42",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/modulation.py": "efdbf9800887f04f6d9bbd5aeb5a39ba5ee9df16b5b2d8065a391cf029ec6672",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/rope_embedder.py": "d3a2d94c0923fc23c981f2290abbe73064f0d010b27b6f1825e874bcedf5b585",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/text_fusion.py": "40fbca1f1bc70b9c139add6ae1b079d50154160f19566ddba127bfe12cce9259",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/text_mlp.py": "0144cd368460dae404a33e3437cb84f2d5312e1140853b9cf17aefb9a1bd9ce6",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/timestep_embedder.py": "127291058519ba91111700b6696f0396fd2842912e5892032b4d97c26044364a",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/transformer.py": "5ffc844c1eaa274bbc26f2946f41cca545a156ca2c446713a44a2ae000fbcd3c",
+    "../references/mflux/src/mflux/models/krea2/model/krea2_transformer/transformer_block.py": "0c2a3213ef98c629e6b355560c44eabe433787487f7bca25ecc3593aaaba6ee1",
+    "../references/mflux/src/mflux/models/krea2/training_adapter/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/krea2/training_adapter/krea2_training_adapter.py": "c82c7219bd8c9eaf2fda24b17ee4e89c2d3b0dcd4ad5183a8a7d57f6d06aebaf",
+    "../references/mflux/src/mflux/models/krea2/variants/__init__.py": "5e84995a2b3197d6361d93072ce0c916623eee3853ae2795036cd25c49b12877",
+    "../references/mflux/src/mflux/models/krea2/variants/txt2img/__init__.py": "226850a1755bb4dae7586c7515047635e6d343de1b802728efdf7621fb560814",
+    "../references/mflux/src/mflux/models/krea2/variants/txt2img/krea2.py": "7bc297593bd850ff772b783285e153dc5b84f09008ce2351922f886b95d03861",
+    "../references/mflux/src/mflux/models/krea2/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/krea2/weights/krea2_lora_mapping.py": "625d505500929d47086c71fd4f147c15d6ddfdd7ddfacbd5364d6a7ec9ddf5c6",
+    "../references/mflux/src/mflux/models/krea2/weights/krea2_weight_definition.py": "6c31cbdae85bc767cc3dd85143c702088bcc215332501368cfb4b4affc658eb2",
+    "../references/mflux/src/mflux/models/krea2/weights/krea2_weight_mapping.py": "8eaf901d18929d07a90e5ac782eaa804fd720dc7331890239875c444608e5ee9",
+    "../references/mflux/src/mflux/models/lens/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/cli/lens_generate.py": "fafc8bde2c12e92b2be2c8a4bd60253019f002e48bdff07be921663337fcdad6",
+    "../references/mflux/src/mflux/models/lens/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/model/text_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/model/text_encoder/lens_gpt_oss_encoder.py": "ff0724ddbab08ca95f713950a2212046cb1803dbf2777016d2cbe2e1a302b214",
+    "../references/mflux/src/mflux/models/lens/model/text_encoder/lens_prompt_template.py": "e414c83fed132f641ecb6cf73fea0267462f75e2ab85cd4a7d6f43abaf1c4879",
+    "../references/mflux/src/mflux/models/lens/model/transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/model/transformer/lens_attention.py": "fa27417bfd7f7ce3d85b0d88979cd8aea23ebdf813ca163d24b6f740c46d206a",
+    "../references/mflux/src/mflux/models/lens/model/transformer/lens_transformer.py": "754a980c6ad1fe0ac5eca6a8cc80e948d43a1d3db32c30ef52e4f9cd79cc6da4",
+    "../references/mflux/src/mflux/models/lens/model/transformer/lens_transformer_block.py": "4da4be14401983f508a54d1d502e9bd014260bb188556007ee24f48114e0355f",
+    "../references/mflux/src/mflux/models/lens/variants/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/variants/txt2img/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/variants/txt2img/lens_image.py": "cf4a6713601b6d93013dd8a50485e317c17c2bb399d8c3bb38d2a4c756c8227c",
+    "../references/mflux/src/mflux/models/lens/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/lens/weights/lens_weight_definition.py": "e26bef93396980466839fd9b5fb9406ea902ed76ef11c5d252a8cafd6069febd",
+    "../references/mflux/src/mflux/models/openpose/__init__.py": "0c22f329e616112bbe8af124065e7d9bebb866d2926bb66e551e3c3eb84dab80",
+    "../references/mflux/src/mflux/models/openpose/openpose.py": "b65bd887619a5aa3424db2235144ee460e384ede7fa3061878396324da723b1d",
+    "../references/mflux/src/mflux/models/qwen/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/cli/qwen_image_edit_generate.py": "8457e9a0d46ed5b018b5397d6128bb8266f3278b818468d5ed6a74bba6e20f39",
+    "../references/mflux/src/mflux/models/qwen/cli/qwen_image_generate.py": "36b9060c46e05e22c25b6a363d4932b59248324908763ae59932be70a022cdee",
+    "../references/mflux/src/mflux/models/qwen/latent_creator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/latent_creator/qwen_latent_creator.py": "3efe89ee478aac9ccaf020e143534304ac50a786ef6b7c165cbf6526423f1d2a",
+    "../references/mflux/src/mflux/models/qwen/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/__init__.py": "032cb4bc23ec496f30647f53fdc37fe457dfd50b03ab1b9d593f4afb961ce7e7",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_attention.py": "e657e08401f9d2b7d625aa15cd0ec1e32643c1a07ca23b64895d42023e282fdf",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_encoder.py": "606176045d019fc6e56e7a3e0ffb739d08bf444b370cf009b80058e596b518ba",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_encoder_layer.py": "60947e579638174e4a1035749b3bc7c807c9d966ec73efe16e1f98e20daec612",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_mlp.py": "bb3503e76db7da59182ef221c7919a048fb15178278aa78677afe94852e045d8",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_patch_merger.py": "a820a75735ca404892a0c9b7fa768bd78918b620efca1e28988d4b364bd75440",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_prompt_encoder.py": "773cbf2bcb6e194d8f50b921ff38c361649174f78046a1f4746b5f01c6e4868e",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_rms_norm.py": "f6d65d1d731ceb5b9efe4b3a3a99c4c2fcef57071dc762545a7384f4a7c0fd71",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_rope.py": "dd397f23e641b1d63fee3d181d3d960c846d1fa9b54d01cdad7057a88e03eee8",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_text_encoder.py": "cddca905670cf7c06e9faeafaa97a8fc89c766926c6faec7dd214b200ff58c1f",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_attention.py": "06408f662ea57d73891a53557e0758c103c2fea3f0f47ec3ccb672458ef763b6",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_block.py": "b2d62cf87f7a3b34315f1290de6b1ef172928b55f72e0dae5b13df9c3148e76f",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_language_encoder.py": "9841ae256bff249788e7d0a772db88c9e31d52862df7fdc376ee22399b353275",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_language_prompt_encoder.py": "f41fb283ca10b22af45678739c496d737231088b84d04a41f0a75fb77d026b7e",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_mlp.py": "4cd1ab3f206ef4da01444be26705c307fa8b756e81fcafd2703a4b121cec35f0",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_patch_embed.py": "54cf99bfe31f649265dcf6c535048aef02543a615b0553a490c3ef55027b0e6d",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_rotary_embedding.py": "7cfa9954f91dc43b1b0814c3d420140e720f9945b6adebf5ab08a3782f609180",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_text_encoder/qwen_vision_transformer.py": "6de9bbca39e87623a7a1291649481ba29abfffb543750b188f940b11b69ce608",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_attention.py": "2a35b18b8fb87defc0cc4eb6e90f0795a51618b01df0fac44e80b56d6222b416",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_feed_forward.py": "cd59f6ed765782331ad869211edbf08bb486bca22d9980957737a62b01862007",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_layer_norm.py": "941a224408054eb6561edd3b12662d4ee6e298334ea0fc06c7da7b1122a77430",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_rope.py": "f7122b1c9afe911b53486931dd7b7526c90a47e729c3f629ce0f7c75716a6b68",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_time_text_embed.py": "e9315673acee7e404fcd25ce91bdeda20c500b9b81954a3d3165f96366574cc8",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_timestep_embedding.py": "79c7d948e75bd50a65ceeecc5211150a9b35a83a57d7ad2aaa4d5766269281c2",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_timesteps.py": "0ed471355bc75655f4e146ecc91d3cac50600d16710951364aa5b6e5d848b91f",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_transformer.py": "07d28211082bfaa59a4076ad80c25f5ea44a61281dc84882c9c5cc95e3e5c154",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_transformer_block.py": "afb4230821a4eba56ddf03bd95e9c653fee214b1e8a1df8a9580a810cdb80ec6",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_transformer/qwen_transformer_rms_norm.py": "8667fd1d273ee4390fecc70dd91a5ca9871bb5c9c2178ab79592ced4fb7b232a",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_attention_block_3d.py": "50d827ff8de20338b3869003b13bb74087c9872190a919a7beae54038df06ad5",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_causal_conv_3d.py": "f4b0f0ba185716f8e43b722d88d1a3cf5356b31e82e2810364b326b0df3f0bd4",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_decoder_3d.py": "7527d50a14ded51e5257f320cdf254652cd203df256e9d443c20fbd037e534b5",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_down_block_3d.py": "6328740e42788dc7c74942d9ef2757bc1fb5a808200f017574b13cc2b2dcba12",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_encoder_3d.py": "fe65cb9fd15985b7bcb52719a7551bbf3080f09cbad04587a69d641eeb9298f0",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_mid_block_3d.py": "d5b4cb3e70d358520067e34b121f837a754f373d01c13411cb4f3f3eb6577aeb",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_res_block_3d.py": "8655b7e5461cdb43acfa642d93381810befd35c616e50de61288706c7dfe69fc",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_resample_3d.py": "eac51814d434a368365e6089b04c31b0c9759ec88d19064c44105a53981281e5",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_rms_norm.py": "f213c2873888665d5e4452ed38b3f7db5c78149cfc6531c1b4c59ec3d0a6e24a",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_image_up_block_3d.py": "231c494a53760d48832981a17d38e0d0cd2b871931253a146a1bdc03db8e89d5",
+    "../references/mflux/src/mflux/models/qwen/model/qwen_vae/qwen_vae.py": "d42436bd93c880e17ef480b647ac327f8c2dc150afa0ad5c8926e178310742cd",
+    "../references/mflux/src/mflux/models/qwen/qwen_initializer.py": "7bd9ef2a49f12fac343c519294555307c989a7502a4eb4537cc8c62e6af60a63",
+    "../references/mflux/src/mflux/models/qwen/tokenizer/__init__.py": "3f82441b9ab1d92f2d01926fe2b54b8ca1f568c7538b823166212394c42adc83",
+    "../references/mflux/src/mflux/models/qwen/tokenizer/qwen_image_processor.py": "ecc6a36d83bd20b673bbecfd40bf495aa10225fa5dc87e193b69a7c00446c489",
+    "../references/mflux/src/mflux/models/qwen/tokenizer/qwen_vision_language_processor.py": "5ad5d25305a0ea0bc8bae1a129434c419b7bbfc2f30407d86a2c4bd8559dc97c",
+    "../references/mflux/src/mflux/models/qwen/tokenizer/qwen_vision_language_tokenizer.py": "2e97ada9626ab334dbdfd23fca71318713d8dfbaf6ccdb15d6b55d1f31281962",
+    "../references/mflux/src/mflux/models/qwen/variants/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/variants/edit/__init__.py": "6a4b32b8870e7867fdd32648cd66d0d14486cdefe4fb063e170ecf853a4ace96",
+    "../references/mflux/src/mflux/models/qwen/variants/edit/qwen_edit_util.py": "e0860769d875b135474b30dd319107bf5f699dbb9a286a3410bd3a5e42cd7a56",
+    "../references/mflux/src/mflux/models/qwen/variants/edit/qwen_image_edit.py": "2da022ac6a98be13d7cb6c97beba4d6e2a779251da6f92957001d5320f0e8de6",
+    "../references/mflux/src/mflux/models/qwen/variants/edit/qwen_prompt_rewriter.py": "a696fbaf60826affbe81a92bce487eb08f5c8e51d3d21aa9fe55c11da3d0b360",
+    "../references/mflux/src/mflux/models/qwen/variants/txt2img/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen/variants/txt2img/qwen_image.py": "99909b985bf22f23970350553f56cc9f62d5ac5a3a8e034943e14970b5bedf2d",
+    "../references/mflux/src/mflux/models/qwen/weights/__init__.py": "a966a916e16b357059f55ef0a9e503564159beb07cd4d3a2eb9c1aaa45fd37ab",
+    "../references/mflux/src/mflux/models/qwen/weights/qwen_lora_mapping.py": "50ce7b63071bfcb83c11d14e37f5c6476baf2a3d64da902c0e44aa0685d440f5",
+    "../references/mflux/src/mflux/models/qwen/weights/qwen_weight_definition.py": "98d98c251ffff8947299e5a5be5864942671f27770929d5adbf0c367104058b5",
+    "../references/mflux/src/mflux/models/qwen/weights/qwen_weight_mapping.py": "3bad38b26348fc6cc15de1589e325e132500f88a89f1ba84811406c4b92d74b5",
+    "../references/mflux/src/mflux/models/qwen21/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/cli/qwen21_generate.py": "c0a23d7bbae0f1bd6c719653f101196e4c23a0a40d4f8e8720d56d7c6bc001e3",
+    "../references/mflux/src/mflux/models/qwen21/latent_creator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/latent_creator/qwen21_latent_creator.py": "3abb0b0ff98e16423d0bb4562ed4afb34038bec588849db981f0600321dc4e3a",
+    "../references/mflux/src/mflux/models/qwen21/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_text_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_text_encoder/qwen21_prompt_encoder.py": "3099c73b16ebdba1241ad5839fc407408a0b67fa966c904a4be151bc2fde61e0",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_text_encoder/qwen21_text_encoder.py": "3806c3960f881e5d8f2e8780ad2b829edfc8ad739b4bf60289d4cbaebd1d3332",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_attention.py": "47a492802dd20ba99ee2762e74372b3d957ec4368d395169f369bb65386d49bd",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_feed_forward.py": "260ad7905138514349a6b7c65772286da615674d49aa00c75179bcd2a2dc6bc4",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_norm_out.py": "f403e5f7f63e297869190fdfe1155a6aabb2a13df480fca0ebf3af733adc911d",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_rope.py": "17ebbcd4a75428770a3cf0b99e3c601af7d216e51c7a00f85bb2d763840ab457",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_text_projection.py": "aca4d4c74c5450fa0238b4650984f478e5f59a5ecf25ddffe60a0a31514ca1aa",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_time_text_embed.py": "ab31403260d73810e71006cdcf14191223a71d44f653360bd8f582bb84646a98",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_transformer.py": "ed3eb6229247960517f874152c05a68d69436c0799a84ee4f8ff3bc4ccde5714",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_transformer_block.py": "a58ba12a265c563a4cc02a484b47c248e6195cdcf5dae3d71c26524cb1ec2bc2",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_zero_center_rms_norm.py": "fee973a86accdd31b8a941f9ad6278243d2f82e5c5f82a7fc1cda48283626c74",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_attention_block.py": "05c2ccc70650bb3a091467f46aec382f4bcf47f5613c1a6ef86ad63b71c3ad7b",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_avg_down.py": "c9ab6daefd82ff9dad6c03af285f515f12eea10655a626d2baa063a0eb5da339",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_causal_conv.py": "14d1cd97b8608551bd5b62d706aaa58755693d7d1621085cad09a3ae524ca03e",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_decoder.py": "fbad16aa01d7d713d946f06ee4f0894b390016e8602a719d46e2baaa195ff685",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_dup_up.py": "e734a8d68ce6122dc4a4ee1de70073eec5a833bbc3553989d30c63f97f19abcc",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_encoder.py": "521b479ebea194a29689fdc94f0a44c836c61afec35bf6b485904ad4ab917fae",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_mid_block.py": "bd34f315ec245d8c48e86b49da4efba22862a6b2f02b1cfe2a126998af82f82f",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_res_block.py": "3137992013e220ec9a12d06a534846c8f9a6b427c6549eabe76b409e125f8f4a",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_resample.py": "a47cbe5a4d23493aa5ea0359b2b4061c7c97bb7edcd477394015db49ba3bc35f",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_rms_norm.py": "aef4fca34cde0504d44dd9eb14c6506f34317ef49b7fabbe964ab96643c3bbeb",
+    "../references/mflux/src/mflux/models/qwen21/model/qwen21_vae/qwen21_vae.py": "e0249200176b0265f9ce9740d4cb42e8bad28c730de1eab7631409454e257920",
+    "../references/mflux/src/mflux/models/qwen21/qwen21_initializer.py": "36cbd8f0d6217781efe8202541e02a781ad47f41f7468af4fb98144dc7f882f6",
+    "../references/mflux/src/mflux/models/qwen21/variants/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/variants/txt2img/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/variants/txt2img/qwen_image_21.py": "4c7cc04e9f0065bbd32e40358653e6f1196ec787f3772b03449bf34a5a08ed74",
+    "../references/mflux/src/mflux/models/qwen21/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/qwen21/weights/qwen21_weight_definition.py": "a519f49be18a5a4e38006e51ba8aecd59b4f5982c510e0c2162dd9adc7749f4b",
+    "../references/mflux/src/mflux/models/qwen21/weights/qwen21_weight_mapping.py": "91170f39e1ff31083da7bc20cfe6c58811b77ef71abdab090bf6c16ab9776c8e",
+    "../references/mflux/src/mflux/models/seedvr2/__init__.py": "8b48d86b5657b7189d55d3b44408625b6325bdf9ac7b1e8accbc36e37e74eb6b",
+    "../references/mflux/src/mflux/models/seedvr2/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/cli/seedvr2_upscale.py": "34e778a1cebbf2d2f29776e3beec75dcf666ebfb9257c392d4bb6eea0d9d70e9",
+    "../references/mflux/src/mflux/models/seedvr2/latent_creator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/latent_creator/seedvr2_latent_creator.py": "c5d33c8f70ddc10d425cc43d283cf439f09587fc0c4224673efb20c29585d041",
+    "../references/mflux/src/mflux/models/seedvr2/model/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_text_encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_text_encoder/text_embeddings.py": "17e92ffd4b8f3dd38e3b075f6954f65b98ee1ed27526bb41a6f69023b4171275",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/ada_modulation.py": "394fa834b6efbd7ee842f61b71574f8fe111125277d621a670c1474659c36820",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/attention.py": "3d2cbb7a39bfa6863d55113e01964c852e481060edca008e174ec5e4c289a510",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/mm_swiglu.py": "a0625f2ce3bd9fe08405395b37f8e781443f16479041bce6b51bbf01f3e8c0f5",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/patch_in.py": "b7d86f377cb006e26dde4b32e1bafeaa31f6483b683f3798e3ae4945eb0814c7",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/patch_out.py": "333d07b03b6d209085331c01060c9ed1c79e3a19464d54ccd85ddb5f342058da",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/rms_norm.py": "802f7b4c43001b447499aa480e7b50ec608eda69848ea0975db41cf6da212e56",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/rope.py": "4e38cc6494e0dc6c62e9dfa83ca970a39e2549b53defed51b58c2452714263ab",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/swiglu_mlp.py": "e412a7f1f2076dfa09abb0c2123410f19baa02fa8cb75884c91d802beded2975",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/time_embedding.py": "d7f4c95c124848f4c1f462d99a2366207c21c84a4516c846d35f0767ccb21dc4",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/transformer.py": "a88aa6f4d80b81ea124bd1a6000f1082bc89e0fb0e61dcf0a655da6601fa0628",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/transformer_block.py": "557754df5fecce942c93d6c69dd6ed8fabb09691e35bbc8cd99b915da107a63d",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_transformer/window.py": "6f73bc560f22737fc769bd22d791de00ff106377cb36d2e7a67918f46a0d9188",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/common/attention_3d.py": "fa421d0c9de881bde62829c23a5baa4b23f826b0bcb37caacdcd2a3325004238",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/common/conv3d.py": "3923d275aff2c216b3499138c4da88bcddfcc1111d8cb75be03796914dfff459",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/decoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/decoder/decoder_3d.py": "b7c466712cc6a1a15d159ebd63f085eee32a3a2cfa6d133a3c5bb995e697c4bd",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/decoder/decoder_mid_block_3d.py": "200cffd59f9685214fe091e377e25e755ac43c27fc577e5b9ddf84a82ac4c63b",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/decoder/decoder_resnet_block_3d.py": "e1e36bb99d7ca3886ee09391b6f632c11e95668e5844393e188f1bcad48b525c",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/decoder/up_block_3d.py": "3c0ffe5c00cc7ae07cad39528d4a240f347eb975559de6f03650790c80268771",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/decoder/upsample_3d.py": "efdc7bc90bcc477cb355722e51814223d623bbe259a532b5f9e1e01ce4cf3bb0",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/encoder/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/encoder/down_block_3d.py": "6915a6d1fa3f677a50fa6e520bec6b1cfe2becf940be33c0a3c7b1dbe8dfad09",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/encoder/downsample_3d.py": "cafe20089409149583a1d78b4ddc12a8f5cd7b54b5a2afbae65f8236e754d3b0",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/encoder/encoder_3d.py": "9ff0134f77e8843aefe21bf29d56994d7f0904c19c23960167fbfb510648f9de",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/encoder/mid_block_3d.py": "c9b2771b5faad5a4e5281093d9180071b3478c2a32b06cbe74139aaad9f7725f",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/encoder/resnet_block_3d.py": "e6bc2805ba1be3b2a7f24adacbb23d728af87c0451a1604710c2774128efa342",
+    "../references/mflux/src/mflux/models/seedvr2/model/seedvr2_vae/vae.py": "1d845d3f1049f56af4b29b337efe30ab0155bec1c0edb8bc303a75221708fd9d",
+    "../references/mflux/src/mflux/models/seedvr2/seedvr2_initializer.py": "9e35e8f1b3d4312ca280c62c144fb04468a7876c3e64a0b1b14cd5a2ee0adf81",
+    "../references/mflux/src/mflux/models/seedvr2/variants/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/variants/upscale/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/variants/upscale/seedvr2.py": "27d0654fe9a60a2b31c36017c80a2afb29b71d5a44a3536d3d9806a68886bcb8",
+    "../references/mflux/src/mflux/models/seedvr2/variants/upscale/seedvr2_util.py": "c2a6b65e22da8613c6181d26c05f6ba694f5e5ded388e0da331f0005b65f3284",
+    "../references/mflux/src/mflux/models/seedvr2/weights/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/seedvr2/weights/seedvr2_weight_definition.py": "d7ee49c5f3da9fd607aecaa8b16698d82c8080adfcd932c5698d80873cd1d657",
+    "../references/mflux/src/mflux/models/seedvr2/weights/seedvr2_weight_mapping.py": "c4a242ee31d472f7940ec1730dedda614b84a4b7e45d40d9c1c8c802c85f2fcf",
+    "../references/mflux/src/mflux/models/z_image/__init__.py": "656cdabf8239fc7e77ad14eb78ee89b903c49e51e3610402d5d874f41fae8cbf",
+    "../references/mflux/src/mflux/models/z_image/cli/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/models/z_image/cli/z_image_generate.py": "9735a6608e0aea1abac635f413f635dfdc72af29e4fd371242931ae7854ca3c6",
+    "../references/mflux/src/mflux/models/z_image/cli/z_image_turbo_generate.py": "ac2f646415ea73935ebff1f8028203b94a0743905e4b4ffe85d76abb97bc4df3",
+    "../references/mflux/src/mflux/models/z_image/cli/z_image_turbo_generate_controlnet.py": "2e89a8a1cc5bb41a0b948d01031b6ac6c504185834bb653c579952e9eac20c06",
+    "../references/mflux/src/mflux/models/z_image/latent_creator/__init__.py": "f07a45a8e1996c30979482e7a484d63ca3fafedb529a02bfae1736c5f3c278eb",
+    "../references/mflux/src/mflux/models/z_image/latent_creator/z_image_latent_creator.py": "af29fe761e9ddc089d619cd19e3b40f4b29f93e0b45d73e1d3d6046a6837cc80",
+    "../references/mflux/src/mflux/models/z_image/model/__init__.py": "9cf52c84c7fdebde7b1ec25d0ee3f647efa0506b9ca4b29148b136160e67447e",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/__init__.py": "a2c4832c7214517bfed35d2090f6705409468cb8925e6c2df267d32ddcb587e2",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/attention.py": "ba6e7be96b500d92260a648681c344a4cf9a745453cc58c12f6bc03ce52cd68d",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/encoder_layer.py": "e8bbc0c17f3a6462a6c408df7a4f0e243eef0375cfd20248b54bd7ad37203a70",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/mlp.py": "59c5179a4312c1b2e276589721c395e4106dcb31ddd05c39911560bb418a2db3",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/prompt_encoder.py": "cee2e670f2a98c7cedcbf1d2b4fcf48bee3e75fa045e5a9eedf7e2ed0e65b7c5",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/rope.py": "eee28219a466f8877f5a9226f9893ec15510d38b0508af6bb64beb9b3bca6dde",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_text_encoder/text_encoder.py": "8e8b44d42180586c53a497b789682e206f89a1c9c3e08bbedac4d1c4165fae2c",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/__init__.py": "aada2a1ee7f759487acb72c1fd04e0a70799eae84c0400d21b0b06522cb3005d",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/attention.py": "016a9dc3efcc886f3015e532ad072751d77e44154904e3e3c4afbee3f5de7bfa",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/context_block.py": "430d62cacb159ff7245a1d1534c91b713fdaa24c2bb2c74506f3cf27d6562c0f",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/feed_forward.py": "f64c7771f78c2dd0d4236013cd2a5ecc491c4269d795d08d5dc41278ee09a4d5",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/final_layer.py": "f3faf99e4b4ee325bc230a1d284483e991e95d0f38b71fa507217638c3a90437",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/rope_embedder.py": "4845650eb0a3fff655be6d1da2e07ee60590fa70ae154353c0fbbeca1c932d0b",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/timestep_embedder.py": "a1f1dafdb6aa4a2b16659275f9d2746353eb5225e060fe17c315b6dd406d67ea",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/transformer.py": "762e5b77e4902bdaf3b709c69ad2353233eaf52647bff9b2034581f29c2301d6",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_transformer/transformer_block.py": "e5286790e162702d1a41c3e14242f148f3c51315c7719e754886debea9bbfbfd",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/__init__.py": "7895ea4bc244dec13feba39ea1050572e16b93e3450afdcf74aa9a597f805fea",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/common/__init__.py": "33b45dc0ec85cc20bc83c29573af734ba67780ba661d0b39833994712b1c0394",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/common/attention.py": "06cc62f1b0ee439fd4ba355c412ae046b34e9c63ea3300ffb57d900b7f51536f",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/common/resnet_block_2d.py": "9e0ea2ae5c3e3e3f3a5c3bb128791bad62af528ffaad91b09e099c0505caf436",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/common/unet_mid_block.py": "5724a3a6d71d2b9ceba2e23a072e290229ff4247794763b31cf36a32ea7c082b",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/__init__.py": "f422414cd9f678ac197fa0fe7c369618fda604ffbb632eefdaedbdd1aac9dd4e",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/conv_in.py": "c9cfca047b12b4b5db96ade4bf73e59179fedbb8ee881660605d97a03c7e09d7",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/conv_norm_out.py": "053b8fbca4bb33c97873b485618abf9db3d6bc146e4d62b1b5eff0241c73a406",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/conv_out.py": "a546d833034f798e70ab686ddc862fb645d9d44f76f3b04bad939a3973c8ccdd",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/decoder.py": "f54a83c1e23ba800f83dbc4feb3cc45e579a7d060fbc22eb3acb57a3267f3563",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/up_decoder_block.py": "d4d7ce5cf08ca2fadeeb5752cc54e9698fa6f4836de84288cd3378e8372b991e",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/decoder/up_sampler.py": "62f825ba27d9f5e9ed8f112953a4d8a0b94d289a437109152711ddde15ad12cf",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/__init__.py": "df5dcc728aa04cfa135aad389bdb42ca5ab48ec7552c212ab59d0fad2ebafccf",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/conv_in.py": "c12b5733b704834714db4425ca75409e53b265f9bec093959870bfe4ef614f4f",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/conv_norm_out.py": "39e1fc72f0e87b8aa36d1fd98cf934ecec13fdb41ef224758d2ed46cbf91e3e3",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/conv_out.py": "851471abd71f4a42f1fca06aa5387cc659bfec2bea1a493ddc2cd6aec0e9f442",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/down_encoder_block.py": "ae864b08fc5c8528303ef8a5cb567d0e3e6deae6497c4d22caadfba171cbcac9",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/down_sampler.py": "85f4f8fce64f7cc992c1f777dfbee0a772f350e39454bf8ce79fcfec8fa83211",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/encoder/encoder.py": "868844983eeaf812a57e24e34dac9e1e7f79f731d1111bf4cf0b4def41913315",
+    "../references/mflux/src/mflux/models/z_image/model/z_image_vae/vae.py": "078409971764ba6480fc4a46a0968c9e34fef4756e7edb7e8398f4feea9a7fad",
+    "../references/mflux/src/mflux/models/z_image/training_adapter/z_image_training_adapter.py": "a07659fbbf4eef61aa94d332ee15e8109801ec2fba6ff13bf43dae75decf9bb4",
+    "../references/mflux/src/mflux/models/z_image/variants/__init__.py": "a6fa06cb742c02c1b8ada716f553db6b67d546ff855120f462e2730517d18df2",
+    "../references/mflux/src/mflux/models/z_image/variants/controlnet/__init__.py": "70ca930442a547e552ad9826c02e87d9cc9e5567c0b06dd00107dcc4eeff2701",
+    "../references/mflux/src/mflux/models/z_image/variants/controlnet/control_types.py": "2cd289054244bff2442380cd8bd6e0b12e5096d71e1ae98b9dcfb255dbd907fa",
+    "../references/mflux/src/mflux/models/z_image/variants/controlnet/controlnet_util.py": "82ca70d08a71522f69e8fb4500449e7bc48e6ddaa34de0553827d9c94e9de531",
+    "../references/mflux/src/mflux/models/z_image/variants/controlnet/transformer_controlnet.py": "ede7387071c9d5bbb5d2818619adecde0e093c9b8105c3f500da3db8c68eb6df",
+    "../references/mflux/src/mflux/models/z_image/variants/controlnet/z_image_turbo_controlnet.py": "eca8f39149ecdc9777f55bdc6eabb2629cecf50b86fc4d6f4934ba76900a45d5",
+    "../references/mflux/src/mflux/models/z_image/variants/z_image.py": "279c2a7ef84409066cacd1c52f10076b535810d512f7374971aa7933ef10a095",
+    "../references/mflux/src/mflux/models/z_image/weights/__init__.py": "9c92292034f1022d26ee8c5e022cd257b904aa3e3b086b893e91bebcc4daea86",
+    "../references/mflux/src/mflux/models/z_image/weights/z_image_controlnet_weight_definition.py": "7af30f8dfa94a1c50122c11b16b2eb9634839d066b4c69299fb4b36fd2633b5d",
+    "../references/mflux/src/mflux/models/z_image/weights/z_image_controlnet_weight_mapping.py": "5213b5309a214b239651eca70a7612fa971f89f39fb75c855c3610fae29e141d",
+    "../references/mflux/src/mflux/models/z_image/weights/z_image_lora_mapping.py": "06360e732d6bfa0a554cb5e8f927d881e73332a6fdd2ee2207e9fcb928f2fe07",
+    "../references/mflux/src/mflux/models/z_image/weights/z_image_weight_definition.py": "7b0695ece8ca773eacc93d28847c2c2a0c562800edd51fd797acaaa0958c8c7b",
+    "../references/mflux/src/mflux/models/z_image/weights/z_image_weight_mapping.py": "16ac0e49dc8d4cb1a4c5bf2d2b23f64167b7c580576a0ec46743006dd772060e",
+    "../references/mflux/src/mflux/models/z_image/z_image_initializer.py": "8a594a161fccd8d2ebbe115c787d5e5db409b50bb0a5776ddd0c928cb6843a20",
+    "../references/mflux/src/mflux/release/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/release/git_operations.py": "af58c01aeda10f43aba9b85c790c7a62e099b463636ade7e08eb4798f136ca55",
+    "../references/mflux/src/mflux/release/github_api.py": "51d9b637714cd39e55891fc7cedb8bdfe5c96aeeda46dad4fa477d49d906a04d",
+    "../references/mflux/src/mflux/release/pypi_publisher.py": "3dd560b9c2de11b679b20ec6df700e79d9a19a3a22507406bc631c5ec6c703d5",
+    "../references/mflux/src/mflux/release/release_manager.py": "6029bcae9502d44013ecc61e7f01678a7bce2965dc6245ec3f787d3128049fed",
+    "../references/mflux/src/mflux/release/release_notes.py": "2d9e7c5fe1357aea519ed96923edff64d4f08792bce2b89dd1632d083e2c6186",
+    "../references/mflux/src/mflux/release/release_script.py": "2db91bc1f0ffc98c59a7c939fcd5d5807b8ee7dc0135bfdbd174708dab889dad",
+    "../references/mflux/src/mflux/release/release_validator.py": "944a8fcfe18dd59418194e3db8f66fc48d96530627a9668d42369f0bcea93334",
+    "../references/mflux/src/mflux/utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "../references/mflux/src/mflux/utils/apple_silicon.py": "db63df9c2ee9ee210f1032f9227836901784dfab1d523a47bc264e0b8d238ef1",
+    "../references/mflux/src/mflux/utils/box_values.py": "57882dbcc04b4e6691dc3463593d328078296fc1f01b57ae3907376d34e63b70",
+    "../references/mflux/src/mflux/utils/dimension_resolver.py": "cc4005debad7aaf3dd4676d99f2bc69972279f91a7446ccd9c71794853eea356",
+    "../references/mflux/src/mflux/utils/exceptions.py": "b218f9c85b01ec1aa36ea447cedb640da9920a745d3f678ec5f95492011b89a2",
+    "../references/mflux/src/mflux/utils/exif_orientation.py": "5116d99f4852b332952c1d47eb5f219cfc28026de0ac302f01f23164653c64cf",
+    "../references/mflux/src/mflux/utils/generated_image.py": "bbf8f0f9b03e4d4752ee1041f6c84114698d8fab261834bf23dd0077509906fa",
+    "../references/mflux/src/mflux/utils/image_compare.py": "2c7278191996d686c61676bc732f8f99e5b9beef5555c27ee2a7630f6d47d078",
+    "../references/mflux/src/mflux/utils/image_util.py": "4103fe8e9ffe6127e5b99d21647ed8eda75895e6615dc3785223f99e15c42a43",
+    "../references/mflux/src/mflux/utils/info_util.py": "24b2c9d4a6a8f119bb74e96e39eaa2ef7d6fc8e673590d52012f8a17ad9d275d",
+    "../references/mflux/src/mflux/utils/lora_library_util.py": "943e358b746aecee2ca50b9e57d57ec1d988e24f485a7a00bf0b5f1152678a51",
+    "../references/mflux/src/mflux/utils/metadata_builder.py": "644de9aafbe6128aa0bf324b81d44da8e4f4cde914e34c03c12f8b1d434b1b76",
+    "../references/mflux/src/mflux/utils/metadata_reader.py": "6c323433eb753ff072ccdf71ba872b3974cd7de8ec45f7fa5e0454e42dc31888",
+    "../references/mflux/src/mflux/utils/prompt_util.py": "07223555d3f4282eaf66943d6069db68a915f616d0688b547e2bcbdb8ca190b9",
+    "../references/mflux/src/mflux/utils/scale_factor.py": "3ac2a91f79090311c6eab99018e73dfeffacadf7c512d29b040618101eee7848",
+    "../references/mflux/src/mflux/utils/version_util.py": "4daf08a15358652450d5c96d3ce179c661c9030f58ca3f0a05dbdcd6c1e180bb"
+  },
+  "evidence": "outputs/flux9-mflux-stock-quant-v1-20261011/summary.json",
+  "evidence_sha256": "5ac223fd439718463027e857f78465f25d8f9beb78b2e9ede66f8d6934b6e4f9",
+  "scope": "stock same-original local BF16 source; reference precision sweep; no native equal-precision ranking claim",
+  "timing_scope": "stock mflux full PNG wall; constructor separately; cold/two fresh/repeat per process",
+  "source_policy": "initial campaign source SHA; metadata guard before and after each process; no per-inference model SHA",
+  "representation_scope": "same BF16 source; eligible mflux text/DiT modules affine quantized; not same arithmetic as native BF16/GGUF",
+  "trials": [
+    {
+      "index": 0,
+      "mode": "bf16",
+      "report": {
+        "quantization": null,
+        "constructor_seconds": 0.3746387920109555,
+        "precision": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "source_recipe": "stock mflux quantize argument; includes eligible text/DiT modules; not equal to native BF16 or GGUF recipes",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 7.569471584050916,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32600021486
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 8.88273975008633,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837064994
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 8.763741958071478,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837065030
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 8.900714083923958,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837065066
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 40480908560,
+        "tree_peak_rss_bytes": 27501592576,
+        "compression_bytes": 42583064576,
+        "decompression_bytes": 40132263936,
+        "swap_in_bytes": 720896,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "6c80a2cad0abf631d71b07608fe22eeb7935896818a4695723f9b7fc6fba8356",
+      "memory_report_sha256": "642c5bedf0e0396e1944055d912d73429dcca0435895669eed0092f4a7e0b5b7",
+      "png_sha256": [
+        "4103d3af81e38b8c656902b6796266f478785d60d36c9bb2b8b870416e7e9d9c",
+        "bbf77853240c50c81905ad30310895bc7192948e5241d874d4fa2ea05df70e1b",
+        "c13e44c3775b80c87277496ba217e62f1c9c9888f7f5a22da89a4f75c7e6e2ab",
+        "5be95734dd9032a4b4dd8e38874942cd418636ada45046608d1f79f6bd25676d"
+      ]
+    },
+    {
+      "index": 1,
+      "mode": "q4",
+      "report": {
+        "quantization": 4,
+        "constructor_seconds": 0.3813947499729693,
+        "precision": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "source_recipe": "stock mflux quantize argument; includes eligible text/DiT modules; not equal to native BF16 or GGUF recipes",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 10.216082750004716,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24215526278
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 8.343525417032652,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24452568538
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 8.298661791952327,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24452568574
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 8.324716917006299,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24452568610
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 33621297944,
+        "tree_peak_rss_bytes": 22366289920,
+        "compression_bytes": 1937965056,
+        "decompression_bytes": 1920335872,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "e9b4f05900e48c19aacdae2b2edfb6a1a9122745073ed181f50624c8ecf7b77f",
+      "memory_report_sha256": "bb4a29c20230900d2b1c91f6eff16225caa4bb849292ba9692d587ef17661635",
+      "png_sha256": [
+        "c2e056765f3cfd28f0042878e145ca687d6b9472700ada57ff02b56aa8705064",
+        "3b2ba9b18b9e911aaea6e17662464e6f616bd986be1158f0e9d5f56b8918d765",
+        "a141aa5c0fb5ec75ac6b603770e44c373c1d0cb7fd0007c09e1706b13bd853ad",
+        "16efb86d84b4ae7c6f58d5cb91540cf8b17e85602d7bf0fde1cd9dc0d7904764"
+      ]
+    },
+    {
+      "index": 2,
+      "mode": "q8",
+      "report": {
+        "quantization": 8,
+        "constructor_seconds": 0.37962945795152336,
+        "precision": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "source_recipe": "stock mflux quantize argument; includes eligible text/DiT modules; not equal to native BF16 or GGUF recipes",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 9.78053716593422,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27131877870
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 9.137978542014025,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27368920098
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 9.553415625006892,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27368920134
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 9.648217207984999,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27368920170
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 37008002128,
+        "tree_peak_rss_bytes": 21509996544,
+        "compression_bytes": 29476847616,
+        "decompression_bytes": 28380086272,
+        "swap_in_bytes": 65536,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "1a9a93e451669e97018334d063e0036565637b5572a2235f0da90da05a613f85",
+      "memory_report_sha256": "352c40e0de11dc999c35acdebd6b7e1d79b8457e42b456660f92a9d3a0ed11e1",
+      "png_sha256": [
+        "b233e9a111b8d9c3f8ba112734b2fe320529d7c8075f5202961df23a32962473",
+        "3057e623034c6e45cf56c609e0ac3ec938e85f905aea3357ed522eef60911911",
+        "8f53e56a9538cbfe4223ab2a1fbfc67c3c33524f191b841ba8b97c3859893821",
+        "727c63cdfb1e586c6ff6a738c2748ea566df4f4a5ce333d7581c24093fa40083"
+      ]
+    },
+    {
+      "index": 3,
+      "mode": "q8",
+      "report": {
+        "quantization": 8,
+        "constructor_seconds": 0.3940665000118315,
+        "precision": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "source_recipe": "stock mflux quantize argument; includes eligible text/DiT modules; not equal to native BF16 or GGUF recipes",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 10.134530916926451,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27131877870
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 9.383281250018626,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27368920098
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 9.549194833030924,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27368920134
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 9.732047750032507,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 8,
+            "loras": [],
+            "mlx_peak_bytes": 27368920170
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 37007264968,
+        "tree_peak_rss_bytes": 21518368768,
+        "compression_bytes": 29568499712,
+        "decompression_bytes": 28765503488,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "911e41d475cd3c2feebb25a7d98d556ab06d172966cdbba2a16ccd9b223bf953",
+      "memory_report_sha256": "158ea542e66ed26d575fd2edf5c1c9032aa69fc08a866f6f160e636bc29e417a",
+      "png_sha256": [
+        "9b87f316b81910023f62db2a84b8b60a9526c0366b052dff733382328c1ba1bc",
+        "1bbfb87263e82d089805998242182b2592e4ce0b40912315fa945f511db1fb5d",
+        "6a57f637080647f4a17a2dfd365e0dcbb34f1e1b857d7e2d41fcd4fa451da2ea",
+        "c0345610a26e48182fe103410d700a8a2936a66936ee1340989b8d7bf4ddcb2e"
+      ]
+    },
+    {
+      "index": 4,
+      "mode": "q4",
+      "report": {
+        "quantization": 4,
+        "constructor_seconds": 0.39059970795642585,
+        "precision": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "source_recipe": "stock mflux quantize argument; includes eligible text/DiT modules; not equal to native BF16 or GGUF recipes",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 9.93103279103525,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24215542254
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 8.293834832962602,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24452584482
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 8.308522541890852,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24452584902
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 8.324505999917164,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "mlx_peak_bytes": 24452584970
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 33622248432,
+        "tree_peak_rss_bytes": 22317350912,
+        "compression_bytes": 1747730432,
+        "decompression_bytes": 1739636736,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "879e74bf81f446ceecbe4611201e2876b3288fbd383d5b61a0ba1eb8dcafb772",
+      "memory_report_sha256": "a80c40fdb230c5392a701650b8c9cf30881275eedac69b2585881d7c4096ddec",
+      "png_sha256": [
+        "c9a2cd0dcb05ac1c787762544305b9faaaec5981e8ba95b59af036d1acce872c",
+        "963e8b3b159fe17d7386d201d43e0dc129495feb10f1839e75695475a9e62adf",
+        "b5add7794faf0f6fefe6adb8d48812aba8d6be8a1366e758a7af7a2abef1b8bf",
+        "4efd3efc6645cbcc80be84286db3f02f9208d142ada90c0347103fbd95149835"
+      ]
+    },
+    {
+      "index": 5,
+      "mode": "bf16",
+      "report": {
+        "quantization": null,
+        "constructor_seconds": 0.39024424995295703,
+        "precision": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "source_recipe": "stock mflux quantize argument; includes eligible text/DiT modules; not equal to native BF16 or GGUF recipes",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 9.17118270904757,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32600021486
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 9.04205008293502,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837064994
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 9.06925883400254,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837065030
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 9.227778416010551,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837065066
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 40478778640,
+        "tree_peak_rss_bytes": 27883110400,
+        "compression_bytes": 47186984960,
+        "decompression_bytes": 44040896512,
+        "swap_in_bytes": 262144,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "4fd66a7fcd1b966f752695142239d42c6dc85cb3b691fcf0b6482d370faa722e",
+      "memory_report_sha256": "846257508ecef16e3bc30cf7c7c15c68a717d5ea5cf79ea8d64ec412c90520cb",
+      "png_sha256": [
+        "5bee690773c3d7a48d19ca79bec48579230263d7daae69d24599199a3c5d5e2c",
+        "f9c648e0e1327aa5d7b0b6a32ade40c3aa8c9d13a69dbbf927dda33f14ffc5e5",
+        "eb012224f468545da07de8923eba056f2969b623bd1ea074e3e400c8aaf8cef9",
+        "05e9f8d75e4a6162929c1d9eb7a584591bf84c00c094b2d2426c4c3790d3695f"
+      ]
+    }
+  ],
+  "quality": [
+    {
+      "mode": "q4",
+      "process_index": 1,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 28.397948923503794,
+          "psnr_db": 19.065064134056666,
+          "max_abs_u8": 219,
+          "rgb_correlation": 0.9184035628910823,
+          "rgb_ssim_gaussian11_valid": 0.8292378382549331,
+          "ssim_per_channel": [
+            0.8327209181820302,
+            0.8308084936173229,
+            0.8241841029654349
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 28.397948923503794,
+          "psnr_db": 19.065064134056666,
+          "max_abs_u8": 219,
+          "rgb_correlation": 0.9184035628910823,
+          "rgb_ssim_gaussian11_valid": 0.8292378382549331,
+          "ssim_per_channel": [
+            0.8327209181820302,
+            0.8308084936173229,
+            0.8241841029654349
+          ]
+        },
+        "raw_rgb_mae_255": 13.348021189371744,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 1,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 25.12058068626797,
+          "psnr_db": 20.130210122402143,
+          "max_abs_u8": 211,
+          "rgb_correlation": 0.9211245590252884,
+          "rgb_ssim_gaussian11_valid": 0.8397982390441966,
+          "ssim_per_channel": [
+            0.8360611475703896,
+            0.8445001721829456,
+            0.838833397379261
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 25.12058068626797,
+          "psnr_db": 20.130210122402143,
+          "max_abs_u8": 211,
+          "rgb_correlation": 0.9211245590252884,
+          "rgb_ssim_gaussian11_valid": 0.8397982390441966,
+          "ssim_per_channel": [
+            0.8360611475703896,
+            0.8445001721829456,
+            0.838833397379261
+          ]
+        },
+        "raw_rgb_mae_255": 13.579073588053385,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 1,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "raw_rgb_mae_255": 10.770549774169922,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 1,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "raw_rgb_mae_255": 10.770549774169922,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 2,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 10.397022635418107,
+          "psnr_db": 27.79262381911646,
+          "max_abs_u8": 204,
+          "rgb_correlation": 0.9890589580141529,
+          "rgb_ssim_gaussian11_valid": 0.9517378738467221,
+          "ssim_per_channel": [
+            0.9523868974446195,
+            0.9523829018507869,
+            0.950443822244762
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 10.397022635418107,
+          "psnr_db": 27.79262381911646,
+          "max_abs_u8": 204,
+          "rgb_correlation": 0.9890589580141529,
+          "rgb_ssim_gaussian11_valid": 0.9517378738467221,
+          "ssim_per_channel": [
+            0.9523868974446195,
+            0.9523829018507869,
+            0.950443822244762
+          ]
+        },
+        "raw_rgb_mae_255": 4.595892588297526,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 2,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 6.750354051134935,
+          "psnr_db": 31.544272571549634,
+          "max_abs_u8": 163,
+          "rgb_correlation": 0.9944470202466771,
+          "rgb_ssim_gaussian11_valid": 0.9726140831160991,
+          "ssim_per_channel": [
+            0.9732749885470042,
+            0.9735566586091209,
+            0.9710106021922201
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 6.750354051134935,
+          "psnr_db": 31.544272571549634,
+          "max_abs_u8": 163,
+          "rgb_correlation": 0.9944470202466771,
+          "rgb_ssim_gaussian11_valid": 0.9726140831160991,
+          "ssim_per_channel": [
+            0.9732749885470042,
+            0.9735566586091209,
+            0.9710106021922201
+          ]
+        },
+        "raw_rgb_mae_255": 3.397296905517578,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 2,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "raw_rgb_mae_255": 3.3762486775716147,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 2,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "raw_rgb_mae_255": 3.3762486775716147,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 3,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 10.397022635418107,
+          "psnr_db": 27.79262381911646,
+          "max_abs_u8": 204,
+          "rgb_correlation": 0.9890589580141529,
+          "rgb_ssim_gaussian11_valid": 0.9517378738467221,
+          "ssim_per_channel": [
+            0.9523868974446195,
+            0.9523829018507869,
+            0.950443822244762
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 10.397022635418107,
+          "psnr_db": 27.79262381911646,
+          "max_abs_u8": 204,
+          "rgb_correlation": 0.9890589580141529,
+          "rgb_ssim_gaussian11_valid": 0.9517378738467221,
+          "ssim_per_channel": [
+            0.9523868974446195,
+            0.9523829018507869,
+            0.950443822244762
+          ]
+        },
+        "raw_rgb_mae_255": 4.595892588297526,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 3,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 6.750354051134935,
+          "psnr_db": 31.544272571549634,
+          "max_abs_u8": 163,
+          "rgb_correlation": 0.9944470202466771,
+          "rgb_ssim_gaussian11_valid": 0.9726140831160991,
+          "ssim_per_channel": [
+            0.9732749885470042,
+            0.9735566586091209,
+            0.9710106021922201
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 6.750354051134935,
+          "psnr_db": 31.544272571549634,
+          "max_abs_u8": 163,
+          "rgb_correlation": 0.9944470202466771,
+          "rgb_ssim_gaussian11_valid": 0.9726140831160991,
+          "ssim_per_channel": [
+            0.9732749885470042,
+            0.9735566586091209,
+            0.9710106021922201
+          ]
+        },
+        "raw_rgb_mae_255": 3.397296905517578,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 3,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "raw_rgb_mae_255": 3.3762486775716147,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q8",
+      "process_index": 3,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.561896013673726,
+          "psnr_db": 30.55818959009059,
+          "max_abs_u8": 221,
+          "rgb_correlation": 0.9934162861968239,
+          "rgb_ssim_gaussian11_valid": 0.9659174303002929,
+          "ssim_per_channel": [
+            0.9664583905694774,
+            0.9676746528179515,
+            0.9636192475134581
+          ]
+        },
+        "raw_rgb_mae_255": 3.3762486775716147,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 4,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 28.397948923503794,
+          "psnr_db": 19.065064134056666,
+          "max_abs_u8": 219,
+          "rgb_correlation": 0.9184035628910823,
+          "rgb_ssim_gaussian11_valid": 0.8292378382549331,
+          "ssim_per_channel": [
+            0.8327209181820302,
+            0.8308084936173229,
+            0.8241841029654349
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 28.397948923503794,
+          "psnr_db": 19.065064134056666,
+          "max_abs_u8": 219,
+          "rgb_correlation": 0.9184035628910823,
+          "rgb_ssim_gaussian11_valid": 0.8292378382549331,
+          "ssim_per_channel": [
+            0.8327209181820302,
+            0.8308084936173229,
+            0.8241841029654349
+          ]
+        },
+        "raw_rgb_mae_255": 13.348021189371744,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 4,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 25.12058068626797,
+          "psnr_db": 20.130210122402143,
+          "max_abs_u8": 211,
+          "rgb_correlation": 0.9211245590252884,
+          "rgb_ssim_gaussian11_valid": 0.8397982390441966,
+          "ssim_per_channel": [
+            0.8360611475703896,
+            0.8445001721829456,
+            0.838833397379261
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 25.12058068626797,
+          "psnr_db": 20.130210122402143,
+          "max_abs_u8": 211,
+          "rgb_correlation": 0.9211245590252884,
+          "rgb_ssim_gaussian11_valid": 0.8397982390441966,
+          "ssim_per_channel": [
+            0.8360611475703896,
+            0.8445001721829456,
+            0.838833397379261
+          ]
+        },
+        "raw_rgb_mae_255": 13.579073588053385,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 4,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "raw_rgb_mae_255": 10.770549774169922,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "q4",
+      "process_index": 4,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 19.13321135523036,
+          "psnr_db": 22.49504622924448,
+          "max_abs_u8": 225,
+          "rgb_correlation": 0.9588378909686329,
+          "rgb_ssim_gaussian11_valid": 0.8675598018122089,
+          "ssim_per_channel": [
+            0.8671311159294017,
+            0.8759318588139565,
+            0.8596164306932647
+          ]
+        },
+        "raw_rgb_mae_255": 10.770549774169922,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "bf16",
+      "process_index": 5,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "raw_rgb_mae_255": 0.0,
+        "rgba_pixel_exact": true,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "bf16",
+      "process_index": 5,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "raw_rgb_mae_255": 0.0,
+        "rgba_pixel_exact": true,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "bf16",
+      "process_index": 5,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "raw_rgb_mae_255": 0.0,
+        "rgba_pixel_exact": true,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    },
+    {
+      "mode": "bf16",
+      "process_index": 5,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": true,
+          "rmse_u8": 0.0,
+          "psnr_db": null,
+          "max_abs_u8": 0,
+          "rgb_correlation": 1.0,
+          "rgb_ssim_gaussian11_valid": 1.0,
+          "ssim_per_channel": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "raw_rgb_mae_255": 0.0,
+        "rgba_pixel_exact": true,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    }
+  ],
+  "quality_scope": "same stock engine/source, original-size RGBA/RGB with alpha retained; quantized representation drift diagnostic, not native parity or broad perceptual qualification"
+}

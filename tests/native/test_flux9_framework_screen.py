@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from flux9_bf16_framework_screen import generation, check_generations, requests, validate_native
+from flux9_bf16_framework_screen import generation, check_generations, registered_hashes, requests, validate_native
 from unittest.mock import patch
 
 
@@ -32,6 +32,18 @@ class Flux9FrameworkScreenTests(unittest.TestCase):
             self.assertEqual(generation(source)["bytes"], 0)
             with self.assertRaises(ValueError):
                 generation(model)
+
+    def test_unchanged_generation_reuses_initial_sha_and_changed_source_rechecks(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path, registration = Path(raw) / "model.bin", Path(raw) / "registrations/source.json"
+            path.write_bytes(b"original")
+            first = registered_hashes([path], registration)
+            with patch("flux9_bf16_framework_screen.sha256_file", side_effect=AssertionError("payload reread")):
+                self.assertEqual(registered_hashes([path], registration), first)
+            path.write_bytes(b"modified")
+            os.utime(path, ns=(path.stat().st_atime_ns, 0))
+            second = registered_hashes([path], registration)
+            self.assertNotEqual(first, second)
 
     def test_matching_fresh_then_repeat_workload_and_actual_receipts(self):
         task = requests(Path("/tmp/not-written"))

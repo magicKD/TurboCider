@@ -48,7 +48,9 @@ def inspect_reference_coverage(root, definition, models=None):
             mapped = {target for targets in flat.values() for target, _ in targets}
             if learned - mapped:
                 raise ValueError("actual learned model parameters lack reference mapping: " + ", ".join(sorted(learned - mapped)[:8]))
-            flat = {source: [(target, transform) for target, transform in targets if target in learned]
+            # Also retain mapped buffers (e.g. FLUX VAE BN mean/variance).
+            # Only architecture constants with no source mapping are excluded.
+            flat = {source: [(target, transform) for target, transform in targets if target in actual]
                     for source, targets in flat.items()}
         result[component.name] = verify_required_sources(header, flat)
     return result

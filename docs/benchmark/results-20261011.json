@@ -1468,12 +1468,634 @@
       ],
       "timing_scope": "native/API full PNG wall; four actual fresh warm per route; separate repeat; request-local GPU encoder",
       "note": "native GPU/frozen complete ABBA; reference omitted64 FFN weights and rendered noise, never promoted as a latency denominator"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/qwen21-valid-framework-current-20261011.json",
+        "sha256": "c729ef5fa0b99c89681581be7e7a9ee93f53669a2ceaa391d196567f94ff8448",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-valid-framework-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            51.720911916927435,
+            50.50867766700685
+          ],
+          "warm_seconds": [
+            57.28520425001625,
+            48.279039458953775,
+            48.744466834003106,
+            46.81029170809779
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 48.51175314647844,
+          "repeated_prompt_seconds": [
+            46.26697899994906,
+            46.18334854207933
+          ],
+          "constructor_seconds": [
+            1.071967166964896,
+            1.0467251669615507
+          ]
+        },
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            57.59545933303889,
+            57.31308070803061
+          ],
+          "warm_seconds": [
+            56.22077074996196,
+            56.44991812505759,
+            56.110281542059965,
+            56.67750720796175
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 56.335344437509775,
+          "repeated_prompt_seconds": [
+            53.80234799999744,
+            51.94531924999319
+          ],
+          "constructor_seconds": [
+            1.064136875094846,
+            1.051102333003655
+          ]
+        },
+        {
+          "route": "mflux-q8",
+          "cold_seconds": [
+            57.5559307920048,
+            57.654860582901165
+          ],
+          "warm_seconds": [
+            55.39305095805321,
+            54.52993620792404,
+            57.863215582910925,
+            54.80887441697996
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 55.100962687516585,
+          "repeated_prompt_seconds": [
+            55.13810879201628,
+            52.12418620893732
+          ],
+          "constructor_seconds": [
+            1.0358704590471461,
+            1.0595922500360757
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            38.798403250053525,
+            48.47990454197861
+          ],
+          "warm_seconds": [
+            31.095176749979146,
+            30.866732083028182,
+            31.21096391696483,
+            31.022437916952185
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 31.058807333465666,
+          "repeated_prompt_seconds": [
+            30.063954416080378,
+            30.37469012499787
+          ],
+          "constructor_seconds": [
+            5.4458039812743664e-05,
+            0.0017279169987887144
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            47.44397091702558,
+            45.289114583982155
+          ],
+          "warm_seconds": [
+            43.26784762495663,
+            43.177114082966,
+            43.303410749998875,
+            43.20964329200797
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.2387454584823,
+          "repeated_prompt_seconds": [
+            42.628264750004746,
+            42.619662957964465
+          ],
+          "constructor_seconds": [
+            0.0006097919540479779,
+            5.020794924348593e-05
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+      "note": "corrected complete source coverage; five-route ten-process palindrome; stock reference memory pressure and cross-engine image drift retained; not pure-kernel or strict BF16/W8A8 equivalence",
+      "reference_comparison_valid": true,
+      "native_comparison_valid": true
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-valid-framework-current-20261011.json",
+        "sha256": "0ba3d67f6f78abce0554cca33d1583acce63cebbe864f3d5e31f82cfd5435a05",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-valid-framework-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            10.336943625006825,
+            9.544676041929051
+          ],
+          "warm_seconds": [
+            9.501849832944572,
+            9.523032082943246,
+            9.516175542026758,
+            9.524593749898486
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.519603812485002,
+          "repeated_prompt_seconds": [
+            9.526508749928325,
+            9.53560845903121
+          ],
+          "constructor_seconds": [
+            0.9522860000142828,
+            0.8023224170319736
+          ]
+        },
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            10.053700959077105,
+            10.055001041968353
+          ],
+          "warm_seconds": [
+            10.052507500047795,
+            9.960117332986556,
+            9.955702250008471,
+            9.982830458087847
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.971473895537201,
+          "repeated_prompt_seconds": [
+            10.021515917032957,
+            9.961468791007064
+          ],
+          "constructor_seconds": [
+            0.9166875000810251,
+            0.8128878329880536
+          ]
+        },
+        {
+          "route": "mflux-q8",
+          "cold_seconds": [
+            10.19230387499556,
+            10.189317332929932
+          ],
+          "warm_seconds": [
+            10.08552520792,
+            10.083388458006084,
+            10.077832165989093,
+            10.068892832961865
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 10.080610311997589,
+          "repeated_prompt_seconds": [
+            10.16173037502449,
+            10.076380165992305
+          ],
+          "constructor_seconds": [
+            0.8198990420205519,
+            0.8126262089936063
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            21.58669812500011,
+            11.60827754100319
+          ],
+          "warm_seconds": [
+            5.808841500082053,
+            5.751404958078638,
+            5.741780583979562,
+            5.823261707904749
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.7801232290803455,
+          "repeated_prompt_seconds": [
+            5.333604791900143,
+            5.331794040976092
+          ],
+          "constructor_seconds": [
+            0.15518845908809453,
+            0.15980299992952496
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            10.231064416933805,
+            7.5895546660758555
+          ],
+          "warm_seconds": [
+            7.378243374987505,
+            7.387339125038125,
+            7.348377957940102,
+            7.329070542007685
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.3633106664638035,
+          "repeated_prompt_seconds": [
+            6.991358209052123,
+            6.989811624982394
+          ],
+          "constructor_seconds": [
+            0.15876004099845886,
+            0.15964304201770574
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            11.867101083043963,
+            6.645623999997042
+          ],
+          "warm_seconds": [
+            6.143594708060846,
+            6.088545499951579,
+            6.173634749953635,
+            6.1352242910070345
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.13940949953394,
+          "repeated_prompt_seconds": [
+            5.7533449169714,
+            5.763277833000757
+          ],
+          "constructor_seconds": [
+            0.1577322909142822,
+            0.15616058406885713
+          ]
+        },
+        {
+          "route": "native-public",
+          "cold_seconds": [
+            8.751014290959574,
+            9.815737791010179
+          ],
+          "warm_seconds": [
+            6.542995542054996,
+            6.5248507499927655,
+            6.584786416962743,
+            6.531972000026144
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.53748377104057,
+          "repeated_prompt_seconds": [
+            6.275925167021342,
+            6.165350875002332
+          ],
+          "constructor_seconds": [
+            0.15349570801481605,
+            0.15799695905297995
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "seven-route fourteen-process palindrome; frozen/Private/Public and stock BF16/affine4/8; actual private4096/f32/retry retained; cold setup separate",
+      "reference_comparison_valid": true,
+      "native_comparison_valid": true
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/qwen21-cache0-framework-current-20261011.json",
+        "sha256": "23e0a54b73f1ff671f536ae9a9a069f166de7874a6308692c54d022dbd6f7201",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-cache0-framework-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            49.37061891693156,
+            47.98398995806929
+          ],
+          "warm_seconds": [
+            45.93757591594476,
+            45.98369825002737,
+            46.20824549999088,
+            45.95273958297912
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 45.96821891650325,
+          "repeated_prompt_seconds": [
+            45.78446487500332,
+            45.79693337494973
+          ],
+          "constructor_seconds": [
+            1.0906944589223713,
+            1.0291460830485448
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            39.15189733309671,
+            42.115946291945875
+          ],
+          "warm_seconds": [
+            31.469134917017072,
+            30.948643459007144,
+            31.650426500011235,
+            31.03265937510878
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 31.250897146062925,
+          "repeated_prompt_seconds": [
+            30.31961483298801,
+            30.34932412498165
+          ],
+          "constructor_seconds": [
+            5.454209167510271e-05,
+            0.001254584058187902
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            47.660839583026245,
+            45.52581395790912
+          ],
+          "warm_seconds": [
+            43.42212829203345,
+            43.37913383299019,
+            43.26243187498767,
+            43.31577266706154
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.347453250025865,
+          "repeated_prompt_seconds": [
+            42.68621570896357,
+            42.632424582960084
+          ],
+          "constructor_seconds": [
+            0.00017745804507285357,
+            5.670799873769283e-05
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+      "note": "six-process same-window native GPU/frozen and mflux BF16 free-cache0 candidate; stock model/math unchanged; lower reference pressure, no pooling with stock cohort",
+      "reference_comparison_valid": true,
+      "native_comparison_valid": true
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-stock-precisions-current-20261011.json",
+        "sha256": "765923f5084b3eaec4c4dfd97a1870b50ee9de4d75fe542e611dd57ab518c1f3",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-stock-reference-precisions",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            7.569471584050916,
+            9.17118270904757
+          ],
+          "warm_seconds": [
+            8.88273975008633,
+            8.763741958071478,
+            9.04205008293502,
+            9.06925883400254
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.962394916510675,
+          "repeated_prompt_seconds": [
+            8.900714083923958,
+            9.227778416010551
+          ],
+          "constructor_seconds": [
+            0.3746387920109555,
+            0.39024424995295703
+          ]
+        },
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            10.216082750004716,
+            9.93103279103525
+          ],
+          "warm_seconds": [
+            8.343525417032652,
+            8.298661791952327,
+            8.293834832962602,
+            8.308522541890852
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.30359216692159,
+          "repeated_prompt_seconds": [
+            8.324716917006299,
+            8.324505999917164
+          ],
+          "constructor_seconds": [
+            0.3813947499729693,
+            0.39059970795642585
+          ]
+        },
+        {
+          "route": "mflux-q8",
+          "cold_seconds": [
+            9.78053716593422,
+            10.134530916926451
+          ],
+          "warm_seconds": [
+            9.137978542014025,
+            9.553415625006892,
+            9.383281250018626,
+            9.549194833030924
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 9.466238041524775,
+          "repeated_prompt_seconds": [
+            9.648217207984999,
+            9.732047750032507
+          ],
+          "constructor_seconds": [
+            0.37962945795152336,
+            0.3940665000118315
+          ]
+        }
+      ],
+      "timing_scope": "stock mflux full PNG wall; constructor separately; cold/two fresh/repeat per process",
+      "note": "stock BF16/Q4/Q8 six-process palindrome; latest reference is faster than old BF16 ABBA; no native same-cohort denominator, no cross-cohort native ranking",
+      "reference_comparison_valid": false,
+      "native_comparison_valid": false
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-bf16-current-v5-20261011.json",
+        "sha256": "b3efbd20a708659bcac586af5619871a8075466ffa840c3bf350c0ffdc89d28b",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-current-BF16-native-mflux",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            8.111152166966349,
+            9.989579958026297
+          ],
+          "warm_seconds": [
+            8.485889417002909,
+            7.518917625071481,
+            8.537789207999595,
+            7.59893862507306
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.042414021037985,
+          "repeated_prompt_seconds": [
+            6.8981640411075205,
+            6.932901250082068
+          ],
+          "constructor_seconds": [
+            0.12914099998306483,
+            0.13947979197837412
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            8.231393874972127,
+            9.469394457992166
+          ],
+          "warm_seconds": [
+            8.813256957917474,
+            8.810875208931975,
+            8.843716875067912,
+            9.135528582963161
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.828486916492693,
+          "repeated_prompt_seconds": [
+            9.061595584033057,
+            9.153890957939439
+          ],
+          "constructor_seconds": [
+            0.3720097920158878,
+            0.36605250008869916
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "current matched async-build native/mflux BF16 ABBA; complete reference required weights; advantage is1.098x rather than old1.370x; no 9B hybrid validation"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-bf16-cache0-current-20261011.json",
+        "sha256": "eff9790ff49a53e3737384c226a6ba37507134ec3ab9de8d42478e7d2be7292d",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-cache0-BF16-native-mflux",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            8.737378083984368,
+            9.119591083959676
+          ],
+          "warm_seconds": [
+            8.426935874973424,
+            7.532347291940823,
+            8.536997583927587,
+            7.4538536668987945
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.9796415834571235,
+          "repeated_prompt_seconds": [
+            7.0387898329645395,
+            6.930236957967281
+          ],
+          "constructor_seconds": [
+            0.12909487495198846,
+            0.14072208292782307
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            8.443193207960576,
+            8.771119208075106
+          ],
+          "warm_seconds": [
+            7.376405040966347,
+            7.327646667021327,
+            7.375414874986745,
+            7.322309790994041
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.351530771004036,
+          "repeated_prompt_seconds": [
+            7.374045874923468,
+            7.346844542073086
+          ],
+          "constructor_seconds": [
+            0.3734387499280274,
+            0.370306457974948
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "same-window cache0 reference candidate; mflux7.351531s beats native7.979642s; retained negative result, not native universal dominance or pooled stock samples"
     }
   ],
   "missing_current_comparisons": [
-    "Qwen BF16/mflux full40 comparison and affine4/8 routes",
-    "Z original BF16/mflux and additional affine4/8 framework routes",
-    "FLUX9B quantized framework and native hybrid qualification",
+    "Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
+    "Z additional native share/join/shape candidates",
+    "FLUX9B same-cohort matched native/reference quantization and validated hybrid partition",
     "LTX best full-media native configurations and runnable reference quantized layouts",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],

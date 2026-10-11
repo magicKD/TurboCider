@@ -3,13 +3,13 @@
   "date": "2026-10-11",
   "goal_complete": false,
   "qualification_passed": false,
-  "selection_scope": "Completed native cohorts only; not global optimum, automatic routing or valid external-framework dominance",
+  "selection_scope": "Each native cohort's GPU/hybrid configuration retained with actual artifacts; fastest tested external reference recorded separately; not native universal victory, global optimum or automatic routing",
   "configurations": [
     {
       "model": "qwen-image-2.1",
       "representation": "original BF16 encoder/DiT/VAE; approximate source-bound Core ML W8A8 FFN prefix",
       "model_root": "models/Comfy-Org-Qwen-Image-2.1",
-      "library": "build/z-base-formats-v2-readonly-private/libturbocider.dylib",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
       "source_manifest": "results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json",
       "compiled_manifest": "outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json",
       "request": {
@@ -23,7 +23,8 @@
         "execution": "gpu_ane",
         "residency": "resident",
         "allow_approximation": true,
-        "qwen21_w8a8": true
+        "qwen21_w8a8": true,
+        "ane_manifest": "outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json"
       },
       "encoder_policy": "original GPU request-local; no new retention or prefill override",
       "ane_prefix_channels": 6144,
@@ -32,19 +33,96 @@
       "subsequent_steps": "GPU attention/caption + parallel frozen image-only FFN prefix",
       "actual_runtime_calls_per_request": 1248,
       "initial_warmup_calls": 32,
-      "fresh_warm_median_seconds": 31.007694708008785,
-      "gpu_control_seconds": 43.249696666549426,
-      "reduction_percent": 28.30540536023912,
-      "evidence": "docs/design/validation/qwen21-native-cohort-current-20261011.json",
-      "reference_comparison_valid": false,
-      "reference_reason": "Previous v1 reference omitted64 FFN weights; corrected reference cohort is still running",
-      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/z-base-formats-v2-readonly-private/libturbocider.dylib --model qwen-image-2.1 --source results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json --cache outputs/new-qwen-frozen-cache"
+      "fresh_warm_median_seconds": 31.058807333465666,
+      "gpu_control_seconds": 43.2387454584823,
+      "reduction_percent": 28.169036811467553,
+      "evidence": "docs/design/validation/qwen21-valid-framework-current-20261011.json",
+      "reference_comparison_valid": true,
+      "reference_reason": "Same original BF16 source fully mapped; stock mflux48.511753s, allocator/component lifetime and numerical arithmetic differ; reference memory pressure retained",
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model qwen-image-2.1 --source results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json --cache outputs/new-qwen-frozen-cache"
+    },
+    {
+      "model": "z-image-turbo",
+      "representation": "original BF16 encoder/DiT/VAE; approximate source-bound frozen W8A8 image-only FFN prefix",
+      "model_root": "models/Comfy-Org-z_image_turbo",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "source_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json",
+      "compiled_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_compiled/manifest-0718a2ff4c18e5c283b91f45ec21d867cd6532e899e6b48520e8396efea20e72.json",
+      "environment": {
+        "TURBOCIDER_Z_IMAGE_TRANSFORMER": "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+      },
+      "request": {
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "allow_approximation": true,
+        "ane_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_compiled/manifest-0718a2ff4c18e5c283b91f45ec21d867cd6532e899e6b48520e8396efea20e72.json",
+        "dynamic_text": true
+      },
+      "encoder_policy": "GPU Qwen3; original BF16 text encoder",
+      "ane_prefix_channels": 5120,
+      "gpu_complement_channels": 5120,
+      "rows": 1024,
+      "actual_runtime_calls_per_request": 256,
+      "initial_warmup_calls": 0,
+      "fresh_warm_median_seconds": 5.7801232290803455,
+      "gpu_control_seconds": 7.3633106664638035,
+      "reduction_percent": 21.501027310909006,
+      "cold_seconds": [
+        21.58669812500011,
+        11.60827754100319
+      ],
+      "evidence": "docs/design/validation/z-valid-framework-current-20261011.json",
+      "reference_comparison_valid": true,
+      "selection_note": "Fastest tested seven-route fresh warm cohort; higher cold setup cost, not one-shot/global optimum or broad quality qualification",
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model z-image-turbo --source models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json --cache outputs/new-z-frozen-cache"
+    },
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native",
+      "representation": "original BF16 encoder/DiT/VAE; pure GPU",
+      "model_root": "models/FLUX.2-klein-9B",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": false
+      },
+      "fresh_warm_median_seconds": 7.9796415834571235,
+      "reference_fresh_warm_median_seconds": 7.351530771004036,
+      "reference_comparison_valid": true,
+      "evidence": "docs/design/validation/flux9-bf16-cache0-current-20261011.json",
+      "selection_note": "Only validated native9B route is pure GPU; in this same-cohort cache0 experiment mflux is faster. Do not label this retained native configuration as overall winner.",
+      "source_policy": "first source generation SHA then persistent benchmark metadata reuse; no per-inference model hash",
+      "native_faster_than_reference": false,
+      "best_tested_reference": {
+        "engine": "mflux0.19.2",
+        "model_root": "models/FLUX.2-klein-9B",
+        "precision": "BF16",
+        "free_cache_limit_bytes": 0,
+        "fresh_warm_median_seconds": 7.351530771004036,
+        "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_bf16_framework_screen.py --model models/FLUX.2-klein-9B --library build/benchmark-async-v1-private/libturbocider.dylib --mflux ../references/mflux --python .deps/qwen21-oracle-env/bin/python3 --extra .deps/mflux-reference-extra --async-evidence --reference-cache-mib 0 --output outputs/new-flux-cache0-benchmark"
+      }
     }
   ],
   "pending": [
-    "Qwen corrected reference and further native parameter/shape screening",
-    "Z external-framework and additional share/join candidates",
-    "FLUX9B quantized frameworks and validated hybrid partition",
+    "Qwen reference free-cache pressure candidates and further native parameter/shape screening",
+    "Z additional share/join/shape candidates and retention of other representation winners",
+    "FLUX9B matched quantized/native framework and validated hybrid partition",
     "LTX complete media best configurations and successful reference layouts"
   ]
 }

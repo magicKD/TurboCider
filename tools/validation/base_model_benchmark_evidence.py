@@ -170,6 +170,44 @@ def export():
     campaigns.append(dict(evidence=binding, model="qwen-image-2.1-current-BF16-native", geometry=[512, 512], steps=40,
         date="2026-10-11", routes=routes, timing_scope="native/API full PNG wall; four actual fresh warm per route; separate repeat; request-local GPU encoder",
         note="native GPU/frozen complete ABBA; reference omitted64 FFN weights and rendered noise, never promoted as a latency denominator"))
+    for path, model, steps, note in (
+        ("docs/design/validation/qwen21-valid-framework-current-20261011.json", "qwen-image-2.1-valid-framework-cohort", 40,
+         "corrected complete source coverage; five-route ten-process palindrome; stock reference memory pressure and cross-engine image drift retained; not pure-kernel or strict BF16/W8A8 equivalence"),
+        ("docs/design/validation/z-valid-framework-current-20261011.json", "z-image-turbo-valid-framework-cohort", 8,
+         "seven-route fourteen-process palindrome; frozen/Private/Public and stock BF16/affine4/8; actual private4096/f32/retry retained; cold setup separate"),
+        ("docs/design/validation/qwen21-cache0-framework-current-20261011.json", "qwen-image-2.1-cache0-framework-cohort", 40,
+         "six-process same-window native GPU/frozen and mflux BF16 free-cache0 candidate; stock model/math unchanged; lower reference pressure, no pooling with stock cohort"),
+        ("docs/design/validation/flux9-stock-precisions-current-20261011.json", "flux2-klein-9b-stock-reference-precisions", 4,
+         "stock BF16/Q4/Q8 six-process palindrome; latest reference is faster than old BF16 ABBA; no native same-cohort denominator, no cross-cohort native ranking"),
+    ):
+        data, binding = source(path, ("complete_diagnostic",))
+        if data["steps"] != steps or data["requests_per_process"] != 4 or data["order"] != list(reversed(data["order"])):
+            raise ValueError("complete original-step fresh/repeat palindrome required")
+        routes = [measured(route["route"], route["cold_seconds"], route["fresh_warm_seconds"],
+            repeated_prompt_seconds=route["repeat_seconds"], constructor_seconds=route["constructor_seconds"])
+            for route in data["routes"]]
+        campaigns.append(dict(evidence=binding, model=model, geometry=[512, 512], steps=steps, date=data["date"],
+            routes=routes, timing_scope=data["timing_scope"], note=note,
+            reference_comparison_valid=data.get("reference_latency_ranking_valid", False),
+            native_comparison_valid=data.get("native_latency_ranking_valid", True)))
+    flux, binding = source("docs/design/validation/flux9-bf16-current-v5-20261011.json", ("complete_diagnostic",))
+    if flux["reference_required_weight_coverage_verified"] is not True:
+        raise ValueError("current FLUX original reference weights must be actually covered")
+    routes = [measured(engine, flux["medians"][engine]["cold_seconds"], flux["medians"][engine]["samples"],
+        repeated_prompt_seconds=flux["medians"][engine]["repeated_prompt_seconds"],
+        constructor_seconds=flux["medians"][engine]["constructor_seconds"]) for engine in ("native", "mflux")]
+    campaigns.append(dict(evidence=binding, model="flux2-klein-9b-current-BF16-native-mflux", geometry=[512, 512],
+        steps=4, date="2026-10-11", routes=routes, timing_scope=flux["timing_scope"],
+        note="current matched async-build native/mflux BF16 ABBA; complete reference required weights; advantage is1.098x rather than old1.370x; no 9B hybrid validation"))
+    flux, binding = source("docs/design/validation/flux9-bf16-cache0-current-20261011.json", ("complete_diagnostic",))
+    if flux["reference_cache_mib"] != 0 or flux["reference_required_weight_coverage_verified"] is not True:
+        raise ValueError("actual cache0 and complete source coverage required")
+    routes = [measured(engine, flux["medians"][engine]["cold_seconds"], flux["medians"][engine]["samples"],
+        repeated_prompt_seconds=flux["medians"][engine]["repeated_prompt_seconds"],
+        constructor_seconds=flux["medians"][engine]["constructor_seconds"]) for engine in ("native", "mflux")]
+    campaigns.append(dict(evidence=binding, model="flux2-klein-9b-cache0-BF16-native-mflux", geometry=[512, 512],
+        steps=4, date="2026-10-11", routes=routes, timing_scope=flux["timing_scope"],
+        note="same-window cache0 reference candidate; mflux7.351531s beats native7.979642s; retained negative result, not native universal dominance or pooled stock samples"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,
@@ -177,8 +215,8 @@ def export():
                 goal_completion_scope="expanded local family/precision/parameter and best GPU/ANE/framework comparisons remain active; prior-stage completion is not expanded-goal proof; not release qualification",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
-                missing_current_comparisons=["Qwen BF16/mflux full40 comparison and affine4/8 routes",
-                    "Z original BF16/mflux and additional affine4/8 framework routes", "FLUX9B quantized framework and native hybrid qualification",
+                missing_current_comparisons=["Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
+                    "Z additional native share/join/shape candidates", "FLUX9B same-cohort matched native/reference quantization and validated hybrid partition",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B DiT hybrid partition unvalidated", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
