@@ -7,7 +7,7 @@
 
 下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
-再加Qwen cache0、FLUX stock/cache0/三组compiled候选和LTX两计时边界，共30个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+再加Qwen cache0、FLUX compiled、LTX两边界和Z十四参数候选，共44个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。参考更多cache候选、
 更多native分区/尺寸、FLUX匹配量化/9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
@@ -47,8 +47,8 @@ Qwen options1项、GGUF snapshot1项和SourceLease原生fixture通过。样本
 中位数、campaign SHA、所有benchmark Markdown本地链接、portable路径、
 97帧媒体范围与完整进程树均复核。未运行全量`make test`，未新增模型推理。
 
-扩大阶段新回归：30个campaign/有效Qwen与Z/FLUX真实compiled+参考精度/cache0/
-artifact配置边界已进入定向测试；当前make test-base-benchmark的103项
+扩大阶段新回归：44个campaign/有效Qwen与Z/FLUX真实compiled+参考精度/cache0/
+artifact配置边界已进入定向测试；当前make test-base-benchmark的112项
 通过（包含6项FLUX源generation/SHA复用），新实验另保留raw。未运行
 全量make test，不将扩大参数、9B混合或外部LTX空缺当成通过。
 LTX full-config包含E5警告粘连JSON/未知文本拒绝/actual plan配置三项

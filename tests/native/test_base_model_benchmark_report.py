@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 30)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 44)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -139,6 +139,15 @@ class BaseBenchmarkReportTests(unittest.TestCase):
             self.assertTrue(all(row["actual_compiled_single_blocks"] == 96 for trial in compiled for row in trial["report"]["runs"]))
             self.assertTrue(all(route["warm_sample_count"] == 4 for route in campaign["routes"]))
             self.assertGreater(data["compiled_gpu_comparison"]["native_eager_over_compiled"], 1)
+
+    def test_complete_z_private_grid_uses_candidate_own_controls(self):
+        campaigns = [row for row in self.report["campaigns"] if row["model"].startswith("z-image-turbo-private-a")]
+        self.assertEqual(len(campaigns), 14)
+        self.assertTrue(all({row["route"] for row in campaign["routes"]} == {"native-gpu", "native-frozen", "native-private"} for campaign in campaigns))
+        data = json.loads((ROOT / campaigns[0]["evidence"]["path"]).read_text())
+        self.assertEqual((data["best_tested_private"]["channels"], data["best_tested_private"]["join"]), (4096, "f32"))
+        self.assertLess(data["best_tested_private"]["frozen_over_private"], 1)
+        self.assertTrue(all(row["warm_sample_count"] == 4 for campaign in campaigns for row in campaign["routes"]))
 
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())

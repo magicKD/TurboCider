@@ -172,7 +172,12 @@ LTX完整配置入口已完成：persistent与clean-exec、GPU/Sol/text256/INT8
 6memory、四fresh/route、每compiled请求96实际分支，默认/deferred/
 fused分别7.483/7.382/7.374s；各自参考7.315/7.326/7.343s，不能混池。
 compiled/eager当前RGBA中的RGB exact，9B ANE guard仍未解除。
-当前没有owned硬件任务遗留；下一步补匹配量化、混合和参考布局缺口。
+Z网格已完整结束：outputs/z-private-partition-grid-v1-20261011，
+七个partial channel shares×F32/F16 join共14候选，每项GPU/frozen/
+Private完整六进程正反序、24PNG，84窗口/336PNG与独立audit全部完成。
+最快Private4096/F32为6.147741s，同窗口frozen5.793671s更快；不把更大
+ANE份额或F16 join假定更优。[完整参数网格](Z_PRIVATE_PARTITIONS.md)。匹配量化、
+9B混合和参考布局缺口也继续保留。
 
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器

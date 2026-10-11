@@ -234,6 +234,17 @@ def export():
         campaigns.append(dict(evidence=binding, model=name, geometry=[512, 512], steps=4, date="2026-10-11", routes=routes,
             timing_scope=data["timing_scope"], note="same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
             native_encoder_eval_interval=data.get("native_encoder_eval_interval")))
+    grid, binding = source("docs/design/validation/z-private-partition-grid-current-20261011.json", ("complete_diagnostic",))
+    if len(grid["trials"]) != 14 or not all(trial["accepted"] for trial in grid["trials"]):
+        raise ValueError("complete fourteen-candidate partition grid required")
+    for trial in grid["trials"]:
+        audit = trial["audit"]
+        routes = [measured(row["route"], row["cold_seconds"], row["fresh_warm_seconds"],
+            repeated_prompt_seconds=row["repeat_seconds"], physical_peaks=row["physical_peaks"])
+            for row in audit["routes"]]
+        campaigns.append(dict(evidence=binding, model=f'z-image-turbo-private-a{trial["channels"]}-{trial["join"]}',
+            geometry=[512,512], steps=8, date="2026-10-11", routes=routes, timing_scope=grid["shared_source"]["timing_scope"],
+            note="same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,

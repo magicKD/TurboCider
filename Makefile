@@ -192,9 +192,12 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_qwen21_mflux_framework_screen.py
 	@"$(PYTHON)" -B tests/native/test_qwen21_mflux_framework_evidence.py
 	@"$(PYTHON)" -B tests/native/test_z_mflux_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_private_partition_sweep.py
+	@"$(PYTHON)" -B tests/native/test_z_private_partition_evidence.py
 	@"$(PYTHON)" -B tests/native/test_z_mflux_framework_evidence.py
 	@"$(PYTHON)" -B tests/native/test_flux9_mflux_quant_screen.py
 	@"$(PYTHON)" -B tests/native/test_flux9_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_flux_coreml_checkpoint.py
 	@"$(PYTHON)" -B tests/native/test_flux9_mflux_quant_evidence.py
 	@"$(PYTHON)" -B tests/native/test_flux9_affine_pack.py
 	@"$(PYTHON)" -B tests/native/test_mflux_cow_text_layout.py

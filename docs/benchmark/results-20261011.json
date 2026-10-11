@@ -2576,6 +2576,1224 @@
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
       "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
       "native_encoder_eval_interval": 0
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a2048-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            22.150262541836128,
+            11.41255895793438
+          ],
+          "warm_seconds": [
+            5.7401840419042856,
+            5.786598957842216,
+            5.739519499940798,
+            5.755896583897993
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.748040312901139,
+          "repeated_prompt_seconds": [
+            5.33391254208982,
+            5.332255000015721
+          ],
+          "physical_peaks": [
+            31968608216,
+            30970608928
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            10.2391854589805,
+            7.602760958019644
+          ],
+          "warm_seconds": [
+            7.381618124898523,
+            7.3393349999096245,
+            7.3616882499773055,
+            7.318690709071234
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.350511624943465,
+          "repeated_prompt_seconds": [
+            6.989878790918738,
+            6.987114374991506
+          ],
+          "physical_peaks": [
+            31811468816,
+            30509382224
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            10.407046457985416,
+            7.253441749839112
+          ],
+          "warm_seconds": [
+            6.845385584048927,
+            6.833424499956891,
+            6.830991666065529,
+            6.82489216607064
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.83220808301121,
+          "repeated_prompt_seconds": [
+            6.473104957956821,
+            6.475006541935727
+          ],
+          "physical_peaks": [
+            30256397000,
+            31752027880
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a3072-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.396567750023678,
+            18.811482375022024
+          ],
+          "warm_seconds": [
+            5.745114084100351,
+            5.734354624990374,
+            5.859893332934007,
+            5.7909681249875575
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.768041104543954,
+          "repeated_prompt_seconds": [
+            5.336577249923721,
+            5.333543125074357
+          ],
+          "physical_peaks": [
+            31539101344,
+            32142295168
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.598012292059138,
+            7.638950916938484
+          ],
+          "warm_seconds": [
+            7.35610487498343,
+            7.324783249991015,
+            7.337531083961949,
+            7.342254208168015
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.339892646064982,
+          "repeated_prompt_seconds": [
+            6.989234750159085,
+            6.991689249873161
+          ],
+          "physical_peaks": [
+            30860409736,
+            31336873032
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            11.081971667008474,
+            6.93380658281967
+          ],
+          "warm_seconds": [
+            6.477756125153974,
+            6.5369212499354035,
+            6.489809625083581,
+            6.431143207941204
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.483782875118777,
+          "repeated_prompt_seconds": [
+            6.096668459009379,
+            6.085616749944165
+          ],
+          "physical_peaks": [
+            31228264264,
+            30557731480
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a4096-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.548218792071566,
+            11.611451832810417
+          ],
+          "warm_seconds": [
+            5.81943599996157,
+            5.948733790777624,
+            5.738080624956638,
+            5.767906124936417
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.793671062448993,
+          "repeated_prompt_seconds": [
+            5.334148208843544,
+            5.336440208833665
+          ],
+          "physical_peaks": [
+            32154812472,
+            31616384912
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.602610790869221,
+            7.607163874898106
+          ],
+          "warm_seconds": [
+            7.363224666798487,
+            7.333169375080615,
+            7.349846625002101,
+            7.340909417020157
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.345378021011129,
+          "repeated_prompt_seconds": [
+            6.992400542134419,
+            6.992427749792114
+          ],
+          "physical_peaks": [
+            31545343768,
+            31425560152
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            6.645766292000189,
+            6.635380832944065
+          ],
+          "warm_seconds": [
+            6.154992750147358,
+            6.140488707926124,
+            6.190173083217815,
+            6.135545916156843
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.147740729036741,
+          "repeated_prompt_seconds": [
+            5.757052125176415,
+            5.753477292135358
+          ],
+          "physical_peaks": [
+            30843452296,
+            31463947984
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a5120-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.678024541819468,
+            17.945736333029345
+          ],
+          "warm_seconds": [
+            5.807343540946022,
+            5.745472874958068,
+            5.847302249865606,
+            6.002153666922823
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.827322895405814,
+          "repeated_prompt_seconds": [
+            5.33271254086867,
+            5.334141833009198
+          ],
+          "physical_peaks": [
+            32204144672,
+            31951519680
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.593922832980752,
+            7.678549458971247
+          ],
+          "warm_seconds": [
+            7.362228124868125,
+            7.334276667097583,
+            7.361728542018682,
+            7.3504255001898855
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.356077021104284,
+          "repeated_prompt_seconds": [
+            7.0062010830733925,
+            6.9923199999611825
+          ],
+          "physical_peaks": [
+            30691196480,
+            31488720472
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            13.422005750006065,
+            8.991306958021596
+          ],
+          "warm_seconds": [
+            6.661344249965623,
+            6.643313208129257,
+            6.696637207875028,
+            6.691434792010114
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.676389520987868,
+          "repeated_prompt_seconds": [
+            6.281294249929488,
+            6.296136915916577
+          ],
+          "physical_peaks": [
+            31313755376,
+            31387729160
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a6144-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.661874749930575,
+            11.528252167161554
+          ],
+          "warm_seconds": [
+            5.742085915990174,
+            5.769337791018188,
+            5.895996415987611,
+            5.744124749908224
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.756731270463206,
+          "repeated_prompt_seconds": [
+            5.3346254581119865,
+            5.332165415864438
+          ],
+          "physical_peaks": [
+            31841157128,
+            31694438168
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.6072437081020325,
+            7.814476625062525
+          ],
+          "warm_seconds": [
+            7.364456625189632,
+            7.353147417074069,
+            7.342287083156407,
+            7.3559577921405435
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.354552604607306,
+          "repeated_prompt_seconds": [
+            6.991342040942982,
+            7.009710125159472
+          ],
+          "physical_peaks": [
+            31409536168,
+            32015154752
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            15.430311999982223,
+            8.0133879580535
+          ],
+          "warm_seconds": [
+            7.483357915887609,
+            7.461446667090058,
+            7.4795426251366735,
+            7.472494459012523
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.476018542074598,
+          "repeated_prompt_seconds": [
+            7.099996375152841,
+            7.106046792119741
+          ],
+          "physical_peaks": [
+            30399838728,
+            31353044112
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a7168-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            17.111674125073478,
+            11.45604604203254
+          ],
+          "warm_seconds": [
+            6.007519958075136,
+            5.772590833017603,
+            6.074646916938946,
+            5.773833667160943
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.8906768126180395,
+          "repeated_prompt_seconds": [
+            5.338075292063877,
+            5.33663795911707
+          ],
+          "physical_peaks": [
+            31549128376,
+            31985516528
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.609023167053238,
+            7.731077332980931
+          ],
+          "warm_seconds": [
+            7.3674474998842925,
+            7.322879166109487,
+            7.365257250145078,
+            7.343408833956346
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.354333042050712,
+          "repeated_prompt_seconds": [
+            6.990847625071183,
+            6.990761957829818
+          ],
+          "physical_peaks": [
+            32032980568,
+            31538003448
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            17.48802787484601,
+            8.791818082798272
+          ],
+          "warm_seconds": [
+            8.204517374979332,
+            8.16797437518835,
+            8.185657290974632,
+            8.14776024990715
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.176815833081491,
+          "repeated_prompt_seconds": [
+            7.881469249958172,
+            7.797018833924085
+          ],
+          "physical_peaks": [
+            31631195496,
+            32063520440
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a8192-f32",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.556286041857675,
+            15.836512375157326
+          ],
+          "warm_seconds": [
+            5.8992577500175685,
+            5.807031625183299,
+            5.9709015840198845,
+            5.765215749852359
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.853144687600434,
+          "repeated_prompt_seconds": [
+            5.338786541949958,
+            5.334212834015489
+          ],
+          "physical_peaks": [
+            32096403560,
+            31536938680
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.613843541126698,
+            7.763875124976039
+          ],
+          "warm_seconds": [
+            7.360339499777183,
+            7.345179958036169,
+            7.3874711249955,
+            7.359800457954407
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.360069978865795,
+          "repeated_prompt_seconds": [
+            6.9925985829904675,
+            6.989367209142074
+          ],
+          "physical_peaks": [
+            31327255648,
+            32066174456
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            19.061545375036076,
+            9.625569208990782
+          ],
+          "warm_seconds": [
+            8.938605166971684,
+            8.928577124839649,
+            8.959195041796193,
+            8.91928791697137
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.933591145905666,
+          "repeated_prompt_seconds": [
+            8.619412957923487,
+            8.63310179184191
+          ],
+          "physical_peaks": [
+            31719947792,
+            31681641928
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a2048-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            14.526725542033091,
+            11.59810841595754
+          ],
+          "warm_seconds": [
+            6.008881541900337,
+            5.785951708909124,
+            5.944653084035963,
+            5.789379874942824
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.8670164794893935,
+          "repeated_prompt_seconds": [
+            5.338776750024408,
+            5.339776917127892
+          ],
+          "physical_peaks": [
+            32044056632,
+            32021413872
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.626088917022571,
+            7.817179792094976
+          ],
+          "warm_seconds": [
+            7.356013583019376,
+            7.342829125002027,
+            7.443369916174561,
+            7.360815041931346
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.358414312475361,
+          "repeated_prompt_seconds": [
+            7.004259957931936,
+            6.989925333997235
+          ],
+          "physical_peaks": [
+            31676480824,
+            31745883496
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            8.61618429212831,
+            7.352740791859105
+          ],
+          "warm_seconds": [
+            6.9340950411278754,
+            6.848665916826576,
+            6.912253125105053,
+            6.876415875041857
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.894334500073455,
+          "repeated_prompt_seconds": [
+            6.474840583978221,
+            6.472537416964769
+          ],
+          "physical_peaks": [
+            31677480512,
+            31531597256
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a3072-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.64320379216224,
+            14.339952792041004
+          ],
+          "warm_seconds": [
+            6.145067499950528,
+            5.841913958080113,
+            5.953391625080258,
+            5.77960408385843
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.897652791580185,
+          "repeated_prompt_seconds": [
+            5.342416167026386,
+            5.337430834071711
+          ],
+          "physical_peaks": [
+            31730204464,
+            31718129456
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.694363833172247,
+            7.771912708180025
+          ],
+          "warm_seconds": [
+            7.448329832870513,
+            7.408298750175163,
+            7.392426667036489,
+            7.361723083071411
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.400362708605826,
+          "repeated_prompt_seconds": [
+            6.993350500008091,
+            6.990287875058129
+          ],
+          "physical_peaks": [
+            31705890344,
+            31588416824
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            10.959497000090778,
+            8.178814542014152
+          ],
+          "warm_seconds": [
+            6.4963720419909805,
+            6.472092042211443,
+            6.504753167042509,
+            6.474037042120472
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.485204542055726,
+          "repeated_prompt_seconds": [
+            6.098567166132852,
+            6.094948000041768
+          ],
+          "physical_peaks": [
+            31541411200,
+            31675940368
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a4096-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.657045874977484,
+            11.639273250009865
+          ],
+          "warm_seconds": [
+            5.9229204170405865,
+            5.81607170891948,
+            5.926326375221834,
+            5.926480374997482
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.92462339613121,
+          "repeated_prompt_seconds": [
+            5.335651541128755,
+            5.338246959028766
+          ],
+          "physical_peaks": [
+            31843827624,
+            31930073048
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.6439868749585,
+            7.780738666886464
+          ],
+          "warm_seconds": [
+            7.385840042028576,
+            7.344180749962106,
+            7.4128572079353034,
+            7.340579457813874
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.365010395995341,
+          "repeated_prompt_seconds": [
+            6.992853791918606,
+            7.002583041088656
+          ],
+          "physical_peaks": [
+            31944687168,
+            31287540784
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            7.122523915953934,
+            6.707205208018422
+          ],
+          "warm_seconds": [
+            6.222538583911955,
+            6.16179716703482,
+            6.239484749967232,
+            6.148767333012074
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.1921678754733875,
+          "repeated_prompt_seconds": [
+            5.7749891669955105,
+            5.770644290838391
+          ],
+          "physical_peaks": [
+            31878610520,
+            31469272736
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a5120-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.648481915937737,
+            12.685162917012349
+          ],
+          "warm_seconds": [
+            5.917585249990225,
+            5.768970082979649,
+            6.190861499868333,
+            5.814003749983385
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.865794499986805,
+          "repeated_prompt_seconds": [
+            5.338227540953085,
+            5.346204041969031
+          ],
+          "physical_peaks": [
+            31935856576,
+            31987138640
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.657190666999668,
+            7.775685583008453
+          ],
+          "warm_seconds": [
+            7.366178249940276,
+            7.346029165899381,
+            7.414120000088587,
+            7.348968958016485
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.357573603978381,
+          "repeated_prompt_seconds": [
+            6.993349291849881,
+            6.988653916167095
+          ],
+          "physical_peaks": [
+            31864962624,
+            30975884144
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            11.345679583959281,
+            7.256072292104363
+          ],
+          "warm_seconds": [
+            6.677070999983698,
+            6.650475250091404,
+            6.741577707929537,
+            6.713576166890562
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 6.69532358343713,
+          "repeated_prompt_seconds": [
+            6.298777374904603,
+            6.3118788751307875
+          ],
+          "physical_peaks": [
+            31883820656,
+            31565364776
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a6144-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.592383333016187,
+            11.489190666005015
+          ],
+          "warm_seconds": [
+            5.943617209093645,
+            5.826589582953602,
+            5.951376667013392,
+            5.855291791958734
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.89945450052619,
+          "repeated_prompt_seconds": [
+            5.338620041962713,
+            5.33887325017713
+          ],
+          "physical_peaks": [
+            32254787760,
+            32080773176
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.661967666819692,
+            7.804536791052669
+          ],
+          "warm_seconds": [
+            7.419735166011378,
+            7.339183582924306,
+            7.413631165865809,
+            7.3345592501573265
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.376407374395058,
+          "repeated_prompt_seconds": [
+            6.992046291939914,
+            6.991809957893565
+          ],
+          "physical_peaks": [
+            31499828464,
+            31901220512
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            10.721548000117764,
+            8.101510541979223
+          ],
+          "warm_seconds": [
+            7.516024291981012,
+            7.506477124989033,
+            7.586630207952112,
+            7.528350875014439
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.522187583497725,
+          "repeated_prompt_seconds": [
+            7.111119834007695,
+            7.121506583178416
+          ],
+          "physical_peaks": [
+            31776947824,
+            31694847456
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a7168-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            13.578668541973457,
+            11.521615624893457
+          ],
+          "warm_seconds": [
+            5.985654208110645,
+            5.759125082986429,
+            5.945378459058702,
+            5.748289749957621
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.852251771022566,
+          "repeated_prompt_seconds": [
+            5.350918707903475,
+            5.3345141659956425
+          ],
+          "physical_peaks": [
+            32104218680,
+            32050659360
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.671703541185707,
+            7.797056833980605
+          ],
+          "warm_seconds": [
+            7.404815667076036,
+            7.3590120419394225,
+            7.387316250009462,
+            7.34155720891431
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.373164145974442,
+          "repeated_prompt_seconds": [
+            6.989021291024983,
+            6.991405749926344
+          ],
+          "physical_peaks": [
+            31242681464,
+            31330778256
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            14.34507495816797,
+            8.816378833027557
+          ],
+          "warm_seconds": [
+            8.186743250116706,
+            8.170745708979666,
+            8.25468016602099,
+            8.182382625062019
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.184562937589362,
+          "repeated_prompt_seconds": [
+            7.819414958823472,
+            7.80889141606167
+          ],
+          "physical_peaks": [
+            31584599544,
+            31699041808
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+        "sha256": "2c57326daa07d586caeb069d5991934e4aa1bcbd3629dd3c35ca32a560ae8341",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-private-a8192-f16",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            11.532962792087346,
+            13.084079375024885
+          ],
+          "warm_seconds": [
+            5.948704000096768,
+            5.786797291133553,
+            5.9844525419175625,
+            5.7708688750863075
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.8677506456151605,
+          "repeated_prompt_seconds": [
+            5.335787999909371,
+            5.330210041953251
+          ],
+          "physical_peaks": [
+            31904497600,
+            31960498136
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.662772082956508,
+            7.814204042078927
+          ],
+          "warm_seconds": [
+            7.402133292052895,
+            7.350164958043024,
+            7.439769207965583,
+            7.362159540876746
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.3821464164648205,
+          "repeated_prompt_seconds": [
+            6.990390374790877,
+            6.992068917024881
+          ],
+          "physical_peaks": [
+            31894306344,
+            31681969488
+          ]
+        },
+        {
+          "route": "native-private",
+          "cold_seconds": [
+            12.911552125122398,
+            9.689816750120372
+          ],
+          "warm_seconds": [
+            8.94753524987027,
+            8.940638833213598,
+            9.023547207936645,
+            8.957420082995668
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.95247766643297,
+          "repeated_prompt_seconds": [
+            8.645394874969497,
+            8.64911041688174
+          ],
+          "physical_peaks": [
+            31492226648,
+            31918440072
+          ]
+        }
+      ],
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
     }
   ],
   "missing_current_comparisons": [

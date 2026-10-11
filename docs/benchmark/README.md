@@ -24,7 +24,7 @@ frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 候选都保留，不为了胜率只选较慢参考，见[Qwen详细边界](QWEN_BF16_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面30组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面44组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
@@ -105,6 +105,8 @@ Z五格式的新同库配置、完整16路线、cold/fresh/repeat/peak/source/ca
 和图像差异见 [Z详细结果](Z_IMAGE_FORMATS.md)。NVFP4 GPU8.844s，无ANE列。
 [Z最新完整框架对照](Z_IMAGE_FRAMEWORKS.md)与上述五格式配置是独立
 campaign；[FLUX最新参考精度筛选](FLUX_PRECISIONS.md)不与旧原生样本拼倍率。
+[Z Private14候选完整网格](Z_PRIVATE_PARTITIONS.md)的最快4096/F32为
+6.147741s，同窗口frozen5.793671s仍胜；更大ANE份额和F16 join均未改善。
 
 ## 3. Qwen GGUF 与原 Unsloth：encoder 到完整生成
 
@@ -282,7 +284,7 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 这份测量报告不是所有设备、编辑/LoRA、所有尺寸或Public/hard-RAM发布
 资格；[目标逐项审计](COMPLETION_AUDIT.md)区分已交付要求与这些限制。
 
-[30 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[44 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
 第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大

@@ -207,5 +207,51 @@
       "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
       "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim"
     }
+  ],
+  "private_configurations": [
+    {
+      "model": "z-image-turbo",
+      "representation": "original BF16 source; approximate Private Hadamard W8A8 channel split",
+      "selected_route": "native-private",
+      "model_root": "models/Comfy-Org-z_image_turbo",
+      "library": "build/flux9-compiled-v1-private/libturbocider.dylib",
+      "source_manifest": "outputs/runtime-ane/private-channel-z-c1152-k1024-n512-v2-20261009/manifest.json",
+      "request": {
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "seed": 42,
+        "audio": false,
+        "residency": "resident",
+        "dynamic_text": true,
+        "execution": "gpu_ane",
+        "allow_approximation": true,
+        "hybrid_mlp_mode": "runtime",
+        "ane_manifest": "outputs/runtime-ane/private-channel-z-c1152-k1024-n512-v2-20261009/manifest.json"
+      },
+      "environment": {
+        "TURBOCIDER_ANE_BACKEND": "private",
+        "TURBOCIDER_ALLOW_PRIVATE_ANE": "1",
+        "TURBOCIDER_PRIVATE_ANE_GPU_IO": "1",
+        "TURBOCIDER_PRIVATE_ANE_DATA_PATH": "w8a8",
+        "TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC": "1",
+        "TURBOCIDER_RUNTIME_ANE_CHUNKS": "1",
+        "TURBOCIDER_PRIVATE_ANE_CHANNELS": "4096",
+        "TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN": "1",
+        "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE": "1",
+        "TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE": "1",
+        "TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE": "1",
+        "TURBOCIDER_PRIVATE_ANE_PREFETCH": "0",
+        "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD": "0",
+        "TURBOCIDER_Z_RUNTIME_MATCH_ROWS": "1"
+      },
+      "fresh_warm_median_seconds": 6.147740729036741,
+      "gpu_control_seconds": 7.345378021011129,
+      "frozen_control_seconds": 5.793671062448993,
+      "evidence": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+      "selection_note": "Private-only finite14-candidate winner; frozen remains faster in own cohort. Not overall winner or automatic default."
+    }
   ]
 }
