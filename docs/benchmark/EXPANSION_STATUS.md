@@ -179,6 +179,16 @@ Private完整六进程正反序、24PNG，84窗口/336PNG与独立audit全部完
 ANE份额或F16 join假定更优。[完整参数网格](Z_PRIVATE_PARTITIONS.md)。匹配量化、
 9B混合和参考布局缺口也继续保留。
 
+FLUX9B新增原始index/shard导出已实际24/24完成，H4096/F12288、
+ANE4096/GPU8192、固定rows1536，无18GB平铺副本。受控engine-cache
+以真正9B id编译24分区成功；低层bridge在blocks0/12/23两输入幅度
+共6次成功，源index+全部shards SHA通过，rel-L2 1.52–3.62%、cosine
+最低0.99934。它是INT8 per-channel权重/FP16 I/O前缀对照，不冒充
+activation8/native integer MAC、完整生成加速或已通过9B混合资格。
+导出、编译和probe分别保留在outputs/flux9-ane-prefix4096-r1536-*
+及outputs/flux9-coreml-prefix4096-r1536-probe-v1-20261011.json。
+下一步仍须实现/核验正确9B GPU complement、全图与端到端请求。
+
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器
 数字凑胜率。赢/输/无收益都发布。最快配置需留下参数、来源、artifact
