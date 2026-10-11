@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 25)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 27)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -117,6 +117,18 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertEqual(proof["reference_cache_mib"], 0)
         self.assertLess(proof["fresh_warm_speedup"], 1)
         self.assertIn("retained negative result", cached["note"])
+
+    def test_ltx_full_media_modes_and_clock_boundaries_are_not_pooled(self):
+        batch = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-persistent-batch")
+        clean = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-clean-exec")
+        self.assertEqual((len(batch["routes"]), len(clean["routes"])), (6, 2))
+        self.assertTrue(all(row["warm_sample_count"] == 2 for row in (*batch["routes"], *clean["routes"])))
+        self.assertTrue(all(row["native_timing_boundary"] == "native request_wall" for row in batch["routes"]))
+        self.assertTrue(all("estimate" in row["native_timing_boundary"] for row in clean["routes"]))
+        proof = json.loads((ROOT / batch["evidence"]["path"]).read_text())
+        self.assertEqual(sum(len(row["memory"]) for row in proof["trials"]), 20)
+        self.assertTrue(all(row["metrics"]["frame_count_compared"] == 97 for row in proof["quality"]))
+        self.assertTrue(all(item["complete"] for row in proof["trials"] for item in row["memory"]))
 
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())

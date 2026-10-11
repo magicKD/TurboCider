@@ -208,6 +208,17 @@ def export():
     campaigns.append(dict(evidence=binding, model="flux2-klein-9b-cache0-BF16-native-mflux", geometry=[512, 512],
         steps=4, date="2026-10-11", routes=routes, timing_scope=flux["timing_scope"],
         note="same-window cache0 reference candidate; mflux7.351531s beats native7.979642s; retained negative result, not native universal dominance or pooled stock samples"))
+    ltx, binding = source("docs/design/validation/ltx-full-configs-current-20261011.json", ("complete_diagnostic",))
+    if len(ltx["trials"]) != 16 or len(ltx["quality"]) != 8 or any(row["metrics"]["frame_count_compared"] != 97 for row in ltx["quality"]):
+        raise ValueError("complete eight-configuration sixteen-arm full-media audit required")
+    for single in (False, True):
+        routes = [measured(route["name"], route["cold_seconds"], route["warm_seconds"],
+            physical_peaks=route["physical_peaks"], configured=route["configured"], native_timing_boundary=route["native_timing_boundary"])
+            for route in ltx["routes"] if route["configured"]["single"] == single]
+        campaigns.append(dict(evidence=binding, model="ltx-2.5-full-config-clean-exec" if single else "ltx-2.5-full-config-persistent-batch",
+            geometry=[704, 448, 97], steps=11, date="2026-10-11", routes=routes,
+            timing_scope="new process conditioning-cache-hit request_wall_estimate; not persistent API wall" if single else "same-process full MP4 request_wall; cold and immediate conditioning-cache-hit warm",
+            note="eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,

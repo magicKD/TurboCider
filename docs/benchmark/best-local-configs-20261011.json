@@ -124,5 +124,81 @@
     "Z additional share/join/shape candidates and retention of other representation winners",
     "FLUX9B matched quantized/native framework and validated hybrid partition",
     "LTX complete media best configurations and successful reference layouts"
+  ],
+  "media_configurations": [
+    {
+      "model": "ltx-2.5-distilled",
+      "representation": "original local INT8 ConvRot DiT/Gemma and BF16 VAE base; GPU Sol+text256 attention approximation",
+      "selected_route": "gpu-text256-batch",
+      "model_root": "models/LTX-2.5",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "cli": "build/benchmark-async-v1-private/turbocider",
+      "request": {
+        "model": "ltx-2.5-distilled",
+        "operation": "video.generate",
+        "width": 704,
+        "height": 448,
+        "frames": 97,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "audio": true,
+        "execution": "gpu",
+        "ltx_backend": "c_metal",
+        "ltx_fast_av": true,
+        "residency": "component_staged",
+        "allow_approximation": true,
+        "ltx_sol_stage1": false,
+        "ltx_sol_stage2": true,
+        "ltx_sol_tau": 1,
+        "ltx_sol_dense_edge_blocks": 1,
+        "ltx_sol_dense_edge_steps": 0,
+        "ltx_stage2_text_rows": 256
+      },
+      "warm_median_seconds": 61.868681729,
+      "gpu_quality_control_seconds": 63.847972125,
+      "reduction_percent": 3.100005106074455,
+      "native_timing_boundary": "native request_wall; persistent batch, immediate conditioning cache hit",
+      "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
+      "selection_note": "Fastest tested persistent configuration; only3.1% saving with substantial full-video drift; opt-in, quality mode remains recommendation, not automatic production default",
+      "media_quality": {
+        "full_frames": 97,
+        "rgb_mean_correlation": 0.8157424355803057,
+        "mae_255": 25.0304630776829,
+        "motion_max_relative_error": 0.07965527256600152
+      }
+    },
+    {
+      "model": "ltx-2.5-distilled",
+      "representation": "same original local base; GPU quality clean-exec decoder",
+      "selected_route": "gpu-quality-exec",
+      "model_root": "models/LTX-2.5",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "cli": "build/benchmark-async-v1-private/turbocider",
+      "request": {
+        "model": "ltx-2.5-distilled",
+        "operation": "video.generate",
+        "width": 704,
+        "height": 448,
+        "frames": 97,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "audio": true,
+        "execution": "gpu",
+        "ltx_backend": "c_metal",
+        "ltx_fast_av": true,
+        "residency": "component_staged",
+        "allow_approximation": false
+      },
+      "warm_median_seconds": 62.6387229585,
+      "native_timing_boundary": "request_wall_estimate from clean finalizer; new process conditioning cache hit, not persistent API wall",
+      "physical_peak_bytes": [
+        37603813440,
+        37604370304
+      ],
+      "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
+      "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim"
+    }
   ]
 }

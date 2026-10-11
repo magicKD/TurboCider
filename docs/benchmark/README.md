@@ -13,14 +13,16 @@ Z-Image Turbo / LTX distilled checkpoint 单列为 base，不拿不同蒸馏模�
 48.512s；Z GPU/frozen为7.363/5.780s，参考9.520s。两者热态领先，
 但不是所有模型/框架/精度的全局第一。FLUX stock匹配GPU8.042/参考
 8.828s为1.098×；进一步cache0匹配GPU7.980/参考7.352s，参考反而更快，
-不能只选较慢参考宣传胜率。LTX仍无明显混合收益。每组保留日期、构建、边界和
+不能只选较慢参考宣传胜率。LTX新完整配置中GPU quality63.848s、
+GPU Sol+text256 61.869s，约3.1%小收益但明显视频漂移；INT8各recipe
+整体更慢，clean-exec另列，不沿用旧0.86%当稳定收益。每组保留日期、构建、边界和
 样本，不拼接不同实验的最快数值。
 随后参考cache0完整对照为mflux45.968/GPU43.347/frozen31.251s，GPU/
 frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 候选都保留，不为了胜率只选较慢参考，见[Qwen详细边界](QWEN_BF16_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面25组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面27组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
@@ -80,6 +82,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-11 Z Q4_0 GGUF，512²，8步 | 9.354 | 9.008，Private Sylvester W8A8 | 1.038× /3.7% | CPU-direct packed；GPU FP16 recipe另记 |
 | 10-11 Z Q8_0 GGUF，512²，8步 | 9.504 | 9.302，Private Sylvester W8A8 | 1.022× /2.1% | 四fresh warm，非repeat cache hit |
 | 10-11 LTX，704×448×97，11步/音视频 | 64.126 | 63.575，配置INT8 Core ML profile | 1.009× /0.86%，不作稳定收益 | 两warm/路；漂移较大，GPU仍推荐 |
+| 10-11 LTX，新Sol+text256同recipe | 61.869 | 66.036，INT8 profile | 混合慢约6.74%，GPU胜 | 两warm/配置；共32MP4/20memory，quality GPU63.848s |
 | 09-30 Qwen BF16，1024²，40 步 | 183.086 | 144.564，Public runtime v1 | 1.266× / 21.0% | 正反序两 warm/路；不是上一行的 encoder 生命周期 |
 | 09 月 Z BF16，512²，8 步 | 6.997 | 5.344，frozen image-only W8A8 | 1.309× / 23.6% | 同库回文顺序四 warm/路；单狐狸 prompt |
 | 09-30 Z BF16，1024²，8 步 | 31.429 | 28.400，Public runtime v1 | 1.107× / 9.6% | 灯塔四 warm/路；肖像为 31.401 / 28.388 |
@@ -222,6 +225,12 @@ streaming/resident 三对 PNG exact；不同量化源不是 bit-exact 同模型
   新97帧RGB correlation INT8/FP16为0.858522/0.876494，MAE20.49/19.02
   /255，不把较宽delta当无损。五进程memory verifier完整，compression/
   swap保留；[当前LTX全链路与框架拒绝](LTX_VIDEO.md)，当前仍推荐GPU。
+  随后8配置/16arm/32MP4完整筛选：batch quality GPU63.847972/
+  INT8 71.333099s；GPU Sol62.848950/text256 61.868682s，后者仅少3.1%，
+  全97帧RGB correlation0.815742/MAE25.03/255，保存performance opt-in，
+  不当无损默认。clean-exec GPU estimate62.638723s、peak37.60GB，
+  视频RGB exact，但不能跨estimate/request_wall边界算倍率；INT8更慢且
+  波动大，E5 recompile诊断与系统压力保留。[新完整八配置](LTX_VIDEO.md)。
 - FastH3：历史 832×480×124、4 步、INT6/g64、完整音视频 VAE 的
   warm/cache-hit wall 为 native337.893 / FastVideo339.028 s，近似持平，
   不是多样本 ABBA；更不能将缺失的当前 INT6 资产标为已复跑。
@@ -270,7 +279,7 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 这份测量报告不是所有设备、编辑/LoRA、所有尺寸或Public/hard-RAM发布
 资格；[目标逐项审计](COMPLETION_AUDIT.md)区分已交付要求与这些限制。
 
-[25 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[27 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
 第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大

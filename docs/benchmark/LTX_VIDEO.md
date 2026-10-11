@@ -84,16 +84,63 @@ memory链、原stock框架拒绝、完整97帧RGB/motion与旧失败。原始MP4
 dependencies/cache/binaries都不进Git。两种成功Core ML配置不当作
 全设备/多prompt/多seed/physical-overlap或Public发布资格。
 
-## 新完整配置筛选正在运行，不预填赢家
+## 新完整配置筛选：32段完整MP4与20条memory完成
 
-outputs/ltx-full-configs-v2-explicit-diagnostics-20261011已启动实际完整A/V推理：
+outputs/ltx-full-configs-v2-explicit-diagnostics-20261011已完整完成：
 quality/Sol/text256的GPU与INT8 batch，加GPU/INT8 clean-exec，8配置
-16arm正反序、每arm两段完整MP4；目标32段，成功数量以terminal
-summary为准，不把排队计划当结果。源/步数/尺寸不变、无LoRA；Sol
+16arm正反序、每arm两段完整MP4；32段均完成，20个独立memory窗口
+complete。源/步数/尺寸不变、无LoRA；Sol
 和text256为另外的attention近似，不能与quality宣称同数学。
 batch request_wall与clean finalizer request_wall_estimate/新进程
 conditioning-hit分开，不为了更快数字混边界。原64.126/63.575s与
-质量差异仍保留，完成后再核验完整媒体并选择各口径最佳配置。
+质量差异仍保留，不与下面新窗口混池。
+
+| 路线 | 正/反warm s | 中位 s | peak GB（十进制） | 计时边界 |
+| --- | --- | ---: | --- | --- |
+| GPU quality batch | 63.769 /63.927 | 63.847972 | 50.58 | request_wall |
+| INT8 quality batch | 67.681 /74.985 | 71.333099 | 50.54–50.77 | request_wall |
+| GPU Sol batch | 62.856 /62.842 | 62.848950 | 50.58 | request_wall |
+| INT8 Sol batch | 66.601 /67.730 | 67.165562 | 50.65–50.77 | request_wall |
+| GPU Sol+text256 batch | 61.998 /61.740 | 61.868682 | 50.57–50.76 | request_wall |
+| INT8 Sol+text256 batch | 70.637 /61.435 | 66.036188 | 50.70–50.76 | request_wall |
+| GPU quality clean-exec | 62.633 /62.644 | 62.638723 | 37.60 | request_wall_estimate |
+| INT8 quality clean-exec | 68.999 /62.481 | 65.740014 | 42.92–42.93 | request_wall_estimate |
+
+batch最快为GPU Sol+text256，对自身quality少3.100%；同attention recipe
+INT8比GPU慢6.736%。quality INT8比GPU慢11.723%，不沿用旧0.86%来
+宣称当前稳定收益。INT8 text256的61.435s最快单样本仍保留，但与
+70.637s一起计算中位数，不删除慢值。clean-exec同口径GPU最快，但
+其新进程/estimate不能与batch算1.2s“API加速”。cold数组全部在记录中。
+
+每候选warm MP4相对quality GPU的原尺寸97帧RGB/motion完整比较：
+
+| 候选 | mean correlation | MAE /255 | 最大motion相对误差 |
+| --- | ---: | ---: | ---: |
+| GPU quality clean-exec | 1.000000 | 0 | 0 |
+| GPU Sol | 0.836078 | 23.026 | 7.92% |
+| GPU Sol+text256 | 0.815742 | 25.030 | 7.97% |
+| INT8 quality（两边界） | 0.858522 | 20.495 | 5.34% |
+| INT8 Sol | 0.807217 | 25.378 | 8.50% |
+| INT8 Sol+text256 | 0.801190 | 26.193 | 6.71% |
+
+已查看quality/text256首、中、尾帧，均是雪林奔跑狐狸，构图和树木/
+身体细节有差异。允许较宽delta不意味着无损；仅3.1%收益伴随明显
+视频漂移，保存performance opt-in，默认建议仍quality GPU。clean-exec
+97帧视频RGB exact，不据此宣称AAC waveform/完整MP4 byte-exact。
+
+可定位的瓶颈：GPU warm model_load约3.4–3.8s，INT8约8.5–17.7s。
+INT8 stage1约20.9–21.5s比GPU23.5s短，部分stage2也更短，却被
+加载/重编译、执行边界与波动抵消；不能说ANE数学完全没有收益。
+raw里共76条E5 resource/recompile消息显式保留。system compression
+每窗口累计0–37.59GB、swap-out总活动约5.33GB，不称全窗口无压力。
+physical peak是process-tree范围，不包括所有外部Core ML服务/driver。
+
+[完整配置便携记录](../design/validation/ltx-full-configs-current-20261011.json)
+绑定514输入/所有helper/source/profile、32MP4/20memory/raw stdout、
+诊断、cold/warm、每stage与97帧统计；完整逐帧数组由full_audit SHA绑定。
+[已测配置](best-local-configs-20261011.json)分别保存batch performance
+与clean-exec quality，不跨边界选赢家、不自动改生产默认。成功外部
+框架/更多native profile与720p缺口继续pending，不因此完成扩大目标。
 
 v1保留failed：GPU两段完成，INT8两段也完成且memory complete，但
 Core ML的5条Missing E5 resource/recompile消息与首个JSON粘连，旧

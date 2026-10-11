@@ -2090,6 +2090,228 @@
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
       "note": "same-window cache0 reference candidate; mflux7.351531s beats native7.979642s; retained negative result, not native universal dominance or pooled stock samples"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/ltx-full-configs-current-20261011.json",
+        "sha256": "53f61e672421b729a1606d3f22f3835b0fcfc41a0f5a032963c4d35359890505",
+        "status": "complete_diagnostic"
+      },
+      "model": "ltx-2.5-full-config-persistent-batch",
+      "geometry": [
+        704,
+        448,
+        97
+      ],
+      "steps": 11,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "gpu-quality-batch",
+          "cold_seconds": [
+            72.597396166,
+            72.899583584
+          ],
+          "warm_seconds": [
+            63.769034916,
+            63.926909334
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 63.847972125,
+          "physical_peaks": [
+            50576878040,
+            50577140256
+          ],
+          "configured": {
+            "mode": "quality",
+            "hybrid": false,
+            "single": false
+          },
+          "native_timing_boundary": "native request_wall"
+        },
+        {
+          "route": "gpu-sol-batch",
+          "cold_seconds": [
+            72.32946475,
+            72.187409958
+          ],
+          "warm_seconds": [
+            62.855934541,
+            62.841964917
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 62.848949729,
+          "physical_peaks": [
+            50578876912,
+            50582776256
+          ],
+          "configured": {
+            "mode": "sol",
+            "hybrid": false,
+            "single": false
+          },
+          "native_timing_boundary": "native request_wall"
+        },
+        {
+          "route": "gpu-text256-batch",
+          "cold_seconds": [
+            70.95645725,
+            71.107542167
+          ],
+          "warm_seconds": [
+            61.997820208,
+            61.73954325
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 61.868681729,
+          "physical_peaks": [
+            50757151552,
+            50573404776
+          ],
+          "configured": {
+            "mode": "fast_approx",
+            "hybrid": false,
+            "single": false
+          },
+          "native_timing_boundary": "native request_wall"
+        },
+        {
+          "route": "int8-quality-batch",
+          "cold_seconds": [
+            88.148145125,
+            75.338000709
+          ],
+          "warm_seconds": [
+            67.6812885,
+            74.984910458
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 71.333099479,
+          "physical_peaks": [
+            50769341464,
+            50537933488
+          ],
+          "configured": {
+            "mode": "quality",
+            "hybrid": true,
+            "single": false
+          },
+          "native_timing_boundary": "native request_wall"
+        },
+        {
+          "route": "int8-sol-batch",
+          "cold_seconds": [
+            92.678085375,
+            80.282488208
+          ],
+          "warm_seconds": [
+            66.60146225,
+            67.729661041
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 67.16556164549999,
+          "physical_peaks": [
+            50770095008,
+            50645560104
+          ],
+          "configured": {
+            "mode": "sol",
+            "hybrid": true,
+            "single": false
+          },
+          "native_timing_boundary": "native request_wall"
+        },
+        {
+          "route": "int8-text256-batch",
+          "cold_seconds": [
+            72.457131375,
+            81.150498625
+          ],
+          "warm_seconds": [
+            70.637168125,
+            61.435208416
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 66.0361882705,
+          "physical_peaks": [
+            50762427272,
+            50697055040
+          ],
+          "configured": {
+            "mode": "fast_approx",
+            "hybrid": true,
+            "single": false
+          },
+          "native_timing_boundary": "native request_wall"
+        }
+      ],
+      "timing_scope": "same-process full MP4 request_wall; cold and immediate conditioning-cache-hit warm",
+      "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/ltx-full-configs-current-20261011.json",
+        "sha256": "53f61e672421b729a1606d3f22f3835b0fcfc41a0f5a032963c4d35359890505",
+        "status": "complete_diagnostic"
+      },
+      "model": "ltx-2.5-full-config-clean-exec",
+      "geometry": [
+        704,
+        448,
+        97
+      ],
+      "steps": 11,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "gpu-quality-exec",
+          "cold_seconds": [
+            72.773575208,
+            73.21951654200001
+          ],
+          "warm_seconds": [
+            62.633128542,
+            62.644317375
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 62.6387229585,
+          "physical_peaks": [
+            37603813440,
+            37604370304
+          ],
+          "configured": {
+            "mode": "quality",
+            "hybrid": false,
+            "single": true
+          },
+          "native_timing_boundary": "request_wall_estimate from clean finalizer"
+        },
+        {
+          "route": "int8-quality-exec",
+          "cold_seconds": [
+            75.418666208,
+            77.23931437499999
+          ],
+          "warm_seconds": [
+            68.998837416,
+            62.481190917000006
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 65.7400141665,
+          "physical_peaks": [
+            42928339376,
+            42919655808
+          ],
+          "configured": {
+            "mode": "quality",
+            "hybrid": true,
+            "single": true
+          },
+          "native_timing_boundary": "request_wall_estimate from clean finalizer"
+        }
+      ],
+      "timing_scope": "new process conditioning-cache-hit request_wall_estimate; not persistent API wall",
+      "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"
     }
   ],
   "missing_current_comparisons": [

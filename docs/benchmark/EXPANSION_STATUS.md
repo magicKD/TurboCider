@@ -12,7 +12,7 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置；最新七路线BF16/frozen/Public/Private/mflux affine4/8完整对照 | 额外尺寸、Private channel/F16/F32 join候选的完整请求筛选，不只微基准 |
 | FLUX.2 Klein 9B | stock配对8.042/8.828s；cache0配对native7.980/reference7.352s，参考胜出；stock三精度筛选 | 9B compiled GPU、匹配g32量化与mlx-serve成功路径；9B DiT混合分区尚未验证 |
-| LTX 2.5 distilled | 当前完整97帧音视频GPU/INT8/FP16；原组合mlx-serve memory preflight失败 | 本机更快GPU/混合profile、可运行的量化框架布局和完整媒体对照；不能只重用旧2.7%或新0.86%结果 |
+| LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
 立即重复prompt，512/1024图像与480p/720p-class视频的独立口径，完整
@@ -36,6 +36,10 @@ FLUX v5最新原生/参考同窗口8.042414/8.828487s，为1.098×，16PNG/
 4memory完整；旧1.370×不当成当前优势。进一步cache0完整ABBA为
 native7.979642/mflux7.351531s，参考胜出、native多用8.544%时间。
 9B compiled GPU/混合/匹配量化缺口不因此标完成。
+LTX v2完整8配置/16arm/32MP4/20memory已完成，batch GPU quality/
+Sol/text256为63.847972/62.848950/61.868682s，INT8相应71.333099/
+67.165562/66.036188s。clean-exec GPU/INT8估计62.638723/65.740014s
+另列；97帧差异与E5重编译、加载波动保留，不因此完成扩大目标。
 扩大目标仍active/partial，不因新增成功就把参数/混合/框架空缺标完成。
 
 1. 为Qwen原BF16创建只读派生布局：encoder仅键名调整，VAE仅键名与
@@ -130,8 +134,8 @@ blocked-fsync/overflow/write-error三项、真实CPU进程独立replay均通过�
 新mflux BF16四请求窗口`qwen21-mflux-original-v10-async-memory-precheck-20261011`
 完整1953samples，actual最大gap110.011ms，allowed仍500ms，memory complete。
 新匹配库`build/benchmark-async-v1-private`已经重建，源/工具身份不借旧库。
-LTX完整配置入口已启动：persistent与clean-exec、GPU/Sol/text256/INT8
-独立口径；尚未terminal完成，不把finalizer estimate伪称同session request_wall。
+LTX完整配置入口已完成：persistent与clean-exec、GPU/Sol/text256/INT8
+独立口径；不把finalizer estimate伪称同session request_wall。
 
 当前owned串行任务：
 
@@ -155,12 +159,12 @@ LTX完整配置入口已启动：persistent与clean-exec、GPU/Sol/text256/INT8
 - `outputs/ltx-full-configs-v1-palindrome-20261011`：terminal failed；GPU/
   INT8各两完整视频与memory完成，Core ML E5警告粘连JSON导致collector
   解析失败，不推广完整排名。raw/媒体保留，显式诊断解析器已修正。
-- `outputs/ltx-full-configs-v2-explicit-diagnostics-20261011`：已确认owned进程
-  实际开始完整A/V推理。8配置/16arm正反序，quality/Sol/text256的
+- `outputs/ltx-full-configs-v2-explicit-diagnostics-20261011`：terminal complete，
+  实际32MP4/20memory完整。8配置/16arm正反序，quality/Sol/text256的
   GPU与INT8 batch，另GPU/INT8 clean-exec；每arm两完整704×448×97/
-  24fps/11步/stereo MP4，目标32段，不预填成功数量或赢家。
+  24fps/11步/stereo MP4，不预填尚未测的其它形状或更优配置。
   batch同进程warm与clean-exec新进程conditioning-hit/estimate边界
-  分开统计；近似attention与INT8差异需完整媒体比较后报告。
+  分开统计；8个候选的完整97帧RGB/motion均已比较并保留。
   Core ML E5 resource/recompile消息与raw stdout SHA显式保留，未知
   文本仍拒绝；不隐去cold setup或伪造物理ANE/无warning资格。
 

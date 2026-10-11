@@ -203,6 +203,7 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_process_tree_async_writer.py
 	@"$(PYTHON)" -B tests/native/test_process_tree_async_live.py
 	@"$(PYTHON)" -B tests/native/test_ltx_full_config_screen.py
+	@"$(PYTHON)" -B tests/native/test_ltx_full_config_evidence.py
 test-acceleration-contract: test-runtime-ane-host
 	@"$(PYTHON)" -B tests/native/test_ane_placement.py
 	@"$(PYTHON)" -B tests/native/test_runtime_ane_model_screen.py
