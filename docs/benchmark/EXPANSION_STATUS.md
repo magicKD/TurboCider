@@ -68,7 +68,7 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 - `outputs/qwen21-mflux-original-v9-complete-weights-five-route-20261011/summary.json`：
   修复后五路线十进程40步对照正在运行。
 - `outputs/z-mflux-original-v4-full-seven-route-20261011/summary.json`：
-  七路线完整8步对照串行排在Qwen之后，尚未启动。
+  七路线完整8步对照串行排在Qwen之后；v9因memory gap失败，所以未启动。
 - [原生完整结果及invalid参考标记](QWEN_BF16_FRAMEWORKS.md)
 - [可携带预检/无损证明/alpha差异记录](../design/validation/qwen21-mflux-layout-precheck-20261011.json)
 
@@ -97,6 +97,34 @@ RGB；不会悄悄丢掉透明度或宣称两边输出功能完全等价。
   可走clean exec finalizer。后续把两种完整MP4边界分开测，并筛选现有
   Sol/text256/INT8 profiles；不能把历史clean decode micro当新whole-request
   加速，也不能把换进程cold算成同session warm。
+
+## 采样写盘阻塞修正（不放宽验收）
+
+v9修复权重后的mflux BF16四张40步图正常、actual source coverage完整，
+但一次579.013ms的采样间隔超过原500ms，window保留failed，不推广完整
+排名。原采样器每sample在采样线程同步fsync，写盘可能阻塞后续采样。
+新增显式bounded async writer，把同样的每sample fsync移到独立writer；
+64-record queue上限、不丢record，写入/overflow/drain失败均拒绝成功，
+结束时完全drain/fsync再独立重放。原gap/role/exit/hash-chain判定不改。
+
+原同步writer保持默认；Qwen/Z新screen显式选择async，对所有路线一致。
+blocked-fsync/overflow/write-error三项、真实CPU进程独立replay均通过。
+新mflux BF16四请求窗口`qwen21-mflux-original-v10-async-memory-precheck-20261011`
+完整1953samples，actual最大gap110.011ms，allowed仍500ms，memory complete。
+新匹配库`build/benchmark-async-v1-private`已经重建，源/工具身份不借旧库。
+LTX完整配置入口也已准备：persistent与clean-exec、GPU/Sol/text256/INT8
+独立口径；尚未硬件实测，不把finalizer estimate伪称同session request_wall。
+
+当前owned串行任务：
+
+- `outputs/qwen21-mflux-original-v11-async-five-route-20261011`：修复后的
+  完整五路线40步正反序，使用新库与相同async observer，目前运行中。
+- `outputs/z-mflux-original-v5-async-seven-route-20261011`：原生四路线与
+  三参考精度8步正反序，排在Qwen完整成功之后，未启动时不标运行。
+- `flux9_mflux_quant_screen.py`已准备stock BF16/Q4/Q8参考精度入口，
+  独立标精度与required parameter coverage，不与native BF16拼等精度
+  倍率；尚未实测。原生group64与quantized embedding尚未验证，后续
+  同源压缩表示/匹配layout仍需补齐，不因此把FLUX量化目标标完成。
 
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 但仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器

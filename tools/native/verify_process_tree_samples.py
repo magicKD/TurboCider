@@ -79,6 +79,11 @@ def verify(path: Path) -> dict[str, Any]:
     if rows[0].get("type") != "sampler_start":
         raise EvidenceError("first record is not sampler_start")
     start = rows[0]
+    writer_policy = start.get("evidence_writer_policy", "synchronous-record-fsync-v1")
+    queue_capacity = unsigned(start.get("evidence_queue_capacity", 0), "start.evidence_queue_capacity")
+    if (writer_policy not in ("synchronous-record-fsync-v1", "bounded-async-record-fsync-v1") or
+            queue_capacity != (64 if writer_policy == "bounded-async-record-fsync-v1" else 0)):
+        raise EvidenceError("unknown or unbounded evidence writer policy")
     revision = start.get("revision")
     if not isinstance(revision, str) or not revision:
         raise EvidenceError("start sampler revision is invalid")
@@ -256,6 +261,8 @@ def verify(path: Path) -> dict[str, Any]:
         "complete": terminal["complete"],
         "correlation_id": correlation,
         "sampler_revision": revision,
+        "evidence_writer_policy": writer_policy,
+        "evidence_queue_capacity": queue_capacity,
         "root_identity": {
             "pid": root_identity[0],
             "start_seconds": root_identity[1],

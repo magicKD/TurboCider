@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import platform
+import queue
 import signal
 import subprocess
 import sys
@@ -117,24 +118,32 @@ class RealClock:
 
 
 class HashChainJsonlWriter:
+    policy = "synchronous-record-fsync-v1"
     def __init__(self, path: Path):
         self.path = path
         self.stream = path.open("x", encoding="utf-8")
         self.sequence = 0
         self.previous_digest = "0" * 64
 
-    def write(self, value: dict[str, Any], *, sync: bool = False) -> dict[str, Any]:
+    def _record(self, value: dict[str, Any]) -> dict[str, Any]:
         record = dict(value)
         record["schema"] = SCHEMA
         record["sequence"] = self.sequence
         record["previous_digest"] = self.previous_digest
         record["record_digest"] = hashlib.sha256(canonical_json(record)).hexdigest()
+        self.previous_digest = record["record_digest"]
+        self.sequence += 1
+        return record
+
+    def _emit(self, record: dict[str, Any], sync: bool) -> None:
         self.stream.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
         self.stream.flush()
         if sync:
             os.fsync(self.stream.fileno())
-        self.previous_digest = record["record_digest"]
-        self.sequence += 1
+
+    def write(self, value: dict[str, Any], *, sync: bool = False) -> dict[str, Any]:
+        record = self._record(value)
+        self._emit(record, sync)
         return record
 
     def close(self) -> None:
@@ -149,6 +158,71 @@ class HashChainJsonlWriter:
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+
+class AsyncHashChainJsonlWriter(HashChainJsonlWriter):
+    """Keep each record durable without putting fsync on the sampling clock."""
+    policy = "bounded-async-record-fsync-v1"
+    queue_capacity = 64
+
+    def __init__(self, path: Path):
+        super().__init__(path)
+        self.pending = queue.Queue(maxsize=self.queue_capacity)
+        self.failure: BaseException | None = None
+        self.closed = False
+        self.worker = threading.Thread(target=self._drain, name="memory-evidence-writer", daemon=True)
+        self.worker.start()
+
+    def _drain(self) -> None:
+        try:
+            while True:
+                item = self.pending.get()
+                try:
+                    if item is None:
+                        self.stream.flush()
+                        os.fsync(self.stream.fileno())
+                        return
+                    self._emit(*item)
+                finally:
+                    self.pending.task_done()
+        except BaseException as error:
+            self.failure = error
+
+    def _check(self) -> None:
+        if self.failure is not None:
+            raise SamplerError("asynchronous evidence writer failed: " + str(self.failure))
+
+    def write(self, value: dict[str, Any], *, sync: bool = False) -> dict[str, Any]:
+        self._check()
+        if self.closed:
+            raise SamplerError("asynchronous evidence writer is closed")
+        record = self._record(value)
+        try:
+            self.pending.put_nowait((record, sync))
+        except queue.Full as error:
+            raise SamplerError("bounded evidence queue exhausted; no records dropped or fabricated") from error
+        return record
+
+    def close(self) -> None:
+        if self.closed:
+            self._check()
+            return
+        self.closed = True
+        try:
+            self._check()
+            try:
+                self.pending.put(None, timeout=5)
+            except queue.Full as error:
+                raise SamplerError("bounded evidence writer did not accept drain") from error
+            self.worker.join(timeout=5)
+            if self.worker.is_alive():
+                raise SamplerError("evidence writer did not drain; never publish successful evidence")
+            self._check()
+        finally:
+            # A failed, already-stopped writer owns no outstanding I/O. Never
+            # close its fd while a live worker might still be using it.
+            if not self.worker.is_alive():
+                self.stream.close()
 
 
 class _ProcBsdInfo(c.Structure):
@@ -549,6 +623,8 @@ class ProcessTreeSampler:
             "correlation_id": self.correlation_id,
             "platform": platform.platform(),
             "capabilities": self.backend.capabilities(),
+            "evidence_writer_policy": self.writer.policy,
+            "evidence_queue_capacity": getattr(self.writer, "queue_capacity", 0),
         }, sync=True)
 
     def sample(self) -> bool:
@@ -746,6 +822,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval-ms", type=int, default=DEFAULT_INTERVAL_MS)
     parser.add_argument("--max-gap-ms", type=int, default=DEFAULT_MAX_GAP_MS)
     parser.add_argument("--phase-file", type=Path)
+    parser.add_argument("--async-evidence", action="store_true",
+                        help="bounded writer thread; each record fsync retained, complete drain before success")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     return parser
 
@@ -766,7 +844,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             root_pid = args.pid
         backend = DarwinBackend()
-        writer = HashChainJsonlWriter(args.output)
+        writer = (AsyncHashChainJsonlWriter if args.async_evidence else HashChainJsonlWriter)(args.output)
         sampler = ProcessTreeSampler(
             backend, RealClock(), writer, root_pid,
             root_role=args.root_role,

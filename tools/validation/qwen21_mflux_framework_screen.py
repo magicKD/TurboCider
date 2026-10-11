@@ -213,6 +213,7 @@ def parent(args):
             with (output / "stdout.txt").open("x") as out, (output / "stderr.txt").open("x") as err:
                 memory = run_sampled(command, repo=ROOT, output=output, stem="run", env=env, stdout=out, stderr=err,
                                      timeout=1800, interval_ms=100, max_gap_ms=500,
+                                     async_evidence=True,
                                      child_roles=(("python_helper", str(args.python.resolve(strict=True))),))
             check_generations(identities)
             report = json.loads((output / "report.json").read_text())
