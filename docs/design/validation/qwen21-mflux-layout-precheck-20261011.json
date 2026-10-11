@@ -1,0 +1,333 @@
+{
+  "schema": "tc-qwen21-mflux-framework-validation-v1",
+  "date": "2026-10-11",
+  "status": "complete_precheck_only",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "steps": 4,
+  "requests_per_process": 1,
+  "order": [
+    "mflux-bf16",
+    "native-gpu"
+  ],
+  "evidence": "outputs/qwen21-mflux-original-v1-precheck-20261011/summary.json",
+  "evidence_sha256": "da17ade8e623323e4cc512a885362d95802bed7b79022346f8b1d6797170217e",
+  "native_inputs_matched": 514,
+  "library_sha256": "dc4eaad2879985c3190d9c2a2d63ea5f23446432cdb88f2e4c837b46b89d4a12",
+  "model_sha256": {
+    "models/Comfy-Org-Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+    "models/Comfy-Org-Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+    "models/Comfy-Org-Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+    "models/Comfy-Org-Qwen-Image-2.1/processor/tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+  },
+  "mflux_commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
+  "mflux_source_snapshot": "c90a2e1fadec82fb07a8b5eaddf89f5123d69f57729548cb299aea5b5d172812",
+  "layout_proof": {
+    "receipt_sha256": "4fa093f188b2d4a1d2fd228fc20ebd4e88b55282870c71996233703dd4b00c9a",
+    "components": [
+      {
+        "kind": "qwen-text",
+        "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+        "derived_sha256": "f5aae9a50ee49c1d39c553182471eb345954c8726fd77992fb9857bac6f734cc",
+        "payload_sha256": "543305cbb19c28513306c083cdfa2693c30102c733a39179fb580ddf5ebe5d8f",
+        "full_payload_equal": true,
+        "tensor_bindings": 750,
+        "preparation_seconds": 24.255860583973117
+      },
+      {
+        "kind": "qwen-vae",
+        "source_sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+        "derived_sha256": "e82d7d48020aa105405637c3cad54be067a6270a67f6b28667c751d8fbab9322",
+        "payload_sha256": "1e1c9913e83a24d1aa34487ed827a82c2906d132c331b626133c6b631c3314b4",
+        "full_payload_equal": true,
+        "tensor_bindings": 238,
+        "preparation_seconds": 0.9172305839601904
+      }
+    ]
+  },
+  "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+  "representation_scope": "same original BF16 values through lossless layout; Q4/Q8 are explicitly separate mflux affine recipes, not original GGUF equality",
+  "source_policy": "first verified source generation only; persistent metadata-bound reuse; no per-inference model SHA",
+  "trials": [
+    {
+      "route": "mflux-bf16",
+      "index": 0,
+      "report": {
+        "engine": "mflux-bf16",
+        "constructor_seconds": 1.1019885410787538,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "instrumentation": "host step counter only; stock model, cache and synchronization",
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 7.519704665988684,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 28427901296
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 44917394632,
+        "compression_bytes": 3616505856,
+        "decompression_bytes": 8454144,
+        "swap_in_bytes": 262144,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "63c8821920f3f2bcfacc9640188ef8f437ea5181d80ec526fda2681c01c135de",
+      "memory_report_sha256": "3a8fabc3fe33ae87e98fde6385da7d410bdcdd0bcffc51c0416cff09ff138165",
+      "pngs": [
+        {
+          "file_sha256": "b1cb0efc35164d74c0c91064e8ec2862508605c9e2b8c4747f69137d4c941361",
+          "rgb_sha256": "d90e3e232634f94d0f5b480f67c3baf4bf45c06ce3229060ef3456bb4d2f15cb"
+        }
+      ]
+    },
+    {
+      "route": "native-gpu",
+      "index": 1,
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 0.0015904169995337725,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 8.922268458991311,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 4,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 1,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264866,
+                "mlx_peak_bytes": 20601289322,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-original-v1-precheck-20261011/1-native-gpu/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 4,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 4.564194541,
+                "hybrid_setup": 0,
+                "image_encode": 4.17e-07,
+                "request_wall": 8.879917541,
+                "text_encode": 2.596778958,
+                "vae_decode": 0.555647167
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 18918141136,
+        "compression_bytes": 0,
+        "decompression_bytes": 6651904,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "3808528a6e6290a825f9966ddf080c8971cb9f4c0ba3ab3e530431f35198c20a",
+      "memory_report_sha256": "76fdceb49911828cef63cb91f442f7e6ea57909ddf308e08bff7518e2ba1ecd6",
+      "pngs": [
+        {
+          "file_sha256": "bbcde3a565f5e8bfb6cdfbd42e4b92674198f2b6e6c3238119ef4ea366f4d33b",
+          "rgb_sha256": "e2b9eeb842d1255bfa950ba162467d6ffd8e53c7e05e0643284ae7b9927be97f"
+        }
+      ]
+    }
+  ],
+  "routes": [],
+  "quality": [
+    {
+      "route": "mflux-bf16",
+      "process_index": 0,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 94.6456859088421,
+          "psnr_db": 8.608787149430615,
+          "max_abs_u8": 255,
+          "rgb_correlation": 0.032242268560712405,
+          "rgb_ssim_gaussian11_valid": 0.26546887261182656,
+          "ssim_per_channel": [
+            0.2864728399932163,
+            0.26306907582046885,
+            0.2468647020218008
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 94.65198289017033,
+          "psnr_db": 8.608209277708928,
+          "max_abs_u8": 255,
+          "rgb_correlation": 0.032150825557746086,
+          "rgb_ssim_gaussian11_valid": 0.26546614596935575,
+          "ssim_per_channel": [
+            0.2864704445158684,
+            0.2631455297801978,
+            0.246782463612002
+          ]
+        },
+        "raw_rgb_mae_255": 79.40957260131836,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 237,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 70910,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.2865028381347656
+        }
+      }
+    }
+  ],
+  "quality_scope": "native PNG retains generated alpha; reference RGB has implicit opaque alpha; raw RGB, alpha and white-composited RGB separately reported; same-size outputs, no resize; cross-engine seed does not prove identical noise or full output-feature equivalence"
+}

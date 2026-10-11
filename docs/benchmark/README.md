@@ -11,6 +11,10 @@ Z-Image Turbo / LTX distilled checkpoint 单列为 base，不拿不同蒸馏模�
 混合路径省时约 19%。这不是所有模型、格式或分辨率都更快的结论。
 以下每组保留自己的日期、构建、边界和样本，不拼接不同实验的最快数值。
 
+新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面18组为已完成的第一
+阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
+
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
 override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
 12对PNG与显式组合一致。它使既有加速可直接使用，不是再一次新kernel
@@ -222,7 +226,7 @@ process-tree physical peak、系统 compression/swap 和输出/质量证据。
 首次完整模型 SHA 持久化，后续 generation 未变时只做轻量身份检查；
 不要在每个 inference 前重扫模型、用 I/O 预热制造冷启动优势。
 
-`make test-base-benchmark` 使用项目 Python 环境运行30项无模型推理的
+`make test-base-benchmark` 使用项目 Python 环境运行42项无模型推理的
 报告/样本/路线/质量/框架边界回归；raw目录在本机存在时还复核小型证据
 与MP4摘要，不重新扫描模型权重。另已复核24项source注册、原SourceLease
 fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
@@ -236,5 +240,6 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 [18 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
-catalog的`goal_complete=true`只指[逐项目标](COMPLETION_AUDIT.md)的本轮交付；
-`qualification_passed=false`和各历史实验状态仍保留，不代表全场景发布资格。
+第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大
+目标的catalog为active/partial，`qualification_passed=false`不变，不代表
+全场景发布资格或已经穷尽本机最佳参数。

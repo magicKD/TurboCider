@@ -16,13 +16,14 @@ class BaseBenchmarkReportTests(unittest.TestCase):
     def setUp(self):
         self.report = json.loads((ROOT / "docs/benchmark/results-20261011.json").read_text())
 
-    def test_report_catalog_complete_but_does_not_promote_unsupported_frameworks(self):
-        self.assertEqual(self.report["status"], "complete_evidence_catalog")
-        self.assertIs(self.report["goal_complete"], True)
+    def test_expanded_goal_remains_active_without_promoting_previous_stage(self):
+        self.assertEqual(self.report["status"], "partial_expanded_evidence_catalog")
+        self.assertIs(self.report["goal_complete"], False)
         self.assertTrue((ROOT / self.report["completion_audit"]).is_file())
         self.assertIn("not release", self.report["goal_completion_scope"])
         self.assertIs(self.report["qualification_passed"], False)
-        self.assertEqual(self.report["missing_current_comparisons"], [])
+        self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
+        self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
         self.assertGreaterEqual(len(self.report["campaigns"]), 18)
 
