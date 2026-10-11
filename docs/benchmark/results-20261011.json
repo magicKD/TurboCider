@@ -2312,6 +2312,270 @@
       ],
       "timing_scope": "new process conditioning-cache-hit request_wall_estimate; not persistent API wall",
       "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-compiled-current-20261011.json",
+        "sha256": "148f08e42d2913350822d041ac4fbbff4819e83206f36d5079d8d4dc79b9c10f",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-compiled-GPU-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            8.46184116601944,
+            8.380447125062346
+          ],
+          "warm_seconds": [
+            7.8542554578743875,
+            7.465511375106871,
+            7.848427083808929,
+            7.587583874817938
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.718005479313433,
+          "repeated_prompt_seconds": [
+            6.857565667014569,
+            6.966751207830384
+          ],
+          "constructor_seconds": [
+            0.13065512501634657,
+            0.13854233315214515
+          ]
+        },
+        {
+          "route": "native-compiled",
+          "cold_seconds": [
+            7.680136499926448,
+            7.991982791107148
+          ],
+          "warm_seconds": [
+            7.667382124811411,
+            7.276677459012717,
+            7.801762082846835,
+            7.298592124832794
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.4829871248221025,
+          "repeated_prompt_seconds": [
+            6.817086874973029,
+            6.688042625086382
+          ],
+          "constructor_seconds": [
+            0.13235637499019504,
+            0.14161254093050957
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            7.826752583030611,
+            8.082318499917164
+          ],
+          "warm_seconds": [
+            7.393489917041734,
+            7.30929383286275,
+            7.3002324579283595,
+            7.320488000055775
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.314890916459262,
+          "repeated_prompt_seconds": [
+            7.294036834035069,
+            7.367715625092387
+          ],
+          "constructor_seconds": [
+            0.3767346248496324,
+            0.36937991599552333
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
+      "native_encoder_eval_interval": null
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-compiled-deferred-current-20261011.json",
+        "sha256": "7674e5b3538ba086fe60b6a6d909e7045583ae87f0568464c2edf4cbea539514",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-compiled-deferred-encoder-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            8.405706708086655,
+            8.439859833102673
+          ],
+          "warm_seconds": [
+            7.80084141693078,
+            7.407022207975388,
+            7.774068250088021,
+            7.438197792042047
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.606133021065034,
+          "repeated_prompt_seconds": [
+            6.907855249941349,
+            6.91667279205285
+          ],
+          "constructor_seconds": [
+            0.131461292039603,
+            0.1409532909747213
+          ]
+        },
+        {
+          "route": "native-compiled",
+          "cold_seconds": [
+            7.701702499995008,
+            7.934045708971098
+          ],
+          "warm_seconds": [
+            7.552434708923101,
+            7.210893207928166,
+            7.573121416848153,
+            7.21059058397077
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.381663958425634,
+          "repeated_prompt_seconds": [
+            6.720816125161946,
+            6.672433541156352
+          ],
+          "constructor_seconds": [
+            0.13292433391325176,
+            0.14279679208993912
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            7.83198537491262,
+            8.15275483415462
+          ],
+          "warm_seconds": [
+            7.315549042075872,
+            7.347669249866158,
+            7.33570420788601,
+            7.297064249869436
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.325626624980941,
+          "repeated_prompt_seconds": [
+            7.341539458138868,
+            7.35428979084827
+          ],
+          "constructor_seconds": [
+            0.3802491659298539,
+            0.37310108402743936
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
+      "native_encoder_eval_interval": 0
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-compiled-fused-current-20261011.json",
+        "sha256": "ec71b7b839415695fe715223ff605ef05e5ff7f422bf1db3f2ec68a2fda767f9",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-compiled-fused-encoder-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-11",
+      "routes": [
+        {
+          "route": "native",
+          "cold_seconds": [
+            8.391951832920313,
+            8.39649650012143
+          ],
+          "warm_seconds": [
+            7.7667287909425795,
+            7.433350041974336,
+            7.823614082997665,
+            7.457633374957368
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.612181082949974,
+          "repeated_prompt_seconds": [
+            6.979424959048629,
+            6.973521374864504
+          ],
+          "constructor_seconds": [
+            0.1322804589290172,
+            0.1448353340383619
+          ]
+        },
+        {
+          "route": "native-compiled",
+          "cold_seconds": [
+            7.695445334073156,
+            7.919486374827102
+          ],
+          "warm_seconds": [
+            7.556173500139266,
+            7.1725717089138925,
+            7.550080583197996,
+            7.198002249933779
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.374041416565888,
+          "repeated_prompt_seconds": [
+            6.8286910420283675,
+            6.823729750001803
+          ],
+          "constructor_seconds": [
+            0.14038558304309845,
+            0.1447482919320464
+          ]
+        },
+        {
+          "route": "mflux",
+          "cold_seconds": [
+            7.895718541927636,
+            8.141281915828586
+          ],
+          "warm_seconds": [
+            7.298503083875403,
+            7.353703917004168,
+            7.367817874997854,
+            7.332607332849875
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.343155624927022,
+          "repeated_prompt_seconds": [
+            7.409936249954626,
+            7.324106625048444
+          ],
+          "constructor_seconds": [
+            0.38914650003425777,
+            0.38396362494677305
+          ]
+        }
+      ],
+      "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+      "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
+      "native_encoder_eval_interval": 0
     }
   ],
   "missing_current_comparisons": [

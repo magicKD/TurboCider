@@ -65,10 +65,10 @@ def registered_hashes(paths, registration):
     return result
 
 
-def requests(output):
+def requests(output, compile_gpu=False):
     return [dict(model="flux2-klein-9b", operation="image.generate", prompt=prompt, width=512,
                  height=512, steps=4, seed=42, audio=False, execution="gpu", residency="resident",
-                 dynamic_text=False, output=str(output / f"{index}.png"))
+                 dynamic_text=False, compile_gpu=compile_gpu, output=str(output / f"{index}.png"))
             for index, prompt in enumerate(PROMPTS)]
 
 
@@ -105,20 +105,43 @@ def native_child(args, output):
     status = lib.tc_engine_create_model(b"flux2-klein-9b", str(args.model).encode(), C.byref(engine), C.byref(failure))
     if status:
         raise RuntimeError(consume(failure))
-    report = dict(engine="native", constructor_seconds=time.perf_counter() - start, runs=[])
+    route = args.child
+    compiled = route == "native-compiled"
+    report = dict(engine=route, constructor_seconds=time.perf_counter() - start,
+                  instrumentation="native branch-event observer; no added GPU fences",
+                  configured_encoder_eval_interval=args.native_encoder_eval_interval,
+                  configured_encoder_fused_attention=args.native_encoder_fused_attention, runs=[])
+    event_counts, event_errors = {}, []
+    callback_type = C.CFUNCTYPE(None, C.c_char_p, C.c_void_p)
+
+    def observed_event(payload, _):
+        try:
+            phase = json.loads(payload.decode())["phase"]
+            event_counts[phase] = event_counts.get(phase, 0) + 1
+        except Exception as error:
+            event_errors.append(str(error))
+
+    callback = callback_type(observed_event)
     try:
-        for index, request in enumerate(requests(output)):
+        for index, request in enumerate(requests(output, compiled)):
+            event_counts.clear()
+            event_errors.clear()
             write_json(output / f"request-{index}.json", request)
             result, failure = C.c_void_p(), C.c_void_p()
             start = time.perf_counter()
-            status = lib.tc_engine_generate(engine, json.dumps(request).encode(), None, None,
+            status = lib.tc_engine_generate(engine, json.dumps(request).encode(), C.cast(callback, C.c_void_p), None,
                                             C.byref(result), C.byref(failure))
             wall = time.perf_counter() - start
             text, error = consume(result), consume(failure)
             if status:
                 raise RuntimeError(error)
+            if event_errors:
+                raise ValueError("actual native branch-event parse failed")
+            actual_compiled = event_counts.get("compiled_single_gpu_block", 0)
+            if actual_compiled != (96 if compiled else 0):
+                raise ValueError("actual four-step24-block compiled branch count differs")
             report["runs"].append(dict(index=index, prompt=request["prompt"], request_wall_including_export=wall,
-                                       metrics=json.loads(text)))
+                actual_compiled_single_blocks=actual_compiled, native_event_counts=event_counts.copy(), metrics=json.loads(text)))
             write_json(output / "report.json", report)
     finally:
         lib.tc_engine_free(engine)
@@ -241,6 +264,8 @@ def parent(args):
                    mflux_commit=subprocess.check_output(["git", "-C", str(args.mflux), "rev-parse", "HEAD"], text=True).strip(),
                    order=args.order.split(","), trials=[],
                    reference_cache_mib=args.reference_cache_mib,
+                   native_encoder_eval_interval=args.native_encoder_eval_interval,
+                   native_encoder_fused_attention=args.native_encoder_fused_attention,
                    timing_scope="first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
                    source_policy="first source generation SHA then durable benchmark metadata reuse; unchanged canonical/stat guard at arm boundaries; no per-inference model hash or OS cache purge",
                    observer_policy="bounded-async-record-fsync-v1" if args.async_evidence else "synchronous-record-fsync-v1")
@@ -253,6 +278,10 @@ def parent(args):
             env = benchmark_environment()
             env.update(PYTHONDONTWRITEBYTECODE="1", HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
                        PYTHONPATH=str(args.extra), MPLCONFIGDIR=str(args.output / "matplotlib-cache"))
+            if engine.startswith("native") and args.native_encoder_eval_interval is not None:
+                env["TURBOCIDER_QWEN3_EVAL_INTERVAL"] = str(args.native_encoder_eval_interval)
+            if engine.startswith("native") and args.native_encoder_fused_attention:
+                env["TURBOCIDER_QWEN3_FUSED_SDPA"] = "1"
             command = [str(args.python), "-B", str(Path(__file__).resolve()), "--child", engine,
                        "--model", str(args.model), "--library", str(args.library), "--mflux", str(args.mflux),
                        "--output", str(destination)]
@@ -260,6 +289,10 @@ def parent(args):
                 command.append("--stage-probe")
             if args.reference_cache_mib is not None:
                 command += ["--reference-cache-mib", str(args.reference_cache_mib)]
+            if args.native_encoder_eval_interval is not None:
+                command += ["--native-encoder-eval-interval", str(args.native_encoder_eval_interval)]
+            if args.native_encoder_fused_attention:
+                command += ["--native-encoder-fused-attention"]
             print(json.dumps(dict(starting=index, engine=engine)), flush=True)
             with (destination / "stdout.txt").open("x") as out, (destination / "stderr.txt").open("x") as err:
                 memory = run_sampled(command, repo=ROOT, output=destination, stem="run", env=env, stdout=out,
@@ -306,20 +339,26 @@ def main():
     parser.add_argument("--extra", type=Path)
     parser.add_argument("--order", default="native,mflux,mflux,native")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--child", choices=("native", "mflux"))
+    parser.add_argument("--child", choices=("native", "native-compiled", "mflux"))
     parser.add_argument("--stage-probe", action="store_true", help="separate optional observer with eval phase fences; not default whole-request ranking")
     parser.add_argument("--async-evidence", action="store_true", help="same bounded async record writer on both arms; gap/verification gate unchanged")
     parser.add_argument("--reference-cache-mib", type=int, choices=(0, 1024, 4096),
                         help="explicit process-local reference free-cache candidate; unset is stock")
+    parser.add_argument("--native-encoder-eval-interval", type=int, choices=(0, 2, 4),
+                        help="explicit resident Qwen3 GPU prefill evaluation interval; unset is native default;0 defers layer fences")
+    parser.add_argument("--native-encoder-fused-attention", action="store_true",
+                        help="explicit existing native Qwen3 fused GPU attention candidate; reference unchanged")
     args = parser.parse_args()
     for field in ("model", "library", "mflux"):
         setattr(args, field, getattr(args, field).resolve(strict=True))
     args.output = args.output.absolute()
     if args.child:
-        (native_child if args.child == "native" else mflux_child)(args, args.output)
+        (native_child if args.child.startswith("native") else mflux_child)(args, args.output)
     else:
         if args.output.exists() or not args.python or not args.extra or args.order.split(",") not in (
-                ["native", "mflux", "mflux", "native"], ["native", "mflux"], ["mflux", "native"]):
+                ["native", "mflux", "mflux", "native"], ["native", "mflux"], ["mflux", "native"],
+                ["native", "native-compiled", "mflux", "mflux", "native-compiled", "native"],
+                ["native", "native-compiled"]):
             parser.error("fresh output, reference Python/extra dependencies and exact serial arm order required")
         args.python = args.python.absolute()  # preserve venv launcher path
         args.extra = args.extra.resolve(strict=True)

@@ -49,6 +49,8 @@ class Flux9FrameworkScreenTests(unittest.TestCase):
         task = requests(Path("/tmp/not-written"))
         self.assertNotEqual(task[1]["prompt"], task[2]["prompt"])
         self.assertEqual(task[2]["prompt"], task[3]["prompt"])
+        self.assertTrue(all(row["compile_gpu"] is False for row in task))
+        self.assertTrue(all(row["compile_gpu"] is True for row in requests(Path("/tmp/not-written"), True)))
         rows = [dict(request_wall_including_export=1.0, metrics=dict(
             model="flux2-klein-9b", operation="image.generate", width=512, height=512,
             steps=4, seed=42, text_tokens=512, prompt_cache_hit=index == 3, hybrid=None)) for index in range(4)]

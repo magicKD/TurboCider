@@ -40,8 +40,10 @@ def rgb(path):
 def audit(screen, mlxserve, build_manifest):
     data = json.loads((screen / "summary.json").read_text())
     if (data["status"] != "complete_diagnostic" or data.get("stage_probe") is not False or
-            data["order"] != ["native", "mflux", "mflux", "native"] or len(data["trials"]) != 4):
-        raise ValueError("complete original four-process ABBA required")
+            data["order"] not in (["native", "mflux", "mflux", "native"],
+                ["native", "native-compiled", "mflux", "mflux", "native-compiled", "native"]) or
+            len(data["trials"]) != len(data["order"])):
+        raise ValueError("complete original BF16 native/reference palindrome required")
     build = json.loads(build_manifest.read_text())
     if any(sha256_file(ROOT / row["path"]) != row["sha256"] for row in build["inputs"]["sources"]):
         raise ValueError("native build/source mismatch")
@@ -57,6 +59,8 @@ def audit(screen, mlxserve, build_manifest):
                   timing_scope=data["timing_scope"], source_policy=data["source_policy"],
                   scope="same BF16 files and native/reference templates; fresh prompt latency, not equal allocator/residency policy or strict numerical equivalence")
     output["reference_cache_mib"] = data.get("reference_cache_mib")
+    output["native_encoder_eval_interval"] = data.get("native_encoder_eval_interval")
+    output["native_encoder_fused_attention"] = data.get("native_encoder_fused_attention", False)
     reference_coverage_complete = True
     for trial in data["trials"]:
         report, memory = trial["report"], trial["memory"]
@@ -66,8 +70,10 @@ def audit(screen, mlxserve, build_manifest):
         for key in ("evidence", "report"):
             if sha256_file(directory / memory[key]) != memory[key + "_sha256"]:
                 raise ValueError("memory evidence changed")
-        if report["engine"] == "native":
+        if report["engine"].startswith("native"):
             validate_native(report["runs"])
+            if report["engine"] == "native-compiled" and any(row.get("actual_compiled_single_blocks") != 96 for row in report["runs"]):
+                raise ValueError("actual complete9B compiled single blocks required")
         elif (report.get("instrumentation") != "host-step-counter-only; no extra GPU sync or encoder wrapper" or
               report["quantization"] is not None or report["precision"] != "mlx.core.bfloat16" or
               len(report["runs"]) != 4 or any(row["actual_steps"] != [0, 1, 2, 3] or row["loras"] or
@@ -100,8 +106,16 @@ def audit(screen, mlxserve, build_manifest):
     a, b = (data["medians"][engine]["fresh_warm_seconds"] for engine in ("native", "mflux"))
     output["fresh_warm_speedup"] = b / a
     output["fresh_warm_reduction_percent"] = 100 * (1 - a / b)
+    if "native-compiled" in data["medians"]:
+        compiled = data["medians"]["native-compiled"]["fresh_warm_seconds"]
+        output["compiled_gpu_comparison"] = dict(native_eager_over_compiled=a / compiled,
+            reference_over_compiled=b / compiled, compiled_reduction_vs_eager_percent=100 * (1 - compiled / a),
+            scope="same BF16 source/four-step whole requests;96 actual host-submitted compiled single-block branches per request, no added fences; not physical GPU occupancy trace")
     output["rgb_comparisons"] = []
-    for native, reference in (("0-native", "1-mflux"), ("3-native", "2-mflux")):
+    pairs = (("0-native", "1-mflux"), ("3-native", "2-mflux")) if len(data["order"]) == 4 else (
+        ("0-native", "1-native-compiled"), ("5-native", "4-native-compiled"),
+        ("0-native", "2-mflux"), ("5-native", "3-mflux"))
+    for native, reference in pairs:
         for index in range(4):
             left, right = screen / native / f"{index}.png", screen / reference / f"{index}.png"
             x, y = rgb(left), rgb(right)

@@ -58,10 +58,35 @@ reference compression累计3.24–3.44GB、native2.81–3.12GB，swap-out均0；
 记录实际cache bytes/previous limit、完整coverage/PNG/内存/样本与图像
 差异。原生fresh阶段encoder约0.60–1.36s、denoise约6.62–6.77s；下一
 优化主项仍是DiT，不能只优化constructor或忽略完整request。
-当前pure-GPU compiled single graph和减少per-block fence仅有4B实现，
-9B仍eager；compile_gpu旗标不能冒充9B已执行compiled graph。需真正
-推广动态H4096/heads32/F12288并重建、做数值和完整请求实测，再改变
-配置/排名。9B混合几何也继续独立验证，不直接解除guard。
+这个v6窗口的9B仍eager；后续已真正实现参数化compiled single graph，
+见下方新实验。9B混合几何继续独立验证，不直接解除guard。
+
+## 9B compiled GPU与encoder参数：完整三路线对照
+
+新增H4096/heads32/F12288参数化single graph，weights显式输入，按
+session保留编译函数；quantized/bias/runtime-LoRA路径仍走正确eager
+投影和同步。9B默认未自动改为compiled，ANE拒绝保护也未解除。
+每组eager→compiled→mflux→mflux→compiled→eager，24PNG/6memory，
+四fresh/route。每compiled请求实际96个成功host分支；不是只看flag。
+
+| 独立cohort / encoder配置 | eager s | compiled s | mflux/cache0 s | compiled对自身eager省时 |
+| --- | ---: | ---: | ---: | ---: |
+| 默认encoder求值间隔 | 7.718005 | 7.482987 | 7.314891 | 3.045% |
+| encoder interval0 | 7.606133 | 7.381664 | 7.325627 | 2.951% |
+| interval0 + fused attention | 7.612181 | 7.374041 | 7.343156 | 3.128% |
+
+三组分别解读，不把最小samples拼成新倍率。compiled/eager当前八对
+PNG每组RGB exact，完整输出/所有内存验收通过；不是任意形状/seed/
+操作或硬件occupancy资格。fused相对deferred-only约0.1%的跨cohort
+名义差异在噪声内，不当稳定收益。最后组reference仍略快；目前可以
+说native接近这组调优参考，不能说native全局最优。
+
+[默认间隔完整证据](../design/validation/flux9-compiled-current-20261011.json)、
+[interval0证据](../design/validation/flux9-compiled-deferred-current-20261011.json)、
+[fused证据](../design/validation/flux9-compiled-fused-current-20261011.json)保留
+新匹配库514输入、96真实分支、全部cold/fresh/repeat/quality/压力。
+新库build/flux9-compiled-v1-private，不借旧库身份；最高名义native
+配置在best-local-configs中保留，未自动改变生产默认。
 
 ## 表示与正确性
 

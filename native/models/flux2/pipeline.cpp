@@ -360,6 +360,7 @@ void Flux::select_loras(const Request &request) {
     hybrid_.reset(); encoder_hybrid_.reset(); cached_conditioning_.reset(); cached_prompt_.clear();
     cached_encoder_manifest_.clear();
     hybrid_gpu_graph_ = {};
+    single_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     transformer_.clear(); vae_.clear(); mx::clear_cache();
 }
@@ -386,6 +387,7 @@ void Flux::unload() {
     hybrid_.reset();
     encoder_hybrid_.reset();
     hybrid_gpu_graph_ = {};
+    single_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
     cached_conditioning_.reset();
     cached_prompt_.clear();

@@ -28,6 +28,8 @@ class Flux : public ModelSession {
     bool cached_dynamic_ = true;
     std::optional<Tensor> cached_conditioning_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
+    // Geometry belongs to this model session; weights stay explicit inputs.
+    std::function<std::vector<Tensor>(const std::vector<Tensor> &)> single_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;

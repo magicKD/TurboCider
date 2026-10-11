@@ -11,7 +11,7 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置；最新七路线BF16/frozen/Public/Private/mflux affine4/8完整对照 | 额外尺寸、Private channel/F16/F32 join候选的完整请求筛选，不只微基准 |
-| FLUX.2 Klein 9B | stock配对8.042/8.828s；cache0配对native7.980/reference7.352s，参考胜出；stock三精度筛选 | 9B compiled GPU、匹配g32量化与mlx-serve成功路径；9B DiT混合分区尚未验证 |
+| FLUX.2 Klein 9B | stock/cache0和三组真实compiled GPU/encoder参数完整对照；最快名义native7.374/reference7.343s | 匹配g32量化与mlx-serve成功路径；9B DiT混合分区尚未验证；不把约持平称全局第一 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
@@ -168,7 +168,13 @@ LTX完整配置入口已完成：persistent与clean-exec、GPU/Sol/text256/INT8
   Core ML E5 resource/recompile消息与raw stdout SHA显式保留，未知
   文本仍拒绝；不隐去cold setup或伪造物理ANE/无warning资格。
 
+最新FLUX compiled v2/v3/v4三cohort均terminal complete，每组24PNG/
+6memory、四fresh/route、每compiled请求96实际分支，默认/deferred/
+fused分别7.483/7.382/7.374s；各自参考7.315/7.326/7.343s，不能混池。
+compiled/eager当前RGBA中的RGB exact，9B ANE guard仍未解除。
+当前没有owned硬件任务遗留；下一步补匹配量化、混合和参考布局缺口。
+
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
-但仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器
+仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器
 数字凑胜率。赢/输/无收益都发布。最快配置需留下参数、来源、artifact
 和复现入口，且在当前文件状态下能实际加载；不只保存一个旧最小数字。

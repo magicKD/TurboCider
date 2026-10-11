@@ -85,10 +85,10 @@
     },
     {
       "model": "flux2-klein-9b",
-      "selected_route": "native",
+      "selected_route": "native-compiled",
       "representation": "original BF16 encoder/DiT/VAE; pure GPU",
       "model_root": "models/FLUX.2-klein-9B",
-      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "library": "build/flux9-compiled-v1-private/libturbocider.dylib",
       "request": {
         "model": "flux2-klein-9b",
         "operation": "image.generate",
@@ -100,13 +100,14 @@
         "execution": "gpu",
         "residency": "resident",
         "dynamic_text": false,
-        "allow_approximation": false
+        "allow_approximation": false,
+        "compile_gpu": true
       },
-      "fresh_warm_median_seconds": 7.9796415834571235,
-      "reference_fresh_warm_median_seconds": 7.351530771004036,
+      "fresh_warm_median_seconds": 7.374041416565888,
+      "reference_fresh_warm_median_seconds": 7.343155624927022,
       "reference_comparison_valid": true,
-      "evidence": "docs/design/validation/flux9-bf16-cache0-current-20261011.json",
-      "selection_note": "Only validated native9B route is pure GPU; in this same-cohort cache0 experiment mflux is faster. Do not label this retained native configuration as overall winner.",
+      "evidence": "docs/design/validation/flux9-compiled-fused-current-20261011.json",
+      "selection_note": "Fastest nominal native candidate median from its own complete cohort; compiled+deferred+fused. Fused versus deferred-only is within noise; reference still slightly faster. Opt-in, no automatic default or9B ANE qualification.",
       "source_policy": "first source generation SHA then persistent benchmark metadata reuse; no per-inference model hash",
       "native_faster_than_reference": false,
       "best_tested_reference": {
@@ -115,8 +116,14 @@
         "precision": "BF16",
         "free_cache_limit_bytes": 0,
         "fresh_warm_median_seconds": 7.351530771004036,
-        "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_bf16_framework_screen.py --model models/FLUX.2-klein-9B --library build/benchmark-async-v1-private/libturbocider.dylib --mflux ../references/mflux --python .deps/qwen21-oracle-env/bin/python3 --extra .deps/mflux-reference-extra --async-evidence --reference-cache-mib 0 --output outputs/new-flux-cache0-benchmark"
-      }
+        "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_bf16_framework_screen.py --model models/FLUX.2-klein-9B --library build/flux9-compiled-v1-private/libturbocider.dylib --mflux ../references/mflux --python .deps/qwen21-oracle-env/bin/python3 --extra .deps/mflux-reference-extra --async-evidence --reference-cache-mib 0 --output outputs/new-flux-cache0-benchmark",
+        "library_comparison_note": "Current fused cohort reference7.343156s; previous cache0 cohort7.351531s retained separately, not pooled"
+      },
+      "environment": {
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "actual_compiled_single_blocks_per_request": 96
     }
   ],
   "pending": [

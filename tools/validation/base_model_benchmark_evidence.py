@@ -219,6 +219,21 @@ def export():
             geometry=[704, 448, 97], steps=11, date="2026-10-11", routes=routes,
             timing_scope="new process conditioning-cache-hit request_wall_estimate; not persistent API wall" if single else "same-process full MP4 request_wall; cold and immediate conditioning-cache-hit warm",
             note="eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"))
+    for path, name in (
+        ("docs/design/validation/flux9-compiled-current-20261011.json", "flux2-klein-9b-compiled-GPU-cohort"),
+        ("docs/design/validation/flux9-compiled-deferred-current-20261011.json", "flux2-klein-9b-compiled-deferred-encoder-cohort"),
+        ("docs/design/validation/flux9-compiled-fused-current-20261011.json", "flux2-klein-9b-compiled-fused-encoder-cohort"),
+    ):
+        data, binding = source(path, ("complete_diagnostic",))
+        if len(data["trials"]) != 6 or any(row.get("actual_compiled_single_blocks") != 96
+                for trial in data["trials"] if trial["engine"] == "native-compiled" for row in trial["report"]["runs"]):
+            raise ValueError("complete actual9B compiled branch cohort required")
+        routes = [measured(engine, data["medians"][engine]["cold_seconds"], data["medians"][engine]["samples"],
+            repeated_prompt_seconds=data["medians"][engine]["repeated_prompt_seconds"],
+            constructor_seconds=data["medians"][engine]["constructor_seconds"]) for engine in ("native", "native-compiled", "mflux")]
+        campaigns.append(dict(evidence=binding, model=name, geometry=[512, 512], steps=4, date="2026-10-11", routes=routes,
+            timing_scope=data["timing_scope"], note="same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
+            native_encoder_eval_interval=data.get("native_encoder_eval_interval")))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-11", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,

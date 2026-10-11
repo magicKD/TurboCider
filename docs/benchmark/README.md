@@ -17,12 +17,14 @@ Z-Image Turbo / LTX distilled checkpoint 单列为 base，不拿不同蒸馏模�
 GPU Sol+text256 61.869s，约3.1%小收益但明显视频漂移；INT8各recipe
 整体更慢，clean-exec另列，不沿用旧0.86%当稳定收益。每组保留日期、构建、边界和
 样本，不拼接不同实验的最快数值。
+后续真实9B compiled图和encoder参数筛选已完成，最新同窗口native
+7.374/mflux7.343s近似持平；对自身eager省约3.13%，仍不宣称普遍领先。
 随后参考cache0完整对照为mflux45.968/GPU43.347/frozen31.251s，GPU/
 frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 候选都保留，不为了胜率只选较慢参考，见[Qwen详细边界](QWEN_BF16_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面27组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面30组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
@@ -76,6 +78,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-11 FLUX9B BF16，旧配对 | 8.221 | N/A，9B DiT分区未验证 | 旧mflux11.263s | 四fresh warm/路；独立旧ABBA |
 | 10-11 FLUX9B BF16，最新配对 | 8.042 | N/A，9B分区仍未验证 | 最新mflux8.828s，1.098× | 四fresh/路，16PNG/4memory；同源async ABBA |
 | 10-11 FLUX9B BF16，参考cache0配对 | 7.980 | N/A，9B混合仍未验证 | mflux7.352s；native多用8.54%时间 | 四fresh/路，16PNG/4memory；负结果保留 |
+| 10-11 FLUX9B，compiled+encoder候选 | 7.374，compiled GPU | N/A，9B混合仍未验证 | 同窗口mflux7.343s，近似持平 | 四fresh/路，24PNG/6memory；对eager7.612s省3.13% |
 | 10-11 Z BF16，512²，8步 | 7.551 | 6.187，frozen image-only W8A8 | 1.220× /18.1% | 四fresh warm/配置；完整正反序 |
 | 10-11 Z BF16，最新七路线 | 7.363 | 5.780，frozen image-only W8A8 | 1.274× /21.5% | 四fresh/路，56PNG；mflux BF16 9.520s，cold另列 |
 | 10-11 Z INT8 ConvRot，512²，8步 | 8.844 | 7.310，Private Comfy W8A8 | 1.210× /17.3% | fastest measured GPU denominator，非慢control |
@@ -279,7 +282,7 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 这份测量报告不是所有设备、编辑/LoRA、所有尺寸或Public/hard-RAM发布
 资格；[目标逐项审计](COMPLETION_AUDIT.md)区分已交付要求与这些限制。
 
-[27 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[30 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
 第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大

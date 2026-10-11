@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 27)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 30)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -130,16 +130,26 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue(all(row["metrics"]["frame_count_compared"] == 97 for row in proof["quality"]))
         self.assertTrue(all(item["complete"] for row in proof["trials"] for item in row["memory"]))
 
+    def test_flux_compiled_candidates_need_actual_branches_not_just_request_flag(self):
+        for model in ("flux2-klein-9b-compiled-GPU-cohort", "flux2-klein-9b-compiled-deferred-encoder-cohort", "flux2-klein-9b-compiled-fused-encoder-cohort"):
+            campaign = next(c for c in self.report["campaigns"] if c["model"] == model)
+            data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+            compiled = [trial for trial in data["trials"] if trial["engine"] == "native-compiled"]
+            self.assertEqual(len(compiled), 2)
+            self.assertTrue(all(row["actual_compiled_single_blocks"] == 96 for trial in compiled for row in trial["report"]["runs"]))
+            self.assertTrue(all(route["warm_sample_count"] == 4 for route in campaign["routes"]))
+            self.assertGreater(data["compiled_gpu_comparison"]["native_eager_over_compiled"], 1)
+
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
         self.assertIs(data["goal_complete"], False)
         self.assertIs(data["qualification_passed"], False)
         for configuration in data["configurations"]:
             evidence = json.loads((ROOT / configuration["evidence"]).read_text())
-            if configuration.get("selected_route") == "native":
+            if configuration.get("selected_route", "").startswith("native"):
                 self.assertEqual(configuration["request"]["execution"], "gpu")
                 self.assertIs(configuration["request"]["allow_approximation"], False)
-                self.assertEqual(configuration["fresh_warm_median_seconds"], evidence["medians"]["native"]["fresh_warm_seconds"])
+                self.assertEqual(configuration["fresh_warm_median_seconds"], evidence["medians"][configuration["selected_route"]]["fresh_warm_seconds"])
                 self.assertTrue((ROOT / configuration["library"]).is_file() or not (ROOT / configuration["model_root"]).exists())
                 continue
             routes = {row["route"]: row for row in evidence["routes"]}
