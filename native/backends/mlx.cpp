@@ -155,6 +155,25 @@ static Tensor convrot_rotate(const Tensor &x, bool metal) {
 }
 
 }
+void Weights::set_affine_quantization(int group_size, int bits) {
+    require((group_size == 32 || group_size == 64 || group_size == 128) &&
+                (bits == 4 || bits == 8), "unsupported explicit affine geometry");
+    require(!affine_bits_ || (affine_bits_ == bits && affine_group_size_ == group_size),
+            "conflicting saved affine geometry");
+    affine_group_size_ = group_size;
+    affine_bits_ = bits;
+}
+
+void Weights::read_affine_metadata(const std::unordered_map<std::string, std::string> &metadata) {
+    const auto group = metadata.find("tc_affine_group_size");
+    const auto bits = metadata.find("tc_affine_bits");
+    if (group == metadata.end() && bits == metadata.end()) return;
+    require(group != metadata.end() && bits != metadata.end(), "incomplete saved affine geometry");
+    require((group->second == "32" || group->second == "64" || group->second == "128") &&
+                (bits->second == "4" || bits->second == "8"), "invalid saved affine geometry");
+    set_affine_quantization(std::stoi(group->second), std::stoi(bits->second));
+}
+
 void Weights::load(const std::filesystem::path &p, const Event &event,
                    std::atomic<bool> &cancelled) {
     if (!values_.empty())
@@ -180,6 +199,7 @@ void Weights::load(const std::filesystem::path &p, const Event &event,
             checkpoint(cancelled);
             event("load_" + p.filename().string(), i, int(shards.size()));
             auto data = mx::load_safetensors(f.string());
+            read_affine_metadata(data.second);
             for (auto &[k, v] : data.first) {
                 require(!values_.count(k), "duplicate tensor: " + k);
                 values_.emplace(k, v);
@@ -208,6 +228,7 @@ void Weights::load_lease(
             event("load_" + logical_id, index,
                   static_cast<int>(logical_ids.size()));
             auto data = mx::load_safetensors(reader);
+            read_affine_metadata(data.second);
             for (auto &[key, value] : data.first) {
                 require(!values_.count(key), "duplicate tensor: " + key);
                 values_.emplace(key, std::move(value));
@@ -223,6 +244,7 @@ void Weights::load_lease(
 }
 void Weights::load_file(const std::filesystem::path &path, const std::string &prefix) {
     auto data = mx::load_safetensors(path.string());
+    read_affine_metadata(data.second);
     for (auto &[name, value] : data.first)
         if (name.starts_with(prefix)) {
             auto key = name.substr(prefix.size());
@@ -511,18 +533,31 @@ struct QuantizedGeometry {
 };
 
 QuantizedGeometry quantized_geometry(const Tensor &weight, const Tensor &scales,
-                                     int logical_input) {
-    require(weight.ndim() == 2 && scales.ndim() == 2 && logical_input > 0 &&
+                                     int logical_input, int expected_group = 32, int expected_bits = 0) {
+    require(weight.ndim() == 2 && weight.dtype() == mx::uint32 && scales.ndim() == 2 &&
+                weight.shape(0) == scales.shape(0) && scales.shape(1) > 0 && logical_input > 0 &&
                 logical_input % scales.shape(1) == 0,
-            "invalid MLX GGUF quantization geometry");
+            "invalid MLX affine quantization geometry");
     const int group_size = logical_input / scales.shape(1);
     require((weight.shape(1) * 32) % logical_input == 0,
             "invalid packed MLX GGUF weight width");
     const int bits = weight.shape(1) * 32 / logical_input;
-    require(group_size == 32 && (bits == 4 || bits == 8),
-            "unsupported native GGUF quantization; expected Q4_0/Q4_1/Q8_0");
+    require(group_size == expected_group && (bits == 4 || bits == 8) &&
+                (!expected_bits || bits == expected_bits),
+            "packed affine source differs from declared geometry");
     return {group_size, bits};
 }
+}
+
+int Weights::logical_input_width(const std::string &prefix) const {
+    const auto &weight = at(prefix + ".weight");
+    require(weight.ndim() == 2, "logical affine width requires rank2 weight");
+    if (!quantized(prefix)) return weight.shape(1);
+    const auto &scales = at(prefix + ".scales");
+    require(scales.ndim() == 2 && scales.shape(1) > 0, "logical affine width requires rank2 scales");
+    const int logical_input = scales.shape(1) * affine_group_size_;
+    quantized_geometry(weight, scales, logical_input, affine_group_size_, affine_bits_);
+    return logical_input;
 }
 
 Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
@@ -567,7 +602,7 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
         }
     } else if (quantized(prefix)) {
         const auto &scales = at(prefix + ".scales");
-        auto geometry = quantized_geometry(weight, scales, x.shape(-1));
+        auto geometry = quantized_geometry(weight, scales, x.shape(-1), affine_group_size_, affine_bits_);
         std::optional<Tensor> biases;
         if (has(prefix + ".biases"))
             biases = at(prefix + ".biases");
@@ -701,13 +736,12 @@ Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
         output=project_range(x,prefix,row_start,row_end,col_start,col_end);
     } else if (quantized(prefix)) {
         const auto &all_scales = at(prefix + ".scales");
-        // GGUF/MLX affine tensors store one scale per 32 logical input
-        // values.  Derive the full logical width from the scale matrix,
-        // then derive the packed width/bit depth from the weight tensor.
+        // Derive full width using the declared group, never guess between
+        // indistinguishable Q4/g64 and Q8/g32 packed plane shapes.
         // Inferring geometry from `col_end` is wrong for partial slices: the
         // slice endpoint is a logical coordinate, not a full tensor width.
-        const int logical_input = all_scales.shape(1) * 32;
-        const auto geometry = quantized_geometry(weight, all_scales, logical_input);
+        const int logical_input = logical_input_width(prefix);
+        const auto geometry = quantized_geometry(weight, all_scales, logical_input, affine_group_size_, affine_bits_);
         require(col_end <= logical_input &&
                     col_start % geometry.group_size == 0 &&
                     col_end % geometry.group_size == 0 &&
@@ -980,6 +1014,10 @@ Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefi
 }
 
 Tensor Weights::embedding_rows(const Tensor &ids,const std::string &prefix) const {
+    return embedding_rows(ids, prefix, mx::float16);
+}
+
+Tensor Weights::embedding_rows(const Tensor &ids, const std::string &prefix, mx::Dtype dtype) const {
     require(ids.ndim()==1 && ids.dtype()==mx::int32 && ids.size()>0,
             "embedding gather requires nonempty rank1 int32 IDs");
     const auto &weight=at(prefix+".weight");
@@ -987,11 +1025,12 @@ Tensor Weights::embedding_rows(const Tensor &ids,const std::string &prefix) cons
             "embedding gather requires dense or affine rank2 source");
     if(!quantized(prefix))return mx::take(weight,ids,0);
     const auto &scales=at(prefix+".scales");
-    const auto geometry=quantized_geometry(weight,scales,scales.shape(1)*32);
+    require(dtype == mx::float16 || dtype == mx::bfloat16, "unsupported affine embedding dtype");
+    const auto geometry=quantized_geometry(weight,scales,logical_input_width(prefix),affine_group_size_,affine_bits_);
     std::optional<Tensor> biases;
     if(has(prefix+".biases"))biases=mx::take(at(prefix+".biases"),ids,0);
     return mx::dequantize(mx::take(weight,ids,0),mx::take(scales,ids,0),biases,
-        geometry.group_size,geometry.bits,"affine",std::nullopt,mx::float16);
+        geometry.group_size,geometry.bits,"affine",std::nullopt,dtype);
 }
 
 void Weights::dequantize(const std::vector<std::string> &prefixes) {
@@ -1038,8 +1077,8 @@ void Weights::dequantize(const std::vector<std::string> &prefixes,
             continue;
         auto weight = at(prefix + ".weight");
         auto scales = at(prefix + ".scales");
-        const int logical_input = scales.shape(1) * 32;
-        auto geometry = quantized_geometry(weight, scales, logical_input);
+        const int logical_input = logical_input_width(prefix);
+        auto geometry = quantized_geometry(weight, scales, logical_input, affine_group_size_, affine_bits_);
         std::optional<Tensor> biases;
         if (has(prefix + ".biases"))
             biases = at(prefix + ".biases");
@@ -1081,6 +1120,8 @@ void Weights::clear() {
     values_.clear();
     runtime_loras_.clear();
     lease_readers_.clear();
+    affine_group_size_ = 32;
+    affine_bits_ = 0;
 }
 
 size_t Weights::bytes() const {

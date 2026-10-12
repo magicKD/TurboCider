@@ -17,13 +17,28 @@ receipt保留；这是资产/格式阶段，不是当前4B performance通过。�
 mlx-serve26.10.1同一整包也实际返回512² RGB PNG，HTTP200、视觉
 正常、服务终态退出。[兼容预检证据](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)
 不进入53组完整catalog或主榜：无native配对fresh中位数/独立物理内存，
-也不宣称native g64运行已通过。原9B样本仍归档；LTX若无兼容成功
+当时尚无native g64运行证据，随后新增结果见下。原9B样本仍归档；LTX若无兼容成功
 外部基线则只报告内部配置，剩余4B完整对照与参数筛选继续推进。
 本次定向回归`make test-base-benchmark`共179项全部通过，包含兼容
 比较政策、同cohort倍率推导、参考胜出保留、预检不可升格与F32
 RoPE覆盖检查。使用既有`TURBOCIDER_FLUX9_GATE_LIBRARY`只进行历史
 API门禁回归，没有安排新的9B benchmark。所有测试在模型预检终态
 之后执行；未运行全量`make test`。整体goal仍active。
+
+随后原生g64扩展已编译至独立MLX0.32.3实验库；6个真实Q4/Q8
+g32/64/128 GPU小样例与12个旧/新Qwen3 math parity case通过。
+上游4B派生native view完整保留压缩payload，VAE卷积逆转轴序逐
+tensor bitpattern验收，387/905/266参数保留。Native一个进程四次
+完整PNG、100 block events/request和独立完整进程树采样成功，
+两fresh中位3.723s、peak4.21GB、compression/swap0，仍只记预检。
+[当前4B证据](FLUX4_CURRENT_STATUS.md)不增加53组完整catalog或跨
+框架倍率。VAE实际有8个Q4 attention linears，原“BF16 VAE”描述
+已修正。早期view v1/v2本地转换错误、实际gpu_graph请求/执行标志
+差别保留；Unsloth官方支持FLUX/Z，但我们尚无这两家族对应完整
+Unsloth配对，下一阶段优先补兼容成功路线，不由Qwen优势推算。
+本次完整`make test-base-benchmark`188项全部通过；另有两项显式
+GPU integration测试通过，分别覆盖上述6个affine和12个Qwen3
+内部case。所有回归在实际模型预检终态后运行，未运行全量`make test`。
 
 更新2026-10-12。按原目标核对下载/格式、GPU/ANE实现、Unsloth encoder/DiT
 对照、BF16 resident/相近内存streaming，以及本地base模型benchmark。

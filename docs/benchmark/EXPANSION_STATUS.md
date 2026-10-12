@@ -23,8 +23,8 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | 家族 | 已有权威实测 | 扩展缺口 / 下一项 |
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；旧五路线/cache0/1024/4096、新0.22 BF16/partialFP16完整四路线 | 新版quant/cache、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
-| Z-Image Turbo | 五表示16配置、旧七路线框架对照、14个Private网格、新mflux0.22 BF16/partial FP16四路线完整完成 | 额外尺寸/checkpoint与新版本量化候选，不能把有限网格当全局最优 |
-| FLUX.2 Klein 4B | 上游Q4/g64整包恢复；mflux0.22与mlx-serve26.10.1实际完整PNG预检成功 | native GPU/最佳mixed与兼容参考的完整配对cohort；9B历史/旧4B/单cold不作性能分母 |
+| Z-Image Turbo | 五表示16配置、旧七路线框架对照、14个Private网格、新mflux0.22 BF16/partial FP16四路线完整完成 | 优先补兼容Unsloth Metal的完整配对；额外尺寸/checkpoint和量化候选，不能把有限网格当全局最优 |
+| FLUX.2 Klein 4B | 上游Q4/g64整包恢复；mflux/mlx-serve与native四PNG真实运行预检成功，native两fresh3.723s但未配对 | 最佳GPU/混合与兼容参考完整cohort，包含兼容Unsloth路径；9B/旧4B/单cold不作分母 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败并排除 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续native驻留/加载瓶颈，外部只测兼容成功的情况，不强制制作转换模型 |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与

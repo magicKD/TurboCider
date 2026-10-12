@@ -5299,8 +5299,8 @@
   ],
   "missing_current_comparisons": [
     "Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
-    "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX4B Q4/g64 restored and mflux/current mlx-serve runtime prechecks succeeded; complete native GPU/best GPU-ANE and compatible reference cohorts pending; old4B not current proof,9B deferred",
+    "Z compatible Unsloth Metal paired cohort and additional native shape/checkpoint/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
+    "FLUX4B Q4/g64 native four-PNG plus mflux/current mlx-serve runtime prechecks succeeded; complete best GPU/GPU-ANE and compatible reference cohorts incl Unsloth pending; old4B not current proof,9B deferred",
     "LTX further native screening; compare external frameworks only if compatible complete media succeeds; unsupported reference packs excluded, no mandatory conversion",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],

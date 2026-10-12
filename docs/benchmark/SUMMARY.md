@@ -28,7 +28,7 @@ Qwen/Z mixed冷启动较贵；LTX近似仅省3.1%、97帧MAE约25/255。
 
 | 家族 | 当前实测状态 | 下一步 |
 | --- | --- | --- |
-| [FLUX4B，512²/4步](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json) | Q4/g64整包已恢复；mflux单cold3.998s及mlx-serve完整PNG预检均成功 | 补本机GPU/最佳mixed及兼容参考的完整正反序；预检不是正式性能结果 |
+| [FLUX4B，512²/4步](FLUX4_CURRENT_STATUS.md) | Native Q4/g64四次PNG预检成功，两fresh中位3.723s；mflux/mlx-serve也可运行 | 补最佳GPU/mixed及兼容参考的完整正反序；不把预检拼成跨框架倍率 |
 | [LTX2.5，704×448×97/11步/音视频](LTX_VIDEO.md) | GPU quality63.848s，INT8 quality71.333s未胜；暂无兼容成功的同任务外部分母 | 当前推荐GPU；不兼容参考略过，不强制改造 |
 
 重点展示已证实的优势；“3.40×”只用于固定GGUF/Metal任务，“1.32–1.34×”

@@ -11,7 +11,7 @@
     "repo": "mflux-community/flux2-klein-4b-mflux-q4",
     "revision": "794cd159538149ad9830848508c31f0ea7088e58",
     "model_root": "models/FLUX.2-klein-4B-mflux-Q4",
-    "representation": "upstream saved Q4/g64 encoder including embedding and DiT; BF16 VAE; not original BF16 or locally derived g32 pack",
+    "representation": "upstream saved Q4/g64 encoder including embedding and DiT; VAE BF16 convolutions/norms with Q4/g64 attention linears; not original BF16 or locally derived g32 pack",
     "asset_receipt": "outputs/flux4-q4-asset-restore-20261012/receipt.json",
     "asset_receipt_sha256": "bb50af73cc902a61f379cbf2af6fd0cd09053b11144b05bfe4ce308e839abf84",
     "download_bytes": 4619699678,

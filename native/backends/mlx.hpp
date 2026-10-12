@@ -29,6 +29,9 @@ class Weights {
     // Lease-backed MLX load primitives may read lazily. Keep their duplicate
     // descriptors alive until every array owned by this weight set is gone.
     std::vector<std::shared_ptr<mlx::core::io::Reader>> lease_readers_;
+    int affine_group_size_ = 32;
+    int affine_bits_ = 0;
+    void read_affine_metadata(const std::unordered_map<std::string, std::string> &);
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
     bool affine_bf16_fp32_partial_ = false;
@@ -62,6 +65,10 @@ class Weights {
     void remap_keys(const std::function<std::string(const std::string &)> &);
     void fuse_keys(const std::string &, const std::vector<std::string> &, int axis);
     void cast_unquantized_float32(mx::Dtype);
+    // Explicit saved-MLX geometry. Packed shape alone cannot distinguish
+    // Q4/g64 from Q8/g32. Legacy GGUF/g32 keeps its original default.
+    void set_affine_quantization(int group_size, int bits);
+    int logical_input_width(const std::string &prefix) const;
     void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
     bool metal_convrot() const { return metal_convrot_; }
     // Owner-thread request snapshot; never mutate while a compiled closure or
@@ -121,6 +128,7 @@ class Weights {
     // Gather token rows before affine decode; never expand a full vocabulary.
     // Host-side vocabulary validation belongs to the prompt assembler.
     Tensor embedding_rows(const Tensor &ids,const std::string &prefix) const;
+    Tensor embedding_rows(const Tensor &ids, const std::string &prefix, mx::Dtype) const;
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;
     void erase(const std::string &);

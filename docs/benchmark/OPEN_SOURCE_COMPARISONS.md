@@ -26,6 +26,25 @@ mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../d
 内部配置，GPU quality63.848s；已有原组合memory preflight拒绝直接
 排除，不拿失败时间当分母，也不要求为外部框架制作转换模型。
 
+## Unsloth支持与本机覆盖不是一回事
+
+2026-10-12核验：Unsloth Desktop官网明确列出FLUX和Z-Image图像生成，
+官方Hugging Face仓库也提供`unsloth/FLUX.2-klein-4B-GGUF`和
+`unsloth/Z-Image-Turbo-GGUF`。不能因本报告尚无某路线计时，就把它
+写成Unsloth不支持。模型发布者、量化recipe与实际执行后端必须分开。
+
+| 家族 | 已有Unsloth同机性能对照 | 当前处理 |
+| --- | --- | --- |
+| Qwen2.1 GGUF | 有：原Unsloth权重+固定sd-server Metal完整40步，125.365s | 对本组mixed36.870s为3.40×，限该后端/版本/任务，不代表全部Desktop路径 |
+| Z-Image Turbo | 暂无成功完整的Unsloth Desktop/sd-server配对cohort | 已测mflux不改名为Unsloth；优先核验本地GGUF的兼容Unsloth执行路径，再补完整对照 |
+| FLUX4B | 暂无成功完整的Unsloth Desktop/sd-server配对cohort | mflux/mlx-serve单次兼容预检不能替代；在同checkpoint/recipe成立时再测，拒绝者略过 |
+
+公开身份来源：`https://unsloth.ai/`、
+`https://huggingface.co/unsloth/FLUX.2-klein-4B-GGUF`、
+`https://huggingface.co/unsloth/Z-Image-Turbo-GGUF`。这里只核验能力与模型
+存在，不把网页中的速度宣传当本机分母。当前catalog的Unsloth完整
+对照只有Qwen原GGUF组；未覆盖FLUX/Z，不宣称已在这两家族胜过它。
+
 ## 上游公开评测能说明什么
 
 | 上游固定来源 / 公开内容 | 属于什么证据 | 当前处理 |

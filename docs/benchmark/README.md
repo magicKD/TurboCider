@@ -49,6 +49,10 @@ FLUX9B暂缓，仅保留在[历史报告](HISTORICAL_RESULTS.md)，不进入主�
   不用旧4B/9B数据或单cold时间填写正式排名。
   当前mlx-serve26.10.1同一上游整包也实际返回512²/4步PNG，视觉
   检查正常、服务终态退出；仅兼容性通过，尚无配对计时或完整内存。
+  随后[原生Q4/g64预检](FLUX4_CURRENT_STATUS.md)也完成四次完整PNG，
+  两fresh中位3.723s、tree physical peak4.21GB，source payload和VAE
+  卷积逆转轴序逐tensor位模式通过。VAE含8个Q4 attention线性层；
+  尚无本组配对reference/混合结果，不宣传跨框架倍率。
 
 [原始样本catalog](results-20261011.json)保留53组历史/当前完整实验，
 其中41组在当前四家族范围、12组FLUX9B为deferred；不把它们一起称为

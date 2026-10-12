@@ -23,7 +23,7 @@ class AffineDequantDtypeTests(unittest.TestCase):
                 cwd=ROOT,check=True,timeout=90)
             result = subprocess.run([str(binary)],cwd=ROOT,capture_output=True,text=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn("PASS affine dequant dtypes: two actual Q4/Q8 cases",result.stdout)
+            self.assertIn("PASS affine dequant dtypes: six actual Q4/Q8 g32/g64/g128 cases",result.stdout)
             print(result.stdout,end="")
 
 
