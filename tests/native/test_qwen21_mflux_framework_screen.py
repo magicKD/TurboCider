@@ -44,6 +44,23 @@ class QwenFrameworkScreenTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_runs(dict(runs=report["runs"][:1]), "mflux-q4", 40, 4)
 
+    def test_partial_float16_requires_real_parameters_and_generation_metadata(self):
+        report = self.reference()
+        report.update(compute_precision_name="float16", text_embedding_dtype="mlx.core.bfloat16",
+                      transformer_floating_parameter_dtypes={"mlx.core.float16": 100, "mlx.core.bfloat16": 20})
+        for row in report["runs"]:
+            row["generation_parameters"] = dict(compute_precision="float16")
+        validate_runs(report, "mflux-fp16", 40, 4)
+        with self.assertRaisesRegex(ValueError, "BF16 control"):
+            validate_runs(report, "mflux-bf16", 40, 4)
+        altered = copy.deepcopy(report)
+        altered["transformer_floating_parameter_dtypes"] = {"mlx.core.bfloat16": 120}
+        with self.assertRaisesRegex(ValueError, "actual upstream partial float16"):
+            validate_runs(altered, "mflux-fp16", 40, 4)
+        report["runs"][0]["generation_parameters"] = {}
+        with self.assertRaisesRegex(ValueError, "actual upstream partial float16"):
+            validate_runs(report, "mflux-fp16", 40, 4)
+
 
 if __name__ == "__main__":
     unittest.main()

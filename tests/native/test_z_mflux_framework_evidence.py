@@ -70,6 +70,20 @@ class ZFrameworkEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 audit(path, path / "absent-model", path / "absent-build")
 
+    def test_actual_cache_limit_cannot_be_a_requested_label(self):
+        data = reference_fixture()
+        data["reference_cache_mib"] = 1024
+        for trial in data["trials"]:
+            trial["report"]["reference_cache_limit_bytes"] = 1024 << 20
+        cohort(data)
+        data["trials"][1]["report"]["reference_cache_limit_bytes"] = 0
+        with self.assertRaisesRegex(ValueError, "actual Z reference cache"):
+            cohort(data)
+
+    def test_new_completion_date_is_checked_before_reads(self):
+        with self.assertRaises(ValueError):
+            audit(Path("not-read"), Path("not-read"), Path("not-read"), "2026-13-99")
+
 
 if __name__ == "__main__":
     unittest.main()

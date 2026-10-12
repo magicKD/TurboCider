@@ -28,10 +28,14 @@ frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 43.377/32.393/45.451s与43.331/32.407/45.498s；每组24PNG/6memory。
 最新优势为约1.05×/1.40×，两cache参考只差0.1%不作速度因果判断；
 保存1024较低peak34.48–34.88GB候选，4096约37.7GB。当前固定mflux
-checkout为2026-09-20提交（包版本字段0.19.2），更新版本仍需重测。
+Qwen/FLUX checkout为2026-09-20提交（包版本字段0.19.2），更新版本仍需重测。
+Z新增0.22.0完整32PNG/8memory对照：GPU7.354/frozen5.959/reference
+BF16 7.976s，对新版参考为1.085×/1.339×，不沿用旧1.647×宣传当前
+优势。新版partial FP16 8.355s反而慢4.746%；参考peak约22.51GB低于
+native约32GB，内存优势属于参考。[当前版本和精度边界](Z_IMAGE_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面50组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面51组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-12新增真实9B GPU/ANE全图四路线正反序：eager8.154/compiled7.844/
@@ -113,6 +117,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-12 FLUX9B，实验四路线 | 7.844，compiled GPU | 7.841，CoreML INT8-weight/FP16-I/O prefix | 1.0003× /0.031%，无稳定fresh收益 | 四fresh/路，32PNG/8memory；同窗口mflux7.355s仍胜 |
 | 10-11 Z BF16，512²，8步 | 7.551 | 6.187，frozen image-only W8A8 | 1.220× /18.1% | 四fresh warm/配置；完整正反序 |
 | 10-11 Z BF16，最新七路线 | 7.363 | 5.780，frozen image-only W8A8 | 1.274× /21.5% | 四fresh/路，56PNG；mflux BF16 9.520s，cold另列 |
+| 10-12 Z，当前mflux0.22四路线 | 7.354 | 5.959，同配置frozen W8A8 | 1.234× /19.0% | 四fresh/路，32PNG/8memory；参考BF16 7.976s、FP16 8.355s，native对BF16 1.085×/1.339× |
 | 10-11 Z INT8 ConvRot，512²，8步 | 8.844 | 7.310，Private Comfy W8A8 | 1.210× /17.3% | fastest measured GPU denominator，非慢control |
 | 10-11 Z Q4_0 GGUF，512²，8步 | 9.354 | 9.008，Private Sylvester W8A8 | 1.038× /3.7% | CPU-direct packed；GPU FP16 recipe另记 |
 | 10-11 Z Q8_0 GGUF，512²，8步 | 9.504 | 9.302，Private Sylvester W8A8 | 1.022× /2.1% | 四fresh warm，非repeat cache hit |

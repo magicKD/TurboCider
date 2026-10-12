@@ -1,5 +1,74 @@
 # Z-Image Turbo：完整框架与GPU/ANE对照
 
+更新2026-10-12。最新当前版本结果优先；下方10-11七路线保留为独立
+历史cohort，不把较慢旧参考继续当作当前优势的分母。
+
+## mflux0.22.0完整四路线：混合1.34×，参考更省内存
+
+原BF16 encoder/DiT/VAE、512²/8步/seed42、无LoRA。新版本clone保持
+只读，原reference checkout不改；独立环境满足其声明依赖，pip check通过。
+实际MLX0.32.3/Torch2.14.1/Transformers5.19.0，原生库仍是已绑定实验
+库；这比较完整框架环境，不是相同MLX版本的纯kernel单因素实验。
+
+8进程四路线完整回文，每进程cold/两fresh/repeat；32PNG/8memory全部
+完整，四fresh/route。参考实际process-local free-cache为1024MiB，
+不修改OS/wired/swap策略；constructor另列。
+
+| 路线 | 四fresh中位s | cold正/反s | repeat正/反s | tree peak GB（十进制） |
+| --- | ---: | --- | --- | --- |
+| TurboCider GPU | 7.354224 | 9.266 /7.803 | 6.989 /6.989 | 31.81–31.97 |
+| TurboCider frozen W8A8 | 5.959064 | 18.351 /16.793 | 5.329 /5.326 | 32.03–32.16 |
+| mflux0.22 BF16 | 7.976479 | 8.994 /8.030 | 7.972 /7.977 | 22.51–22.52 |
+| mflux0.22 partial FP16 compute | 8.355058 | 8.415 /8.420 | 8.351 /8.371 | 22.61–22.63 |
+
+对本窗口BF16参考，GPU为1.085×、frozen为1.339×；frozen对自身GPU
+省18.971%。仍是热态领先，但不是旧参考的1.647×。参考peak比native
+约低9–10GB，不能宣称我们同时在时延与内存上全面最好。frozen冷请求
+16.79–18.35s仍贵，参考constructor约1.09–1.40s、native约0.14–0.16s
+也保留，不扣成本或用repeat当fresh。
+
+FP16候选在此任务反而比自己的BF16慢4.746%，负结果保留；不把
+precision flag当作成功加速。实际306个transformer floating参数为FP16、
+215个为BF16，text embedding仍BF16，float32_stream=false；每张图
+实际generation_parameters=compute_precision:float16。它只改变上游
+attention/FFN内部数学，residual/modulation/text/VAE仍按模型精度，
+不是全模型FP16或W8A8。BF16 control显式拒绝偷偷启用该选项。
+
+warm-light同engine FP16对BF16 SSIM0.989234、MAE1.116/255；相对native
+GPU的SSIM：frozen0.932267、mflux BF16 0.908011、FP16 0.910548。
+16对正反序RGBA均exact；8组同engine FP16误差与全部跨engine/alpha/
+白背景RGB另列，有限prompt仍不是广泛感知资格或同noise证明。
+
+全部新窗口swap-out0，native frozen一个窗口compression累计0.341GB，
+其它为0；不是所有外部CoreML服务/driver的归因或硬RAM cap。frozen
+每请求256成功calls、无fallback；仍没有physical NE occupancy trace。
+current required coverage521 DiT/398encoder/244VAE完整，模型payload不改。
+
+新版源码将time embedding cast回模型精度，旧固定源码未做该cast；
+旧表的“BF16”是source/global配置标签，不代表旧隐流所有算子均BF16。
+版本/依赖/cache/cohort一起变化，不能把旧9.520s到新7.976s差异全部
+归因一个kernel或单因素release。旧样本保留，不与新样本混池。
+
+[完整当前验收](../design/validation/z-mflux022-bf16-fp16-current-20261012.json)
+绑定commit `31c9640399572ea394d07092763be9a36007a754`、0.22.0源码
+snapshot、原payload/layout、514个native输入及所有32PNG/8memory。
+当前保存BF16/1024MiB为此新版本已测参考候选，FP16未选为最快；
+原生frozen配置保留，其旧5.780s不能与新7.976s拼倍率。
+
+```sh
+.venv/bin/python3 -B tools/validation/z_mflux_framework_screen.py \
+  --reference-model outputs/benchmark-model-views/z-bf16-mflux-v1-20261011 \
+  --library build/flux9-predecode-v2-private/libturbocider.dylib \
+  --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 \
+  --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --reference-cache-mib 1024 \
+  --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu \
+  --output outputs/new-z-current-reference
+```
+
+更多shape/quantized reference与其它家族当前版本仍pending，扩大目标未完成。
+
+## 保留10-11旧参考七路线
+
 2026-10-11，M4 Max64GiB/macOS26.6.2。原BF16 encoder/DiT/VAE经无损
 布局适配给只读mflux0.19.2；512²、8步、seed42，无LoRA。十四进程
 七路线完整正反序，每进程cold、两fresh、一次repeat，constructor另列。

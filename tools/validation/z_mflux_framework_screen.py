@@ -10,6 +10,7 @@ import statistics
 import subprocess
 import sys
 import time
+import tomllib
 
 from flux9_bf16_framework_screen import generation, check_generations, write_json
 from image_framework_native import generate_requests
@@ -19,7 +20,8 @@ from runtime_ane_memory import run_sampled
 from z_base_formats_screen import COMMON, FROZEN, PRIVATE, PUBLIC, PROMPTS, environment, request, validate_rows
 
 ROOT = Path(__file__).resolve().parents[2]
-ROUTES = ("native-gpu", "native-frozen", "native-private", "native-public", "mflux-bf16", "mflux-q4", "mflux-q8")
+REFERENCE_BITS = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8, "mflux-fp16": None}
+ROUTES = ("native-gpu", "native-frozen", "native-private", "native-public", *REFERENCE_BITS)
 PRIVATE_SHARES = (2048, 3072, 4096, 5120, 6144, 7168, 8192)
 
 
@@ -52,11 +54,20 @@ def validate_runs(report, route, steps, count):
         if type(wall) not in (int, float) or not math.isfinite(wall) or wall <= 0:
             raise ValueError("finite positive full PNG wall required")
         if route.startswith("mflux-"):
-            bits = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8}[route]
+            bits = REFERENCE_BITS[route]
             if row["actual_steps"] != list(range(steps)) or row["actual_quantization"] != bits or row["loras"]:
                 raise ValueError("actual Z reference steps/precision/base differs")
             if row.get("prompt_cache_hit") is not False:
                 raise ValueError("stock Z reference re-encodes prompts, no fabricated cache hits")
+            if route == "mflux-bf16" and report.get("compute_precision_name") is not None:
+                raise ValueError("BF16 control cannot silently enable reduced compute precision")
+            if route == "mflux-fp16" and (report.get("compute_precision_name") != "float16" or
+                    report.get("float32_stream") is not False or
+                    report.get("transformer_floating_parameter_dtypes", {}).get("mlx.core.float16", 0) <= 0 or
+                    report.get("transformer_floating_parameter_dtypes", {}).get("mlx.core.bfloat16", 0) <= 0 or
+                    report.get("text_embedding_dtype") != "mlx.core.bfloat16" or
+                    row.get("generation_parameters", {}).get("compute_precision") != "float16"):
+                raise ValueError("actual upstream partial float16 compute required, not a label-only candidate")
         else:
             metrics = row["metrics"]
             if (metrics["model"], metrics["operation"], metrics["width"], metrics["height"], metrics["steps"], metrics["seed"]) != (
@@ -80,14 +91,29 @@ def mflux_child(args):
     from mflux.models.z_image.weights.z_image_weight_definition import ZImageWeightDefinition
     from mflux_weight_coverage import inspect_reference_coverage
     import mlx.core as mx
-    bits = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8}[args.child]
+    bits = REFERENCE_BITS[args.child]
+    previous_cache_limit = mx.set_cache_limit(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None
+    options = dict(quantize=bits)
+    if args.child == "mflux-fp16":
+        options["compute_precision"] = mx.float16
     start = time.perf_counter()
-    model = ZImage(model_path=str(args.reference_model), quantize=bits)
+    model = ZImage(model_path=str(args.reference_model), **options)
     constructor_seconds = time.perf_counter() - start
     coverage = inspect_reference_coverage(args.reference_model, ZImageWeightDefinition,
         dict(vae=model.vae, transformer=model.transformer, text_encoder=model.text_encoder))
+    from mlx.utils import tree_flatten
+    floating_dtypes = {}
+    for _, value in tree_flatten(model.transformer.parameters()):
+        if mx.issubdtype(value.dtype, mx.floating):
+            name = str(value.dtype)
+            floating_dtypes[name] = floating_dtypes.get(name, 0) + 1
     report = dict(engine=args.child, constructor_seconds=constructor_seconds,
                   precision=str(ModelConfig.precision), quantization=model.bits,
+                  compute_precision_name=getattr(getattr(model, "compute_precision", None), "name", None),
+                  float32_stream=getattr(model, "float32", None),
+                  transformer_floating_parameter_dtypes=floating_dtypes,
+                  reference_cache_limit_bytes=(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None,
+                  previous_reference_cache_limit_bytes=previous_cache_limit,
                   text_embedding_dtype=str(model.text_encoder.embed_tokens.weight.dtype),
                   required_weight_coverage=coverage,
                   instrumentation="host step counter only; unchanged stock compile, tokenizer and synchronization",
@@ -110,6 +136,7 @@ def mflux_child(args):
         image.save(actual["output"])
         report["runs"].append(dict(index=index, request_wall_including_export=time.perf_counter() - start,
             actual_steps=counter.steps, actual_quantization=image.quantization, loras=image.lora_paths,
+            generation_parameters=getattr(image, "generation_parameters", {}),
             prompt_cache_hit=False, mlx_peak_bytes=mx.get_peak_memory()))
         write_json(args.output / "report.json", report)
     validate_runs(report, args.child, args.steps, args.count)
@@ -151,19 +178,21 @@ def parent(args):
         hashes[str(path.relative_to(ROOT))] = digest
     write_json(cache_path, cache)
     reference_code = sorted((args.mflux / "src").rglob("*.py"))
-    own_code = [args.library, Path(__file__).resolve(), ROOT / "tools/validation/image_framework_native.py",
+    own_code = [args.library, Path(__file__).resolve(), args.mflux / "pyproject.toml", ROOT / "tools/validation/image_framework_native.py",
                 ROOT / "tools/validation/mflux_original_layout.py", ROOT / "tools/validation/z_base_formats_screen.py",
                 ROOT / "tools/validation/mflux_weight_coverage.py"]
     identities = {str(path): generation(path) for path in (*files, *manifests, *reference_code, *own_code, *args.reference_model.rglob("*.json"))}
     summary = dict(schema="tc-z-mflux-framework-screen-v1", status="running", qualification_passed=False,
         steps=args.steps, count=args.count, order=selected, trials=[], model_sha256=hashes,
+        reference_cache_mib=args.reference_cache_mib,
+        mflux_package_version=tomllib.loads((args.mflux / "pyproject.toml").read_text())["project"]["version"],
         private_channels=args.private_channels, private_join=args.private_join,
         library_sha256=sha256_file(args.library), layout_receipt_sha256=sha256_file(args.reference_model / "layout-receipt.json"),
         mflux_commit=subprocess.check_output(["git", "-C", str(args.mflux), "rev-parse", "HEAD"], text=True).strip(),
         mflux_source_snapshot=hashlib.sha256(json.dumps([(str(path.relative_to(args.mflux)), sha256_file(path)) for path in reference_code]).encode()).hexdigest(),
         source_policy="first source generation verified; durable metadata-bound reuse; no per-inference model SHA",
         timing_scope="constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-        representation_scope="same original BF16 values through lossless layout; reference affine4/8 quantizes eligible text/DiT/VAE modules, not original GGUF equality")
+        representation_scope="same original BF16 source through lossless layout; upstream optional float16 compute changes only attention/FFN arithmetic, residual/text/VAE retain BF16; affine4/8 separate recipes, not original GGUF equality")
     target = args.output / "summary.json"
     write_json(target, summary)
     try:
@@ -178,6 +207,8 @@ def parent(args):
             command = [str(args.python), "-B", str(Path(__file__).resolve()), "--child", route,
                        "--reference-model", str(args.reference_model), "--library", str(args.library), "--mflux", str(args.mflux),
                        "--output", str(output), "--steps", str(args.steps), "--count", str(args.count)]
+            if args.reference_cache_mib is not None:
+                command.extend(["--reference-cache-mib", str(args.reference_cache_mib)])
             print(json.dumps(dict(starting=index, route=route)), flush=True)
             with (output / "stdout.txt").open("x") as out, (output / "stderr.txt").open("x") as err:
                 memory = run_sampled(command, repo=ROOT, output=output, stem="run", env=env, stdout=out, stderr=err,
@@ -226,6 +257,8 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--python", type=Path)
     parser.add_argument("--extra", type=Path)
+    parser.add_argument("--reference-cache-mib", type=int, choices=(0, 1024, 4096),
+                        help="explicit process-local MLX free-cache limit; unset keeps stock behavior")
     parser.add_argument("--steps", type=int, choices=(2, 8), default=8)
     parser.add_argument("--count", type=int, choices=(1, 4), default=4)
     parser.add_argument("--private-channels", type=int, choices=PRIVATE_SHARES, default=4096)

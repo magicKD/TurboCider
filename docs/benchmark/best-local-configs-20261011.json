@@ -129,8 +129,8 @@
   "updated": "2026-10-12",
   "pending": [
     "Qwen current upstream framework-version comparisons and further native parameter/shape screening; cache0/1024/4096 completed",
-    "Z additional checkpoint/shape candidates and retention of other representation winners; fourteen Private share/join candidates completed",
-    "FLUX9B additional quantized precisions and hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 and exact512/4 hybrid measured",
+    "Z additional checkpoint/shape/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
+    "FLUX9B current upstream framework versions, additional quantized precisions and hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 and exact512/4 hybrid measured",
     "LTX further load/residency configurations and successful reference layouts; eight full-media configurations completed"
   ],
   "media_configurations": [
@@ -384,6 +384,32 @@
           "free_cache_limit_bytes": 4294967296,
           "fresh_warm_median_seconds": 45.497861896059476,
           "evidence": "docs/design/validation/qwen21-cache4096-framework-current-20261012.json"
+        }
+      ]
+    },
+    {
+      "model": "z-image-turbo",
+      "engine": "mflux",
+      "package_version_field": "0.22.0",
+      "commit": "31c9640399572ea394d07092763be9a36007a754",
+      "precision": "original BF16 source, current stock BF16 residual/DiT; optional partial FP16 not selected",
+      "model_root": "outputs/benchmark-model-views/z-bf16-mflux-v1-20261011",
+      "selected_route": "mflux-bf16",
+      "free_cache_limit_bytes": 1073741824,
+      "fresh_warm_median_seconds": 7.976479062461294,
+      "native_gpu_control_seconds": 7.354224395938218,
+      "native_frozen_control_seconds": 5.959064104012214,
+      "physical_peak_bytes": [22506422784, 22521987608],
+      "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json",
+      "selection_note": "Fastest of current0.22 BF16/partialfloat16 candidates; FP16 is4.746% slower. Native latency wins but reference has lower observed peak22.51GB versus native31.81-32.16GB. Own-cohort controls only; old native5.780/old reference9.520 not pooled. Not all-shape/precision/cache or global optimum.",
+      "packages": {"mlx": "0.32.3", "torch": "2.14.1", "transformers": "5.19.0", "numpy": "2.5.4", "Pillow": "12.3.0", "safetensors": "0.8.0"},
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/z_mflux_framework_screen.py --reference-model outputs/benchmark-model-views/z-bf16-mflux-v1-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu --output outputs/new-z-current-reference",
+      "other_compute_candidates": [
+        {
+          "route": "mflux-fp16",
+          "compute_precision": "float16",
+          "fresh_warm_median_seconds": 8.355057770502754,
+          "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"
         }
       ]
     }

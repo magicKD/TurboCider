@@ -11,6 +11,7 @@ import statistics
 import subprocess
 import sys
 import time
+import tomllib
 
 from flux9_bf16_framework_screen import PROMPTS, generation, check_generations, write_json
 from mflux_original_layout import validate_layout
@@ -18,7 +19,8 @@ from runtime_ane_common import benchmark_environment, sha256_file
 from runtime_ane_memory import run_sampled
 
 ROOT = Path(__file__).resolve().parents[2]
-ROUTES = ("native-gpu", "native-frozen", "mflux-bf16", "mflux-q4", "mflux-q8")
+REFERENCE_BITS = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8, "mflux-fp16": None}
+ROUTES = ("native-gpu", "native-frozen", *REFERENCE_BITS)
 
 
 def requests(output, steps, count, route, manifest=None):
@@ -43,11 +45,19 @@ def validate_runs(report, route, steps, count):
         if type(wall) not in (float, int) or not math.isfinite(wall) or wall <= 0:
             raise ValueError("finite positive complete image latency required")
         if route.startswith("mflux"):
-            bits = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8}[route]
+            bits = REFERENCE_BITS[route]
             if row["actual_steps"] != list(range(steps)) or row["actual_quantization"] != bits or row["loras"]:
                 raise ValueError("actual mflux steps/precision/base task differs")
             if row["prompt_cache_hit"] is not (index == 3):
                 raise ValueError("actual mflux fresh/repeat cache lifecycle differs")
+            if route == "mflux-bf16" and report.get("compute_precision_name") is not None:
+                raise ValueError("BF16 control cannot silently enable reduced compute precision")
+            if route == "mflux-fp16" and (report.get("compute_precision_name") != "float16" or
+                    report.get("transformer_floating_parameter_dtypes", {}).get("mlx.core.float16", 0) <= 0 or
+                    report.get("transformer_floating_parameter_dtypes", {}).get("mlx.core.bfloat16", 0) <= 0 or
+                    report.get("text_embedding_dtype") != "mlx.core.bfloat16" or
+                    row.get("generation_parameters", {}).get("compute_precision") != "float16"):
+                raise ValueError("actual upstream partial float16 compute required, not a label-only candidate")
         else:
             metrics = row["metrics"]
             if (metrics["model"] != "qwen-image-2.1" or metrics["operation"] != "image.generate" or
@@ -107,11 +117,23 @@ def mflux_child(args):
     from mflux_weight_coverage import inspect_reference_coverage
     import mlx.core as mx
     previous_cache_limit = mx.set_cache_limit(args.reference_cache_mib << 20) if args.reference_cache_mib is not None else None
-    bits = {"mflux-bf16": None, "mflux-q4": 4, "mflux-q8": 8}[args.child]
+    bits = REFERENCE_BITS[args.child]
     coverage = inspect_reference_coverage(args.reference_model, Qwen21WeightDefinition)
+    options = dict(quantize=bits)
+    if args.child == "mflux-fp16":
+        options["compute_precision"] = mx.float16
     start = time.perf_counter()
-    model = QwenImage21(model_path=str(args.reference_model), quantize=bits)
-    report = dict(engine=args.child, constructor_seconds=time.perf_counter() - start,
+    model = QwenImage21(model_path=str(args.reference_model), **options)
+    constructor_seconds = time.perf_counter() - start
+    from mlx.utils import tree_flatten
+    floating_dtypes = {}
+    for _, value in tree_flatten(model.transformer.parameters()):
+        if mx.issubdtype(value.dtype, mx.floating):
+            name = str(value.dtype)
+            floating_dtypes[name] = floating_dtypes.get(name, 0) + 1
+    report = dict(engine=args.child, constructor_seconds=constructor_seconds,
+                  compute_precision_name=getattr(getattr(model, "compute_precision", None), "name", None),
+                  transformer_floating_parameter_dtypes=floating_dtypes,
                   precision=str(ModelConfig.precision), quantization=model.bits,
                   text_embedding_dtype=str(model.text_encoder.embed_tokens.weight.dtype),
                   transformer_input_weight_dtype=str(model.transformer.img_in.weight.dtype),
@@ -139,6 +161,7 @@ def mflux_child(args):
         image.save(request["output"])
         row = dict(index=index, request_wall_including_export=time.perf_counter() - start,
                    actual_steps=counter.steps, actual_quantization=image.quantization, loras=image.lora_paths,
+                   generation_parameters=getattr(image, "generation_parameters", {}),
                    prompt_cache_hit=before_cache, mlx_peak_bytes=mx.get_peak_memory())
         report["runs"].append(row)
         write_json(args.output / "report.json", report)
@@ -182,7 +205,7 @@ def parent(args):
         hashes[str(path.relative_to(ROOT))] = digest
     write_json(cache_path, cache)
     reference_code = sorted((args.mflux / "src").rglob("*.py"))
-    code = reference_code + [args.library, Path(__file__).resolve(), ROOT / "tools/validation/mflux_original_layout.py",
+    code = reference_code + [args.library, Path(__file__).resolve(), args.mflux / "pyproject.toml", ROOT / "tools/validation/mflux_original_layout.py",
                              ROOT / "tools/validation/mflux_weight_coverage.py"]
     if args.frozen_manifest:
         files.append(args.frozen_manifest.resolve(strict=True))
@@ -191,12 +214,13 @@ def parent(args):
     summary = dict(schema="tc-qwen21-mflux-framework-screen-v1", status="running", qualification_passed=False,
                    steps=args.steps, count=args.count, order=args.order.split(","), trials=[], model_sha256=hashes,
                    reference_cache_mib=args.reference_cache_mib,
+                   mflux_package_version=tomllib.loads((args.mflux / "pyproject.toml").read_text())["project"]["version"],
                    library_sha256=sha256_file(args.library), layout_receipt_sha256=sha256_file(args.reference_model / "layout-receipt.json"),
                    mflux_commit=subprocess.check_output(["git", "-C", str(args.mflux), "rev-parse", "HEAD"], text=True).strip(),
                    mflux_source_snapshot=hashlib.sha256(json.dumps([(str(path.relative_to(args.mflux)), sha256_file(path)) for path in reference_code]).encode()).hexdigest(),
                    source_policy="first verified source generation only; persistent metadata-bound reuse; no per-inference model SHA",
                    timing_scope="constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
-                   representation_scope="same original BF16 values through lossless layout; Q4/Q8 are explicitly separate mflux affine recipes, not original GGUF equality")
+                   representation_scope="same original BF16 source through lossless layout; upstream optional float16 compute changes attention/FFN math, residual/text/VAE retain BF16; Q4/Q8 separate affine recipes, not original GGUF equality")
     target = args.output / "summary.json"
     write_json(target, summary)
     try:

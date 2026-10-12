@@ -73,6 +73,39 @@ def qwen_cache_campaign(path, cache_mib):
         note="complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0")
 
 
+def z_upstream_campaign(path):
+    data, binding = source(path, ("complete_diagnostic",))
+    order = ["native-gpu", "native-frozen", "mflux-bf16", "mflux-fp16", "mflux-fp16", "mflux-bf16", "native-frozen", "native-gpu"]
+    if (data["steps"] != 8 or data["requests_per_process"] != 4 or data["order"] != order or
+            len(data["trials"]) != 8 or data["mflux_package_version"] != "0.22.0" or
+            data["reference_cache_mib"] != 1024 or data["reference_latency_ranking_valid"] is not True or
+            len(data["reference_compute_quality"]) != 8):
+        raise ValueError("complete source-bound current Z BF16/float16 candidate required")
+    routes = []
+    for row in data["routes"]:
+        trials = [trial for trial in data["trials"] if trial["route"] == row["route"]]
+        if len(trials) != 2 or len(row["fresh_warm_seconds"]) != 4 or any(trial["memory"]["complete"] is not True for trial in trials):
+            raise ValueError("complete current Z samples and process-tree memory required")
+        if row["route"] == "mflux-bf16" and any(trial["report"].get("compute_precision_name") is not None for trial in trials):
+            raise ValueError("current BF16 control cannot enable float16 math")
+        if row["route"] == "mflux-fp16" and any(
+                trial["report"]["compute_precision_name"] != "float16" or
+                trial["report"]["transformer_floating_parameter_dtypes"].get("mlx.core.float16", 0) <= 0 or
+                any(run["generation_parameters"].get("compute_precision") != "float16" for run in trial["report"]["runs"])
+                for trial in trials):
+            raise ValueError("current Z float16 needs actual parameters and generation metadata")
+        routes.append(measured(row["route"], row["cold_seconds"], row["fresh_warm_seconds"],
+            repeated_prompt_seconds=row["repeat_seconds"], constructor_seconds=row["constructor_seconds"],
+            physical_peaks=row["physical_peaks"],
+            compression_bytes=[trial["memory"]["compression_bytes"] for trial in trials],
+            swap_out_bytes=[trial["memory"]["swap_out_bytes"] for trial in trials]))
+    return dict(evidence=binding, model="z-image-turbo-mflux022-bf16-fp16-cohort", geometry=[512, 512],
+        steps=8, date=data["date"], routes=routes, mflux_commit=data["mflux_commit"],
+        mflux_package_version=data["mflux_package_version"], reference_cache_mib=1024,
+        timing_scope=data["timing_scope"], reference_comparison_valid=True,
+        note="current upstream0.22.0 isolated declared-dependency environment,8process/32PNG/8memory,4fresh/route; sourceBF16 stock7.976479s versus partialfloat16 8.355058s is4.746% slower, nativeGPU7.354224/frozen5.959064s; native speed wins but reference peak22.51GB is lower than native31.81-32.16GB; old reference9.519604s is a separate cohort/environment, no pooling or single-factor release causality")
+
+
 def export():
     campaigns = []
     data, binding = source("docs/design/validation/qwen21-conditioned-reference-20261010.json",
@@ -225,6 +258,7 @@ def export():
     for cache_mib in (1024, 4096):
         campaigns.append(qwen_cache_campaign(
             f"docs/design/validation/qwen21-cache{cache_mib}-framework-current-20261012.json", cache_mib))
+    campaigns.append(z_upstream_campaign("docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"))
     flux, binding = source("docs/design/validation/flux9-bf16-current-v5-20261011.json", ("complete_diagnostic",))
     if flux["reference_required_weight_coverage_verified"] is not True:
         raise ValueError("current FLUX original reference weights must be actually covered")
@@ -359,7 +393,7 @@ def export():
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
                 missing_current_comparisons=["Qwen further native share/shape candidates; reference0/1024/4096MiB cache cohorts completed; current upstream framework-version comparisons pending",
-                    "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed", "FLUX9B additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
+                    "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX9B current upstream framework versions, additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",

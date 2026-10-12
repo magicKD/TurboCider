@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit complete Z framework cohorts without opening model payloads."""
 import argparse
+from datetime import date
 import hashlib
 import json
 from pathlib import Path
@@ -37,6 +38,8 @@ def cohort(data):
             raise ValueError("actual route order differs")
         validate_runs(trial["report"], trial["route"], 8, 4)
         if trial["route"].startswith("mflux-"):
+            if data.get("reference_cache_mib") is not None and trial["report"].get("reference_cache_limit_bytes") != data["reference_cache_mib"] << 20:
+                raise ValueError("actual Z reference cache limit differs")
             coverage = trial["report"].get("required_weight_coverage")
             if not isinstance(coverage, dict) or set(coverage) != {"vae", "transformer", "text_encoder"} or any(
                     type(item.get("required_targets")) is not int or item["required_targets"] <= 0 or
@@ -77,7 +80,8 @@ def cohort(data):
     return routes
 
 
-def audit(screen, layout, build_manifest):
+def audit(screen, layout, build_manifest, evidence_date="2026-10-11"):
+    date.fromisoformat(evidence_date)
     data = json.loads((screen / "summary.json").read_text())
     routes = cohort(data)
     build = json.loads(build_manifest.read_text())
@@ -91,12 +95,13 @@ def audit(screen, layout, build_manifest):
             sha256_file(layout / "layout-receipt.json") != data["layout_receipt_sha256"] or
             any(item["full_payload_equal"] is not True for item in receipt["files"])):
         raise ValueError("bound same-source complete lossless Z layout required")
-    result = dict(schema="tc-z-valid-framework-cohort-v1", date="2026-10-11", status="complete_diagnostic",
+    result = dict(schema="tc-z-valid-framework-cohort-v1", date=evidence_date, status="complete_diagnostic",
         goal_complete=False, qualification_passed=False, reference_latency_ranking_valid=True,
         hardware="M4 Max64GiB/macOS26.6.2", steps=8, requests_per_process=4, order=data["order"],
         native_inputs_matched=len(build["inputs"]["sources"]), library_sha256=data["library_sha256"],
         model_sha256=data["model_sha256"], mflux_commit=data["mflux_commit"],
         mflux_source_snapshot=data["mflux_source_snapshot"], private_channels=data["private_channels"],
+        mflux_package_version=data.get("mflux_package_version"), reference_cache_mib=data.get("reference_cache_mib"),
         private_join=data["private_join"], source_policy=data["source_policy"], timing_scope=data["timing_scope"],
         representation_scope=data["representation_scope"],
         evidence=str((screen / "summary.json").relative_to(ROOT)), evidence_sha256=sha256_file(screen / "summary.json"),
@@ -126,13 +131,16 @@ def audit(screen, layout, build_manifest):
             images[trial["index"], index] = value
         report = trial["report"]
         published = {key: report[key] for key in ("engine", "constructor_seconds", "precision", "quantization",
-            "packages", "required_weight_coverage", "text_embedding_dtype", "instrumentation") if key in report}
+            "packages", "required_weight_coverage", "text_embedding_dtype", "instrumentation", "compute_precision_name",
+            "float32_stream", "transformer_floating_parameter_dtypes", "reference_cache_limit_bytes",
+            "previous_reference_cache_limit_bytes") if key in report}
         published["runs"] = []
         for row in report["runs"]:
             actual = dict(index=row["index"], seconds=row["request_wall_including_export"])
             if trial["route"].startswith("mflux-"):
                 actual.update(actual_steps=row["actual_steps"], actual_quantization=row["actual_quantization"],
                     loras=row["loras"], prompt_cache_hit=row["prompt_cache_hit"], mlx_peak_bytes=row["mlx_peak_bytes"])
+                actual["generation_parameters"] = row.get("generation_parameters", {})
             else:
                 metrics = row["metrics"]
                 hybrid, runtime = metrics.get("hybrid") or {}, (metrics.get("hybrid") or {}).get("runtime_weight") or {}
@@ -158,12 +166,26 @@ def audit(screen, layout, build_manifest):
         for index in range(4):
             result["output_checks"].append(dict(route=route, index=index,
                 forward_reverse_rgba_exact=bool(np.array_equal(images[left["index"], index], images[right["index"], index]))))
+    reference = next((trial for trial in data["trials"] if trial["route"] == "mflux-bf16"), None)
+    result["reference_compute_quality"] = []
+    if reference:
+        for trial in data["trials"]:
+            if trial["route"] == "mflux-fp16":
+                for index in range(4):
+                    result["reference_compute_quality"].append(dict(reference="mflux-bf16", candidate="mflux-fp16",
+                        process_index=trial["index"], request_index=index,
+                        comparison=compare_rgba(images[reference["index"], index], images[trial["index"], index])))
     medians = {route["route"]: route["fresh_warm_median"] for route in routes}
     if "native-gpu" in medians and "mflux-bf16" in medians:
         result["comparisons"] = dict(reference_bf16_over_native_gpu=medians["mflux-bf16"] / medians["native-gpu"])
         if "native-frozen" in medians:
             result["comparisons"].update(reference_bf16_over_native_frozen=medians["mflux-bf16"] / medians["native-frozen"],
                 frozen_reduction_vs_native_gpu_percent=100 * (1 - medians["native-frozen"] / medians["native-gpu"]))
+        if "mflux-fp16" in medians:
+            result["comparisons"].update(reference_fp16_over_native_gpu=medians["mflux-fp16"] / medians["native-gpu"],
+                reference_fp16_reduction_vs_bf16_percent=100 * (1 - medians["mflux-fp16"] / medians["mflux-bf16"]))
+            if "native-frozen" in medians:
+                result["comparisons"]["reference_fp16_over_native_frozen"] = medians["mflux-fp16"] / medians["native-frozen"]
     result["quality_scope"] = "all original-size RGBA/RGB with alpha and white-composited metrics; same seed not proof of equal noise; diagnostics, not broad perceptual or physical-NE qualification"
     if "/Users/" in json.dumps(result):
         raise ValueError("portable evidence contains machine-specific paths")
@@ -174,10 +196,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("screen", "layout", "build-manifest", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--date", default="2026-10-11", help="actual local completion/publication date")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("fresh audit output required")
-    result = audit(args.screen.resolve(), args.layout.resolve(), args.build_manifest.resolve())
+    result = audit(args.screen.resolve(), args.layout.resolve(), args.build_manifest.resolve(), args.date)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as target:
         json.dump(result, target, indent=2, allow_nan=False)

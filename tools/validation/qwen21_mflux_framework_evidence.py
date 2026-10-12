@@ -54,11 +54,15 @@ def audit(screen, layout, build, invalid_reference_reason=None, evidence_date="2
         raise ValueError("terminal complete image experiment required")
     if data["status"] == "complete_diagnostic" and (data["steps"], data["count"]) != (40, 4):
         raise ValueError("short prechecks cannot be full benchmark evidence")
+    selected = ["native-gpu", "native-frozen", "mflux-bf16"]
+    if "mflux-fp16" in data["order"]:
+        selected.append("mflux-fp16")
+    expected_order = selected + list(reversed(selected))
     if data.get("reference_cache_mib") in (1024,4096) and data["status"] == "complete_diagnostic" and (
-            data["order"] != ["native-gpu","native-frozen","mflux-bf16","mflux-bf16","native-frozen","native-gpu"] or
-            [trial["index"] for trial in data["trials"]] != list(range(6)) or
+            data["order"] != expected_order or
+            [trial["index"] for trial in data["trials"]] != list(range(len(expected_order))) or
             [trial["route"] for trial in data["trials"]] != data["order"]):
-        raise ValueError("new cache candidate requires complete matched three-route palindrome")
+        raise ValueError("new cache candidate requires complete matched three-route palindrome, or explicit four-route float16 candidate")
     references = [trial for trial in data["trials"] if trial["route"].startswith("mflux-")]
     for trial in references:
         coverage = trial["report"].get("required_weight_coverage")
@@ -81,6 +85,7 @@ def audit(screen, layout, build, invalid_reference_reason=None, evidence_date="2
                   evidence=str((screen / "summary.json").relative_to(ROOT)), evidence_sha256=sha256_file(screen / "summary.json"),
                   native_inputs_matched=len(manifest["inputs"]["sources"]), library_sha256=data["library_sha256"],
                   model_sha256=data["model_sha256"], mflux_commit=data["mflux_commit"], mflux_source_snapshot=data["mflux_source_snapshot"],
+                  mflux_package_version=data.get("mflux_package_version"),
                   layout_proof=dict(receipt_sha256=data["layout_receipt_sha256"], components=[dict(kind=item["kind"],
                       source_sha256=item["source_sha256"], derived_sha256=item["derived_sha256"], payload_sha256=item["payload_sha256"],
                       full_payload_equal=item["full_payload_equal"], tensor_bindings=len(item["tensor_bindings"]),
@@ -134,6 +139,17 @@ def audit(screen, layout, build, invalid_reference_reason=None, evidence_date="2
                 a, b = rgba(directory / f"{index}.png"), rgba(candidate / f"{index}.png")
                 result["quality"].append(dict(route=trial["route"], process_index=trial["index"], request_index=index,
                     comparison=compare_rgba(a, b)))
+    reference = next((trial for trial in result["trials"] if trial["route"] == "mflux-bf16"), None)
+    result["reference_compute_quality"] = []
+    if reference:
+        directory = screen / f'{reference["index"]}-mflux-bf16'
+        for trial in result["trials"]:
+            if trial["route"] == "mflux-fp16":
+                candidate = screen / f'{trial["index"]}-mflux-fp16'
+                for index in range(data["count"]):
+                    result["reference_compute_quality"].append(dict(reference="mflux-bf16", candidate="mflux-fp16",
+                        process_index=trial["index"], request_index=index,
+                        comparison=compare_rgba(rgba(directory / f"{index}.png"), rgba(candidate / f"{index}.png"))))
     result["quality_scope"] = "native PNG retains generated alpha; reference RGB has implicit opaque alpha; raw RGB, alpha and white-composited RGB separately reported; same-size outputs, no resize; cross-engine seed does not prove identical noise or full output-feature equivalence"
     if "/Users/" in json.dumps(result):
         raise ValueError("portable evidence contains machine-specific paths")

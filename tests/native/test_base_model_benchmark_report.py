@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from base_model_benchmark_evidence import measured, qwen_cache_campaign
+from base_model_benchmark_evidence import measured, qwen_cache_campaign, z_upstream_campaign
 
 
 class BaseBenchmarkReportTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 50)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 51)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -167,6 +167,38 @@ class BaseBenchmarkReportTests(unittest.TestCase):
             actual = next(row for row in other["routes"] if row["route"] == "mflux-bf16")
             self.assertEqual(candidate["free_cache_limit_bytes"], other["reference_cache_mib"] << 20)
             self.assertEqual(candidate["fresh_warm_median_seconds"], actual["fresh_warm_median"])
+
+    def test_current_z_reference_preserves_version_math_memory_and_smaller_advantage(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "z-image-turbo-mflux022-bf16-fp16-cohort")
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertEqual((data["date"], data["mflux_package_version"], data["reference_cache_mib"]), ("2026-10-12", "0.22.0", 1024))
+        self.assertEqual(sum(len(trial["pngs"]) for trial in data["trials"]), 32)
+        self.assertEqual(len(data["reference_compute_quality"]), 8)
+        self.assertTrue(all(trial["memory"]["complete"] for trial in data["trials"]))
+        self.assertTrue(all(row["warm_sample_count"] == 4 for row in campaign["routes"]))
+        comparison = data["comparisons"]
+        self.assertGreater(comparison["reference_bf16_over_native_gpu"], 1)
+        self.assertLess(comparison["reference_bf16_over_native_frozen"], 1.4)
+        self.assertLess(comparison["reference_fp16_reduction_vs_bf16_percent"], 0)
+        for trial in data["trials"]:
+            if trial["route"] == "mflux-fp16":
+                self.assertEqual(trial["report"]["transformer_floating_parameter_dtypes"],
+                                 {"mlx.core.bfloat16": 215, "mlx.core.float16": 306})
+                self.assertTrue(all(run["generation_parameters"]["compute_precision"] == "float16" for run in trial["report"]["runs"]))
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        reference = next(row for row in configs["reference_configurations"] if row["model"] == "z-image-turbo")
+        routes = {row["route"]: row for row in data["routes"]}
+        self.assertEqual(reference["fresh_warm_median_seconds"], routes["mflux-bf16"]["fresh_warm_median"])
+        self.assertEqual(reference["native_frozen_control_seconds"], routes["native-frozen"]["fresh_warm_median"])
+        self.assertLess(max(reference["physical_peak_bytes"]), min(routes["native-gpu"]["physical_peaks"]))
+
+    def test_current_z_export_rejects_label_only_float16_candidate(self):
+        path = "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"
+        data = json.loads((ROOT / path).read_text())
+        data["trials"][3]["report"]["runs"][0]["generation_parameters"] = {}
+        with mock.patch("base_model_benchmark_evidence.source", return_value=(data, {})):
+            with self.assertRaisesRegex(ValueError, "actual parameters and generation metadata"):
+                z_upstream_campaign(path)
 
     def test_ltx_full_media_modes_and_clock_boundaries_are_not_pooled(self):
         batch = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-persistent-batch")

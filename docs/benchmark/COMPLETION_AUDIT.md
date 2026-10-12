@@ -8,7 +8,8 @@
 下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
 再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
-hybrid、两种Q4/g32匹配及提前解码、Qwen1024/4096MiB缓存，共50个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+hybrid、两种Q4/g32匹配及提前解码、Qwen1024/4096MiB缓存、Z当前
+mflux0.22 BF16/FP16对照，共51个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。更新上游框架版本、
 更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
@@ -100,6 +101,16 @@ actual cache limits、完整三路线回文、四fresh与cold/repeat独立验收
 按原验收值45.96821891650325修正，不放宽比较门槛。设置上述新实验库
 运行make test-base-benchmark，142项全部通过，未运行全量make test。
 仍不将更多shape/current-upstream/成功外部LTX缺口当成完成。
+
+Z当前mflux0.22.0独立声明依赖环境/源码snapshot、完整四路线8process/
+32PNG/8memory已验收，使catalog为51组。nativeGPU7.354/frozen5.959/
+referenceBF16 7.976s，mixed优势1.339×；referencepeak22.51GB比native
+约32GB低。partialFP16 8.355s反而慢4.746%，306 FP16/215 BF16参数、
+实际每图metadata、同engine8组误差与16对正反序RGBA均核验。
+新增label-only compute/偷偷改BF16 control、实际cache/日期/无完整memory
+拒绝回归，设置实验库运行make test-base-benchmark，148项全部通过。
+所有tests/audits在模型实验terminal后运行，仍未运行全量make test。
+Qwen/FLUX当前版本、更广native配置与成功外部LTX仍未完成，goal保持active。
 
 ## 不是缺少结果的隐含通过
 
