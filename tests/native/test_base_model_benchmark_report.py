@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from base_model_benchmark_evidence import measured, qwen_cache_campaign, z_upstream_campaign
+from base_model_benchmark_evidence import measured, qwen_cache_campaign, qwen_upstream_campaign, z_upstream_campaign
 
 
 class BaseBenchmarkReportTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 51)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 52)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -211,6 +211,33 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertEqual(candidate["report"]["transformer_floating_parameter_dtypes"],
                          {"mlx.core.bfloat16": 9, "mlx.core.float16": 288})
         self.assertNotIn(path, [campaign["evidence"]["path"] for campaign in self.report["campaigns"]])
+
+    def test_current_qwen_reference_gpu_win_and_no_stable_float16_gain_are_retained(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "qwen-image-2.1-mflux022-bf16-fp16-cohort")
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertEqual((data["steps"], data["requests_per_process"], data["mflux_package_version"]), (40, 4, "0.22.0"))
+        self.assertEqual(sum(len(trial["pngs"]) for trial in data["trials"]), 32)
+        self.assertTrue(all(trial["memory"]["complete"] for trial in data["trials"]))
+        self.assertEqual(len(data["reference_compute_quality"]), 8)
+        values = {row["route"]: row["warm_median_seconds"] for row in campaign["routes"]}
+        self.assertLess(values["mflux-bf16"], values["native-gpu"])
+        self.assertLess(values["native-frozen"], values["mflux-bf16"])
+        self.assertLess(abs(values["mflux-fp16"] / values["mflux-bf16"] - 1), .002)
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        selected = next(row for row in configs["reference_configurations"] if row["model"] == "qwen-image-2.1")
+        self.assertEqual(selected["package_version_field"], "0.22.0")
+        self.assertEqual(selected["fresh_warm_median_seconds"], values["mflux-bf16"])
+        self.assertEqual(selected["native_gpu_control_seconds"], values["native-gpu"])
+        self.assertEqual(selected["native_frozen_control_seconds"], values["native-frozen"])
+        self.assertEqual(selected["evidence"], campaign["evidence"]["path"])
+
+    def test_current_qwen_export_rejects_wrong_actual_limit(self):
+        path = "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json"
+        data = json.loads((ROOT / path).read_text())
+        data["trials"][2]["report"]["reference_cache_limit_bytes"] = 0
+        with mock.patch("base_model_benchmark_evidence.source", return_value=(data, {})):
+            with self.assertRaisesRegex(ValueError, "actual current Qwen reference cache"):
+                qwen_upstream_campaign(path)
 
     def test_ltx_full_media_modes_and_clock_boundaries_are_not_pooled(self):
         batch = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-persistent-batch")

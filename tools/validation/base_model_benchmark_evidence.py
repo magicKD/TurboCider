@@ -106,6 +106,39 @@ def z_upstream_campaign(path):
         note="current upstream0.22.0 isolated declared-dependency environment,8process/32PNG/8memory,4fresh/route; sourceBF16 stock7.976479s versus partialfloat16 8.355058s is4.746% slower, nativeGPU7.354224/frozen5.959064s; native speed wins but reference peak22.51GB is lower than native31.81-32.16GB; old reference9.519604s is a separate cohort/environment, no pooling or single-factor release causality")
 
 
+def qwen_upstream_campaign(path):
+    data, binding = source(path, ("complete_diagnostic",))
+    order = ["native-gpu", "native-frozen", "mflux-bf16", "mflux-fp16", "mflux-fp16", "mflux-bf16", "native-frozen", "native-gpu"]
+    if (data["steps"] != 40 or data["requests_per_process"] != 4 or data["order"] != order or
+            len(data["trials"]) != 8 or data["mflux_package_version"] != "0.22.0" or
+            data["reference_cache_mib"] != 1024 or data["reference_latency_ranking_valid"] is not True or
+            len(data["reference_compute_quality"]) != 8):
+        raise ValueError("complete original40-step current Qwen source-bound cohort required")
+    routes = []
+    for row in data["routes"]:
+        trials = [trial for trial in data["trials"] if trial["route"] == row["route"]]
+        if len(trials) != 2 or len(row["fresh_warm_seconds"]) != 4 or any(trial["memory"]["complete"] is not True for trial in trials):
+            raise ValueError("all four current Qwen fresh samples and complete memory required")
+        if row["route"].startswith("mflux-") and any(trial["report"]["reference_cache_limit_bytes"] != 1024 << 20 for trial in trials):
+            raise ValueError("actual current Qwen reference cache differs")
+        if row["route"] == "mflux-fp16" and any(
+                trial["report"]["compute_precision_name"] != "float16" or
+                trial["report"]["transformer_floating_parameter_dtypes"].get("mlx.core.float16", 0) <= 0 or
+                any(run["generation_parameters"].get("compute_precision") != "float16" for run in trial["report"]["runs"])
+                for trial in trials):
+            raise ValueError("current Qwen float16 requires actual parameters and outputs")
+        routes.append(measured(row["route"], row["cold_seconds"], row["fresh_warm_seconds"],
+            repeated_prompt_seconds=row["repeat_seconds"], constructor_seconds=row["constructor_seconds"],
+            physical_peaks=[trial["memory"]["tree_peak_phys_footprint_bytes"] for trial in trials],
+            compression_bytes=[trial["memory"]["compression_bytes"] for trial in trials],
+            swap_out_bytes=[trial["memory"]["swap_out_bytes"] for trial in trials]))
+    return dict(evidence=binding, model="qwen-image-2.1-mflux022-bf16-fp16-cohort", geometry=[512, 512],
+        steps=40, date=data["date"], routes=routes, mflux_package_version=data["mflux_package_version"],
+        mflux_commit=data["mflux_commit"], reference_cache_mib=1024, reference_comparison_valid=True,
+        timing_scope=data["timing_scope"],
+        note="current0.22.0 independent declared-dependency environment,8process/32PNG/8memory,4fresh/route; referenceBF16 41.952435s beats nativeGPU43.308977s, frozen31.809596s remains faster; referencepartialFP16 42.000398s differs only0.114%, no stable compute-option win; nativeGPU peak29.77-30.47GB lower than reference34.51-34.93GB/frozen36.03-36.08GB; old reference45.450516s retained separately, no pooling or global dominance")
+
+
 def export():
     campaigns = []
     data, binding = source("docs/design/validation/qwen21-conditioned-reference-20261010.json",
@@ -259,6 +292,7 @@ def export():
         campaigns.append(qwen_cache_campaign(
             f"docs/design/validation/qwen21-cache{cache_mib}-framework-current-20261012.json", cache_mib))
     campaigns.append(z_upstream_campaign("docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"))
+    campaigns.append(qwen_upstream_campaign("docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json"))
     flux, binding = source("docs/design/validation/flux9-bf16-current-v5-20261011.json", ("complete_diagnostic",))
     if flux["reference_required_weight_coverage_verified"] is not True:
         raise ValueError("current FLUX original reference weights must be actually covered")
@@ -392,7 +426,7 @@ def export():
                 goal_completion_scope="expanded local family/precision/parameter and best GPU/ANE/framework comparisons remain active; prior-stage completion is not expanded-goal proof; not release qualification",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
-                missing_current_comparisons=["Qwen further native share/shape candidates; reference0/1024/4096MiB cache cohorts completed; current upstream framework-version comparisons pending",
+                missing_current_comparisons=["Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
                     "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX9B current upstream framework versions, additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",

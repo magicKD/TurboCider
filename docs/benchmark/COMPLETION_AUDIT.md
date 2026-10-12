@@ -9,7 +9,7 @@
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
 再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
 hybrid、两种Q4/g32匹配及提前解码、Qwen1024/4096MiB缓存、Z当前
-mflux0.22 BF16/FP16对照，共51个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+mflux0.22 BF16/FP16对照、Qwen0.22完整40步四路线，共52个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。更新上游框架版本、
 更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
@@ -115,6 +115,19 @@ Qwen/FLUX当前版本、更广native配置与成功外部LTX仍未完成，goal�
 两memory/两PNG核验，只保存precheck、不进入51组完整catalog。补充
 预检不得当完整排名的回归后，make test-base-benchmark为149项全过；
 仍未运行全量make test，40步新版本对照和其它缺口未完成。
+
+随后Qwen0.22完整40步四路线8process/32PNG/8memory已验收，catalog为
+52组：GPU43.309/frozen31.810/referenceBF16 41.952/partialFP16 42.000s，
+新版参考胜pureGPU约3.2%，mixed仍1.319×；FP16仅0.114%差异没有
+稳定收益，同engine warm-light SSIM0.997113/MAE0.563，288F16/9BF16
+参数、actual1GiB cache、所有required weights与1248frozen calls均核验。
+新增当前reference胜出/错误cache拒绝和保存自己cohort controls回归。
+FLUX新版本七路线工具新增BF16 compiled/hybrid/Q4/predecode及参考
+BF16/partialFP16/matchedQ4完整14进程协议、source/precision/calls/PNG/
+memory验收与12项CPU协议测试；此时只是工具，不冒充真实新模型结果。
+使用实验库运行make test-base-benchmark，163项全部通过；所有tests/
+audits在Qwen实验terminal后执行，仍未运行全量make test。
+FLUX新版真实运行、更多native shape/precision与成功外部LTX仍pending。
 
 ## 不是缺少结果的隐含通过
 

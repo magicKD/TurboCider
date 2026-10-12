@@ -128,7 +128,7 @@
   ],
   "updated": "2026-10-12",
   "pending": [
-    "Qwen current upstream framework-version comparisons and further native parameter/shape screening; cache0/1024/4096 completed",
+    "Qwen further native parameter/shape/current upstream quantized screening; cache0/1024/4096 and current0.22 BF16/partialFP16 completed",
     "Z additional checkpoint/shape/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
     "FLUX9B current upstream framework versions, additional quantized precisions and hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 and exact512/4 hybrid measured",
     "LTX further load/residency configurations and successful reference layouts; eight full-media configurations completed"
@@ -360,30 +360,42 @@
     {
       "model": "qwen-image-2.1",
       "engine": "mflux",
-      "package_version_field": "0.19.2",
-      "commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
-      "commit_date": "2026-09-20",
+      "package_version_field": "0.22.0",
+      "commit": "31c9640399572ea394d07092763be9a36007a754",
       "precision": "original BF16 encoder/DiT/VAE, complete lossless reference layout",
       "model_root": "outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011",
       "selected_route": "mflux-bf16",
       "free_cache_limit_bytes": 1073741824,
-      "fresh_warm_median_seconds": 45.45051572902594,
-      "native_gpu_control_seconds": 43.37704808358103,
-      "native_frozen_control_seconds": 32.393132145982236,
-      "physical_peak_bytes": [34878070064, 34480069936],
-      "evidence": "docs/design/validation/qwen21-cache1024-framework-current-20261012.json",
-      "selection_note": "Lower observed memory than4096MiB with only0.104% median difference, not a causal/global speed winner. Retain native controls from this cohort only; stock/cache0/4096 not pooled. Current upstream versions not benchmarked yet.",
-      "reproduction_command": ".venv/bin/python3 -B tools/validation/qwen21_mflux_framework_screen.py --model models/Comfy-Org-Qwen-Image-2.1 --reference-model outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux ../references/mflux --python .deps/qwen21-oracle-env/bin/python3 --extra .deps/mflux-reference-extra --frozen-manifest outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-bf16,native-frozen,native-gpu --output outputs/new-qwen-cache1024-benchmark",
+      "fresh_warm_median_seconds": 41.952435375074856,
+      "native_gpu_control_seconds": 43.308976791915484,
+      "native_frozen_control_seconds": 31.809596374980174,
+      "physical_peak_bytes": [34514132104, 34925796416],
+      "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json",
+      "selection_note": "Current0.22 BF16 versus partialFP16 differs only0.114%, not a causal/global speed winner. Reference beats own-cohort nativeGPU by3.234%, nativefrozen remains1.319x faster. Own controls only; older stock/cache0/1024/4096 retained separately, not pooled. Other current precision/cache/shape candidates pending.",
+      "packages": {"mlx": "0.32.3", "torch": "2.14.1", "transformers": "5.19.0", "numpy": "2.5.4", "Pillow": "12.3.0", "safetensors": "0.8.0"},
+      "other_compute_candidates": [
+        {"route": "mflux-fp16", "compute_precision": "float16", "fresh_warm_median_seconds": 42.00039812445175,
+         "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json"}
+      ],
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/qwen21_mflux_framework_screen.py --model models/Comfy-Org-Qwen-Image-2.1 --reference-model outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --frozen-manifest outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu --output outputs/new-qwen-current-reference",
       "other_cache_candidates": [
         {
           "free_cache_limit_bytes": 0,
+          "package_version_field": "0.19.2",
           "fresh_warm_median_seconds": 45.96821891650325,
           "evidence": "docs/design/validation/qwen21-cache0-framework-current-20261011.json"
         },
         {
           "free_cache_limit_bytes": 4294967296,
+          "package_version_field": "0.19.2",
           "fresh_warm_median_seconds": 45.497861896059476,
           "evidence": "docs/design/validation/qwen21-cache4096-framework-current-20261012.json"
+        },
+        {
+          "free_cache_limit_bytes": 1073741824,
+          "package_version_field": "0.19.2",
+          "fresh_warm_median_seconds": 45.45051572902594,
+          "evidence": "docs/design/validation/qwen21-cache1024-framework-current-20261012.json"
         }
       ]
     },

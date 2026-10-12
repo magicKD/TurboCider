@@ -2377,6 +2377,168 @@
     },
     {
       "evidence": {
+        "path": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json",
+        "sha256": "324ca46c1635d974aa02f738b12424f500975dce3540538c461479c9998e8b40",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-mflux022-bf16-fp16-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            46.2981887080241,
+            44.88769383402541
+          ],
+          "warm_seconds": [
+            41.969167000148445,
+            41.93570375000127,
+            42.09774191584438,
+            41.86259274999611
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 41.952435375074856,
+          "repeated_prompt_seconds": [
+            41.85098199988715,
+            41.865171416895464
+          ],
+          "constructor_seconds": [
+            1.575065250042826,
+            1.4474272090010345
+          ],
+          "physical_peaks": [
+            34514132104,
+            34925796416
+          ],
+          "compression_bytes": [
+            4076093440,
+            2071330816
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "mflux-fp16",
+          "cold_seconds": [
+            44.9398234160617,
+            44.83512333314866
+          ],
+          "warm_seconds": [
+            41.99506020802073,
+            42.005736040882766,
+            42.16621887497604,
+            41.88611525017768
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 42.00039812445175,
+          "repeated_prompt_seconds": [
+            41.85575866699219,
+            41.80910954205319
+          ],
+          "constructor_seconds": [
+            1.4736817080993205,
+            1.4667942500673234
+          ],
+          "physical_peaks": [
+            34614811976,
+            34930875600
+          ],
+          "compression_bytes": [
+            814940160,
+            2656174080
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            45.762133499840274,
+            47.27891129208729
+          ],
+          "warm_seconds": [
+            32.361175124999136,
+            31.532453624997288,
+            32.08673912496306,
+            31.33978383312933
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 31.809596374980174,
+          "repeated_prompt_seconds": [
+            30.544623624999076,
+            30.47166324988939
+          ],
+          "constructor_seconds": [
+            4.950002767145634e-05,
+            0.001427417155355215
+          ],
+          "physical_peaks": [
+            36027046352,
+            36077852992
+          ],
+          "compression_bytes": [
+            3404627968,
+            3118907392
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            47.490479291882366,
+            45.7246173331514
+          ],
+          "warm_seconds": [
+            43.29881604202092,
+            43.32817608397454,
+            43.31913754181005,
+            43.27891058311798
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.308976791915484,
+          "repeated_prompt_seconds": [
+            42.68029724992812,
+            42.653747625183314
+          ],
+          "constructor_seconds": [
+            7.85409938544035e-05,
+            5.074986256659031e-05
+          ],
+          "physical_peaks": [
+            30469216048,
+            29772158504
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        }
+      ],
+      "mflux_package_version": "0.22.0",
+      "mflux_commit": "31c9640399572ea394d07092763be9a36007a754",
+      "reference_cache_mib": 1024,
+      "reference_comparison_valid": true,
+      "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+      "note": "current0.22.0 independent declared-dependency environment,8process/32PNG/8memory,4fresh/route; referenceBF16 41.952435s beats nativeGPU43.308977s, frozen31.809596s remains faster; referencepartialFP16 42.000398s differs only0.114%, no stable compute-option win; nativeGPU peak29.77-30.47GB lower than reference34.51-34.93GB/frozen36.03-36.08GB; old reference45.450516s retained separately, no pooling or global dominance"
+    },
+    {
+      "evidence": {
         "path": "docs/design/validation/flux9-bf16-current-v5-20261011.json",
         "sha256": "b3efbd20a708659bcac586af5619871a8075466ffa840c3bf350c0ffdc89d28b",
         "status": "complete_diagnostic"
@@ -4740,7 +4902,7 @@
     }
   ],
   "missing_current_comparisons": [
-    "Qwen further native share/shape candidates; reference0/1024/4096MiB cache cohorts completed; current upstream framework-version comparisons pending",
+    "Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
     "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
     "FLUX9B current upstream framework versions, additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
     "LTX best full-media native configurations and runnable reference quantized layouts",

@@ -1,9 +1,53 @@
 # Qwen BF16：有效完整框架对照
 
 更新2026-10-12，M4 Max64GiB/macOS26.6.2。原BF16 encoder/DiT/VAE、512²、
-40步、seed29、三个fox-light prompts，无LoRA。最新有效v11为十进程
+40步、seed29、三个fox-light prompts，无LoRA。先前有效v11为十进程
 五路线回文顺序；每新进程cold、两fresh、一次repeat，constructor另列。
 全部40张PNG和十条独立process-tree memory证据完整；不删除慢样本。
+
+## 最新mflux0.22：BF16参考略胜GPU，混合仍1.32×
+
+2026-10-12新版本独立满足声明依赖的环境，实际MLX0.32.3/Torch2.14.1/
+Transformers5.19.0，原固定reference checkout不改。原模型完整无损
+layout不变、512²/40步/seed29；8进程四路线回文，32PNG/8memory全部
+完整，每路四fresh，constructor/cold/repeat独立保留，不与旧样本混池。
+
+| 路线 | 四fresh中位s | cold正/反s | repeat正/反s | tree peak GB（十进制） |
+| --- | ---: | --- | --- | --- |
+| TurboCider GPU | 43.308977 | 47.490 /45.725 | 42.680 /42.654 | 29.77–30.47 |
+| TurboCider frozen W8A8 | 31.809596 | 45.762 /47.279 | 30.545 /30.472 | 36.03–36.08 |
+| mflux0.22 BF16/cache1024 | 41.952435 | 46.298 /44.888 | 41.851 /41.865 | 34.51–34.93 |
+| mflux0.22 partial FP16/cache1024 | 42.000398 | 44.940 /44.835 | 41.856 /41.809 | 34.61–34.93 |
+
+BF16参考对native GPU为1.03233×，native耗时高3.234%；不能继续宣传
+“Qwen纯GPU也更快”。frozen对本窗口参考为1.318861×、对自身GPU省
+26.552%，仍是该完整cohort的热态赢家。其高内存和冷初始化另列；
+参考constructor1.45–1.58s，原生约0.00005–0.00143s，不扣掉setup。
+
+两个reference只差0.047963s/0.114%，不能称FP16有稳定加速或稳定回退。
+FP16实际288个DiT floating参数F16、9个BF16，encoder/VAE按模型精度，
+每图generation_parameters确认float16；BF16 control没有该选项。
+同engine warm-light SSIM0.997113、MAE0.563/255，源/所有参数和
+完整40步图像已核验；不是跨engine同noise、逐像素或广泛感知parity。
+
+实际reference cache bytes两路均1073741824，全部required coverage
+297DiT/398encoder/226VAE完整。frozen仍每请求1248runtime+首次32
+warmup calls、failure0，首步GPU，后续image-only FFN split6144/6144；
+没有physical NE occupancy/native INT8 MAC的trace。
+
+所有窗口swap-out0；GPU compression0，frozen累计3.12–3.40GB，
+参考BF16 2.07–4.08GB/FP16 0.81–2.66GB，不能称无压力。pure GPU
+观测peak比参考低约4–5GB，mixed又比参考高约1–2GB；不存在同时
+全面最优的证据。新版环境/代码整体变化，不把旧45.451s到新41.952s
+全部归因一个kernel、dtype或cache。旧原生31.059s不拼新参考分母。
+
+[完整新版验收](../design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json)
+绑定commit `31c9640399572ea394d07092763be9a36007a754`、源码snapshot、
+514个native输入、全部请求/PNG/内存与8组同engineFP16质量比较。
+保存BF16/cache1024为当前已测reference候选；其它cache/quant/shapes
+仍须独立测量，image.generate不冒充Image Edit首步无KV-cache收益。
+
+## 保留旧固定checkout的完整同窗口结果
 
 ## 同窗口完整生成
 
@@ -82,7 +126,7 @@ SSIM0.958431、MAE4.609/255；跨框架同seed不是同noise或BF16逐像素pari
 
 参考固定commit `8c00dab2505a96019df9d30bc9c223bf20d733c4`（2026-09-20），
 包版本字段0.19.2；这是含Qwen2.1支持的固定checkout，不是官方当前所有
-版本的排名。更新框架版本的同机完整对照仍pending。当前任务为
+版本的排名。上方0.22完整对照已补，其它精度/参数仍pending。当前任务为
 image.generate；不把其倍率冒充Qwen Image Edit首步无KV-cache收益。
 
 ## 内存压力是结果的一部分
@@ -106,8 +150,8 @@ FP16实际为288个DiT floating参数F16、9个BF16、encoder/VAE仍按模型
 精度；每图compute_precision metadata与源码snapshot核验。
 [短预检记录](../design/validation/qwen21-mflux022-precheck-20261012.json)
 只有4步/单cold，各10.165/8.552s，图像仍有短步数去噪残留，不作为
-40步latency排名、最终画质通过或混合最佳配置。完整40步四路线回文
-与fresh/repeat/quality对照仍pending，不能沿用旧45.45s参考作新版分母。
+40步latency排名、最终画质通过或混合最佳配置。随后完整40步四路线
+已完成，见本页最上方；不能沿用旧45.45s参考作新版分母。
 
 32个checkpoint-bound W6144/r1024 source graphs与compiled manifest
 已经恢复到独立benchmark cache，当前实际可加载。每40步请求1248次
