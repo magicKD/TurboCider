@@ -39,6 +39,20 @@ class MatchedAffineScreenTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_report(bad,"mflux-q4")
 
+    def test_full_recipe_requires_all252_encoder_linears_and902_saved_parameters(self):
+        coverage = {key:dict(required_targets=1,covered_targets=1,missing=[]) for key in ("vae","text_encoder","transformer")}
+        coverage["transformer"].update(bits=4,group_size=32,quantized_linears=153)
+        coverage["text_encoder"].update(bits=4,group_size=32,quantized_linears=252,required_targets=902,covered_targets=902)
+        report = dict(engine="mflux-q4",quantization=4,precision="mlx.core.bfloat16",required_weight_coverage=coverage,
+            quantized_components=["transformer","text_encoder"],
+            runs=[dict(actual_steps=[0,1,2,3],actual_quantization=4,loras=[]) for _ in range(4)])
+        validate_report(report,"mflux-q4")
+        for changes in (dict(group_size=64),dict(quantized_linears=196),dict(required_targets=706,covered_targets=706)):
+            bad = copy.deepcopy(report)
+            bad["required_weight_coverage"]["text_encoder"].update(changes)
+            with self.assertRaises(ValueError):
+                validate_report(bad,"mflux-q4")
+
 
 if __name__ == "__main__":
     unittest.main()

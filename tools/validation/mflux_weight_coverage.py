@@ -72,31 +72,49 @@ def verify_saved_parameter_descriptions(header, parameters):
 
 def inspect_saved_dit_coverage(root, definition, models):
     """Exact DiT-only g32/Q4 save; encoder/VAE must remain original dense BF16."""
+    return inspect_saved_affine_coverage(root,definition,models,("transformer",))
+
+
+def inspect_saved_full_coverage(root,definition,models):
+    return inspect_saved_affine_coverage(root,definition,models,("transformer","text_encoder"))
+
+
+def inspect_saved_affine_coverage(root,definition,models,converted):
     import mlx.core as mx
     from mlx import nn
     from mlx.utils import tree_flatten
-    result = inspect_reference_coverage(root,definition,models,selected_components=("text_encoder","vae"))
-    files = sorted((Path(root)/"transformer").glob("*.safetensors"))
-    if len(files) != 1:
-        raise ValueError("one complete matched saved DiT artifact required")
-    header,_ = read_header(files[0])
-    metadata = header.get("__metadata__",{})
-    if metadata.get("quantization_level") != "4" or metadata.get("group_size") != "32":
-        raise ValueError("explicit matched Q4/g32 saved DiT metadata required")
-    dtypes = {str(mx.uint32):"U32",str(mx.bfloat16):"BF16"}
-    actual = {}
-    for key,value in tree_flatten(models["transformer"].parameters()):
-        if str(value.dtype) not in dtypes:
-            raise ValueError("packed U32 or original BF16 parameters required")
-        actual[key] = dict(shape=list(value.shape),dtype=dtypes[str(value.dtype)])
-    result["transformer"] = verify_saved_parameter_descriptions(header,actual)
-    linears = [(path,layer) for path,layer in models["transformer"].named_modules() if isinstance(layer,nn.QuantizedLinear)]
-    if len(linears) != 153 or any(layer.bits != 4 or layer.group_size != 32 for _,layer in linears):
-        raise ValueError("all153 actual DiT linears must load exact Q4/g32")
-    for name in ("text_encoder","vae"):
+    dense = tuple(name for name in ("transformer","text_encoder","vae") if name not in converted)
+    result = inspect_reference_coverage(root,definition,models,selected_components=dense)
+    for name in converted:
+        files = sorted((Path(root)/name).glob("*.safetensors"))
+        if len(files) != 1:
+            raise ValueError("one complete matched saved component artifact required")
+        header,_ = read_header(files[0])
+        metadata = header.get("__metadata__",{})
+        if metadata.get("quantization_level") != "4" or metadata.get("group_size") != "32":
+            raise ValueError("explicit matched Q4/g32 saved component metadata required")
+        dtypes = {str(mx.uint32):"U32",str(mx.bfloat16):"BF16"}
+        actual = {}
+        excluded = []
+        for key,value in tree_flatten(models[name].parameters()):
+            if name == "text_encoder" and key == "rotary_emb.inv_freq":
+                excluded.append(key)
+                continue
+            if str(value.dtype) not in dtypes:
+                raise ValueError("packed U32 or original BF16 parameters required")
+            actual[key] = dict(shape=list(value.shape),dtype=dtypes[str(value.dtype)])
+        result[name] = verify_saved_parameter_descriptions(header,actual)
+        linears = [(path,layer) for path,layer in models[name].named_modules() if isinstance(layer,nn.QuantizedLinear)]
+        expected = 153 if name == "transformer" else 252
+        if len(linears) != expected or any(layer.bits != 4 or layer.group_size != 32 for _,layer in linears):
+            raise ValueError("all actual converted linears must load exact Q4/g32")
+        if name == "text_encoder" and (not isinstance(models[name].embed_tokens,nn.Embedding) or
+                isinstance(models[name].embed_tokens,nn.QuantizedEmbedding) or models[name].embed_tokens.weight.dtype != mx.bfloat16):
+            raise ValueError("conditioning encoder embedding must remain original dense BF16")
+        result[name].update(quantized_linears=expected,bits=4,group_size=32,excluded_architecture_constants=excluded)
+    for name in dense:
         if any(key.endswith((".scales",".biases")) or
                (key.endswith((".weight",".bias")) and value.dtype != mx.bfloat16)
                for key,value in tree_flatten(models[name].parameters())):
             raise ValueError("unconverted encoder/VAE must remain original dense BF16")
-    result["transformer"].update(quantized_linears=153,bits=4,group_size=32)
     return result

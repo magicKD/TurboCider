@@ -25,7 +25,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 46)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 47)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -212,6 +212,35 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertIn("not fastest/default",candidate["selection_note"])
         if (ROOT / "models/FLUX.2-klein-9B").exists():
             self.assertTrue((ROOT / candidate["model_root"] / "transformer/0.safetensors").is_file())
+
+    def test_full_encoder_dit_recipe_has_all36_layers_and_does_not_claim_latency_win(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "flux2-klein-9b-matched-encoder-dit-q4-g32-cohort")
+        self.assertTrue(all(row["warm_sample_count"] == 4 for row in campaign["routes"]))
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertEqual(data["conversion"]["converted_components"],["transformer","text_encoder"])
+        self.assertEqual(data["conversion"]["components"]["text_encoder"]["stored_tensors"],902)
+        self.assertEqual(data["conversion"]["components"]["text_encoder"]["quantized_linears"],252)
+        self.assertLess(data["comparison"]["native_q4_reduction_percent"],0)
+        for trial in data["trials"]:
+            self.assertTrue(trial["memory"]["complete"])
+            if trial["route"] == "mflux-q4":
+                covered = trial["report"]["required_weight_coverage"]["text_encoder"]
+                self.assertEqual((covered["required_targets"],covered["covered_targets"],covered["quantized_linears"],covered["group_size"]),(902,902,252,32))
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        candidate = configs["memory_configurations"][1]
+        self.assertEqual(candidate["fresh_warm_median_seconds"],data["medians"]["native-q4"]["fresh_warm_seconds"])
+        self.assertIn("not fastest/default",candidate["selection_note"])
+        self.assertNotIn("/Users/",json.dumps(data))
+
+    def test_derived_mlxserve_rejection_is_not_original_format_or_latency_denominator(self):
+        data = json.loads((ROOT / "docs/design/validation/flux9-full-q4-compatibility-20261012.json").read_text())
+        probe = data["mlxserve"]
+        self.assertTrue(probe["derived_layout"])
+        self.assertTrue(probe["server_terminal"])
+        self.assertEqual((probe["status"],probe["exit_code"],probe["requests"]),("startup_rejected",1,[]))
+        self.assertFalse(probe["latency_comparison_valid"])
+        self.assertIn("embed_tokens.scales",probe["rejection"])
+        self.assertEqual(data["retained_conversion_failure"]["status"],"failed")
 
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())

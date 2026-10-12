@@ -281,6 +281,22 @@ def export():
     campaigns.append(dict(evidence=binding,model="flux2-klein-9b-matched-dit-q4-g32-cohort",
         geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=matched["timing_scope"],
         note="same byte-identical153-linear DiT Q4/g32 planes in native/reference, original BF16 encoder/VAE; all32PNG/8memory complete; nativeQ4 7.986974 versus ownBF16 7.921748s is not speedup, referenceQ4 8.030596 versus BF16 7.379937s is slower; Q4 peaks18.16/19.73GB and compression0, memory-only candidate not full-model quantization or ANE qualification"))
+    full,binding = source("docs/design/validation/flux9-matched-full-q4-current-20261012.json",("complete_diagnostic",))
+    if (len(full["trials"]) != 8 or full["conversion"]["converted_components"] != ["transformer","text_encoder"] or
+            any(full["conversion"]["components"][name]["full_compressed_payload_equal"] is not True for name in ("transformer","text_encoder"))):
+        raise ValueError("complete same-payload encoder+DiT Q4/g32 cohort required")
+    routes = []
+    for route in ("native-bf16","native-q4","mflux-bf16","mflux-q4"):
+        values = full["medians"][route]
+        trials = [trial for trial in full["trials"] if trial["route"] == route]
+        if any(trial["memory"]["complete"] is not True for trial in trials):
+            raise ValueError("complete full-linear matched memory proof required")
+        routes.append(measured(route,values["cold_seconds"],values["samples"],
+            repeated_prompt_seconds=values["repeated_prompt_seconds"],constructor_seconds=values["constructor_seconds"],
+            physical_peaks=[trial["memory"]["tree_peak_phys_footprint_bytes"] for trial in trials]))
+    campaigns.append(dict(evidence=binding,model="flux2-klein-9b-matched-encoder-dit-q4-g32-cohort",
+        geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=full["timing_scope"],
+        note="same153 DiT+252 encoder Q4/g32 linears, BF16 embedding/VAE; complete539+902 saved parameters and all36 encoder layers,32PNG/8memory; nativeQ4 8.005275/ownBF16 7.741839s is3.4% slower, referenceQ4 8.042573/ownBF16 7.346223s slower; nativeQ4 peak11.99GB, lower-memory candidate not fastest, all-module4bit or ANE qualification"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-12", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,
@@ -289,7 +305,7 @@ def export():
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
                 missing_current_comparisons=["Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
-                    "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed", "FLUX9B full-component/more-precision matched quantization and additional source-bound hybrid shares/shapes; DiT-only Q4/g32 matched cohort complete",
+                    "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed", "FLUX9B additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",

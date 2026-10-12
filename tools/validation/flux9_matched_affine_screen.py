@@ -11,7 +11,7 @@ import sys
 from flux9_bf16_framework_screen import (
     check_generations, generation, native_child, mflux_child, registered_hashes, requests, validate_native, write_json)
 from mflux_original_layout import read_header
-from mflux_weight_coverage import inspect_saved_dit_coverage
+from mflux_weight_coverage import inspect_saved_dit_coverage, inspect_saved_full_coverage
 from runtime_ane_common import benchmark_environment, sha256_file
 from runtime_ane_memory import run_sampled
 
@@ -23,33 +23,38 @@ ORDER = ("native-bf16","native-q4","mflux-bf16","mflux-q4",
 def validate_pack(pack, original):
     receipt = json.loads((pack / "conversion.json").read_text())
     if (receipt.get("status") != "complete_conversion_only" or receipt.get("bits") != 4 or
-            receipt.get("group_size") != 32 or receipt.get("converted_components") != ["transformer"]):
-        raise ValueError("complete matched DiT-only Q4/g32 conversion required")
-    record = receipt["components"]["transformer"]
-    if (record.get("full_compressed_payload_equal") is not True or record.get("stored_tensors") != 539 or
-            record.get("quantized_linears") != 153):
-        raise ValueError("complete original9B learned weights plus all affine planes required")
-    if (pack / "native/transformer/config.json").resolve(strict=True) != (original / "transformer/config.json").resolve(strict=True):
-        raise ValueError("actual native geometry must retain the original9B config")
+            receipt.get("group_size") != 32 or receipt.get("converted_components") not in (["transformer"],["transformer","text_encoder"])):
+        raise ValueError("complete known matched Q4/g32 conversion required")
+    components = receipt["converted_components"]
+    for name in components:
+        record = receipt["components"][name]
+        tensors,linears = (539,153) if name == "transformer" else (902,252)
+        if (record.get("full_compressed_payload_equal") is not True or record.get("stored_tensors") != tensors or
+                record.get("quantized_linears") != linears):
+            raise ValueError("complete original9B learned weights plus all affine planes required")
+        if (pack / "native" / name / "config.json").resolve(strict=True) != (original / name / "config.json").resolve(strict=True):
+            raise ValueError("actual native geometry must retain the original9B config")
     for layout in ("native","mflux"):
-        for component in ("text_encoder","vae","tokenizer"):
+        for component in [name for name in ("text_encoder","vae","tokenizer") if name not in components]:
             if (pack / layout / component).resolve(strict=True) != (original / component).resolve(strict=True):
                 raise ValueError("original dense encoder/VAE/tokenizer must be shared unchanged")
-        path = pack / layout / "transformer/0.safetensors"
-        if path.stat().st_size != record["bytes"]:
-            raise ValueError("complete compressed source extent required")
-        header,_ = read_header(path)
-        if len(header)-1 != 539 or sum(key.endswith(".scales") for key in header) != 153:
-            raise ValueError("complete539 quantized/native source tensor descriptors required")
-        # Quantized geometry is unambiguous with the true input dimensions.
-        for key, value in header.items():
-            if key.endswith(".scales"):
-                prefix = key[:-7]
-                weight, bias = header[prefix+".weight"],header[prefix+".biases"]
-                if (weight["dtype"] != "U32" or value["dtype"] != "BF16" or bias["dtype"] != "BF16" or
-                        len(weight["shape"]) != 2 or value["shape"] != bias["shape"] or
-                        weight["shape"][0] != value["shape"][0] or weight["shape"][1] != 4*value["shape"][1]):
-                    raise ValueError("exact saved Q4/g32 packed/scales/affine-bias planes required")
+        for name in components:
+            path = pack / layout / name / "0.safetensors"
+            record = receipt["components"][name]
+            tensors,linears = (539,153) if name == "transformer" else (902,252)
+            if path.stat().st_size != record["bytes"]:
+                raise ValueError("complete compressed source extent required")
+            header,_ = read_header(path)
+            if len(header)-1 != tensors or sum(key.endswith(".scales") for key in header) != linears:
+                raise ValueError("complete quantized/native source tensor descriptors required")
+            for key, value in header.items():
+                if key.endswith(".scales"):
+                    prefix = key[:-7]
+                    weight, bias = header[prefix+".weight"],header[prefix+".biases"]
+                    if (weight["dtype"] != "U32" or value["dtype"] != "BF16" or bias["dtype"] != "BF16" or
+                            len(weight["shape"]) != 2 or value["shape"] != bias["shape"] or
+                            weight["shape"][0] != value["shape"][0] or weight["shape"][1] != 4*value["shape"][1]):
+                        raise ValueError("exact saved Q4/g32 packed/scales/affine-bias planes required")
     return receipt
 
 
@@ -75,6 +80,10 @@ def validate_report(report, route):
         if route == "mflux-q4" and (coverage["transformer"].get("bits"),coverage["transformer"].get("group_size"),
                                       coverage["transformer"].get("quantized_linears")) != (4,32,153):
             raise ValueError("actual153 DiT Q4/g32 linears required")
+        if route == "mflux-q4" and report.get("quantized_components") == ["transformer","text_encoder"] and (
+                coverage["text_encoder"].get("bits"),coverage["text_encoder"].get("group_size"),
+                coverage["text_encoder"].get("quantized_linears"),coverage["text_encoder"].get("required_targets")) != (4,32,252,902):
+            raise ValueError("all252 actual encoder Q4/g32 linears and902 saved parameters required")
         if any(row.get("actual_steps") != [0,1,2,3] or row.get("actual_quantization") != bits or row.get("loras")
                for row in report["runs"]):
             raise ValueError("actual base four-step generation required")
@@ -82,6 +91,8 @@ def validate_report(report, route):
 
 def child(args):
     route = args.child
+    receipt = validate_pack(args.pack,args.model)
+    full = receipt["converted_components"] == ["transformer","text_encoder"]
     output = args.output
     call = copy.copy(args)
     call.native_encoder_eval_interval = 0
@@ -103,9 +114,11 @@ def child(args):
         report = native_child(call,output,request_factory=factory)
     else:
         report = mflux_child(call,output,stored_bits=4 if route.endswith("q4") else None,
-                            coverage_provider=inspect_saved_dit_coverage if route.endswith("q4") else None)
+                            coverage_provider=(inspect_saved_full_coverage if full else inspect_saved_dit_coverage) if route.endswith("q4") else None)
     report.update(engine=route,model_root=str(call.model),
-        representation="DiT153 affine Q4/g32 linears; original dense BF16 encoder/VAE" if route.endswith("q4") else "original BF16 encoder/DiT/VAE",
+        quantized_components=receipt["converted_components"] if route.endswith("q4") else [],
+        representation=("DiT153+encoder252 affine Q4/g32 linears; original dense BF16 embedding/VAE" if full else
+                        "DiT153 affine Q4/g32 linears; original dense BF16 encoder/VAE") if route.endswith("q4") else "original BF16 encoder/DiT/VAE",
         library_sha256=sha256_file(args.library) if route.startswith("native") else None)
     validate_report(report,route)
     write_json(output / "report.json",report)
@@ -116,7 +129,7 @@ def parent(args):
     receipt = validate_pack(args.pack,args.model)
     args.output.mkdir(parents=True)
     models = sorted([*args.model.rglob("*.safetensors"),*args.model.rglob("*.json"),*args.model.rglob("*.jinja"),
-        args.pack / "native/transformer/0.safetensors",args.pack / "mflux/transformer/0.safetensors",args.pack / "conversion.json"])
+        *(args.pack / layout / name / "0.safetensors" for layout in ("native","mflux") for name in receipt["converted_components"]),args.pack / "conversion.json"])
     reference = sorted((args.mflux / "src").rglob("*.py"))
     local = [args.library,Path(__file__).resolve(),ROOT / "tools/validation/flux9_affine_pack.py",
         ROOT / "tools/validation/flux9_bf16_framework_screen.py",ROOT / "tools/validation/mflux_weight_coverage.py",
@@ -125,9 +138,10 @@ def parent(args):
     hashes = registered_hashes(models,ROOT / "outputs/benchmark-source-registrations/flux9-bf16.json")
     hashes.update({str(path):sha256_file(path) for path in (*reference,*local)})
     for layout in ("native","mflux"):
-        path = args.pack / layout / "transformer/0.safetensors"
-        if hashes[str(path)] != receipt["components"]["transformer"][layout+"_sha256"]:
-            raise ValueError("actual converted artifact differs from whole-payload equality proof")
+        for name in receipt["converted_components"]:
+            path = args.pack / layout / name / "0.safetensors"
+            if hashes[str(path)] != receipt["components"][name][layout+"_sha256"]:
+                raise ValueError("actual converted artifact differs from whole-payload equality proof")
     for name,digest in receipt["source_sha256"].items():
         if hashes.get(name) != digest:
             raise ValueError("actual original source differs from conversion provenance")
@@ -141,7 +155,7 @@ def parent(args):
         task=dict(model="flux2-klein-9b",size=512,steps=4,seed=42,dynamic_text=False,loras=[]),
         timing_scope="complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
         source_policy="first source-generation SHA then durable metadata reuse; stat guards at arm boundaries; no per-inference model hash",
-        scope="same original base; both Q4 routes share byte-identical g32 compressed DiT payload, original BF16 encoder/VAE; not stock all-component affine or GGUF; no ANE route for this quantized candidate")
+        scope="same original base; both Q4 routes share byte-identical g32 compressed payload in declared converted components; original BF16 embedding/VAE; not stock all-module affine or GGUF; no ANE route for this quantized candidate")
     target = args.output / "summary.json"
     write_json(target,data)
     try:

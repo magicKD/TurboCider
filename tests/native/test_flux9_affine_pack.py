@@ -4,7 +4,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from flux9_affine_pack import mirrored_header, native_key, tensor_storage_plan
+from flux9_affine_pack import mirrored_header, native_key, tensor_storage_plan, serializable_parameters, saved_encoder_layers
 
 
 class FluxMatchedPackTests(unittest.TestCase):
@@ -40,6 +40,23 @@ class FluxMatchedPackTests(unittest.TestCase):
                 dict(dtype="BF16",shape=[8,40],data_offsets=[0,640])):
             with self.assertRaises(ValueError):
                 tensor_storage_plan("attn.weight",tensor,4,"transformer")
+
+    def test_only_generated_encoder_rope_constant_is_omitted(self):
+        sentinel = object()
+        arrays,excluded = serializable_parameters({"rotary_emb.inv_freq":object(),"norm.weight":sentinel},
+            {"norm.weight":"model.norm.weight"},"text_encoder")
+        self.assertIs(arrays["norm.weight"],sentinel)
+        self.assertEqual(excluded,["rotary_emb.inv_freq"])
+        with self.assertRaises(ValueError):
+            serializable_parameters({"unknown.weight":sentinel},{},"text_encoder")
+
+    def test_saved_encoder_geometry_uses_all36_layers_not_hf_only_default28(self):
+        self.assertEqual(saved_encoder_layers({f"layers.{index}.mlp.gate_proj.weight":None for index in range(36)}),36)
+        self.assertEqual(saved_encoder_layers({f"model.layers.{index}.self_attn.q_proj.weight":None for index in range(36)}),36)
+        with self.assertRaises(ValueError):
+            saved_encoder_layers({"layers.0.norm.weight":None,"layers.2.norm.weight":None})
+        with self.assertRaises(ValueError):
+            saved_encoder_layers({"norm.weight":None})
 
 
 if __name__ == "__main__":

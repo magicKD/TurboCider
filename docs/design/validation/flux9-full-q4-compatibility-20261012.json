@@ -1,0 +1,41 @@
+{
+  "schema": "tc-flux9-full-q4-compatibility-v1",
+  "date": "2026-10-12",
+  "status": "complete_compatibility_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "retained_conversion_failure": {
+    "status": "failed",
+    "error": "saved learned tensor lacks a native source key: layers.28.input_layernorm.weight",
+    "converted_components": [
+      "transformer",
+      "text_encoder"
+    ],
+    "evidence": "outputs/flux9-matched-full-q4-g32-pack-v1-20261012/conversion.json",
+    "sha256": "435ac51af476675a165c77f78806c3f768bddd2bf69208985f28ebd70408d35a",
+    "reason": "Saved keys lacked the HF model. prefix; default28 mapped layers28-35 incorrectly. Rejected before encoder serialization. Fixed by actual contiguous36-layer detection; v2 separately complete."
+  },
+  "mlxserve": {
+    "schema": "tc-mlxserve-local-compatibility-v1",
+    "status": "startup_rejected",
+    "version": "[mem] MLX buffer-pool cap 4096 MB (was 62259 MB)\nmlx-serve 26.10.1\nmlx 0.32.3\nmlx-c 56b2d39fc831\nnax off (requires M5-class GPU)\nggml 0.23.0 (5266f24da)\nllama.cpp b10809\ngguf 3\nds4 unknown\n",
+    "binary_sha256": "46d017b5f6e49890e654dbefd2b750eda44b627a20f4ec7a01015a4d0d8ea1e0",
+    "model_layout": "derived FLUX9B DiT+encoder linear Q4/g32; BF16 embedding/VAE; same saved mflux tensor payload",
+    "modality": "image",
+    "qualification_passed": false,
+    "latency_comparison_valid": false,
+    "requests": [],
+    "scope": "owned server over loopback; explicitly derived local precision/layout; original source unchanged; no latency denominator",
+    "derived_layout": true,
+    "startup_seconds": 0.2609758749604225,
+    "exit_code": 1,
+    "server_terminal": true,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "779f6220aabfe2b00dfd0185db2938ebbb8d5e9f1914465d63a32c75e738ff38",
+    "evidence": "outputs/mlxserve-flux9-full-q4-g32-probe-v1-20261012/summary.json",
+    "sha256": "20a49838dce891b54889099fedf1a8c03880eefa4477a117f1bef5dda9583468",
+    "rejection": "Pinned26.10.1 loads902 encoder tensors and correct4096/36/32/8/12288 geometry, then requires embed_tokens.scales absent in the matched dense-BF16 embedding recipe. No generation/latency denominator."
+  },
+  "matched_evidence": "docs/design/validation/flux9-matched-full-q4-current-20261012.json",
+  "scope": "Derived same-payload g32 linear-only format, not original-format rejection or general mlx-serve capability; source and reference code unchanged; alternative compatible formats still pending."
+}

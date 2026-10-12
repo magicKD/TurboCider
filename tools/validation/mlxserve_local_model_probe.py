@@ -58,6 +58,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--layout-label", default="original local FLUX9B BF16 diffusers shards")
     parser.add_argument("--modality", choices=("image", "video"), default="image")
+    parser.add_argument("--derived-layout",action="store_true",help="explicit local derived precision/layout, not an original-format claim")
     args = parser.parse_args()
     binary, model = args.binary.resolve(strict=True), args.model.resolve(strict=True)
     if args.output.exists():
@@ -72,7 +73,9 @@ def main():
     report = dict(schema="tc-mlxserve-local-compatibility-v1", status="running", version=version,
                   binary_sha256=sha256_file(binary), model_layout=args.layout_label, modality=args.modality,
                   qualification_passed=False, latency_comparison_valid=False, requests=[],
-                  scope="owned server over loopback; original unmodified model; no precision/layout conversion")
+                  scope="owned server over loopback; explicitly derived local precision/layout; original source unchanged; no latency denominator" if args.derived_layout else
+                        "owned server over loopback; original unmodified model; no precision/layout conversion",
+                  derived_layout=args.derived_layout)
     start = time.perf_counter()
     with (args.output / "stdout.txt").open("x") as out, (args.output / "stderr.txt").open("x") as err:
         process = subprocess.Popen(command, stdout=out, stderr=err, env=benchmark_environment(), start_new_session=True)

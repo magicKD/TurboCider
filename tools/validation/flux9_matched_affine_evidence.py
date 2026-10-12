@@ -29,6 +29,9 @@ def cohort(data):
         if trial["index"] != index or trial["route"] != ORDER[index]:
             raise ValueError("actual measured route order differs")
         validate_report(trial["report"],trial["route"])
+        declared = trial["report"].get("quantized_components",["transformer"] if trial["route"].endswith("q4") else [])
+        if declared != (data["conversion"]["converted_components"] if trial["route"].endswith("q4") else []):
+            raise ValueError("actual declared quantized components differ from the verified conversion")
     for route in dict.fromkeys(ORDER):
         trials = [trial for trial in data["trials"] if trial["route"] == route]
         samples = [row["request_wall_including_export"] for trial in trials for row in trial["report"]["runs"][1:3]]

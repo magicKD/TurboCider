@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -39,9 +40,11 @@ def tensor_storage_plan(name, tensor, bits, component):
     return dict(payload_bytes=size,quantized=quantized,excluded=False)
 
 
-def storage_plan(model_root, components, bits):
+def storage_plan(model_root, components, bits, reused_components=()):
     if components not in (("transformer",), ("transformer","text_encoder")):
         raise ValueError("known bounded converted component set required")
+    if reused_components not in ((),("transformer",)) or set(reused_components)-set(components):
+        raise ValueError("only a verified complete DiT payload may be reused")
     result = dict(bits=bits,group_size=32,components={},reserve_bytes=2<<30,
                   policy="header-derived complete payload, largest one-tensor serialization, two CoW headers and conservative allocation slack; originals never deleted")
     for component in components:
@@ -69,8 +72,11 @@ def storage_plan(model_root, components, bits):
         result["components"][component] = dict(payload_bytes=total,largest_temporary_bytes=largest,
             source_tensors=count,quantized_linears=quantized,header_and_allocation_slack_bytes=16<<20)
     result["estimated_retained_bytes"] = sum(row["payload_bytes"]+row["header_and_allocation_slack_bytes"] for row in result["components"].values())
-    result["largest_temporary_bytes"] = max(row["largest_temporary_bytes"] for row in result["components"].values())
-    result["required_free_bytes"] = result["estimated_retained_bytes"]+result["largest_temporary_bytes"]+result["reserve_bytes"]
+    result["reused_components"] = list(reused_components)
+    result["new_allocation_estimate_bytes"] = sum((0 if name in reused_components else row["payload_bytes"])+row["header_and_allocation_slack_bytes"]
+        for name,row in result["components"].items())
+    result["largest_temporary_bytes"] = max(row["largest_temporary_bytes"] for name,row in result["components"].items() if name not in reused_components)
+    result["required_free_bytes"] = result["new_allocation_estimate_bytes"]+result["largest_temporary_bytes"]+result["reserve_bytes"]
     return result
 
 
@@ -94,6 +100,36 @@ def mirrored_header(header, inverse):
                 raise ValueError("native layout key collision")
             result[target] = value
     return result
+
+
+def serializable_parameters(arrays,inverse,component):
+    result,excluded = {},[]
+    for name,value in arrays.items():
+        # Generated from the unchanged original config, not a learned tensor.
+        if component == "text_encoder" and name == "rotary_emb.inv_freq":
+            excluded.append(name)
+            continue
+        native_key(name,inverse)  # Reject every other missing source mapping.
+        result[name] = value
+    return result,excluded
+
+
+def saved_encoder_layers(parameters):
+    indices = {int(match.group(1)) for key in parameters if (match := re.match(r"^(?:model\.)?layers\.(\d+)\.",key))}
+    if not indices or indices != set(range(max(indices)+1)):
+        raise ValueError("complete contiguous actual encoder layer names required; no28-layer fallback")
+    return len(indices)
+
+
+def clone_unchanged(source,destination):
+    library = ctypes.CDLL("/usr/lib/libSystem.B.dylib",use_errno=True)
+    clone = library.clonefile
+    clone.argtypes,clone.restype = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_int],ctypes.c_int
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    if clone(str(source).encode(),str(destination).encode(),0):
+        code = ctypes.get_errno()
+        raise OSError(code,os.strerror(code),str(destination))
+    destination.chmod(0o400)
 
 
 def stream_component(arrays, destination, inverse, mx, bits):
@@ -178,10 +214,21 @@ def main():
     parser.add_argument("--components", choices=("all","transformer"), default="all",
                         help="DiT-only keeps original BF16 encoder/VAE; not a full-model quantized recipe")
     parser.add_argument("--plan-only", action="store_true", help="header-only exact storage preflight; no model load or output creation")
+    parser.add_argument("--reuse-dit-pack",type=Path,help="verified DiT-only same-bit pack; clone both unchanged layouts and quantize only the encoder")
     args = parser.parse_args()
     model_root, output = args.model.resolve(strict=True), args.output.absolute()
     components = ("transformer","text_encoder") if args.components == "all" else ("transformer",)
-    plan = storage_plan(model_root,components,args.bits)
+    reused = None
+    if args.reuse_dit_pack:
+        if components != ("transformer","text_encoder"):
+            parser.error("DiT reuse applies only to the complete encoder+DiT linear recipe")
+        args.reuse_dit_pack = args.reuse_dit_pack.resolve(strict=True)
+        reused = json.loads((args.reuse_dit_pack / "conversion.json").read_text())
+        if (reused.get("status") != "complete_conversion_only" or reused.get("bits") != args.bits or
+                reused.get("group_size") != 32 or reused.get("converted_components") != ["transformer"] or
+                reused["components"]["transformer"].get("full_compressed_payload_equal") is not True):
+            parser.error("verified complete same-bit/g32 DiT-only pack required")
+    plan = storage_plan(model_root,components,args.bits,("transformer",) if reused else ())
     free = shutil.disk_usage(ROOT).free
     if args.plan_only:
         print(json.dumps(dict(storage=plan,free_bytes=free,fits=free >= plan["required_free_bytes"]),indent=2))
@@ -204,25 +251,49 @@ def main():
     sources = sorted([*model_root.rglob("*.safetensors"), *model_root.rglob("*.json"), *model_root.rglob("*.jinja")])
     identities = {str(path): generation(path) for path in sources}
     hashes = registered_hashes(sources,ROOT / "outputs/benchmark-source-registrations/flux9-bf16.json")
+    if reused:
+        if any(hashes.get(name) != digest for name,digest in reused["source_sha256"].items()):
+            raise ValueError("reused DiT pack must bind the exact unchanged original model")
+        paths = [args.reuse_dit_pack / layout / "transformer/0.safetensors" for layout in ("native","mflux")]
+        reuse_hashes = registered_hashes(paths,ROOT / "outputs/benchmark-source-registrations/flux9-bf16.json")
+        for layout,path in zip(("native","mflux"),paths):
+            if reuse_hashes[str(path)] != reused["components"]["transformer"][layout+"_sha256"]:
+                raise ValueError("reused DiT artifact changed after complete payload comparison")
+            identities[str(path)] = generation(path)
     output.mkdir(parents=True)
     report = dict(schema="tc-flux9-matched-affine-pack-v1", status="preparing", bits=args.bits, group_size=32,
         source_sha256=hashes, source_generations=identities, components={},converted_components=list(components),
         storage_preflight=plan,source_policy="first original generation SHA then durable metadata reuse; original sources read-only",
-        scope="same g32 compressed planes for native and configured mflux; stock defaultg64 is separately measured; original embeddings/VAE unchanged; unconverted encoder remains BF16")
+        scope="same g32 compressed planes for native and configured mflux; stock defaultg64 is separately measured; original embeddings/VAE unchanged; " +
+              ("DiT and encoder eligible linears quantized" if "text_encoder" in components else "unconverted encoder remains BF16"))
     target = output / "conversion.json"
     write_json(target, report)
     try:
+        if reused:
+            record = dict(reused["components"]["transformer"],reused=True,reuse_conversion_sha256=sha256_file(args.reuse_dit_pack / "conversion.json"))
+            for layout in ("native","mflux"):
+                source = args.reuse_dit_pack / layout / "transformer/0.safetensors"
+                destination = output / layout / "transformer/0.safetensors"
+                clone_unchanged(source,destination)
+                if sha256_file(destination) != record[layout+"_sha256"]:
+                    raise ValueError("complete reused DiT CoW clone differs from source")
+            report["components"]["transformer"] = record
+            write_json(target,report)
         model = Flux2Klein(model_path=str(model_root), model_config=ModelConfig.flux2_klein_9b(), quantize=None)
         definitions = Flux2KleinWeightDefinition.get_components()
         report["required_coverage"] = inspect_reference_coverage(model_root, Flux2KleinWeightDefinition,
             dict(vae=model.vae, transformer=model.transformer, text_encoder=model.text_encoder))
         for name in components:
+            if name == "transformer" and reused:
+                continue
             module = getattr(model, name)
             nn.quantize(module, group_size=32, bits=args.bits,
                         class_predicate=lambda _, layer: isinstance(layer, nn.Linear))
             component = next(value for value in definitions if value.name == name)
             parameter_names = {key: None for key, _ in tree_flatten(module.parameters())}
-            layers = WeightMapper._detect_num_layers(parameter_names)
+            layers = saved_encoder_layers(parameter_names) if name == "text_encoder" else 0
+            if name == "text_encoder" and layers != len(module.layers):
+                raise ValueError("all actual conditioning encoder layers must be serialized")
             flat = WeightMapper._build_flat_mapping(component.mapping_getter(), 24, layers)
             inverse = {}
             for source, mappings in flat.items():
@@ -232,14 +303,15 @@ def main():
                     inverse[mapped] = source
             file = output / "mflux" / name / "0.safetensors"
             native_file = output / "native" / name / "0.safetensors"
-            header, native, capacity = stream_component(dict(tree_flatten(module.parameters())), file, inverse, mx, args.bits)
+            arrays,excluded = serializable_parameters(dict(tree_flatten(module.parameters())),inverse,name)
+            header, native, capacity = stream_component(arrays, file, inverse, mx, args.bits)
             actual_bytes = file.stat().st_size
             estimated = plan["components"][name]
             if actual_bytes > estimated["payload_bytes"] + estimated["header_and_allocation_slack_bytes"]:
                 raise ValueError("actual converted component exceeds header-derived storage preflight")
             report["components"][name] = clone_native(file, native_file, native, capacity)
             report["components"][name].update(bytes=actual_bytes,stored_tensors=len(header)-1,
-                quantized_linears=sum(key.endswith(".scales") for key in header))
+                quantized_linears=sum(key.endswith(".scales") for key in header),excluded_architecture_constants=excluded)
             write_json(target, report)
         for root in (output / "native", output / "mflux"):
             (root / "tokenizer").symlink_to(model_root / "tokenizer", target_is_directory=True)

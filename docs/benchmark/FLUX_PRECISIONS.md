@@ -103,7 +103,10 @@ MAE10.771/255，近似图像漂移不当成native/reference parity。
 同源匹配g32 DiT-only Q4已完成真实大模型转换/匹配运行：native BF16/Q4
 7.922/7.987s、mflux BF16/Q4 7.380/8.031s，32PNG/8memory完整；Q4
 未省时，native peak降至18.16GB。[完整同payload对照](FLUX9_MATCHED_Q4.md)。
-全组件linear-only/dense embedding与其它bits仍待补；预算分别预检，不删除
+随后encoder+DiT所有eligible linears/dense embedding的Q4/g32也完整
+匹配：native8.005/reference8.043s、native peak11.99GB；encoder36层/
+902参数全覆盖。[完整线性Q4对照与布局边界](FLUX9_FULL_Q4.md)。
+其它bits与更兼容外部格式仍待补；预算分别预检，不删除
 原模型腾空间。实际只读stock loader已支持由压缩planes形状恢复g32；
 匹配runner须验实际bits/group/embedding与完整source coverage，不只
 相信metadata，不需要为此修改参考源码。
