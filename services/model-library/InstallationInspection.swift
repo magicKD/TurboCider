@@ -112,6 +112,19 @@ private struct InstallationProbe {
             report.referencedWeightBytes += UInt64(value.st_size)
         } catch { issue("invalid_weights", relative, error.localizedDescription) }
     }
+    private mutating func qwenComponent(_ bf16: String, _ gguf: String) {
+        // Preserve native component_source priority: a present BF16 file wins.
+        if let value = info(bf16), (value.st_mode & S_IFMT) == S_IFREG { weights(bf16); return }
+        guard exists(gguf) else { weights(bf16); return }
+        do {
+            try LibraryComponents.validateQwen(url(gguf), kind: gguf.hasPrefix("diffusion_models/") ? "dit" : "encoder")
+            guard let value = info(gguf) else { throw LibraryFailure(message: "GGUF 权重不可访问。") }
+            report.checkedWeightFiles += 1; report.referencedWeightBytes += UInt64(value.st_size)
+            if report.preparation.isEmpty {
+                report.preparation.append("Qwen Q4_K_M GGUF 是实验性近似文生图组件：需显式允许近似，当前不支持图片编辑、LoRA 或编码器 ANE；文件检查不代表推理或画质通过。其它 GGUF 精度尚未接入。")
+            }
+        } catch { issue("invalid_weights", gguf, error.localizedDescription) }
+    }
     private mutating func component(_ relative: String, mlxDirectory: Bool = false, allowSingleLink: Bool = false) {
         do {
             guard let value = info(relative), (value.st_mode & S_IFMT) == S_IFDIR else {
@@ -155,9 +168,9 @@ private struct InstallationProbe {
         switch report.modelID {
         case "qwen-image-2.1":
             json("processor/tokenizer.json")
-            for path in ["diffusion_models/qwen_image_2.1_bf16.safetensors", "text_encoders/qwen3vl_8b_bf16.safetensors", "vae/qwen_image_2.1_vae_bf16.safetensors"] {
-                weights(path)
-            }
+            qwenComponent("diffusion_models/qwen_image_2.1_bf16.safetensors", "diffusion_models/qwen-image-2.1-Q4_K_M.gguf")
+            qwenComponent("text_encoders/qwen3vl_8b_bf16.safetensors", "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf")
+            weights("vae/qwen_image_2.1_vae_bf16.safetensors")
         case "z-image-turbo":
             json("tokenizer/tokenizer.json")
             let comfy = ZImageVariant.all.filter(\.runnable).map(\.path).first(where: { exists($0) }) ?? ZImageVariant.all[0].path

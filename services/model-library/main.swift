@@ -39,6 +39,8 @@ private struct Failure: Encodable { let ok = false; let error: String }
             turbocider library import CONFIG.json [--root DIRECTORY]
             turbocider library shared-text MODEL_DIRECTORY
             turbocider library inspect MODEL_ID MODEL_DIRECTORY
+            turbocider library components MODEL_ID MODEL_DIRECTORY
+            turbocider library compose COMPONENTS.json [--root DIRECTORY]
 
             REQUEST.json: {"modelID":"z-image-turbo","repository":"owner/repo",
               "provider":"modelscope","revision":"master","include":[],"components":{}}
@@ -46,6 +48,12 @@ private struct Failure: Encodable { let ok = false; let error: String }
             for gated repositories. plan reads metadata only; download installs files.
             remove forgets a registration and retains all model files.
             App and CLI share TURBOCIDER_MODEL_LIBRARY or the default Models directory.
+            COMPONENTS.json: {"modelID":"qwen-image-2.1","basePath":"/existing/model",
+              "components":{"encoder":"/existing/encoder.safetensors","dit":"/existing/dit.safetensors"}}
+            compose inherits omitted components and tokenizer from basePath, checks
+            architecture/required files, and publishes a new linked installation.
+            It never copies weights or changes the source installation. Runtime
+            qualification (including GGUF limits) still applies to generation.
             """)
             return
         }
@@ -88,6 +96,13 @@ private struct Failure: Encodable { let ok = false; let error: String }
             emit(Success(result: try SharedTextComponents.inspect(URL(fileURLWithPath: args[1]))))
         case "inspect" where args.count == 3:
             emit(Success(result: InstallationInspection.inspect(modelID: args[1], root: URL(fileURLWithPath: args[2]))))
+        case "components" where args.count == 3:
+            emit(Success(result: try LibraryComponents.inventory(modelID: args[1], root: URL(fileURLWithPath: args[2]))))
+        case "compose" where args.count == 2:
+            let file = URL(fileURLWithPath: args[1])
+            guard let size = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]).fileSize,
+                  size > 0, size <= 1024 * 1024 else { throw LibraryFailure(message: "组件配置文件必须为 1 MiB 以内的 JSON。") }
+            emit(Success(result: try LibraryComponents.compose(LibraryCompositionRequest.decode(Data(contentsOf: file)), store: store)))
         case "import" where args.count == 2:
             let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: args[1]))) as? [String: Any]
             guard let paths = raw?["modelPaths"] as? [String: String] else { throw LibraryFailure(message: "Configuration must contain modelPaths.") }

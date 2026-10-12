@@ -73,6 +73,48 @@ enum LibraryTool {
     @Published private(set) var event: LibraryDownloadEvent?
     @Published var message: String?
     @Published private(set) var inspections: [String: InstallationInspection] = [:]
+    @Published private(set) var componentInventories: [String: LibraryComponentInventory] = [:]
+    @Published private(set) var componentErrors: [String: String] = [:]
+    func components(modelID: String, path: String) -> LibraryComponentInventory? { componentInventories[modelID + "\n" + path] }
+    func componentError(modelID: String, path: String) -> String? { componentErrors[modelID + "\n" + path] }
+    func inspectComponents(modelID: String, path: String, force: Bool = false) {
+        let key = modelID + "\n" + path
+        guard !path.isEmpty, !busy, force || (componentInventories[key] == nil && componentErrors[key] == nil) else { return }
+        perform { [self] in
+            do {
+                let data = try await metadataRunner(["components", modelID, path, "--root", root])
+                let inventory = try LibraryTool.decode(LibraryComponentInventory.self, from: data)
+                guard inventory.modelID == modelID, inventory.path == URL(fileURLWithPath: path).standardizedFileURL.path else {
+                    throw NativeFailure(message: "组件检查返回了其他模型或路径，请重试。")
+                }
+                try Task.checkCancellation()
+                componentInventories[key] = inventory; componentErrors.removeValue(forKey: key)
+            } catch {
+                componentErrors[key] = Task.isCancelled || error is CancellationError ? "组件检查已取消；可手动刷新重试。" : error.localizedDescription
+                throw error
+            }
+        }
+    }
+    func composeComponents(_ request: LibraryCompositionRequest, studio: StudioState, completion: @escaping () -> Void) {
+        guard !studio.imageInputsBusy else { return }
+        let workspace = studio.workspaceResetID
+        let originalModelID = studio.draft.modelID
+        let originalPath = studio.draft.modelPaths[request.modelID]
+        perform { [self] in
+            let response = try await LibraryTool.run(["compose", "{request}", "--root", root], payload: JSONEncoder().encode(request))
+            let item = try LibraryTool.decode(LibraryInstallation.self, from: response)
+            try Task.checkCancellation()
+            try await readIndex()
+            if studio.workspaceResetID == workspace, studio.draft.modelID == originalModelID,
+               studio.draft.modelPaths[request.modelID] == originalPath, !studio.imageInputsBusy {
+                studio.selectInstallation(modelID: item.modelID, path: item.path)
+                message = "组件已检查并保存为独立安装；原安装与权重保留。"
+            } else {
+                message = "组件组合已保存；创作上下文已变化，可在本机模型中选择此安装。"
+            }
+            completion()
+        }
+    }
     private var operation: Task<Void, Never>?
     private weak var compilationStore: NativeJobStore?
     private let metadataRunner: MetadataRunner
@@ -198,8 +240,7 @@ enum LibraryTool {
                     if let path = zImagePath,
                        let split = ZImageInstallation.splitDirectory(URL(fileURLWithPath: path)) {
                         try Task.checkCancellation()
-                        let files = (try? FileManager.default.contentsOfDirectory(at: split.appendingPathComponent("loras"), includingPropertiesForKeys: nil)) ?? []
-                        for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "safetensors" {
+                        for file in try Self.discoverLoRAFiles(in: split) {
                             result.append(("z-image-turbo", file.path))
                         }
                     }
@@ -220,7 +261,13 @@ enum LibraryTool {
             }
             try await readIndex()
             // Keep explicit draft choices. New installations fill missing entries only.
-            for item in installations { studio.applyLibraryInstallation(item, replace: false) }
+            for item in installations {
+                // Downloading a component or an unsupported GGUF is not activation.
+                // Existing explicit paths remain available; new managed downloads
+                // fill missing draft paths only after a complete file inspection.
+                if item.repository != nil && inspection(modelID: item.modelID, path: item.path)?.status != "files_present" { continue }
+                studio.applyLibraryInstallation(item, replace: false)
+            }
         }
     }
     func configure(root url: URL, studio: StudioState) {
@@ -309,19 +356,27 @@ enum LibraryTool {
             try await readIndex()
         }
     }
+    /// Both common spellings are supported; scan known local folders only.
+    nonisolated static func discoverLoRAFiles(in root: URL) throws -> [URL] {
+        var paths = Set<String>()
+        var result: [URL] = []
+        for parent in [root, root.appendingPathComponent("split_files"), root.appendingPathComponent("models")] {
+            for folder in ["lora", "loras"] {
+                try Task.checkCancellation()
+                let files = (try? FileManager.default.contentsOfDirectory(at: parent.appendingPathComponent(folder), includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+                for file in files where file.pathExtension == "safetensors" {
+                    guard (try? file.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+                    let identity = file.standardizedFileURL.resolvingSymlinksInPath().path
+                    if paths.insert(identity).inserted { result.append(file) }
+                }
+            }
+        }
+        return result.sorted { $0.path < $1.path }
+    }
     func discoverLoRAs(modelID: String, path: String) {
         perform { [self] in
             let base = URL(fileURLWithPath: path)
-            let directories = [base.appendingPathComponent("loras"), base.appendingPathComponent("split_files/loras"), base.appendingPathComponent("models/loras")]
-            let files = try await Self.fileIO {
-                var result: [URL] = []
-                for directory in directories {
-                    try Task.checkCancellation()
-                    let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-                    result.append(contentsOf: files.filter { $0.pathExtension == "safetensors" }.sorted { $0.path < $1.path })
-                }
-                return result
-            }
+            let files = try await Self.fileIO { try Self.discoverLoRAFiles(in: base) }
             for file in files {
                 _ = try await LibraryTool.run(["register-lora", modelID, file.path, "--root", root])
             }
@@ -398,11 +453,11 @@ enum LibraryTool {
             }
             let result = try LibraryTool.decode(LibraryInstallation.self, from: response)
             try await readIndex()
-            studio.draft.modelPaths[result.modelID] = result.path
             message = "所选文件已下载并登记；正在检查执行器所需组件。"
             do {
                 let report = try await readInspection(modelID: result.modelID, path: result.path)
-                message = "所选文件已下载并登记。\(report.title)。在模型页查看检查详情。"
+                if report.status == "files_present" { studio.applyLibraryInstallation(result, replace: false) }
+                message = "所选文件已下载并登记。\(report.title)。\(report.status == "files_present" ? "可在本机模型中选择此安装。" : "补齐兼容组件后再用于创作。")"
             } catch { message = "所选文件已下载并登记，安装检查未完成：\(error.localizedDescription)" }
         }
     }

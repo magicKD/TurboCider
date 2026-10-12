@@ -227,6 +227,10 @@ test-app:
 	@build/native/turbocider-run-insights-tests
 	@build/native/turbocider-tensor-cache-tests
 test-library:
+	@build/native/turbocider-component-tests
+	@build/native/turbocider-model-hub-tests
+	@build/native/turbocider-lora-management-tests
+	@build/native/turbocider-model-library-tests
 	@build/native/turbocider-library-store-tests
 	@build/native/turbocider-installation-tests
 	@build/native/turbocider-library-tool-tests

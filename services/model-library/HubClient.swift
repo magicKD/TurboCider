@@ -15,6 +15,9 @@ struct HubFile: Codable, Sendable {
     var revision: String
     /// Set by a multi-repository installation plan, never accepted from a hub.
     var sourceRepository: String? = nil
+    /// Local installation layout only. The original hub path/hash remain intact.
+    var destinationPath: String? = nil
+    var installationPath: String { destinationPath ?? path }
 }
 
 struct HubSnapshot: Codable, Sendable {

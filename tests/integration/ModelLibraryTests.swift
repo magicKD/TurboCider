@@ -8,6 +8,20 @@ import Foundation
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tc-model-switch-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         try await ModelLibraryRegistrationRegression.run(directory: directory)
+        let scanRoot = directory.appendingPathComponent("scan-fixture")
+        for (index, folder) in ["lora", "loras", "split_files/lora", "models/loras"].enumerated() {
+            let path = scanRoot.appendingPathComponent(folder)
+            try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+            try Data("tiny adapter fixture".utf8).write(to: path.appendingPathComponent("adapter-\(index).safetensors"))
+            try Data().write(to: path.appendingPathComponent("ignore.txt"))
+        }
+        try FileManager.default.createDirectory(at: scanRoot.appendingPathComponent("lora/not-a-file.safetensors"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: scanRoot.appendingPathComponent("loras/duplicate.safetensors"), withDestinationURL: scanRoot.appendingPathComponent("lora/adapter-0.safetensors"))
+        let linkedSource = scanRoot.appendingPathComponent("external-adapter.safetensors")
+        try Data([1]).write(to: linkedSource)
+        try FileManager.default.createSymbolicLink(at: scanRoot.appendingPathComponent("lora/linked.safetensors"), withDestinationURL: linkedSource)
+        let scanned = try ModelLibraryController.discoverLoRAFiles(in: scanRoot)
+        try check(scanned.count == 5, "Local lora/loras scan missed a folder or linked file, duplicated a link, or accepted non-files")
         let studio = StudioState(directory: directory)
         studio.selectModel("z-image-turbo")
         studio.draft.loras = [StudioLoRA(path: "/fixture/z.safetensors", strength: 0.6)]
@@ -93,6 +107,8 @@ import Foundation
             }
             try Task.checkCancellation()
             switch arguments[0] {
+            case "components":
+                return try response(LibraryComponentInventory(modelID: arguments[1], path: arguments[2], supported: true, detail: "fixture", components: []))
             case "inspect":
                 if failInspection { throw NativeFailure(message: "fixture inspection failed") }
                 return try response(InstallationInspection(modelID: arguments[1], path: arguments[2]))
@@ -204,6 +220,22 @@ import Foundation
         cancelledController.registerLoRA(b, modelID: "qwen-image-2.1")
         try await wait("retry after cancellation") { !cancelledController.busy }
         try check(Set(cancelledController.loras.map(\.path)) == [b.path, c.path], "New registration after cancellation did not recover")
+        // The view retries uncached component inspection when busy becomes false.
+        // A cancelled inspection must remember its state until a manual retry.
+        let componentHelper = Helper(); componentHelper.holdCommand = "components"
+        defer { componentHelper.release() }
+        let componentController = ModelLibraryController(root: root, metadataRunner: componentHelper.run)
+        componentController.inspectComponents(modelID: "qwen-image-2.1", path: "/fixture/qwen")
+        try await wait("held component inspection") { componentHelper.isHeld }
+        componentController.cancel(); componentHelper.release()
+        try await wait("cancelled component inspection") { !componentController.busy }
+        componentController.inspectComponents(modelID: "qwen-image-2.1", path: "/fixture/qwen")
+        try check(!componentController.busy && componentHelper.calls.count == 1 && componentController.componentError(modelID: "qwen-image-2.1", path: "/fixture/qwen") != nil,
+                  "Cancelled component inspection was immediately retried by the view")
+        componentController.inspectComponents(modelID: "qwen-image-2.1", path: "/fixture/qwen", force: true)
+        try await wait("manual component retry") { !componentController.busy }
+        try check(componentController.components(modelID: "qwen-image-2.1", path: "/fixture/qwen")?.supported == true && componentController.componentError(modelID: "qwen-image-2.1", path: "/fixture/qwen") == nil,
+                  "Manual component retry did not clear cancellation state")
         print("PASS: queued LoRA registration FIFO, duplicate/model identity, failure/index visibility, root switching and cancellation")
     }
 }
