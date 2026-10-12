@@ -1,6 +1,7 @@
 #include "ane_memory.hpp"
 
 #if defined(__APPLE__)
+#include <cstddef>
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #endif
@@ -27,7 +28,12 @@ MemoryObservation observe_runtime_memory(uint64_t mlx_active_bytes) {
     const auto stats_status = host_statistics64(host, HOST_VM_INFO64,
                                                reinterpret_cast<host_info64_t>(&statistics), &count);
     mach_port_deallocate(mach_task_self(), host);
-    if (page_status != KERN_SUCCESS || stats_status != KERN_SUCCESS || count != HOST_VM_INFO64_COUNT)
+    // Older kernels can return a shorter structure than the build SDK defines.
+    // Only require the fields consumed below, measured in Mach integer units.
+    constexpr auto required_count =
+        (offsetof(vm_statistics64_data_t, inactive_count) + sizeof(statistics.inactive_count)) /
+        sizeof(integer_t);
+    if (page_status != KERN_SUCCESS || stats_status != KERN_SUCCESS || count < required_count)
         return result;
     const auto free = free_page_bytes(statistics.free_count, page_size);
     const auto inactive = free_page_bytes(statistics.inactive_count, page_size);
