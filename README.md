@@ -3,68 +3,58 @@
 </p>
 
 <p align="center"><strong>Native inference. More of your Apple silicon.</strong></p>
-<p align="center">SwiftUI Studio · Native CLI · C / Swift SDK · Local API</p>
-<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/public/GETTING_STARTED.md">Getting started</a> · <a href="docs/public/PERFORMANCE.md">Benchmarks</a></p>
+<p align="center">SwiftUI Studio · CLI · C / Swift SDK · Local HTTP API · ComfyUI</p>
+<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/public/GETTING_STARTED.md">Getting started</a> · <a href="docs/benchmark/PERFORMANCE_REPORT.md">Benchmarks</a></p>
 
-TurboCider is a local multimodal inference engine for Apple silicon. It turns unified memory into an opportunity for **heterogeneous execution: the CPU orchestrates native work while GPU and ANE process selected model partitions in parallel**. Shared output buffers, compiled GPU graphs and reusable sessions reduce copies and repeated preparation in compute-intensive image inference.
+TurboCider is a local multimodal inference engine for Apple silicon. Create images and videos in a native macOS App, automate jobs through the API, or connect it to ComfyUI workflows. Models and generated media stay on your Mac.
 
-Create images and videos in a native SwiftUI studio, automate jobs with the CLI, or embed the same runtime through C / Swift bindings and a local task API. Models and generated media stay on your Mac.
-
-## App preview
-
-Qwen-Image-2.1 native App/CLI support and validation boundaries:
-[Qwen-Image-2.1 guide](docs/public/QWEN_IMAGE_21.md).
-
-![TurboCider macOS App](assets/app/app.png)
-
-Studio also supports [2× / 4× image upscaling](docs/public/IMAGE_UPSCALING.md) with a local Real-ESRGAN x2plus / x4plus Core ML model: upscale an existing image or automatically upscale after generation, keeping the original. The App runs this path entirely in Swift/Core ML, without Python. Z-Image Turbo defaults to 8 steps.
-
-
-
-## What makes it different
-
-- **Hardware-aware parallelism:** Metal / MLX on the GPU and Core ML FFN partitions eligible for the Neural Engine, coordinated by the CPU.
-- **Measured performance and fidelity:** FLUX.2 Klein 4B at 512×512, 4 steps on M4 Max 64 GB achieved **1.39× throughput and 28% lower generation time**, with GPU-to-hybrid pixel cosine similarity **0.999840**.
-- **Reuse across requests:** resident sessions, prompt encoding caches, compiled graphs and Core ML artifact caches. Z-Image's flexible ANE partitions support up to 512 encoded text tokens at 512×512.
-- **One runtime:** native App, CLI, C / Swift SDK and a local Unix socket job service share execution contracts.
-- **Explicit capabilities:** image generation, image editing and video generation are offered only where the executor supports them. LoRA and GPU / ANE controls remain explicit.
-- **Shared model management:** App / CLI registrations, ModelScope / Hugging Face download previews and compatible text-component reuse. Start the local API from the App and manage regenerable text-tensor retention.
-
-The INT8 ANE partitions benchmarked below are high-fidelity approximations, not bit-exact inference. The optional runtime-weight route stages FP16 weights; it is not INT8 ANE compute. Gains depend on hardware, model and shape. GPU is the default. Core ML compute-unit selection is not proof of ANE occupancy. These are reproducible workload results, not a universal SOTA claim. See the measurements below and [benchmark methodology](docs/public/PERFORMANCE.md).
-
-For current Qwen / Z-Image results, reusable base graphs with runtime LoRA,
-and which experiments remain optional, see the maintained
-[GPU/ANE acceleration status](docs/status/acceleration.md). Qwen six-step
-runtime LoRA has not established an end-to-end speedup over GPU.
+**Up to 3.40× faster complete image generation, with 70.6% less time than the measured Unsloth/Metal backend.** Native Metal / MLX GPU inference and optional GPU + ANE execution put more of the same Mac to work.
 
 ## Performance highlights
 
-**More performance from the same Mac: 1.39× on M4 Max FLUX GPU → hybrid,
-1.34× versus the recorded ComfyUI Z-Image workload, and up to 1.64× in a
-historical M4 Pro FLUX snapshot.**
+Apple M4 Max · 64 GiB · 512×512. Recorded warm medians below cover complete generation, including text encoding, denoising and image decoding/output.
 
-Selected **warm request medians**, not the fastest individual run:
+| Model and workload | Reference backend | Reference time | TurboCider GPU + ANE | Speedup |
+|---|---|---:|---:|---:|
+| Qwen-Image-2.1 · Q4_K_M · 40 steps | Unsloth / sd-server Metal | 125.365 s | **36.870 s** | **3.40×** |
+| Z-Image Turbo · BF16 source · 8 steps | Unsloth Metal, GPU text encoder | 18.735 s | **5.955 s** | **3.15×** |
+| Z-Image Turbo · BF16 source · 8 steps | mflux 0.22 BF16 | 7.971 s | **5.955 s** | **1.34×** |
 
-| Workload | Baseline → TurboCider | Speedup |
-|---|---|---:|
-| FLUX 4B · M4 Pro 48 GiB · 512² · 4 steps | Native GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×** |
-| FLUX 4B · M4 Max 64 GB · 512² · 4 steps | Native GPU 2.266 s → GPU + ANE **1.628 s** | **1.39×** |
-| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 steps | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×** |
+**GPU alone also delivers:** the same Z-Image cohort took **7.356 s, or 2.55× faster than Unsloth/Metal**. The comparison uses the faster measured Unsloth GPU text encoder configuration.
 
-The M4 Max FLUX hybrid result cuts request time by **28.2%**, with recorded
-GPU/hybrid PNG cosine similarity **0.999840**. Native Z-Image GPU alone took
-36.369 s; its hybrid route adds **1.21×** over that optimized GPU baseline.
+Results apply to the recorded versions, models and configurations; Unsloth refers to its pinned native Metal backend, excluding Desktop UI. Hybrid results require prepared, explicitly enabled experimental W8A8 ANE configurations (Private ANE for Qwen), with numerical approximation, startup and memory costs. GPU is the default. See the [full report](docs/benchmark/PERFORMANCE_REPORT.md) for conditions, quality checks, cold starts and individual samples.
 
-Results vary by device and workload. Warm timings exclude initial setup and compilation; detailed test conditions are linked below.
+## Features
 
-**LTX 2.5 pure GPU snapshot (September 13, 2026):** Apple M4 Max, 64 GB unified
-memory; 704×448, 97 frames (4.04 seconds), 24 FPS, 11 steps, audio off and text
-conditioning cache hits. App end-to-end generation time: **63.08 s text-to-video**,
-**62.35 s image-to-video**. These are existing single-run records, not medians;
-ANE and approximate acceleration were disabled, with staged weight release.
+- **Image and video creation:** text-to-image, image transforms, reference editing, text-to-video and image-to-video, according to each model's capabilities.
+- **LoRA and generation controls:** manage adapters, strengths, seeds, dimensions and steps, with supported runtime or in-memory merge strategies.
+- **Local API:** start an HTTP service from the App; discover models, validate requests, submit jobs, track progress, cancel and download results. A Unix socket service, Python HTTP client and C / Swift SDK are also available.
+- **ComfyUI / Comfy Desktop:** model, LoRA, generation, editing and native video request nodes. Feed generated images into standard preview, save and compositing nodes; TurboCider manages the weights without a second model installation in ComfyUI.
+- **Shared model library:** register existing local models, preview Hugging Face / ModelScope downloads and reuse compatible text components across App and CLI.
+- **Repeated jobs and memory management:** resident sessions, batches, prompt caches, compiled GPU graphs, and model-specific staged or streamed loading.
 
-[Performance and fidelity](docs/public/PERFORMANCE.md) ·
-[Public samples, conditions and comparison limits](docs/public/BENCHMARKS.md)
+## App preview
+
+![TurboCider macOS App](assets/app/app.png)
+
+## API and ComfyUI
+
+Open **Local API** in the App and click **Start**. The default endpoint is `http://127.0.0.1:8765`; the page includes curl and Python examples.
+
+```sh
+curl http://127.0.0.1:8765/v1/health
+curl http://127.0.0.1:8765/v1/catalog
+```
+
+Install the nodes into an existing ComfyUI installation, then restart ComfyUI:
+
+```sh
+python3 tools/comfyui/install.py /path/to/ComfyUI
+```
+
+Connect **Model (API) → Generate Image → Save Image**, using the App's HTTP URL in the Model node. Add **LoRA (API)** when needed. The integration composes at the image boundary; TurboCider owns sampling.
+
+[ComfyUI and HTTP guide](docs/public/COMFYUI.md) · [Chinese tutorial](docs/public/COMFYUI_TUTORIAL.zh-CN.md) · [Local job API](docs/public/LOCAL_API.md)
 
 ## Build and run
 
@@ -85,49 +75,29 @@ Choose image or video creation in the App; a compatible executor is selected aut
 
 For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`. `batch` reuses a session; `serve` exposes the local job API. See [getting started](docs/public/GETTING_STARTED.md) and the [request / SDK / API reference](docs/public/USAGE.md).
 
-For a compiled ANE manifest, `generate` and `batch` also accept a trailing
-`--ane-manifest MANIFEST.json`; the explicit profile stays independent of the
-default GPU and other models' ANE manifests. See the
-[measured Z-Image 512² W8A8 route](docs/public/Z_IMAGE_ANE.md) for its
-~1.31× warm-wall result and qualification limits.
-
 ## Model capabilities
 
-`turbocider models` reports the authoritative executable operations. Availability below describes the current runtime, not every upstream model feature.
+| Model | Main capabilities |
+|---|---|
+| Qwen-Image-2.1 | Text-to-image, multiple-reference editing and LoRA; selected six-step Viggle adapters |
+| FLUX.2 Klein 4B / 9B | Text-to-image, transforms, reference editing and LoRA; qualified hybrid profiles for 4B |
+| Z-Image Turbo | Text-to-image, LoRA and optional GPU / ANE execution |
+| MiniMax H3 Turbo | Video generation, keyframes and references; media tools required |
+| LTX 2.5 Distilled | Text-to-video, image-to-video and optional audio output; backend/configuration limits apply |
+| Wan 2.1 1.3B QAD | Native three-step video generation; offline-converted assets and verified premerged LoRA required |
 
-| Model | Output | Input | Notes |
-|---|---|---|---|
-| FLUX.2 Klein 4B / 9B | Image | Text; image transform; reference editing | 4B has qualified hybrid profiles; 9B performance coverage is incomplete |
-| Z-Image Turbo | Image | Text | Comfy / Diffusers layouts; in-memory LoRA; flexible ANE inputs |
-| MiniMax H3 Turbo | Video | Text; keyframes; references | Native Metal / MPS; artifact-gated ANE; media tools required |
-| LTX 2.5 Distilled | Video | Text, video-only | Image input and audio remain gated; staged residency |
-| Wan 2.1 1.3B QAD | Video | Native MLX / Core ML, 832×480, 3 steps | Offline-converted TAEHV; verified premerged LoRA only |
-
-Weights retain their upstream licenses. Large model files and generated outputs are not included in the repository.
+`turbocider models` and request `plan` report the executable capabilities. LoRA, input and acceleration options vary by model. See the [model and request reference](docs/public/USAGE.md#model-capabilities), [Qwen guide](docs/public/QWEN_IMAGE_21.md) and [GPU/ANE acceleration status](docs/status/acceleration.md).
 
 ## Project map
 
 | Directory | Responsibility |
 |---|---|
 | `native/` | Inference core, model executors, Metal / MLX / Core ML backends |
-| `apps/` | SwiftUI App and native CLI |
-| `services/` | Persistent local task service and model/cache management helper |
-| `bindings/` | C ABI and Swift SDK |
-| `profiles/`, `examples/` | Hardware policies and runnable request examples |
-| `tools/`, `tests/` | Setup, packaging, conversion, regression and benchmark tools |
-| `assets/branding/` | Turbo Drop artwork and reproducible App icon |
-| `docs/public/` | Self-contained English user guides and published benchmark evidence |
+| `apps/`, `services/` | SwiftUI App, CLI, local job service and model library |
+| `bindings/`, `integrations/comfyui/` | C / Swift SDK, Python HTTP client and ComfyUI nodes |
+| `tools/`, `tests/` | Builds, conversion, regression tests and benchmarks |
+| `docs/public/`, `docs/benchmark/` | User guides and verifiable performance records |
 
-[Documentation](docs/public/README.md) · [Benchmark evidence](docs/public/BENCHMARKS.md)
+[Documentation](docs/public/README.md) · [Model library](docs/public/MODEL_LIBRARY.md) · [Cache and memory](docs/public/CACHES.md)
 
-[Model library](docs/public/MODEL_LIBRARY.md) · [Local API](docs/public/LOCAL_API.md) · [Cache and memory](docs/public/CACHES.md)
-
-Original TurboCider code uses the MIT license. Third-party code and model
-weights retain their respective terms; retain the license and notices supplied
-with the source or package.
-
-[Native model capabilities, GGUF limits and LoRA](docs/public/USAGE.md#model-capabilities).
-
-### ComfyUI / Comfy Desktop
-
-[ComfyUI backend integration](docs/public/COMFYUI.md): use TurboCider model services over the local HTTP API without installing model weights in ComfyUI.
+Original TurboCider code uses the MIT license. Third-party code and model weights retain their respective terms. Large model files and generated outputs are not included in the repository.

@@ -3,59 +3,58 @@
 </p>
 
 <p align="center"><strong>原生推理，释放 Apple Silicon 的更多算力。</strong></p>
-<p align="center">SwiftUI 工作室 · 原生命令行 · C / Swift SDK · 本地 API</p>
-<p align="center"><strong>中文</strong> · <a href="README.md">English</a> · <a href="docs/public/GETTING_STARTED.md">快速开始</a> · <a href="docs/public/PERFORMANCE.md">性能测试</a></p>
+<p align="center">SwiftUI 工作室 · CLI · C / Swift SDK · 本地 HTTP API · ComfyUI</p>
+<p align="center"><strong>中文</strong> · <a href="README.md">English</a> · <a href="docs/public/GETTING_STARTED.md">快速开始</a> · <a href="docs/benchmark/PERFORMANCE_REPORT.md">性能评测</a></p>
 
-TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。它把统一内存架构变成实际的优化空间：**CPU 调度原生计算，GPU 与 ANE 并行处理选定的模型分区**，减少设备边界的复制和等待，让计算密集型图像推理用上 GPU 之外的算力。
+TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。用原生 macOS App 创作图片和视频，通过 API 自动化任务，或直接接入 ComfyUI 工作流。模型和生成内容保留在本机。
 
-用原生 macOS App 创作图片和视频，用 CLI 批量运行，或把同一套运行时接入你的应用。模型和生成内容保留在本机。
+**在已测完整图像生成任务中，相比固定版本的 Unsloth/Metal 后端，最高达到 3.40× 加速、耗时减少 70.6%。** 原生 Metal / MLX GPU 推理与可选 GPU + ANE 混合计算，让同一台 Mac 发挥更多算力。
+
+## 性能亮点
+
+Apple M4 Max · 64 GiB · 512×512。下表为已有完整生成测试的热态中位数，包含文本编码、去噪与图像解码／输出。
+
+| 模型与任务 | 对比后端 | 对比耗时 | TurboCider GPU + ANE | 加速比 |
+|---|---|---:|---:|---:|
+| Qwen-Image-2.1 · Q4_K_M · 40 步 | Unsloth / sd-server Metal | 125.365 秒 | **36.870 秒** | **3.40×** |
+| Z-Image Turbo · BF16 源 · 8 步 | Unsloth Metal，GPU 文本编码 | 18.735 秒 | **5.955 秒** | **3.15×** |
+| Z-Image Turbo · BF16 源 · 8 步 | mflux 0.22 BF16 | 7.971 秒 | **5.955 秒** | **1.34×** |
+
+**仅使用 GPU 也有收益：** 同组 Z-Image 测试为 **7.356 秒，相比 Unsloth/Metal 快 2.55×**。上表采用已测更快的 Unsloth GPU 文本编码配置。
+
+这些成绩来自指定版本、模型和配置；Unsloth 对比指其固定 native Metal 后端，不含 Desktop UI。混合路线使用需额外准备并显式启用的实验性 W8A8 ANE 配置（Qwen 使用 Private ANE），存在数值近似、首次准备和内存成本；默认使用 GPU。详细条件、质量检查、冷启动与逐请求记录见[完整评测](docs/benchmark/PERFORMANCE_REPORT.md)。
+
+## 支持的功能
+
+- **图像与视频创作：** 文生图、图片修改、多参考图编辑、文生视频和图生视频，按模型能力开放。
+- **LoRA 与生成控制：** 管理适配器、强度、随机种子、尺寸和步数，支持模型允许的运行时或内存合并策略。
+- **本地 API：** App 一键启停 HTTP 服务；支持模型发现、请求预检、任务提交、进度查询、取消和结果下载。另有 Unix socket 服务、Python HTTP 客户端及 C / Swift SDK。
+- **ComfyUI / Comfy Desktop：** 提供模型、LoRA、生图、编辑和原生视频请求节点；图像结果可接标准预览、保存与合成节点。权重由 TurboCider 管理，无需在 ComfyUI 再装一份模型。
+- **模型管理：** 共用 App / CLI 模型库，登记已有本地模型，支持 Hugging Face / ModelScope 下载预览与兼容文本组件复用。
+- **重复任务与内存优化：** 常驻会话、批量任务、提示词缓存、GPU 图编译，以及模型支持的分阶段驻留和流式加载。
 
 ## App 预览
 
 ![TurboCider macOS 应用预览](assets/app/app.png)
 
-Studio 支持 [2× / 4× 图像超分](docs/public/IMAGE_UPSCALING.md)：选择本地 Real-ESRGAN x2plus / x4plus Core ML 模型，可单独超分图片，也可在生成后自动超分并保留原图。运行时完全使用 Swift/Core ML，不依赖 Python。Z-Image Turbo 默认 8 步。
+## API 与 ComfyUI
 
-## 为什么选择 TurboCider
+在 App 的「本地 API」页面点击「启动服务」，默认地址为 `http://127.0.0.1:8765`，可直接查看 curl / Python 示例。
 
-- **硬件级异构并行。** Metal / MLX 执行 GPU 计算，Core ML 承接适合 ANE 的 FFN 分区；CPU 负责调度、准备和同步。已验证的分区路径使用共享输出缓冲，避免额外的输出复制。
-- **可核查的提速。** 在 M4 Max 64 GB 的 FLUX.2 Klein 4B、512×512、4 步测试中，GPU + ANE 达到 **1.39× 吞吐，生成耗时降低约 28%**。相同测试输出的像素余弦相似度为 **0.999840**。速度和质量一起报告。
-- **为重复创作优化。** 常驻模型、提示词编码缓存、GPU 图编译与可复用的 Core ML 编译缓存，减少更换 seed 后的重复工作。Z-Image 可变长度 ANE 分区在 512×512 下覆盖最多 512 个编码后的文本 tokens。
-- **一套引擎，多种入口。** SwiftUI App、CLI、本地 Unix socket 任务 API，以及 C / Swift SDK 共用模型能力和请求契约。
-- **按模型能力创作。** 文生图、图片修改、参考图编辑与视频生成按执行器开放。独立 LoRA、强度、随机种子和 GPU / ANE 选择都有明确控制。
-- **模型与缓存集中管理。** App / CLI 共用模型目录，支持外部路径登记、ModelScope / Hugging Face 下载预览及兼容文本组件复用；App 可启停本地 API，并管理可重建的文本张量缓存。
+```sh
+curl http://127.0.0.1:8765/v1/health
+curl http://127.0.0.1:8765/v1/catalog
+```
 
-下述已测 INT8 ANE 分区属于高保真近似，不是逐位无损。可选 runtime-weight 路径将权重 staging 为 FP16，不是 INT8 ANE 计算。不同模型、芯片和输入的收益不同；默认使用 GPU。公开 Core ML 接口不能保证每个算子都实际驻留 ANE，也不提供可靠的本任务 ANE 占用百分比。我们公开边界和测量方法，不以单项测试宣称通用 SOTA。
+将节点安装到已有 ComfyUI，然后重启 ComfyUI：
 
-Qwen / Z-Image 当前实验、runtime LoRA 共用 base 图及 optional 边界统一见
-[GPU/ANE 加速状态](docs/status/acceleration.md)。Qwen 六步 runtime LoRA
-尚无可靠的整请求 GPU 加速收益，不作为默认最快方案。
+```sh
+python3 tools/comfyui/install.py /path/to/ComfyUI
+```
 
-## 性能亮点
+连接 **Model (API) → Generate Image → Save Image**，在 Model 节点填入 App 显示的 HTTP 地址；需要 LoRA 时加入 **LoRA (API)** 节点。此集成在图像边界与 ComfyUI 组合，采样由 TurboCider 执行。
 
-**同一台 Mac，用上更多算力：M4 Max FLUX 的 GPU → 混合加速达到 1.39×，
-Z-Image 相对记录中的 ComfyUI 为 1.34×；历史 M4 Pro FLUX 快照最高达到 1.64×。**
-
-以下挑选已有记录中的 **warm request 中位数**，不是最快的单次运行：
-
-| 工作负载 | 基线 → TurboCider | 加速比 |
-|---|---|---:|
-| FLUX 4B · M4 Pro 48 GiB · 512² · 4 步 | 原生 GPU 4.758 s → GPU + ANE **2.896 s** | **1.64×** |
-| FLUX 4B · M4 Max 64 GB · 512² · 4 步 | 原生 GPU 2.266 s → GPU + ANE **1.628 s** | **1.39×** |
-| Z-Image Turbo · M4 Max 64 GB · 1024² · 9 步 | Stock ComfyUI GPU 40.110 s → GPU + ANE **30.001 s** | **1.34×** |
-
-M4 Max FLUX 的生成耗时降低 **28.2%**，对应 GPU／混合输出 PNG 余弦相似度
-**0.999840**。Z-Image 原生 GPU 单独为 36.369 s，混合路线在此基础上再提速 **1.21×**。
-
-实际性能因设备和工作负载而异。warm 耗时不含首次准备和编译，详细测试条件见下方文档。
-
-**LTX 2.5 纯 GPU 实测（2026-09-13）：** Apple M4 Max、64 GB 统一内存；
-704×448、97 帧（约 4.04 秒）、24 FPS、11 步，关闭音频，命中文本条件缓存。
-App 端到端生成耗时：**文生视频 63.08 秒，图生视频 62.35 秒**。
-以上为已有单次记录，非中位数；未启用 ANE 或近似加速，使用分阶段权重释放。
-
-[性能与保真度（英文）](docs/public/PERFORMANCE.md) ·
-[公开样本、测量条件与比较边界（英文）](docs/public/BENCHMARKS.md)
+[ComfyUI 中文教程](docs/public/COMFYUI_TUTORIAL.zh-CN.md) · [HTTP 接口与独立 CLI 启动](docs/public/COMFYUI.md) · [本地任务 API](docs/public/LOCAL_API.md)
 
 ## 开始使用
 
@@ -85,48 +84,31 @@ dist/cli/turbocider plan examples/requests/z-image-turbo.json
 dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z-image-turbo.json
 ```
 
-CLI 的 `plan`、`generate` 和 `batch` 可在末尾加
-`--ane-manifest path/to/compiled-manifest.json`，显式使用与该请求
-匹配的 ANE 产物，不修改 JSON。512²、8 步下目前最快的本地 Z-Image
-W8A8/BF16 并行方案及其 **约 1.31× 暖请求加速**、画质和冷启动边界详见
-[Z-Image GPU/ANE 指南（英文）](docs/public/Z_IMAGE_ANE.md)；其他模型仍可传各自
-匹配的 ANE manifest，默认 `auto` 策略不变。
-
 相对输出路径按当前工作目录解析；示例可能使用 `/tmp` 下的绝对路径。完整图像、视频、LoRA、ANE 准备和服务步骤见[快速开始](docs/public/GETTING_STARTED.md)与[使用参考](docs/public/USAGE.md)。
 
 ## 模型能力
 
-`turbocider models` 返回当前执行器实际开放的操作；下表不代表上游模型的全部能力。
+| 模型 | 主要能力 |
+|---|---|
+| Qwen-Image-2.1 | 文生图、多参考图编辑、LoRA；支持特定 Viggle 六步适配器 |
+| FLUX.2 Klein 4B / 9B | 文生图、图片修改、参考图编辑、LoRA；4B 有已验证混合配置 |
+| Z-Image Turbo | 文生图、LoRA、可选 GPU / ANE 混合推理 |
+| MiniMax H3 Turbo | 视频生成、关键帧与参考素材；需要媒体工具 |
+| LTX 2.5 Distilled | 文生视频、图生视频及可选音频输出；受后端与配置限制 |
+| Wan 2.1 1.3B QAD | 原生三步视频生成；需离线转换产物及已验证预合并 LoRA |
 
-| 模型 | 输出 | 输入 | 说明 |
-|---|---|---|---|
-| FLUX.2 Klein 4B / 9B | 图像 | 文字、单图修改、参考图编辑 | 4B 已有混合加速验收配置；9B 性能覆盖尚不完整 |
-| Z-Image Turbo | 图像 | 文字 | Comfy / Diffusers 目录；内存中应用 LoRA；可变长度 ANE 输入 |
-| MiniMax H3 Turbo | 视频 | 文字、关键帧、参考素材 | 原生 Metal / MPS；ANE 需要匹配的模型产物；需要媒体工具 |
-| LTX 2.5 Distilled | 视频 | 文字，仅无音轨视频 | 图片输入与音频尚未开放；分阶段驻留 |
-| Wan 2.1 1.3B QAD | 视频 | 原生 MLX / Core ML，832×480、3 步 | 离线转换的 TAEHV；只接受验证过的预融合 LoRA |
-
-权重遵循上游许可证。仓库不包含大型模型文件和生成内容。
+具体可用操作以 `turbocider models` 和请求 `plan` 为准。不同模型的 LoRA、输入和加速选项不能互换。参阅[模型与请求参考](docs/public/USAGE.md#model-capabilities)、[Qwen 指南](docs/public/QWEN_IMAGE_21.md)和[GPU/ANE 加速状态](docs/status/acceleration.md)。
 
 ## 项目结构
 
-| 目录 | 职责 |
+| 目录 | 内容 |
 |---|---|
 | `native/` | 推理核心、模型执行器、Metal / MLX / Core ML 后端 |
-| `apps/` | SwiftUI App 与原生命令行 |
-| `services/` | 常驻本地任务服务、模型与缓存管理工具 |
-| `bindings/` | C ABI 与 Swift SDK |
-| `profiles/`、`examples/` | 硬件策略与请求示例 |
-| `tools/`、`tests/` | 安装、打包、转换、回归测试与性能测试工具 |
-| `assets/branding/` | Turbo Drop 标识与可复现的 App 图标 |
-| `docs/public/` | 使用指南与公开性能证据 |
+| `apps/`、`services/` | SwiftUI App、CLI、本地任务服务与模型库 |
+| `bindings/`、`integrations/comfyui/` | C / Swift SDK、Python HTTP 客户端与 ComfyUI 节点 |
+| `tools/`、`tests/` | 构建、转换、回归测试和性能验证 |
+| `docs/public/`、`docs/benchmark/` | 使用指南与可核查的评测记录 |
 
-[公开文档](docs/public/README.md) · [性能证据（英文）](docs/public/BENCHMARKS.md)
+[文档入口](docs/public/README.md) · [模型库](docs/public/MODEL_LIBRARY.md) · [缓存与内存](docs/public/CACHES.md)
 
-[模型库](docs/public/MODEL_LIBRARY.md) · [本地 API](docs/public/LOCAL_API.md) · [缓存与内存](docs/public/CACHES.md)
-
-TurboCider 原创代码采用 MIT 许可证；第三方代码和模型权重遵循各自条款，请保留源码或发行包附带的许可证及声明。
-
-### ComfyUI / Comfy Desktop
-
-[中文使用教程](docs/public/COMFYUI_TUTORIAL.zh-CN.md)：从 App「本地 API」或独立后台启动服务，在 Comfy Desktop 中使用已有模型、LoRA、参考图编辑与批量生成。ComfyUI 无需安装模型权重。[英文接口参考](docs/public/COMFYUI.md)。
+TurboCider 原创代码采用 MIT 许可证；第三方代码与模型权重遵循各自许可证。仓库不包含大型模型权重和生成结果。
