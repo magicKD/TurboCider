@@ -6,6 +6,40 @@
   "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls; compare compatible successful frameworks only, no mandatory unsupported adaptation;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
   "consolidated_report": "docs/benchmark/PERFORMANCE_REPORT.md",
   "additional_experiments_scheduled": false,
+  "comfy_best_record_comparison": {
+    "report": "docs/benchmark/COMFYUI_MODEL_COMPARISON.md",
+    "policy": "user requested existing native best reuse; native not retested; keep original source/task/build/cache/precision and samples; never a new same-window paired cohort",
+    "z_image": {
+      "reference_evidence": "docs/design/validation/z-comfy039-current-20261012.json",
+      "native_evidence": "docs/design/validation/z-valid-framework-current-20261011.json",
+      "native_seconds": 5.7801232290803455,
+      "comfy_seconds": 8.535402354435064,
+      "speedup": 1.4766817273882067
+    },
+    "qwen21": {
+      "reference_evidence": "docs/design/validation/qwen21-comfy039-reference-current-20261012.json",
+      "native_evidence": "docs/design/validation/qwen21-valid-framework-current-20261011.json",
+      "native_seconds": 31.058807333465666,
+      "comfy_seconds": 48.34967849997338,
+      "speedup": 1.5567139452865246,
+      "reference_selector": "GPU/subquadratic, not slower default or SDPA/GPU;2fresh/preset"
+    },
+    "ltx25": {
+      "reference_evidence": "docs/design/validation/ltx25-comfy039-reference-current-20261012.json",
+      "native_evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
+      "native_quality_seconds": 63.847972125,
+      "native_fastest_opt_in_seconds": 61.868681729,
+      "comfy_single_warm_seconds": 112.22977362503298,
+      "quality_speedup": 1.7577656719513701,
+      "fastest_speedup": 1.8139997570439097,
+      "scope": "same local ConvRot/Gemma4/conv-only video+audioVAE/upscaler/97frame AV task; one Comfy warm observation not median; fastest native Sol+text256 has MAE25.03/255"
+    },
+    "flux4": {
+      "admission_evidence": "docs/design/validation/comfy-flux4-local-format-admission-20261012.json",
+      "comfy_complete_generation_verified": false,
+      "scope": "no successful whole saved-MLX Q4/g64 stock generation; index not stock UNET choice, single shard not complete model; no conversion/download or invented denominator"
+    }
+  },
   "comfy_current_comparison": {
     "model": "z-image-turbo",
     "evidence": "docs/design/validation/z-comfy039-current-20261012.json",
@@ -172,9 +206,9 @@
   ],
   "updated": "2026-10-12",
   "pending": [
-    "FLUX4B source/format admission and complete GPU/bestGPU-ANE/mflux/current mlx-serve comparisons; originalBF16 reuse rejected, upstreamQ4 restoration pending",
-    "Qwen/Z further current precision/shape/share screening and applicable current framework comparisons",
-    "LTX successful same-task external complete-media comparison and best native loading/residency configurations",
+    "Boundary: FLUX4B original BF16 local pack absent; current upstreamQ4 assets/native/mflux/mlx-serve prechecks succeeded, stock Comfy whole saved-index not admitted; no complete matched current GPU-ANE/external ranking",
+    "Boundary: Qwen/Z finite tested precision/shape/share presets do not establish a global optimum; current Comfy comparisons use preserved native bests at user request",
+    "Boundary: LTX Comfy successful full97frame AV now measured; one warm observation versus preserved native batch bests, not exhaustive presets or a new paired median",
     "cross-family durable actually-runnable current winners; no public cross-hardware timing denominators"
   ],
   "media_configurations": [

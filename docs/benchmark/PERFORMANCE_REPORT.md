@@ -4,6 +4,11 @@
 范围仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5；FLUX9B不参与排名。
 本报告收敛已有完整实验与刚结束的Unsloth/ComfyUI对照，不再扩大参数网格。
 
+**最新Comfy重点对照**按用户要求复用TC已测最优，不再重跑原生：
+Z **1.48×**、Qwen2.1 **1.56×**、LTX质量GPU **1.76×**／最快近似 **1.81×**。
+这是已有最优记录的跨窗口比较，LTX Comfy只有单warm观察；下方原同窗口
+倍率不改写。完整四模型表与来源/精度/缓存边界见[Comfy模型对照](COMFYUI_MODEL_COMPARISON.md)。
+
 ## 核心结论
 
 **在已测完整任务中，TurboCider GPU/ANE相对固定Unsloth/Metal路径达到
@@ -56,16 +61,20 @@ SaveImage执行，fresh必须重编码；没有把相同prompt+seed整图cache�
 混合cold11.689–17.664s、peak30.91–32.00GB，Comfy默认cold10.679–11.839s、
 peak27.18–27.78GB，所有swap-out0。16对正反序同路线RGBA exact；完整图已检查。
 
-本轮Comfy速度榜仅新增Z；v0.39源码有Qwen2.1/其prefix KV cache支持，
-缺少配对不是不兼容。FLUX4B当前saved-MLX Q4/g64和LTX完整含音频任务
-也未形成Comfy分母，不推算倍数。实现、阶段口径与复现见[Mac专页](COMFYUI_MAC.md)。
+随后新增Qwen三Comfy预设12PNG/3memory，最快GPU/sub-quadratic48.350s，
+复用已有TC31.059s为1.557×；LTX同源两完整97帧AV MP4，warm112.230s，
+复用quality63.848s为1.758×／opt-in61.869s为1.814×。它们是用户指定
+“TC取已有最优”的跨窗口对照，不混进上述Z新paired cohort。
+FLUX4B当前saved-MLX Q4/g64 whole index不在stock UNET choices，不能
+用单shard当完整模型，暂无有效Comfy分母。实现与复现见[Mac专页](COMFYUI_MAC.md)
+和[四模型重点表](COMFYUI_MODEL_COMPARISON.md)。
 
 ## FLUX4B与LTX：保留已测结果，不制造外部分母
 
 | 模型与任务 | 已测性能 | 当前可用于报告的结论 |
 | --- | --- | --- |
 | [FLUX4B Q4/g64，512²/4步](FLUX4_CURRENT_STATUS.md) | Native单进程cold3.959s、两fresh中位3.723s、repeat3.440s，4PNG及完整内存 | 已验证原生可运行；mflux/mlx-serve也可出图，但未形成当前配对排名，不声明领先倍率 |
-| [LTX2.5 distilled，704×448×97/11步，含音频MP4](LTX_VIDEO.md) | GPU quality63.848s；INT8 quality71.333s | 当前推荐GPU；混合没有收益，没有兼容成功的同任务外部对照则不填分母 |
+| [LTX2.5 distilled，704×448×97/11步，含音频MP4](LTX_VIDEO.md) | GPU quality63.848s；INT8 quality71.333s | 当前推荐GPU；混合没有收益；新Comfy单warm112.230s成功，回用最佳记录另列，不称paired median |
 
 FLUX4B不是从未测过：历史文档记录GPU/ANE warm1.628s，见
 [2026-09-08状态](../status/current-status-2026-09-08.md#当前推荐配置)。它是
@@ -89,4 +98,4 @@ LTX最快已测近似GPU Sol+text256为61.869s，只比自身quality省3.1%，
 [逐请求样本catalog](results-20261011.json) · [已测最优配置](best-local-configs-20261011.json) ·
 [Z完整机器证据](../design/validation/z-unsloth-mflux-current-20261012.json) ·
 [框架身份与公开评测](OPEN_SOURCE_COMPARISONS.md)。
-保留55组历史/当前记录，其中43组在当前四家族范围、12组9B为历史deferred。
+保留57组历史/当前记录，其中45组在当前四家族范围、12组9B为历史deferred。

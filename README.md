@@ -37,6 +37,9 @@ runtime LoRA has not established an end-to-end speedup over GPU.
 
 Current source-bound Qwen / Z / FLUX4B / LTX scope:
 [consolidated benchmark report](docs/benchmark/PERFORMANCE_REPORT.md).
+Latest [ComfyUI versus preserved native bests](docs/benchmark/COMFYUI_MODEL_COMPARISON.md):
+Z **1.48×**, Qwen2.1 **1.56×**, LTX quality **1.76×** (opt-in approximate **1.81×**).
+These reuse existing native records, not new paired runs; LTX Comfy has one warm observation.
 The new matched Z-Image 512²/8-step Mac cohort records **1.46×** GPU/ANE
 versus the faster measured ComfyUI v0.39 MPS preset (8.535 → 5.840 s);
 [Mac implementation, cold/RAM costs and comparison limits](docs/benchmark/COMFYUI_MAC.md).

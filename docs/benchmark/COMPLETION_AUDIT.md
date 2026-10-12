@@ -2,6 +2,23 @@
 
 ## 最新交付：按用户要求收敛报告
 
+最新追加2026-10-12：用户将重点指定为ComfyUI四模型对已有TC最优，
+已经测过的TC不充分重测。Z既有Comfy8.535s复用旧TC最优5.780s，
+Qwen三Comfy预设12PNG/3完整memory最快48.350s，复用旧TC31.059s，
+LTX两97帧完整AV MP4/完整memory，cold142.925s、单warm112.230s，
+复用quality63.848s/opt-in近似61.869s；比值为1.477×、1.557×、
+1.758×/1.814×，**不是新同窗口配对**，LTX不是warm中位数。
+[四模型重点报告](COMFYUI_MODEL_COMPARISON.md)与57组catalog、已有最优
+配置和portable媒体/事件/内存链同步。原paired五项优势不变，跨窗口
+记录单列`best_known_comfy_comparisons`；更多统计/插件/参数不隐含通过。
+FLUX4B whole MLX index不在stock UNET choices；387完整参数跨两shard，
+单片不可作完整性能分母。没有宣称ComfyUI不支持FLUX4B或所有loader
+都失败，也不为此下载/转换模型。TC排队在用户变更后未继续；此前
+621ms内存gap和LTX SaveVideo collector参数错误留存，不降门槛，
+不将partial输出/采样时间升格。下方197项/54组等是当时历史审计。
+新增定向回归共219项通过，1组fixture跳过；完整模型进程终态后执行。
+未运行全量`make test`，未新增TC/9B性能实验；原release/更多形状资格不升级。
+
 2026-10-12用户要求“之前已经评测，尽可能收敛，整理突出框架性能的
 报告”。本轮不再扩大网格；完成已启动Z/Unsloth同机正反序后，将
 已有证据收敛至[性能报告](PERFORMANCE_REPORT.md)。新Z五路线10进程、

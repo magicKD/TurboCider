@@ -1,5 +1,14 @@
 # 历史扩展记录与当前证据边界
 
+最新Comfy重点对照已补Qwen和LTX，只重用TC已有最优：Z1.477×、
+Qwen1.557×、LTX quality1.758×／opt-in近似1.814×。见
+[当前四模型对照](COMFYUI_MODEL_COMPARISON.md)。57组里45组active、12组9B
+historical；Comfy新参考单独成campaign，不把跨窗口TC回用改成paired。
+原Z完整配对保留；Qwen12PNG/3memory、LTX两完整97帧AV/完整memory
+已terminal成功，FLUX4B当前MLX whole-index入口未形成完整stock生成，
+不以单shard或新下载/转换权重补分母。用户要求已经测过的不充分
+重测，后续不重新安排TC网格；下方旧pending/计数仅为历史边界。
+
 2026-10-12最新要求已改为收敛现有实测、整理突出性能的报告。
 当前已启动的Z/Unsloth五路线随后完成：GPU7.356/frozen5.955/
 mflux7.971/UnslothGPU-text18.735/defaultCPU-text22.600s，10进程/

@@ -1,6 +1,9 @@
 # 当前四家族 benchmark 摘要
 
 完整收敛版见[性能报告](PERFORMANCE_REPORT.md)。2026-10-12，M4 Max64GiB，base-only。
+最新重点为[ComfyUI对已有TC最优](COMFYUI_MODEL_COMPARISON.md)：Z1.48×、
+Qwen2.1 1.56×、LTX quality1.76×／opt-in近似1.81×；跨窗口回用，LTX单warm，
+不是新增原生重测或严格paired排名。下表原同窗口口径保留。
 
 | 完整任务 / 已测兼容路径 | GPU/ANE热态 | 相对参考 |
 | --- | ---: | --- |

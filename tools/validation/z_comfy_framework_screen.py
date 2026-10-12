@@ -105,11 +105,12 @@ def validate_trial(trial, count=4):
                 raise ValueError("actual complete source-bound frozen FFN work required")
 
 
-async def comfy_requests(output, server):
+async def comfy_requests(output, server, *, graph_factory=workflow, prompts=PROMPTS,
+                         validate_row=validate_comfy_row, seed_key="seed"):
     import aiohttp
     config = json.loads((output / "launch.json").read_text())
     address = f"http://127.0.0.1:{config['port']}"
-    report = dict(status="running", runs=[], cache_policy="stock RAM pressure; repeat prompt uses seed43 to force sampling",
+    report = dict(status="running", runs=[], cache_policy="stock RAM pressure; repeated prompt uses a new seed to force sampling",
                   packages={p: importlib.metadata.version(p) for p in ("torch", "transformers", "numpy", "Pillow", "aiohttp")})
     started = time.perf_counter()
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600), trust_env=False) as session:
@@ -133,16 +134,16 @@ async def comfy_requests(output, server):
         async with session.get(address + "/object_info") as response:
             response.raise_for_status()
             objects = await response.json()
-        graph = workflow(PROMPTS[0], 0)
+        graph = graph_factory(prompts[0], 0)
         if any(n["class_type"] not in objects for n in graph.values()):
-            raise ValueError("stock Z workflow nodes unavailable")
+            raise ValueError("stock workflow nodes unavailable")
         write_json(output / "object-info.json", {n["class_type"]: objects[n["class_type"]] for n in graph.values()})
         client = uuid.uuid4().hex
         async with session.ws_connect(address + "/ws?clientId=" + client) as ws:
-            for index, prompt in enumerate(PROMPTS[:config["count"]]):
+            for index, prompt in enumerate(prompts[:config["count"]]):
                 if listener_pid(config["port"]) != {server.pid}:
                     raise RuntimeError("owned listener identity changed")
-                graph = workflow(prompt, index)
+                graph = graph_factory(prompt, index)
                 write_json(output / f"request-{index}.json", graph)
                 start = time.perf_counter()
                 async with session.post(address + "/prompt", json=dict(prompt=graph, client_id=client)) as response:
@@ -188,25 +189,32 @@ async def comfy_requests(output, server):
                 executed = [e["data"]["node"] for e in events if e["type"] == "executing" and e["data"].get("node")]
                 cached = [n for e in events if e["type"] == "execution_cached" for n in e["data"]["nodes"]]
                 steps = [e["data"]["value"] for e in events if e["type"] == "progress" and e["data"].get("node") == "8"]
-                row = dict(index=index, seed=graph["8"]["inputs"]["seed"], prompt=prompt, prompt_id=prompt_id,
+                row = dict(index=index, seed=graph["8"]["inputs"][seed_key], prompt=prompt, prompt_id=prompt_id,
                            request_wall_including_export=wall, actual_steps=steps, executed_nodes=executed,
                            cached_nodes=cached, history_status=history["status"]["status_str"])
                 write_json(output / f"events-{index}.json", events)
                 write_json(output / f"history-{index}.json", history)
-                validate_comfy_row(row, index)
+                validate_row(row, index)
                 report["runs"].append(row)
                 write_json(output / "report.json", report)
     report["status"] = "complete"
     return report
 
 
-def comfy_worker(output):
+def comfy_worker(output, **request_options):
     launch = json.loads((output / "launch.json").read_text())
     report = dict(status="failed", runs=[])
     with (output / "server.stdout.txt").open("x") as out, (output / "server.stderr.txt").open("x") as err:
         server = subprocess.Popen(launch["command"], cwd=launch["comfy"], stdout=out, stderr=err)
         try:
-            report = asyncio.run(comfy_requests(output, server))
+            report = asyncio.run(comfy_requests(output, server, **request_options))
+        except BaseException as error:
+            # Retain completed requests if a later request fails.
+            target = output / "report.json"
+            if target.is_file():
+                report = json.loads(target.read_text())
+            report.update(status="failed", error=str(error))
+            raise
         finally:
             if server.poll() is None:
                 server.terminate()

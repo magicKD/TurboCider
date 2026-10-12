@@ -148,6 +148,69 @@ def z_comfy_campaign(path):
         note="same original BF16 encoder/DiT/VAE; ComfyUI v0.39 pinned current release, existing PyTorch2.12.1/MPS with exact five pinned package overlay; eight serial processes/32PNG/8complete memory;4fresh/route; default and SDPA+GPU-only both retained; frozen W8A8 approximate/higher cold+RAM; HTTP submit/history/download/export vs native C API/export, no frontend UI; repeat prompt seed43 forces actual8steps/VAE, no cached sampler latency; independent RNG/token/compute lifecycles; not all Mac presets/Torch versions or global optimum")
 
 
+def qwen_comfy_reference_campaign(path):
+    from qwen21_comfy_framework_screen import ROUTES, validate_trial
+    data, binding = source(path, ("complete_diagnostic",))
+    if (data["reference_only"] is not True or data["same_window_native_pair"] is not False or
+            data["order"] != list(ROUTES[2:]) or len(data["trials"]) != 3 or data["steps"] != 40):
+        raise ValueError("complete reference-only Qwen presets required")
+    for t in data["trials"]:
+        validate_trial(t)
+    routes = []
+    for row in data["routes"]:
+        trial = next(t for t in data["trials"] if t["route"] == row["route"])
+        samples = [r["request_wall_including_export"] for r in trial["report"]["runs"][1:3]]
+        if samples != row["fresh_warm_seconds"] or statistics.median(samples) != row["fresh_warm_median"]:
+            raise ValueError("own actual two fresh reference samples required")
+        routes.append(measured(row["route"], row["cold_seconds"], samples, constructor_seconds=row["constructor_seconds"],
+            repeated_prompt_seconds=row["repeat_seconds"], physical_peaks=row["physical_peaks"], swap_out_bytes=row["swap_out_bytes"]))
+    return dict(evidence=binding, model="qwen-image-2.1-comfy039-reference-only", date=data["date"], geometry=[512, 512], steps=40,
+        routes=routes, reference_comparison_valid=True, native_comparison_valid=False, baseline_reused=True,
+        timing_scope=data["timing_scope"], note="Comfy-only3presets/12PNG/3memory,twofresh each; fastest GPU/subquadratic48.349678s; original TC best31.058807s reused separately at user request, not a new paired cohort; exact shared3BF16 source hashes,40Euler/terminal.02/cfg1,lossless auto prefix cache; MPS partialoffload/swap and failed621msgap diagnostic retained")
+
+
+def ltx_comfy_reference_campaign(path):
+    data, binding = source(path, ("complete_diagnostic",))
+    if (data["reference_only"] is not True or data["same_window_native_pair"] is not False or data["warm_sample_count"] != 1 or
+            data["memory"]["verified"]["complete"] is not True or len(data["output_checks"]) != 2 or
+            any(c["video_frames"] != 97 or c["audio_finite"] is not True or c["complete_decode"] is not True for c in data["output_checks"])):
+        raise ValueError("one cold/warm complete97frame AV reference and independent memory required")
+    return dict(evidence=binding, model="ltx-2.5-comfy039-reference-only", date=data["date"], geometry=[704, 448, 97], steps=11, audio=True,
+        routes=[measured("comfy-sdpa", [data["cold_seconds"]], [data["warm_seconds"]], warm_scope=data["warm_scope"],
+            physical_peaks=[data["memory"]["verified"]["tree_peak_phys_footprint_bytes"]])],
+        reference_comparison_valid=True, native_comparison_valid=False, baseline_reused=True, timing_scope=data["scope"],
+        note="same local distilledConvRot/Gemma4/conv-only video+audioVAE/upscaler;stock SDPA/BF16VAE,8+3Eulerancestral,704x448x97/24fps/audio/noLoRA/noPE;2full H264/AAC MP4/complete finite audio;onewarm112.229774s is observation not median; existing TC quality63.847972/optinapprox61.868682s reused separately, not new paired native; old SaveVideo API collector error excluded")
+
+
+def best_known_comfy_comparisons():
+    """User-requested best-record reuse, explicitly outside paired headlines."""
+    qwen, qbind = source("docs/design/validation/qwen21-comfy039-reference-current-20261012.json", ("complete_diagnostic",))
+    ltx, lbind = source("docs/design/validation/ltx25-comfy039-reference-current-20261012.json", ("complete_diagnostic",))
+    z, zbind = source("docs/design/validation/z-comfy039-current-20261012.json", ("complete_diagnostic",))
+    configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+    zcfg = next(c for c in configs["configurations"] if c["model"] == "z-image-turbo")
+    zevidence, zbase = source(zcfg["evidence"], ("complete_diagnostic",))
+    zr = next(r for r in zevidence["routes"] if r["route"] == "native-frozen")
+    if statistics.median(zr["fresh_warm_seconds"]) != zcfg["fresh_warm_median_seconds"]:
+        raise ValueError("existing Z best must use original actual samples")
+    for k, digest in z["model_sha256"].items():
+        if zevidence["model_sha256"].get(k) != digest:
+            raise ValueError("reused Z best must use the same BF16 source components")
+    zref = min((r for r in z["routes"] if r["route"].startswith("comfy-")), key=lambda r:r["fresh_warm_median"])
+    qref = min(qwen["routes"], key=lambda r:r["fresh_warm_median"])
+    specifications = (
+        ("z-image-turbo", zcfg["fresh_warm_median_seconds"], zref["fresh_warm_median"], zbind, zbase, "frozen W8A8 approximation;4fresh per side in separate original windows"),
+        ("qwen-image-2.1", qwen["existing_native_baseline"]["native_frozen_seconds"], qref["fresh_warm_median"], qbind,
+         dict(path=qwen["existing_native_baseline"]["evidence"], sha256=qwen["existing_native_baseline"]["evidence_sha256"]), "frozen W8A8 approximation;TC4fresh versus Comfy2fresh per preset, different windows"),
+        ("ltx-2.5-quality", ltx["existing_native_baseline"]["quality_seconds"], ltx["warm_seconds"], lbind,
+         dict(path=ltx["existing_native_baseline"]["evidence"], sha256=ltx["existing_native_baseline"]["evidence_sha256"]), "GPU quality;native old batch median versus one Comfy warm AV observation"),
+        ("ltx-2.5-fastest-opt-in", ltx["existing_native_baseline"]["fastest_opt_in_seconds"], ltx["warm_seconds"], lbind,
+         dict(path=ltx["existing_native_baseline"]["evidence"], sha256=ltx["existing_native_baseline"]["evidence_sha256"]), "GPU Sol+text256 substantial approximation,MAE25.03/255;native old batch median versus one Comfy warm observation"))
+    return [dict(model=model, native_seconds=native, reference_seconds=ref, speedup=ref/native,
+        reduction_percent=100*(1-native/ref), reference_evidence=reference, native_evidence=baseline,
+        same_window_pair=False, user_requested_baseline_reuse=True, scope=note) for model,native,ref,reference,baseline,note in specifications]
+
+
 def runtime_campaign(path, model, size, steps, note):
     data, binding = source(path, ("complete",))
     if data["model"] != model or data["size"] != size or data["steps"] != steps or data.get("lora"):
@@ -578,6 +641,8 @@ def export():
         note="same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"))
     campaigns.append(z_unsloth_campaign("docs/design/validation/z-unsloth-mflux-current-20261012.json"))
     campaigns.append(z_comfy_campaign("docs/design/validation/z-comfy039-current-20261012.json"))
+    campaigns.append(qwen_comfy_reference_campaign("docs/design/validation/qwen21-comfy039-reference-current-20261012.json"))
+    campaigns.append(ltx_comfy_reference_campaign("docs/design/validation/ltx25-comfy039-reference-current-20261012.json"))
     active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
     for row in campaigns:
         row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")
@@ -587,6 +652,7 @@ def export():
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
                 goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
                 comparison_policy=COMPARISON_POLICY, verified_advantages=verified_advantages(campaigns),
+                best_known_comfy_comparisons=best_known_comfy_comparisons(),
                 primary_report="docs/benchmark/PERFORMANCE_REPORT.md",
                 latest_user_scope="consolidate completed experiments into a concise performance report; no further model/shape/grid experiments scheduled; historical and unpaired results labelled separately",
                 active_model_families=["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"],

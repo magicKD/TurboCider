@@ -190,6 +190,8 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_unsloth_image_reference_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_unsloth_framework_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_comfy_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_qwen21_comfy_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_ltx_comfy_reference_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_base_formats_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_base_formats_evidence.py
 	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_screen.py

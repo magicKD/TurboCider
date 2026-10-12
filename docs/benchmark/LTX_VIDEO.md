@@ -1,5 +1,11 @@
 # LTX 2.5 base：完整音视频与实际框架边界
 
+最新2026-10-12已补Comfy v0.39同源97帧完整AV：cold142.925s、单warm
+112.230s。按用户要求复用后续TC最佳quality63.848s／opt-in近似61.869s，
+为1.758×／1.814×；[完整重点对照](COMFYUI_MODEL_COMPARISON.md)明确
+跨窗口和近似漂移，不重跑TC。本页下方五进程是较早原GPU/ANE阶段，
+不拿其64.126s替代后续最佳配置或拼成新paired median。
+
 2026-10-11，M4 Max64 GiB/macOS26.6.2。当前本地LTX distilled INT8 ConvRot
 DiT/Gemma、原connector/upscaler/video/audio VAE；无LoRA。原生C/Metal，
 component_staged、704×448×97、24fps、8+3=11模型步、seed42，狐狸雪景

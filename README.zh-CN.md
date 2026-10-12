@@ -32,6 +32,9 @@ Qwen / Z-Image 当前实验、runtime LoRA 共用 base 图及 optional 边界统
 ## 性能亮点
 
 当前Qwen /Z /FLUX4B /LTX范围见[收敛性能报告](docs/benchmark/PERFORMANCE_REPORT.md)。
+最新[Comfy对TC已有最优](docs/benchmark/COMFYUI_MODEL_COMPARISON.md)：Z **1.48×**、
+Qwen2.1 **1.56×**、LTX质量 **1.76×**／opt-in近似 **1.81×**。
+按要求不重跑TC；跨窗口回用，LTX Comfy为单warm观察，不伪称paired中位数。
 新增Z-Image 512²/8步同机配对：GPU/ANE相对更快的ComfyUI v0.39 MPS
 实测配置为 **1.46×，8.535 →5.840s**，详见[Mac实现与冷启动/内存边界](docs/benchmark/COMFYUI_MAC.md)。
 下方1024² ComfyUI记录仍作为独立历史观察，不与新组拼倍率。

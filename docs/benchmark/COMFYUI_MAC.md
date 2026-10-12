@@ -1,6 +1,8 @@
 # ComfyUI Mac：当前正式版的同机完整出图对照
 
 2026-10-12，M4 Max64GiB /macOS26.6.2，Z-Image Turbo，512²/8步，base-only。
+最新已按用户要求补Qwen/LTX并回用TC最优，见[四模型重点对照](COMFYUI_MODEL_COMPARISON.md)。
+本页保留原Z同窗口配对，不混成新的最佳记录比较。
 **TurboCider GPU/ANE 5.840s，对本轮更快的ComfyUI路线8.535s为1.462×，
 完整生成耗时减少31.6%；纯GPU为1.155×。** 仅限此已测任务，不是
 所有Mac配置、插件、PyTorch版本或四模型的全局排名。
@@ -92,9 +94,9 @@ source-generation首次SHA后只做metadata guard，不每次inference重扫权�
 | 模型 | 本轮ComfyUI比较处理 |
 | --- | --- |
 | Z-Image Turbo | 当前v0.39完整配对，采用更快实测MPS路线，入榜 |
-| Qwen Image2.1 | v0.39源码有独立DiT、Qwen3-VL encoder及prefix KV cache支持；本轮尚无完整同任务配对，N/A不是不支持 |
-| FLUX4B | 当前本地原saved-MLX Q4/g64包未形成stock等价执行配对；不转换/混用不同GGUF源填分母 |
-| LTX2.5 | 未形成同一704×448×97/11步/含音频MP4的Comfy完整配对；不拿无音频、别checkpoint或失败时间填榜 |
+| Qwen Image2.1 | 已补三Comfy预设12完整PNG/3memory，最快48.350s；回用TC最优31.059s，1.557×，非同窗口配对 |
+| FLUX4B | whole saved-MLX Q4 index不在stock UNET choices；未形成完整stock生成，单shard/不同GGUF不填分母 |
+| LTX2.5 | 已补同一704×448×97/11步/含音频MP4，cold142.925s、单warm112.230s；回用TC质量/近似最优，1.758×/1.814×，非paired median |
 
 此前1024²/9步Comfy40.110s对mixed30.001s的1.34×见
 [历史口径](../public/BENCHMARKS.md#z-image-on-m4-max--september-7-2026)。
