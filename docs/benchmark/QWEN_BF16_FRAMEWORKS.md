@@ -1,6 +1,6 @@
 # Qwen BF16：有效完整框架对照
 
-2026-10-11，M4 Max64GiB/macOS26.6.2。原BF16 encoder/DiT/VAE、512²、
+更新2026-10-12，M4 Max64GiB/macOS26.6.2。原BF16 encoder/DiT/VAE、512²、
 40步、seed29、三个fox-light prompts，无LoRA。最新有效v11为十进程
 五路线回文顺序；每新进程cold、两fresh、一次repeat，constructor另列。
 全部40张PNG和十条独立process-tree memory证据完整；不删除慢样本。
@@ -44,6 +44,46 @@ peak、48.512s，候选更省内存且更快，但两独立cohort不构成严格
 保留实际cache bytes/previous limit、全部样本、raw/PNG/内存链和输出
 差异。这使“纯GPU大幅领先参考”的结论更保守：对已调低缓存参考，
 GPU只有约6%倍率优势，GPU/ANE约47%；两者cold/setup另列。
+
+## 新增1GiB/4GiB缓存：参考约45.45s，混合约32.4s
+
+2026-10-12两组独立六进程回文完成，任务/模型/40步不变，每组24PNG/
+6个完整memory窗口、四fresh/route。实际process-local cache bytes分别
+核验为1073741824/4294967296；没有修改OS缓存、wired/swap设置或参考源码。
+
+| 参考cache / 路线 | 四fresh中位s | cold正/反s | repeat正/反s | tree peak GB（十进制） |
+| --- | ---: | --- | --- | --- |
+| 1024MiB / GPU | 43.377048 | 47.485 /45.900 | 42.677 /42.739 | 30.62–30.78 |
+| 1024MiB / frozen | 32.393132 | 47.220 /48.784 | 30.346 /30.280 | 36.16–36.16 |
+| 1024MiB / mflux BF16 | 45.450516 | 48.682 /47.992 | 45.309 /45.233 | 34.48–34.88 |
+| 4096MiB / GPU | 43.330965 | 44.774 /45.881 | 42.638 /42.671 | 29.84–30.21 |
+| 4096MiB / frozen | 32.406713 | 45.864 /47.580 | 30.951 /30.246 | 35.80–36.16 |
+| 4096MiB / mflux BF16 | 45.497862 | 48.665 /48.276 | 45.245 /45.229 | 37.71–37.76 |
+
+1GiB同窗口GPU/混合对参考为1.048×/1.403×，混合对自身GPU省25.321%；
+4GiB为1.050×/1.404×。两个参考中位只差0.047346s，约0.104%，不足以
+证明缓存容量的速度因果优劣。两组各自与controls比较，不混池，不把
+前一cache0的31.251s与本组45.451s拼出更高倍率。新mixed约32.4s也
+不能据独立cohort归因为缓存造成回退；native没有改变参考cache设置。
+
+当前保存1GiB为较低观测内存的reference候选：相对4GiB约少3GB，
+不是全局最佳证明；cache0更低peak33–34GB，但其独立中位45.968s。
+所有新窗口swap-out0；native GPU compression0，frozen累计5.05–5.78GB、
+参考4.27–5.31GB，不能称全窗口无压力。frozen冷请求45.86–48.78s，
+远慢于自己的fresh，单次启动需要把setup算上。
+
+frozen仍是32个W6144图、每请求1248runtime+首次32warmup calls、failure0，
+首步GPU而不是全部交ANE，后续image-only FFN channel split6144/6144。
+两组完整原尺寸RGBA/白背景RGB差异均保留，warm-light相对GPU仍为
+SSIM0.958431、MAE4.609/255；跨框架同seed不是同noise或BF16逐像素parity。
+[1GiB完整验收](../design/validation/qwen21-cache1024-framework-current-20261012.json)、
+[4GiB完整验收](../design/validation/qwen21-cache4096-framework-current-20261012.json)
+绑定actual limits、所有cold/fresh/repeat、PNG/内存SHA与514个native输入。
+
+参考固定commit `8c00dab2505a96019df9d30bc9c223bf20d733c4`（2026-09-20），
+包版本字段0.19.2；这是含Qwen2.1支持的固定checkout，不是官方当前所有
+版本的排名。更新框架版本的同机完整对照仍pending。当前任务为
+image.generate；不把其倍率冒充Qwen Image Edit首步无KV-cache收益。
 
 ## 内存压力是结果的一部分
 

@@ -128,10 +128,10 @@
   ],
   "updated": "2026-10-12",
   "pending": [
-    "Qwen reference free-cache pressure candidates and further native parameter/shape screening",
-    "Z additional share/join/shape candidates and retention of other representation winners",
+    "Qwen current upstream framework-version comparisons and further native parameter/shape screening; cache0/1024/4096 completed",
+    "Z additional checkpoint/shape candidates and retention of other representation winners; fourteen Private share/join candidates completed",
     "FLUX9B additional quantized precisions and hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 and exact512/4 hybrid measured",
-    "LTX complete media best configurations and successful reference layouts"
+    "LTX further load/residency configurations and successful reference layouts; eight full-media configurations completed"
   ],
   "media_configurations": [
     {
@@ -354,6 +354,38 @@
       "physical_peak_bytes": [11989492760, 11989673008],
       "evidence": "docs/design/validation/flux9-matched-full-q4-current-20261012.json",
       "selection_note": "Lowest observed native9B peak among these tested recipes, not fastest/default or hard RAM qualification:11.99GB versus ownBF16 30.33-30.65GB, about60% lower; Q4 fresh3.403% slower, numerical drift retained; no validated ANE route for this quantized source."
+    }
+  ],
+  "reference_configurations": [
+    {
+      "model": "qwen-image-2.1",
+      "engine": "mflux",
+      "package_version_field": "0.19.2",
+      "commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
+      "commit_date": "2026-09-20",
+      "precision": "original BF16 encoder/DiT/VAE, complete lossless reference layout",
+      "model_root": "outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011",
+      "selected_route": "mflux-bf16",
+      "free_cache_limit_bytes": 1073741824,
+      "fresh_warm_median_seconds": 45.45051572902594,
+      "native_gpu_control_seconds": 43.37704808358103,
+      "native_frozen_control_seconds": 32.393132145982236,
+      "physical_peak_bytes": [34878070064, 34480069936],
+      "evidence": "docs/design/validation/qwen21-cache1024-framework-current-20261012.json",
+      "selection_note": "Lower observed memory than4096MiB with only0.104% median difference, not a causal/global speed winner. Retain native controls from this cohort only; stock/cache0/4096 not pooled. Current upstream versions not benchmarked yet.",
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/qwen21_mflux_framework_screen.py --model models/Comfy-Org-Qwen-Image-2.1 --reference-model outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux ../references/mflux --python .deps/qwen21-oracle-env/bin/python3 --extra .deps/mflux-reference-extra --frozen-manifest outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-bf16,native-frozen,native-gpu --output outputs/new-qwen-cache1024-benchmark",
+      "other_cache_candidates": [
+        {
+          "free_cache_limit_bytes": 0,
+          "fresh_warm_median_seconds": 45.96821891650325,
+          "evidence": "docs/design/validation/qwen21-cache0-framework-current-20261011.json"
+        },
+        {
+          "free_cache_limit_bytes": 4294967296,
+          "fresh_warm_median_seconds": 45.497861896059476,
+          "evidence": "docs/design/validation/qwen21-cache4096-framework-current-20261012.json"
+        }
+      ]
     }
   ],
   "private_configurations": [

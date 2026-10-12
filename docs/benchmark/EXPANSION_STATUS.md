@@ -9,7 +9,7 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 
 | 家族 | 已有权威实测 | 扩展缺口 / 下一项 |
 | --- | --- | --- |
-| Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
+| Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；完整五路线和cache0/1024/4096三组对照 | 更新框架版本、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置、七路线框架对照、14个Private channel/F16/F32候选全请求网格完成 | 额外尺寸与checkpoint，不能把有限网格当全局最优 |
 | FLUX.2 Klein 9B | stock/cache0、compiled、9B混合、两种Q4与提前解码完成；新predecoded7.211/packed8.001/referenceQ4 8.028s、peak24.4GB | 其它bits与mlx-serve更兼容格式/成功路径、其它shares/shapes、进一步prefill/加载；低RAM与性能候选分开 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
@@ -20,6 +20,16 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 额外LoRA/PE/VDN附件仍不进入base排名；不同checkpoint不互当分母。
 
 ## 本轮实际新增证据
+
+10-12参考1024/4096MiB两组Qwen完整对照新增后catalog为50组。各自六
+进程、24PNG/6memory、四fresh/route完整验收；实际缓存bytes/全部
+required weights/1248 frozen runtime calls、cold/repeat与pressure均保留。
+GPU/frozen/reference为43.377/32.393/45.451s及43.331/32.407/45.498s，
+约1.05×/1.40×；reference仅差0.104%，不作缓存速度优劣的因果证明。
+1024的参考peak34.48–34.88GB低于4096的37.71–37.76GB，保存较低
+开销reference候选，不跨cohort拼最小native分母。[完整记录](QWEN_BF16_FRAMEWORKS.md)。
+扩大目标仍active；原固定参考是2026-09-20commit/版本字段0.19.2，
+当前上游版本同机重测与更多形状/分区/成功LTX对照继续pending。
 
 10-12新增9B完整hybrid cohort使catalog达到45组。8进程/32PNG/8memory
 完整，实际4096-prefix/8192-GPU补集、96calls/request、无fallback、原

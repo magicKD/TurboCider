@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit actual Qwen/mflux images and timing; never load/hash model payloads."""
 import argparse
+from datetime import date
 import json
 from pathlib import Path
 import statistics
@@ -46,12 +47,18 @@ def compare_rgba(a, b):
                     mae_255=float(np.mean(np.abs(alpha_a.astype(np.float64) - alpha_b.astype(np.float64))))))
 
 
-def audit(screen, layout, build, invalid_reference_reason=None):
+def audit(screen, layout, build, invalid_reference_reason=None, evidence_date="2026-10-11"):
+    date.fromisoformat(evidence_date)
     data = json.loads((screen / "summary.json").read_text())
     if data["status"] not in ("complete_precheck_only", "complete_diagnostic") or len(data["trials"]) != len(data["order"]):
         raise ValueError("terminal complete image experiment required")
     if data["status"] == "complete_diagnostic" and (data["steps"], data["count"]) != (40, 4):
         raise ValueError("short prechecks cannot be full benchmark evidence")
+    if data.get("reference_cache_mib") in (1024,4096) and data["status"] == "complete_diagnostic" and (
+            data["order"] != ["native-gpu","native-frozen","mflux-bf16","mflux-bf16","native-frozen","native-gpu"] or
+            [trial["index"] for trial in data["trials"]] != list(range(6)) or
+            [trial["route"] for trial in data["trials"]] != data["order"]):
+        raise ValueError("new cache candidate requires complete matched three-route palindrome")
     references = [trial for trial in data["trials"] if trial["route"].startswith("mflux-")]
     for trial in references:
         coverage = trial["report"].get("required_weight_coverage")
@@ -68,7 +75,7 @@ def audit(screen, layout, build, invalid_reference_reason=None):
     receipt = json.loads((layout / "layout-receipt.json").read_text())
     if sha256_file(layout / "layout-receipt.json") != data["layout_receipt_sha256"] or receipt["status"] != "complete_layout_only":
         raise ValueError("same verified layout conversion required")
-    result = dict(schema="tc-qwen21-mflux-framework-validation-v1", date="2026-10-11", status=data["status"],
+    result = dict(schema="tc-qwen21-mflux-framework-validation-v1", date=evidence_date, status=data["status"],
                   qualification_passed=False, goal_complete=False, hardware="M4 Max64GiB/macOS26.6.2",
                   steps=data["steps"], requests_per_process=data["count"], order=data["order"],
                   evidence=str((screen / "summary.json").relative_to(ROOT)), evidence_sha256=sha256_file(screen / "summary.json"),
@@ -138,10 +145,11 @@ def main():
     for name in ("screen", "layout", "build-manifest", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--invalid-reference-reason", help="retain known invalid outputs without promoting their latency")
+    parser.add_argument("--date",default="2026-10-11",help="actual local completion/publication date")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("fresh portable evidence output required")
-    result = audit(args.screen.resolve(), args.layout.resolve(), args.build_manifest.resolve(), args.invalid_reference_reason)
+    result = audit(args.screen.resolve(), args.layout.resolve(), args.build_manifest.resolve(), args.invalid_reference_reason, args.date)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as target:
         json.dump(result, target, indent=2, allow_nan=False)

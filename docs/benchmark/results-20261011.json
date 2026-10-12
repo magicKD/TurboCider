@@ -1965,6 +1965,256 @@
     },
     {
       "evidence": {
+        "path": "docs/design/validation/qwen21-cache1024-framework-current-20261012.json",
+        "sha256": "1215ccc340836fb48aa9681cf9dec5007323c6bc709683a6f76ba4b76d998514",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-cache1024-framework-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            48.681558333104476,
+            47.99156670784578
+          ],
+          "warm_seconds": [
+            45.537404417060316,
+            45.35930487490259,
+            45.66209016600624,
+            45.36362704099156
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 45.45051572902594,
+          "repeated_prompt_seconds": [
+            45.30858495901339,
+            45.2326337499544
+          ],
+          "constructor_seconds": [
+            1.169931833166629,
+            1.0347630840260535
+          ],
+          "physical_peaks": [
+            34878070064,
+            34480069936
+          ],
+          "compression_bytes": [
+            4871700480,
+            4265164800
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            47.22007308411412,
+            48.78375441697426
+          ],
+          "warm_seconds": [
+            32.660036416957155,
+            32.12622787500732,
+            32.85022495803423,
+            31.60666716704145
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 32.393132145982236,
+          "repeated_prompt_seconds": [
+            30.345601458102465,
+            30.28020895808004
+          ],
+          "constructor_seconds": [
+            5.24159986525774e-05,
+            0.0014031659811735153
+          ],
+          "physical_peaks": [
+            36157004288,
+            36164737464
+          ],
+          "compression_bytes": [
+            5784911872,
+            5050826752
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            47.48506066692062,
+            45.90024070814252
+          ],
+          "warm_seconds": [
+            43.360621833009645,
+            43.36268200003542,
+            43.42298358283006,
+            43.39141416712664
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.37704808358103,
+          "repeated_prompt_seconds": [
+            42.67661229101941,
+            42.7390597499907
+          ],
+          "constructor_seconds": [
+            7.604202255606651e-05,
+            5.3582945838570595e-05
+          ],
+          "physical_peaks": [
+            30782920688,
+            30621472656
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        }
+      ],
+      "reference_cache_mib": 1024,
+      "reference_comparison_valid": true,
+      "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+      "note": "complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/qwen21-cache4096-framework-current-20261012.json",
+        "sha256": "5ee39596543e92ce65295d13869086404381d7efe24633886986beeea1c4e2ab",
+        "status": "complete_diagnostic"
+      },
+      "model": "qwen-image-2.1-cache4096-framework-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 40,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            48.66541562508792,
+            48.27593516581692
+          ],
+          "warm_seconds": [
+            45.51476345793344,
+            45.39238837501034,
+            45.59044116688892,
+            45.48096033418551
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 45.497861896059476,
+          "repeated_prompt_seconds": [
+            45.24463416589424,
+            45.22867066599429
+          ],
+          "constructor_seconds": [
+            1.0617080421652645,
+            1.029759082943201
+          ],
+          "physical_peaks": [
+            37714091456,
+            37764406768
+          ],
+          "compression_bytes": [
+            5307367424,
+            4902731776
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            45.86404437501915,
+            47.5804590000771
+          ],
+          "warm_seconds": [
+            32.70925091695972,
+            31.909828291041777,
+            32.78142329212278,
+            32.104175084037706
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 32.40671300049871,
+          "repeated_prompt_seconds": [
+            30.95066270790994,
+            30.245816292008385
+          ],
+          "constructor_seconds": [
+            5.466700531542301e-05,
+            0.0014596250839531422
+          ],
+          "physical_peaks": [
+            35795524000,
+            36159527352
+          ],
+          "compression_bytes": [
+            5251481600,
+            5710970880
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            44.774244165979326,
+            45.88135387515649
+          ],
+          "warm_seconds": [
+            43.326782708987594,
+            43.33514695800841,
+            43.341005166992545,
+            43.293961458839476
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 43.330964833498,
+          "repeated_prompt_seconds": [
+            42.63826300017536,
+            42.67051399988122
+          ],
+          "constructor_seconds": [
+            5.074986256659031e-05,
+            5.7416968047618866e-05
+          ],
+          "physical_peaks": [
+            30212576856,
+            29841659288
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        }
+      ],
+      "reference_cache_mib": 4096,
+      "reference_comparison_valid": true,
+      "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+      "note": "complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0"
+    },
+    {
+      "evidence": {
         "path": "docs/design/validation/flux9-bf16-current-v5-20261011.json",
         "sha256": "b3efbd20a708659bcac586af5619871a8075466ffa840c3bf350c0ffdc89d28b",
         "status": "complete_diagnostic"
@@ -4328,7 +4578,7 @@
     }
   ],
   "missing_current_comparisons": [
-    "Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
+    "Qwen further native share/shape candidates; reference0/1024/4096MiB cache cohorts completed; current upstream framework-version comparisons pending",
     "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed",
     "FLUX9B additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
     "LTX best full-media native configurations and runnable reference quantized layouts",

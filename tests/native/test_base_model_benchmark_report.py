@@ -6,10 +6,11 @@ import re
 import statistics
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from base_model_benchmark_evidence import measured
+from base_model_benchmark_evidence import measured, qwen_cache_campaign
 
 
 class BaseBenchmarkReportTests(unittest.TestCase):
@@ -25,7 +26,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 48)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 50)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -117,6 +118,55 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertEqual(proof["reference_cache_mib"], 0)
         self.assertLess(proof["fresh_warm_speedup"], 1)
         self.assertIn("retained negative result", cached["note"])
+
+    def test_new_qwen_cache_cohorts_keep_actual_limits_samples_and_pressure(self):
+        for cache_mib in (1024, 4096):
+            campaign = next(row for row in self.report["campaigns"]
+                if row["model"] == f"qwen-image-2.1-cache{cache_mib}-framework-cohort")
+            self.assertEqual((campaign["date"], campaign["reference_cache_mib"]), ("2026-10-12", cache_mib))
+            evidence = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+            self.assertTrue(campaign["reference_comparison_valid"])
+            self.assertEqual(evidence["order"], ["native-gpu", "native-frozen", "mflux-bf16", "mflux-bf16", "native-frozen", "native-gpu"])
+            self.assertEqual(sum(len(trial["pngs"]) for trial in evidence["trials"]), 24)
+            for route in campaign["routes"]:
+                self.assertEqual(route["warm_sample_count"], 4)
+                self.assertEqual(len(route["cold_seconds"]), 2)
+                self.assertEqual(len(route["repeated_prompt_seconds"]), 2)
+                trials = [trial for trial in evidence["trials"] if trial["route"] == route["route"]]
+                self.assertEqual(route["physical_peaks"], [trial["memory"]["tree_peak_phys_footprint_bytes"] for trial in trials])
+                self.assertEqual(route["compression_bytes"], [trial["memory"]["compression_bytes"] for trial in trials])
+                self.assertEqual(route["swap_out_bytes"], [0, 0])
+                if route["route"] == "mflux-bf16":
+                    self.assertTrue(all(trial["report"]["reference_cache_limit_bytes"] == cache_mib << 20 for trial in trials))
+            self.assertIn("no causal cache-speed ranking", campaign["note"])
+
+    def test_qwen_cache_export_rejects_wrong_actual_limit_or_incomplete_memory(self):
+        path = "docs/design/validation/qwen21-cache1024-framework-current-20261012.json"
+        for corruption, message in (("limit", "actual reference cache limit"), ("memory", "complete cache candidate memory")):
+            evidence = json.loads((ROOT / path).read_text())
+            if corruption == "limit":
+                evidence["trials"][2]["report"]["reference_cache_limit_bytes"] = 0
+            else:
+                evidence["trials"][0]["memory"]["complete"] = False
+            with mock.patch("base_model_benchmark_evidence.source", return_value=(evidence, {})):
+                with self.assertRaisesRegex(ValueError, message):
+                    qwen_cache_campaign(path, 1024)
+
+    def test_retained_qwen_reference_uses_own_native_controls_and_preserves_other_limits(self):
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        reference = configs["reference_configurations"][0]
+        evidence = json.loads((ROOT / reference["evidence"]).read_text())
+        routes = {row["route"]: row for row in evidence["routes"]}
+        self.assertEqual(reference["fresh_warm_median_seconds"], routes["mflux-bf16"]["fresh_warm_median"])
+        self.assertEqual(reference["native_gpu_control_seconds"], routes["native-gpu"]["fresh_warm_median"])
+        self.assertEqual(reference["native_frozen_control_seconds"], routes["native-frozen"]["fresh_warm_median"])
+        self.assertEqual(reference["free_cache_limit_bytes"], 1024 << 20)
+        self.assertIn("not a causal/global speed winner", reference["selection_note"])
+        for candidate in reference["other_cache_candidates"]:
+            other = json.loads((ROOT / candidate["evidence"]).read_text())
+            actual = next(row for row in other["routes"] if row["route"] == "mflux-bf16")
+            self.assertEqual(candidate["free_cache_limit_bytes"], other["reference_cache_mib"] << 20)
+            self.assertEqual(candidate["fresh_warm_median_seconds"], actual["fresh_warm_median"])
 
     def test_ltx_full_media_modes_and_clock_boundaries_are_not_pooled(self):
         batch = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-persistent-batch")

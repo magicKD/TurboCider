@@ -8,8 +8,8 @@
 下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
 再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
-hybrid、两种Q4/g32匹配及提前解码，共48个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
-[Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。参考更多cache候选、
+hybrid、两种Q4/g32匹配及提前解码、Qwen1024/4096MiB缓存，共50个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+[Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。更新上游框架版本、
 更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
 
@@ -92,6 +92,14 @@ encoder+DiT Q4/g32扩展后定向目标133项通过，包含saved36层推导、
 不变、新BF16准确与复制源不变。同真实session的packed/predecoded/
 packed/predecoded四完整请求与pixels恢复通过；未作额外计时分母。
 所有tests/probes在性能实验terminal后运行，未运行全量make test。
+
+Qwen1024/4096MiB两组完成后catalog为50组，各自24PNG/6memory，
+actual cache limits、完整三路线回文、四fresh与cold/repeat独立验收。
+新增错误cache实际值/不完整memory/日期/控制顺序拒绝，以及保存reference
+自己cohort的native分母回归；首次测试发现cache0配置抄录的尾数不一致，
+按原验收值45.96821891650325修正，不放宽比较门槛。设置上述新实验库
+运行make test-base-benchmark，142项全部通过，未运行全量make test。
+仍不将更多shape/current-upstream/成功外部LTX缺口当成完成。
 
 ## 不是缺少结果的隐含通过
 

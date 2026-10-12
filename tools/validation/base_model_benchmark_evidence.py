@@ -41,6 +41,38 @@ def runtime_campaign(path, model, size, steps, note):
                 timing_scope=data["timing_scope"])
 
 
+def qwen_cache_campaign(path, cache_mib):
+    data, binding = source(path, ("complete_diagnostic",))
+    order = ["native-gpu", "native-frozen", "mflux-bf16", "mflux-bf16", "native-frozen", "native-gpu"]
+    if (cache_mib not in (1024, 4096) or data["reference_cache_mib"] != cache_mib or
+            data["steps"] != 40 or data["requests_per_process"] != 4 or data["order"] != order or
+            [trial["index"] for trial in data["trials"]] != list(range(6)) or
+            [trial["route"] for trial in data["trials"]] != order or
+            data["reference_latency_ranking_valid"] is not True):
+        raise ValueError("complete valid same-window Qwen cache candidate required")
+    routes = []
+    for row in data["routes"]:
+        trials = [trial for trial in data["trials"] if trial["route"] == row["route"]]
+        if len(trials) != 2 or any(trial["memory"]["complete"] is not True for trial in trials):
+            raise ValueError("complete cache candidate memory required")
+        if len(row["fresh_warm_seconds"]) != 4 or len(row["cold_seconds"]) != 2 or len(row["repeat_seconds"]) != 2:
+            raise ValueError("four fresh samples and separate cold/repeat required")
+        if row["route"] == "mflux-bf16" and any(
+                trial["report"]["reference_cache_limit_bytes"] != cache_mib << 20 for trial in trials):
+            raise ValueError("actual reference cache limit differs")
+        routes.append(measured(row["route"], row["cold_seconds"], row["fresh_warm_seconds"],
+            repeated_prompt_seconds=row["repeat_seconds"], constructor_seconds=row["constructor_seconds"],
+            physical_peaks=[trial["memory"]["tree_peak_phys_footprint_bytes"] for trial in trials],
+            compression_bytes=[trial["memory"]["compression_bytes"] for trial in trials],
+            swap_out_bytes=[trial["memory"]["swap_out_bytes"] for trial in trials]))
+    if {row["route"] for row in routes} != set(order) or len(routes) != 3:
+        raise ValueError("all three matched cache candidate controls required")
+    return dict(evidence=binding, model=f"qwen-image-2.1-cache{cache_mib}-framework-cohort",
+        geometry=[512, 512], steps=40, date=data["date"], routes=routes,
+        reference_cache_mib=cache_mib, reference_comparison_valid=True, timing_scope=data["timing_scope"],
+        note="complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0")
+
+
 def export():
     campaigns = []
     data, binding = source("docs/design/validation/qwen21-conditioned-reference-20261010.json",
@@ -190,6 +222,9 @@ def export():
             routes=routes, timing_scope=data["timing_scope"], note=note,
             reference_comparison_valid=data.get("reference_latency_ranking_valid", False),
             native_comparison_valid=data.get("native_latency_ranking_valid", True)))
+    for cache_mib in (1024, 4096):
+        campaigns.append(qwen_cache_campaign(
+            f"docs/design/validation/qwen21-cache{cache_mib}-framework-current-20261012.json", cache_mib))
     flux, binding = source("docs/design/validation/flux9-bf16-current-v5-20261011.json", ("complete_diagnostic",))
     if flux["reference_required_weight_coverage_verified"] is not True:
         raise ValueError("current FLUX original reference weights must be actually covered")
@@ -323,7 +358,7 @@ def export():
                 goal_completion_scope="expanded local family/precision/parameter and best GPU/ANE/framework comparisons remain active; prior-stage completion is not expanded-goal proof; not release qualification",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
-                missing_current_comparisons=["Qwen further native share/shape and optional reference1024/4096MiB cache candidates",
+                missing_current_comparisons=["Qwen further native share/shape candidates; reference0/1024/4096MiB cache cohorts completed; current upstream framework-version comparisons pending",
                     "Z additional native shape/checkpoint candidates; fourteen Private share/join candidates completed", "FLUX9B additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",

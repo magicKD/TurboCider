@@ -9,6 +9,8 @@
 | --- | ---: | ---: | ---: | --- |
 | 10-10 [Qwen原GGUF Q4_K_M，512²/40步](README.md#3-qwen-gguf-与原-unslothencoder-到完整生成) | 44.428 | 36.870，Private W8A8 | pinned Unsloth/sd-server125.365 | GPU2.82×、混合3.40×；两fresh/路 |
 | 10-11 [Qwen原BF16源，512²/40步](QWEN_BF16_FRAMEWORKS.md) | 43.347 | 31.251，frozen CoreML | mflux BF16/cache0 45.968 | GPU1.06×、混合1.47×；四fresh/路 |
+| 10-12 [Qwen BF16源/cache1024完整候选](QWEN_BF16_FRAMEWORKS.md) | 43.377 | 32.393，frozen W8A8 | mflux BF16/cache1024 45.451 | GPU1.048×、混合1.403×；四fresh/路，24PNG/6memory |
+| 10-12 [Qwen BF16源/cache4096完整候选](QWEN_BF16_FRAMEWORKS.md) | 43.331 | 32.407，frozen W8A8 | mflux BF16/cache4096 45.498 | GPU1.050×、混合1.404×；与1024参考只差0.1%，不证明速度优劣 |
 | 10-11 [Z原BF16源，512²/8步](Z_IMAGE_FRAMEWORKS.md) | 7.363 | 5.780，frozen W8A8 | mflux BF16 9.520 | GPU1.29×、混合1.65×；四fresh/路 |
 | 10-12 [FLUX9B原BF16源，512²/4步](FLUX9_HYBRID.md) | compiled7.844 | 7.841，INT8-weight/FP16-I/O prefix | mflux BF16/cache0 7.355 | 混合对compiled仅省0.031%，参考胜；四fresh/路 |
 | 10-12 [FLUX9B DiT-only Q4/g32，512²/4步](FLUX9_MATCHED_Q4.md) | Q4 7.987 | 未验证；该候选GPU-only | 同planes mflux Q4 8.031 | GPU仅名义0.5%差异；对自身BF16 7.922s不加速，但peak降至18.16GB |
@@ -20,6 +22,8 @@
 近似量化，不能宣称严格BF16画质parity；不同框架同seed不等于同noise。
 Unsloth这里只指固定GGUF/sd-server路径，mflux为只读0.19.2，不是所有
 版本/其它硬件的排名。不同模型checkpoint和不同量化recipe不互当分母。
+更准确的版本身份是2026-09-20固定commit，包版本字段0.19.2；更新
+上游版本尚未同机重测。当前主要是文生图/视频，不冒充Image Edit首步对照。
 
 ## 参数探索与推荐
 
@@ -28,13 +32,15 @@ Unsloth这里只指固定GGUF/sd-server路径，mflux为只读0.19.2，不是所
   join均未改善；热态仍选frozen，单次冷启动未必选它。
 - Qwen GGUF的GPU/Private快速组合已接到合格512/40 base请求默认路径；
   BF16源的frozen是独立近似候选，不能混称同一种默认精度。
+  最新参考缓存1024/4096MiB完整对照约45.45s，GPU约43.35s、mixed
+  约32.4s；保存1024的较低观测peak34.48–34.88GB候选，不合并旧样本。
 - FLUX保留compiled GPU与新hybrid实验配置，但新hybrid不自动启用。
   cold15.73–16.03s更贵；native同prompt repeat-cache-hit省约11.5%
   单列，不混入fresh优势。物理ANE occupancy/并行重叠尚未观测。
 - LTX仍推荐quality GPU。INT8加载/重编译抵消部分计算收益；batch和
   clean-exec estimate不混池，也不把较大delta当无损。
 
-[详细总览](README.md)、[48组逐请求catalog](results-20261011.json)、
+[详细总览](README.md)、[50组逐请求catalog](results-20261011.json)、
 [可复现配置](best-local-configs-20261011.json)、[完成度审计](COMPLETION_AUDIT.md)
 分别保留任务/精度/冷启动/实际调用/内存/媒体误差和缺口。更多尺寸、
 FLUX匹配量化、进一步GPU/ANE分区及LTX成功外部对照仍未完成，扩大

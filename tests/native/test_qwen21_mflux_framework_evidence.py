@@ -49,6 +49,19 @@ class QwenFrameworkEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "required weights unproven"):
                 audit(root, root, root / "missing-build.json")
 
+    def test_new_cache_candidates_require_exact_complete_control_palindrome(self):
+        with tempfile.TemporaryDirectory(prefix="tc-qwen-cache-order-") as raw:
+            root = Path(raw)
+            for size in (1024,4096):
+                (root / "summary.json").write_text(json.dumps(dict(status="complete_diagnostic",steps=40,count=4,
+                    reference_cache_mib=size,order=["mflux-bf16"],trials=[dict(index=0,route="mflux-bf16",report={})])))
+                with self.assertRaisesRegex(ValueError,"matched three-route palindrome"):
+                    audit(root,root,root / "missing-build.json")
+
+    def test_completion_date_must_be_valid_before_any_evidence_reads(self):
+        with self.assertRaises(ValueError):
+            audit(Path("not-read"),Path("not-read"),Path("not-read"),evidence_date="2026-13-99")
+
 
 if __name__ == "__main__":
     unittest.main()

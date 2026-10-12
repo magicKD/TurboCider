@@ -24,9 +24,14 @@ GPU Sol+text256 61.869s，约3.1%小收益但明显视频漂移；INT8各recipe
 随后参考cache0完整对照为mflux45.968/GPU43.347/frozen31.251s，GPU/
 frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 候选都保留，不为了胜率只选较慢参考，见[Qwen详细边界](QWEN_BF16_FRAMEWORKS.md)。
+10-12新增参考1024/4096MiB两组完整候选，GPU/frozen/reference分别
+43.377/32.393/45.451s与43.331/32.407/45.498s；每组24PNG/6memory。
+最新优势为约1.05×/1.40×，两cache参考只差0.1%不作速度因果判断；
+保存1024较低peak34.48–34.88GB候选，4096约37.7GB。当前固定mflux
+checkout为2026-09-20提交（包版本字段0.19.2），更新版本仍需重测。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面48组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面50组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-12新增真实9B GPU/ANE全图四路线正反序：eager8.154/compiled7.844/
@@ -99,6 +104,8 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-11 Qwen BF16，512²，40步 | 43.250 | 31.008，Public Core ML frozen W6144 | 1.395× /28.3% | 原生完整ABBA；同窗口mflux噪声输出不作外部排名 |
 | 10-11 Qwen BF16，最新有效五路线 | 43.239 | 31.059，Public Core ML frozen W6144 | 1.392× /28.2% | 四fresh/路，40PNG；mflux BF16 48.512s，内存压力保留 |
 | 10-11 Qwen BF16，参考cache0独立候选 | 43.347 | 31.251，同配置frozen | 1.387× /27.9% | 四fresh/路，24PNG；mflux45.968s，原生对参考1.060×/1.471× |
+| 10-12 Qwen BF16，参考cache1024候选 | 43.377 | 32.393，同配置frozen | 1.339× /25.3% | 四fresh/路，24PNG/6memory；mflux45.451s，对参考1.048×/1.403× |
+| 10-12 Qwen BF16，参考cache4096候选 | 43.331 | 32.407，同配置frozen | 1.337× /25.2% | 四fresh/路，24PNG/6memory；mflux45.498s，对参考1.050×/1.404× |
 | 10-11 FLUX9B BF16，旧配对 | 8.221 | N/A，9B DiT分区未验证 | 旧mflux11.263s | 四fresh warm/路；独立旧ABBA |
 | 10-11 FLUX9B BF16，最新配对 | 8.042 | N/A，9B分区仍未验证 | 最新mflux8.828s，1.098× | 四fresh/路，16PNG/4memory；同源async ABBA |
 | 10-11 FLUX9B BF16，参考cache0配对 | 7.980 | N/A，9B混合仍未验证 | mflux7.352s；native多用8.54%时间 | 四fresh/路，16PNG/4memory；负结果保留 |
