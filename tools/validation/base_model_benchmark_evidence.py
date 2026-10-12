@@ -454,15 +454,21 @@ def export():
     campaigns.append(dict(evidence=binding,model="flux2-klein-9b-affine-predecoded-gpu-cohort",
         geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=decoded["timing_scope"],
         note="same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"))
+    active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
+    for row in campaigns:
+        row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-12", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
-                goal_completion_scope="expanded local family/precision/parameter and best GPU/ANE/framework comparisons remain active; prior-stage completion is not expanded-goal proof; not release qualification",
+                goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only precision/parameter/best GPU-ANE and framework comparisons remain active; FLUX9B retained as deferred historical evidence only; not release qualification",
+                active_model_families=["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"],
+                deferred_model_families=["flux2-klein-9b"], active_campaign_count=len(active),
+                deferred_campaign_count=len(campaigns)-len(active), historical_report="docs/benchmark/HISTORICAL_RESULTS.md",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
                 missing_current_comparisons=["Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
-                    "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX9B native MLX version/precision/share/shape screening and compatible mlx-serve layouts; current0.22 seven-route BF16/hybrid/Q4/predecode/partialFP16 cohort completed",
+                    "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX4B original/current quantized asset admission, complete GPU/best GPU-ANE/mflux/current mlx-serve comparisons; old4B not current proof,9B deferred",
                     "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",

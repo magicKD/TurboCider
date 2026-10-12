@@ -6,7 +6,19 @@
   "qualification_passed": false,
   "goal_complete": false,
   "completion_audit": "docs/benchmark/COMPLETION_AUDIT.md",
-  "goal_completion_scope": "expanded local family/precision/parameter and best GPU/ANE/framework comparisons remain active; prior-stage completion is not expanded-goal proof; not release qualification",
+  "goal_completion_scope": "user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only precision/parameter/best GPU-ANE and framework comparisons remain active; FLUX9B retained as deferred historical evidence only; not release qualification",
+  "active_model_families": [
+    "flux2-klein-4b",
+    "z-image-turbo",
+    "qwen-image-2.1",
+    "ltx-2.5-distilled"
+  ],
+  "deferred_model_families": [
+    "flux2-klein-9b"
+  ],
+  "active_campaign_count": 41,
+  "deferred_campaign_count": 12,
+  "historical_report": "docs/benchmark/HISTORICAL_RESULTS.md",
   "expansion_status": "docs/benchmark/EXPANSION_STATUS.md",
   "campaigns": [
     {
@@ -115,7 +127,8 @@
         "sd_cpp_args.py": "374f46d17cd77a0f5d8973ebfb29976135553de2c0873178e511cd6573e67f72",
         "diffusion_memory.py": "e386058318403de82598e4cfbdf77f83518f64585946291fb2c2257634b99ecf"
       },
-      "note": "each target preceded by actual BF16 streaming 40 steps x3; two fresh warm prompts; not identical OS page state"
+      "note": "each target preceded by actual BF16 streaming 40 steps x3; two fresh warm prompts; not identical OS page state",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -238,7 +251,8 @@
       ],
       "timing_scope": "native request_wall including VAE/export; one cold and two fresh warm per route",
       "observed_memory_within_ten_percent": true,
-      "note": "physical peak is process-tree load+cold+warm+exit; not a hard RAM cap or equal-precision comparison"
+      "note": "physical peak is process-tree load+cold+warm+exit; not a hard RAM cap or equal-precision comparison",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -302,7 +316,8 @@
       ],
       "library_sha256": "b664b504e60ebde3dd2fc1e74dc176319a769fb3d3c549fa8ac47bb25fbe1bf0",
       "timing_scope": "native request_wall including VAE/export; request-local encoder on every route",
-      "note": "forward/reverse; both CPU load checks failed; busy diagnostic, not idle/default qualification"
+      "note": "forward/reverse; both CPU load checks failed; busy diagnostic, not idle/default qualification",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -362,7 +377,8 @@
         }
       ],
       "note": "forward campaign; combine raw warm samples with reverse, not route medians",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -422,7 +438,8 @@
         }
       ],
       "note": "reverse campaign; README quotes the pooled actual warm samples across both directions",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -503,7 +520,8 @@
         }
       ],
       "note": "September retained build; GPU/runtime v2/frozen palindromic order; single fox prompt",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -563,7 +581,8 @@
         }
       ],
       "note": "2026-09-30 lighthouse; GPU/runtime v1 ABBA",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -623,7 +642,8 @@
         }
       ],
       "note": "2026-09-30 portrait; separate prompt campaign",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -683,7 +703,8 @@
         }
       ],
       "note": "2026-09-30 Q8 lighthouse; GPU/runtime v1 ABBA; not BF16 checkpoint",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -743,7 +764,8 @@
         }
       ],
       "note": "2026-09-30 Q8 portrait; runtime PNG differs between forward/reverse",
-      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request"
+      "timing_scope": "native request_wall; includes VAE/PNG; excludes cold request",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -789,7 +811,8 @@
         }
       ],
       "timing_scope": "warm request wall; single sample",
-      "note": "INT8 small latency win failed quality; FP16 slower and failed quality; not automatically selected"
+      "note": "INT8 small latency win failed quality; FP16 slower and failed quality; not automatically selected",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -857,7 +880,8 @@
       "unsupported_same_layout_frameworks": [
         "mlx-serve26.10.1"
       ],
-      "native_hybrid_status": "9B DiT partition unvalidated; no automatic/claimed mixed benchmark"
+      "native_hybrid_status": "9B DiT partition unvalidated; no automatic/claimed mixed benchmark",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -948,7 +972,8 @@
       ],
       "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
       "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
-      "source_library_inputs_matched": 514
+      "source_library_inputs_matched": 514,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -991,7 +1016,8 @@
       ],
       "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
       "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
-      "source_library_inputs_matched": 514
+      "source_library_inputs_matched": 514,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1106,7 +1132,8 @@
       ],
       "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
       "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
-      "source_library_inputs_matched": 514
+      "source_library_inputs_matched": 514,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1221,7 +1248,8 @@
       ],
       "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
       "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
-      "source_library_inputs_matched": 514
+      "source_library_inputs_matched": 514,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1336,7 +1364,8 @@
       ],
       "timing_scope": "native request_wall; four fresh warm per config across full forward/reverse; repeat excluded",
       "note": "same library/original BF16 encoder/VAE/tokenizer; source representation and opt-in arithmetic differ; all fallback/retry/memory pressure retained",
-      "source_library_inputs_matched": 514
+      "source_library_inputs_matched": 514,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1403,7 +1432,8 @@
         }
       ],
       "timing_scope": "native full MP4 request_wall; one cold and one immediate conditioning-cache-hit warm per process",
-      "note": "GPU/INT8 forward+reverse two warm each; FP16 one warm; media drift and system pressure retained; stock mlx-serve original-pack preflight rejects before generation"
+      "note": "GPU/INT8 forward+reverse two warm each; FP16 one warm; media drift and system pressure retained; stock mlx-serve original-pack preflight rejects before generation",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1467,7 +1497,8 @@
         }
       ],
       "timing_scope": "native/API full PNG wall; four actual fresh warm per route; separate repeat; request-local GPU encoder",
-      "note": "native GPU/frozen complete ABBA; reference omitted64 FFN weights and rendered noise, never promoted as a latency denominator"
+      "note": "native GPU/frozen complete ABBA; reference omitted64 FFN weights and rendered noise, never promoted as a latency denominator",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1602,7 +1633,8 @@
       "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
       "note": "corrected complete source coverage; five-route ten-process palindrome; stock reference memory pressure and cross-engine image drift retained; not pure-kernel or strict BF16/W8A8 equivalence",
       "reference_comparison_valid": true,
-      "native_comparison_valid": true
+      "native_comparison_valid": true,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1783,7 +1815,8 @@
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
       "note": "seven-route fourteen-process palindrome; frozen/Private/Public and stock BF16/affine4/8; actual private4096/f32/retry retained; cold setup separate",
       "reference_comparison_valid": true,
-      "native_comparison_valid": true
+      "native_comparison_valid": true,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1872,7 +1905,8 @@
       "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
       "note": "six-process same-window native GPU/frozen and mflux BF16 free-cache0 candidate; stock model/math unchanged; lower reference pressure, no pooling with stock cohort",
       "reference_comparison_valid": true,
-      "native_comparison_valid": true
+      "native_comparison_valid": true,
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -1961,7 +1995,8 @@
       "timing_scope": "stock mflux full PNG wall; constructor separately; cold/two fresh/repeat per process",
       "note": "stock BF16/Q4/Q8 six-process palindrome; latest reference is faster than old BF16 ABBA; no native same-cohort denominator, no cross-cohort native ranking",
       "reference_comparison_valid": false,
-      "native_comparison_valid": false
+      "native_comparison_valid": false,
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -2086,7 +2121,8 @@
       "reference_cache_mib": 1024,
       "reference_comparison_valid": true,
       "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
-      "note": "complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0"
+      "note": "complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -2211,7 +2247,8 @@
       "reference_cache_mib": 4096,
       "reference_comparison_valid": true,
       "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
-      "note": "complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0"
+      "note": "complete six-process same-window GPU/frozen/mflux BF16 cache candidate; four fresh/route,24PNG/6memory; actual process-local limit checked, cold/repeat/pressure retained;1024/4096 medians differ only0.1%, no causal cache-speed ranking or pooling with stock/cache0",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -2373,7 +2410,8 @@
       "reference_cache_mib": 1024,
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
       "reference_comparison_valid": true,
-      "note": "current upstream0.22.0 isolated declared-dependency environment,8process/32PNG/8memory,4fresh/route; sourceBF16 stock7.976479s versus partialfloat16 8.355058s is4.746% slower, nativeGPU7.354224/frozen5.959064s; native speed wins but reference peak22.51GB is lower than native31.81-32.16GB; old reference9.519604s is a separate cohort/environment, no pooling or single-factor release causality"
+      "note": "current upstream0.22.0 isolated declared-dependency environment,8process/32PNG/8memory,4fresh/route; sourceBF16 stock7.976479s versus partialfloat16 8.355058s is4.746% slower, nativeGPU7.354224/frozen5.959064s; native speed wins but reference peak22.51GB is lower than native31.81-32.16GB; old reference9.519604s is a separate cohort/environment, no pooling or single-factor release causality",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -2535,7 +2573,8 @@
       "reference_cache_mib": 1024,
       "reference_comparison_valid": true,
       "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
-      "note": "current0.22.0 independent declared-dependency environment,8process/32PNG/8memory,4fresh/route; referenceBF16 41.952435s beats nativeGPU43.308977s, frozen31.809596s remains faster; referencepartialFP16 42.000398s differs only0.114%, no stable compute-option win; nativeGPU peak29.77-30.47GB lower than reference34.51-34.93GB/frozen36.03-36.08GB; old reference45.450516s retained separately, no pooling or global dominance"
+      "note": "current0.22.0 independent declared-dependency environment,8process/32PNG/8memory,4fresh/route; referenceBF16 41.952435s beats nativeGPU43.308977s, frozen31.809596s remains faster; referencepartialFP16 42.000398s differs only0.114%, no stable compute-option win; nativeGPU peak29.77-30.47GB lower than reference34.51-34.93GB/frozen36.03-36.08GB; old reference45.450516s retained separately, no pooling or global dominance",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -2802,7 +2841,8 @@
       "reference_cache_mib": 0,
       "reference_comparison_valid": true,
       "timing_scope": "complete PNG request wall; constructor separate; cold/two fresh/repeat, no added phase fences",
-      "note": "current0.22 isolated environment,14process/56PNG/14memory,4fresh/route; originalBF16 nativecompiled7.661436/hybrid7.433898/reference7.318347s, reference wins; hybrid saves2.970% aggregate but prompt-variable and cold21.69-21.86s; packednativeQ4 8.015237/referenceQ4 7.875917s, reference wins; nativepredecoded7.253946s saves9.498% versus ownpacked with peak24.36-24.43GB rather than11.92GB, sourceQ4 not strictBF16; referencepartialFP16 7.649527s slower4.525%; all negative results/cold/pressure and extra precision drift retained"
+      "note": "current0.22 isolated environment,14process/56PNG/14memory,4fresh/route; originalBF16 nativecompiled7.661436/hybrid7.433898/reference7.318347s, reference wins; hybrid saves2.970% aggregate but prompt-variable and cold21.69-21.86s; packednativeQ4 8.015237/referenceQ4 7.875917s, reference wins; nativepredecoded7.253946s saves9.498% versus ownpacked with peak24.36-24.43GB rather than11.92GB, sourceQ4 not strictBF16; referencepartialFP16 7.649527s slower4.525%; all negative results/cold/pressure and extra precision drift retained",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -2866,7 +2906,8 @@
         }
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
-      "note": "current matched async-build native/mflux BF16 ABBA; complete reference required weights; advantage is1.098x rather than old1.370x; no 9B hybrid validation"
+      "note": "current matched async-build native/mflux BF16 ABBA; complete reference required weights; advantage is1.098x rather than old1.370x; no 9B hybrid validation",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -2930,7 +2971,8 @@
         }
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
-      "note": "same-window cache0 reference candidate; mflux7.351531s beats native7.979642s; retained negative result, not native universal dominance or pooled stock samples"
+      "note": "same-window cache0 reference candidate; mflux7.351531s beats native7.979642s; retained negative result, not native universal dominance or pooled stock samples",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -3087,7 +3129,8 @@
         }
       ],
       "timing_scope": "same-process full MP4 request_wall; cold and immediate conditioning-cache-hit warm",
-      "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"
+      "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3152,7 +3195,8 @@
         }
       ],
       "timing_scope": "new process conditioning-cache-hit request_wall_estimate; not persistent API wall",
-      "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling"
+      "note": "eight source-bound configurations; Sol/text256/INT8 arithmetic separate; two actual warm per config; batch INT8 slower and variable; all32MP4/20memory and E5 raw diagnostics preserved; no physical NE trace or cross-boundary pooling",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3240,7 +3284,8 @@
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
       "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
-      "native_encoder_eval_interval": null
+      "native_encoder_eval_interval": null,
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -3328,7 +3373,8 @@
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
       "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
-      "native_encoder_eval_interval": 0
+      "native_encoder_eval_interval": 0,
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -3416,7 +3462,8 @@
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
       "note": "same-window eager/actual compiled96 branches/cache0 reference; four fresh per route; parameterized9B geometry, explicit weights; compiled/eager image exact in recorded tasks; reference remains slightly faster, not universal native dominance",
-      "native_encoder_eval_interval": 0
+      "native_encoder_eval_interval": 0,
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -3503,7 +3550,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3590,7 +3638,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3677,7 +3726,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3764,7 +3814,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3851,7 +3902,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -3938,7 +3990,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4025,7 +4078,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4112,7 +4166,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4199,7 +4254,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4286,7 +4342,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4373,7 +4430,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4460,7 +4518,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4547,7 +4606,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4634,7 +4694,8 @@
         }
       ],
       "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences",
-      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls"
+      "note": "same candidate six-process GPU/frozen/Private palindrome; four fresh per route; exact actual channel/join/retry/fallback and original-size quality preserved; candidate winner compared only with its own controls",
+      "in_current_scope": true
     },
     {
       "evidence": {
@@ -4760,7 +4821,8 @@
         }
       ],
       "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
-      "note": "eight-process same-window source-bound4096-prefix/8192-GPU complement,96 actual calls/request; INT8 weights/FP16 I/O, not W8A8/native integer MAC; hybrid7.841375/compiled7.843808s differ only0.031%, no stable fresh-request win; cache0 reference7.355288s wins; cold/repeat/pressure and all32PNG/8memory retained, automatic route unchanged"
+      "note": "eight-process same-window source-bound4096-prefix/8192-GPU complement,96 actual calls/request; INT8 weights/FP16 I/O, not W8A8/native integer MAC; hybrid7.841375/compiled7.843808s differ only0.031%, no stable fresh-request win; cache0 reference7.355288s wins; cold/repeat/pressure and all32PNG/8memory retained, automatic route unchanged",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -4886,7 +4948,8 @@
         }
       ],
       "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
-      "note": "same byte-identical153-linear DiT Q4/g32 planes in native/reference, original BF16 encoder/VAE; all32PNG/8memory complete; nativeQ4 7.986974 versus ownBF16 7.921748s is not speedup, referenceQ4 8.030596 versus BF16 7.379937s is slower; Q4 peaks18.16/19.73GB and compression0, memory-only candidate not full-model quantization or ANE qualification"
+      "note": "same byte-identical153-linear DiT Q4/g32 planes in native/reference, original BF16 encoder/VAE; all32PNG/8memory complete; nativeQ4 7.986974 versus ownBF16 7.921748s is not speedup, referenceQ4 8.030596 versus BF16 7.379937s is slower; Q4 peaks18.16/19.73GB and compression0, memory-only candidate not full-model quantization or ANE qualification",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -5012,7 +5075,8 @@
         }
       ],
       "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
-      "note": "same153 DiT+252 encoder Q4/g32 linears, BF16 embedding/VAE; complete539+902 saved parameters and all36 encoder layers,32PNG/8memory; nativeQ4 8.005275/ownBF16 7.741839s is3.4% slower, referenceQ4 8.042573/ownBF16 7.346223s slower; nativeQ4 peak11.99GB, lower-memory candidate not fastest, all-module4bit or ANE qualification"
+      "note": "same153 DiT+252 encoder Q4/g32 linears, BF16 embedding/VAE; complete539+902 saved parameters and all36 encoder layers,32PNG/8memory; nativeQ4 8.005275/ownBF16 7.741839s is3.4% slower, referenceQ4 8.042573/ownBF16 7.346223s slower; nativeQ4 peak11.99GB, lower-memory candidate not fastest, all-module4bit or ANE qualification",
+      "in_current_scope": false
     },
     {
       "evidence": {
@@ -5165,13 +5229,14 @@
         }
       ],
       "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
-      "note": "same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"
+      "note": "same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification",
+      "in_current_scope": false
     }
   ],
   "missing_current_comparisons": [
     "Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
     "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX9B native MLX version/precision/share/shape screening and compatible mlx-serve layouts; current0.22 seven-route BF16/hybrid/Q4/predecode/partialFP16 cohort completed",
+    "FLUX4B original/current quantized asset admission, complete GPU/best GPU-ANE/mflux/current mlx-serve comparisons; old4B not current proof,9B deferred",
     "LTX best full-media native configurations and runnable reference quantized layouts",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],

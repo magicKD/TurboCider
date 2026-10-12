@@ -1,5 +1,13 @@
 # 扩展 benchmark：完整目标仍在推进
 
+当前优先范围已按2026-10-12用户要求改为FLUX4B/Z-Image Turbo/
+Qwen2.1/LTX。9B只保留历史附录，不再安排新9B benchmark；下方
+9B扩展过程不是当前4B证据。53组里41组active、12组9B deferred。
+FLUX4B原BF16共享encoder身份复用被SHA拒绝，失败记录保留；官方
+mflux-community Q4整包已完整下载、全部size/SHA验收，runtime/
+performance仍false；随后验证本机GPU/最佳mixed与开源
+同任务端到端，不能用9B或旧4B数字填当前主榜。
+
 更新2026-10-12。本页对应新增要求：充分覆盖本机 FLUX、Z-Image Turbo、Qwen
 Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳路线，
 保留最快配置，并补常见框架的成功端到端对照。此前18个campaign是已

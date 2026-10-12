@@ -1,5 +1,18 @@
 # 本轮目标逐项核验
 
+2026-10-12用户最新范围：当前只考虑FLUX4B、Z-Image Turbo、Qwen
+Image2.1、LTX2.5，9B暂缓；下方9B实验仅为完整历史，不进入当前
+主榜或替代4B。53组catalog保留41组active/12组deferred，原数据不删。
+FLUX4B旧BF16目录未找到；复用Z encoder的原HF两片SHA重建失败，
+已拒绝该复用并保留receipt，改为官方mflux-community Q4整包恢复。
+Q4整包随后下载完成，11文件全部size/SHA核验，固定repo/revision与
+receipt保留；这是资产/格式阶段，不是当前4B performance通过。库
+0.32.3构建已terminal success，尚未据此宣称性能提升。新增四家族
+active/deferred范围与encoder字节重建负例回归，定向目标170项全过，
+未运行全量make test；主榜4B无新成功timing、原9B样本仍归档。
+LTX外部完整基线
+与四家族更多参数缺口仍保留，goal保持active。
+
 更新2026-10-12。按原目标核对下载/格式、GPU/ANE实现、Unsloth encoder/DiT
 对照、BF16 resident/相近内存streaming，以及本地base模型benchmark。
 “本轮交付”不等于所有设备/尺寸/操作或生产/Public/hard-RAM发布资格。

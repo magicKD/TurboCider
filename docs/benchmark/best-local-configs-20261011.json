@@ -3,7 +3,7 @@
   "date": "2026-10-11",
   "goal_complete": false,
   "qualification_passed": false,
-  "selection_scope": "Each native cohort's GPU/hybrid configuration retained with actual artifacts; fastest tested external reference recorded separately; not native universal victory, global optimum or automatic routing",
+  "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
   "configurations": [
     {
       "model": "qwen-image-2.1",
@@ -39,7 +39,8 @@
       "evidence": "docs/design/validation/qwen21-valid-framework-current-20261011.json",
       "reference_comparison_valid": true,
       "reference_reason": "Same original BF16 source fully mapped; stock mflux48.511753s, allocator/component lifetime and numerical arithmetic differ; reference memory pressure retained",
-      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model qwen-image-2.1 --source results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json --cache outputs/new-qwen-frozen-cache"
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model qwen-image-2.1 --source results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json --cache outputs/new-qwen-frozen-cache",
+      "in_current_scope": true
     },
     {
       "model": "z-image-turbo",
@@ -81,7 +82,8 @@
       "evidence": "docs/design/validation/z-valid-framework-current-20261011.json",
       "reference_comparison_valid": true,
       "selection_note": "Fastest tested seven-route fresh warm cohort; higher cold setup cost, not one-shot/global optimum or broad quality qualification",
-      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model z-image-turbo --source models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json --cache outputs/new-z-frozen-cache"
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model z-image-turbo --source models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json --cache outputs/new-z-frozen-cache",
+      "in_current_scope": true
     },
     {
       "model": "flux2-klein-9b",
@@ -123,15 +125,16 @@
         "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
         "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
       },
-      "actual_compiled_single_blocks_per_request": 96
+      "actual_compiled_single_blocks_per_request": 96,
+      "in_current_scope": false
     }
   ],
   "updated": "2026-10-12",
   "pending": [
-    "Qwen further native parameter/shape/current upstream quantized screening; cache0/1024/4096 and current0.22 BF16/partialFP16 completed",
-    "Z additional checkpoint/shape/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX9B native library-version/precision/share/shape and compatible mlx-serve candidates; current0.22 seven-route cohort completed",
-    "LTX further load/residency configurations and successful reference layouts; eight full-media configurations completed"
+    "FLUX4B source/format admission and complete GPU/bestGPU-ANE/mflux/current mlx-serve comparisons; originalBF16 reuse rejected, upstreamQ4 restoration pending",
+    "Qwen/Z further current precision/shape/share screening and applicable current framework comparisons",
+    "LTX successful same-task external complete-media comparison and best native loading/residency configurations",
+    "cross-family durable actually-runnable current winners; no public cross-hardware timing denominators"
   ],
   "media_configurations": [
     {
@@ -174,7 +177,8 @@
         "rgb_mean_correlation": 0.8157424355803057,
         "mae_255": 25.0304630776829,
         "motion_max_relative_error": 0.07965527256600152
-      }
+      },
+      "in_current_scope": true
     },
     {
       "model": "ltx-2.5-distilled",
@@ -206,7 +210,8 @@
         37604370304
       ],
       "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
-      "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim"
+      "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim",
+      "in_current_scope": true
     }
   ],
   "performance_configurations": [
@@ -244,7 +249,10 @@
       "reference_bf16_seconds": 7.342802146100439,
       "actual_initial_decoded_projections": 153,
       "actual_compiled_single_blocks_per_request": 96,
-      "physical_peak_bytes": [24400991776, 24448063872],
+      "physical_peak_bytes": [
+        24400991776,
+        24448063872
+      ],
       "evidence": "docs/design/validation/flux9-predecode-current-20261012.json",
       "current_replication": {
         "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
@@ -253,10 +261,14 @@
         "bf16_compiled_control_seconds": 7.661435957881622,
         "same_q4_reference_seconds": 7.875916603952646,
         "reference_bf16_seconds": 7.318346583517268,
-        "physical_peak_bytes": [24360441424, 24432433872],
+        "physical_peak_bytes": [
+          24360441424,
+          24432433872
+        ],
         "scope": "own0.22 seven-route cohort only, same retained recipe;9.498% saving versus packed, only0.88% nominal versus original BF16 with different math; old7.211s not pooled"
       },
-      "selection_note": "Fastest tested native approximate candidate in this complete cohort, opt-in not automatic/default:9.882% saving versus own packedQ4, peak24.40-24.45GB versus11.95-11.97GB; only1.8% nominal versus original referenceBF16 with different weight math; full quality/transition diagnostics retained."
+      "selection_note": "Fastest tested native approximate candidate in this complete cohort, opt-in not automatic/default:9.882% saving versus own packedQ4, peak24.40-24.45GB versus11.95-11.97GB; only1.8% nominal versus original referenceBF16 with different weight math; full quality/transition diagnostics retained.",
+      "in_current_scope": false
     }
   ],
   "experimental_configurations": [
@@ -269,7 +281,10 @@
         "fresh_warm_median_seconds": 7.433897687471472,
         "compiled_gpu_control_seconds": 7.661435957881622,
         "reference_bf16_seconds": 7.318346583517268,
-        "cold_seconds": [21.86401145812124, 21.687461416004226],
+        "cold_seconds": [
+          21.86401145812124,
+          21.687461416004226
+        ],
         "scope": "2.970% aggregate fresh saving but soft/light-variable, repeat slower and cold21.7s; reference BF16 wins, no automatic/default change; old0.031%/repeat11.5% not reused"
       },
       "representation": "original BF16 source; CoreML INT8 per-channel weights/FP16 I/O prefix, not activation8 or proven integer MAC",
@@ -306,7 +321,8 @@
       "compiled_gpu_control_seconds": 7.843807916389778,
       "reference_fresh_warm_median_seconds": 7.355287811951712,
       "evidence": "docs/design/validation/flux9-hybrid-current-20261012.json",
-      "selection_note": "Retain runnable experimental candidate, not a new best/default: fresh difference0.031% versus own compiled control is noise, tuned reference remains faster, cold15.73-16.03s; repeat-cache benefit is separate. Existing pure GPU opt-in retained; no physical ANE/overlap or broad quality qualification."
+      "selection_note": "Retain runnable experimental candidate, not a new best/default: fresh difference0.031% versus own compiled control is noise, tuned reference remains faster, cold15.73-16.03s; repeat-cache benefit is separate. Existing pure GPU opt-in retained; no physical ANE/overlap or broad quality qualification.",
+      "in_current_scope": false
     }
   ],
   "memory_configurations": [
@@ -338,9 +354,13 @@
       "fresh_warm_median_seconds": 7.986974145518616,
       "bf16_compiled_control_seconds": 7.9217483749380335,
       "same_q4_reference_seconds": 8.030595708056353,
-      "physical_peak_bytes": [18164528520, 18163725680],
+      "physical_peak_bytes": [
+        18164528520,
+        18163725680
+      ],
       "evidence": "docs/design/validation/flux9-matched-dit-q4-current-20261012.json",
-      "selection_note": "Lower observed memory candidate, not fastest/default or hard RAM qualification: peak18.16GB versus ownBF16 30.53-30.65GB; Q4 fresh0.823% slower; same-plane reference only0.5% nominal difference; approximate output drift retained."
+      "selection_note": "Lower observed memory candidate, not fastest/default or hard RAM qualification: peak18.16GB versus ownBF16 30.53-30.65GB; Q4 fresh0.823% slower; same-plane reference only0.5% nominal difference; approximate output drift retained.",
+      "in_current_scope": false
     },
     {
       "model": "flux2-klein-9b",
@@ -370,9 +390,13 @@
       "fresh_warm_median_seconds": 8.005275249946862,
       "bf16_compiled_control_seconds": 7.741838708054274,
       "same_q4_reference_seconds": 8.042573208338581,
-      "physical_peak_bytes": [11989492760, 11989673008],
+      "physical_peak_bytes": [
+        11989492760,
+        11989673008
+      ],
       "evidence": "docs/design/validation/flux9-matched-full-q4-current-20261012.json",
-      "selection_note": "Lowest observed native9B peak among these tested recipes, not fastest/default or hard RAM qualification:11.99GB versus ownBF16 30.33-30.65GB, about60% lower; Q4 fresh3.403% slower, numerical drift retained; no validated ANE route for this quantized source."
+      "selection_note": "Lowest observed native9B peak among these tested recipes, not fastest/default or hard RAM qualification:11.99GB versus ownBF16 30.33-30.65GB, about60% lower; Q4 fresh3.403% slower, numerical drift retained; no validated ANE route for this quantized source.",
+      "in_current_scope": false
     }
   ],
   "reference_configurations": [
@@ -388,13 +412,27 @@
       "fresh_warm_median_seconds": 41.952435375074856,
       "native_gpu_control_seconds": 43.308976791915484,
       "native_frozen_control_seconds": 31.809596374980174,
-      "physical_peak_bytes": [34514132104, 34925796416],
+      "physical_peak_bytes": [
+        34514132104,
+        34925796416
+      ],
       "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json",
       "selection_note": "Current0.22 BF16 versus partialFP16 differs only0.114%, not a causal/global speed winner. Reference beats own-cohort nativeGPU by3.234%, nativefrozen remains1.319x faster. Own controls only; older stock/cache0/1024/4096 retained separately, not pooled. Other current precision/cache/shape candidates pending.",
-      "packages": {"mlx": "0.32.3", "torch": "2.14.1", "transformers": "5.19.0", "numpy": "2.5.4", "Pillow": "12.3.0", "safetensors": "0.8.0"},
+      "packages": {
+        "mlx": "0.32.3",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "numpy": "2.5.4",
+        "Pillow": "12.3.0",
+        "safetensors": "0.8.0"
+      },
       "other_compute_candidates": [
-        {"route": "mflux-fp16", "compute_precision": "float16", "fresh_warm_median_seconds": 42.00039812445175,
-         "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json"}
+        {
+          "route": "mflux-fp16",
+          "compute_precision": "float16",
+          "fresh_warm_median_seconds": 42.00039812445175,
+          "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json"
+        }
       ],
       "reproduction_command": ".venv/bin/python3 -B tools/validation/qwen21_mflux_framework_screen.py --model models/Comfy-Org-Qwen-Image-2.1 --reference-model outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --frozen-manifest outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu --output outputs/new-qwen-current-reference",
       "other_cache_candidates": [
@@ -416,7 +454,8 @@
           "fresh_warm_median_seconds": 45.45051572902594,
           "evidence": "docs/design/validation/qwen21-cache1024-framework-current-20261012.json"
         }
-      ]
+      ],
+      "in_current_scope": true
     },
     {
       "model": "z-image-turbo",
@@ -430,10 +469,20 @@
       "fresh_warm_median_seconds": 7.976479062461294,
       "native_gpu_control_seconds": 7.354224395938218,
       "native_frozen_control_seconds": 5.959064104012214,
-      "physical_peak_bytes": [22506422784, 22521987608],
+      "physical_peak_bytes": [
+        22506422784,
+        22521987608
+      ],
       "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json",
       "selection_note": "Fastest of current0.22 BF16/partialfloat16 candidates; FP16 is4.746% slower. Native latency wins but reference has lower observed peak22.51GB versus native31.81-32.16GB. Own-cohort controls only; old native5.780/old reference9.520 not pooled. Not all-shape/precision/cache or global optimum.",
-      "packages": {"mlx": "0.32.3", "torch": "2.14.1", "transformers": "5.19.0", "numpy": "2.5.4", "Pillow": "12.3.0", "safetensors": "0.8.0"},
+      "packages": {
+        "mlx": "0.32.3",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "numpy": "2.5.4",
+        "Pillow": "12.3.0",
+        "safetensors": "0.8.0"
+      },
       "reproduction_command": ".venv/bin/python3 -B tools/validation/z_mflux_framework_screen.py --reference-model outputs/benchmark-model-views/z-bf16-mflux-v1-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu --output outputs/new-z-current-reference",
       "other_compute_candidates": [
         {
@@ -442,7 +491,8 @@
           "fresh_warm_median_seconds": 8.355057770502754,
           "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"
         }
-      ]
+      ],
+      "in_current_scope": true
     },
     {
       "model": "flux2-klein-9b",
@@ -457,18 +507,40 @@
       "native_bf16_control_seconds": 7.661435957881622,
       "native_hybrid_control_seconds": 7.433897687471472,
       "native_predecoded_control_seconds": 7.253945666481741,
-      "physical_peak_bytes": [32129899872, 32119790848],
+      "physical_peak_bytes": [
+        32129899872,
+        32119790848
+      ],
       "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
       "selection_note": "Fastest of current0.22 originalBF16/partialFP16/matchedQ4 reference candidates; beats native BF16 and hybrid. Native sourceQ4 predecode nominally0.88% faster with different weight math, not strict parity/global first. All ratios use own seven-route cohort, not old native7.211s.",
-      "packages": {"mlx": "0.32.3", "torch": "2.14.1", "transformers": "5.19.0", "numpy": "2.5.4", "Pillow": "12.3.0", "safetensors": "0.8.0"},
+      "packages": {
+        "mlx": "0.32.3",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "numpy": "2.5.4",
+        "Pillow": "12.3.0",
+        "safetensors": "0.8.0"
+      },
       "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_current_framework_screen.py --model models/FLUX.2-klein-9B --pack outputs/flux9-matched-full-q4-g32-pack-v2-20261012 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --ane-manifest outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json --output outputs/new-flux-current-frameworks",
       "other_compute_candidates": [
-        {"route": "mflux-fp16", "compute_precision": "float16", "fresh_warm_median_seconds": 7.649527395493351,
-         "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"},
-        {"route": "mflux-q4", "stored_recipe": "encoder+DiT eligible linears Q4/g32, denseBF16 embedding/VAE",
-         "fresh_warm_median_seconds": 7.875916603952646, "physical_peak_bytes": [12445344912, 12442854616],
-         "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"}
-      ]
+        {
+          "route": "mflux-fp16",
+          "compute_precision": "float16",
+          "fresh_warm_median_seconds": 7.649527395493351,
+          "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"
+        },
+        {
+          "route": "mflux-q4",
+          "stored_recipe": "encoder+DiT eligible linears Q4/g32, denseBF16 embedding/VAE",
+          "fresh_warm_median_seconds": 7.875916603952646,
+          "physical_peak_bytes": [
+            12445344912,
+            12442854616
+          ],
+          "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"
+        }
+      ],
+      "in_current_scope": false
     }
   ],
   "private_configurations": [
@@ -514,7 +586,17 @@
       "gpu_control_seconds": 7.345378021011129,
       "frozen_control_seconds": 5.793671062448993,
       "evidence": "docs/design/validation/z-private-partition-grid-current-20261011.json",
-      "selection_note": "Private-only finite14-candidate winner; frozen remains faster in own cohort. Not overall winner or automatic default."
+      "selection_note": "Private-only finite14-candidate winner; frozen remains faster in own cohort. Not overall winner or automatic default.",
+      "in_current_scope": true
     }
+  ],
+  "active_model_families": [
+    "flux2-klein-4b",
+    "z-image-turbo",
+    "qwen-image-2.1",
+    "ltx-2.5-distilled"
+  ],
+  "deferred_model_families": [
+    "flux2-klein-9b"
   ]
 }

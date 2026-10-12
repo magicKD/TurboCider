@@ -37,6 +37,19 @@ class BaseBenchmarkReportTests(unittest.TestCase):
                 self.assertTrue(all(type(value) in (float, int) and math.isfinite(value) and value > 0 for value in samples))
                 self.assertAlmostEqual(route["warm_median_seconds"], statistics.median(samples), places=12)
 
+    def test_current_focus_is_four_requested_families_without_promoting_flux9_history(self):
+        self.assertEqual(self.report["active_model_families"], ["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"])
+        self.assertEqual(self.report["deferred_model_families"], ["flux2-klein-9b"])
+        active = [row for row in self.report["campaigns"] if row["in_current_scope"]]
+        deferred = [row for row in self.report["campaigns"] if not row["in_current_scope"]]
+        self.assertEqual((len(active), len(deferred)), (self.report["active_campaign_count"], self.report["deferred_campaign_count"]))
+        self.assertTrue(all(row["model"].startswith("flux2-klein-9b") for row in deferred))
+        self.assertTrue(all(not row["model"].startswith("flux2-klein-9b") for row in active))
+        self.assertTrue((ROOT / self.report["historical_report"]).is_file())
+        summary = (ROOT / "docs/benchmark/SUMMARY.md").read_text()
+        self.assertNotIn("| 10-12 [FLUX9B", summary)
+        self.assertIn("FLUX4B", summary)
+
     def test_bound_raw_evidence_when_locally_available(self):
         for campaign in self.report["campaigns"]:
             binding = campaign["evidence"]
