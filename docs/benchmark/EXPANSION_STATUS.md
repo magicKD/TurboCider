@@ -3,10 +3,15 @@
 当前优先范围已按2026-10-12用户要求改为FLUX4B/Z-Image Turbo/
 Qwen2.1/LTX。9B只保留历史附录，不再安排新9B benchmark；下方
 9B扩展过程不是当前4B证据。53组里41组active、12组9B deferred。
+主榜只纳入兼容且完整成功的外部框架；不兼容者略过，不强制
+转换/改造。重点展示已证实的优势，保留同任务参考胜出、数值精度、
+cold与内存边界，不写所有模型/配置全面远超。
 FLUX4B原BF16共享encoder身份复用被SHA拒绝，失败记录保留；官方
-mflux-community Q4整包已完整下载、全部size/SHA验收，runtime/
-performance仍false；随后验证本机GPU/最佳mixed与开源
-同任务端到端，不能用9B或旧4B数字填当前主榜。
+mflux-community Q4整包已完整下载、全部size/SHA验收；下载receipt
+不改写。随后mflux0.22与当前mlx-serve26.10.1都实际生成512²/4步
+完整PNG，[预检证据](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)
+只证明各自兼容，尚非与native配对性能对照。继续验证本机GPU/
+最佳mixed与兼容开源同任务端到端，不用9B或旧4B数字填当前主榜。
 
 更新2026-10-12。本页对应新增要求：充分覆盖本机 FLUX、Z-Image Turbo、Qwen
 Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳路线，
@@ -19,8 +24,8 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；旧五路线/cache0/1024/4096、新0.22 BF16/partialFP16完整四路线 | 新版quant/cache、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置、旧七路线框架对照、14个Private网格、新mflux0.22 BF16/partial FP16四路线完整完成 | 额外尺寸/checkpoint与新版本量化候选，不能把有限网格当全局最优 |
-| FLUX.2 Klein 9B | stock/cache0、compiled、混合/Q4/预解码；当前mflux0.22七路线56PNG/14memory完整完成，predecode7.254对packed8.015s省9.50% | native库版本、其它bits/兼容mlx-serve布局、shares/shapes和prefill/加载；低RAM与性能候选分开 |
-| LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
+| FLUX.2 Klein 4B | 上游Q4/g64整包恢复；mflux0.22与mlx-serve26.10.1实际完整PNG预检成功 | native GPU/最佳mixed与兼容参考的完整配对cohort；9B历史/旧4B/单cold不作性能分母 |
+| LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败并排除 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续native驻留/加载瓶颈，外部只测兼容成功的情况，不强制制作转换模型 |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
 立即重复prompt，512/1024图像与480p/720p-class视频的独立口径，完整

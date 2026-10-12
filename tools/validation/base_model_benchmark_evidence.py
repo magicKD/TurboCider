@@ -9,6 +9,15 @@ import statistics
 
 ROOT = Path(__file__).resolve().parents[2]
 
+COMPARISON_POLICY = dict(
+    framework_admission="compatible and successful complete generation only",
+    adapt_unsupported_frameworks=False,
+    unsupported_results="audit only; no latency denominator or mandatory conversion",
+    ranking_scope="same task and own cohort; full output; precision and lifecycle differences explicit",
+    preserve_reference_wins=True,
+    presentation="verified advantages first; no universal dominance claim",
+)
+
 
 def measured(route, cold, warm, **details):
     if not cold or not warm or any(type(value) not in (float, int) or not math.isfinite(value) or value <= 0
@@ -16,6 +25,53 @@ def measured(route, cold, warm, **details):
         raise ValueError("finite positive complete-request samples required")
     return dict(route=route, cold_seconds=cold, warm_seconds=warm,
                 warm_sample_count=len(warm), warm_median_seconds=statistics.median(warm), **details)
+
+
+def matched_comparison(campaign, native_route, reference_route, precision_note):
+    """Derive a headline from one qualified cohort, never pooled minima."""
+    if (campaign.get("in_current_scope") is not True or
+            campaign["evidence"]["status"] != "complete_diagnostic" or
+            campaign.get("reference_comparison_valid", True) is not True or
+            campaign.get("native_comparison_valid", True) is not True):
+        raise ValueError("current compatible complete comparison required")
+    selected = {}
+    for name in (native_route, reference_route):
+        rows = [row for row in campaign["routes"] if row["route"] == name]
+        if len(rows) != 1:
+            raise ValueError("one actual cohort route per comparison side required")
+        row = rows[0]
+        checked = measured(name, row["cold_seconds"], row["warm_seconds"])
+        if (row["warm_sample_count"] != checked["warm_sample_count"] or
+                row["warm_median_seconds"] != checked["warm_median_seconds"]):
+            raise ValueError("comparison median must match actual samples")
+        selected[name] = checked
+    native, reference = selected[native_route], selected[reference_route]
+    elapsed, baseline = native["warm_median_seconds"], reference["warm_median_seconds"]
+    return dict(model=campaign["model"], evidence=dict(campaign["evidence"]),
+                native_route=native_route, reference_route=reference_route,
+                native_seconds=elapsed, reference_seconds=baseline,
+                speedup=baseline / elapsed, reduction_percent=100 * (1 - elapsed / baseline),
+                native_warm_sample_count=native["warm_sample_count"],
+                reference_warm_sample_count=reference["warm_sample_count"],
+                precision_note=precision_note, timing_scope=campaign.get("timing_scope") or campaign["note"])
+
+
+def verified_advantages(campaigns):
+    specifications = (
+        ("qwen-image-2.1-original-Q4_K_M", "mixed", "original-unsloth-gpu",
+         "original GGUF Q4_K_M source; approximate Private W8A8 FFN; pinned sd-server Metal only; native request/export versus original generate_image span"),
+        ("qwen-image-2.1-mflux022-bf16-fp16-cohort", "native-frozen", "mflux-bf16",
+         "same BF16 source; approximate frozen W8A8 FFN, not strict BF16 parity"),
+        ("z-image-turbo-mflux022-bf16-fp16-cohort", "native-frozen", "mflux-bf16",
+         "same BF16 source; approximate frozen W8A8 FFN; reference uses less memory"),
+    )
+    result = []
+    for model, native, reference, note in specifications:
+        rows = [row for row in campaigns if row["model"] == model]
+        if len(rows) != 1:
+            raise ValueError("one source-bound headline cohort required")
+        result.append(matched_comparison(rows[0], native, reference, note))
+    return result
 
 
 def source(path, statuses):
@@ -461,15 +517,16 @@ def export():
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
-                goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only precision/parameter/best GPU-ANE and framework comparisons remain active; FLUX9B retained as deferred historical evidence only; not release qualification",
+                goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
+                comparison_policy=COMPARISON_POLICY, verified_advantages=verified_advantages(campaigns),
                 active_model_families=["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"],
                 deferred_model_families=["flux2-klein-9b"], active_campaign_count=len(active),
                 deferred_campaign_count=len(campaigns)-len(active), historical_report="docs/benchmark/HISTORICAL_RESULTS.md",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
                 missing_current_comparisons=["Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
-                    "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX4B original/current quantized asset admission, complete GPU/best GPU-ANE/mflux/current mlx-serve comparisons; old4B not current proof,9B deferred",
-                    "LTX best full-media native configurations and runnable reference quantized layouts", "cross-family parameter screening and durable actually-loadable best configurations"],
+                    "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX4B Q4/g64 restored and mflux/current mlx-serve runtime prechecks succeeded; complete native GPU/best GPU-ANE and compatible reference cohorts pending; old4B not current proof,9B deferred",
+                    "LTX further native screening; compare external frameworks only if compatible complete media succeeds; unsupported reference packs excluded, no mandatory conversion", "cross-family parameter screening and durable actually-loadable best configurations"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
                     "additional converted precision/model packs are not equal-source original-format benchmark denominators"])

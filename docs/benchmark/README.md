@@ -8,18 +8,21 @@ FLUX9B暂缓，仅保留在[历史报告](HISTORICAL_RESULTS.md)，不进入主�
 
 先读[一页摘要](SUMMARY.md)；[开源项目公开评测与可比性](OPEN_SOURCE_COMPARISONS.md)
 区分同机完整实测、外部公开结果和未测/格式拒绝，不混用分母。
+主榜只纳入兼容且完整成功的开源路线；不兼容者略过，不强制转换或
+改造它们，失败记录仅供审计。优先展示已验证优势，同任务参考胜出
+的结果也保留，不把“最快已测”扩大成全部框架/任务全局最优。
 
-## 当前完整实测
+## 兼容开源框架的完整实测：优势置顶
 
 | 模型 / 任务 | 原生GPU s | 本组最快GPU/ANE s | 同组开源参考 s | 判断 |
 | --- | ---: | ---: | ---: | --- |
-| FLUX4B，目标512²/4步 | 待当前重测 | 待验证 | mflux0.22/当前mlx-serve待测 | 上游Q4整包已恢复、SHA验收，运行/格式待测；旧4B不充当当前结果 |
+| [Qwen2.1原GGUF Q4_K_M，512²/40步](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成) | 44.428 | **36.870**，Private W8A8 | pinned Unsloth/sd-server125.365 | **3.40×，省70.6%**；纯GPU2.82×，限该固定Metal路径 |
 | [Qwen2.1 BF16源，512²/40步](QWEN_BF16_FRAMEWORKS.md) | 43.309 | 31.810，近似frozen W8A8 | mflux0.22 BF16 41.952 | mixed1.319×；新版参考略胜pureGPU |
-| [Qwen2.1原GGUF Q4_K_M，512²/40步](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成) | 44.428 | 36.870，Private W8A8 | pinned Unsloth/sd-server125.365 | 该固定路径GPU2.82×/mixed3.40×；不同精度不混池 |
 | [Z-Image Turbo BF16源，512²/8步](Z_IMAGE_FRAMEWORKS.md) | 7.354 | 5.959，近似frozen W8A8 | mflux0.22 BF16 7.976 | GPU1.085×/mixed1.339×；参考peak22.51GB更低 |
-| [LTX2.5，704×448×97/11步/含音频](LTX_VIDEO.md) | quality63.848 | INT8 quality71.333，未胜GPU | 暂缺成功同任务外部完整对照 | 当前推荐GPU；不把失败启动当速度分母 |
 
-全部时间为完整PNG/MP4 request wall，constructor/cold/repeat另列。
+以上为完整生成热态时间，constructor/cold/repeat另列。固定GGUF参考
+使用原generate_image span，HTTP端到端另存，不能与native export边界
+称完全相同。其余图像为完整PNG request wall。
 图像每路通常4个fresh，LTX部分为两次conditioning-cache-hit warm；
 不跨campaign挑最小值。physical peak覆盖load+cold+warm+exit进程树，
 不等于硬RAM cap或全部外部服务/driver归因。
@@ -32,12 +35,20 @@ FLUX9B暂缓，仅保留在[历史报告](HISTORICAL_RESULTS.md)，不进入主�
 - LTX性能近似GPU Sol+text256为61.869s，对自身quality只省3.1%，
   97帧MAE约25/255；保存opt-in，不冒充无损或自动默认。clean-exec
   62.639s为不同estimate边界，不与persistent API wall拼倍率。
+  [LTX完整结果](LTX_VIDEO.md)的GPU quality为63.848s，INT8 quality
+  71.333s未胜GPU；没有兼容成功的外部分母，只报告内部优化，排除
+  原组合启动拒绝的框架，不以强制转换作为benchmark完成要求。
 - FLUX4B历史BF16记录有完整source SHA，但对应目录当前未找到。
   原BF16恢复尝试的共享encoder精确SHA核验失败，不能混用Z encoder；
   失败receipt保留，明确标注的官方mflux-community Q4整包已恢复并
-  完成全部文件的size/SHA验收（约4.62GB），runtime/performance仍false。
-  在完成source/格式/实际生成验收后补同机
-  GPU/最佳mixed/mflux/兼容mlx-serve及可用量化对照；不缩小目标为历史数字。
+  完成全部文件的size/SHA验收（约4.62GB）；下载receipt的runtime/
+  performance=false只描述资产阶段，不改写。随后[当前mflux预检](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)
+  已成功生成512²/4步完整PNG，单cold3.998s、constructor0.496s，
+  387 DiT/905 encoder/266 VAE参数全覆盖；这是运行兼容性，不是
+  fresh中位数或完整内存基线。继续补同机GPU/最佳mixed及兼容参考，
+  不用旧4B/9B数据或单cold时间填写正式排名。
+  当前mlx-serve26.10.1同一上游整包也实际返回512²/4步PNG，视觉
+  检查正常、服务终态退出；仅兼容性通过，尚无配对计时或完整内存。
 
 [原始样本catalog](results-20261011.json)保留53组历史/当前完整实验，
 其中41组在当前四家族范围、12组FLUX9B为deferred；不把它们一起称为

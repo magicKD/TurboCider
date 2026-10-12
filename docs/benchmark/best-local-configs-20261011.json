@@ -3,7 +3,15 @@
   "date": "2026-10-11",
   "goal_complete": false,
   "qualification_passed": false,
-  "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
+  "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls; compare compatible successful frameworks only, no mandatory unsupported adaptation;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
+  "comparison_policy": {
+    "framework_admission": "compatible and successful complete generation only",
+    "adapt_unsupported_frameworks": false,
+    "unsupported_results": "audit only; no latency denominator or mandatory conversion",
+    "ranking_scope": "same task and own cohort; full output; precision and lifecycle differences explicit",
+    "preserve_reference_wins": true,
+    "presentation": "verified advantages first; no universal dominance claim"
+  },
   "configurations": [
     {
       "model": "qwen-image-2.1",

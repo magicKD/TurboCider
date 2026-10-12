@@ -184,6 +184,7 @@ build-runtime-ane-probe:
 test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_base_model_benchmark_report.py
 	@"$(PYTHON)" -B tests/native/test_flux4_restore_assets.py
+	@"$(PYTHON)" -B tests/native/test_flux4_saved_precheck.py
 	@"$(PYTHON)" -B tests/native/test_z_base_formats_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_base_formats_evidence.py
 	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_screen.py

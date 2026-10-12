@@ -3,15 +3,27 @@
 2026-10-12用户最新范围：当前只考虑FLUX4B、Z-Image Turbo、Qwen
 Image2.1、LTX2.5，9B暂缓；下方9B实验仅为完整历史，不进入当前
 主榜或替代4B。53组catalog保留41组active/12组deferred，原数据不删。
+随后按用户要求收敛到兼容且完整成功的外部路线；不兼容者只保留
+审计，不强制转换/改造，也不将它们的缺失作为必须补齐的目标。
+优势榜置顶固定GGUF/Metal3.40×、Qwen/mflux1.319×、Z/mflux1.339×，
+所有倍率由各自cohort原始样本导出，Qwen纯GPU略输参考仍保留。
 FLUX4B旧BF16目录未找到；复用Z encoder的原HF两片SHA重建失败，
 已拒绝该复用并保留receipt，改为官方mflux-community Q4整包恢复。
 Q4整包随后下载完成，11文件全部size/SHA核验，固定repo/revision与
 receipt保留；这是资产/格式阶段，不是当前4B performance通过。库
-0.32.3构建已terminal success，尚未据此宣称性能提升。新增四家族
-active/deferred范围与encoder字节重建负例回归，定向目标170项全过，
-未运行全量make test；主榜4B无新成功timing、原9B样本仍归档。
-LTX外部完整基线
-与四家族更多参数缺口仍保留，goal保持active。
+0.32.3构建已terminal success，尚未据此宣称性能提升。随后mflux0.22
+当前4B整包512²/4步完整PNG预检成功，单cold3.998s，387/905/266
+参数全覆盖；存储F32 RoPE常量覆盖修正的早期失败保留。当前
+mlx-serve26.10.1同一整包也实际返回512² RGB PNG，HTTP200、视觉
+正常、服务终态退出。[兼容预检证据](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)
+不进入53组完整catalog或主榜：无native配对fresh中位数/独立物理内存，
+也不宣称native g64运行已通过。原9B样本仍归档；LTX若无兼容成功
+外部基线则只报告内部配置，剩余4B完整对照与参数筛选继续推进。
+本次定向回归`make test-base-benchmark`共179项全部通过，包含兼容
+比较政策、同cohort倍率推导、参考胜出保留、预检不可升格与F32
+RoPE覆盖检查。使用既有`TURBOCIDER_FLUX9_GATE_LIBRARY`只进行历史
+API门禁回归，没有安排新的9B benchmark。所有测试在模型预检终态
+之后执行；未运行全量`make test`。整体goal仍active。
 
 更新2026-10-12。按原目标核对下载/格式、GPU/ANE实现、Unsloth encoder/DiT
 对照、BF16 resident/相近内存streaming，以及本地base模型benchmark。

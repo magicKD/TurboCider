@@ -1,22 +1,30 @@
 # 开源项目评测：同机实测与公开背景分开
 
 更新2026-10-12。当前仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5，
-base-only。不是所有框架/版本/硬件的全局排行榜。
+base-only。主榜只比较兼容且完整生成成功的路线；不兼容者略过，不
+强制转换或修改外部框架。不是所有框架/版本/硬件的全局排行榜。
 
 ## 能作本机速度分母的结果
 
 | 项目 / 已测路线 | 模型与任务 | 开源参考完整s | 原生本组最优完整s | 可比性与限制 |
 | --- | --- | ---: | ---: | --- |
-| mflux0.22，fixed release commit | Qwen2.1 BF16源512²/40步 | 41.952 | frozen31.810 | mixed1.319×；nativeGPU43.309略输；W8A8不是严格BF16 |
+| Unsloth权重+pinned sd-server/Metal | Qwen2.1原Q4_K_M encoder+DiT/BF16VAE，512²/40步 | 125.365 | Private36.870 | **mixed3.40×，省70.6%**；只代表该固定路径，不代表Unsloth所有执行后端 |
+| mflux0.22，fixed release commit | Qwen2.1 BF16源512²/40步 | 41.952 | frozen31.810 | mixed1.319×，省24.2%；nativeGPU43.309略输；W8A8不是严格BF16 |
 | mflux0.22，同release | Z-Image Turbo512²/8步 | 7.976 | frozen5.959 | mixed1.339×；referencepeak22.51GB比native约32GB低 |
-| Unsloth权重+pinned sd-server/Metal | Qwen2.1原Q4_K_M encoder+DiT/BF16VAE，512²/40步 | 125.365 | Private36.870 | 该具体路径mixed3.40×，不代表Unsloth所有执行后端 |
-| mflux/当前mlx-serve | FLUX4B512²/4步 | 待完整重测 | 待完整重测 | 不能拿9B数据、9月旧4B或公开GPU宣传值替代 |
-| mlx-serve/ltx-2-mlx | LTX2.5 704×448×97/11步/stereoMP4 | 暂缺成功匹配基线 | qualityGPU63.848 | 已有stock mlx-serve memory preflight拒绝不是latency；converted/其他runtime仍待补 |
 
-前三行只用自己的完整正反序cohort、原尺寸PNG、独立进程树内存和
-实际参数/calls证据；[Qwen](QWEN_BF16_FRAMEWORKS.md)、[Z](Z_IMAGE_FRAMEWORKS.md)、
+每行只用自己的cohort和完整生成，不跨组拼最快分子/最慢分母。
+Qwen/Z mflux组为完整正反序、原尺寸PNG、独立进程树内存和
+实际参数/calls证据；固定GGUF组为同前置负载、各路两个fresh，
+原generate_image span与native request/export边界的差别单列。
+[Qwen](QWEN_BF16_FRAMEWORKS.md)、[Z](Z_IMAGE_FRAMEWORKS.md)、
 [固定GGUF路径](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成)。
 Model checkpoint/数学/组件生命周期、cold、repeat缓存边界另列。
+
+FLUX4B Q4/g64已经通过mflux0.22完整PNG单cold预检（3.998s），当前
+mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)
+仍不是与本机GPU/最佳mixed完整配对计时，暂不入速度榜。LTX只报告已完成的
+内部配置，GPU quality63.848s；已有原组合memory preflight拒绝直接
+排除，不拿失败时间当分母，也不要求为外部框架制作转换模型。
 
 ## 上游公开评测能说明什么
 
@@ -25,8 +33,8 @@ Model checkpoint/数学/组件生命周期、cold、repeat缓存边界另列。
 | BFL官方FLUX.2-klein-4B model card：4-step distilled，宣称sub-second生成，约13GB VRAM | 上游能力/性能宣传；未给出可复现的同机M4 Max完整任务计时 | 不拿“<1s”除本机时间；不混非蒸馏base-4B50步 |
 | mflux官方0.22.0 release：Z默认隐流从FP32改BF16；新增局部FP16 compute及报告的潜在收益 | 同项目版本优化；不是它与TurboCider的同机胜率 | 本机Qwen/Z已实际重测，FP16在这些任务没有收益；FLUX9B旧实验当前deferred |
 | mlx-serve README：相同MLX权重对LM Studio解码geomean约+26% | LLM token decoding，不是FLUX/Z/Qwen图像或LTX视频吞吐 | 不当媒体速度分母；媒体必须实际成功完整输出 |
-| mlx-serve26.10.1官方release列出FLUX4B默认媒体路径、LTX2.5/Qwen2.1功能 | 版本能力声明，不证明本地原格式可运行或更快 | 从当前binary/对应tag源码核验，再作同机对照；旧只读source checkout日期不同，不冒充当前能力 |
-| ltx-2-mlx上游公开benchmark：M2 Pro、主要2.3/streaming/不同pipeline | 不同设备、checkpoint和步骤/输出边界 | 仅作背景；当前2.5成功同任务完整MP4仍待实测，不跨条件拼倍率 |
+| mlx-serve26.10.1官方release列出FLUX4B默认媒体路径、LTX2.5/Qwen2.1功能 | 版本能力声明，不等于本机速度实测 | 当前binary的4B Q4实际PNG预检已成功；其他路线各自核验，旧source不冒充当前能力 |
+| ltx-2-mlx上游公开benchmark：M2 Pro、主要2.3/streaming/不同pipeline | 不同设备、checkpoint和步骤/输出边界 | 仅作背景；本机暂无兼容成功的同任务2.5完整MP4分母，不跨条件拼倍率 |
 
 截至本次查阅，上游LLM速度图、microkernel峰值、denoise-only时间、
 冷启动失败和不同模型参数规模，都不能直接用于当前四模型完整生成
@@ -49,5 +57,6 @@ prompt/cache、完整输出边界与硬件；不同seed engine也不保证相同
 
 所有公开数字不进入[raw sample catalog](results-20261011.json)的本机
 成功latency数组。保留框架自身负结果、完整source/实际执行/输出和
-memory pressure，避免只展示较慢参考。目标仍active，FLUX4B与LTX
-缺口不能用公开宣传数字填成完成。
+memory pressure，同任务有更快参考时也如实列出。重点展示已测
+Qwen/Z优势，不写“四模型全部远超”；FLUX4B完整同机对照仍待补，
+LTX无兼容成功参考则只报内部配置，不以强制适配作为完成条件。

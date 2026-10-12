@@ -6,7 +6,71 @@
   "qualification_passed": false,
   "goal_complete": false,
   "completion_audit": "docs/benchmark/COMPLETION_AUDIT.md",
-  "goal_completion_scope": "user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only precision/parameter/best GPU-ANE and framework comparisons remain active; FLUX9B retained as deferred historical evidence only; not release qualification",
+  "goal_completion_scope": "user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
+  "comparison_policy": {
+    "framework_admission": "compatible and successful complete generation only",
+    "adapt_unsupported_frameworks": false,
+    "unsupported_results": "audit only; no latency denominator or mandatory conversion",
+    "ranking_scope": "same task and own cohort; full output; precision and lifecycle differences explicit",
+    "preserve_reference_wins": true,
+    "presentation": "verified advantages first; no universal dominance claim"
+  },
+  "verified_advantages": [
+    {
+      "model": "qwen-image-2.1-original-Q4_K_M",
+      "evidence": {
+        "path": "docs/design/validation/qwen21-conditioned-reference-20261010.json",
+        "sha256": "cd5de3de9d51b553423451c8ab330b312cc4428c0eef6e575f18b9e2d7d159bf",
+        "status": "complete_diagnostic"
+      },
+      "native_route": "mixed",
+      "reference_route": "original-unsloth-gpu",
+      "native_seconds": 36.8704638545,
+      "reference_seconds": 125.36500000000001,
+      "speedup": 3.400147079644059,
+      "reduction_percent": 70.58950755434132,
+      "native_warm_sample_count": 2,
+      "reference_warm_sample_count": 2,
+      "precision_note": "original GGUF Q4_K_M source; approximate Private W8A8 FFN; pinned sd-server Metal only; native request/export versus original generate_image span",
+      "timing_scope": "each target preceded by actual BF16 streaming 40 steps x3; two fresh warm prompts; not identical OS page state"
+    },
+    {
+      "model": "qwen-image-2.1-mflux022-bf16-fp16-cohort",
+      "evidence": {
+        "path": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json",
+        "sha256": "324ca46c1635d974aa02f738b12424f500975dce3540538c461479c9998e8b40",
+        "status": "complete_diagnostic"
+      },
+      "native_route": "native-frozen",
+      "reference_route": "mflux-bf16",
+      "native_seconds": 31.809596374980174,
+      "reference_seconds": 41.952435375074856,
+      "speedup": 1.3188609776913902,
+      "reduction_percent": 24.17699689997218,
+      "native_warm_sample_count": 4,
+      "reference_warm_sample_count": 4,
+      "precision_note": "same BF16 source; approximate frozen W8A8 FFN, not strict BF16 parity",
+      "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation"
+    },
+    {
+      "model": "z-image-turbo-mflux022-bf16-fp16-cohort",
+      "evidence": {
+        "path": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json",
+        "sha256": "adba0db5066ffbfdec7b48148f7bf60dc268247b6cb3f5f699e8fdc9f5471a89",
+        "status": "complete_diagnostic"
+      },
+      "native_route": "native-frozen",
+      "reference_route": "mflux-bf16",
+      "native_seconds": 5.959064104012214,
+      "reference_seconds": 7.976479062461294,
+      "speedup": 1.3385456043493076,
+      "reduction_percent": 25.292048567436076,
+      "native_warm_sample_count": 4,
+      "reference_warm_sample_count": 4,
+      "precision_note": "same BF16 source; approximate frozen W8A8 FFN; reference uses less memory",
+      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences"
+    }
+  ],
   "active_model_families": [
     "flux2-klein-4b",
     "z-image-turbo",
@@ -5236,8 +5300,8 @@
   "missing_current_comparisons": [
     "Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
     "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX4B original/current quantized asset admission, complete GPU/best GPU-ANE/mflux/current mlx-serve comparisons; old4B not current proof,9B deferred",
-    "LTX best full-media native configurations and runnable reference quantized layouts",
+    "FLUX4B Q4/g64 restored and mflux/current mlx-serve runtime prechecks succeeded; complete native GPU/best GPU-ANE and compatible reference cohorts pending; old4B not current proof,9B deferred",
+    "LTX further native screening; compare external frameworks only if compatible complete media succeeds; unsupported reference packs excluded, no mandatory conversion",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],
   "unmeasured_or_inapplicable": [

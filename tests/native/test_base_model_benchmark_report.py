@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from base_model_benchmark_evidence import measured, flux_upstream_campaign, qwen_cache_campaign, qwen_upstream_campaign, z_upstream_campaign
+from base_model_benchmark_evidence import COMPARISON_POLICY, matched_comparison, measured, verified_advantages, flux_upstream_campaign, qwen_cache_campaign, qwen_upstream_campaign, z_upstream_campaign
 
 
 class BaseBenchmarkReportTests(unittest.TestCase):
@@ -49,6 +49,42 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         summary = (ROOT / "docs/benchmark/SUMMARY.md").read_text()
         self.assertNotIn("| 10-12 [FLUX9B", summary)
         self.assertIn("FLUX4B", summary)
+
+    def test_compatible_only_policy_and_headlines_use_own_actual_cohort(self):
+        self.assertEqual(self.report["comparison_policy"], COMPARISON_POLICY)
+        self.assertIs(COMPARISON_POLICY["adapt_unsupported_frameworks"], False)
+        self.assertIs(COMPARISON_POLICY["preserve_reference_wins"], True)
+        self.assertEqual(self.report["verified_advantages"], verified_advantages(self.report["campaigns"]))
+        self.assertEqual(len(self.report["verified_advantages"]), 3)
+        for row, expected in zip(self.report["verified_advantages"], (3.40, 1.319, 1.339)):
+            self.assertAlmostEqual(row["speedup"], expected, delta=.005)
+            self.assertIn("approximate", row["precision_note"])
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        self.assertEqual(configs["comparison_policy"], COMPARISON_POLICY)
+
+    def test_prechecks_invalid_and_deferred_routes_cannot_be_speed_headlines(self):
+        campaign = dict(self.report["campaigns"][0])
+        for change in (dict(in_current_scope=False), dict(reference_comparison_valid=False),
+                       dict(reference_comparison_valid=0), dict(native_comparison_valid=False),
+                       dict(evidence=dict(status="complete_precheck_only"))):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                matched_comparison(dict(campaign, **change), "mixed", "original-unsloth-gpu", "test")
+
+    def test_duplicate_route_or_label_only_median_cannot_create_advantage(self):
+        campaign = self.report["campaigns"][0]
+        rows = [dict(row) for row in campaign["routes"]]
+        rows[0]["warm_median_seconds"] = .001
+        with self.assertRaises(ValueError):
+            matched_comparison(dict(campaign, routes=rows), "gpu", "original-unsloth-gpu", "test")
+        with self.assertRaises(ValueError):
+            matched_comparison(dict(campaign, routes=[*campaign["routes"], campaign["routes"][0]]),
+                               "gpu", "original-unsloth-gpu", "test")
+
+    def test_reference_win_is_not_filtered_out_of_a_valid_comparison(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "qwen-image-2.1-mflux022-bf16-fp16-cohort")
+        row = matched_comparison(campaign, "native-gpu", "mflux-bf16", "strict BF16 controls")
+        self.assertLess(row["speedup"], 1)
+        self.assertLess(row["reduction_percent"], 0)
 
     def test_bound_raw_evidence_when_locally_available(self):
         for campaign in self.report["campaigns"]:
