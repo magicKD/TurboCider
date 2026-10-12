@@ -83,6 +83,18 @@ ModelModule flux9_module() {
                         r.operation == "image.edit", "unsupported FLUX operation");
             require(r.model_variant == "auto" || r.model_variant == "flux2-klein-9b",
                     "model_variant does not match the selected FLUX module");
+            if (const char *predecode = std::getenv("TURBOCIDER_FLUX9_PREDECODE_AFFINE")) {
+#ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+                require(std::strcmp(predecode, "1") == 0 && r.execution == "gpu" &&
+                            r.compile_gpu && r.allow_approximation && r.residency == "resident" &&
+                            !r.streaming.active() && r.operation == "image.generate" &&
+                            r.width == 512 && r.height == 512 && r.steps == 4 &&
+                            !r.dynamic_text && r.loras.empty(),
+                        "FLUX9B affine predecode requires exact512/4 base GPU experimental opt-in");
+#else
+                require(false, "FLUX9B affine predecode is experimental-only");
+#endif
+            }
             if (r.operation == "image.generate")
                 require(r.inputs.empty(), "image.generate does not accept image inputs");
             else {

@@ -116,6 +116,8 @@ class Weights {
     void select_dense_indices(const std::string &prefix,
                               const std::vector<int> &channel_indexes, int axis);
     void dequantize(const std::vector<std::string> &);
+    // Explicit dense operand dtype; the historical overload remains FP16.
+    void dequantize(const std::vector<std::string> &, mx::Dtype);
     // Gather token rows before affine decode; never expand a full vocabulary.
     // Host-side vocabulary validation belongs to the prompt assembler.
     Tensor embedding_rows(const Tensor &ids,const std::string &prefix) const;

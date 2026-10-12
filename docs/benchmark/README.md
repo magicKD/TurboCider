@@ -26,7 +26,7 @@ frozen倍率缩至1.060×/1.471×、参考peak降到33–34GB；stock与调优
 候选都保留，不为了胜率只选较慢参考，见[Qwen详细边界](QWEN_BF16_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面47组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面48组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-12新增真实9B GPU/ANE全图四路线正反序：eager8.154/compiled7.844/
@@ -44,6 +44,12 @@ Q4没有时延收益，但native peak降至18.16GB（自身BF16 30.53–30.65GB�
 7.742/8.005s、mflux BF16/Q4 7.346/8.043s，32PNG/8memory完整。
 Q4慢约3.4%，但native peak11.99GB、对自身BF16约少60%；embedding/
 VAE保持BF16，不冒充每个tensor4bit。[完整层数、误差、CoW与框架边界](FLUX9_FULL_Q4.md)。
+
+最新提前解码候选五路线已完成：Q4源DiT→BF16 operands+compiled GPU
+7.211s，对同窗口packed8.001s省9.88%，peak24.40–24.45GB而不是
+packed11.95–11.97GB；40PNG/10memory与真实153次初始decode通过。
+对参考原BF16 7.343s只是约1.8%名义差异且不同权重数学，不宣称严格
+BF16/全局领先。[完整高内存候选与额外舍入](FLUX9_PREDECODE.md)。
 
 10-11 已将实测快速组合接到合格 GGUF 请求的默认路径；不设置八个优化
 override 的同库回归为 GPU44.449 / Private36.861 s，24对完整tensor、
@@ -306,7 +312,7 @@ fixture、Qwen options与GGUF只读snapshot。未运行全量`make test`。
 这份测量报告不是所有设备、编辑/LoRA、所有尺寸或Public/hard-RAM发布
 资格；[目标逐项审计](COMPLETION_AUDIT.md)区分已交付要求与这些限制。
 
-[47 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
+[48 个完整已保留 campaign 的逐请求样本](results-20261011.json)单独导出
 了 cold/warm arrays、各阶段时间、构建身份与 source summary SHA；它
 是完整的本轮evidence catalog，不把明确N/A或未测扩展伪标为完成的运行。
 第一阶段[逐项审计](COMPLETION_AUDIT.md)与各历史实验状态仍保留；扩大

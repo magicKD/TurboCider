@@ -23,6 +23,8 @@ class Flux : public ModelSession {
     bool test_fail_drain_ = false;
 #endif
     Weights transformer_, vae_;
+    bool affine_predecoded_ = false;
+    void select_gpu_affine(const Request &, const Event &, std::atomic<bool> &);
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;

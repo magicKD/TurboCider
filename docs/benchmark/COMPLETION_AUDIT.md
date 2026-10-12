@@ -8,7 +8,7 @@
 下表保留原阶段审计，不代表新增扩大目标已经完成。最新扩大catalog
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
 再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
-hybrid、DiT-only及encoder+DiT线性Q4/g32匹配，共47个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+hybrid、两种Q4/g32匹配及提前解码，共48个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。参考更多cache候选、
 更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
@@ -19,6 +19,11 @@ native peak18.16GB更低；[真实模型与payload/内存/误差审计](FLUX9_MA
 随后encoder+DiT eligible linears Q4/g32也完整匹配，native8.005s、
 peak11.99GB，未省时；[36层完整覆盖与兼容性边界](FLUX9_FULL_Q4.md)。
 其它precision/布局/更多GPU-ANE分区仍未因此完成。
+
+source-Q4 DiT预解码BF16+compiled五路线7.211s对自己packed8.001s省
+9.88%，peak24.4GB；153次初始decode、后续96compiled events、40PNG/
+10memory与额外舍入均核验。[完整候选](FLUX9_PREDECODE.md)仍为显式
+近似高内存配置，不替代低RAM/严格BF16/全设备发布资格。
 
 | 原要求 | 已核验的当前/保留权威证据 | 结论与限制 |
 | --- | --- | --- |
@@ -81,6 +86,12 @@ encoder+DiT Q4/g32扩展后定向目标133项通过，包含saved36层推导、
 生成RoPE常量排除/其它unknown拒绝、902参数/252encoder linears，
 以及派生mlx-serve拒绝不作原格式或latency分母的回归。所有测试在
 模型实验terminal后运行；仍未运行全量make test。
+
+提前解码扩展后使用新experimental library运行定向目标137项通过；
+另显式GPU opt-in的微型Weights fixture验证Q4/Q8两case、历史FP16
+不变、新BF16准确与复制源不变。同真实session的packed/predecoded/
+packed/predecoded四完整请求与pixels恢复通过；未作额外计时分母。
+所有tests/probes在性能实验terminal后运行，未运行全量make test。
 
 ## 不是缺少结果的隐含通过
 

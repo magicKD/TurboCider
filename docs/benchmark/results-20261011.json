@@ -4172,6 +4172,159 @@
       ],
       "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
       "note": "same153 DiT+252 encoder Q4/g32 linears, BF16 embedding/VAE; complete539+902 saved parameters and all36 encoder layers,32PNG/8memory; nativeQ4 8.005275/ownBF16 7.741839s is3.4% slower, referenceQ4 8.042573/ownBF16 7.346223s slower; nativeQ4 peak11.99GB, lower-memory candidate not fastest, all-module4bit or ANE qualification"
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux9-predecode-current-20261012.json",
+        "sha256": "c2e2774de41fc0d88b8fcada10758c23d1dd18e29ad0c093d2c504091ae1d31a",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-affine-predecoded-gpu-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "native-bf16",
+          "cold_seconds": [
+            8.542283124988899,
+            8.963040957925841
+          ],
+          "warm_seconds": [
+            8.274533917196095,
+            7.254153207875788,
+            8.219685666030273,
+            7.28140529198572
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.750545479007997,
+          "repeated_prompt_seconds": [
+            6.666579167125747,
+            6.721829917049035
+          ],
+          "constructor_seconds": [
+            0.16366662504151464,
+            0.14424141705967486
+          ],
+          "physical_peaks": [
+            30264334152,
+            30627895376
+          ]
+        },
+        {
+          "route": "native-q4",
+          "cold_seconds": [
+            8.804823082871735,
+            8.17232795781456
+          ],
+          "warm_seconds": [
+            7.999691542005166,
+            8.040294166887179,
+            8.00288649997674,
+            7.979068707907572
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.001289020990953,
+          "repeated_prompt_seconds": [
+            7.490561957936734,
+            7.4801117919851094
+          ],
+          "constructor_seconds": [
+            0.13261712482199073,
+            0.1414028329309076
+          ],
+          "physical_peaks": [
+            11952088112,
+            11967013936
+          ]
+        },
+        {
+          "route": "native-predecoded",
+          "cold_seconds": [
+            7.957164665916935,
+            9.02624558401294
+          ],
+          "warm_seconds": [
+            7.173505417071283,
+            7.186089207883924,
+            7.235188500024378,
+            7.271078125108033
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.210638853954151,
+          "repeated_prompt_seconds": [
+            6.821592207998037,
+            6.713997124927118
+          ],
+          "constructor_seconds": [
+            0.136730165919289,
+            0.14659820892848074
+          ],
+          "physical_peaks": [
+            24400991776,
+            24448063872
+          ]
+        },
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            8.96719116694294,
+            10.263520583044738
+          ],
+          "warm_seconds": [
+            7.342356959125027,
+            7.302784292027354,
+            7.343247333075851,
+            7.367314082803205
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.342802146100439,
+          "repeated_prompt_seconds": [
+            7.445379541022703,
+            7.343772666994482
+          ],
+          "constructor_seconds": [
+            0.3840643330477178,
+            0.3830254999920726
+          ],
+          "physical_peaks": [
+            32332750320,
+            32283483608
+          ]
+        },
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            8.405094207962975,
+            8.098202750086784
+          ],
+          "warm_seconds": [
+            8.020388916134834,
+            8.027483332902193,
+            8.028259916929528,
+            8.066265333909541
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.02787162491586,
+          "repeated_prompt_seconds": [
+            8.031775834038854,
+            8.077560832956806
+          ],
+          "constructor_seconds": [
+            0.39219787484034896,
+            0.4013780830428004
+          ],
+          "physical_peaks": [
+            12564883056,
+            12567569984
+          ]
+        }
+      ],
+      "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
+      "note": "same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"
     }
   ],
   "missing_current_comparisons": [

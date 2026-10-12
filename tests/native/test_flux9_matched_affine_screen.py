@@ -53,6 +53,19 @@ class MatchedAffineScreenTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_report(bad,"mflux-q4")
 
+    def test_predecoded_route_needs153_initial_conversions_then_retained96_compiled_blocks(self):
+        report = dict(engine="native-predecoded",runs=[dict(request_wall_including_export=1.0,
+            actual_compiled_single_blocks=96,native_event_counts=dict(transformer_block=128,
+                affine_predecoded_gpu_route=1,affine_predecode_projection=153 if index==0 else 0),metrics=dict(
+                model="flux2-klein-9b",operation="image.generate",width=512,height=512,steps=4,
+                seed=42,text_tokens=512,prompt_cache_hit=index==3,hybrid={})) for index in range(4)])
+        validate_report(report,"native-predecoded")
+        for index,key,value in ((0,"affine_predecode_projection",152),(1,"affine_predecode_projection",153),(2,"affine_predecoded_gpu_route",0)):
+            bad = copy.deepcopy(report)
+            bad["runs"][index]["native_event_counts"][key] = value
+            with self.assertRaises(ValueError):
+                validate_report(bad,"native-predecoded")
+
 
 if __name__ == "__main__":
     unittest.main()

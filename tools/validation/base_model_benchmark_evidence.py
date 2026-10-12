@@ -297,6 +297,25 @@ def export():
     campaigns.append(dict(evidence=binding,model="flux2-klein-9b-matched-encoder-dit-q4-g32-cohort",
         geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=full["timing_scope"],
         note="same153 DiT+252 encoder Q4/g32 linears, BF16 embedding/VAE; complete539+902 saved parameters and all36 encoder layers,32PNG/8memory; nativeQ4 8.005275/ownBF16 7.741839s is3.4% slower, referenceQ4 8.042573/ownBF16 7.346223s slower; nativeQ4 peak11.99GB, lower-memory candidate not fastest, all-module4bit or ANE qualification"))
+    decoded,binding = source("docs/design/validation/flux9-predecode-current-20261012.json",("complete_diagnostic",))
+    if len(decoded["trials"]) != 10 or "native-predecoded" not in decoded["medians"]:
+        raise ValueError("complete actual five-route affine predecode cohort required")
+    routes = []
+    for route in ("native-bf16","native-q4","native-predecoded","mflux-bf16","mflux-q4"):
+        values = decoded["medians"][route]
+        trials = [trial for trial in decoded["trials"] if trial["route"] == route]
+        if any(trial["memory"]["complete"] is not True for trial in trials):
+            raise ValueError("complete predecode cohort process-tree proof required")
+        if route == "native-predecoded" and any(row["actual_compiled_single_blocks"] != 96 or
+                row["native_event_counts"].get("affine_predecode_projection",0) != (153 if row["index"]==0 else 0)
+                for trial in trials for row in trial["report"]["runs"]):
+            raise ValueError("actual one-time153 BF16 decodes then96 compiled blocks/request required")
+        routes.append(measured(route,values["cold_seconds"],values["samples"],
+            repeated_prompt_seconds=values["repeated_prompt_seconds"],constructor_seconds=values["constructor_seconds"],
+            physical_peaks=[trial["memory"]["tree_peak_phys_footprint_bytes"] for trial in trials]))
+    campaigns.append(dict(evidence=binding,model="flux2-klein-9b-affine-predecoded-gpu-cohort",
+        geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=decoded["timing_scope"],
+        note="same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"))
     return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-12", status="partial_expanded_evidence_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
                 qualification_passed=False, goal_complete=False,

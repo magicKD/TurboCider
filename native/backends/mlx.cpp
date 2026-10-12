@@ -995,6 +995,12 @@ Tensor Weights::embedding_rows(const Tensor &ids,const std::string &prefix) cons
 }
 
 void Weights::dequantize(const std::vector<std::string> &prefixes) {
+    dequantize(prefixes, mx::float16);
+}
+void Weights::dequantize(const std::vector<std::string> &prefixes,
+                          mx::Dtype dense_dtype) {
+    require(dense_dtype == mx::float16 || dense_dtype == mx::bfloat16,
+            "affine dense operands require an explicit supported 16-bit dtype");
     for (const auto &prefix : prefixes) {
         if (convrot(prefix)) {
             const auto &packed = at(prefix + ".weight");
@@ -1038,7 +1044,7 @@ void Weights::dequantize(const std::vector<std::string> &prefixes) {
         if (has(prefix + ".biases"))
             biases = at(prefix + ".biases");
         auto dense = mx::dequantize(weight, scales, biases, geometry.group_size,
-                                    geometry.bits, "affine", std::nullopt, mx::float16);
+                                    geometry.bits, "affine", std::nullopt, dense_dtype);
         mx::eval(dense);
         values_.at(prefix + ".weight") = std::move(dense);
         values_.erase(prefix + ".scales");

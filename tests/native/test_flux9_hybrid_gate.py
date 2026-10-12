@@ -78,6 +78,22 @@ class Flux9HybridGateTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.rejected(changes,"1")
 
+    def test_affine_predecode_rejects_wrong_recipe_before_loading(self):
+        task = dict(model="flux2-klein-9b",operation="image.generate",prompt="g",width=512,height=512,
+            steps=4,seed=42,audio=False,execution="gpu",residency="resident",dynamic_text=False,
+            allow_approximation=True,compile_gpu=True,output="/tmp/not-generated-flux9-predecode.png")
+        for changes in (dict(width=1024),dict(steps=8),dict(dynamic_text=True),dict(compile_gpu=False),
+                        dict(allow_approximation=False),dict(residency="component_staged")):
+            bad = dict(task,**changes)
+            result,error = C.c_void_p(),C.c_void_p()
+            with patch.dict(os.environ,{"TURBOCIDER_FLUX9_PREDECODE_AFFINE":"1"}):
+                status = self.lib.tc_engine_generate(self.engine,json.dumps(bad).encode(),None,None,
+                    C.byref(result),C.byref(error))
+            self.take(result)
+            message = self.take(error)
+            self.assertNotEqual(status,0)
+            self.assertIn("FLUX9B affine predecode requires exact512/4 base GPU experimental opt-in",message)
+
 
 if __name__ == "__main__":
     unittest.main()

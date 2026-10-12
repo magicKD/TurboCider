@@ -18,6 +18,12 @@ from runtime_ane_memory import run_sampled
 ROOT = Path(__file__).resolve().parents[2]
 ORDER = ("native-bf16","native-q4","mflux-bf16","mflux-q4",
          "mflux-q4","mflux-bf16","native-q4","native-bf16")
+PREDECODE_ORDER = ("native-bf16","native-q4","native-predecoded","mflux-bf16","mflux-q4",
+                   "mflux-q4","mflux-bf16","native-predecoded","native-q4","native-bf16")
+
+
+def quantized_route(route):
+    return route in ("native-q4","native-predecoded","mflux-q4")
 
 
 def validate_pack(pack, original):
@@ -59,15 +65,20 @@ def validate_pack(pack, original):
 
 
 def validate_report(report, route):
-    if route not in ORDER or report.get("engine") != route or len(report.get("runs",[])) != 4:
+    if route not in PREDECODE_ORDER or report.get("engine") != route or len(report.get("runs",[])) != 4:
         raise ValueError("actual complete known four-request route required")
     if route.startswith("native"):
         validate_native(report["runs"])
-        count = 96 if route == "native-bf16" else 0
+        count = 96 if route in ("native-bf16","native-predecoded") else 0
         if any(row.get("actual_compiled_single_blocks") != count for row in report["runs"]):
             raise ValueError("actual dense compiled versus packed eager branch differs")
         if any(row.get("native_event_counts",{}).get("transformer_block") != 128 for row in report["runs"]):
             raise ValueError("all8 dual plus24 single blocks across4 steps must execute")
+        if route == "native-predecoded" and any(
+                row["native_event_counts"].get("affine_predecoded_gpu_route") != 1 or
+                row["native_event_counts"].get("affine_predecode_projection",0) != (153 if index == 0 else 0)
+                for index,row in enumerate(report["runs"])):
+            raise ValueError("one complete153-projection BF16 predecode then retained compiled route required")
     else:
         bits = 4 if route == "mflux-q4" else None
         if report.get("quantization") != bits or report.get("precision") != "mlx.core.bfloat16":
@@ -100,13 +111,13 @@ def child(args):
     call.reference_cache_mib = 0
     call.stage_probe = False
     call.ane_manifest = None
-    call.model = args.pack / ("native" if route.startswith("native") else "mflux") if route.endswith("q4") else args.model
+    call.model = args.pack / ("native" if route.startswith("native") else "mflux") if quantized_route(route) else args.model
     if route.startswith("native"):
-        call.child = "native-compiled" if route == "native-bf16" else "native"
+        call.child = "native-compiled" if route in ("native-bf16","native-predecoded") else "native"
 
         def factory(destination, compiled, manifest):
             result = requests(destination,compiled,manifest)
-            if route == "native-q4":
+            if quantized_route(route):
                 for request in result:
                     request["allow_approximation"] = True
             return result
@@ -116,9 +127,10 @@ def child(args):
         report = mflux_child(call,output,stored_bits=4 if route.endswith("q4") else None,
                             coverage_provider=(inspect_saved_full_coverage if full else inspect_saved_dit_coverage) if route.endswith("q4") else None)
     report.update(engine=route,model_root=str(call.model),
-        quantized_components=receipt["converted_components"] if route.endswith("q4") else [],
+        quantized_components=receipt["converted_components"] if quantized_route(route) else [],
         representation=("DiT153+encoder252 affine Q4/g32 linears; original dense BF16 embedding/VAE" if full else
-                        "DiT153 affine Q4/g32 linears; original dense BF16 encoder/VAE") if route.endswith("q4") else "original BF16 encoder/DiT/VAE",
+                        "DiT153 affine Q4/g32 linears; original dense BF16 encoder/VAE") if quantized_route(route) else "original BF16 encoder/DiT/VAE",
+        dit_runtime_recipe="source Q4/g32 decoded once to BF16,153 dense projections then96 compiled singles/request" if route == "native-predecoded" else "original packed/dense route",
         library_sha256=sha256_file(args.library) if route.startswith("native") else None)
     validate_report(report,route)
     write_json(output / "report.json",report)
@@ -171,6 +183,8 @@ def parent(args):
                 MPLCONFIGDIR=str(args.output / "matplotlib-cache"))
             if route.startswith("native"):
                 env.update(TURBOCIDER_QWEN3_EVAL_INTERVAL="0",TURBOCIDER_QWEN3_FUSED_SDPA="1")
+            if route == "native-predecoded":
+                env["TURBOCIDER_FLUX9_PREDECODE_AFFINE"] = "1"
             command = [str(args.python),"-B",str(Path(__file__).resolve()),"--model",str(args.model),"--pack",str(args.pack),
                 "--library",str(args.library),"--mflux",str(args.mflux),"--output",str(destination),"--child",route]
             print(json.dumps(dict(starting=index,route=route)),flush=True)
@@ -214,7 +228,7 @@ def main():
     parser.add_argument("--python",type=Path)
     parser.add_argument("--extra",type=Path)
     parser.add_argument("--order",default=",".join(ORDER))
-    parser.add_argument("--child",choices=tuple(dict.fromkeys(ORDER)))
+    parser.add_argument("--child",choices=tuple(dict.fromkeys(PREDECODE_ORDER)))
     args = parser.parse_args()
     for name in ("model","pack","mflux","library"):
         setattr(args,name,getattr(args,name).resolve(strict=True))
@@ -223,7 +237,7 @@ def main():
         child(args)
     else:
         if (args.output.exists() or not args.python or not args.extra or
-                args.order.split(",") not in (list(ORDER),["native-q4","mflux-q4"])):
+                args.order.split(",") not in (list(ORDER),list(PREDECODE_ORDER),["native-q4","mflux-q4"],["native-q4","native-predecoded"])):
             parser.error("fresh output, reference environment and exact serial order required")
         args.python,args.extra = args.python.absolute(),args.extra.resolve(strict=True)
         parent(args)

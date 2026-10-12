@@ -6,7 +6,7 @@ from pathlib import Path
 import statistics
 
 from flux9_framework_evidence import portable, rgb
-from flux9_matched_affine_screen import ORDER, validate_report
+from flux9_matched_affine_screen import ORDER, PREDECODE_ORDER, quantized_route, validate_report
 from runtime_ane_common import sha256_file
 from runtime_ane_image_compare import rgb_metrics
 import numpy as np
@@ -23,16 +23,17 @@ def portable_tree(value):
 
 
 def cohort(data):
-    if data.get("status") != "complete_diagnostic" or data.get("order") != list(ORDER) or len(data.get("trials",[])) != 8:
+    order = data.get("order")
+    if data.get("status") != "complete_diagnostic" or order not in (list(ORDER),list(PREDECODE_ORDER)) or len(data.get("trials",[])) != len(order):
         raise ValueError("complete exact four-route matched-precision palindrome required")
     for index,trial in enumerate(data["trials"]):
-        if trial["index"] != index or trial["route"] != ORDER[index]:
+        if trial["index"] != index or trial["route"] != order[index]:
             raise ValueError("actual measured route order differs")
         validate_report(trial["report"],trial["route"])
-        declared = trial["report"].get("quantized_components",["transformer"] if trial["route"].endswith("q4") else [])
-        if declared != (data["conversion"]["converted_components"] if trial["route"].endswith("q4") else []):
+        declared = trial["report"].get("quantized_components",["transformer"] if quantized_route(trial["route"]) else [])
+        if declared != (data["conversion"]["converted_components"] if quantized_route(trial["route"]) else []):
             raise ValueError("actual declared quantized components differ from the verified conversion")
-    for route in dict.fromkeys(ORDER):
+    for route in dict.fromkeys(order):
         trials = [trial for trial in data["trials"] if trial["route"] == route]
         samples = [row["request_wall_including_export"] for trial in trials for row in trial["report"]["runs"][1:3]]
         declared = data["medians"][route]
@@ -87,19 +88,28 @@ def audit(screen,build_manifest):
                 raise ValueError("same base source/task required")
             if trial["route"] == "native-q4" and (requested.get("allow_approximation") is not True or requested["compile_gpu"]):
                 raise ValueError("packed quantized GPU recipe must remain explicit and eager")
+            if trial["route"] == "native-predecoded" and (requested.get("allow_approximation") is not True or requested.get("compile_gpu") is not True):
+                raise ValueError("predecoded source requires explicit approximate compiled GPU request")
         result["trials"].append(dict(index=trial["index"],route=trial["route"],report=portable(trial["report"]),
             memory={key:actual[key] for key in ("complete","tree_peak_phys_footprint_bytes","compression_bytes","decompression_bytes","swap_in_bytes","swap_out_bytes")},
             memory_report_sha256=memory["report_sha256"],memory_evidence_sha256=memory["evidence_sha256"],png_sha256=trial["png_sha256"]))
-    for left,right,label in ((0,1,"native-q4-vs-native-bf16"),(7,6,"native-q4-vs-native-bf16"),
-            (2,3,"mflux-q4-vs-mflux-bf16"),(5,4,"mflux-q4-vs-mflux-bf16"),
-            (0,2,"native-vs-mflux-bf16"),(7,5,"native-vs-mflux-bf16"),
-            (1,3,"native-vs-mflux-q4"),(6,4,"native-vs-mflux-q4")):
-        for index in range(4):
-            x,y = images[left,index],images[right,index]
-            result["quality"].append(dict(comparison=label,left_process=left,right_process=right,request_index=index,
-                mae_u8=float(np.mean(np.abs(x.astype(np.float64)-y))),**rgb_metrics(x,y)))
+    positions = {route:[trial["index"] for trial in data["trials"] if trial["route"] == route] for route in set(data["order"])}
+    pairs = [("native-bf16","native-q4","native-q4-vs-native-bf16"),
+             ("mflux-bf16","mflux-q4","mflux-q4-vs-mflux-bf16"),
+             ("native-bf16","mflux-bf16","native-vs-mflux-bf16"),
+             ("native-q4","mflux-q4","native-vs-mflux-q4")]
+    if "native-predecoded" in positions:
+        pairs += [("native-q4","native-predecoded","predecoded-vs-packed-q4"),
+                  ("native-bf16","native-predecoded","predecoded-vs-original-bf16")]
+    for first,second,label in pairs:
+        for arm in range(2):
+            left,right = positions[first][arm],positions[second][arm]
+            for index in range(4):
+                x,y = images[left,index],images[right,index]
+                result["quality"].append(dict(comparison=label,left_process=left,right_process=right,request_index=index,
+                    mae_u8=float(np.mean(np.abs(x.astype(np.float64)-y))),**rgb_metrics(x,y)))
     result["forward_reverse_rgb_determinism"] = []
-    for route in dict.fromkeys(ORDER):
+    for route in dict.fromkeys(data["order"]):
         indices = [trial["index"] for trial in data["trials"] if trial["route"] == route]
         result["forward_reverse_rgb_determinism"].append(dict(route=route,exact_requests=[
             bool(np.array_equal(images[indices[0],index],images[indices[1],index])) for index in range(4)]))
@@ -107,6 +117,12 @@ def audit(screen,build_manifest):
     result["comparison"] = dict(native_bf16_over_q4=gpu/quant,mflux_bf16_over_q4=ref/qref,
         reference_over_native_bf16=ref/gpu,reference_over_native_q4=qref/quant,
         native_q4_reduction_percent=100*(1-quant/gpu),mflux_q4_reduction_percent=100*(1-qref/ref))
+    if "native-predecoded" in medians:
+        decoded = medians["native-predecoded"]["fresh_warm_seconds"]
+        result["predecode_comparison"] = dict(packed_native_over_predecoded=quant/decoded,
+            reference_q4_over_predecoded=qref/decoded,original_native_bf16_over_predecoded=gpu/decoded,
+            reference_bf16_over_predecoded=ref/decoded,predecode_reduction_vs_packed_percent=100*(1-decoded/quant),
+            scope="Q4 stored source decoded once to BF16 DiT operands with additional rounding, encoder remains declared source; high-memory approximate candidate, cold preparation retained")
     result["quality_scope"] = "full unresized RGB and native opaque alpha verified; same engine precision drift versus cross-engine differences separated; no broad perceptual qualification or same-noise claim"
     result = portable_tree(result)
     if "/Users/" in json.dumps(result):

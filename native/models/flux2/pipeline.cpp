@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 namespace tc {
 namespace {
 
@@ -362,7 +364,7 @@ void Flux::select_loras(const Request &request) {
     hybrid_gpu_graph_ = {};
     single_gpu_graph_ = {};
     hybrid_gpu_mlp_start_ = -1;
-    transformer_.clear(); vae_.clear(); mx::clear_cache();
+    transformer_.clear(); affine_predecoded_ = false; vae_.clear(); mx::clear_cache();
 }
 LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
     // Load image weights only: Qwen is intentionally staged during prompt encoding.
@@ -371,6 +373,7 @@ LoadResult Flux::load(const Event &event, std::atomic<bool> &cancelled) {
     reset_public_component_cache();
     bool transformer_cold = transformer_.bytes() == 0;
     transformer_.load(root_ / "transformer", event, cancelled);
+    if (transformer_cold) affine_predecoded_ = false;
     if (transformer_cold && !active_loras_.empty())
         transformer_.apply_loras(active_loras_, "transformer", event, cancelled);
     vae_.load(root_ / "vae", event, cancelled);
@@ -393,6 +396,7 @@ void Flux::unload() {
     cached_prompt_.clear();
     cached_encoder_manifest_.clear();
     transformer_.clear();
+    affine_predecoded_ = false;
     vae_.clear();
     public_component_cache_ = false;
 }
@@ -426,6 +430,7 @@ bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &eve
     if (!retain) {
         hybrid_.reset();
         transformer_.clear();
+        affine_predecoded_ = false;
         vae_.clear();
     }
     cached_conditioning_.reset();
@@ -461,6 +466,58 @@ bool Flux::conditioning(const Request &r, const Tokens &tokens, const Event &eve
     cached_encoder_manifest_ = r.encoder_ane_manifest;
     mx::clear_cache();
     return false;
+}
+void Flux::select_gpu_affine(const Request &r, const Event &event,
+                              std::atomic<bool> &cancelled) {
+    const char *candidate = std::getenv("TURBOCIDER_FLUX9_PREDECODE_AFFINE");
+    if (!candidate) return;
+#ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+    require(std::strcmp(candidate, "1") == 0 && model_id_ == "flux2-klein-9b" &&
+                r.execution == "gpu" && r.compile_gpu && r.allow_approximation &&
+                r.residency == "resident" && !r.streaming.active() &&
+                r.operation == "image.generate" && r.width == 512 && r.height == 512 &&
+                r.steps == 4 && !r.dynamic_text && active_loras_.empty() && !hybrid_ &&
+                device_info().physical_memory >= (48ull << 30) &&
+                (!r.memory_budget_bytes || r.memory_budget_bytes >= (28ull << 30)),
+            "FLUX9B affine predecode requires exact opted-in high-memory512/4 base GPU recipe");
+    std::vector<std::string> prefixes;
+    for (const auto &key : transformer_.sorted_keys()) {
+        if (!key.ends_with(".weight")) continue;
+        const auto prefix = key.substr(0, key.size() - 7);
+        if (!transformer_.quantized(prefix)) continue;
+        const auto &weight = transformer_.at(key);
+        const auto &scales = transformer_.at(prefix + ".scales");
+        require(transformer_.has(prefix + ".biases") && weight.ndim() == 2 &&
+                    scales.ndim() == 2 && scales.dtype() == mx::bfloat16 &&
+                    transformer_.at(prefix + ".biases").dtype() == mx::bfloat16 &&
+                    scales.shape() == transformer_.at(prefix + ".biases").shape() &&
+                    weight.shape(0) == scales.shape(0) && weight.shape(1) == scales.shape(1) * 4,
+                "FLUX9B predecode requires complete original Q4/g32 planes");
+        prefixes.push_back(prefix);
+    }
+    if (!affine_predecoded_) {
+        require(prefixes.size() == 153 && hidden_ == 4096 && heads_ == 32 &&
+                    dual_layers_ == 8 && single_layers_ == 24 && !transformer_.has_runtime_loras(),
+                "FLUX9B predecode must cover every153 DiT Q4 projection");
+        // Transactional: source arrays remain intact on cancellation/error.
+        // This temporarily holds packed and decoded arrays; never a low-RAM route.
+        Weights decoded = transformer_;
+        for (size_t index = 0; index < prefixes.size(); ++index) {
+            checkpoint(cancelled);
+            decoded.dequantize({prefixes[index]}, mx::bfloat16);
+            require(decoded.at(prefixes[index] + ".weight").dtype() == mx::bfloat16 &&
+                        !decoded.quantized(prefixes[index]), "decoded BF16 operand required");
+            event("affine_predecode_projection", int(index + 1), int(prefixes.size()));
+        }
+        transformer_ = std::move(decoded);
+        affine_predecoded_ = true;
+    } else {
+        require(prefixes.empty(), "predecoded session must not contain packed projections");
+    }
+    event("affine_predecoded_gpu_route", 1, 1);
+#else
+    require(false, "FLUX9B affine predecode is experimental-only");
+#endif
 }
 std::string Flux::select_acceleration(Request &r, int count, const Event &event,
                                       std::atomic<bool> &cancelled) {
@@ -627,6 +684,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         streaming::audit_increment(
             streaming::AuditCounter::CacheClearOrUnloadCalls, 2);
         transformer_.clear();
+        affine_predecoded_ = false;
         hybrid_.reset();
         hybrid_gpu_graph_ = {};
         hybrid_gpu_mlp_start_ = -1;
@@ -694,11 +752,19 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     dump("conditioning", text);
     checkpoint(cancelled);
     if (!exact_streaming) {
+        if (affine_predecoded_ && !std::getenv("TURBOCIDER_FLUX9_PREDECODE_AFFINE")) {
+            mx::synchronize();
+            transformer_.clear();
+            affine_predecoded_ = false;
+            single_gpu_graph_ = {};
+        }
         bool transformer_cold = transformer_.bytes() == 0;
         transformer_.load(root_ / "transformer", event, cancelled);
+        if (transformer_cold) affine_predecoded_ = false;
         if (transformer_cold && !active_loras_.empty())
             transformer_.apply_loras(active_loras_, "transformer", event,
                                      cancelled);
+        select_gpu_affine(r, event, cancelled);
     }
     auto z = mx::astype(mx::random::normal({1, 128, r.height / 16, r.width / 16}, mx::float32, 0, 1,
                                            mx::random::key(r.seed)),
@@ -856,6 +922,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         streaming::audit_increment(
             streaming::AuditCounter::CacheClearOrUnloadCalls, 2);
         transformer_.clear();
+        affine_predecoded_ = false;
         exact_stream_.reset();
         mx::clear_cache();
     }
@@ -865,6 +932,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
     checkpoint(cancelled);
     if (!exact_streaming && residency.release_after_denoise) {
         transformer_.clear();
+        affine_predecoded_ = false;
         hybrid_.reset();
         mx::clear_cache();
     }
@@ -925,6 +993,7 @@ RunResult Flux::run(const Request &requested, const Event &event, std::atomic<bo
         } else {
             exact_stream_.reset();
             transformer_.clear();
+            affine_predecoded_ = false;
         }
     }
     throw;

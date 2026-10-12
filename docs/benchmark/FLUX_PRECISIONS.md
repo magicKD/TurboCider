@@ -111,6 +111,11 @@ MAE10.771/255，近似图像漂移不当成native/reference parity。
 匹配runner须验实际bits/group/embedding与完整source coverage，不只
 相信metadata，不需要为此修改参考源码。
 
+新高内存提前解码候选已完整测量：153个source-Q4 DiT投影解码一次
+为BF16 operands，再compiled执行；7.211s比自己packed8.001s省9.88%，
+peak升至24.4GB，encoder仍Q4。真实event、额外舍入、source恢复与40PNG/
+10memory见[完整五路线](FLUX9_PREDECODE.md)，不能说原BF16 parity。
+
 9B实际H4096/F12288、8 dual+24 single，不能直接套用原4B几何。
 10-12已完成精确512/4实验9B混合四路线：eager8.154/compiled7.844/
 hybrid7.841/reference7.355s，32PNG/8memory完整；hybrid对compiled

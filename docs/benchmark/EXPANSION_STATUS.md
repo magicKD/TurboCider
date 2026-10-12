@@ -11,7 +11,7 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；修复后五路线40步/40PNG有效对照 | reference cache-limit候选、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置、七路线框架对照、14个Private channel/F16/F32候选全请求网格完成 | 额外尺寸与checkpoint，不能把有限网格当全局最优 |
-| FLUX.2 Klein 9B | stock/cache0、compiled参数、9B混合、DiT-only与encoder+DiT Q4/g32匹配均完成；全线性Q4 native8.005/reference8.043s、peak11.99GB | 其它bits与mlx-serve更兼容格式/成功路径、其它shares/shapes、进一步prefill/加载；Q4和hybrid没有稳定fresh收益 |
+| FLUX.2 Klein 9B | stock/cache0、compiled、9B混合、两种Q4与提前解码完成；新predecoded7.211/packed8.001/referenceQ4 8.028s、peak24.4GB | 其它bits与mlx-serve更兼容格式/成功路径、其它shares/shapes、进一步prefill/加载；低RAM与性能候选分开 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
@@ -210,6 +210,13 @@ encoder36层/902参数与两component整payload通过；旧28层fallback的
 转换失败保留，复用只读DiT CoW使准备满足2GiB reserve。原embedding/
 VAE仍BF16，不能称每个tensor4bit。pinned mlx-serve新派生布局因缺
 embed_tokens.scales实际startup拒绝，不作分母。[完整新结果](FLUX9_FULL_Q4.md)。
+
+提前解码source-Q4 DiT→BF16 operands后保留compiled singles的新五路线
+已完成，catalog为48组：predecoded7.210639/packed8.001289s，省9.88%，
+peak24.40–24.45GB而不是packed11.95–11.97GB。40PNG/10memory、每
+session153decode与后续96compiled branches/request，完整输出误差与
+同session packed/predecoded/packed/predecoded恢复均通过。额外BF16
+rounding和原Q4误差不混称同精度；[高内存performance候选](FLUX9_PREDECODE.md)。
 
 尚未运行的量化/参数格子继续标pending，格式/memory失败保留原原因，
 仍尝试安全的同源派生格式，不用失败启动时间、不同精度或其它机器

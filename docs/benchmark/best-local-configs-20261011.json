@@ -209,6 +209,46 @@
       "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim"
     }
   ],
+  "performance_configurations": [
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-predecoded",
+      "representation": "source DiT+encoder Q4/g32,153 DiT projections decoded once to BF16 operands; encoder staysQ4, BF16 embedding/VAE; additional rounding not strictBF16 parity",
+      "model_root": "outputs/flux9-matched-full-q4-g32-pack-v2-20261012/native",
+      "library": "build/flux9-predecode-v2-private/libturbocider.dylib",
+      "environment": {
+        "TURBOCIDER_FLUX9_PREDECODE_AFFINE": "1",
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": true
+      },
+      "minimum_physical_memory_bytes": 51539607552,
+      "minimum_explicit_request_budget_bytes": 30064771072,
+      "fresh_warm_median_seconds": 7.210638853954151,
+      "packed_q4_control_seconds": 8.001289020990953,
+      "bf16_compiled_control_seconds": 7.750545479007997,
+      "same_q4_reference_seconds": 8.02787162491586,
+      "reference_bf16_seconds": 7.342802146100439,
+      "actual_initial_decoded_projections": 153,
+      "actual_compiled_single_blocks_per_request": 96,
+      "physical_peak_bytes": [24400991776, 24448063872],
+      "evidence": "docs/design/validation/flux9-predecode-current-20261012.json",
+      "selection_note": "Fastest tested native approximate candidate in this complete cohort, opt-in not automatic/default:9.882% saving versus own packedQ4, peak24.40-24.45GB versus11.95-11.97GB; only1.8% nominal versus original referenceBF16 with different weight math; full quality/transition diagnostics retained."
+    }
+  ],
   "experimental_configurations": [
     {
       "model": "flux2-klein-9b",
