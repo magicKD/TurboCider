@@ -50,6 +50,19 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertNotIn("| 10-12 [FLUX9B", summary)
         self.assertIn("FLUX4B", summary)
 
+    def test_current_completion_boundaries_keep_flux4_gap_and_successful_ltx(self):
+        boundaries = " ".join(self.report["missing_current_comparisons"])
+        self.assertIn("source-bound GPU/ANE timing", boundaries)
+        self.assertIn("successful same-source Comfy97frame AV", boundaries)
+        self.assertNotIn("LTX has no compatible successful", boundaries)
+        audit = (ROOT / "docs/benchmark/REQUIREMENTS_AUDIT.md").read_text()
+        self.assertIn("goal保持active", audit)
+        self.assertIn("gpu_ane_current_q4_result: null", audit)
+        self.assertIn("TC取已有最优", audit)
+        self.assertIn("58组", audit)
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        self.assertIsNone(configs["current_flux4_available_configuration"]["gpu_ane_current_q4_result"])
+
     def test_compatible_only_policy_and_headlines_use_own_actual_cohort(self):
         self.assertEqual(self.report["comparison_policy"], COMPARISON_POLICY)
         self.assertIs(COMPARISON_POLICY["adapt_unsupported_frameworks"], False)

@@ -681,8 +681,8 @@ def export():
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
                 missing_current_comparisons=["Boundary only, not a new experiment queue: finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
-                    "FLUX4B current Q4/g64 GPU/ANE and external paired ranking absent; native/mflux/mlx-serve runtime prechecks and historicalBF16 mixed separately labelled,9B deferred",
-                    "LTX has no compatible successful same-task external denominator; existing full-media internal configurations reported, unsupported packs excluded without mandatory conversion"],
+                    "FLUX4B current Q4/g64 source-bound GPU/ANE timing and paired native ranking absent; native twofresh precheck, successful mflux/mlx-serve twofresh references and historical BF16 mixed separately labelled; user asks to reuse native bests,9B deferred",
+                    "LTX now has successful same-source Comfy97frame AV cold+onewarm; one external warm observation versus existing native batch medians, not new same-window/exhaustive-preset ranking; mlx-serve original memory preflight rejection remains audit-only"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
                     "additional converted precision/model packs are not equal-source original-format benchmark denominators"])
