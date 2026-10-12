@@ -18,6 +18,26 @@
 先前Unsloth/mflux的各自同cohort倍率仍在[总体性能报告](PERFORMANCE_REPORT.md)。
 不能据此说四模型/所有Mac配置/插件/Torch版本都全面领先。
 
+### 纯GPU与GPU/ANE一起看，不把更慢的混合路线当赢家
+
+下面回用各自原记录，没有重新跑TC。Z/Qwen的GPU列取其保留混合最优
+所在窗口的GPU control，避免把别的prompt/cache窗口最小值拼进去。
+
+| 任务与表示 | TC纯GPU完整s | TC GPU/ANE完整s | Comfy最快已测s | 当前选择 |
+| --- | ---: | ---: | ---: | --- |
+| Z BF16源512²/8步 | 7.363 | **5.780** | 8.535 | W5120 frozen混合 |
+| Qwen2.1 BF16源512²/40步 | 43.239 | **31.059** | 48.350 | W6144 frozen混合 |
+| LTX quality，97帧AV | **63.848** | 71.333 | 112.230，单warm | GPU，不强选ANE |
+| LTX opt-in Sol+text256，97帧AV | **61.869** | 66.036 | 112.230，单warm | GPU，MAE25.03/255需披露 |
+| FLUX4当前saved-Q4/g64，512²/4步 | 3.723，原两fresh预检 | 无匹配当前Q4 source的已测混合 | 无当前stock Comfy完整生成 | 不以旧BF16 1.628s代替当前Q4 |
+
+Z同配置在Private网格control中也出现5.748s的四fresh中位，比保留主
+cohort5.780s只低0.55%；不是新的配置/优化收益。历史5.344s是同prompt
+conditioning-cache-hit窗口，不能替换本表fresh值去除Comfy fresh时间。
+当前最优配置仍是W5120；完整control/原样本保留，不以噪声宣称新加速。
+来源：[Z原完整框架组](../design/validation/z-valid-framework-current-20261011.json)、
+[Private全网格](Z_PRIVATE_PARTITIONS.md)、[LTX完整八配置](../design/validation/ltx-full-configs-current-20261011.json)。
+
 ## Qwen：三种Comfy预设，不重复原生实验
 
 三个独立owned实例，12个完整512² PNG，三份独立完整100ms/500ms内存。

@@ -73,7 +73,7 @@ FLUX4B当前saved-MLX Q4/g64 whole index不在stock UNET choices，不能
 
 | 模型与任务 | 已测性能 | 当前可用于报告的结论 |
 | --- | --- | --- |
-| [FLUX4B Q4/g64，512²/4步](FLUX4_CURRENT_STATUS.md) | Native单进程cold3.959s、两fresh中位3.723s、repeat3.440s，4PNG及完整内存 | 已验证原生可运行；mflux/mlx-serve也可出图，但未形成当前配对排名，不声明领先倍率 |
+| [FLUX4B Q4/g64，512²/4步](FLUX4_CURRENT_STATUS.md) | Native两fresh预检3.723s；新参考mflux3.811s、mlx-serve4.305s，各两fresh完整PNG | 只补兼容参考热态，复用已有TC；未形成当前配对排名，不声明稳定领先倍率或把旧BF16混合当分子 |
 | [LTX2.5 distilled，704×448×97/11步，含音频MP4](LTX_VIDEO.md) | GPU quality63.848s；INT8 quality71.333s | 当前推荐GPU；混合没有收益；新Comfy单warm112.230s成功，回用最佳记录另列，不称paired median |
 
 FLUX4B不是从未测过：历史文档记录GPU/ANE warm1.628s，见
@@ -98,4 +98,4 @@ LTX最快已测近似GPU Sol+text256为61.869s，只比自身quality省3.1%，
 [逐请求样本catalog](results-20261011.json) · [已测最优配置](best-local-configs-20261011.json) ·
 [Z完整机器证据](../design/validation/z-unsloth-mflux-current-20261012.json) ·
 [框架身份与公开评测](OPEN_SOURCE_COMPARISONS.md)。
-保留57组历史/当前记录，其中45组在当前四家族范围、12组9B为历史deferred。
+保留58组历史/当前记录，其中46组在当前四家族范围、12组9B为历史deferred。

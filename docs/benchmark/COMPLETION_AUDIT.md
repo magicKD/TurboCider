@@ -2,6 +2,20 @@
 
 ## 最新交付：按用户要求收敛报告
 
+本次交付核验又发现当前4B兼容mflux/mlx-serve只存单cold预检，因此仅补
+两个参考热态、不重跑TC：同原Q4/g64整包、2进程/8PNG/2complete memory，
+mflux两fresh3.810622s、mlx-serve两fresh4.304634s。每PNG真实4步callback/
+SSE和媒体SHA完整。旧collector把实际`Generating`误筛成`denoise`，
+后置validator失败但媒体/执行/内存都已complete/exit0；独立auditor仅按
+source-confirmed阶段名提取，不改原failed summary、不放宽门槛、不重推理。
+TC3.723469s旧两fresh仍为预检；当前Q4混合没有实测，不填旧BF16分母。
+完整catalog58组/46active/12历史9B，当前可执行Q4配置另存
+`current_flux4_available_configuration`，不把未测混合或paired资格改成通过。
+Comfy重点表同时补纯GPU/混合两列，LTX混合更慢仍保留。Z5.344s是重复
+conditioning-cache-hit窗口，不能冒充fresh；控制组5.748s对5.780s的0.55%
+变化不当新优化收益。最优配置选择与原始样本/生命周期口径保持明确。
+新增定向回归225项通过，1组fixture跳过；全量`make test`未运行。
+
 最新追加2026-10-12：用户将重点指定为ComfyUI四模型对已有TC最优，
 已经测过的TC不充分重测。Z既有Comfy8.535s复用旧TC最优5.780s，
 Qwen三Comfy预设12PNG/3完整memory最快48.350s，复用旧TC31.059s，

@@ -39,6 +39,11 @@ mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../d
 mlx-serve memory preflight拒绝仍排除；新Comfy现已成功完整AV出图，
 单warm观察与回用native中位数的边界单列，不拿失败时间当分母，不转换外部模型。
 
+4B后来只补这两个兼容参考热态：mflux3.810622s、mlx-serve4.304634s，
+各cold/两fresh/repeat新seed、8PNG/2完整memory，TC不重跑；与已有
+Q4两fresh预检3.723469s对照，但不升格paired排名，不混历史BF161.628s。
+[参考完整事件与输出链](../design/validation/flux4-reference-warm-current-20261012.json)。
+
 ## Unsloth支持与本机覆盖不是一回事
 
 2026-10-12核验：Unsloth Desktop官网明确列出FLUX和Z-Image图像生成，

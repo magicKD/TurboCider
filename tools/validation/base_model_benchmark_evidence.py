@@ -182,6 +182,25 @@ def ltx_comfy_reference_campaign(path):
         note="same local distilledConvRot/Gemma4/conv-only video+audioVAE/upscaler;stock SDPA/BF16VAE,8+3Eulerancestral,704x448x97/24fps/audio/noLoRA/noPE;2full H264/AAC MP4/complete finite audio;onewarm112.229774s is observation not median; existing TC quality63.847972/optinapprox61.868682s reused separately, not new paired native; old SaveVideo API collector error excluded")
 
 
+def flux4_warm_reference_campaign(path):
+    from flux4_reference_warm_screen import ROUTES, validate_trial
+    data, binding = source(path, ("complete_reference_only",))
+    if (data["reference_only"] is not True or data["native_retested"] is not False or data["same_window_native_pair"] is not False or
+            len(data["trials"]) != 2 or [t["route"] for t in data["trials"]] != list(ROUTES)):
+        raise ValueError("complete compatible two-reference4B cohort required")
+    routes = []
+    for t, row in zip(data["trials"], data["routes"]):
+        validate_trial(t)
+        samples = [r["request_wall_including_export"] for r in t["report"]["runs"][1:3]]
+        if row["route"] != t["route"] or samples != row["fresh_warm_seconds"] or statistics.median(samples) != row["fresh_warm_median"]:
+            raise ValueError("actual twofresh reference medians required")
+        routes.append(measured(t["route"], row["cold_seconds"], samples, repeated_prompt_seconds=row["repeat_seconds"],
+            constructor_seconds=[row["constructor_seconds"]], physical_peaks=[row["physical_peak_bytes"]]))
+    return dict(evidence=binding, model="flux2-klein-4b-compatible-warm-references", geometry=[512,512], steps=4,
+        date=data["date"], routes=routes, reference_comparison_valid=True, native_comparison_valid=False,
+        timing_scope=data["timing_scope"], note="original unchanged savedQ4/g64 pack; mflux0.22 cache0/full387/905/266 source coverage,mlx-serve26.10.1 actual4SSE Generating steps/fullPNG;8PNG/2complete memory; native existing twofresh precheck remains precheck,not paired/global/ANE claim; collector stage filter audit-only recovery preserves originalfailed summary and actualsuccessful media/memory,no threshold relaxation")
+
+
 def best_known_comfy_comparisons():
     """User-requested best-record reuse, explicitly outside paired headlines."""
     qwen, qbind = source("docs/design/validation/qwen21-comfy039-reference-current-20261012.json", ("complete_diagnostic",))
@@ -643,6 +662,7 @@ def export():
     campaigns.append(z_comfy_campaign("docs/design/validation/z-comfy039-current-20261012.json"))
     campaigns.append(qwen_comfy_reference_campaign("docs/design/validation/qwen21-comfy039-reference-current-20261012.json"))
     campaigns.append(ltx_comfy_reference_campaign("docs/design/validation/ltx25-comfy039-reference-current-20261012.json"))
+    campaigns.append(flux4_warm_reference_campaign("docs/design/validation/flux4-reference-warm-current-20261012.json"))
     active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
     for row in campaigns:
         row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")

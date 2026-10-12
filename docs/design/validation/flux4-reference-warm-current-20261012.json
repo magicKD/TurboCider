@@ -1,0 +1,363 @@
+{
+  "schema": "tc-flux4-warm-reference-validation-v1",
+  "status": "complete_reference_only",
+  "date": "2026-10-12",
+  "reference_only": true,
+  "native_retested": false,
+  "same_window_native_pair": false,
+  "qualification_passed": false,
+  "goal_complete": false,
+  "evidence": "outputs/flux4-warm-references-v1-20261012/summary.json",
+  "evidence_sha256": "f06dd0f81f5b348c394f0ce5ec18cd98f02c9712c452e47a01c4529ffb0137b9",
+  "collector_record_status": "failed",
+  "collector_stage_name_recovered": true,
+  "recovery_scope": "only stage filter corrected from denoise to source-confirmed Generating; all original reports/PNG/events/memory/failed summary unchanged",
+  "model_sha256": {
+    "models/FLUX.2-klein-4B-mflux-Q4/text_encoder/0.safetensors": "e59ed2b6825cb8ae3d0ba1e8a43575a565d465ce4518b7d79d28020b19b639cd",
+    "models/FLUX.2-klein-4B-mflux-Q4/text_encoder/1.safetensors": "edbdea3187bc4a0ad0e1ecb7152da8e6b344669413d9e45be5e7a2244f398ee3",
+    "models/FLUX.2-klein-4B-mflux-Q4/text_encoder/model.safetensors.index.json": "7dc8598806b8bbdb0b87b9dc445ac7cf49d7acc42ae333bd0bc0252e46081ed9",
+    "models/FLUX.2-klein-4B-mflux-Q4/tokenizer/chat_template.jinja": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+    "models/FLUX.2-klein-4B-mflux-Q4/tokenizer/tokenizer.json": "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506",
+    "models/FLUX.2-klein-4B-mflux-Q4/tokenizer/tokenizer_config.json": "779410a34a98fb2c6c925a1be6f24d632f1723473161b037f6676eb6c04886c6",
+    "models/FLUX.2-klein-4B-mflux-Q4/transformer/0.safetensors": "36796395e3946496f3e118f26fe22594b1d7d871342a59dd7824349d91c08266",
+    "models/FLUX.2-klein-4B-mflux-Q4/transformer/1.safetensors": "9730ae148ca4f5ffc62860748b849a70987f0b7301588248bd98a2af9bc15070",
+    "models/FLUX.2-klein-4B-mflux-Q4/transformer/model.safetensors.index.json": "dbdecbf3a957b37d15bd943b956dbb25aa648a01df363e7dd5ebbe5ce941358d",
+    "models/FLUX.2-klein-4B-mflux-Q4/vae/0.safetensors": "688ae0c3d2e93573ce8a6d3561d793cf6de5a4207b2e128cad6cd0d71e43b10f",
+    "models/FLUX.2-klein-4B-mflux-Q4/vae/model.safetensors.index.json": "e13e551dabf8c088c8b3c6f52fca3f9e64ead5c42dd592586c7a1f868607afa4"
+  },
+  "routes": [
+    {
+      "route": "mflux-q4",
+      "fresh_warm_seconds": [
+        3.7996097919531167,
+        3.8216334998141974
+      ],
+      "fresh_warm_median": 3.810621645883657,
+      "cold_seconds": [
+        3.8786720409989357
+      ],
+      "repeat_seconds": [
+        3.7914705420844257
+      ],
+      "constructor_seconds": 0.5219574589282274,
+      "physical_peak_bytes": 6370825136,
+      "swap_out_bytes": 0
+    },
+    {
+      "route": "mlxserve-q4",
+      "fresh_warm_seconds": [
+        4.303910166956484,
+        4.3053586250171065
+      ],
+      "fresh_warm_median": 4.304634395986795,
+      "cold_seconds": [
+        4.37549016601406
+      ],
+      "repeat_seconds": [
+        4.30237204185687
+      ],
+      "constructor_seconds": 0.3393656250555068,
+      "physical_peak_bytes": 10610071888,
+      "swap_out_bytes": 0
+    }
+  ],
+  "trials": [
+    {
+      "index": 0,
+      "route": "mflux-q4",
+      "report": {
+        "status": "complete_reference_only",
+        "scope": "four complete reference-only PNGs: cold/two fresh/repeated prompt new seed; native best reused, no new paired ranking",
+        "model": "flux2-klein-4b",
+        "constructor_seconds": 0.5219574589282274,
+        "required_weight_coverage": {
+          "transformer": {
+            "required_targets": 387,
+            "covered_targets": 387,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 905,
+            "covered_targets": 905,
+            "missing": []
+          },
+          "vae": {
+            "required_targets": 266,
+            "covered_targets": 266,
+            "missing": []
+          }
+        },
+        "packages": {
+          "mflux": "0.22.0",
+          "mlx": "0.32.3",
+          "torch": "2.14.1",
+          "transformers": "5.19.0"
+        },
+        "runtime_verified": true,
+        "performance_verified": false,
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "seed": 42,
+            "request_wall_including_export": 3.8786720409989357,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "png_sha256": "277e929465d0fb870cce8b45a55d56300345251c9b95e5746dba9b853900422f",
+            "mlx_peak_bytes": 5763601236
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "seed": 42,
+            "request_wall_including_export": 3.7996097919531167,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "png_sha256": "82e42cfcc875c1f1695b1810b419a9db30ad7484a0ab3a6efdb920eaacd4aef1",
+            "mlx_peak_bytes": 5861334938
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "seed": 42,
+            "request_wall_including_export": 3.8216334998141974,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "png_sha256": "5c132dfa41c681f2ec1de675a0c8f885bb084718e097432097cf10a2a156a030",
+            "mlx_peak_bytes": 5861334974
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "seed": 43,
+            "request_wall_including_export": 3.7914705420844257,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": 4,
+            "loras": [],
+            "png_sha256": "898b44cfbbc4d6da1eb1cc2b2d602236e1faeaf846f221b9363ca53876430bbd",
+            "mlx_peak_bytes": 5861335010
+          }
+        ]
+      },
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "d92476c9bee54313a4a3e42f0aa42a1a",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "a4364170bf6f2b36aa6d9e62ab1b4502306e8a8d58196f041b4eb051aaa975cf",
+        "report": "run-memory-report.json",
+        "report_sha256": "8511bc149cff110e1f33e9254c44d9e8bea2ca64bebec81bda1461d9a6ffeb07",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "d92476c9bee54313a4a3e42f0aa42a1a",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 93377,
+            "start_seconds": 1791815989,
+            "start_microseconds": 754744
+          },
+          "record_count": 179,
+          "sample_count": 173,
+          "final_evidence_digest": "154326498da295c8fea290de40add15cb45fcb76db495708cd91c8627dd1ebb1",
+          "max_gap_ns": 110015458,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 4437082112,
+          "tree_peak_phys_footprint_bytes": 6370825136,
+          "swap_in_bytes": 131072,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 606208,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      }
+    },
+    {
+      "index": 1,
+      "route": "mlxserve-q4",
+      "report": {
+        "status": "complete_reference_only",
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "seed": 42,
+            "request_wall_including_export": 4.37549016601406,
+            "denoise_progress": [
+              [
+                1,
+                4
+              ],
+              [
+                2,
+                4
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                4
+              ]
+            ],
+            "png_sha256": "2d3e5d89eea338152524f27fd598f8abf2bb0b47e812407dea68cbb64f26755c",
+            "events_sha256": "9437903b7a04019563147a556e82a6b06777da4aad648311abce998a24f50093"
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "seed": 42,
+            "request_wall_including_export": 4.303910166956484,
+            "denoise_progress": [
+              [
+                1,
+                4
+              ],
+              [
+                2,
+                4
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                4
+              ]
+            ],
+            "png_sha256": "df80fbbe00fadfecbab4a1d658517d8d89d808fb4afb9f2cbd49a79f2b6de91b",
+            "events_sha256": "9437903b7a04019563147a556e82a6b06777da4aad648311abce998a24f50093"
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "seed": 42,
+            "request_wall_including_export": 4.3053586250171065,
+            "denoise_progress": [
+              [
+                1,
+                4
+              ],
+              [
+                2,
+                4
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                4
+              ]
+            ],
+            "png_sha256": "8b33d1e50065d48c13266253e28412771f9c5e202432134586cdd88dccaf4d05",
+            "events_sha256": "9437903b7a04019563147a556e82a6b06777da4aad648311abce998a24f50093"
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "seed": 43,
+            "request_wall_including_export": 4.30237204185687,
+            "denoise_progress": [
+              [
+                1,
+                4
+              ],
+              [
+                2,
+                4
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                4
+              ]
+            ],
+            "png_sha256": "e0275185f8a29fb9991172e20ade3925f4f7596c920028d1f6493278fe872c92",
+            "events_sha256": "9437903b7a04019563147a556e82a6b06777da4aad648311abce998a24f50093"
+          }
+        ],
+        "version": "[mem] MLX buffer-pool cap 4096 MB (was 62259 MB)\nmlx-serve 26.10.1\nmlx 0.32.3\nmlx-c 56b2d39fc831\nnax off (requires M5-class GPU)\nggml 0.23.0 (5266f24da)\nllama.cpp b10809\ngguf 3\nds4 unknown\n",
+        "ready_seconds": 0.3393656250555068,
+        "server_terminal": true
+      },
+      "memory": {
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "7d11400f7b7ce02c66ebe8797d5385a064e86f5c8e544cff798b78118d22eaae",
+        "report": "run-memory-report.json",
+        "report_sha256": "1943e8bc6ec8bf2099a1ba33fa96f9811cd9ce24b926c621e37bf1e258fecdaf",
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "ff4c0f5498b3486497a84f7deb5d02fb",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 93393,
+            "start_seconds": 1791816007,
+            "start_microseconds": 300343
+          },
+          "record_count": 211,
+          "sample_count": 195,
+          "final_evidence_digest": "13e2e40ca5b495c135c880fdaba4abf4e8f83a76f39011f5d9420d670e3bee90",
+          "max_gap_ns": 109844250,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 4114546688,
+          "tree_peak_phys_footprint_bytes": 10610071888,
+          "swap_in_bytes": 262144,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 1458176,
+          "reasons": [],
+          "command_exit_code": 0
+        },
+        "scope": "post-validation recovery only; original sampler/verifier already complete and exit0; no weakened gap/role/data rule"
+      }
+    }
+  ],
+  "existing_native_evidence": "docs/design/validation/flux4-native-saved-q4-precheck-20261012.json",
+  "existing_native_evidence_sha256": "c7c245675b504de229986f823df4a8bd65a01703e8a8fb6dad96e485b1da442a",
+  "timing_scope": "same original savedQ4/g64 pack incl embedding/8VAEattention linears;512/4,full PNG;constructor/readiness/cold/twofresh/repeat new seed; existing native results reused separately,not new paired ranking",
+  "notes": "reference twofresh each; mflux cache0/stock saved loader with full387/905/266 coverage; mlx-serve26.10.1 SSE fouractual Generating steps and completePNG; native previous Q4/g64 precheck only, no paired/global/ANE claim"
+}

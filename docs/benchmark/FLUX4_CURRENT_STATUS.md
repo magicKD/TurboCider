@@ -10,6 +10,18 @@
 | mlx-serve26.10.1，同一整包 | HTTP200返回512² RGB PNG，视觉正常、独占服务终态退出 | 兼容性预检，无正式性能分母 |
 | Unsloth Desktop / sd-server Metal | 上游支持FLUX，但本机暂无这条4B完整配对cohort | 尚未比较；不能由Qwen3.40×或mflux预检推算 |
 
+随后只补已兼容的两个参考热态，不重跑TC：mflux0.22 saved-Q4两fresh
+中位 **3.810622s**（cache0）；mlx-serve26.10.1原整包SSE/PNG两fresh
+中位 **4.304634s**。两独立进程、8完整512² PNG、两complete memory；
+constructor/readiness、cold、repeat新seed独立保留。相对已有TC Q4
+两fresh3.723469s的差距很小/有限，不宣称新同窗口配对或稳定全局领先，
+也不拿历史BF16 mixed1.628s除当前Q4参考。
+[完整参考热态与原事件/媒体/内存复核](../design/validation/flux4-reference-warm-current-20261012.json)。
+收集器最初错误地筛选`denoise`；本版本实际SSE阶段名为`Generating`，
+四步1–4全部存在、媒体与memory早已complete/exit0。新独立auditor只修正
+事件提取，原failed summary不改写、不降任何门槛、不重新推理。
+这不是恢复失败模型或inconclusive memory；原验收原因与SHA链均保留。
+
 Native来源是`mflux-community/flux2-klein-4b-mflux-q4`，revision
 `794cd159538149ad9830848508c31f0ea7088e58`，不是原BF16或本地重做量化。
 Native派生布局完整保留DiT/encoder压缩payload，包括量化embedding和

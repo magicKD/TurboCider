@@ -197,7 +197,7 @@
   "deferred_model_families": [
     "flux2-klein-9b"
   ],
-  "active_campaign_count": 45,
+  "active_campaign_count": 46,
   "deferred_campaign_count": 12,
   "historical_report": "docs/benchmark/HISTORICAL_RESULTS.md",
   "expansion_status": "docs/benchmark/EXPANSION_STATUS.md",
@@ -5900,6 +5900,69 @@
       "baseline_reused": true,
       "timing_scope": "existing local LTX2.5 distilled ConvRot/Gemma4/conv-video+audio VAE;704x448x97/24fps,8+3Euler ancestral,CFG1,no LoRA/no PE;SDPA/BF16 VAE,stock text placement; cold/new-seed repeat, full MP4 wall; native not retested",
       "note": "same local distilledConvRot/Gemma4/conv-only video+audioVAE/upscaler;stock SDPA/BF16VAE,8+3Eulerancestral,704x448x97/24fps/audio/noLoRA/noPE;2full H264/AAC MP4/complete finite audio;onewarm112.229774s is observation not median; existing TC quality63.847972/optinapprox61.868682s reused separately, not new paired native; old SaveVideo API collector error excluded",
+      "in_current_scope": true
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux4-reference-warm-current-20261012.json",
+        "sha256": "4d92ad2fc6856dd1ab73eab053e1f481225c283f751ce50e81fce1b9c3535430",
+        "status": "complete_reference_only"
+      },
+      "model": "flux2-klein-4b-compatible-warm-references",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            3.8786720409989357
+          ],
+          "warm_seconds": [
+            3.7996097919531167,
+            3.8216334998141974
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 3.810621645883657,
+          "repeated_prompt_seconds": [
+            3.7914705420844257
+          ],
+          "constructor_seconds": [
+            0.5219574589282274
+          ],
+          "physical_peaks": [
+            6370825136
+          ]
+        },
+        {
+          "route": "mlxserve-q4",
+          "cold_seconds": [
+            4.37549016601406
+          ],
+          "warm_seconds": [
+            4.303910166956484,
+            4.3053586250171065
+          ],
+          "warm_sample_count": 2,
+          "warm_median_seconds": 4.304634395986795,
+          "repeated_prompt_seconds": [
+            4.30237204185687
+          ],
+          "constructor_seconds": [
+            0.3393656250555068
+          ],
+          "physical_peaks": [
+            10610071888
+          ]
+        }
+      ],
+      "reference_comparison_valid": true,
+      "native_comparison_valid": false,
+      "timing_scope": "same original savedQ4/g64 pack incl embedding/8VAEattention linears;512/4,full PNG;constructor/readiness/cold/twofresh/repeat new seed; existing native results reused separately,not new paired ranking",
+      "note": "original unchanged savedQ4/g64 pack; mflux0.22 cache0/full387/905/266 source coverage,mlx-serve26.10.1 actual4SSE Generating steps/fullPNG;8PNG/2complete memory; native existing twofresh precheck remains precheck,not paired/global/ANE claim; collector stage filter audit-only recovery preserves originalfailed summary and actualsuccessful media/memory,no threshold relaxation",
       "in_current_scope": true
     }
   ],
