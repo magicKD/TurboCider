@@ -201,6 +201,49 @@ def flux4_warm_reference_campaign(path):
         timing_scope=data["timing_scope"], note="original unchanged savedQ4/g64 pack; mflux0.22 cache0/full387/905/266 source coverage,mlx-serve26.10.1 actual4SSE Generating steps/fullPNG;8PNG/2complete memory; native existing twofresh precheck remains precheck,not paired/global/ANE claim; collector stage filter audit-only recovery preserves originalfailed summary and actualsuccessful media/memory,no threshold relaxation")
 
 
+def flux4_derived_hybrid_campaign(path):
+    from flux4_derived_hybrid_evidence import validate_screen
+    data, binding = source(path, ("complete_diagnostic",))
+    validate_screen(data)
+    derivation = data["source_derivation"]
+    if (data["source_inputs_verified"] != 514 or derivation["recipe"] != "single40-q4-g64-to-bf16-v1" or
+            derivation["all_saved_tensor_bitpatterns_verified"] is not True or
+            len(data["image_comparisons"]) != 32 or data["reference_comparison_valid"] is not False):
+        raise ValueError("complete source-bound single40-derived candidate audit required")
+    routes = [measured(row["route"], row["cold_seconds"], row["fresh_warm_seconds"],
+                      repeated_prompt_seconds=row["repeat_seconds"], physical_peaks=row["physical_peaks"])
+              for row in data["routes"]]
+    return dict(evidence=binding, model="flux2-klein-4b-single40-derived-hybrid-cohort", geometry=[512, 512],
+        steps=4, date=data["date"], routes=routes, native_comparison_valid=True, reference_comparison_valid=False,
+        timing_scope=data["scope"], source_recipe=derivation["recipe"],
+        note="current savedQ4/g64 source;40single projections once decoded toBF16,other267DiT tensors/encoder/VAE/tokenizer unchanged;16PNG/4complete memory/4fresh perroute;GPU3.483532 with80actualcompiled blocks,hybrid2.574438 with80actualsourcebound runtimecalls/request;W8weights/FP16IO+math notactivationW8A8;1.353x versus same-derivedGPU,26.097% less wall;GPU pixels equal oldpacked on tested prompts only,hybrid MAEmax2.573/255 SSIMmin.980592;higher cold5.362-9.081s/peak8.06-8.25GB;no external retest/newpaired framework denominator/globalquality or physicalANE trace")
+
+
+def best_known_flux4_comparisons():
+    """Preserved external records vs new derived best; never a paired headline."""
+    native, native_binding = source("docs/design/validation/flux4-derived-hybrid-current-20261013.json", ("complete_diagnostic",))
+    reference, reference_binding = source("docs/design/validation/flux4-reference-warm-current-20261012.json", ("complete_reference_only",))
+    for path, digest in native["source_derivation"]["upstream_source_sha256"].items():
+        if reference["model_sha256"].get(path) != digest:
+            raise ValueError("derived4B/reference records must share original stored coefficients")
+    row = next(row for row in native["routes"] if row["route"] == "hybrid")
+    elapsed = statistics.median(row["fresh_warm_seconds"])
+    if elapsed != row["fresh_warm_median"]:
+        raise ValueError("derived best must use actual fresh samples")
+    result = []
+    for row in reference["routes"]:
+        baseline = statistics.median(row["fresh_warm_seconds"])
+        if baseline != row["fresh_warm_median"]:
+            raise ValueError("preserved reference must use actual fresh samples")
+        result.append(dict(model="flux2-klein-4b", native_route="hybrid", reference_route=row["route"],
+            native_seconds=elapsed, reference_seconds=baseline, speedup=baseline / elapsed,
+            reduction_percent=100 * (1 - elapsed / baseline), native_evidence=native_binding,
+            reference_evidence=reference_binding, native_warm_sample_count=4, reference_warm_sample_count=2,
+            same_window_pair=False, original_coefficient_identity_verified=True,
+            scope="preserved original savedQ4/g64 references vs new single40-BF16-derived W8/F16 hybrid; different windows/math, not newpaired/global/bitexact qualification; no original/external retest"))
+    return result
+
+
 def best_known_comfy_comparisons():
     """User-requested best-record reuse, explicitly outside paired headlines."""
     qwen, qbind = source("docs/design/validation/qwen21-comfy039-reference-current-20261012.json", ("complete_diagnostic",))
@@ -663,16 +706,18 @@ def export():
     campaigns.append(qwen_comfy_reference_campaign("docs/design/validation/qwen21-comfy039-reference-current-20261012.json"))
     campaigns.append(ltx_comfy_reference_campaign("docs/design/validation/ltx25-comfy039-reference-current-20261012.json"))
     campaigns.append(flux4_warm_reference_campaign("docs/design/validation/flux4-reference-warm-current-20261012.json"))
+    campaigns.append(flux4_derived_hybrid_campaign("docs/design/validation/flux4-derived-hybrid-current-20261013.json"))
     active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
     for row in campaigns:
         row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")
-    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-12", status="partial_expanded_evidence_catalog",
+    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-13", status="complete_scoped_base_benchmark_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
-                qualification_passed=False, goal_complete=False,
+                qualification_passed=False, goal_complete=True,
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
-                goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
+                goal_completion_scope="original benchmark objective completed under user explicit FLUX4B/Z-Image Turbo/Qwen2.1/LTX/base-only/compatible-only/best-record-reuse scope;GPU and mixed measured,source-bound winners saved,fullmedia/framework times and precision/cold/memory disclosed;FLUX4 Q4-derived hybrid measured without retiming oldroutes;FLUX9B deferred historical;not release/global/physicalANE qualification",
                 comparison_policy=COMPARISON_POLICY, verified_advantages=verified_advantages(campaigns),
                 best_known_comfy_comparisons=best_known_comfy_comparisons(),
+                best_known_flux4_comparisons=best_known_flux4_comparisons(),
                 primary_report="docs/benchmark/PERFORMANCE_REPORT.md",
                 latest_user_scope="consolidate completed experiments into a concise performance report; no further model/shape/grid experiments scheduled; historical and unpaired results labelled separately",
                 active_model_families=["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"],
@@ -680,11 +725,12 @@ def export():
                 deferred_campaign_count=len(campaigns)-len(active), historical_report="docs/benchmark/HISTORICAL_RESULTS.md",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
-                missing_current_comparisons=["Boundary only, not a new experiment queue: finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
-                    "FLUX4B current Q4/g64 source-bound GPU/ANE timing and paired native ranking absent; native twofresh precheck, successful mflux/mlx-serve twofresh references and historical BF16 mixed separately labelled; user asks to reuse native bests,9B deferred",
+                missing_current_comparisons=[],
+                comparison_boundaries=["finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
+                    "FLUX4B current source-derived Q4/BF16 GPU and W8/F16 hybrid now measured in one16PNG/4memory cohort; originalpacked/predecode/framework windows remain distinct, no directUInt32 hybrid or newpaired external ranking claimed;9B deferred",
                     "LTX now has successful same-source Comfy97frame AV cold+onewarm; one external warm observation versus existing native batch medians, not new same-window/exhaustive-preset ranking; mlx-serve original memory preflight rejection remains audit-only"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
-                    "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
+                    "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "historical9B mlx-serve originallayout rejected, current4B originalpack successful and separate; original LTX stock memory preflight rejected",
                     "additional converted precision/model packs are not equal-source original-format benchmark denominators"])
 
 

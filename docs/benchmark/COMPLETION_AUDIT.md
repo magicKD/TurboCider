@@ -1,10 +1,30 @@
 # 本轮目标逐项核验
 
 当前按原目标与最新约束的逐项核验见[要求审计](REQUIREMENTS_AUDIT.md)。
-LTX外部完整AV已成功，旧catalog“无成功分母”已纠正；当前4BQ4来源
-绑定混合仍没有时延记录，扩大goal不能仅因报告完成或回归绿色而标完成。
+2026-10-13已新增当前4BQ4来源绑定的single40预解码GPU/混合完整实验，
+不再将此前“没有混合时延”当作当前事实。下方10-12及更早的缺口、
+计数和测试成绩保留为历史阶段，不升级原预检或物理/生产资格。
 
-## 最新交付：按用户要求收敛报告
+## 2026-10-13：补此前未测的4B派生候选
+
+原packed GPU与参考均未重跑。新视图40single投影转BF16，267个其它
+DiT tensor保留，encoder/VAE/tokenizer只读链接；307保存tensor逐位验证。
+20图来源绑定，514native source inputs核对；GPU/hybrid正反序4进程、
+16完整PNG、4完整memory、各四fresh中位3.483532/2.574438s，内部
+1.353×/省26.1%，每请求实际80compiled blocks或80runtime calls，无fallback。
+32项原尺寸/原通道PNG比较与原媒体/内存SHA链通过；GPU与原packed本组输出
+exact，混合MAE最高2.573/255、SSIM最低0.98059。W8/F16不是W8A8激活，
+direct UInt32 hybrid仍未实现，但当前来源派生候选已实际测量、配置已保存。
+Comfy4B当前本地格式N/A不变；没有据新派生结果制造新的paired外部排名。
+catalog现59组/47active/12历史9B。最终逐要求与跨报告核验已完成：
+59原evidence SHA、189route样本/中位数、四家族5个保存配置产物、
+214本地链接和重导出逐字段相等均通过。make test-base-benchmark
+241项通过，另有1组历史fixture跳过，未运行全量make test。
+原benchmark目标按用户明确的
+四家族/兼容/复用范围完成；生产/全局/物理ANE资格不升级，原实验
+diagnostic记录不改。详细逐要求证据见[要求审计](REQUIREMENTS_AUDIT.md)。
+
+## 2026-10-12及此前交付记录
 
 本次交付核验又发现当前4B兼容mflux/mlx-serve只存单cold预检，因此仅补
 两个参考热态、不重跑TC：同原Q4/g64整包、2进程/8PNG/2complete memory，

@@ -1,12 +1,12 @@
 {
   "schema": "tc-local-base-benchmark-samples-v1",
-  "date": "2026-10-12",
-  "status": "partial_expanded_evidence_catalog",
+  "date": "2026-10-13",
+  "status": "complete_scoped_base_benchmark_catalog",
   "hardware": "Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
   "qualification_passed": false,
-  "goal_complete": false,
+  "goal_complete": true,
   "completion_audit": "docs/benchmark/COMPLETION_AUDIT.md",
-  "goal_completion_scope": "user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
+  "goal_completion_scope": "original benchmark objective completed under user explicit FLUX4B/Z-Image Turbo/Qwen2.1/LTX/base-only/compatible-only/best-record-reuse scope;GPU and mixed measured,source-bound winners saved,fullmedia/framework times and precision/cold/memory disclosed;FLUX4 Q4-derived hybrid measured without retiming oldroutes;FLUX9B deferred historical;not release/global/physicalANE qualification",
   "comparison_policy": {
     "framework_admission": "compatible and successful complete generation only",
     "adapt_unsupported_frameworks": false,
@@ -186,6 +186,56 @@
       "scope": "GPU Sol+text256 substantial approximation,MAE25.03/255;native old batch median versus one Comfy warm observation"
     }
   ],
+  "best_known_flux4_comparisons": [
+    {
+      "model": "flux2-klein-4b",
+      "native_route": "hybrid",
+      "reference_route": "mflux-q4",
+      "native_seconds": 2.574438374955207,
+      "reference_seconds": 3.810621645883657,
+      "speedup": 1.4801759028121846,
+      "reduction_percent": 32.44046210317969,
+      "native_evidence": {
+        "path": "docs/design/validation/flux4-derived-hybrid-current-20261013.json",
+        "sha256": "5ba4a7080fb96a4e7c5b3b7b56bb6019309b0db78c3970de2bd7971a85710b60",
+        "status": "complete_diagnostic"
+      },
+      "reference_evidence": {
+        "path": "docs/design/validation/flux4-reference-warm-current-20261012.json",
+        "sha256": "4d92ad2fc6856dd1ab73eab053e1f481225c283f751ce50e81fce1b9c3535430",
+        "status": "complete_reference_only"
+      },
+      "native_warm_sample_count": 4,
+      "reference_warm_sample_count": 2,
+      "same_window_pair": false,
+      "original_coefficient_identity_verified": true,
+      "scope": "preserved original savedQ4/g64 references vs new single40-BF16-derived W8/F16 hybrid; different windows/math, not newpaired/global/bitexact qualification; no original/external retest"
+    },
+    {
+      "model": "flux2-klein-4b",
+      "native_route": "hybrid",
+      "reference_route": "mlxserve-q4",
+      "native_seconds": 2.574438374955207,
+      "reference_seconds": 4.304634395986795,
+      "speedup": 1.6720673673385917,
+      "reduction_percent": 40.19379723965984,
+      "native_evidence": {
+        "path": "docs/design/validation/flux4-derived-hybrid-current-20261013.json",
+        "sha256": "5ba4a7080fb96a4e7c5b3b7b56bb6019309b0db78c3970de2bd7971a85710b60",
+        "status": "complete_diagnostic"
+      },
+      "reference_evidence": {
+        "path": "docs/design/validation/flux4-reference-warm-current-20261012.json",
+        "sha256": "4d92ad2fc6856dd1ab73eab053e1f481225c283f751ce50e81fce1b9c3535430",
+        "status": "complete_reference_only"
+      },
+      "native_warm_sample_count": 4,
+      "reference_warm_sample_count": 2,
+      "same_window_pair": false,
+      "original_coefficient_identity_verified": true,
+      "scope": "preserved original savedQ4/g64 references vs new single40-BF16-derived W8/F16 hybrid; different windows/math, not newpaired/global/bitexact qualification; no original/external retest"
+    }
+  ],
   "primary_report": "docs/benchmark/PERFORMANCE_REPORT.md",
   "latest_user_scope": "consolidate completed experiments into a concise performance report; no further model/shape/grid experiments scheduled; historical and unpaired results labelled separately",
   "active_model_families": [
@@ -197,7 +247,7 @@
   "deferred_model_families": [
     "flux2-klein-9b"
   ],
-  "active_campaign_count": 46,
+  "active_campaign_count": 47,
   "deferred_campaign_count": 12,
   "historical_report": "docs/benchmark/HISTORICAL_RESULTS.md",
   "expansion_status": "docs/benchmark/EXPANSION_STATUS.md",
@@ -5964,18 +6014,87 @@
       "timing_scope": "same original savedQ4/g64 pack incl embedding/8VAEattention linears;512/4,full PNG;constructor/readiness/cold/twofresh/repeat new seed; existing native results reused separately,not new paired ranking",
       "note": "original unchanged savedQ4/g64 pack; mflux0.22 cache0/full387/905/266 source coverage,mlx-serve26.10.1 actual4SSE Generating steps/fullPNG;8PNG/2complete memory; native existing twofresh precheck remains precheck,not paired/global/ANE claim; collector stage filter audit-only recovery preserves originalfailed summary and actualsuccessful media/memory,no threshold relaxation",
       "in_current_scope": true
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/flux4-derived-hybrid-current-20261013.json",
+        "sha256": "5ba4a7080fb96a4e7c5b3b7b56bb6019309b0db78c3970de2bd7971a85710b60",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-4b-single40-derived-hybrid-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-13",
+      "routes": [
+        {
+          "route": "gpu",
+          "cold_seconds": [
+            3.817715749843046,
+            3.561708875000477
+          ],
+          "warm_seconds": [
+            3.4864168751519173,
+            3.4806470000185072,
+            3.494405207922682,
+            3.4764893751125783
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 3.4835319375852123,
+          "repeated_prompt_seconds": [
+            3.2005086250137538,
+            3.199651415925473
+          ],
+          "physical_peaks": [
+            8030968024,
+            7722325992
+          ]
+        },
+        {
+          "route": "hybrid",
+          "cold_seconds": [
+            9.080859124893323,
+            5.362255125073716
+          ],
+          "warm_seconds": [
+            2.576020000036806,
+            2.569153915857896,
+            2.572941582882777,
+            2.5759351670276374
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 2.574438374955207,
+          "repeated_prompt_seconds": [
+            2.2972229158040136,
+            2.3041295828297734
+          ],
+          "physical_peaks": [
+            8064440536,
+            8245778792
+          ]
+        }
+      ],
+      "native_comparison_valid": true,
+      "reference_comparison_valid": false,
+      "timing_scope": "complete PNG; cold/twofresh/repeat perprocess; derivedGPU vs same-derived-source hybrid; not originalpacked speed/quality parity",
+      "source_recipe": "single40-q4-g64-to-bf16-v1",
+      "note": "current savedQ4/g64 source;40single projections once decoded toBF16,other267DiT tensors/encoder/VAE/tokenizer unchanged;16PNG/4complete memory/4fresh perroute;GPU3.483532 with80actualcompiled blocks,hybrid2.574438 with80actualsourcebound runtimecalls/request;W8weights/FP16IO+math notactivationW8A8;1.353x versus same-derivedGPU,26.097% less wall;GPU pixels equal oldpacked on tested prompts only,hybrid MAEmax2.573/255 SSIMmin.980592;higher cold5.362-9.081s/peak8.06-8.25GB;no external retest/newpaired framework denominator/globalquality or physicalANE trace",
+      "in_current_scope": true
     }
   ],
-  "missing_current_comparisons": [
-    "Boundary only, not a new experiment queue: finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
-    "FLUX4B current Q4/g64 source-bound GPU/ANE timing and paired native ranking absent; native twofresh precheck, successful mflux/mlx-serve twofresh references and historical BF16 mixed separately labelled; user asks to reuse native bests,9B deferred",
+  "missing_current_comparisons": [],
+  "comparison_boundaries": [
+    "finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
+    "FLUX4B current source-derived Q4/BF16 GPU and W8/F16 hybrid now measured in one16PNG/4memory cohort; originalpacked/predecode/framework windows remain distinct, no directUInt32 hybrid or newpaired external ranking claimed;9B deferred",
     "LTX now has successful same-source Comfy97frame AV cold+onewarm; one external warm observation versus existing native batch medians, not new same-window/exhaustive-preset ranking; mlx-serve original memory preflight rejection remains audit-only"
   ],
   "unmeasured_or_inapplicable": [
     "current FastH3 INT6 DiT and original H3 video VAE assets absent",
     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured",
     "NVFP4 runtime GPU-only",
-    "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
+    "historical9B mlx-serve originallayout rejected, current4B originalpack successful and separate; original LTX stock memory preflight rejected",
     "additional converted precision/model packs are not equal-source original-format benchmark denominators"
   ]
 }

@@ -1,16 +1,21 @@
 # ComfyUI Mac vs TurboCider 已测最优
 
-2026-10-12，M4 Max64GiB /macOS26.6.2，base-only，无额外LoRA。
+2026-10-13整理；实测窗口2026-10-11至12，M4 Max64GiB /macOS26.6.2，base-only，无额外LoRA。
 按最新要求：**已测TurboCider取保留的最优配置，不重复跑；Comfy已测的Z也不重跑。**
 新补Qwen完整PNG和LTX完整AV MP4。Comfy为v0.39.0 /PyTorch2.12.1 MPS，GPU/SDPA
 预设均实际执行；比值采用更快的Comfy预设，不拿慢配置放大优势。
 
-| 完整任务 | Comfy最快已测 | TurboCider已有最优 | 耗时差异 | 证据口径 |
-| --- | ---: | ---: | --- | --- |
-| Z-Image Turbo BF16源，512²/8步 | **8.535s**，默认MPS | **5.780s**，frozen W8A8 GPU/ANE | **1.477×，省32.3%** | Comfy四fresh；TC原完整四fresh最优，跨窗口回用 |
-| Qwen Image2.1 BF16源，512²/40步 | **48.350s**，GPU驻留/sub-quadratic | **31.059s**，W6144 GPU/ANE | **1.557×，省35.8%** | Comfy两fresh/预设；TC原完整四fresh最优，跨窗口回用 |
-| FLUX.2 Klein4B，512²/4步 | 当前本地saved-MLX Q4/g64未形成stock完整出图 | 当前Q4/g64两fresh3.723s；旧BF16 mixed1.628s另列 | **N/A，不造Comfy分母** | 缺少原BF164B本地包；whole index不在stock UNET choices，单shard不算完整模型 |
-| LTX2.5，704×448×97/11步，含音频MP4 | **112.230s**，SDPA/BF16 VAE，单warm观察 | quality GPU**63.848s**；opt-in近似**61.869s** | **质量路线1.758×；最快近似1.814×** | 完整AV、复用原TC记录；Comfy只有1个warm，不伪称中位数 |
+| 完整任务 | Comfy最快已测 | TurboCider已有最优 | 每次节省 | 耗时差异 | 证据口径 |
+| --- | ---: | ---: | ---: | --- | --- |
+| Z-Image Turbo BF16源，512²/8步 | **8.535s**，默认MPS | **5.780s**，frozen W8A8 GPU/ANE | **2.755s** | **1.477×，省32.3%** | Comfy四fresh；TC原完整四fresh最优，跨窗口回用 |
+| Qwen Image2.1 BF16源，512²/40步 | **48.350s**，GPU驻留/sub-quadratic | **31.059s**，W6144 GPU/ANE | **17.291s** | **1.557×，省35.8%** | Comfy两fresh/预设；TC原完整四fresh最优，跨窗口回用 |
+| FLUX.2 Klein4B，512²/4步 | 当前本地saved-MLX Q4/g64未形成stock完整出图 | **2.574s**，Q4派生W8/F16 GPU/ANE；原packed GPU3.723s另列 | N/A | **N/A，不造Comfy分母** | 新派生视图16PNG/4memory验收，非原BF16/直接packed混合；Comfy whole index不在stock UNET choices |
+| LTX2.5，704×448×97/11步，含音频MP4 | **112.230s**，SDPA/BF16 VAE，单warm观察 | quality GPU**63.848s**；opt-in近似**61.869s** | 质量**48.382s**；近似**50.361s** | **质量路线1.758×；最快近似1.814×** | 完整AV、复用原TC记录；Comfy只有1个warm，不伪称中位数 |
+
+倍率为Comfy耗时 /TC耗时，节省比例为1−TC耗时 /Comfy耗时，
+绝对差值由原始未舍入记录计算。完整PNG/含音频MP4导出计入；模型
+构造/服务ready与cold另列。这里的“最优”是匹配来源、任务与缓存口径的
+已验收最佳配置主记录，不是跨表示/缓存挑最低单次sample。
 
 这里是用户指定的**“已有最佳记录对照”**，不是全新的同窗口配对实验：
 明确允许回用TC旧窗口，保留来源、版本、配置与样本数。原严格同窗口Z
@@ -23,13 +28,28 @@
 下面回用各自原记录，没有重新跑TC。Z/Qwen的GPU列取其保留混合最优
 所在窗口的GPU control，避免把别的prompt/cache窗口最小值拼进去。
 
-| 任务与表示 | TC纯GPU完整s | TC GPU/ANE完整s | Comfy最快已测s | 当前选择 |
-| --- | ---: | ---: | ---: | --- |
-| Z BF16源512²/8步 | 7.363 | **5.780** | 8.535 | W5120 frozen混合 |
-| Qwen2.1 BF16源512²/40步 | 43.239 | **31.059** | 48.350 | W6144 frozen混合 |
-| LTX quality，97帧AV | **63.848** | 71.333 | 112.230，单warm | GPU，不强选ANE |
-| LTX opt-in Sol+text256，97帧AV | **61.869** | 66.036 | 112.230，单warm | GPU，MAE25.03/255需披露 |
-| FLUX4当前saved-Q4/g64，512²/4步 | 3.723，原两fresh预检 | 无匹配当前Q4 source的已测混合 | 无当前stock Comfy完整生成 | 不以旧BF16 1.628s代替当前Q4 |
+| 任务与表示 | TC纯GPU完整s | TC GPU/ANE完整s | Comfy最快已测s | 纯GPU对Comfy倍率 | 当前选择 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Z BF16源512²/8步 | 7.363 | **5.780** | 8.535 | **1.159×** | W5120 frozen混合 |
+| Qwen2.1 BF16源512²/40步 | 43.239 | **31.059** | 48.350 | **1.118×** | W6144 frozen混合 |
+| LTX quality，97帧AV | **63.848** | 71.333 | 112.230，单warm | **1.758×** | GPU，不强选ANE |
+| LTX opt-in Sol+text256，97帧AV | **61.869** | 66.036 | 112.230，单warm | **1.814×** | GPU，MAE25.03/255需披露 |
+| FLUX4当前Q4派生single40 BF16，512²/4步 | **3.484**，80实际compiled blocks | **2.574**，80实际runtime calls | 无当前stock Comfy完整生成 | N/A | W8/F16混合；不以旧BF16 1.628s代替当前来源 |
+
+2026-10-13扩大goal续作只补FLUX4这个此前未测的派生候选，没有重跑
+原packed GPU或任何外部框架。相同派生视图内混合比GPU快1.353×、
+少26.1%；source链、BF16预解码成本与四fresh/route见
+[FLUX4当前结果](FLUX4_CURRENT_STATUS.md)。它不改变本页的Comfy N/A。
+
+Z纯GPU相对Comfy省13.7%时间，W8A8混合再比自身GPU省21.5%；Qwen
+对应为10.6%和28.2%。因此Z/Qwen的额外优势主要来自混合配置，而不是
+仅凭GPU后端就有1.5×。这是配置级差距，不是隔离ANE硬件贡献的因果
+测量：混合也改变精度、调度和数据传输。LTX质量GPU已省43.1%，近似
+GPU再比自身质量路线省3.1%；ANE路线更慢，当前不推荐为测速开启。
+
+热态优势也不等于一次性请求优势：保留Z最优配置的cold为11.608–21.587s，
+Comfy默认为10.679–11.839s，窗口不同，不能拿热态倍率推算cold赢家。
+混合还增加驻留/启动成本；后续选择以完整任务的实际耗时为准。
 
 Z同配置在Private网格control中也出现5.748s的四fresh中位，比保留主
 cohort5.780s只低0.55%；不是新的配置/优化收益。历史5.344s是同prompt

@@ -17,14 +17,15 @@ class BaseBenchmarkReportTests(unittest.TestCase):
     def setUp(self):
         self.report = json.loads((ROOT / "docs/benchmark/results-20261011.json").read_text())
 
-    def test_expanded_goal_remains_active_without_promoting_previous_stage(self):
-        self.assertEqual(self.report["status"], "partial_expanded_evidence_catalog")
-        self.assertIs(self.report["goal_complete"], False)
+    def test_completed_requested_benchmark_does_not_promote_runtime_qualification(self):
+        self.assertEqual(self.report["status"], "complete_scoped_base_benchmark_catalog")
+        self.assertIs(self.report["goal_complete"], True)
         self.assertTrue((ROOT / self.report["completion_audit"]).is_file())
         self.assertIn("not release", self.report["goal_completion_scope"])
         self.assertIs(self.report["qualification_passed"], False)
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
-        self.assertTrue(self.report["missing_current_comparisons"])
+        self.assertEqual(self.report["missing_current_comparisons"], [])
+        self.assertTrue(self.report["comparison_boundaries"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
         self.assertGreaterEqual(len(self.report["campaigns"]), 53)
 
@@ -50,18 +51,20 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertNotIn("| 10-12 [FLUX9B", summary)
         self.assertIn("FLUX4B", summary)
 
-    def test_current_completion_boundaries_keep_flux4_gap_and_successful_ltx(self):
-        boundaries = " ".join(self.report["missing_current_comparisons"])
-        self.assertIn("source-bound GPU/ANE timing", boundaries)
+    def test_current_completion_boundaries_keep_derived_flux4_and_successful_ltx(self):
+        boundaries = " ".join(self.report["comparison_boundaries"])
+        self.assertIn("source-derived Q4/BF16 GPU", boundaries)
+        self.assertIn("no directUInt32 hybrid", boundaries)
         self.assertIn("successful same-source Comfy97frame AV", boundaries)
         self.assertNotIn("LTX has no compatible successful", boundaries)
         audit = (ROOT / "docs/benchmark/REQUIREMENTS_AUDIT.md").read_text()
-        self.assertIn("goal保持active", audit)
+        self.assertIn("benchmark目标已完成", audit)
         self.assertIn("gpu_ane_current_q4_result: null", audit)
         self.assertIn("TC取已有最优", audit)
-        self.assertIn("58组", audit)
+        self.assertIn("59组", audit)
         configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
         self.assertIsNone(configs["current_flux4_available_configuration"]["gpu_ane_current_q4_result"])
+        self.assertAlmostEqual(configs["current_flux4_available_configuration"]["gpu_ane_derived_q4_seconds"], 2.574438374955207)
 
     def test_compatible_only_policy_and_headlines_use_own_actual_cohort(self):
         self.assertEqual(self.report["comparison_policy"], COMPARISON_POLICY)
@@ -106,7 +109,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertIn("18.735s",report)
         self.assertIn("22.600s",report)
         self.assertIn("不再扩大参数网格",report)
-        self.assertIn("未形成当前配对排名",report)
+        self.assertIn("不混为新配对排名",report)
         self.assertIn("Qwen纯GPU43.309s略输mflux41.952s",report)
         campaign=next(row for row in self.report["campaigns"] if row["model"]=="z-image-turbo-unsloth-mflux-bf16-cohort")
         values={row["route"]:row["warm_median_seconds"] for row in campaign["routes"]}
@@ -114,6 +117,58 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertAlmostEqual(values["unsloth-gpu-text"]/values["native-frozen"],3.1459257859863987)
         configs=json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
         self.assertFalse(configs["additional_experiments_scheduled"])
+
+    def test_comfy_focus_absolute_gaps_use_unrounded_preserved_samples(self):
+        def load(name):
+            return json.loads((ROOT / "docs/design/validation" / name).read_text())
+
+        z_native = load("z-valid-framework-current-20261011.json")
+        z_comfy = load("z-comfy039-current-20261012.json")
+        qwen = load("qwen21-comfy039-reference-current-20261012.json")
+        ltx = load("ltx25-comfy039-reference-current-20261012.json")
+        z_best = statistics.median(next(row["fresh_warm_seconds"] for row in z_native["routes"]
+                                       if row["route"] == "native-frozen"))
+        z_reference = min(statistics.median(row["fresh_warm_seconds"]) for row in z_comfy["routes"]
+                          if row["route"].startswith("comfy-"))
+        qwen_best = statistics.median(qwen["existing_native_baseline"]["native_samples"]["native-frozen"])
+        qwen_reference = min(statistics.median(row["fresh_warm_seconds"]) for row in qwen["routes"])
+        cases = (
+            ("Z-Image Turbo BF16源", z_reference, z_best),
+            ("Qwen Image2.1 BF16源", qwen_reference, qwen_best),
+            ("LTX2.5，", ltx["warm_seconds"], statistics.median(ltx["existing_native_baseline"]["quality_samples"])),
+            ("LTX2.5，", ltx["warm_seconds"], statistics.median(ltx["existing_native_baseline"]["fastest_samples"])),
+        )
+        focus = (ROOT / "docs/benchmark/COMFYUI_MODEL_COMPARISON.md").read_text()
+        primary = (ROOT / "docs/benchmark/PERFORMANCE_REPORT.md").read_text()
+        for label, reference, native in cases:
+            with self.subTest(model=label, native=native):
+                row = next(line for line in focus.splitlines() if line.startswith("| " + label))
+                self.assertIn(f"{reference - native:.3f}s", row)
+                self.assertIn(f"{reference / native:.3f}×", row)
+                self.assertIn(f"{reference - native:.3f}s", primary)
+        self.assertEqual(ltx["warm_sample_count"], 1)
+        self.assertIn("cold另列", focus)
+        self.assertIn("配置级差距", focus)
+
+    def test_comfy_focus_gpu_contribution_and_successful_ltx_summary(self):
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        focus = (ROOT / "docs/benchmark/COMFYUI_MODEL_COMPARISON.md").read_text()
+        for model, label, reference_key in (
+            ("z-image-turbo", "Z BF16源", "z_image"),
+            ("qwen-image-2.1", "Qwen2.1 BF16源", "qwen21"),
+        ):
+            selected = next(row for row in configs["configurations"] if row["model"] == model)
+            reference = configs["comfy_best_record_comparison"][reference_key]["comfy_seconds"]
+            gpu = selected["gpu_control_seconds"]
+            mixed = selected["fresh_warm_median_seconds"]
+            row = next(line for line in focus.splitlines() if line.startswith("| " + label))
+            self.assertIn(f"{reference / gpu:.3f}×", row)
+            self.assertIn(f"{100 * (1 - gpu / reference):.1f}%", focus)
+            self.assertIn(f"{100 * (1 - mixed / gpu):.1f}%", focus)
+        summary = (ROOT / "docs/benchmark/SUMMARY.md").read_text()
+        self.assertNotIn("暂无成功同任务外部分母", summary)
+        self.assertIn("Comfy完整97帧含音频MP4对照112.230s", summary)
+        self.assertIn("单warm，非配对中位数", summary)
 
     def test_bound_raw_evidence_when_locally_available(self):
         for campaign in self.report["campaigns"]:
@@ -500,10 +555,22 @@ class BaseBenchmarkReportTests(unittest.TestCase):
 
     def test_retained_winners_are_from_their_actual_cohort(self):
         data = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
-        self.assertIs(data["goal_complete"], False)
+        self.assertIs(data["goal_complete"], True)
         self.assertIs(data["qualification_passed"], False)
+        self.assertEqual(data["pending"], [])
+        self.assertTrue(data["boundaries"])
         for configuration in data["configurations"]:
             evidence = json.loads((ROOT / configuration["evidence"]).read_text())
+            if configuration["model"] == "flux2-klein-4b":
+                routes = {row["route"]: row for row in evidence["routes"]}
+                self.assertEqual(configuration["selected_route"], "hybrid")
+                self.assertEqual(configuration["fresh_warm_median_seconds"], routes["hybrid"]["fresh_warm_median"])
+                self.assertEqual(configuration["gpu_control_seconds"], routes["gpu"]["fresh_warm_median"])
+                self.assertEqual(configuration["actual_runtime_calls_per_request"], 80)
+                self.assertTrue(configuration["request"]["allow_approximation"])
+                self.assertFalse(configuration["reference_comparison_valid"])
+                self.assertIn("notactivationW8A8", configuration["selection_note"])
+                continue
             if configuration.get("selected_route", "").startswith("native"):
                 self.assertEqual(configuration["request"]["execution"], "gpu")
                 self.assertIs(configuration["request"]["allow_approximation"], False)
