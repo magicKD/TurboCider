@@ -200,6 +200,18 @@ class BaseBenchmarkReportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "actual parameters and generation metadata"):
                 z_upstream_campaign(path)
 
+    def test_current_qwen_short_precheck_is_not_a_full_benchmark_campaign(self):
+        path = "docs/design/validation/qwen21-mflux022-precheck-20261012.json"
+        data = json.loads((ROOT / path).read_text())
+        self.assertEqual((data["status"], data["steps"], data["requests_per_process"]), ("complete_precheck_only", 4, 1))
+        self.assertEqual(data["mflux_package_version"], "0.22.0")
+        self.assertEqual(data["routes"], [])
+        self.assertTrue(all(trial["memory"]["complete"] for trial in data["trials"]))
+        candidate = data["trials"][1]
+        self.assertEqual(candidate["report"]["transformer_floating_parameter_dtypes"],
+                         {"mlx.core.bfloat16": 9, "mlx.core.float16": 288})
+        self.assertNotIn(path, [campaign["evidence"]["path"] for campaign in self.report["campaigns"]])
+
     def test_ltx_full_media_modes_and_clock_boundaries_are_not_pooled(self):
         batch = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-persistent-batch")
         clean = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-clean-exec")

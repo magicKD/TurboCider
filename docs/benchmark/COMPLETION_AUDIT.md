@@ -111,6 +111,10 @@ referenceBF16 7.976s，mixed优势1.339×；referencepeak22.51GB比native
 拒绝回归，设置实验库运行make test-base-benchmark，148项全部通过。
 所有tests/audits在模型实验terminal后运行，仍未运行全量make test。
 Qwen/FLUX当前版本、更广native配置与成功外部LTX仍未完成，goal保持active。
+随后Qwen0.22两路线短预检完成，4步单cold、288F16/9BF16 DiT参数和
+两memory/两PNG核验，只保存precheck、不进入51组完整catalog。补充
+预检不得当完整排名的回归后，make test-base-benchmark为149项全过；
+仍未运行全量make test，40步新版本对照和其它缺口未完成。
 
 ## 不是缺少结果的隐含通过
 

@@ -1,0 +1,274 @@
+{
+  "schema": "tc-qwen21-mflux-framework-validation-v1",
+  "date": "2026-10-12",
+  "status": "complete_precheck_only",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "steps": 4,
+  "requests_per_process": 1,
+  "order": [
+    "mflux-bf16",
+    "mflux-fp16"
+  ],
+  "evidence": "outputs/qwen21-mflux022-v1-bf16-fp16-precheck-20261012/summary.json",
+  "evidence_sha256": "b29fc048b51dab001d8190d9745104559e3ee50ea74c3c97dc3efc48c8c82b64",
+  "native_inputs_matched": 514,
+  "library_sha256": "c1c0fcd81269cc99f8bc49dae76c2aaa907a0f24a95b1ef63fd8dd8090d6410e",
+  "model_sha256": {
+    "models/Comfy-Org-Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+    "models/Comfy-Org-Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+    "models/Comfy-Org-Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+    "models/Comfy-Org-Qwen-Image-2.1/processor/tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+  },
+  "mflux_commit": "31c9640399572ea394d07092763be9a36007a754",
+  "mflux_source_snapshot": "10e88df4cf816c874bad01b3b100808d523bd19755bc73387d538d3d641bad26",
+  "mflux_package_version": "0.22.0",
+  "layout_proof": {
+    "receipt_sha256": "0ea6390918217054220efb423e4a8ead2c3db054870c392d268b93fa7d3ab035",
+    "components": [
+      {
+        "kind": "qwen-text",
+        "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+        "derived_sha256": "fce5bccc1838c6021dfd5cbd32f370c08a00cf53bf252b3fb938c8d0d5548818",
+        "payload_sha256": "543305cbb19c28513306c083cdfa2693c30102c733a39179fb580ddf5ebe5d8f",
+        "full_payload_equal": true,
+        "tensor_bindings": 750,
+        "preparation_seconds": 22.76936137501616
+      },
+      {
+        "kind": "qwen-dit",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "derived_sha256": "19a700d9594e38a753614de1ef03e39972bb88c10da1a6aedc679a78a99c3db8",
+        "payload_sha256": "27720cfe3d6e42d777f004a33efdc832d67ad5ad80b7e2d84044423f281b7828",
+        "full_payload_equal": true,
+        "tensor_bindings": 297,
+        "preparation_seconds": 19.84992887498811
+      },
+      {
+        "kind": "qwen-vae",
+        "source_sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+        "derived_sha256": "e82d7d48020aa105405637c3cad54be067a6270a67f6b28667c751d8fbab9322",
+        "payload_sha256": "1e1c9913e83a24d1aa34487ed827a82c2906d132c331b626133c6b631c3314b4",
+        "full_payload_equal": true,
+        "tensor_bindings": 238,
+        "preparation_seconds": 0.9206316249910742
+      }
+    ]
+  },
+  "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+  "representation_scope": "same original BF16 source through lossless layout; upstream optional float16 compute changes attention/FFN math, residual/text/VAE retain BF16; Q4/Q8 separate affine recipes, not original GGUF equality",
+  "source_policy": "first verified source generation only; persistent metadata-bound reuse; no per-inference model SHA",
+  "reference_cache_mib": 1024,
+  "trials": [
+    {
+      "route": "mflux-bf16",
+      "index": 0,
+      "report": {
+        "engine": "mflux-bf16",
+        "constructor_seconds": 1.502737957984209,
+        "compute_precision_name": null,
+        "transformer_floating_parameter_dtypes": {
+          "mlx.core.bfloat16": 297
+        },
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "text_embedding_dtype": "mlx.core.bfloat16",
+        "transformer_input_weight_dtype": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 226,
+            "covered_targets": 226,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 297,
+            "covered_targets": 297,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "reference_cache_limit_bytes": 1073741824,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "instrumentation": "host step counter only; stock model, cache and synchronization",
+        "packages": {
+          "mlx": "0.32.3",
+          "torch": "2.14.1",
+          "transformers": "5.19.0",
+          "numpy": "2.5.4",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 10.164626957848668,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 34794148218
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 33911626888,
+        "compression_bytes": 5478514688,
+        "decompression_bytes": 3546513408,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "e8c75ed94a217dd5228a2953a23aebabc8349974240a4b0d0a623278028f18ef",
+      "memory_report_sha256": "cd0052948c8ae4899458f33294026d06cedad11313f006e055b7574fe2eba7fc",
+      "pngs": [
+        {
+          "file_sha256": "7ab13d7e54611ee68e1071ecac818da55a2c213434eb29759c09456d7027240f",
+          "rgb_sha256": "5f808b9649be293ebb5b1a015413511e8d391fbb0c4addf8434bc83b9973cc1c"
+        }
+      ]
+    },
+    {
+      "route": "mflux-fp16",
+      "index": 1,
+      "report": {
+        "engine": "mflux-fp16",
+        "constructor_seconds": 1.368645332986489,
+        "compute_precision_name": "float16",
+        "transformer_floating_parameter_dtypes": {
+          "mlx.core.bfloat16": 9,
+          "mlx.core.float16": 288
+        },
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "text_embedding_dtype": "mlx.core.bfloat16",
+        "transformer_input_weight_dtype": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 226,
+            "covered_targets": 226,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 297,
+            "covered_targets": 297,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "reference_cache_limit_bytes": 1073741824,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "instrumentation": "host step counter only; stock model, cache and synchronization",
+        "packages": {
+          "mlx": "0.32.3",
+          "torch": "2.14.1",
+          "transformers": "5.19.0",
+          "numpy": "2.5.4",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 8.55178854195401,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {
+              "compute_precision": "float16"
+            },
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 34869651806
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 34071616744,
+        "compression_bytes": 3298672640,
+        "decompression_bytes": 70664192,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "f3313a5da5aa5b56752c84d6ad903fe5782e75664653c446f2af3cbb80a95ece",
+      "memory_report_sha256": "9ef315a2a507e4e0de713a3b648321ac63fac39d1c5d9b11d70351a013649589",
+      "pngs": [
+        {
+          "file_sha256": "fc1e520ab517f7d1775984a00dc010634ea5c56888197f664a0cb440eb02d876",
+          "rgb_sha256": "1e022cffa5198a585520f155157267e6112310cecfaefa97b656e729375ff43a"
+        }
+      ]
+    }
+  ],
+  "routes": [],
+  "quality": [],
+  "reference_latency_ranking_valid": true,
+  "invalid_reference_reason": null,
+  "reference_compute_quality": [
+    {
+      "reference": "mflux-bf16",
+      "candidate": "mflux-fp16",
+      "process_index": 1,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 1.2641562899769478,
+          "psnr_db": 46.094788210786874,
+          "max_abs_u8": 51,
+          "rgb_correlation": 0.9995985372755223,
+          "rgb_ssim_gaussian11_valid": 0.9954270957497245,
+          "ssim_per_channel": [
+            0.9955853837838805,
+            0.9948167469798896,
+            0.9958791564853738
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 1.2641562899769478,
+          "psnr_db": 46.094788210786874,
+          "max_abs_u8": 51,
+          "rgb_correlation": 0.9995985372755223,
+          "rgb_ssim_gaussian11_valid": 0.9954270957497245,
+          "ssim_per_channel": [
+            0.9955853837838805,
+            0.9948167469798896,
+            0.9958791564853738
+          ]
+        },
+        "raw_rgb_mae_255": 0.7269999186197916,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 255,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 0,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.0
+        }
+      }
+    }
+  ],
+  "quality_scope": "native PNG retains generated alpha; reference RGB has implicit opaque alpha; raw RGB, alpha and white-composited RGB separately reported; same-size outputs, no resize; cross-engine seed does not prove identical noise or full output-feature equivalence"
+}

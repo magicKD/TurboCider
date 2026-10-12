@@ -28,6 +28,9 @@ BF16慢4.746%，reference peak22.51GB优于native约32GB。完整同engine
 FP16质量误差与实际306个FP16参数/215BF16、每图generation metadata
 均核验，旧参考9.520s不混池。[最新Z结果](Z_IMAGE_FRAMEWORKS.md)。
 Qwen/FLUX新版本、更多shape/quant/hybrid与成功外部LTX仍pending。
+Qwen0.22 BF16/partialFP16短4步单cold预检已完成，288FP16/9BF16 DiT
+参数与全部required weights、两个memory窗口核验；仅预检，不增加
+完整campaign计数或宣传40步倍率，见[Qwen当前边界](QWEN_BF16_FRAMEWORKS.md)。
 
 10-12参考1024/4096MiB两组Qwen完整对照新增后catalog为50组。各自六
 进程、24PNG/6memory、四fresh/route完整验收；实际缓存bytes/全部

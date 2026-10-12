@@ -100,6 +100,15 @@ native GPU/frozen的compression/swap-out增量均0，少量swap-in/decompression
 
 ## 实际GPU/ANE执行与输出差异
 
+10-12新版mflux0.22.0的BF16/partialFP16两路线短预检已完成，实际
+required coverage297DiT/398encoder/226VAE与两个完整memory窗口通过。
+FP16实际为288个DiT floating参数F16、9个BF16、encoder/VAE仍按模型
+精度；每图compute_precision metadata与源码snapshot核验。
+[短预检记录](../design/validation/qwen21-mflux022-precheck-20261012.json)
+只有4步/单cold，各10.165/8.552s，图像仍有短步数去噪残留，不作为
+40步latency排名、最终画质通过或混合最佳配置。完整40步四路线回文
+与fresh/repeat/quality对照仍pending，不能沿用旧45.45s参考作新版分母。
+
 32个checkpoint-bound W6144/r1024 source graphs与compiled manifest
 已经恢复到独立benchmark cache，当前实际可加载。每40步请求1248次
 runtime，首次32次warmup，failure0，checkpoint SHA通过；首步GPU，
