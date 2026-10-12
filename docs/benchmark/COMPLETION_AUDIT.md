@@ -9,7 +9,8 @@
 已补有效Qwen五路线40步、Z七路线8步、FLUX stock三精度完整对照，
 再加Qwen cache0、FLUX compiled、LTX两边界、Z十四参数候选和9B完整
 hybrid、两种Q4/g32匹配及提前解码、Qwen1024/4096MiB缓存、Z当前
-mflux0.22 BF16/FP16对照、Qwen0.22完整40步四路线，共52个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
+mflux0.22 BF16/FP16对照、Qwen0.22完整40步四路线及FLUX0.22七路线，
+共53个dated campaigns；最新证据见[Qwen](QWEN_BF16_FRAMEWORKS.md)、
 [Z](Z_IMAGE_FRAMEWORKS.md)、[FLUX](FLUX_PRECISIONS.md)。更新上游框架版本、
 更多native分区/尺寸、FLUX匹配量化/其它9B混合、LTX进一步加载/驻留与成功外部
 对照仍缺证据，扩大目标仍active/partial/goal_complete=false。
@@ -128,6 +129,20 @@ memory验收与12项CPU协议测试；此时只是工具，不冒充真实新模
 使用实验库运行make test-base-benchmark，163项全部通过；所有tests/
 audits在Qwen实验terminal后执行，仍未运行全量make test。
 FLUX新版真实运行、更多native shape/precision与成功外部LTX仍pending。
+
+FLUX0.22随后完整七路线14process/56PNG/14memory验收完成，catalog为
+53组；64个完整RGB比较、28对正反序输出均核验。BF16compiled7.661/
+hybrid7.434/packedQ4 8.015/predecoded7.254s，reference BF16 7.318/
+partialFP16 7.650/matchedQ4 7.876s。BF16/packedQ4参考胜出，partial
+FP16慢4.525%，hybrid中位省2.970%但soft/light分化且cold21.7s；
+predecode省9.498%、peak24.36–24.43GB，数学漂移和内存代价保留。
+实际96hybrid calls/request、首次153decode/后续0、每请求96compiled
+分支及所有128blocks、原index/两shards/compiled artifacts身份通过。
+新增current reference胜出/label-only hybrid拒绝与保存自己cohort的
+control/replication回归，使用实验库运行make test-base-benchmark，
+165项全过。所有tests/audits在性能实验terminal后运行，仍未运行全量
+make test。native库版本/其它precision/shape/share、兼容mlx-serve与
+成功外部LTX仍不因此完成，扩大goal保持active。
 
 ## 不是缺少结果的隐含通过
 

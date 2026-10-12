@@ -130,7 +130,7 @@
   "pending": [
     "Qwen further native parameter/shape/current upstream quantized screening; cache0/1024/4096 and current0.22 BF16/partialFP16 completed",
     "Z additional checkpoint/shape/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX9B current upstream framework versions, additional quantized precisions and hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 and exact512/4 hybrid measured",
+    "FLUX9B native library-version/precision/share/shape and compatible mlx-serve candidates; current0.22 seven-route cohort completed",
     "LTX further load/residency configurations and successful reference layouts; eight full-media configurations completed"
   ],
   "media_configurations": [
@@ -246,6 +246,16 @@
       "actual_compiled_single_blocks_per_request": 96,
       "physical_peak_bytes": [24400991776, 24448063872],
       "evidence": "docs/design/validation/flux9-predecode-current-20261012.json",
+      "current_replication": {
+        "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
+        "fresh_warm_median_seconds": 7.253945666481741,
+        "packed_q4_control_seconds": 8.01523687550798,
+        "bf16_compiled_control_seconds": 7.661435957881622,
+        "same_q4_reference_seconds": 7.875916603952646,
+        "reference_bf16_seconds": 7.318346583517268,
+        "physical_peak_bytes": [24360441424, 24432433872],
+        "scope": "own0.22 seven-route cohort only, same retained recipe;9.498% saving versus packed, only0.88% nominal versus original BF16 with different math; old7.211s not pooled"
+      },
       "selection_note": "Fastest tested native approximate candidate in this complete cohort, opt-in not automatic/default:9.882% saving versus own packedQ4, peak24.40-24.45GB versus11.95-11.97GB; only1.8% nominal versus original referenceBF16 with different weight math; full quality/transition diagnostics retained."
     }
   ],
@@ -253,6 +263,15 @@
     {
       "model": "flux2-klein-9b",
       "selected_route": "native-hybrid",
+      "current_replication": {
+        "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
+        "library": "build/flux9-predecode-v2-private/libturbocider.dylib",
+        "fresh_warm_median_seconds": 7.433897687471472,
+        "compiled_gpu_control_seconds": 7.661435957881622,
+        "reference_bf16_seconds": 7.318346583517268,
+        "cold_seconds": [21.86401145812124, 21.687461416004226],
+        "scope": "2.970% aggregate fresh saving but soft/light-variable, repeat slower and cold21.7s; reference BF16 wins, no automatic/default change; old0.031%/repeat11.5% not reused"
+      },
       "representation": "original BF16 source; CoreML INT8 per-channel weights/FP16 I/O prefix, not activation8 or proven integer MAC",
       "model_root": "models/FLUX.2-klein-9B",
       "library": "build/flux9-hybrid-v1-private/libturbocider.dylib",
@@ -423,6 +442,32 @@
           "fresh_warm_median_seconds": 8.355057770502754,
           "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"
         }
+      ]
+    },
+    {
+      "model": "flux2-klein-9b",
+      "engine": "mflux",
+      "package_version_field": "0.22.0",
+      "commit": "31c9640399572ea394d07092763be9a36007a754",
+      "precision": "original BF16 encoder/DiT/VAE; partialFP16 and matchedlinearQ4 separate candidates",
+      "model_root": "models/FLUX.2-klein-9B",
+      "selected_route": "mflux-bf16",
+      "free_cache_limit_bytes": 0,
+      "fresh_warm_median_seconds": 7.318346583517268,
+      "native_bf16_control_seconds": 7.661435957881622,
+      "native_hybrid_control_seconds": 7.433897687471472,
+      "native_predecoded_control_seconds": 7.253945666481741,
+      "physical_peak_bytes": [32129899872, 32119790848],
+      "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
+      "selection_note": "Fastest of current0.22 originalBF16/partialFP16/matchedQ4 reference candidates; beats native BF16 and hybrid. Native sourceQ4 predecode nominally0.88% faster with different weight math, not strict parity/global first. All ratios use own seven-route cohort, not old native7.211s.",
+      "packages": {"mlx": "0.32.3", "torch": "2.14.1", "transformers": "5.19.0", "numpy": "2.5.4", "Pillow": "12.3.0", "safetensors": "0.8.0"},
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_current_framework_screen.py --model models/FLUX.2-klein-9B --pack outputs/flux9-matched-full-q4-g32-pack-v2-20261012 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --ane-manifest outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json --output outputs/new-flux-current-frameworks",
+      "other_compute_candidates": [
+        {"route": "mflux-fp16", "compute_precision": "float16", "fresh_warm_median_seconds": 7.649527395493351,
+         "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"},
+        {"route": "mflux-q4", "stored_recipe": "encoder+DiT eligible linears Q4/g32, denseBF16 embedding/VAE",
+         "fresh_warm_median_seconds": 7.875916603952646, "physical_peak_bytes": [12445344912, 12442854616],
+         "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"}
       ]
     }
   ],

@@ -1,5 +1,10 @@
 # FLUX.2 Klein 9B：stock参考精度筛选
 
+更新2026-10-12。[当前mflux0.22七路线](FLUX9_CURRENT_FRAMEWORKS.md)
+已完整完成：native BF16compiled7.661/hybrid7.434/sourceQ4预解码
+7.254s，referenceBF16 7.318/partialFP16 7.650/matchedQ4 7.876s。
+下方旧cohort分别保留，不将较慢旧参考或旧repeat收益套作当前排名。
+
 2026-10-11，M4 Max64GiB/macOS26.6.2，原本地9B BF16完整源、512²、
 4步、seed42，无LoRA。只读mflux0.19.2的stock quantize参数，BF16→
 Q4→Q8→Q8→Q4→BF16，六进程24张图，全部独立进程树内存验收完整。

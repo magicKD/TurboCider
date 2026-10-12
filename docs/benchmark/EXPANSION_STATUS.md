@@ -11,7 +11,7 @@ Image、LTX 的 BF16/可用量化表示与参数，继续探索 GPU/ANE 最佳�
 | --- | --- | --- |
 | Qwen Image 2.1 | 原 GGUF GPU/Private/Unsloth；BF16 resident/streaming；旧五路线/cache0/1024/4096、新0.22 BF16/partialFP16完整四路线 | 新版quant/cache、512/1024和share/phase最佳配置再核验；stock有明显内存压力 |
 | Z-Image Turbo | 五表示16配置、旧七路线框架对照、14个Private网格、新mflux0.22 BF16/partial FP16四路线完整完成 | 额外尺寸/checkpoint与新版本量化候选，不能把有限网格当全局最优 |
-| FLUX.2 Klein 9B | stock/cache0、compiled、9B混合、两种Q4与提前解码完成；新predecoded7.211/packed8.001/referenceQ4 8.028s、peak24.4GB | 其它bits与mlx-serve更兼容格式/成功路径、其它shares/shapes、进一步prefill/加载；低RAM与性能候选分开 |
+| FLUX.2 Klein 9B | stock/cache0、compiled、混合/Q4/预解码；当前mflux0.22七路线56PNG/14memory完整完成，predecode7.254对packed8.015s省9.50% | native库版本、其它bits/兼容mlx-serve布局、shares/shapes和prefill/加载；低RAM与性能候选分开 |
 | LTX 2.5 distilled | 最新8配置/32MP4/20memory，quality/Sol/text256、GPU/INT8、batch/clean-exec分开；原组合mlx-serve preflight失败 | GPU Sol+text256只省3.1%且漂移明显，INT8更慢；继续驻留/加载瓶颈与成功参考布局/其它尺寸，不只重用旧0.86% |
 
 除了主表热态延迟，还保留新进程constructor、cold、fresh prompt与
@@ -21,13 +21,22 @@ PNG/MP4、memory pressure、执行分区/实际fallback/retry及表示差异。
 
 ## 本轮实际新增证据
 
+FLUX0.22七路线新增后catalog为53组，14process/56PNG/14memory，
+全部4fresh/route、64媒体比较和28对正反序RGB exact。native BF16
+compiled7.661/hybrid7.434/packedQ4 8.015/predecoded7.254s；reference
+BF16 7.318/partialFP16 7.650/matchedQ4 7.876s。BF16/packedQ4参考均
+胜，FP16慢4.525%，hybrid中位省2.970%但prompt-variable且cold21.7s；
+predecode省9.498%且peak24.4GB，extra舍入/sourceQ4漂移保留。
+[完整当前FLUX](FLUX9_CURRENT_FRAMEWORKS.md)，不自动启用hybrid或
+拼旧native最小值。native MLX0.32.0/reference0.32.3，库版本筛选仍待补。
+
 最新Qwen0.22完整40步四路线新增后catalog为52组：8process/32PNG/
 8memory、每路4fresh完整验收。GPU43.309/frozen31.810/referenceBF16
 41.952/partialFP16 42.000s，新版参考胜pureGPU约3.2%，mixed仍1.319×；
 FP16仅差0.114%没有稳定收益，warm-light同engine SSIM0.997113/
 MAE0.563。actual288FP16/9BF16参数、cache1GiB与1248frozen calls
 均保留，不拿旧更慢分母宣传。[当前完整Qwen](QWEN_BF16_FRAMEWORKS.md)。
-FLUX新版七路线工具准备中；native改动/转换/测试不与计时实验并行。
+FLUX新版七路线随后已完成；native改动/转换/测试不与计时实验并行。
 
 最新Z/mflux0.22四路线新增后catalog为51组：8process/32PNG/8memory
 完整，独立满足声明依赖的新环境，GPU7.354/frozen5.959/reference
@@ -35,7 +44,7 @@ BF16 7.976/partial FP16 8.355s；mixed优势缩至1.339×，FP16比自己
 BF16慢4.746%，reference peak22.51GB优于native约32GB。完整同engine
 FP16质量误差与实际306个FP16参数/215BF16、每图generation metadata
 均核验，旧参考9.520s不混池。[最新Z结果](Z_IMAGE_FRAMEWORKS.md)。
-FLUX新版本、Qwen/Z更多shape/quant/hybrid与成功外部LTX仍pending。
+三家族更多native shape/quant/hybrid与成功外部LTX仍pending。
 Qwen0.22 BF16/partialFP16短4步单cold预检已完成，288FP16/9BF16 DiT
 参数与全部required weights、两个memory窗口核验；仅预检，不增加
 完整campaign计数或宣传40步倍率，见[Qwen当前边界](QWEN_BF16_FRAMEWORKS.md)。
@@ -48,7 +57,7 @@ GPU/frozen/reference为43.377/32.393/45.451s及43.331/32.407/45.498s，
 1024的参考peak34.48–34.88GB低于4096的37.71–37.76GB，保存较低
 开销reference候选，不跨cohort拼最小native分母。[完整记录](QWEN_BF16_FRAMEWORKS.md)。
 扩大目标仍active；原固定参考是2026-09-20commit/版本字段0.19.2，
-FLUX当前上游版本同机重测与更多形状/分区/成功LTX对照继续pending。
+FLUX native库版本、更多形状/分区/成功LTX对照继续pending。
 
 10-12新增9B完整hybrid cohort使catalog达到45组。8进程/32PNG/8memory
 完整，实际4096-prefix/8192-GPU补集、96calls/request、无fallback、原

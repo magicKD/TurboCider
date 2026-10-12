@@ -37,10 +37,15 @@ native约32GB，内存优势属于参考。[当前版本和精度边界](Z_IMAGE
 referenceBF16 41.952/partialFP16 42.000s；新版参考略胜pureGPU，mixed
 优势为1.319×而不是旧1.40–1.56×，FP16仅差0.114%不作稳定收益。
 pureGPU peak29.77–30.47GB更低，mixed36.03–36.08GB更高；各取舍
-见[最新Qwen结果](QWEN_BF16_FRAMEWORKS.md)。FLUX当前上游对照仍pending。
+见[最新Qwen结果](QWEN_BF16_FRAMEWORKS.md)。
+FLUX0.22七路线完整56PNG/14memory也已完成：native BF16compiled/
+hybrid/predecoded为7.661/7.434/7.254s，reference BF16/partialFP16/
+matchedQ4为7.318/7.650/7.876s。BF16参考胜；hybrid对compiled省
+2.97%但prompt-variable/cold21.7s，predecode对自己packed8.015s省
+9.50%、peak24.4GB，不冒充原BF16数学。[当前完整FLUX](FLUX9_CURRENT_FRAMEWORKS.md)。
 
 新增“各家族BF16/量化/参数与本机最佳GPU/ANE配置”的扩大目标仍在推进，
-见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面52组为已保留的完整
+见[扩展覆盖与当前实验](EXPANSION_STATUS.md)。下面53组为已保留的完整
 阶段，不把尚未成功的外部框架/未验证分区当作扩大目标已经完成。
 
 10-12新增真实9B GPU/ANE全图四路线正反序：eager8.154/compiled7.844/
@@ -121,6 +126,7 @@ Tongyi Z 根目录当前没有独立 DiT；别名目录、Core ML 图和 app-bin
 | 10-11 FLUX9B BF16，参考cache0配对 | 7.980 | N/A，9B混合仍未验证 | mflux7.352s；native多用8.54%时间 | 四fresh/路，16PNG/4memory；负结果保留 |
 | 10-11 FLUX9B，compiled+encoder候选 | 7.374，compiled GPU | N/A，9B混合仍未验证 | 同窗口mflux7.343s，近似持平 | 四fresh/路，24PNG/6memory；对eager7.612s省3.13% |
 | 10-12 FLUX9B，实验四路线 | 7.844，compiled GPU | 7.841，CoreML INT8-weight/FP16-I/O prefix | 1.0003× /0.031%，无稳定fresh收益 | 四fresh/路，32PNG/8memory；同窗口mflux7.355s仍胜 |
+| 10-12 FLUX9B，当前mflux0.22七路线 | 7.661，BF16compiled；Q4预解码7.254 | 7.434，BF16源hybrid | 1.031× /2.97%，prompt-variable | 四fresh/路，56PNG/14memory；referenceBF16 7.318s胜；predecode对packed8.015s省9.50% |
 | 10-11 Z BF16，512²，8步 | 7.551 | 6.187，frozen image-only W8A8 | 1.220× /18.1% | 四fresh warm/配置；完整正反序 |
 | 10-11 Z BF16，最新七路线 | 7.363 | 5.780，frozen image-only W8A8 | 1.274× /21.5% | 四fresh/路，56PNG；mflux BF16 9.520s，cold另列 |
 | 10-12 Z，当前mflux0.22四路线 | 7.354 | 5.959，同配置frozen W8A8 | 1.234× /19.0% | 四fresh/路，32PNG/8memory；参考BF16 7.976s、FP16 8.355s，native对BF16 1.085×/1.339× |

@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from base_model_benchmark_evidence import measured, qwen_cache_campaign, qwen_upstream_campaign, z_upstream_campaign
+from base_model_benchmark_evidence import measured, flux_upstream_campaign, qwen_cache_campaign, qwen_upstream_campaign, z_upstream_campaign
 
 
 class BaseBenchmarkReportTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertTrue((ROOT / self.report["expansion_status"]).is_file())
         self.assertTrue(self.report["missing_current_comparisons"])
         self.assertTrue(self.report["unmeasured_or_inapplicable"])
-        self.assertGreaterEqual(len(self.report["campaigns"]), 52)
+        self.assertGreaterEqual(len(self.report["campaigns"]), 53)
 
     def test_complete_actual_sample_arrays_and_medians(self):
         for campaign in self.report["campaigns"]:
@@ -238,6 +238,36 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         with mock.patch("base_model_benchmark_evidence.source", return_value=(data, {})):
             with self.assertRaisesRegex(ValueError, "actual current Qwen reference cache"):
                 qwen_upstream_campaign(path)
+
+    def test_current_flux_seven_routes_preserve_reference_wins_and_predecode_tradeoff(self):
+        campaign = next(row for row in self.report["campaigns"] if row["model"] == "flux2-klein-9b-mflux022-seven-route-cohort")
+        data = json.loads((ROOT / campaign["evidence"]["path"]).read_text())
+        self.assertEqual((len(data["trials"]), len(data["quality"])), (14, 64))
+        self.assertEqual(sum(len(trial["png_sha256"]) for trial in data["trials"]), 56)
+        self.assertTrue(all(trial["memory"]["complete"] for trial in data["trials"]))
+        self.assertTrue(all(all(check["exact_requests"]) for check in data["output_checks"]))
+        values = {row["route"]: row["warm_median_seconds"] for row in campaign["routes"]}
+        self.assertLess(values["mflux-bf16"], values["native-bf16"])
+        self.assertLess(values["mflux-bf16"], values["native-hybrid"])
+        self.assertLess(values["mflux-q4"], values["native-q4"])
+        self.assertGreater(values["mflux-fp16"], values["mflux-bf16"])
+        self.assertLess(values["native-predecoded"], values["native-q4"])
+        self.assertLess(data["comparisons"]["native_hybrid_reduction_vs_compiled_percent"], 5)
+        self.assertGreater(data["comparisons"]["native_predecode_reduction_vs_packed_percent"], 5)
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        reference = next(row for row in configs["reference_configurations"] if row["model"] == "flux2-klein-9b")
+        self.assertEqual(reference["fresh_warm_median_seconds"], values["mflux-bf16"])
+        self.assertEqual(reference["native_predecoded_control_seconds"], values["native-predecoded"])
+        self.assertEqual(configs["performance_configurations"][0]["current_replication"]["fresh_warm_median_seconds"], values["native-predecoded"])
+        self.assertEqual(configs["experimental_configurations"][0]["current_replication"]["fresh_warm_median_seconds"], values["native-hybrid"])
+
+    def test_current_flux_export_requires_actual_calls_not_hybrid_label(self):
+        path = "docs/design/validation/flux9-mflux022-current-20261012.json"
+        data = json.loads((ROOT / path).read_text())
+        data["trials"][1]["report"]["runs"][0]["metrics"]["hybrid"]["runtime_calls_session_total"] = 0
+        with mock.patch("base_model_benchmark_evidence.source", return_value=(data, {})):
+            with self.assertRaisesRegex(ValueError, "actual complete96"):
+                flux_upstream_campaign(path)
 
     def test_ltx_full_media_modes_and_clock_boundaries_are_not_pooled(self):
         batch = next(c for c in self.report["campaigns"] if c["model"] == "ltx-2.5-full-config-persistent-batch")

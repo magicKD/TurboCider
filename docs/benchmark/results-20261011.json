@@ -2539,6 +2539,273 @@
     },
     {
       "evidence": {
+        "path": "docs/design/validation/flux9-mflux022-current-20261012.json",
+        "sha256": "4aed066eff9a54339ccb7b13864a0b365bc3e41429f0394ce7013e8969898479",
+        "status": "complete_diagnostic"
+      },
+      "model": "flux2-klein-9b-mflux022-seven-route-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 4,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "native-bf16",
+          "cold_seconds": [
+            8.599369874922559,
+            8.261356916977093
+          ],
+          "warm_seconds": [
+            7.826395582873374,
+            7.299782249843702,
+            8.298466749954969,
+            7.49647633288987
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.661435957881622,
+          "repeated_prompt_seconds": [
+            6.711838292190805,
+            6.9121488749515265
+          ],
+          "constructor_seconds": [
+            0.1293965841177851,
+            0.14411608292721212
+          ],
+          "physical_peaks": [
+            30618556520,
+            30484781040
+          ],
+          "compression_bytes": [
+            3249963008,
+            5450776576
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-hybrid",
+          "cold_seconds": [
+            21.86401145812124,
+            21.687461416004226
+          ],
+          "warm_seconds": [
+            8.146554084029049,
+            6.6550672091543674,
+            8.142248833086342,
+            6.725546541856602
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.433897687471472,
+          "repeated_prompt_seconds": [
+            7.070957750082016,
+            7.068329083034769
+          ],
+          "constructor_seconds": [
+            0.1350720408372581,
+            0.14783999999053776
+          ],
+          "physical_peaks": [
+            30964881776,
+            31249782888
+          ],
+          "compression_bytes": [
+            6439174144,
+            6001344512
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-q4",
+          "cold_seconds": [
+            8.81543229194358,
+            8.70154850021936
+          ],
+          "warm_seconds": [
+            7.997311499901116,
+            8.035078292014077,
+            8.017512209014967,
+            8.012961542000994
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.01523687550798,
+          "repeated_prompt_seconds": [
+            7.492348624859005,
+            7.479817292187363
+          ],
+          "constructor_seconds": [
+            0.1339437081478536,
+            0.1435253331437707
+          ],
+          "physical_peaks": [
+            11927446552,
+            11920204824
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-predecoded",
+          "cold_seconds": [
+            8.03100016596727,
+            8.939015791984275
+          ],
+          "warm_seconds": [
+            7.291422958951443,
+            7.208895416930318,
+            7.233885749941692,
+            7.27400558302179
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.253945666481741,
+          "repeated_prompt_seconds": [
+            6.693445082986727,
+            6.689794959034771
+          ],
+          "constructor_seconds": [
+            0.14067616616375744,
+            0.1464732091408223
+          ],
+          "physical_peaks": [
+            24360441424,
+            24432433872
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            8.87467695795931,
+            8.969020124990493
+          ],
+          "warm_seconds": [
+            7.309755250113085,
+            7.267400540877134,
+            7.380288959015161,
+            7.326937916921452
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.318346583517268,
+          "repeated_prompt_seconds": [
+            7.327052666805685,
+            7.3537432078737766
+          ],
+          "constructor_seconds": [
+            0.3953517919871956,
+            0.40782545786350965
+          ],
+          "physical_peaks": [
+            32129899872,
+            32119790848
+          ],
+          "compression_bytes": [
+            6177079296,
+            3979034624
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "mflux-fp16",
+          "cold_seconds": [
+            9.303033874835819,
+            10.430303749861196
+          ],
+          "warm_seconds": [
+            7.712103375000879,
+            7.658829207997769,
+            7.640225582988933,
+            7.59963604202494
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.649527395493351,
+          "repeated_prompt_seconds": [
+            7.636266832938418,
+            7.634432832943276
+          ],
+          "constructor_seconds": [
+            0.38676999998278916,
+            0.3980554169975221
+          ],
+          "physical_peaks": [
+            32716561616,
+            32779541760
+          ],
+          "compression_bytes": [
+            4210540544,
+            5080825856
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "mflux-q4",
+          "cold_seconds": [
+            8.176849958952516,
+            7.9344043338205665
+          ],
+          "warm_seconds": [
+            7.866028042044491,
+            7.892103875055909,
+            7.871232332894579,
+            7.880600875010714
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.875916603952646,
+          "repeated_prompt_seconds": [
+            7.883549334015697,
+            7.87661683303304
+          ],
+          "constructor_seconds": [
+            0.4088825420476496,
+            0.40630458295345306
+          ],
+          "physical_peaks": [
+            12445344912,
+            12442854616
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        }
+      ],
+      "mflux_package_version": "0.22.0",
+      "mflux_commit": "31c9640399572ea394d07092763be9a36007a754",
+      "reference_cache_mib": 0,
+      "reference_comparison_valid": true,
+      "timing_scope": "complete PNG request wall; constructor separate; cold/two fresh/repeat, no added phase fences",
+      "note": "current0.22 isolated environment,14process/56PNG/14memory,4fresh/route; originalBF16 nativecompiled7.661436/hybrid7.433898/reference7.318347s, reference wins; hybrid saves2.970% aggregate but prompt-variable and cold21.69-21.86s; packednativeQ4 8.015237/referenceQ4 7.875917s, reference wins; nativepredecoded7.253946s saves9.498% versus ownpacked with peak24.36-24.43GB rather than11.92GB, sourceQ4 not strictBF16; referencepartialFP16 7.649527s slower4.525%; all negative results/cold/pressure and extra precision drift retained"
+    },
+    {
+      "evidence": {
         "path": "docs/design/validation/flux9-bf16-current-v5-20261011.json",
         "sha256": "b3efbd20a708659bcac586af5619871a8075466ffa840c3bf350c0ffdc89d28b",
         "status": "complete_diagnostic"
@@ -4904,7 +5171,7 @@
   "missing_current_comparisons": [
     "Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
     "Z additional native shape/checkpoint and current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX9B current upstream framework versions, additional quantized precisions and source-bound hybrid shares/shapes; DiT-only and encoder+DiT Q4/g32 matched cohorts complete",
+    "FLUX9B native MLX version/precision/share/shape screening and compatible mlx-serve layouts; current0.22 seven-route BF16/hybrid/Q4/predecode/partialFP16 cohort completed",
     "LTX best full-media native configurations and runnable reference quantized layouts",
     "cross-family parameter screening and durable actually-loadable best configurations"
   ],
