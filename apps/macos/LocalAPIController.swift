@@ -62,6 +62,9 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
 
 @MainActor final class LocalAPIController: ObservableObject {
     typealias RPCTransport = @MainActor ([String: Any]) async throws -> [String: Any]
+    @Published private(set) var httpPort = 0
+    @Published var requestedHTTPPort = UserDefaults.standard.object(forKey: "localAPIHTTPPort") as? Int ?? 8765
+    var httpURL: String { "http://127.0.0.1:\(httpPort == 0 ? requestedHTTPPort : httpPort)" }
     @Published private(set) var running = false
     @Published private(set) var changing = false
     @Published private(set) var status = "服务未启动"
@@ -82,6 +85,7 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
     let directory: URL
     let socketPath: String
     private let executable: URL
+    private var gateway: LocalHTTPGateway?
     private var process: Process?
     private var logHandle: FileHandle?
     private var lifecycleID = UUID()
@@ -89,15 +93,19 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
     private weak var ownedStore: NativeJobStore?
     private let rpcTransport: RPCTransport?
     init(directory: URL, executable: URL? = nil, socketPath: String? = nil,
-         rpcTransport: RPCTransport? = nil) {
+         rpcTransport: RPCTransport? = nil, httpPort: Int? = nil) {
         self.directory = directory.appendingPathComponent("api-service")
         self.socketPath = socketPath ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("turbocider-app-\(getuid()).sock").path
         self.executable = executable ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("turbocider")
         self.rpcTransport = rpcTransport
+        if let httpPort { requestedHTTPPort = httpPort }
     }
     func start(store: NativeJobStore) async {
         guard !changing, process == nil, !store.busy else { return }
+        guard (0...65535).contains(requestedHTTPPort) else {
+            error = "HTTP 端口必须在 0–65535 之间（0 自动分配）。"; status = "启动失败"; return
+        }
         let generation = UUID(); lifecycleID = generation; ownedStore = store
         invalidateJobs()
         changing = true; error = nil; status = "正在启动…"; store.externalServiceActive = true
@@ -123,17 +131,19 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
             child.terminationHandler = { [weak self, weak store] child in
                 Task { @MainActor in
                     guard let self, self.process === child else { return }
+                    self.gateway?.stop(); self.gateway = nil; self.httpPort = 0
                     self.lifecycleID = UUID()
                     self.invalidateJobs()
                     self.running = false; self.changing = false; self.process = nil; self.activeJob = ""; store?.externalServiceActive = false
                     self.sessionModel = ""; self.externalWorkerActive = false; self.jobCount = 0; self.ownedStore = nil
-                    self.status = child.terminationStatus == 0 ? "服务已停止" : "服务已退出"
-                    if child.terminationStatus != 0 { self.error = (try? String(contentsOf: log, encoding: .utf8)).map { String($0.suffix(2000)) } }
+                    self.status = self.error != nil ? "服务已停止 · 请检查错误" : child.terminationStatus == 0 ? "服务已停止" : "服务已退出"
+                    if child.terminationStatus != 0, self.error == nil { self.error = (try? String(contentsOf: log, encoding: .utf8)).map { String($0.suffix(2000)) } }
                     try? self.logHandle?.close(); self.logHandle = nil
                 }
             }
             process = child
             do { try child.run() } catch { process = nil; try? output.close(); logHandle = nil; throw error }
+            var nativeReady = false
             for _ in 0..<50 {
                 guard lifecycleID == generation, process === child else { return }
                 guard child.isRunning else { throw NativeFailure(message: "服务未能启动，请查看日志。") }
@@ -143,22 +153,47 @@ private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
                         guard lifecycleID == generation, process === child, child.isRunning else { return }
                         let info = response["result"] as? [String: Any]
                         guard info?["pid"] as? Int == Int(child.processIdentifier) else { throw NativeFailure(message: "Socket 已由其他进程使用。") }
-                        running = true; store.externalServiceActive = true; status = "仅当前用户可访问 · Unix socket"; return
+                        nativeReady = true; break
                     } catch {
                         guard lifecycleID == generation, process === child else { return }
                     }
                 }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            child.terminate(); throw NativeFailure(message: "服务启动超时。")
+            guard nativeReady else { throw NativeFailure(message: "服务启动超时。") }
+            guard lifecycleID == generation, process === child, child.isRunning else { return }
+            status = "正在启动 HTTP 网关…"
+            let http = LocalHTTPGateway(root: directory.appendingPathComponent("http"), rpc: { [executable, socketPath] request in
+                let data = try JSONSerialization.data(withJSONObject: request)
+                let response = try await LibraryTool.run(["rpc", socketPath, "{request}"], payload: data, executable: executable)
+                guard let raw = try JSONSerialization.jsonObject(with: response) as? [String: Any] else {
+                    throw NativeFailure(message: "Invalid native RPC response")
+                }
+                guard raw["ok"] as? Bool == true else {
+                    throw LocalHTTPGateway.Failure(status: 400, message: raw["error"] as? String ?? "Native request rejected")
+                }
+                guard let result = raw["result"] as? [String: Any] else { throw NativeFailure(message: "Invalid native RPC result") }
+                return result
+            }, onFailure: { [weak self] message in
+                guard let self, self.lifecycleID == generation else { return }
+                self.error = message; self.stop()
+            })
+            gateway = http
+            let port = try await http.start(port: requestedHTTPPort)
+            guard lifecycleID == generation, process === child, child.isRunning else { http.stop(); return }
+            httpPort = port
+            if requestedHTTPPort != 0 { UserDefaults.standard.set(requestedHTTPPort, forKey: "localAPIHTTPPort") }
+            running = true; store.externalServiceActive = true; status = "HTTP 网关与原生服务已启动 · 仅本机可访问"
         } catch {
             guard lifecycleID == generation else { return }
+            gateway?.stop(); gateway = nil; httpPort = 0
             if let process, process.isRunning { process.terminate() }
             self.error = error.localizedDescription; status = "启动失败"
         }
     }
     func stop() {
         lifecycleID = UUID(); running = false
+        gateway?.stop(); gateway = nil; httpPort = 0
         invalidateJobs()
         guard let process else {
             changing = false; ownedStore?.externalServiceActive = false; ownedStore = nil

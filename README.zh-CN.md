@@ -119,10 +119,14 @@ W8A8/BF16 并行方案及其 **约 1.31× 暖请求加速**、画质和冷启动
 | `profiles/`、`examples/` | 硬件策略与请求示例 |
 | `tools/`、`tests/` | 安装、打包、转换、回归测试与性能测试工具 |
 | `assets/branding/` | Turbo Drop 标识与可复现的 App 图标 |
-| `docs/public/` | 独立英文使用指南与公开性能证据 |
+| `docs/public/` | 使用指南与公开性能证据 |
 
-[公开文档（英文）](docs/public/README.md) · [性能证据（英文）](docs/public/BENCHMARKS.md)
+[公开文档](docs/public/README.md) · [性能证据（英文）](docs/public/BENCHMARKS.md)
 
 [模型库](docs/public/MODEL_LIBRARY.md) · [本地 API](docs/public/LOCAL_API.md) · [缓存与内存](docs/public/CACHES.md)
 
 TurboCider 原创代码采用 MIT 许可证；第三方代码和模型权重遵循各自条款，请保留源码或发行包附带的许可证及声明。
+
+### ComfyUI / Comfy Desktop
+
+[中文使用教程](docs/public/COMFYUI_TUTORIAL.zh-CN.md)：从 App「本地 API」或独立后台启动服务，在 Comfy Desktop 中使用已有模型、LoRA、参考图编辑与批量生成。ComfyUI 无需安装模型权重。[英文接口参考](docs/public/COMFYUI.md)。

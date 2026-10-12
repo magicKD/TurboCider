@@ -32,7 +32,7 @@ LIBRARY+=(services/model-library/LibraryInventory.swift)
 LIBRARY+=(services/model-library/TensorCache.swift)
 LIBRARY+=(services/model-library/DiagnosticTensorCache.swift)
 LIBRARY+=(services/model-library/InstallationInspection.swift services/model-library/LibraryComponents.swift)
-STATE+=("${LIBRARY[@]}" apps/macos/ModelLibraryController.swift apps/macos/LocalAPIController.swift)
+STATE+=("${LIBRARY[@]}" apps/macos/ModelLibraryController.swift apps/macos/LocalAPIController.swift apps/macos/LocalHTTPGateway.swift)
 STATE+=(apps/macos/RunInsights.swift)
 STATE+=(apps/macos/TensorCacheController.swift)
 STATE+=(apps/macos/LTXWorker.swift)
@@ -79,6 +79,7 @@ fi
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/ModelLibraryTests.swift -o "$OUT/turbocider-model-library-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LibraryToolTests.swift -o "$OUT/turbocider-library-tool-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/LocalAPITests.swift -o "$OUT/turbocider-local-api-tests"
+"$SWIFTC" "${FLAGS[@]}" apps/macos/LocalHTTPGateway.swift tests/integration/LocalHTTPGatewayTests.swift -o "$OUT/turbocider-http-gateway-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/RunInsightsTests.swift -o "$OUT/turbocider-run-insights-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioGPUModelTests.swift -o "$OUT/turbocider-studio-gpu-model-tests"
 

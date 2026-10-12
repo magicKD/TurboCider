@@ -12,11 +12,13 @@ CLI, C / Swift SDK or local job API.
 | [Usage reference](USAGE.md) | Configure requests, model capabilities, LoRA, ANE and SDKs |
 | [Model library](MODEL_LIBRARY.md) | Register, inspect, download and share model components |
 | [Local API](LOCAL_API.md) | Submit jobs and reuse a persistent session |
+| [ComfyUI / Comfy Desktop](COMFYUI.md) | Use TurboCider as a model backend without installing weights in ComfyUI |
+| [ComfyUI 中文教程](COMFYUI_TUTORIAL.zh-CN.md) | 从 App 或独立后台启动 API，在 Desktop 使用模型、LoRA、参考图与批量生成 |
 | [Caches and memory](CACHES.md) | Understand residency, prompt reuse and safe cleanup |
 | [Performance](PERFORMANCE.md) | Read selected benchmark highlights with their measurement limits |
 | [Benchmark evidence](BENCHMARKS.md) | Inspect dates, samples, baselines and quality evidence |
 
-These English guides are self-contained. All relative documentation links
+These guides are self-contained. All relative documentation links
 remain within this public documentation set; no development notes are required.
 Commands assume the repository root unless stated otherwise. English UI names
 in these guides describe the controls; the current App may display localized

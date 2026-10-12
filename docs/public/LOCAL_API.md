@@ -3,7 +3,8 @@
 [Documentation](README.md) · [Usage reference](USAGE.md)
 
 TurboCider exposes a persistent job service over a user-only Unix socket.
-The App's local API page starts an owned service and shows its socket path.
+The App's local API page starts an owned service and its HTTP gateway, showing
+the socket path and HTTP URL (default `http://127.0.0.1:8765`).
 It releases the embedded model session first. Stop the API to resume generation
 inside the App. Quit or unexpected App termination stops its owned service;
 an independently launched CLI service has its own lifecycle.
@@ -405,3 +406,18 @@ Another process cannot use the same state directory or socket concurrently.
 Actual generation requires compatible local weights and macOS permission to
 access Metal. A successful connection or plan does not certify model output.
 Use unique output paths; stop an App-owned service through its local API page.
+
+## ComfyUI HTTP gateway
+
+The App Local API page starts a native loopback HTTP gateway together with the
+Unix service (default `http://127.0.0.1:8765`, configurable before starting). It
+displays routes and copyable curl/Python examples. Stop and App quit close both
+services; HTTP startup failure rolls back the owned native service. The App
+gateway needs no Python runtime.
+
+The optional [ComfyUI integration](COMFYUI.md) adds a standalone gateway,
+image transfer, model/LoRA discovery, cancellation and ComfyUI custom nodes.
+It reuses this native service and never loads model weights inside ComfyUI.
+
+For App startup, Desktop connection and model/LoRA examples, follow the
+[Chinese step-by-step tutorial](COMFYUI_TUTORIAL.zh-CN.md).

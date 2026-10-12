@@ -127,3 +127,7 @@ weights retain their respective terms; retain the license and notices supplied
 with the source or package.
 
 [Native model capabilities, GGUF limits and LoRA](docs/public/USAGE.md#model-capabilities).
+
+### ComfyUI / Comfy Desktop
+
+[ComfyUI backend integration](docs/public/COMFYUI.md): use TurboCider model services over the local HTTP API without installing model weights in ComfyUI.

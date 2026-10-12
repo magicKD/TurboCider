@@ -109,3 +109,6 @@ codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 printf 'Local ad-hoc signed App: %s\n' "$APP"
 printf 'Packaged minimum macOS: %s\n' "$PACKAGE_MIN_MACOS"
+
+# Pure-Python HTTP adapter and ComfyUI nodes; no model/runtime dependencies.
+"${TURBOCIDER_BUILD_PYTHON:-python3}" tools/comfyui/package.py --output-dir "$DIST/comfyui"
