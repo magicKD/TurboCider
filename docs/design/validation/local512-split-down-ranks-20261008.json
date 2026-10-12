@@ -1,0 +1,76 @@
+{
+  "schema": "tc-local512-split-down-ranks-evidence-v1",
+  "local_date": "2026-10-08",
+  "hardware": "Apple M4 Max 64GB",
+  "feature_default_enabled": false,
+  "qualification_passed": false,
+  "full_goal_complete": false,
+  "math_policy": "split FP32 down-A ranks, one joined B/delta cast/base add; changed reduction order",
+  "builds": {
+    "private": {
+      "library": "build/local512-down-rank-v1-private/libturbocider.dylib",
+      "sha256": "e4f77f3b8ad7c2e38408ba214652c9e9ec9546b744318c3fb7986d72b8f7df06",
+      "source_input_count": 491,
+      "source_mismatches_at_verification": 0,
+      "build_scope": "native-only complete, includes pre-existing working-tree ConvRot drafts"
+    },
+    "public": {
+      "library": "build/local512-down-rank-v1-public/libturbocider.dylib",
+      "sha256": "96e42d71c3f0ec51270bbc3211a09f7f10c3a3449071109aa229b9d3397ccde0",
+      "source_input_count": 491,
+      "source_mismatches_at_verification": 0,
+      "release_binary_guard_passed": true,
+      "build_scope": "native library/CLI and manifest verification finished; extra owned Swift/App phase stopped; not full build exit0"
+    }
+  },
+  "tests": {
+    "private_final": {"count": 22, "skips": 0, "passed": true, "log": "outputs/local512-down-rank-v1-private-final-regression-20261008.log"},
+    "public_final": {"count": 19, "skips": 0, "passed": true, "log": "outputs/local512-down-rank-v1-public-regression-v2-20261008.log"},
+    "scope": "selected native math, compiled graph, receipt/request gates, actual channel/encoder/failure recovery, tool tests; not full suite/model matrix"
+  },
+  "experiments": [
+    {
+      "references": 1,
+      "directory": "outputs/local512-qwen-edit1-down-rank-v1-diagnostic-20261008",
+      "order": ["down_ranks_on", "down_ranks_off", "gpu_weights"],
+      "cold_seconds": {"down_ranks_on": 17.314612083, "down_ranks_off": 16.236879333, "gpu_weights": 15.845075708},
+      "warm_median_seconds": {"down_ranks_on": 12.0455866045, "down_ranks_off": 11.7092725415, "gpu_weights": 10.9685858545},
+      "on_split_blocks_cumulative": [192, 384, 576],
+      "on_split_arrays_cumulative": [192, 384, 576],
+      "ane_calls_per_request": 224,
+      "on_peak_process_tree_phys_footprint_bytes": 38654586168,
+      "on_png_sha256": ["e32fb08d71e113a677423ff30fd4a88baf89c6503da4a595f18d809d1ad91aa9", "e0c702e9d484348fa285adca812539d3fdc1f4e00b082a35f8a75765d3b0e77e", "590bd0e9da142650063ea4c35bbe5705f418f589d78390d0c9ba231fa096ed51"],
+      "on_faster_than_original_hybrid": false,
+      "on_faster_than_complete_gpu": false
+    },
+    {
+      "references": 2,
+      "directory": "outputs/local512-qwen-edit2-down-rank-v1-diagnostic-20261008",
+      "order": ["gpu_weights", "down_ranks_off", "down_ranks_on"],
+      "cold_seconds": {"down_ranks_on": 18.279603292, "down_ranks_off": 18.433157708, "gpu_weights": 17.855519958},
+      "warm_median_seconds": {"down_ranks_on": 14.0500640835, "down_ranks_off": 14.495052146, "gpu_weights": 13.1197726045},
+      "on_split_blocks_cumulative": [192, 384, 576],
+      "on_split_arrays_cumulative": [192, 384, 576],
+      "ane_calls_per_request": 256,
+      "on_peak_process_tree_phys_footprint_bytes": 39239151072,
+      "on_png_sha256": ["6cb88e270b02d02976e9452d2dfd946f7fb80206c9a087d6e0ca2575177ad2cb", "65b34f8f1ca9c71c580337dfda650a5c4304d1275a87fc52c055a7894dd738ce", "17c0b658acbf26825ec6b390a91b8932b302251446e2233581ab612603dda773"],
+      "on_faster_than_original_hybrid": true,
+      "on_faster_than_complete_gpu": false
+    }
+  ],
+  "experiment_scope": "same library/local real Viggle r256, six steps/seed29/512sq, three fresh prompts, retained encoder sources, GPU encoder, Private DiT5120, shared gate/up ranks, W-code caches off; diagnostics, not strict load qualified or physical overlap proof",
+  "memory_reports_complete": 6,
+  "system_swap_in_out_bytes": 0,
+  "runtime_failure_fallback_retries": 0,
+  "visual_review": {
+    "reference_route": "original Private hybrid, not GPU despite fixed sheet caption",
+    "candidate_route": "split down ranks Private hybrid",
+    "whole_pairs_inspected": 6,
+    "same_coordinate_crops_inspected": 18,
+    "png_byte_exact": false,
+    "agent_observation": "very similar layout, teapot shape/glaze/shadows; subtle detail changes, no visible new discontinuities/color blocks",
+    "qualification_passed": false,
+    "automatic_manifests": "pending; not rewritten as user approval"
+  },
+  "cleanup": {"objects_removed": 425, "logical_object_bytes": 33075624, "public_module_cache_kib": 332152, "module_cache_directories_removed": 2, "recoverable": "rebuild", "models_adapters_media_libraries_retained": true}
+}

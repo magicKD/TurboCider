@@ -1,4 +1,6 @@
 #include "mlx_weight_pager.hpp"
+#include "gguf_storage.hpp"
+#include "../../backends/ane_memory.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -97,6 +99,7 @@ struct MlxWeightPager::State {
     std::map<uint32_t, Pool> pools;
     Slot resident;
     bool resident_loaded = false;
+    bool exact_allocations = false;
 
     ~State() {
         for (auto &artifact : artifacts)
@@ -335,14 +338,31 @@ namespace {
 
 void allocate_fields(MlxWeightPager::State::Slot &slot,
                      const std::vector<FieldSpec> &fields,
-                     MlxWeightPagerMetrics &metrics) {
+                     MlxWeightPagerMetrics &metrics,bool exact) {
     pager_require(slot.arrays.empty() && slot.pointers.empty(),
                   "slot backing already exists");
     slot.arrays.reserve(fields.size());
     slot.pointers.reserve(fields.size());
+    std::optional<gguf_storage::ExactCapacityCacheScope> cache_scope;
+    if(exact)cache_scope.emplace();
     for (const auto &field : fields) {
+        if(exact) {
+            // A core component is allocated in real field increments, not as
+            // one speculative 11GiB optional payload. Reobserve BEFORE every
+            // new backing using the unchanged reserve/inactive/process guards.
+            const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
+            const auto admission=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},
+                0,gguf_storage::capacity_upper(field.bytes));
+            pager_require(admission.allowed(),"incremental core source admission declined: "+
+                ane::memory_denial_reason(admission.denial,observed));
+        }
         slot.arrays.emplace_back(mx::allocator::malloc(field.bytes),
                                  mlx_shape(field), mx::bfloat16);
+        if(exact) {
+            const auto actual=mx::allocator::allocator().size(slot.arrays.back().data_shared_ptr()->buffer);
+            pager_require(actual>=field.bytes && actual<=gguf_storage::capacity_upper(field.bytes),
+                "actual source backing exceeds admitted aligned capacity");
+        }
         slot.pointers.push_back(slot.arrays.back().data<char>());
         ++metrics.slot_arrays_allocated;
     }
@@ -396,6 +416,11 @@ std::vector<std::string> binding_keys(
 
 } // namespace
 
+void MlxWeightPager::use_exact_allocations() {
+    pager_require(state_ && !state_->resident_loaded && state_->pools.empty(),"exact source recipe must precede payload allocation");
+    state_->exact_allocations=true;
+}
+
 void MlxWeightPager::load_resident(
     Weights &destination, const std::atomic<bool> *cancel) {
     pager_require(state_ && !state_->resident_loaded,
@@ -403,7 +428,7 @@ void MlxWeightPager::load_resident(
     check_open_files();
     const auto &fields = state_->stage->resident_fields;
     pager_require(!fields.empty(), "stage has no resident fields");
-    allocate_fields(state_->resident, fields, metrics_);
+    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations);
     const auto begin = Clock::now();
     const uint64_t bytes = read_fields(
         fields, state_->resident.pointers, state_->artifacts, cancel);
@@ -446,7 +471,7 @@ void MlxWeightPager::create_pool(const PoolLayout &layout) {
             pager_require(fields[field_index].bytes <=
                               slot_layout.field_capacity[field_index],
                           "slot field capacity is too small");
-        allocate_fields(pool.slots[slot_index], fields, metrics_);
+        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations);
     }
     state_->pools.emplace(layout.id, std::move(pool));
 }

@@ -7,7 +7,17 @@ if [[ -z "${DEVELOPER_DIR:-}" ]]; then
  fi
 fi
 source tools/native/dependencies.sh
+PACKAGE_ONLY="${TURBOCIDER_BUILD_PACKAGE_ONLY:-0}"
+case "$PACKAGE_ONLY" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_PACKAGE_ONLY must be 0 or 1\n' >&2; exit 2 ;;
+esac
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
+PRIVATE_ANE="${TURBOCIDER_ENABLE_PRIVATE_ANE:-0}"
+case "$PRIVATE_ANE" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_ENABLE_PRIVATE_ANE must be 0 or 1\n' >&2; exit 2 ;;
+esac
 case "$EXPERIMENTAL_PROBES" in
  0|1) ;;
  *) printf 'TURBOCIDER_BUILD_EXPERIMENTAL_PROBES must be 0 or 1\n' >&2; exit 2 ;;
@@ -45,9 +55,16 @@ MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
+COMMON+=(-isystem "$MLX_ROOT/include/metal_cpp")
 if [[ -n "$TEST_HOOK_FLAG" ]]; then COMMON+=("$TEST_HOOK_FLAG"); fi
 if [[ -n "$AUDIT_COUNTER_FLAG" ]]; then COMMON+=("$AUDIT_COUNTER_FLAG"); fi
 COMMON+=(-DTURBOCIDER_HAS_BUNDLED_CATALOG=1)
+if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS=1)
+fi
+if [[ "$PRIVATE_ANE" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_PRIVATE_ANE=1)
+fi
 BUILD_IDENTITY_DIR="$OUT/runtime-build"
 BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
 BUILD_IDENTITY_FLAGS=("${COMMON[@]}")
@@ -73,6 +90,9 @@ bundled_streaming_catalog() {
   --output "$BUILD_IDENTITY_DIR" "$@"
 }
 bundled_streaming_catalog
+"$BUILD_IDENTITY_PYTHON" tools/native/generate_image_workflow_catalog.py \
+ --input native/workflows/image_workflows.json \
+ --output "$BUILD_IDENTITY_DIR/image_workflows_catalog_generated.hpp"
 # Native identity and catalog implementations require these generated headers.
 # Missing generation fails instead of sharing a manual fallback ID/catalog.
 COMMON+=(-I "$BUILD_IDENTITY_DIR")
@@ -80,6 +100,9 @@ OBJECTS=()
 SOURCES=(
  native/runtime/build_identity.cpp
  native/core/common.cpp
+ native/core/gguf_decode.cpp
+ native/core/gguf_affine.cpp
+ native/core/quantized_execution.cpp
  native/core/json_keys.cpp
  native/runtime/streaming/config.cpp native/runtime/streaming/layout.cpp
  native/runtime/streaming/public_request_validation.cpp
@@ -91,6 +114,9 @@ SOURCES=(
  native/runtime/streaming/slot_pool.cpp native/runtime/streaming/io_executor.cpp native/runtime/streaming/context.cpp
  native/runtime/streaming/run_context.cpp
  native/runtime/streaming/mlx_weight_pager.cpp
+ native/runtime/streaming/gguf_weight_pager.cpp
+ native/runtime/streaming/gguf_gpu_affine_fixed.cpp
+ native/runtime/streaming/gguf_packed_bank.cpp
  native/runtime/streaming/c_bridge.cpp native/runtime/streaming/audit.cpp
  native/models/ltx_runtime/ltx_streaming_descriptor.cpp native/models/ltx_runtime/ltx_streaming_plan.cpp
  native/models/h3_runtime/h3_streaming_descriptor.cpp
@@ -98,6 +124,7 @@ SOURCES=(
  native/platform/apple/flux_streaming_descriptor.mm
  native/platform/apple/streaming_config.mm
  native/components/text/qwen3.cpp
+ native/components/text/qwen3_gguf.cpp native/platform/apple/qwen3_gguf_config.mm
  native/components/text/umt5.cpp
  native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
  native/components/diffusion/wan.cpp
@@ -112,15 +139,29 @@ SOURCES=(
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
+ native/workflows/image_workflows.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/backends/ane_memory.cpp native/backends/ane_runtime.mm native/backends/ane_ffn.cpp native/backends/ane_qkv.cpp
+ native/backends/ane_memory.cpp native/backends/ane_gpu.mm native/backends/ane_runtime.mm native/backends/ane_public_w8.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_channel_calibration.cpp native/backends/ane_qkv.cpp native/backends/ane_smoothquant.mm
+ native/backends/metal_graph/backend.mm native/backends/metal_graph/native_ffn.mm
+ native/backends/metal_graph/native_linear.mm native/backends/metal_graph/mlx_bridge.cpp
+ native/backends/metal_graph/native_lora.mm native/backends/metal_graph/native_gate_up.mm
+ native/backends/metal_graph/mlx_ffn_island.cpp
+ native/backends/metal_graph/native_attention.mm native/backends/metal_graph/native_qwen_ops.mm
+ native/backends/metal_graph/native_step_ops.mm
+ native/backends/metal_graph/memory_bridge.cpp
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
  native/models/z_image/gguf.cpp
+ native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/models/qwen21/transformer.cpp
+ native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
+ native/models/qwen21/native_block.cpp
+ native/models/qwen21/native_denoiser.cpp native/models/qwen21/native_denoiser_math.cpp
+ native/models/qwen21/mlx_native_denoiser.cpp
+ native/models/qwen21/native_memory_plan.cpp native/models/qwen21/native_session.cpp
  native/models/qwen21/hybrid.cpp
  native/models/qwen21/sequence.cpp
  native/models/qwen21/text_encoder.cpp
@@ -135,6 +176,8 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/qwen21/pe_sampling.cpp
  native/models/qwen21/pe_generation.cpp
  native/models/qwen21/pipeline.cpp
+ native/models/qwen21/bf16_streaming.cpp native/models/qwen21/bf16_streaming_pipeline.cpp
+ native/platform/apple/qwen21_bf16_streaming.mm
  native/models/qwen21_module.cpp
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
@@ -143,7 +186,11 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
  native/media/pe_image.mm
+ native/media/reference_preparation.mm
 )
+if [[ "$PRIVATE_ANE" == "1" ]]; then
+ SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm native/backends/metal_graph/native_ane_handoff.mm native/backends/metal_graph/native_ane_stages.mm native/backends/metal_graph/native_hybrid_ffn.mm native/backends/metal_graph/native_prefill_ffn.mm)
+fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
  # intentionally contain common names such as dit.cpp and pipeline.cpp.
@@ -215,11 +262,24 @@ if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
  exit 0
 fi
-"$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
-"$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+if [[ "$PACKAGE_ONLY" == "0" ]]; then
+ "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
+ "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+fi
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
-"$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+"$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm native/core/json_keys.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+if [[ "$PACKAGE_ONLY" == "1" ]]; then
+ runtime_build_identity --verify
+ bundled_streaming_catalog --verify
+ if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" != "1" ]]; then
+  export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+  export TURBOCIDER_BUILD_OUTPUT_DIR="$OUT"
+  TURBOCIDER_BUILD_APP_ONLY=1 tools/native/build_app.sh
+ fi
+ printf 'Built package binaries; test and auxiliary probe targets skipped\n'
+ exit 0
+fi
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"

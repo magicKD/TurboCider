@@ -7,8 +7,11 @@ CPU_AND_NE is a scheduling policy, not evidence of ANE residency.
 """
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
+import os
 import platform
 import shutil
 import tempfile
@@ -106,7 +109,26 @@ def make_program(spec):
     return program
 
 
-def export(destination, spec):
+def _publish_exclusively(source, destination):
+    # Core ML compilation is macOS-only. Plain rename can replace an empty
+    # directory created by somebody else while conversion was running. Use
+    # the kernel's no-replace operation, with no check/rename race or fallback.
+    if platform.system() != "Darwin":
+        raise OSError(errno.ENOTSUP, "exclusive runtime graph publication requires macOS", str(destination))
+    library = ctypes.CDLL(None, use_errno=True)
+    try:
+        rename = library.renamex_np
+    except AttributeError as error:
+        raise OSError(errno.ENOTSUP, "exclusive runtime graph publication is unavailable", str(destination)) from error
+    rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    # <sys/stdio.h>: RENAME_EXCL (available since macOS 10.12).
+    if rename(os.fsencode(source), os.fsencode(destination), 0x00000004) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(destination))
+
+
+def export(destination, spec, *, program_factory=make_program, compute_precision=None):
     import coremltools as ct
 
     destination = Path(destination)
@@ -116,9 +138,10 @@ def export(destination, spec):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".runtime-ane-", dir=destination.parent) as scratch:
         root = Path(scratch)
-        model = ct.convert(make_program(spec), convert_to="mlprogram",
+        model = ct.convert(program_factory(spec), convert_to="mlprogram",
                            minimum_deployment_target=ct.target.macOS15,
-                           compute_precision=ct.precision.FLOAT16,
+                           compute_precision=(ct.precision.FLOAT16 if compute_precision is None
+                                              else compute_precision),
                            skip_model_load=True)
         package = root / "graph.mlpackage"
         model.save(str(package))
@@ -136,7 +159,7 @@ def export(destination, spec):
         }
         (root / "manifest.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
         # Keep the source package for reproduction/compilation on another OS.
-        root.rename(destination)
+        _publish_exclusively(root, destination)
     return metadata
 
 

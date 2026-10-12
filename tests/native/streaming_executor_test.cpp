@@ -206,6 +206,59 @@ public:
 };
 
 int main() {
+    // Explicit private bank transitions release physical backing between
+    // passes, while preserving layer/pass identity and independent readers.
+    {
+        auto model=std::make_shared<FakeModel>();
+        StageExecutor exec(0,811,model);std::atomic<bool> cancel{false};
+        exec.begin(layout(3,2,1));exec.release_drained_backing();
+        assert(model->creates==1 && model->destroys==1);
+        rejects([&]{exec.release_drained_backing();});
+        rejects([&]{exec.enable_receipt({std::string(64,'a'),
+                                        "generic_stage_executor_v2",11});});
+        for (uint32_t pass=0;pass<3;++pass) {
+            exec.run_pass(pass,pass,cancel);exec.release_drained_backing();
+            assert(model->creates==pass+2 && model->destroys==pass+2);
+        }
+        const auto counts=exec.finish();assert(counts.fills==39 && counts.groups_submitted==39);
+        assert(counts.pool_creates==4 && counts.slot_bundles==12);
+        rejects([&]{exec.release_drained_backing();});
+    }
+    {
+        auto model=std::make_shared<FakeModel>();StageExecutor exec(0,812,model);
+        exec.begin(carry_layout());rejects([&]{exec.release_drained_backing();});assert(exec.retry_drain());
+        std::atomic<bool> cancel{false};rejects([&]{exec.run_pass(0,0,cancel);});
+    }
+    {
+        auto model=std::make_shared<FakeModel>();model->retain_pools=true;
+        StageExecutor exec(0,813,model);
+        exec.begin(retained_multi_layout(2,1,1));
+        rejects([&]{exec.release_drained_backing();});
+        assert(model->creates==2 && model->destroys==0);
+        std::atomic<bool> cancel{false};
+        for(uint32_t pass=0;pass<3;++pass)exec.run_pass(pass,pass,cancel);
+        assert(exec.finish().fills==18 && model->destroys==2);
+    }
+    {
+        // A partial allocation failure during bank recreation is drained, not
+        // retried with a new bank while the old ownership might still be live.
+        auto model=std::make_shared<FakeModel>();model->fail_create_at=2;
+        StageExecutor exec(0,814,model);std::atomic<bool> cancel{false};
+        exec.begin(layout(2,1,1));exec.release_drained_backing();
+        rejects([&]{exec.run_pass(0,0,cancel);});
+        assert(model->creates==2 && model->destroys==2 && !exec.quarantined());
+        assert(model->fills==0 && exec.retry_drain());
+        rejects([&]{exec.run_pass(0,0,cancel);});
+        rejects([&]{exec.release_drained_backing();});
+    }
+    {
+        // Only the owner may release even an otherwise quiescent bank.
+        auto model=std::make_shared<FakeModel>();StageExecutor exec(0,815,model);
+        exec.begin(layout(1,0,1));
+        std::thread intruder([&]{rejects([&]{exec.release_drained_backing();});});
+        intruder.join();assert(model->destroys==0);exec.release_drained_backing();
+        assert(model->destroys==1 && exec.retry_drain());
+    }
     const uint64_t cap=8;
     {
         SlotSafetyTracker pool(2,5,{&cap,1});
@@ -262,6 +315,8 @@ int main() {
         exec.begin(planned);
         exec.enable_receipt({std::string(64,'a'),
                              "generic_stage_executor_v2",11});
+        rejects([&]{exec.release_drained_backing();});
+        assert(model->destroys==0);
         for(uint32_t pass=0;pass<planned.pass_count;++pass)
             exec.run_pass(pass,pass+20,cancel);
         const auto result=exec.finish();

@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "model": "qwen-image-2.1",
+  "operation": "image.generate",
+  "inputs": [
+    {
+      "kind": "text",
+      "role": "prompt",
+      "text": "A red fox sitting in a snowy forest, natural winter light, detailed fur."
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "image",
+      "path": "outputs/qwen21-q4km-smoke-20261010.png",
+      "width": 512,
+      "height": 512,
+      "audio": false
+    }
+  ],
+  "sampling": {
+    "seed": 29,
+    "steps": 4
+  },
+  "execution": {
+    "policy": "gpu",
+    "allow_approximation": true
+  },
+  "parameters": {
+    "dynamic_text": true
+  }
+}

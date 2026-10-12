@@ -1,0 +1,153 @@
+{
+  "schema": "tc-gguf-memory-budget-screen-v2",
+  "production_qualified": false,
+  "scope": "fastest observed same-source packed/bounded candidate that fits sampled footprint; NOT enforced whole-request caps or true small-device qualification",
+  "whole_request_memory": "unknown",
+  "formal_performance": "not_run",
+  "identity": {
+    "library_sha256": "d73c681050c07426040000ff44fb91849cd5c12083b89d03ff973871c407ec6c",
+    "loaded_libraries": {
+      "libturbocider.dylib": {
+        "sha256": "d73c681050c07426040000ff44fb91849cd5c12083b89d03ff973871c407ec6c"
+      },
+      "libmlx.dylib": {
+        "sha256": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51"
+      },
+      "libjaccl.dylib": {
+        "sha256": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+      }
+    },
+    "dit_sha256": "687360c35c468ae1054f8a848d40a6c852c3c67d81f962dafcfbeff09e66d7d0",
+    "encoder_sha256": "8c2f07f26af9747e41988551106f149b03eb9b5cb6df636027b6bf6278473300",
+    "encoder_layout_digest": "a2fe8a6aece115b9462fd09159b6811faeadb7bb13f70c40ec18ce3abd14d47d",
+    "encoder_profile": "qwen3-z-source-mixed-v1",
+    "encoder_metadata_policy": "engine-verified-cpu-metadata-only-v1",
+    "encoder_controls": {
+      "TURBOCIDER_QWEN3_GGUF_PREFETCH": "2",
+      "TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY": "packed_streamed",
+      "TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES": "1073741824",
+      "TURBOCIDER_QWEN3_GGUF_METADATA_CACHE": "1"
+    },
+    "prompt_cache_policy": "hit",
+    "math": {
+      "schema_version": 1,
+      "enabled": true,
+      "precision_profile": "z-mlx-compat-affine-v1"
+    },
+    "workload": {
+      "schema_version": 2,
+      "model": "z-image-turbo-gguf",
+      "operation": "image.generate",
+      "inputs": [
+        {
+          "kind": "text",
+          "role": "prompt",
+          "text": "A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture."
+        }
+      ],
+      "sampling": {
+        "seed": 42,
+        "steps": 4
+      },
+      "parameters": {
+        "dynamic_text": true,
+        "compile_gpu": true
+      }
+    },
+    "outputs": [
+      {
+        "kind": "image",
+        "width": 512,
+        "height": 512,
+        "audio": false
+      }
+    ],
+    "execution": {
+      "policy": "gpu",
+      "allow_approximation": true
+    },
+    "png_sha256": "67d980c8ebefbad34e00f935e6d4e9ac4cf8e08b5754035233ea5858a7069059"
+  },
+  "buffer_percent": 10,
+  "budget_unit": "GB",
+  "candidates": {
+    "native_packed:cpu_direct:cache=1073741824:qmm_f16": {
+      "timings_seconds": [
+        5.0396110829897225,
+        5.066432208986953,
+        5.161871165968478,
+        5.050174459000118
+      ],
+      "observed_peak_bytes": 7796216344,
+      "memory_sample_max_gap_seconds": 0.01603454101132229,
+      "managed_weights_peak_bytes": 4850649728,
+      "memory_runs": 1,
+      "sampling_inconclusive": false,
+      "swap_observed": false,
+      "consumer_revision": "z-serial-refiners-release-before-vae-v1",
+      "layout_digest": "9a148ed4c1267a986c9552fabe1e52bd6380da465d010fe95ab9606ba33dcf0f",
+      "warm_median_seconds": 5.0583033339935355
+    }
+  },
+  "budgets": [
+    {
+      "budget_value": 6,
+      "budget_unit": "GB",
+      "budget_gb": 6,
+      "limit_bytes": 6000000000,
+      "screen_available_bytes": 5400000000,
+      "observed_fitting_candidates": [],
+      "fastest_observed_candidate": null,
+      "status": "no_supported_observation",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 8,
+      "budget_unit": "GB",
+      "budget_gb": 8,
+      "limit_bytes": 8000000000,
+      "screen_available_bytes": 7200000000,
+      "observed_fitting_candidates": [],
+      "fastest_observed_candidate": null,
+      "status": "no_supported_observation",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 10,
+      "budget_unit": "GB",
+      "budget_gb": 10,
+      "limit_bytes": 10000000000,
+      "screen_available_bytes": 9000000000,
+      "observed_fitting_candidates": [
+        "native_packed:cpu_direct:cache=1073741824:qmm_f16"
+      ],
+      "fastest_observed_candidate": "native_packed:cpu_direct:cache=1073741824:qmm_f16",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 16,
+      "budget_unit": "GB",
+      "budget_gb": 16,
+      "limit_bytes": 16000000000,
+      "screen_available_bytes": 14400000000,
+      "observed_fitting_candidates": [
+        "native_packed:cpu_direct:cache=1073741824:qmm_f16"
+      ],
+      "fastest_observed_candidate": "native_packed:cpu_direct:cache=1073741824:qmm_f16",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    }
+  ],
+  "raw_reports": [
+    {
+      "id": "final-q4-bounded-fused-timing",
+      "sha256": "986911f27c99f88fce6ee329fc3800f1e2317e07ea2fa3ed35ae9e6f6a559056"
+    },
+    {
+      "id": "final-q4-bounded-fused-memory",
+      "sha256": "9abbbfc3a7928ba7fd768c45a3314d2ccae1a7fbcde63d0ee33709a2751b210f"
+    }
+  ],
+  "verifier_sha256": "b64b628aa9612fded9fe7b960f5ce0ec128888234c87128c13784928e551b390"
+}

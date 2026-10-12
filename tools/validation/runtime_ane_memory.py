@@ -5,6 +5,7 @@ per-request GPU/ANE memory attribution. No model work occurs on import.
 """
 import json
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
@@ -29,6 +30,7 @@ def run_owned(command, **kwargs):
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError("owned memory sampling requires the main thread for signal cleanup")
     timeout = kwargs.pop("timeout")
+    observer = kwargs.pop("observer", None)
     process = subprocess.Popen(command, start_new_session=True, **kwargs)
 
     def interrupted(signum, _frame):
@@ -36,6 +38,8 @@ def run_owned(command, **kwargs):
 
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
+        if observer is not None:
+            observer.start(process.pid)
         returncode = process.wait(timeout=timeout)
     except BaseException as error:
         try:
@@ -52,7 +56,11 @@ def run_owned(command, **kwargs):
             error.add_note(f"owned sampler group cleanup failed: {cleanup_error}")
         raise
     finally:
-        signal.signal(signal.SIGTERM, previous_term)
+        try:
+            if observer is not None:
+                observer.finish()
+        finally:
+            signal.signal(signal.SIGTERM, previous_term)
     if returncode:
         # A crashed/killed wrapper might not have reached its child cleanup.
         signal_owned_group(process.pid, signal.SIGKILL)
@@ -60,8 +68,18 @@ def run_owned(command, **kwargs):
 
 
 def run_sampled(command, *, repo, output, stem, env, stdout, stderr, timeout,
-                interval_ms, max_gap_ms):
+                interval_ms, max_gap_ms, observer=None, child_roles=()):
     """Run then independently verify; incomplete evidence never returns success."""
+    role_arguments = []
+    for role, executable in child_roles:
+        if (not isinstance(role, str) or not role or "=" in role or
+            not isinstance(executable, str) or not os.path.isabs(executable) or
+            any(char in executable for char in "*?[]")):
+            raise ValueError("child role requires a named role and exact absolute executable, not a wildcard")
+        path = Path(executable).resolve(strict=True)
+        if not path.is_file():
+            raise ValueError("child role executable is not a file")
+        role_arguments.extend(["--role", role + "=" + str(path)])
     raw = output / f"{stem}-memory.jsonl"
     report = output / f"{stem}-memory-report.json"
     sampler = repo / "tools/native/process_tree_sampler.py"
@@ -70,9 +88,9 @@ def run_sampled(command, *, repo, output, stem, env, stdout, stderr, timeout,
     correlation = uuid.uuid4().hex
     wrapped = [sys.executable, str(sampler), "--launch", "--output", str(raw.resolve()),
                "--correlation-id", correlation, "--root-role", "inference",
-               "--interval-ms", str(interval_ms), "--max-gap-ms", str(max_gap_ms),
+               "--interval-ms", str(interval_ms), "--max-gap-ms", str(max_gap_ms), *role_arguments,
                "--", *command]
-    result = run_owned(wrapped, cwd=repo, env=env, stdout=stdout, stderr=stderr, timeout=timeout)
+    result = run_owned(wrapped, cwd=repo, env=env, stdout=stdout, stderr=stderr, timeout=timeout, observer=observer)
     verification = subprocess.run(
         [sys.executable, str(verifier), str(raw.resolve()), "--output", str(report.resolve())],
         cwd=repo, env=env, stdout=stderr, stderr=stderr, timeout=60)

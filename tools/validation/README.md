@@ -10,12 +10,54 @@
 | --- | --- | --- |
 | `runtime_ane_common.py` | 共用环境清理、竞争推理预检、流式SHA、编辑/调用/QK receipt校验 | 不加载模型，不代替图像质量验收 |
 | `runtime_ane_model_screen.py` | GPU/runtime/frozen整请求对照、原始结果与PNG、可选独立内存采样 | 单向screen不等于完整匹配对照 |
+| `runtime_ane_image_compare.py` | CPU-only等尺寸PNG哈希、RGB RMSE/PSNR/相关与Gaussian11 SSIM、独立alpha比较 | 不重采样，不下载学习权重，不代替LPIPS/CLIP/latent或语义资格 |
 | `runtime_lora_shared_graph_switch.py` | 同进程base → A → 合成B → base，检查图复用、实际调用和状态隔离 | 合成B不是第二个训练LoRA的质量资格 |
 | `runtime_ane_memory.py` | 采样进程编排、证据绑定、超时处理；复用 `tools/native/` 的采样器 | 进程footprint不是ANE独占或完整driver内存 |
+| `runtime_ane_qkv_regression.py` | 使用既有原生库运行一次合成 QKV 失败回退/取消复用检查；保存日志/hash 并清理所属临时图 | 不加载 checkpoint，不证明 ANE 驻留或推理提速；不属于默认构建 |
+| `runtime_ane_swiglu_int8_probe.py` | 完整动态 SwiGLU/LoRA 的 FP16/QDQ 对照，包含 CPU 准备、FP32桥接、数值/设备计划与严格 Python 输出边界检查 | 两个小几何的诊断不是生产加速或图像质量资格；不接入 App |
+| `runtime_gpu_swiglu_a8w8_probe.py` | 两个受限小尺寸的完整动态 SwiGLU/LoRA GPU 对照：FP16、INT8 存储后 FP16、普通整数 ALU；含准备/同步/回读和独立 CPU 数值校验 | 整数 ALU 不是原生 INT8 矩阵加速；不接入 App，不与不同输入边界的旧 Core ML 跑分直接相除 |
 | `qwen21_ane_placement.py` | 冻结/runtime manifest的离线设备计划、嵌套算子与artifact身份 | preferred设备不等于实际硬件执行或重叠 |
+| `qwen_ffn_phase_screen.py` | 同库生成/编辑GPU、prefill/decode/all与已有frozen-base对照；验证实际phase/calls及统一encoder source生命周期 | frozen仅base生成；Private callback计数不等于Core ML prediction计数，busy诊断不等于正式性能资格 |
+
+Qwen base三路对照可用 `--generation --frozen-manifest <existing compiled
+manifest> --request-local-encoder --modes gpu,all,frozen`；以显式disabled
+native source record检查每请求loads1/2/3、retained0，不改写raw retention
+metadata。反序须另起fresh output；完整条件和保留的失败见
+[当前base对照](../../docs/status/local512-qwen-frozen-base-2026-10-10.md)。
+
+Qwen原LoRA编辑首步缓存对照用 `--prefill-code-cache-bytes <budget>
+--joint-ab`，默认GPU/prefill/cache-copy/cache-surface四臂；可选三臂反序。
+仅缓存首步原W，decode保持完整GPU；验证actual cold fills/zero hits和warm进度、
+96 W producers及Shared Device的12 bootstrap/每prediction一个不可缓存A8。
+不把预算标记或ineligible误当未执行，也不追认memory fallback为混合。
+完整边界见[首步cache筛选](../../docs/status/local512-qwen-prefill-weight-cache-2026-10-10.md)。
 
 新增验证工具应直接复用 `runtime_ane_common`，不要从screen导入runner逻辑。
 screen现有helper重导出和switch兼容接口保留，避免破坏已保存的复核脚本。
+Private W8A8 初筛使用 `--runtime-backend private --private-gpu-io
+--private-data-path w8a8`；tool 明确设置已清理的私有环境，并校验实际
+data-path 和所有 prediction 的 device I/O 回执。runtime 每请求调用增量
+另存为 `runtime_calls_per_request`；auto 的热态零调用不是 ANE 加速资格。
+Private/纯 GPU 的库、工作负载和 Q/K/LoRA 精度仍必须相同。
+`--private-a8-lookahead 0|1` 独立控制 chunk-sized A8 双槽，默认关闭。
+多块序列校验累计 producer 数、等待 span 与 policy 一致；单块无 future
+producer，不能把其它优化的收益算作 A8 pipeline 收益。详见
+[A8 接续](../../docs/status/private-ane-a8-lookahead-2026-10-04.md)。
+`--private-stage-specialize 0|1` 消融 Metal format/dtype/block function
+constants；默认0、同库测量，不改变 recipe 或原始 weight layout。
+`--observe-load` 连续记录 CPU 负载并排除 owned launch tree，检测到竞争或
+观察不完整就保留 raw output、拒绝比较；不是实际 GPU/ANE 独占证明。
+`--private-lora-channel-range 0|1` 对比旧 full gate/up correction 与仅 ANE
+子范围 correction；限定 private W8A8 channel LoRA，并验证实际 narrow/full
+callback counters，不能将 env 或 self-test 当作模型执行。Public/row和
+没有子范围 callback 的调用方保持完整路径；down-LoRA仍用一次完整 hidden。
+`--fixed-async 0|1` 仅用于positive fixed chunks且关闭profile的runtime消融。
+1复用untimed/async head，0保持固定分区计时；verifier要求实际成功block的
+untimed/async counters符合选择。该计数不是物理GPU/ANE overlap证据。
+`--qwen-lora-1024` 显式开启六步1024² LoRA生成diagnostic，对每条GPU/
+runtime路线采用同样的原FP32 rank，拒绝编辑、frozen和FP16混用；核验
+planned与actual 1024 LoRA标记、实际尺寸/步数/未合并binding，不把flag
+或self-test当模型执行/画质资格。原512²精度与入口不变。
 placement保留历史文件名和冻结图 `--blocks` 接口；runtime只有一个共享图，
 不是每层一个图，且不接受 `--blocks`。不要仅为命名统一移动这些入口。
 

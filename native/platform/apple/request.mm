@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "../../core/json_keys.hpp"
+#include "../../models/qwen21/native_route.hpp"
 #include <cmath>
 namespace tc {
 std::string json(id object) {
@@ -83,6 +84,32 @@ static void keys(NSDictionary *d, NSArray *allowed) {
     for (NSString *k in d)
         require([set containsObject:k], "unknown field: " + std::string(k.UTF8String));
 }
+static void parse_quantized_execution(NSDictionary *d, QuantizedExecutionConfig &c) {
+    require([d isKindOfClass:NSDictionary.class], "quantized_execution must be an object");
+    require(d[@"enabled"] && d[@"schema_version"], "quantized_execution object requires enabled and schema_version");
+    keys(d, @[@"enabled", @"schema_version", @"mode", @"source_residency", @"decode_backend",
+              @"precision_profile", @"granularity", @"prefetch_layers", @"persistent_dense_layers",
+              @"oversized_layer_policy", @"ane_compute", @"allow_requantization"]);
+    if (d[@"enabled"]) c.enabled = boolean(d, @"enabled", false);
+    if (d[@"allow_requantization"]) c.allow_requantization = boolean(d, @"allow_requantization", false);
+    auto integer = [&](NSString *key, std::optional<uint32_t> &field) {
+        if (!d[key]) return;
+        id value = d[key];
+        require([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID() &&
+                    std::isfinite([value doubleValue]) && [value doubleValue] >= 0 &&
+                    [value doubleValue] <= UINT32_MAX && [value doubleValue] == std::floor([value doubleValue]),
+                std::string(key.UTF8String) + " must be uint32");
+        field = [value unsignedIntValue];
+    };
+    integer(@"schema_version", c.schema_version); integer(@"prefetch_layers", c.prefetch_layers);
+    integer(@"persistent_dense_layers", c.persistent_dense_layers);
+    auto string = [&](NSString *key, std::optional<std::string> &field) { if (d[key]) field = string_value(d, key); };
+    string(@"mode", c.mode); string(@"source_residency", c.source_residency);
+    string(@"decode_backend", c.decode_backend); string(@"precision_profile", c.precision_profile);
+    string(@"granularity", c.granularity); string(@"oversized_layer_policy", c.oversized_layer_policy);
+    string(@"ane_compute", c.ane_compute);
+    validate_quantized_execution(c);
+}
 static NSArray *ltx_option_keys() {
     return @[
         @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
@@ -122,7 +149,19 @@ static void parse_ltx_options(NSDictionary *d, Request &r) {
         d, @"ltx_sparse_keep_blocks", r.ltx_sparse_keep_blocks);
 }
 static void parse_qwen21_options(NSDictionary *d, Request &r) {
+    r.qwen21_denoiser_backend = string_value(d, @"qwen21_denoiser_backend", r.qwen21_denoiser_backend);
+    r.qwen21_native_ane_cache = string_value(d, @"qwen21_native_ane_cache", r.qwen21_native_ane_cache);
+    r.qwen21_native_w8_staging = string_value(d, @"qwen21_native_w8_staging", r.qwen21_native_w8_staging);
+    if (d[@"qwen21_native_w8_staging"]) r.qwen21_native_w8_staging_specified = true;
+    r.qwen21_native_scale_cache = boolean(d, @"qwen21_native_scale_cache", r.qwen21_native_scale_cache);
+    if (d[@"qwen21_native_scale_cache"]) r.qwen21_native_scale_cache_specified = true;
+    r.qwen21_native_lora_kernel = string_value(d, @"qwen21_native_lora_kernel", r.qwen21_native_lora_kernel);
+    if (d[@"qwen21_native_lora_kernel"]) r.qwen21_native_lora_kernel_specified = true;
+    if (d[@"qwen21_native_ane_cache"])
+        require(!r.qwen21_native_ane_cache.empty(), "qwen21_native_ane_cache must be a nonempty absolute directory");
+    if (d[@"qwen21_dit_cache"]) r.qwen21_dit_cache_explicit = true;
     r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
+    r.qwen21_dit_cache = string_value(d, @"qwen21_dit_cache", r.qwen21_dit_cache);
     r.qwen21_w8a8 = boolean(d, @"qwen21_w8a8", r.qwen21_w8a8);
     r.qwen21_gpu_w8a16 = boolean(d, @"qwen21_gpu_w8a16", r.qwen21_gpu_w8a16);
     r.qwen21_reference_size = number(d, @"qwen21_reference_size", r.qwen21_reference_size);
@@ -193,8 +232,8 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size",
-            @"qwen21_gpu_full_ffn_blocks",
+            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_dit_cache", @"qwen21_denoiser_backend",
+            @"qwen21_gpu_full_ffn_blocks", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
             @"vsa_prefix_mode", @"vsa_dense_first_n_steps",
@@ -299,8 +338,8 @@ Request request_from_json(NSDictionary *d) {
             @[ @"policy", @"profile", @"ane_manifest", @"encoder_ane_manifest", @"allow_approximation",
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"hybrid_mlp_mode",
-               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks",
-               @"quantized_cache", @"memory_constrained", @"streaming" ]);
+               @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks", @"qwen21_dit_cache", @"qwen21_denoiser_backend", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
+               @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution" ]);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
@@ -318,6 +357,7 @@ Request request_from_json(NSDictionary *d) {
             parse_memory_constrained(execution[@"memory_constrained"],
                                      r.memory_constrained);
         r.quantized_cache = string_value(execution, @"quantized_cache");
+        if (execution[@"quantized_execution"]) parse_quantized_execution(execution[@"quantized_execution"], r.quantized_execution);
         parse_ltx_options(execution, r);
         r.warmup_iterations = number(execution, @"warmup_iterations", 0);
         require(r.warmup_iterations >= 0 && r.warmup_iterations <= 8,
@@ -427,9 +467,10 @@ Request request_from_json(NSDictionary *d) {
                 "encoder_ane_manifest requires allow_approximation=true");
         require(module_for(r.model).describe().supports_encoder_gpu_ane,
                 "encoder_ane_manifest is currently supported for FLUX/Z-Image "
-                "Qwen3, LTX Gemma4, and H3 Qwen3-VL encoders only");
+                "Qwen3, LTX Gemma4, H3/Qwen Image Qwen3-VL encoders only");
     }
-    if (r.execution == "gpu_ane") {
+    qwen21::validate_native_denoiser_request(r);
+    if (r.execution == "gpu_ane" && !qwen21::native_w1_requested(r)) {
         require(!r.ane_manifest.empty(),
                 "gpu_ane requires an explicit ANE manifest or partition directory");
         if (r.model == "ltx-2.5-distilled")

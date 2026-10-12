@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-07",
+  "host": {
+    "gpu": "Apple M4 Pro",
+    "memory_GiB": 48,
+    "os": "macOS 26.6",
+    "sdk": "macOS 15.2"
+  },
+  "base_commit": "8d12b44cc764d079ee31c6092725e22fcc8fb9e0",
+  "runtime_build_id": "tc-runtime-build-v1-782e3ca0977588dbafcb429d00c1964f92890fcde0b58bab64724cd385a14f24",
+  "native_and_app_build": "build/qwen-frozen-20261007",
+  "constraints": {
+    "downloaded_models": false,
+    "e2e_groups": 2,
+    "e2e_images": 4,
+    "size": [
+      512,
+      512
+    ],
+    "seed": 42,
+    "reference_images": 0,
+    "cache": "off",
+    "prompt_enhance": false,
+    "residency": "component_staged"
+  },
+  "candidate": {
+    "precision": "FP16 weights and activations; BF16 GPU complement; FP32 LoRA rank accumulation",
+    "layers": 32,
+    "rows": 1024,
+    "ane_channels": 6144,
+    "total_ffn_channels": 12288,
+    "mode": "lora_fused; zero deltas for base",
+    "checkpoint_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+    "lora": "local Viggle v0.2.1 six-step r128",
+    "compute_policy": "cpuAndNeuralEngine",
+    "placement": "outside-sandbox MLComputePlan prefers ANE for all nine block-0 operations; this is a planned-placement observation, not a runtime hardware trace"
+  },
+  "single_ffn_screen": {
+    "input": "synthetic normal(seed=42)*0.2, BF16; 1024x4096; layer 0 only",
+    "samples": "2 excluded warmups, 3 measured pairs, median",
+    "unfused_base_speedup": 1.39363,
+    "fused_base_speedup": 1.28246,
+    "fused_lora_speedup": 1.14096,
+    "warning": "component speedup is not E2E evidence; complete model changes memory traffic and synchronization"
+  },
+  "e2e": {
+    "base": {
+      "gpu": {
+        "denoise": 42.635697208,
+        "hybrid_setup": 0,
+        "image_encode": 7.08e-07,
+        "request_wall": 48.90116,
+        "text_encode": 2.745679292,
+        "vae_decode": 0.917825042
+      },
+      "frozen": {
+        "denoise": 45.675202292,
+        "hybrid_setup": 31.42094775,
+        "image_encode": 5.83e-07,
+        "request_wall": 83.941360542,
+        "text_encode": 2.720404875,
+        "vae_decode": 0.926373667
+      },
+      "request_speedup": 0.582563347606599,
+      "denoise_speedup": 0.9334539327364432,
+      "psnr_db": 36.93932682114972,
+      "rgb_mae": 0.007592927664518356,
+      "runtime_failed": false
+    },
+    "lora": {
+      "gpu": {
+        "denoise": 14.305119125,
+        "hybrid_setup": 0,
+        "image_encode": 5e-07,
+        "request_wall": 20.762797125,
+        "text_encode": 2.630711666,
+        "vae_decode": 0.924763917
+      },
+      "frozen": {
+        "denoise": 15.045453375,
+        "hybrid_setup": 8.869549584,
+        "image_encode": 5.41e-07,
+        "request_wall": 30.947246083,
+        "text_encode": 2.674449,
+        "vae_decode": 0.915763375
+      },
+      "request_speedup": 0.6709093619934556,
+      "denoise_speedup": 0.950793490129705,
+      "psnr_db": 42.409384742539245,
+      "rgb_mae": 0.0031237632501870394,
+      "runtime_failed": false
+    }
+  },
+  "decision": {
+    "keep_frozen_candidates": false,
+    "enable_frozen_in_app": false,
+    "default": "GPU",
+    "reason": "Both base and r128 regressed denoise as well as complete-request latency; keep diagnostic FP16 exporter/ABI, delete this candidate"
+  },
+  "cache_state": {
+    "base_frozen": "first complete-model Core ML load: 21.404 s; validation 6.990 s",
+    "lora_frozen": "reused system compilation state, fresh process: model load 0.820 s; validation 6.753 s",
+    "warning": "Neither pair measures a resident warm Session. One image per arm; no statistical significance claim. Core ML setup is included in total latency."
+  },
+  "reference_encoder_reuse": {
+    "scope": "native Session, not cross-process App workers",
+    "invalidations": [
+      "reference content SHA-256",
+      "encoding resolution",
+      "encoder/tokenizer file generation",
+      "Session unload"
+    ],
+    "bounds": {
+      "references": 3,
+      "retained_MiB": 128
+    },
+    "probe": "three prepares; no denoising; changed prompt and same bytes at new path",
+    "bit_identical_text_and_reference": true,
+    "cold_encoder_seconds": 7.22656,
+    "reused_encoder_seconds": 4.08925,
+    "timing_caveat": "single observation; CPU export was concurrent, so this is indicative, not a controlled throughput benchmark"
+  },
+  "request_rows": {
+    "policy": "explicit Private channel split only; actual native token count, ceiling to 128 rows, max bucket 2048 then tile; no truncation",
+    "qwen_512_rows": 1024,
+    "z_image_1088_rows_bucket": 1152,
+    "old_z_image_padded_rows": 2112,
+    "cache_identity": "bucket included in Session identity; executor policy included in scheduler identity; program MIL includes shape",
+    "validation": "1024/1088 small-shape Private W8A8 self-tests passed with LoRA inputs; full-model performance of this policy not measured",
+    "app_profile": "private-w8a8-hadamard-512-v2; still experimental"
+  },
+  "validation": {
+    "native_and_swift_build": "passed; native source hashes match build manifest",
+    "host_contracts": "21 passed",
+    "native_API_contracts": "129 ran, 3 skipped; passed outside sandbox",
+    "swift_worker": "83 contract + 36 source-cache checks passed",
+    "coreml_export_regressions": "14 passed",
+    "reference_encoder_parity": "real local-model oracle passed",
+    "e2e": "4/4 succeeded, frozen runtime failures=0, images visually inspected"
+  },
+  "cleanup": {
+    "scope": "only task-owned candidates, private self-test cache and transient tensors; source models unchanged",
+    "kept_coreml_candidates": [],
+    "removed": [
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/fp16-fused",
+        "logical_bytes": 4832027161
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/compiled-fp16-fused",
+        "logical_bytes": 4832017486
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/fp16-fused-base-probe.safetensors",
+        "logical_bytes": 33554977
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/fp16-fused-lora-probe.safetensors",
+        "logical_bytes": 33554977
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/fp16-base-probe.safetensors",
+        "logical_bytes": 33554977
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/reference-cache-check/first",
+        "logical_bytes": 753866
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/reference-cache-check/reused",
+        "logical_bytes": 786634
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/reference-cache-check/cold",
+        "logical_bytes": 786634
+      },
+      {
+        "path": "/Users/kd/Documents/project/TurboCider/outputs/qwen-frozen-laptop-20261007/private-row-check",
+        "logical_bytes": 1066312
+      }
+    ],
+    "removed_logical_bytes": 9768103024,
+    "reason": "reusable FP16 frozen candidate regressed both full-request and denoise time for base and r128 LoRA"
+  },
+  "next_gates": [
+    "Keep GPU as production default; do not repeat this 6144-channel FP16 full-model experiment.",
+    "Screen 4096/6144 splits using real FFN inputs from representative layers and surrounding GPU work; measure input-ready, ANE prediction and join separately.",
+    "For W8A8, calibrate from local base and r128 activations, compare SmoothQuant and rotation in the same complete FFN pipeline; validate pre-SiLU LoRA and one correct down-LoRA, do not infer speed from nominal INT8 TOPS.",
+    "Only export all 32 layers after both error and complete-pipeline speed gates pass; bounded temporary calibration and one candidate cache at a time.",
+    "Cross-process encoder cache needs a separate content/build identity and atomic bounded persistence design before App integration; do not advertise current Session reuse as cross-job App acceleration."
+  ],
+  "evidence_directory": "outputs/qwen-frozen-laptop-20261007",
+  "artifacts_retained": [
+    "4 PNG comparisons",
+    "JSON requests/results",
+    "timings, compute plan, export provenance and cleanup receipts"
+  ]
+}

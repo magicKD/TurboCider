@@ -1,0 +1,44 @@
+{
+  "schema":"tc-convrot-group-scope-validation-v1",
+  "date":"2026-10-05",
+  "production_qualified":false,
+  "default_changed":false,
+  "opt_in":{"size":"TURBOCIDER_PRIVATE_ANE_A8_GROUP_SIZE=256","scope":"TURBOCIDER_PRIVATE_ANE_A8_GROUP_SCOPE=input|hidden|both"},
+  "input_hidden_projection_selection_independent":true,
+  "same_weight_codes_scales":true,
+  "lora_hidden_abi_preserved":true,
+  "whole_operation_gpu_fallback_preserved":true,
+  "native_int8_macs_observed":false,
+  "physical_overlap_proven":false,
+  "regressions":{"private_pass":16,"private_opt_in_skip":2,"public_pass":13,"gpu_pass":6,"host_pass":8,"full_make_test":false},
+  "build_scope":"working-tree snapshot retaining original ConvRot drafts; not clean staged-tree rebuild",
+  "libraries":{
+    "private":"6c83bba7e62bddd3383fdbfb00d4adaea60124d82215d643dc4598692bb47e6f",
+    "public":"7cb8c1cb685542ee76e8d05522da3550327a660bb34f0483477184b1208eff6f",
+    "public_actual_release_guard_passed":true
+  },
+  "model":{
+    "id":"z-image-turbo",
+    "source_sha256":"be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    "profile":"legacy packed BF16 scales",
+    "comparison":"same binary/source/prompt/seed GPU and candidate; independent CPU FP64 tensors",
+    "steps":4,"seed":42,"ane_channels":4096,"gpu_channels":6144,"bucket_rows":1056,"fp32_join":true,
+    "n1_gate":{"max_rel_l2":0.03,"min_cosine":0.999},
+    "native_quality_enabled":false,
+    "cells":[
+      {"size":512,"scope":"input","input_group":256,"hidden_group":0,"evidence":"outputs/convrot-group-scope-512-input-private4096-4-diagnostic","rel_l2":0.05130106731513672,"cosine":0.99868575296043,"channel_blocks":128,"driver_calls":248,"fallback_blocks":0,"conditioning_exact":true,"initial_latent_exact":true,"n1_pass":false},
+      {"size":512,"scope":"hidden","input_group":0,"hidden_group":256,"evidence":"outputs/convrot-group-scope-512-hidden-private4096-4-diagnostic","rel_l2":0.051161893321752014,"cosine":0.9986909180139923,"channel_blocks":128,"driver_calls":248,"fallback_blocks":0,"conditioning_exact":true,"initial_latent_exact":true,"n1_pass":false},
+      {"size":1024,"scope":"input","input_group":256,"hidden_group":0,"evidence":"outputs/convrot-group-scope-1024-input-private4096-4-diagnostic","rel_l2":0.05748272863961912,"cosine":0.9983475926553556,"channel_blocks":128,"driver_calls":512,"fallback_blocks":0,"conditioning_exact":true,"initial_latent_exact":true,"n1_pass":false},
+      {"size":1024,"scope":"hidden","input_group":0,"hidden_group":256,"evidence":"outputs/convrot-group-scope-1024-hidden-private4096-4-diagnostic","rel_l2":0.07345785061147601,"cosine":0.9973076905590355,"channel_blocks":128,"driver_calls":512,"fallback_blocks":0,"conditioning_exact":true,"initial_latent_exact":true,"n1_pass":false}
+    ],
+    "performance_qualified":false,"media_qualified":false
+  },
+  "pending":[
+    "source precision boundaries and normalized FP16 reduction controls",
+    "qualify sensitive-layer GPU/Public strategy",
+    "GGUF bounded dense consumer and reuse-cost A/B",
+    "adaptive fitted identity cache/share/prefetch integration",
+    "all four Z/Qwen base cells matched optimized GPU >=1.2x",
+    "actual-model LoRA/media/memory/device trace acceptance"
+  ]
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "key": "qwen",
+    "organization": "QwenLM",
+    "page": "https://github.com/QwenLM",
+    "image": "https://avatars.githubusercontent.com/u/141221163?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/141221163?v=4&s=256",
+    "file": "qwen.png",
+    "sha256": "25869dae20028c631830e273362ece1e54fcc6a2f81ff5399e0f05c62e8fe286",
+    "bytes": 8919
+  },
+  {
+    "key": "flux",
+    "organization": "black-forest-labs",
+    "page": "https://github.com/black-forest-labs",
+    "image": "https://avatars.githubusercontent.com/u/164064024?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/164064024?v=4&s=256",
+    "file": "flux.png",
+    "sha256": "60b3c10c98bd2680db003867193dd1ed79ab1ed7a297d6bea3fc22188551c11f",
+    "bytes": 7086
+  },
+  {
+    "key": "ltx",
+    "organization": "Lightricks",
+    "page": "https://github.com/Lightricks",
+    "image": "https://avatars.githubusercontent.com/u/3170348?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/3170348?v=4&s=256",
+    "file": "ltx.jpg",
+    "sha256": "0729b9953a6679636d54c877bd62062c4f829bec0f65fef6fe478bfe3f5702ed",
+    "bytes": 6465
+  },
+  {
+    "key": "minimax",
+    "organization": "MiniMax-AI",
+    "page": "https://github.com/MiniMax-AI",
+    "image": "https://avatars.githubusercontent.com/u/194880281?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/194880281?v=4&s=256",
+    "file": "minimax.jpg",
+    "sha256": "d9d4fd7cb2eb36c88c046f34ec768a51be9b16433c4d07865164e903df89a42f",
+    "bytes": 8252
+  },
+  {
+    "key": "wan",
+    "organization": "Wan-Video",
+    "page": "https://github.com/Wan-Video",
+    "image": "https://avatars.githubusercontent.com/u/200620180?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/200620180?v=4&s=256",
+    "file": "wan.png",
+    "sha256": "32d9897f4315f7f57456a47943e9f4567abe55dba10dd2e443617c89062a4aa4",
+    "bytes": 18872
+  },
+  {
+    "key": "z-image",
+    "organization": "Tongyi-MAI",
+    "page": "https://github.com/Tongyi-MAI",
+    "image": "https://avatars.githubusercontent.com/u/246097416?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/246097416?v=4&s=256",
+    "file": "z-image.jpg",
+    "sha256": "6666adc547eeffe4bb9d615037ba94b6b3c726da8237e3b6be23e7a1b1232f08",
+    "bytes": 4963
+  },
+  {
+    "key": "llada",
+    "organization": "inclusionAI",
+    "page": "https://github.com/inclusionAI",
+    "image": "https://avatars.githubusercontent.com/u/199075982?v=4",
+    "retrieved": "2026-10-12",
+    "download_url": "https://avatars.githubusercontent.com/u/199075982?v=4&s=256",
+    "file": "llada.jpg",
+    "sha256": "f37679e5a1eb4628552f46f52f95feb1809e7df796be770ecee71b511776bdf7",
+    "bytes": 5619
+  }
+]

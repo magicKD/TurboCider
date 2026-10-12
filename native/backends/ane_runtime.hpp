@@ -9,11 +9,15 @@
 #include <string>
 #include <vector>
 #include <variant>
+#include <span>
+#include "../core/ane_weight_code_cache_report.hpp"
 
 namespace tc::ane {
 
 enum class Kind { Matmul, SwiGLU, GELU };
 enum class DType { FP16, BF16, FP32 };
+enum class BackendKind { PublicCoreML, PrivateANE };
+enum class PartitionAxis { Rows, IntermediateChannels };
 struct MemoryBudgetError : std::runtime_error { using std::runtime_error::runtime_error; };
 struct CapabilityError : std::runtime_error { using std::runtime_error::runtime_error; };
 
@@ -23,6 +27,9 @@ struct GraphGeometry {
     Kind kind;
     int hidden, width;
     bool require_lora_inputs = false;
+    // Actual steady-state FFN rows, supplied by the model after tokenization.
+    // Used only by the explicit Private request-row policy.
+    int request_rows = 0;
 };
 
 // Borrowed immutable row-major matrix. Sources must remain alive and readable
@@ -35,9 +42,66 @@ struct MatrixView {
     DType dtype = DType::FP16;
 };
 
+// Opaque, already-produced Metal storage. No ObjC/MLX dependency in the graph
+// contract. Owner keeps the allocation (not just its MTL object) out of the
+// caller's allocator cache until finish. Input is immutable during the job;
+// output is independent caller-owned storage, published only on success.
+struct DeviceMatrixView {
+    void *buffer = nullptr;
+    size_t buffer_bytes = 0, offset_bytes = 0;
+    int rows = 0, cols = 0;
+    size_t row_stride_bytes = 0;
+    DType dtype = DType::FP16;
+    std::shared_ptr<void> owner;
+    std::weak_ptr<void> allocation_identity{}; // stable allocation generation, never a raw-address-only cache key
+};
+struct DeviceAdapterInput { DeviceMatrixView gate, up, hidden; };
+
+enum class DeviceWeightEncoding : uint32_t {
+    Dense, AffineQ4, AffineQ8, GgufQ4_0, GgufQ4_K, GgufQ8_0, GgufQ6_K,
+    ConvrotQ8Signed, ConvrotQ8Packed
+};
+enum class W8Basis : uint32_t { SylvesterDH, ComfyH256 };
+// Immutable physical source matrix, independent of an executor's W8/FP16
+// representation. cols/pitch remain the FULL source row when staging a slice.
+struct DeviceWeightView {
+    void *buffer = nullptr;
+    size_t buffer_bytes = 0, offset_bytes = 0, row_stride_bytes = 0;
+    int rows = 0, cols = 0;
+    DeviceWeightEncoding encoding = DeviceWeightEncoding::Dense;
+    DType dense_dtype = DType::BF16;
+    int group_size = 32;
+    std::optional<DeviceMatrixView> scales, offsets;
+    std::shared_ptr<void> owner;
+    std::weak_ptr<void> allocation_identity{};
+    bool immutable_generation = false; // opt-in promise: contents/metadata do not change while this generation lives
+    // Raw GGUF importer-only promise: complete logical matrix bytes identify
+    // one verified source generation/tensor across physical refills. This is
+    // NOT an allocation identity or permission to reuse mutable data. A scale
+    // cache may weakly retain the tag, never the packed matrix or source lease.
+    std::weak_ptr<void> logical_content_identity{};
+};
+struct W8StageSpec {
+    int row_begin = 0, rows = 0, column_begin = 0, columns = 0;
+    int rotation_block = 128;
+    uint64_t rotation_seed = 20260930;
+    bool transpose = false; // A8 channel-major vs W8 out/in
+    W8Basis basis = W8Basis::SylvesterDH;
+    int activation_group_size = 0; // 0: per-token; 256: explicit Comfy A8 groups
+    // Validated immutable SmoothQuant S1, one FP32 value per FULL source
+    // column. Applied before H128: W*S1, or X/S1 for transpose A8. H512 does
+    // not use S1. The ticket/bank owns its allocation; cache keys stay weak.
+    std::optional<DeviceMatrixView> column_scale{};
+    bool inverse_column_scale = false;
+};
+// Logical selection over an unchanged physical source. In particular a down
+// channel slice keeps the full packed row pitch/metadata geometry and owner.
+struct DeviceWeightRegion { DeviceWeightView source; W8StageSpec selection; };
+
 // MLX affine codes, not raw GGUF blocks: unsigned low-bit-first uint32 words,
-// logical [out,in], value = scale[group] * code + offset[group]. A GGUF loader
-// must first expose its native MLX representation. ConvRot/NVFP4 are different
+// logical [out,in], value = scale[group] * code + offset[group]. Legacy MLX
+// GGUF imports expose this representation; raw blocks instead use GgufView.
+// ConvRot/NVFP4 are different
 // formats and must never be passed as affine. All buffers are borrowed.
 struct AffineView {
     const void *data = nullptr;
@@ -48,7 +112,29 @@ struct AffineView {
     MatrixView scales;
     std::optional<MatrixView> offsets;
 };
-using WeightView = std::variant<MatrixView, AffineView>;
+// Raw on-disk GGML blocks, not MLX affine. Callers retain immutable packed
+// buffers through wait_stage/finish; no intermediate full dense matrix.
+struct GgufView {
+    const void *data = nullptr;
+    size_t bytes = 0;
+    int rows = 0, cols = 0;
+    size_t row_stride_bytes = 0;
+    uint32_t ggml_type = 8;
+};
+// Original signed rotated codes and FP32 row scales. The staging recipe is
+// effective W = diag(scale) * codes * Comfy H256^T; it does not requantize W.
+struct ConvrotView {
+    const int8_t *data = nullptr;
+    size_t bytes = 0;
+    int rows = 0, cols = 0;
+    size_t row_stride_bytes = 0;
+    MatrixView row_scales;
+};
+// Explicit legacy MLX packed ConvRot, NEVER ordinary affine/GGUF. Codes are
+// unsigned q+128; every group's scale/offset must be the same row scale and
+// -128*scale. Inverse H uses that stored scale, not original F32 provenance.
+struct ConvrotAffineView { AffineView packed; };
+using WeightView = std::variant<MatrixView, AffineView, GgufView, ConvrotView, ConvrotAffineView>;
 
 struct GraphShape {
     Kind kind = Kind::SwiGLU;
@@ -58,9 +144,31 @@ struct GraphShape {
     int output_width() const { return kind == Kind::Matmul ? width : hidden; }
 };
 
+enum class RuntimeArtifactKind { PublicCoreML, PrivateShape };
+struct RuntimeTemplateDescriptor {
+    GraphShape shape;
+    RuntimeArtifactKind artifact = RuntimeArtifactKind::PublicCoreML;
+    bool has_public_artifact() const { return artifact == RuntimeArtifactKind::PublicCoreML; }
+};
+
+// A private_runtime_shape descriptor contains geometry only, without a Core ML
+// model or checkpoint. Legacy runtime_weight_fp16 templates remain supported.
+// Parsing either format does not claim validation of a compiled artifact.
+RuntimeTemplateDescriptor runtime_template_descriptor(const std::filesystem::path &manifest);
+GraphShape runtime_template_shape(const std::filesystem::path &manifest);
+bool runtime_template_w8a8(const std::filesystem::path &manifest);
+struct RuntimeArtifactSnapshot {
+    GraphShape shape;
+    W8Basis basis = W8Basis::SylvesterDH;
+    std::filesystem::path compiled_model;
+    std::shared_ptr<void> lease;
+};
+RuntimeArtifactSnapshot snapshot_runtime_w8a8(const std::filesystem::path &manifest);
+
 // Per-request activation corrections, NEVER merged into weight slots.
 // gate/up have the full launch row count and FFN width. The worker scales up
 // with its base up weights, and restores hidden before GPU down-LoRA uses it.
+// hidden has the SAME dtype as launch's output_dtype, including BF16 range.
 struct AdapterInput {
     MatrixView gate, up;
     uint16_t *hidden = nullptr;
@@ -74,7 +182,83 @@ struct RunResult {
     double output_seconds = 0, total_seconds = 0;
     uint64_t calls = 0, copied_output_bytes = 0;
     uint64_t overflow_retries = 0;
+    float headroom_start_scale = 1.f;
     float headroom_scale = 1.f;
+    // Successful lookahead submissions, not proof of physical GPU/ANE overlap.
+    uint64_t activation_prefetches = 0;
+    double activation_wait_seconds = 0;
+};
+struct WeightCacheStats {
+    bool enabled = false;
+    uint64_t hits = 0, misses = 0, entries = 0, bytes = 0, evictions = 0;
+};
+struct StagePipelineStats {
+    bool specialized = false;
+    uint64_t variants = 0;
+};
+struct A8SinglePassStats {
+    bool requested = false, pipeline_compiled = false;
+    // Committed staging submissions, including executor capability self-test.
+    // No kernel timing, successful completion or physical overlap claim.
+    uint64_t eligible_submissions = 0, ineligible_submissions = 0;
+};
+
+// Model/scheduler contract, independent of Core ML and private ObjC classes.
+// All executors share the same source views, row chunks, adapter corrections,
+// output ownership and all-or-GPU failure semantics. One owning host thread.
+class Executor {
+  public:
+    virtual ~Executor() = default;
+    virtual BackendKind backend() const = 0;
+    virtual const GraphShape &shape() const = 0;
+    virtual size_t slot_bytes() const = 0;
+    virtual size_t estimated_bytes() const = 0;
+    virtual double load_seconds() const = 0;
+    // Public artifact/model/binding phases; other executors report total load.
+    virtual double artifact_seconds() const { return 0; }
+    virtual double model_load_seconds() const { return 0; }
+    virtual double bind_seconds() const { return 0; }
+    virtual bool self_test(std::string &error) = 0;
+    virtual void stage_weights(std::vector<WeightView> weights) = 0;
+    virtual RunResult wait_stage() = 0;
+    virtual void launch(MatrixView input, uint16_t *output, size_t output_elements,
+                        DType output_dtype = DType::FP16,
+                        std::optional<AdapterInput> adapter = std::nullopt) = 0;
+    virtual RunResult finish() = 0;
+    virtual bool supports_device_io() const { return false; }
+    virtual bool supports_device_weights() const { return false; }
+    virtual bool supports_device_weight_regions() const { return false; }
+    virtual bool supports_weight_prefetch() const { return false; }
+    virtual std::string data_path() const { return "fp16"; }
+    virtual std::string weight_recipe() const { return {}; }
+    virtual WeightCacheStats weight_cache_stats() const { return {}; }
+    virtual WeightCodeCacheReport weight_code_cache_stats() const { return {}; }
+    virtual StagePipelineStats stage_pipeline_stats() const { return {}; }
+    virtual A8SinglePassStats activation_stage_stats() const { return {}; }
+    virtual bool device_submission_fence_enabled() const { return false; }
+    virtual bool activation_lookahead_enabled() const { return false; }
+    virtual void stage_device_weights(std::vector<DeviceWeightView>) {
+        throw CapabilityError("executor has no device-weight staging path");
+    }
+    virtual void stage_device_weight_regions(std::vector<DeviceWeightRegion>) {
+        throw CapabilityError("executor has no physical-source region staging path");
+    }
+    // Exactly one future bank; source owners remain leased until the producer
+    // completes. Activation is allowed only after the current consumer joins.
+    virtual void prefetch_device_weight_regions(std::vector<DeviceWeightRegion>) {
+        throw CapabilityError("executor has no future weight bank");
+    }
+    virtual std::optional<RunResult> activate_prefetched_weights(std::span<const DeviceWeightRegion>) { return std::nullopt; }
+    virtual void discard_prefetched_weights() {}
+    virtual void launch_device(DeviceMatrixView, DeviceMatrixView,
+                               std::optional<DeviceAdapterInput> = std::nullopt) {
+        throw CapabilityError("executor has no device-buffer I/O path");
+    }
+    // Base-down partial only. Retain FP32 until a channel join's ONE final
+    // model-dtype rounding. Does not imply an FP32 ANE graph or hidden ABI.
+    virtual bool supports_fp32_device_output() const { return false; }
+    virtual int activation_group_size() const { return 0; }
+    virtual int hidden_activation_group_size() const { return 0; }
 };
 
 // Explicit opt-in runtime-weight backend; never selected by auto routing.
@@ -88,34 +272,72 @@ struct RunResult {
 // after any false result (including partially completed multi-chunk jobs).
 // Public calls require one owning host thread; this is not a concurrent queue.
 // Source/output buffers must outlive the asynchronous job and finish().
-class RuntimeGraph {
+class RuntimeGraph : public Executor {
   public:
+    // Verified private artifact and loaded model only: no IOSurfaces, feature
+    // bindings, prediction worker, self-test or model-dependent weights. It
+    // can be prepared on a separate owning thread, then transferred after
+    // that thread has joined. Concurrent use of one Prepared is unsupported.
+    class Prepared {
+      public:
+        ~Prepared();
+        Prepared(Prepared &&) noexcept;
+        Prepared &operator=(Prepared &&) noexcept;
+        Prepared(const Prepared &) = delete;
+        Prepared &operator=(const Prepared &) = delete;
+
+        const GraphShape &shape() const;
+        size_t estimated_bytes() const;
+        double artifact_seconds() const;
+        double model_load_seconds() const;
+
+      private:
+        friend class RuntimeGraph;
+        struct Impl;
+        explicit Prepared(std::unique_ptr<Impl>);
+        std::unique_ptr<Impl> impl_;
+    };
+
+    // Both prepare and bind reserve the complete graph estimate against the
+    // current budget/live-memory observation. Preparation does not prove
+    // sufficient memory remains available when the model phase changes.
+    static std::unique_ptr<Prepared> prepare(const std::filesystem::path &manifest,
+                          size_t memory_budget_bytes, bool cpu_only = false,
+                          std::optional<GraphGeometry> expected = std::nullopt);
+    explicit RuntimeGraph(std::unique_ptr<Prepared> prepared,
+                          size_t bind_memory_budget_bytes, bool scalar_staging = false);
     explicit RuntimeGraph(const std::filesystem::path &manifest,
                           size_t memory_budget_bytes, bool cpu_only = false,
                           bool scalar_staging = false,
                           std::optional<GraphGeometry> expected = std::nullopt);
-    ~RuntimeGraph();
+    ~RuntimeGraph() override;
     RuntimeGraph(const RuntimeGraph &) = delete;
     RuntimeGraph &operator=(const RuntimeGraph &) = delete;
 
-    const GraphShape &shape() const;
-    size_t slot_bytes() const;
-    size_t estimated_bytes() const;
-    double load_seconds() const;
+    BackendKind backend() const override { return BackendKind::PublicCoreML; }
+    const GraphShape &shape() const override;
+    size_t slot_bytes() const override;
+    size_t estimated_bytes() const override;
+    double artifact_seconds() const override;
+    double model_load_seconds() const override;
+    double bind_seconds() const override;
+    // Sum of artifact verification, model loading and binding work. Queue
+    // wait/encoder overlap is intentionally excluded; it is not request wall.
+    double load_seconds() const override;
 
     // Checks TWO weight sets and nonzero input on this actual shape. Caller
     // must run this before arming a model route; it leaves no user weights.
-    bool self_test(std::string &error);
+    bool self_test(std::string &error) override;
 
     // Graph input order: matmul {w}; SwiGLU {gate,up,down}; GELU {up,down}.
     // Asynchronous staging can overlap the model's GPU attention.
     void stage(std::vector<MatrixView> weights);
-    void stage_weights(std::vector<WeightView> weights);
+    void stage_weights(std::vector<WeightView> weights) override;
     // MatMul only: append dense [out,in] source rows directly into ONE weight
     // slot. Q/K/V remain separate checkpoint tensors; no 3 GiB GPU pack bank.
     // Every row must be covered exactly once. Inputs stay borrowed until join.
     void stage_matmul_parts(std::vector<MatrixView> parts);
-    RunResult wait_stage();
+    RunResult wait_stage() override;
 
     // Input rows must be a positive multiple of the graph's chunk rows.
     // Output is caller-owned packed FP16 or BF16, never borrowed from the next
@@ -123,8 +345,8 @@ class RuntimeGraph {
     // This deliberately does not depend on MLX and does not evaluate GPU work.
     void launch(MatrixView input, uint16_t *output, size_t output_elements,
                 DType output_dtype = DType::FP16,
-                std::optional<AdapterInput> adapter = std::nullopt);
-    RunResult finish();
+                std::optional<AdapterInput> adapter = std::nullopt) override;
+    RunResult finish() override;
 
   private:
     struct Impl;

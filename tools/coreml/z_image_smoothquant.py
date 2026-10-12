@@ -94,8 +94,19 @@ def representative_rows(sample, count, np):
     return np.unique(np.concatenate((regular, extreme)))
 
 
+def validate_corrections(corrections, samples, width, np):
+    if corrections is None:
+        return
+    if len(corrections) != len(samples):
+        raise ValueError("LoRA calibration correction/sample count mismatch")
+    for sample, pair in zip(samples, corrections):
+        if len(pair) != 2 or any(value.shape != (len(sample), width) or
+                                not np.isfinite(value).all() for value in pair):
+            raise ValueError("invalid LoRA calibration correction geometry/values")
+
+
 def smooth_partial_ffn(gate, up, down, samples, alpha1, alpha2, np, hidden_rows=32,
-                       outlier_rows=False, hidden_region_rows=None):
+                       outlier_rows=False, hidden_region_rows=None, corrections=None):
     if (gate.shape != up.shape or down.shape[1] != gate.shape[0] or
             not len(samples) or samples[0].shape[-1] != gate.shape[1] or hidden_rows < 1 or
             (hidden_region_rows is not None and hidden_region_rows < 1)):
@@ -103,6 +114,7 @@ def smooth_partial_ffn(gate, up, down, samples, alpha1, alpha2, np, hidden_rows=
     gate = np.asarray(gate, dtype=np.float32)
     up = np.asarray(up, dtype=np.float32)
     down = np.asarray(down, dtype=np.float32)
+    validate_corrections(corrections, samples, gate.shape[0], np)
     a1 = np.zeros(gate.shape[1], dtype=np.float32)
     for sample in samples:
         for first in range(0, len(sample), 128):
@@ -110,7 +122,7 @@ def smooth_partial_ffn(gate, up, down, samples, alpha1, alpha2, np, hidden_rows=
     w1 = np.maximum(np.max(np.abs(gate), axis=0), np.max(np.abs(up), axis=0))
     s1 = channel_scale(a1, w1, alpha1, np)
     a2 = np.zeros(gate.shape[0], dtype=np.float32)
-    for sample in samples:
+    for sample_index, sample in enumerate(samples):
         region = sample[:hidden_region_rows] if hidden_region_rows is not None else sample
         indexes = (representative_rows(region, hidden_rows, np) if outlier_rows else
                    np.linspace(0, len(region) - 1, min(hidden_rows, len(region)), dtype=np.int64))
@@ -119,6 +131,10 @@ def smooth_partial_ffn(gate, up, down, samples, alpha1, alpha2, np, hidden_rows=
             with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
                 g = x @ gate.T
                 u = x @ up.T
+                if corrections is not None:
+                    dg, du = corrections[sample_index]
+                    g += dg[indexes[first:first + 8]]
+                    u += du[indexes[first:first + 8]]
                 z = (g / (1 + np.exp(-np.clip(g, -80, 80)))) * u
             a2 = np.maximum(a2, np.max(np.abs(z), axis=0))
     s2 = channel_scale(a2, np.max(np.abs(down), axis=0), alpha2, np)
@@ -179,7 +195,8 @@ def calibrate_input_a8(gate, up, down, s1, samples, np, rows_per_sample=32,
 
 
 def calibrate_hidden_a8(gate, up, down, s1, samples, input_scale,
-                        activation_scale, np, rows_per_sample=128, outlier_rows=False):
+                        activation_scale, np, rows_per_sample=128, outlier_rows=False,
+                        corrections=None, correction_s2=None):
     """Minimize partial-FFN output NMSE across real strided calibration rows.
 
     Unlike a max-only tensor threshold, this measures the downstream cost of
@@ -187,8 +204,12 @@ def calibrate_hidden_a8(gate, up, down, s1, samples, input_scale,
     """
     if rows_per_sample < 1 or activation_scale < 1 or not samples:
         raise ValueError("invalid hidden A8 calibration")
+    validate_corrections(corrections, samples, gate.shape[0], np)
+    if corrections is not None and (correction_s2 is None or correction_s2.shape != (gate.shape[0],) or
+                                    not np.isfinite(correction_s2).all() or np.any(correction_s2 <= 0)):
+        raise ValueError("LoRA hidden calibration requires valid S2 correction scales")
     hidden = []
-    for sample in samples:
+    for sample_index, sample in enumerate(samples):
         ids = (representative_rows(sample, rows_per_sample, np) if outlier_rows else
                np.linspace(0, len(sample) - 1, min(rows_per_sample, len(sample)), dtype=np.int64))
         for first in range(0, len(ids), 8):
@@ -197,6 +218,12 @@ def calibrate_hidden_a8(gate, up, down, s1, samples, input_scale,
             with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
                 g = x @ gate.T
                 u = x @ up.T
+                if corrections is not None:
+                    dg, du = corrections[sample_index]
+                    g += dg[ids[first:first + 8]]
+                    # The exporter folds 1/S2 into base up weights and applies
+                    # exactly the same scale to the runtime up-LoRA delta.
+                    u += du[ids[first:first + 8]] / correction_s2
                 z = (g / (1 + np.exp(-np.clip(g, -80, 80)))) * u / (activation_scale ** 2)
             if not np.isfinite(z).all():
                 raise ValueError("nonfinite hidden A8 calibration")

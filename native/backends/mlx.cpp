@@ -1,8 +1,17 @@
 #include "mlx.hpp"
+#include "convrot_rotation.hpp"
+#include "affine_gpu_fp32.hpp"
+#include "affine_gpu_mpp.hpp"
+#include "affine_gpu_shared.hpp"
+#include "dense_gpu_projection.hpp"
+#include "dense_gpu_lora_b.hpp"
 #include "mlx_fd_reader.hpp"
+#include "lora_metadata.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
+#include "../platform/apple/platform.hpp"
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -93,6 +102,16 @@ static Tensor convrot_rotate_metal(const Tensor &x) {
     require(x.dtype() == mx::bfloat16 || x.dtype() == mx::float16 ||
                 x.dtype() == mx::float32,
             "Metal ConvRot requires a floating-point activation");
+    // Only the existing explicit Metal ConvRot path takes this candidate.
+    // Dense-H / legacy default, other devices, small modulation vectors and
+    // unmeasured dtypes keep their previous implementation. Four independent
+    // SIMD groups keep H256 entirely in registers, with the same radix-4
+    // ordering and final BF16 rounding as the original shared-memory kernel.
+    static const bool qualified_device = device_info().gpu == "Apple M4 Max";
+    const auto quad_rows = x.size() / size_t(x.shape(-1));
+    if (qualified_device && x.dtype() == mx::bfloat16 && quad_rows >= 1024 && quad_rows <= 4224 &&
+        (x.shape(-1) == 3840 || x.shape(-1) == 10240))
+        return convrot_kernel::rotate(x, convrot_kernel::Rotation::SimdRegister);
     /* H_256 = H_4 kron H_4 kron H_4 kron H_4.  One threadgroup owns one
      * contiguous 256-value tile, reducing the transform from a dense
      * 256x256 matmul to four radix-4 butterflies.  Accumulation stays FP32
@@ -198,6 +217,7 @@ void Weights::load_lease(
             ++index;
         }
         require(!values_.empty(), "streaming lease contains no tensors");
+        source_leases_.push_back(lease);
     } catch (...) {
         clear();
         throw;
@@ -270,8 +290,7 @@ void Weights::bind_arrays(const std::vector<std::string> &keys,
                           const std::vector<Tensor> &arrays, size_t offset) {
     require(offset <= arrays.size() && keys.size() <= arrays.size() - offset,
             "weight binding array range is invalid");
-    values_.clear();
-    runtime_loras_.clear();
+    clear();
     values_.reserve(keys.size());
     for (size_t index = 0; index < keys.size(); ++index)
         values_.emplace(keys[index], arrays[offset + index]);
@@ -551,14 +570,25 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
         std::optional<Tensor> biases;
         if (has(prefix + ".biases"))
             biases = at(prefix + ".biases");
-        output = mx::quantized_matmul(x, weight, scales, biases, true,
-                                      geometry.group_size, geometry.bits, "affine");
+        if(qwen_affine_shared_down_ && prefix.ends_with(".img_mlp.out") && x.ndim()==3 && x.shape(0)==1 && x.shape(1)>=32) {
+            require(bool(biases),"Qwen shared packed down requires explicit affine bias plane");
+            output=affine_gpu::projection_shared(x,weight,scales,*biases,geometry.bits,
+                0,weight.shape(0),0,x.shape(-1),64,64,64,x.dtype());
+        } else output = mx::quantized_matmul(x, weight, scales, biases, true,
+                                            geometry.group_size, geometry.bits, "affine");
     } else {
         auto dense = weight;
         if (dense.ndim() != 2)
             dense = mx::reshape(dense, {dense.shape(0), int(dense.size() / dense.shape(0))});
         output = mx::matmul(x, mx::transpose(dense));
     }
+    output=add_runtime_projection_loras(x,std::move(output),prefix);
+    if (has(prefix + ".bias"))
+        output = output + mx::astype(at(prefix + ".bias"), output.dtype());
+    return output;
+}
+
+Tensor Weights::add_runtime_projection_loras(const Tensor &x,Tensor output,const std::string &prefix) const {
     auto runtime = runtime_loras_.find(prefix);
     if (runtime != runtime_loras_.end()) {
         for (const auto &adapter : runtime->second) {
@@ -568,24 +598,14 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
             // across hundreds of adapter projections.  The adapter remains
             // stored in its compact source dtype; only this rank-sized branch
             // is promoted for the projection.
-            const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto input = mx::astype(x, rank_dtype);
-            auto down = mx::astype(adapter.down, rank_dtype);
-            auto up = mx::astype(adapter.up, rank_dtype);
-            auto low = mx::matmul(input, mx::transpose(down));
-            auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
-                         Tensor(adapter.scale, mx::float32);
+            auto low = runtime_lora_rank(x,adapter.down,0,x.shape(-1));
             if (adapter.output_start == 0 && adapter.output_end == output.shape(-1))
-                output = mx::astype(mx::astype(output, mx::float32) + delta,
-                                    output.dtype());
+                output = runtime_lora_add_b(low,adapter.up,0,adapter.up.shape(0),adapter.scale,output,0);
             else {
                 require(adapter.output_start >= 0 && adapter.output_end <= output.shape(-1) &&
                             adapter.output_start < adapter.output_end,
                         "invalid runtime LoRA output range: " + prefix);
-                auto middle = mx::astype(
-                    mx::astype(slice_axis(output, -1, adapter.output_start,
-                                          adapter.output_end), mx::float32) + delta,
-                    output.dtype());
+                auto middle = runtime_lora_add_b(low,adapter.up,0,adapter.up.shape(0),adapter.scale,output,adapter.output_start);
                 std::vector<Tensor> pieces;
                 if (adapter.output_start)
                     pieces.push_back(slice_axis(output, -1, 0, adapter.output_start));
@@ -597,8 +617,6 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
             }
         }
     }
-    if (has(prefix + ".bias"))
-        output = output + mx::astype(at(prefix + ".bias"), output.dtype());
     return output;
 }
 
@@ -607,7 +625,7 @@ std::vector<Tensor> Weights::project_many(
     require(!prefixes.empty(), "cannot project an empty prefix list");
     bool shared_convrot = true;
     for (const auto &prefix : prefixes) {
-        if (!convrot(prefix) || runtime_loras_.count(prefix)) {
+        if (!convrot(prefix)) {
             shared_convrot = false;
             break;
         }
@@ -654,6 +672,10 @@ std::vector<Tensor> Weights::project_many(
                            mx::transpose(dense)),
                 x.dtype());
         }
+        // LoRA consumes the ORIGINAL unrotated activation. Preserve each
+        // adapter's FP32 rank/delta and sequential output rounding, then the
+        // original projection bias. Only the frozen base shares H256.
+        output=add_runtime_projection_loras(x,std::move(output),prefix);
         if (has(prefix + ".bias"))
             output = output + mx::astype(at(prefix + ".bias"), output.dtype());
         outputs.push_back(std::move(output));
@@ -661,7 +683,7 @@ std::vector<Tensor> Weights::project_many(
     return outputs;
 }
 
-Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
+Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
                               int row_start, int row_end,
                               int col_start, int col_end,
                               bool add_bias) const {
@@ -672,7 +694,11 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
             "invalid sliced projection geometry: " + prefix);
 
     Tensor output = x;
-    if (quantized(prefix)) {
+    if (convrot(prefix)) {
+        // Base projection only: project_slice applies gate/up LoRA below;
+        // channel callers join full corrected hidden before ONE down-LoRA.
+        output=project_range(x,prefix,row_start,row_end,col_start,col_end);
+    } else if (quantized(prefix)) {
         const auto &all_scales = at(prefix + ".scales");
         // GGUF/MLX affine tensors store one scale per 32 logical input
         // values.  Derive the full logical width from the scale matrix,
@@ -699,9 +725,12 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
             biases = slice_axis(*biases, 1, col_start / geometry.group_size,
                                 col_end / geometry.group_size);
         }
-        output = mx::quantized_matmul(x, q, scales, biases, true,
-                                      geometry.group_size, geometry.bits,
-                                      "affine");
+        if(qwen_affine_shared_down_ && prefix.ends_with(".img_mlp.out") && x.ndim()==3 && x.shape(0)==1 && x.shape(1)>=32) {
+            require(has(prefix+".biases"),"Qwen shared packed down requires original affine planes");
+            output=affine_gpu::projection_shared(x,weight,all_scales,at(prefix+".biases"),geometry.bits,
+                row_start,row_end,col_start,col_end,64,64,64,x.dtype());
+        } else output = mx::quantized_matmul(x, q, scales, biases, true,
+                                            geometry.group_size, geometry.bits,"affine");
     } else {
         require(!convrot(prefix) && !nvfp4(prefix),
                 "sliced projection supports dense or affine MLX weights: " + prefix);
@@ -709,9 +738,111 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
         selected = slice_axis(selected, 1, col_start, col_end);
         output = mx::matmul(x, mx::transpose(selected));
     }
+    if (add_bias && has(prefix + ".bias"))
+        output = output + mx::astype(slice_axis(at(prefix + ".bias"), 0, row_start, row_end),output.dtype());
+    return output;
+}
+
+Tensor Weights::runtime_lora_low(const Tensor &x, const RuntimeLoRA &adapter,
+                                int col_start, int col_end,
+                                LoRAWorkspace *workspace) const {
+    const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+    if (workspace) {
+        for (const auto &entry : workspace->entries_) {
+            if (entry.owner == this && entry.input.id() == x.id() &&
+                entry.down.id() == adapter.down.id() &&
+                entry.column_start == col_start && entry.column_end == col_end &&
+                entry.rank_dtype == rank_dtype && entry.bf16_operands == runtime_lora_bf16_fp32_ranks_)
+                return entry.low;
+        }
+    }
+    auto low = runtime_lora_rank(x, adapter.down, col_start, col_end);
+    if (workspace)
+        workspace->entries_.push_back({this, x, adapter.down, low,
+                                       col_start, col_end, rank_dtype, runtime_lora_bf16_fp32_ranks_});
+    return low;
+}
+
+Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
+                              int row_start, int row_end, int col_start, int col_end, bool add_bias, LoRAWorkspace *workspace) const {
+    return project_slice_rank_impl(x,prefix,row_start,row_end,col_start,col_end,add_bias,nullptr,workspace);
+}
+Tensor Weights::apply_runtime_lora_slice(const Tensor &base, const Tensor &x,
+                                       const std::string &prefix,
+                                       int row_start, int row_end,
+                                       int col_start, int col_end, bool add_bias,
+                                       LoRAWorkspace *workspace) const {
+    const auto &weight = at(prefix + ".weight");
+    require(weight.ndim() == 2, "supplied-base LoRA requires matrix weights: " + prefix);
+    if (quantized(prefix))
+        require(at(prefix + ".scales").ndim() == 2,
+                "supplied-base LoRA requires matrix scales: " + prefix);
+    const int logical_input = quantized(prefix) ? at(prefix + ".scales").shape(1) * 32 :
+                                                weight.shape(1);
+    require(x.ndim() > 0 && row_start >= 0 && row_start < row_end &&
+                row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
+                col_end <= logical_input && x.shape(-1) == col_end - col_start,
+            "invalid supplied-base LoRA slice geometry: " + prefix);
+    auto expected_shape = x.shape();
+    expected_shape.back() = row_end - row_start;
+    require(base.shape() == expected_shape,
+            "supplied base projection shape does not match LoRA slice: " + prefix);
+    return project_slice_rank_impl(x,prefix,row_start,row_end,col_start,col_end,add_bias,nullptr,workspace,&base);
+}
+
+
+Tensor Weights::project_slice_with_ranks(const Tensor &x,const std::string &prefix,const std::vector<Tensor> &ranks,
+    int rs,int re,int cs,int ce,bool bias) const {
+    return project_slice_rank_impl(x,prefix,rs,re,cs,ce,bias,&ranks);
+}
+Tensor Weights::runtime_lora_rank(const Tensor &x,const Tensor &down,int cs,int ce) const {
+    require(!runtime_lora_bf16_fp32_ranks_ || !runtime_lora_fp16_,"BF16 operand/F32 ranks cannot use FP16 rank arithmetic");
+    require(down.ndim()==2 && cs>=0 && ce>cs && ce<=down.shape(1) && x.shape(-1)==ce-cs,
+            "runtime LoRA rank column/input geometry mismatch");
+    if(runtime_lora_bf16_fp32_ranks_ && x.dtype()==mx::bfloat16 && down.dtype()==mx::bfloat16 &&
+        x.ndim()==3 && x.shape(0)==1 && x.shape(1)>=32 && down.shape(0)>=64 && down.flags().row_contiguous)
+        return dense_gpu::projection_range(x,down,0,down.shape(0),cs,ce,16,true,64);
+    const auto dtype=runtime_lora_fp16_?mx::float16:mx::float32;
+    return mx::matmul(mx::astype(x,dtype),mx::transpose(mx::astype(slice_axis(down,1,cs,ce),dtype)));
+}
+bool Weights::runtime_lora_b_eligible(const Tensor &low,const Tensor &up) const {
+    require(!runtime_lora_b_epilogue_ || !runtime_lora_fp16_,"fused BF16 B epilogue cannot use FP16 A-ranks");
+    return runtime_lora_b_epilogue_ && low.ndim()==3 && low.shape(0)==1 && low.shape(1)>=128 &&
+        low.dtype()==mx::float32 && low.shape(2)>=64 && up.ndim()==2 && up.dtype()==mx::bfloat16 && up.flags().row_contiguous;
+}
+Tensor Weights::runtime_lora_scaled_b(const Tensor &low,const Tensor &up,int first,int last,float scale) const {
+    if(runtime_lora_b_eligible(low,up))
+        return dense_gpu::lora_b_epilogue(low,up,first,last,scale,mx::float32);
+    const auto dtype=runtime_lora_fp16_?mx::float16:mx::float32;
+    return mx::astype(mx::matmul(low,mx::transpose(mx::astype(slice_axis(up,0,first,last),dtype))),mx::float32)*Tensor(scale,mx::float32);
+}
+Tensor Weights::runtime_lora_add_b(const Tensor &low,const Tensor &up,int first,int last,float scale,const Tensor &base,int begin) const {
+    if(runtime_lora_b_eligible(low,up) && base.ndim()==3 && base.shape(0)==1 &&
+        base.shape(1)==low.shape(1) && base.flags().row_contiguous)
+        return dense_gpu::lora_b_epilogue(low,up,first,last,scale,base.dtype(),base,begin);
+    auto delta=runtime_lora_scaled_b(low,up,first,last,scale);
+    return mx::astype(mx::astype(slice_axis(base,-1,begin,begin+last-first),mx::float32)+delta,base.dtype());
+}
+std::vector<Tensor> Weights::lora_input_ranks(const Tensor &x,const std::string &prefix,int cs,int ce) const {
+    require(cs>=0 && ce>cs && x.shape(-1)==ce-cs,"invalid shared LoRA rank input geometry: "+prefix);
+    std::vector<Tensor> result;
+    auto found=runtime_loras_.find(prefix);
+    if(found==runtime_loras_.end())return result;
+    for(const auto &adapter:found->second) {
+        require(ce<=adapter.down.shape(1),"shared LoRA rank column range mismatch");
+        result.push_back(runtime_lora_rank(x,adapter.down,cs,ce));
+    }
+    return result;
+}
+Tensor Weights::project_slice_rank_impl(const Tensor &x,const std::string &prefix,
+    int row_start,int row_end,int col_start,int col_end,bool add_bias,const std::vector<Tensor> *ranks, LoRAWorkspace *workspace, const Tensor *base) const {
+    auto output = base ? *base : project_base_slice(x,prefix,row_start,row_end,col_start,col_end,false);
     auto runtime = runtime_loras_.find(prefix);
+    if(ranks)require(ranks->size()==(runtime==runtime_loras_.end()?0:runtime->second.size()),"shared projection rank adapter count mismatch");
+    size_t rank_index=0;
     if (runtime != runtime_loras_.end()) {
         for (const auto &adapter : runtime->second) {
+            const size_t index=rank_index++;
             const int first = std::max(row_start, adapter.output_start);
             const int last = std::min(row_end, adapter.output_end);
             if (first >= last) continue;
@@ -719,15 +850,12 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
             // fused gate/up adapter, intersect its global output row range
             // before selecting the corresponding low-rank B rows.
             const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
-            auto up = mx::astype(slice_axis(adapter.up, 0,
-                first - adapter.output_start, last - adapter.output_start), rank_dtype);
-            auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
-            auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
-                Tensor(adapter.scale, mx::float32);
+            auto low = ranks ? ranks->at(index) : runtime_lora_low(x,adapter,col_start,col_end,workspace);
+            auto expected=x.shape();expected.back()=adapter.down.shape(0);
+            require(low.shape()==expected && low.dtype()==rank_dtype,"shared projection rank shape/dtype mismatch");
             const int begin = first - row_start, end = last - row_start;
-            auto middle = mx::astype(mx::astype(slice_axis(output, -1, begin, end), mx::float32) + delta,
-                                     output.dtype());
+            auto middle = runtime_lora_add_b(low,adapter.up,first-adapter.output_start,last-adapter.output_start,
+                adapter.scale,output,begin);
             if (begin == 0 && end == row_end - row_start) output = std::move(middle);
             else {
                 std::vector<Tensor> pieces;
@@ -749,33 +877,56 @@ Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
 Tensor Weights::lora_delta_slice(const Tensor &x, const std::string &prefix,
                                  int row_start, int row_end,
                                  int col_start, int col_end,
-                                 std::optional<mx::Dtype> output_dtype) const {
+                                 std::optional<mx::Dtype> output_dtype, LoRAWorkspace *workspace) const {
+    return lora_delta_slice_rank_impl(&x,x.shape(),x.dtype(),prefix,row_start,row_end,col_start,col_end,output_dtype,nullptr,workspace);
+}
+Tensor Weights::lora_delta_slice_with_ranks(const Tensor &x,const std::string &prefix,const std::vector<Tensor> &ranks,
+    int rs,int re,int cs,int ce,std::optional<mx::Dtype> dtype) const {
+    return lora_delta_slice_rank_impl(&x,x.shape(),x.dtype(),prefix,rs,re,cs,ce,dtype,&ranks);
+}
+Tensor Weights::lora_delta_from_ranks(const mx::Shape &shape,mx::Dtype input_dtype,const std::string &prefix,
+    const std::vector<Tensor> &ranks,int rs,int re,int cs,int ce,std::optional<mx::Dtype> dtype) const {
+    return lora_delta_slice_rank_impl(nullptr,shape,input_dtype,prefix,rs,re,cs,ce,dtype,&ranks);
+}
+Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &input_shape,mx::Dtype input_dtype,
+    const std::string &prefix,int row_start,int row_end,
+    int col_start,int col_end,std::optional<mx::Dtype> output_dtype,const std::vector<Tensor> *ranks, LoRAWorkspace *workspace) const {
     const auto &weight = at(prefix + ".weight");
     require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
                 row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
-                x.shape(-1) == col_end - col_start,
+                !input_shape.empty() && input_shape.back() == col_end - col_start && (x || ranks),
             "invalid runtime LoRA delta slice geometry: " + prefix);
-    auto result_shape = x.shape();
+    auto result_shape = input_shape;
     result_shape.back() = row_end - row_start;
-    const auto destination_dtype = output_dtype.value_or(x.dtype());
+    const auto destination_dtype = output_dtype.value_or(input_dtype);
     // Most runtime adapters cover the full requested projection slice. Avoid
     // materializing and adding a full-sized FP32 zero tensor before their
     // low-rank result (notably the gate/up Core ML correction each block).
     std::optional<Tensor> result;
     auto runtime = runtime_loras_.find(prefix);
+    if(ranks)require(ranks->size()==(runtime==runtime_loras_.end()?0:runtime->second.size()),"shared delta rank adapter count mismatch");
     if (runtime == runtime_loras_.end()) return mx::zeros(result_shape, destination_dtype);
+    size_t contributors=0;
+    for(const auto &adapter:runtime->second)
+        if(std::max(row_start,adapter.output_start)<std::min(row_end,adapter.output_end))++contributors;
+    size_t rank_index=0;
     for (const auto &adapter : runtime->second) {
+        const size_t index=rank_index++;
         const int first = std::max(row_start, adapter.output_start);
         const int last = std::min(row_end, adapter.output_end);
         if (first >= last) continue;
         const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-        auto down = mx::astype(slice_axis(adapter.down, 1, col_start, col_end), rank_dtype);
-        auto up = mx::astype(slice_axis(adapter.up, 0,
-            first - adapter.output_start, last - adapter.output_start), rank_dtype);
-        auto low = mx::matmul(mx::astype(x, rank_dtype), mx::transpose(down));
-        auto delta = mx::astype(mx::matmul(low, mx::transpose(up)), mx::float32) *
-            Tensor(adapter.scale, mx::float32);
+        require(col_end<=adapter.down.shape(1),"shared delta rank column range mismatch");
+        auto low = ranks ? ranks->at(index) : runtime_lora_low(*x,adapter,col_start,col_end,workspace);
+        auto expected=input_shape;expected.back()=adapter.down.shape(0);
+        require(low.shape()==expected && low.dtype()==rank_dtype,"shared delta rank shape/dtype mismatch");
         const int begin = first - row_start, end = last - row_start;
+        // Exactly one intersecting adapter can scale/cast directly. Stacked
+        // deltas still aggregate in F32 and round ONCE after the sum.
+        if(contributors==1 && begin==0 && end==row_end-row_start && runtime_lora_b_eligible(low,adapter.up))
+            return dense_gpu::lora_b_epilogue(low,adapter.up,first-adapter.output_start,last-adapter.output_start,
+                adapter.scale,destination_dtype);
+        auto delta=runtime_lora_scaled_b(low,adapter.up,first-adapter.output_start,last-adapter.output_start,adapter.scale);
         if (begin || end != row_end - row_start) {
             std::vector<Tensor> pieces;
             if (begin) {
@@ -837,6 +988,53 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
     auto dense = mx::astype(q, mx::float32) * mx::astype(scale, mx::float32);
     return mx::astype(mx::matmul(mx::astype(rotated, mx::float32),
                                  mx::transpose(dense)), x.dtype());
+}
+
+Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
+    require(convrot(prefix) && at(prefix+".weight").dtype()==mx::uint32 && !has_runtime_loras(),
+            "F32 ConvRot partial requires packed base-only source: "+prefix);
+    if(affine_bf16_fp32_partial_) {
+        require(x.dtype()==mx::bfloat16 && at(prefix+".scales").dtype()==mx::bfloat16 &&
+                at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");
+        return mx::astype(project_range(x,prefix,rb,re,cb,ce),mx::float32);
+    }
+    if(affine_fp32_mpp_)return affine_gpu::projection_shared(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
+        at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,64,64,64,mx::float32);
+    return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),at(prefix+".weight"),
+        at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
+}
+
+Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
+    const auto &weight=at(prefix+".weight");
+    if(convrot(prefix)) {
+        require(weight.dtype()==mx::uint32,"F32 ConvRot partial requires original packed source: "+prefix);
+        if(affine_bf16_fp32_partial_) {
+            require(x.dtype()==mx::bfloat16 && at(prefix+".scales").dtype()==mx::bfloat16 &&
+                    at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");
+            return mx::astype(project_base_slice(x,prefix,rb,re,cb,ce,false),mx::float32);
+        }
+        if(affine_fp32_mpp_)return affine_gpu::projection_shared(convrot_rotate(x,metal_convrot_),weight,
+            at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce,64,64,64,mx::float32);
+        return affine_gpu::projection_fp32(convrot_rotate(x,metal_convrot_),weight,
+            at(prefix+".scales"),at(prefix+".biases"),8,rb,re,cb,ce);
+    }
+    require(!quantized(prefix) && !nvfp4(prefix),"F32 base partial requires dense or packed ConvRot source: "+prefix);
+    return dense_gpu::projection_range(x,weight,rb,re,cb,ce,32,true);
+}
+
+Tensor Weights::embedding_rows(const Tensor &ids,const std::string &prefix) const {
+    require(ids.ndim()==1 && ids.dtype()==mx::int32 && ids.size()>0,
+            "embedding gather requires nonempty rank1 int32 IDs");
+    const auto &weight=at(prefix+".weight");
+    require(weight.ndim()==2 && !convrot(prefix) && !nvfp4(prefix),
+            "embedding gather requires dense or affine rank2 source");
+    if(!quantized(prefix))return mx::take(weight,ids,0);
+    const auto &scales=at(prefix+".scales");
+    const auto geometry=quantized_geometry(weight,scales,scales.shape(1)*32);
+    std::optional<Tensor> biases;
+    if(has(prefix+".biases"))biases=mx::take(at(prefix+".biases"),ids,0);
+    return mx::dequantize(mx::take(weight,ids,0),mx::take(scales,ids,0),biases,
+        geometry.group_size,geometry.bits,"affine",std::nullopt,mx::float16);
 }
 
 void Weights::dequantize(const std::vector<std::string> &prefixes) {
@@ -920,6 +1118,27 @@ void Weights::clear() {
     values_.clear();
     runtime_loras_.clear();
     lease_readers_.clear();
+    source_leases_.clear();
+    lora_source_count_ = 0;
+    native_lora_rejection_.clear();
+}
+
+Weights::RuntimeLoRASnapshot Weights::runtime_lora_snapshot() const {
+    RuntimeLoRASnapshot result;
+    result.native_metadata_compatible = native_lora_rejection_.empty();
+    result.native_rejection_reason = native_lora_rejection_;
+    result.fp16_rank_math = runtime_lora_fp16_;
+    for (const auto& [prefix, terms] : runtime_loras_) {
+        ResolvedLoRABinding binding{prefix,{}};
+        for (const auto& term : terms)
+            binding.ordered_terms.push_back({term.down,term.up,term.down.dtype(),term.up.dtype(),
+                term.scale,term.output_start,term.output_end,term.source_adapter_ordinal,
+                bool(term.source_lease),term.source_logical_id,term.source_role,term.source_lease,term.source_strength});
+        result.bindings.push_back(std::move(binding));
+    }
+    std::sort(result.bindings.begin(),result.bindings.end(),
+        [](const auto& a,const auto& b) { return a.prefix<b.prefix; });
+    return result;
 }
 
 size_t Weights::bytes() const {
@@ -945,41 +1164,98 @@ void Weights::materialize() {
 }
 size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::string &role,
                             const Event &event, std::atomic<bool> &cancelled,
-                            bool inference_time) try {
+                            bool inference_time, bool strict_targets) {
+    return apply_loras_impl(adapters,role,event,cancelled,inference_time,{},{},strict_targets);
+}
+size_t Weights::apply_loras_leased(const std::vector<LoRAAsset> &adapters,const std::string &role,
+    const Event &event,std::atomic<bool> &cancelled,bool inference_time,
+    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids, bool strict_targets) {
+    require(lease && lease->has_verified_content(),"LoRA lease requires native verified content");
+    return apply_loras_impl(adapters,role,event,cancelled,inference_time,lease,ids,strict_targets);
+}
+size_t Weights::apply_loras_lease(const std::shared_ptr<const streaming::SourceLease>& lease,
+    const std::vector<std::string>& ids,const std::vector<LoRAAsset>& adapters,
+    const std::string& role,const Event& event,std::atomic<bool>& cancelled,
+    bool inference_time,bool strict_targets) {
+    return apply_loras_leased(adapters,role,event,cancelled,inference_time,lease,ids,strict_targets);
+}
+size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const std::string &role,
+    const Event &event,std::atomic<bool> &cancelled,bool inference_time,
+    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids, bool strict_targets) try {
+    require(!lease || ids.size()==adapters.size(),"LoRA lease logical ids must match adapters");
+    if(lease)lease->revalidate_after_drain();
     size_t applied = 0;
     for (size_t index = 0; index < adapters.size(); ++index) {
         const auto &adapter = adapters[index];
         if (adapter.role != role) continue;
-        require(std::filesystem::is_regular_file(adapter.path), "LoRA file missing: " + adapter.path);
         checkpoint(cancelled); event("load_lora", int(index), int(adapters.size()));
-        auto data = mx::load_safetensors(adapter.path);
+        std::shared_ptr<mlx::core::io::Reader> reader;
+        if(lease) {
+            require(lease->file(ids.at(index)).canonical_target_path==std::filesystem::canonical(adapter.path),
+                    "LoRA lease does not bind the requested adapter");
+            auto duplicate=lease->duplicate_fd(ids.at(index));
+            reader=std::make_shared<MlxLeaseFdReader>(MlxOwnedFd(duplicate.release()),ids.at(index));
+            // dup shares the header cursor with the lease and earlier readers.
+            // Header parsing is owner-thread serial; lazy tensor reads use
+            // this reader's pread overload and do not share cursor state.
+            reader->seek(0,std::ios_base::beg);
+        }
+        auto data=reader?mx::load_safetensors(reader):mx::load_safetensors(adapter.path);
+        if(reader)lease_readers_.push_back(reader);
+        const auto metadata=lora_metadata::inspect(data.second);
         std::map<std::string, LoRAPair> pairs;
         for (auto &[raw, value] : data.first) {
             auto stem = raw;
+            auto assign = [&](std::optional<Tensor>& destination) {
+                if (destination && native_lora_rejection_.empty())
+                    native_lora_rejection_="ambiguous LoRA factor/alpha suffix: "+stem;
+                destination=value; // Preserve the legacy resolver's behavior.
+            };
             if (remove_suffix(stem, ".lora_A.default.weight") || remove_suffix(stem, ".lora_A.weight") ||
-                remove_suffix(stem, ".lora_down.weight")) pairs[stem].down = value;
+                remove_suffix(stem, ".lora_down.weight")) assign(pairs[stem].down);
             else if (remove_suffix(stem, ".lora_B.default.weight") || remove_suffix(stem, ".lora_B.weight") ||
-                     remove_suffix(stem, ".lora_up.weight")) pairs[stem].up = value;
-            else if (remove_suffix(stem, ".alpha") || remove_suffix(stem, ".lora_alpha")) pairs[stem].alpha = value;
+                     remove_suffix(stem, ".lora_up.weight")) assign(pairs[stem].up);
+            else if (remove_suffix(stem, ".alpha") || remove_suffix(stem, ".lora_alpha")) assign(pairs[stem].alpha);
+            else {
+                if (native_lora_rejection_.empty()) native_lora_rejection_="unsupported LoRA tensor: "+raw;
+                if (strict_targets) throw std::invalid_argument("unsupported LoRA tensor: " + raw);
+            }
         }
         size_t adapter_applied = 0;
         for (auto &[stem, pair] : pairs) {
-            if (!pair.down && !pair.up) continue;
+            if (!pair.down && !pair.up) {
+                if (native_lora_rejection_.empty()) native_lora_rejection_="orphan LoRA alpha: "+stem;
+                require(!strict_targets, "orphan LoRA alpha: " + stem);
+                continue;
+            }
             require(pair.down && pair.up, "incomplete LoRA pair: " + stem);
             const auto &down = *pair.down, &up = *pair.up;
             require(down.ndim() == 2 && up.ndim() == 2 && down.shape(0) == up.shape(1),
                     "invalid LoRA rank geometry: " + stem);
+            if (strict_targets)
+                require(down.shape(0) > 0 && down.shape(1) > 0 && up.shape(0) > 0,
+                        "LoRA rank and dimensions must be positive: " + stem);
             float scale = adapter.strength;
+            std::optional<float> tensor_alpha;
             if (pair.alpha) {
                 require(pair.alpha->size() == 1, "LoRA alpha must be scalar: " + stem);
                 // item<T>() reads storage as T; it does not convert BF16,
                 // FP16 or integer scalar metadata to a floating-point value.
                 const auto alpha = mx::astype(*pair.alpha, mx::float32).item<float>();
                 require(std::isfinite(alpha), "LoRA alpha must be finite: " + stem);
+                tensor_alpha = alpha;
                 scale *= alpha / float(down.shape(0));
             }
             require(std::isfinite(scale), "LoRA effective scale must be finite: " + stem);
+            if (native_lora_rejection_.empty())
+                native_lora_rejection_=metadata.rejection_for(down.shape(0),tensor_alpha);
+            auto bind_runtime = [&](const std::string& prefix,const Tensor& selected,
+                                    int first,int last) {
+                runtime_loras_[prefix].push_back({down,selected,scale,first,last,
+                    lora_source_count_+index,lease,lease?ids[index]:std::string{},adapter.role,adapter.strength});
+            };
             const auto targets = lora_targets(stem);
+            const auto applied_before_pair = adapter_applied;
             auto resolve_target_key = [&](const std::string &target) {
                 auto key = target.ends_with(".weight") ? target : target + ".weight";
                 // FLUX owns a real `to_out.0.weight`; Z-Image's Comfy layout
@@ -995,6 +1271,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
             for (const auto &target : targets)
                 ++target_key_counts[resolve_target_key(target)];
             int offset = 0;
+            int64_t consumed_output_rows = 0;
             for (const auto &target : targets) {
                 auto key = resolve_target_key(target);
                 auto found = values_.find(key);
@@ -1020,6 +1297,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                                         ? up
                                         : slice_axis(up, 0, offset, offset + rows);
                     offset += rows;
+                    consumed_output_rows += rows;
                     if (inference_time) {
                         // If multiple logical targets resolve to one fused
                         // base projection, preserve the adapter's row slice.
@@ -1028,8 +1306,7 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                         const bool shared_projection = target_key_counts[key] > 1;
                         const int output_start = shared_projection ? offset - rows : 0;
                         const int output_end = shared_projection ? offset : rows;
-                        runtime_loras_[prefix].push_back(
-                            {down, selected, scale, output_start, output_end});
+                        bind_runtime(prefix,selected,output_start,output_end);
                     } else {
                         auto delta = mx::matmul(mx::astype(selected, mx::float32),
                                                 mx::astype(down, mx::float32)) *
@@ -1057,7 +1334,8 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                                     base.shape(1) == down.shape(1),
                                 "Qwen21 fused gate/up LoRA geometry does not match " + target);
                         int start = qwen_mlp[2] == "gate_layer" ? 0 : up.shape(0);
-                        runtime_loras_[prefix].push_back({down, up, scale, start, start + up.shape(0)});
+                        bind_runtime(prefix,up,start,start+up.shape(0));
+                        consumed_output_rows += up.shape(0);
                         ++adapter_applied;
                         continue;
                     }
@@ -1087,11 +1365,11 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                     int rows = base.shape(0) / 3;
                     require(up.shape(0) == rows,
                             "Z-Image LoRA output does not match " + target);
+                    consumed_output_rows += rows;
                     char which = std::string(projection[2])[0];
                     int begin = which == 'q' ? 0 : (which == 'k' ? rows : 2 * rows);
                     if (inference_time) {
-                        runtime_loras_[fused_prefix].push_back({down, up, scale, begin,
-                                                                 begin + rows});
+                        bind_runtime(fused_prefix,up,begin,begin+rows);
                         ++adapter_applied;
                         continue;
                     }
@@ -1111,10 +1389,28 @@ size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::s
                     ++adapter_applied;
                 }
             }
+            if (adapter_applied-applied_before_pair!=targets.size() || consumed_output_rows!=up.shape(0))
+                if (native_lora_rejection_.empty()) native_lora_rejection_="LoRA target/output range was not fully consumed: "+stem;
+            if (strict_targets) {
+                require(adapter_applied - applied_before_pair == targets.size(),
+                        "LoRA target did not match all " + role + " weights: " + stem);
+                require(consumed_output_rows == up.shape(0),
+                        "LoRA output rows do not exactly match target weights: " + stem);
+            }
         }
         require(adapter_applied > 0, "LoRA did not match any " + role + " weights: " + adapter.path);
         applied += adapter_applied; event("load_lora", int(index + 1), int(adapters.size()));
     }
+    if(lease) {
+        // Ensure no path-based/lazy adapter read can escape the verification
+        // scope. Only A/B sources are materialized, never dense merged weights.
+        std::vector<Tensor> sources;
+        if(inference_time)for(const auto &[prefix,entries]:runtime_loras_)
+            for(const auto &entry:entries){sources.push_back(entry.down);sources.push_back(entry.up);}
+        if(!sources.empty())mx::eval(sources);
+        lease->revalidate_after_drain();checkpoint(cancelled);
+    }
+    lora_source_count_ += adapters.size();
     return applied;
 } catch (...) {
     // LoRA deltas replace weight entries as they are materialized.  If a

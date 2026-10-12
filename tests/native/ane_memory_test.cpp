@@ -9,6 +9,14 @@ int main() {
     constexpr uint64_t GiB = uint64_t(1) << 30;
     constexpr uint64_t MiB = uint64_t(1) << 20;
     constexpr auto max = std::numeric_limits<uint64_t>::max();
+    assert(!plan_packed_conversion(0, 512, 16));
+    assert(!plan_packed_conversion(max, 512, 16));
+    assert(!plan_packed_conversion(512, max, 16));
+    assert(plan_packed_conversion(3, 512, 16)->workers == 1);
+    assert(plan_packed_conversion(512, 256, 0)->workers == 1);
+    const auto conversion = plan_packed_conversion(10240, 3840, 128);
+    assert(conversion && conversion->groups == 640 && conversion->workers == 8);
+    assert(conversion->scratch_upper_bytes == 16384);
     assert(free_page_bytes(64, 16384) == MiB);
     assert(!free_page_bytes(1, 0) && !free_page_bytes(max, 16384));
     const MemoryLimits limits;

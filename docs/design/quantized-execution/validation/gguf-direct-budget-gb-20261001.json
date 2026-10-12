@@ -1,0 +1,178 @@
+{
+  "schema": "tc-gguf-memory-budget-screen-v1",
+  "production_qualified": false,
+  "scope": "fastest observed same-source packed/bounded candidate that fits sampled footprint; NOT enforced whole-request caps or true small-device qualification",
+  "whole_request_memory": "unknown",
+  "formal_performance": "not_run",
+  "identity": {
+    "library_sha256": "3b25a87d8c5f68df98b68c12b88791fbd29e678517432721d8b2ba046ccffda2",
+    "loaded_libraries": {
+      "libturbocider.dylib": {
+        "sha256": "3b25a87d8c5f68df98b68c12b88791fbd29e678517432721d8b2ba046ccffda2"
+      },
+      "libmlx.dylib": {
+        "sha256": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51"
+      },
+      "libjaccl.dylib": {
+        "sha256": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+      }
+    },
+    "dit_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+    "encoder_sha256": "8c2f07f26af9747e41988551106f149b03eb9b5cb6df636027b6bf6278473300",
+    "encoder_layout_digest": "a2fe8a6aece115b9462fd09159b6811faeadb7bb13f70c40ec18ce3abd14d47d",
+    "encoder_profile": "qwen3-z-source-mixed-v1",
+    "encoder_controls": {
+      "TURBOCIDER_QWEN3_GGUF_PREFETCH": "2",
+      "TURBOCIDER_QWEN3_GGUF_SOURCE_RESIDENCY": "packed_streamed",
+      "TURBOCIDER_QWEN3_GGUF_WEIGHT_LIMIT_BYTES": "1073741824"
+    },
+    "prompt_cache_policy": "miss",
+    "math": {
+      "schema_version": 1,
+      "enabled": true,
+      "precision_profile": "z-mlx-compat-affine-v1"
+    },
+    "workload": {
+      "schema_version": 2,
+      "model": "z-image-turbo-gguf",
+      "operation": "image.generate",
+      "inputs": [
+        {
+          "kind": "text",
+          "role": "prompt",
+          "text": "A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture."
+        }
+      ],
+      "sampling": {
+        "seed": 42,
+        "steps": 4
+      },
+      "parameters": {
+        "dynamic_text": true
+      }
+    },
+    "outputs": [
+      {
+        "kind": "image",
+        "width": 512,
+        "height": 512,
+        "audio": false
+      }
+    ],
+    "execution": {
+      "policy": "gpu"
+    },
+    "png_sha256": "768bafac297cec9484b9a7a1352a61d8e75905672ecb46ab4b2e42bad79e96d8"
+  },
+  "buffer_percent": 10,
+  "budget_unit": "GB",
+  "candidates": {
+    "native_packed:cpu_direct": {
+      "timings_seconds": [
+        8.987047000002349,
+        9.0512966660026,
+        9.071569332998479,
+        9.08283908298472
+      ],
+      "observed_peak_bytes": 9562298752,
+      "memory_sample_max_gap_seconds": 0.015806499985046685,
+      "managed_weights_peak_bytes": 7565989120,
+      "memory_runs": 1,
+      "sampling_inconclusive": false,
+      "swap_observed": false,
+      "consumer_revision": "z-serial-refiners-release-before-vae-v1",
+      "layout_digest": "341b10530bdda02d00b09c248377eab7d3c364f8cf0d49a3623587630de35ec5",
+      "warm_median_seconds": 9.06143299950054
+    },
+    "packed_streamed:p1": {
+      "timings_seconds": [
+        10.505794750002678,
+        10.563056332990527,
+        10.721573874994647,
+        10.702962957991986
+      ],
+      "observed_peak_bytes": 3834529016,
+      "memory_sample_max_gap_seconds": 0.015308542002458125,
+      "managed_weights_peak_bytes": 606845952,
+      "memory_runs": 1,
+      "sampling_inconclusive": false,
+      "swap_observed": false,
+      "layout_digest": "d0c96f139cb4f05ee0f233a2bddbf318171a18ef651094dfbb67042de661da87",
+      "warm_median_seconds": 10.633009645491256
+    }
+  },
+  "budgets": [
+    {
+      "budget_value": 6,
+      "budget_unit": "GB",
+      "budget_gb": 6,
+      "limit_bytes": 6000000000,
+      "screen_available_bytes": 5400000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 8,
+      "budget_unit": "GB",
+      "budget_gb": 8,
+      "limit_bytes": 8000000000,
+      "screen_available_bytes": 7200000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 10,
+      "budget_unit": "GB",
+      "budget_gb": 10,
+      "limit_bytes": 10000000000,
+      "screen_available_bytes": 9000000000,
+      "observed_fitting_candidates": [
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "packed_streamed:p1",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    },
+    {
+      "budget_value": 16,
+      "budget_unit": "GB",
+      "budget_gb": 16,
+      "limit_bytes": 16000000000,
+      "screen_available_bytes": 14400000000,
+      "observed_fitting_candidates": [
+        "native_packed:cpu_direct",
+        "packed_streamed:p1"
+      ],
+      "fastest_observed_candidate": "native_packed:cpu_direct",
+      "status": "observed_fit_only",
+      "bounded_certified": false
+    }
+  ],
+  "raw_reports": [
+    {
+      "id": "final-q8-direct-timing",
+      "sha256": "c62074bfe794bfc67e6cc3b08ae3ee2756ad7cc36c9b5e2c4333b09d6c3c0009"
+    },
+    {
+      "id": "final-q8-stream-timing",
+      "sha256": "8dc86dfedf47b6b4f7b8d905bb18c2d23832a3580084952786ca203bf6bf2b34"
+    },
+    {
+      "id": "final-q8-direct-memory",
+      "sha256": "a490b8e11d9de8b350247b77fee78b8b9a6e20de00c665102ce7108e1e6984c9"
+    },
+    {
+      "id": "final-q8-stream-memory",
+      "sha256": "f3d8517b98774115c0ddcb1ed206cbdd18d27a9f91b90f285e986e2f5830eea0"
+    }
+  ],
+  "verifier_sha256": "e53749a24bb61aabac8af85d007f3f9cf5829edc08e4a5e0a96fd0c5f4e7cab8"
+}

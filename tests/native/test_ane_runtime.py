@@ -5,6 +5,7 @@ probe executable are scoped to this test and removed on exit.
 """
 
 import importlib.util
+import hashlib
 import json
 import math
 import os
@@ -18,10 +19,113 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+NATIVE_LIBRARY_DIR = ROOT / Path(os.environ.get("TURBOCIDER_NATIVE_LIBRARY_DIR", "build/native"))
+HAS_NATIVE_LIBRARY = (NATIVE_LIBRARY_DIR / "libturbocider.dylib").is_file()
 SPEC = importlib.util.spec_from_file_location("runtime_ane_export", ROOT / "tools/coreml/export_runtime_ane.py")
 EXPORT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EXPORT)
 HAS_COREML = importlib.util.find_spec("coremltools") is not None
+
+
+@unittest.skipUnless(sys.platform == "darwin" and HAS_COREML and
+                     os.environ.get("TURBOCIDER_TEST_RUNTIME_ANE") == "1",
+                     "set TURBOCIDER_TEST_RUNTIME_ANE=1 on macOS for tiny Prepared lifecycle checks")
+class PreparedGraphIntegrationTests(unittest.TestCase):
+    """One tiny CPU-only graph; no MLX/Metal work or real checkpoints."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.scratch = tempfile.TemporaryDirectory(prefix="tc-prepared-graph-test-")
+        cls.addClassCleanup(cls.scratch.cleanup)
+        cls.root = Path(cls.scratch.name)
+        cls.report_root = Path(os.environ.get("TURBOCIDER_PREPARED_TEST_REPORT_DIR",
+                                             str(cls.root / "evidence")))
+        cls.report_root.mkdir(parents=True, exist_ok=True)
+        sys.path.insert(0, str(ROOT / "tools/validation"))
+        from runtime_ane_memory import run_owned
+        cls.run_owned = staticmethod(run_owned)
+        env = {**os.environ, "TURBOCIDER_NATIVE_OUT": str(cls.root / "build")}
+        with (cls.report_root / "build.stdout.log").open("w") as stdout, \
+                (cls.report_root / "build.stderr.log").open("w") as stderr:
+            built = run_owned(["bash", "tools/native/build_ane_runtime_probe.sh"],
+                              cwd=ROOT, env=env, stdout=stdout, stderr=stderr, timeout=120)
+        if built.returncode:
+            raise RuntimeError(f"focused Prepared probe build failed; see {cls.report_root}")
+        cls.probe = cls.root / "build/ane-runtime-probe"
+
+    def test_prepared_ownership_abi_budget_and_synchronous_equivalence(self):
+        sources = ("native/backends/ane_runtime.hpp", "native/backends/ane_runtime.mm",
+                   "native/backends/ane_artifact_lease.hpp", "tools/native/ane_runtime_probe.cpp",
+                   "tools/coreml/export_runtime_ane.py", "tests/native/test_ane_runtime.py")
+        hashes = lambda: {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                          for name in sources}
+        report = {"passed": False, "scope": "tiny 32x64x96 CPU-only Core ML; no MLX/Metal",
+                  "source_sha256_before": hashes(),
+                  "probe_sha256": hashlib.sha256(self.probe.read_bytes()).hexdigest()}
+        fixture_root = None
+        try:
+            with tempfile.TemporaryDirectory(prefix="fixture-", dir=self.root) as fixture:
+                fixture_root = Path(fixture)
+                compiler_tmp = fixture_root / "compiler-temp"
+                compiler_tmp.mkdir(mode=0o700)
+                private_tmp = fixture_root / "lease-temp"
+                private_tmp.mkdir(mode=0o700)
+                directory = fixture_root / "graph"
+                command = [sys.executable, str(ROOT / "tools/coreml/export_runtime_ane.py"),
+                           "--kind", "swiglu", "--rows", "32", "--hidden", "64",
+                           "--width", "96", "--tile-k", "33", "--tile-n", "47",
+                           "--lora-inputs", "--output", str(directory)]
+                with (self.report_root / "export.stdout.log").open("w") as stdout, \
+                        (self.report_root / "export.stderr.log").open("w") as stderr:
+                    exported = self.run_owned(command, cwd=ROOT,
+                        env={**os.environ, "TMPDIR": str(compiler_tmp)},
+                        stdout=stdout, stderr=stderr, timeout=120)
+                self.assertEqual(exported.returncode, 0, "tiny export failed; inspect retained export logs")
+                manifest = directory / "manifest.json"
+                metadata = json.loads(manifest.read_text())
+                self.assertEqual((metadata["rows"], metadata["hidden"], metadata["width"]), (32, 64, 96))
+                self.assertEqual(metadata["graph_version"], 2)
+                # Keep the artifact receipt valid and logical FFN geometry
+                # unchanged; only the declared row ABI disagrees with MLModel.
+                bad_abi = directory / "bad-abi.json"
+                bad_abi.write_text(json.dumps({**metadata, "rows": 31}))
+                report["manifest_sha256"] = hashlib.sha256(manifest.read_bytes()).hexdigest()
+                command = [str(self.probe), str(manifest), "prepared-lifecycle-self-test", str(bad_abi)]
+                with (self.report_root / "probe.stdout.log").open("w") as stdout, \
+                        (self.report_root / "probe.stderr.log").open("w") as stderr:
+                    result = self.run_owned(command, cwd=ROOT,
+                        env={**os.environ, "TMPDIR": str(private_tmp)},
+                        stdout=stdout, stderr=stderr, timeout=60)
+                report["exit_code"] = result.returncode
+                report["private_leases_after_exit"] = sorted(
+                    path.name for path in private_tmp.glob("turbocider-runtime-ane-*"))
+                self.assertEqual(result.returncode, 0, "Prepared lifecycle probe failed; inspect retained probe logs")
+                data = json.loads((self.report_root / "probe.stdout.log").read_text())
+                report["probe"] = data
+                for key in ("passed", "cpu_only", "unbound_cleanup", "move_cleanup",
+                            "bind_budget_rejected", "abi_rejected", "source_move_survived",
+                            "same_output_bits", "same_snapshot_after_bind"):
+                    self.assertIs(data[key], True, key)
+                self.assertEqual(data["leases_after_destroy"], 0)
+                self.assertEqual(report["private_leases_after_exit"], [])
+                self.assertGreater(data["slot_bytes"], 0)
+                self.assertGreaterEqual(data["estimated_bytes"], data["slot_bytes"])
+                for name in ("synchronous_timings", "prepared_timings"):
+                    times = data[name]
+                    self.assertTrue(all(type(value) in (int, float) and math.isfinite(value) and value >= 0
+                                        for value in times.values()), name)
+                    self.assertAlmostEqual(times["load"], times["artifact"] + times["model_load"] + times["bind"], places=12)
+                self.assertFalse((directory / "graph.mlmodelc").exists())
+                self.assertTrue((directory / "graph.moved/model.mil").is_file())
+                self.assertEqual(hashes(), report["source_sha256_before"], "sources changed during the probe")
+            report["passed"] = True
+        except BaseException as error:
+            report["error"] = f"{type(error).__name__}: {error}"
+            raise
+        finally:
+            report["fixtures_removed"] = fixture_root is not None and not fixture_root.exists()
+            report["source_sha256_after"] = hashes()
+            (self.report_root / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 
 
 @unittest.skipUnless(HAS_COREML, "coremltools not installed")
@@ -62,17 +166,25 @@ class RuntimeIntegrationTests(unittest.TestCase):
         cls.scratch = tempfile.TemporaryDirectory(prefix="tc-runtime-ane-test-")
         cls.addClassCleanup(cls.scratch.cleanup)
         cls.root = Path(cls.scratch.name)
-        env = {**os.environ, "TURBOCIDER_NATIVE_OUT": str(cls.root / "build")}
+        env = {**os.environ, "TURBOCIDER_NATIVE_OUT": str(cls.root / "build"),
+               "TURBOCIDER_NATIVE_LIBRARY_DIR": str(NATIVE_LIBRARY_DIR)}
         subprocess.run(["bash", "tools/native/build_ane_runtime_probe.sh"], cwd=ROOT, env=env,
                        check=True, capture_output=True, text=True, timeout=120)
         cls.probe = cls.root / "build/ane-runtime-probe"
-        if (ROOT / "build/native/libturbocider.dylib").is_file():
+        if HAS_NATIVE_LIBRARY:
             subprocess.run(["bash", "tools/native/build_ane_ffn_test.sh"], cwd=ROOT, env=env,
                            check=True, capture_output=True, text=True, timeout=120)
 
     def run_probe(self, manifest, policy="ne"):
         return subprocess.run([str(self.probe), str(manifest), "2", "97", policy],
                               cwd=ROOT, capture_output=True, text=True, timeout=120)
+
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY, "build native runtime for receipt serialization")
+    def test_runtime_receipts_cover_w8a8_and_fp16_without_precision_coupling(self):
+        result = subprocess.run([str(self.root / "build/ane-runtime-receipt-test")],
+                                cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS runtime receipt", result.stdout)
 
     def assert_probe_samples(self, data, chunks, repeats=2):
         self.assertEqual(data["warmup_iterations"], 2)
@@ -103,7 +215,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
                                     sum(sample[key] for key in (
                                         "input_seconds", "predict_seconds", "output_seconds")))
 
-    @unittest.skipUnless((ROOT / "build/native/libturbocider.dylib").is_file(),
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY,
                          "build native runtime for model-facing fallback/cancellation tests")
     def test_model_wrapper_recomputes_failed_tail_and_drains_cancellation(self):
         directory = self.root / "model-wrapper"
@@ -118,6 +230,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("GPU tail fallback", result.stdout)
         self.assertIn("PASS Q4/Q8 staging vs MLX dequantize", result.stdout)
+        self.assertIn("PASS raw GGUF FFN source",result.stdout)
         self.assertIn("PASS runtime LoRA activation corrections", result.stdout)
         self.assertIn("PASS runtime LoRA readiness: lazy upstream input", result.stdout)
         self.assertIn("PASS runtime base v2: validation-only hidden", result.stdout)
@@ -126,11 +239,12 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertIn("PASS LoRA alpha: F32/BF16/F16/integer", result.stdout)
         self.assertIn("PASS output lifetime: BF16/FP16/FP32", result.stdout)
         self.assertIn("PASS async head join: base/LoRA", result.stdout)
+        self.assertIn("PASS fixed async row plan", result.stdout)
         self.assertIn("PASS request scheduler isolation: base/A/same-A/B/base", result.stdout)
         self.assertIn("PASS resident memory pressure: graph release and complete GPU result", result.stdout)
         print(result.stdout.strip())
 
-    @unittest.skipUnless((ROOT / "build/native/libturbocider.dylib").is_file(),
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY,
                          "build native runtime for Z-Image padding geometry")
     def test_z_gguf_padding_singleton_and_unquantized_contract(self):
         result = subprocess.run([str(self.root / "build/z-image-padding-test")],
@@ -138,7 +252,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PASS Z-Image GGUF padding", result.stdout)
 
-    @unittest.skipUnless((ROOT / "build/native/libturbocider.dylib").is_file(),
+    @unittest.skipUnless(HAS_NATIVE_LIBRARY,
                          "build native runtime for compiled Qwen split switching")
     def test_qwen_compiled_full_split_variants(self):
         result = subprocess.run([str(self.root / "build/qwen21-runtime-split-test")],

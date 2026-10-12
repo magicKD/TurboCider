@@ -3,6 +3,7 @@
 #include <mlx/mlx.h>
 #include <mlx/fast.h>
 #include <stdexcept>
+#include "../../../backends/dense_gpu_projection.hpp"
 
 namespace tc::z_metal {
 namespace mx = mlx::core;
@@ -44,5 +45,12 @@ inline mx::array projection(const mx::array &x, const mx::array &w) {
                   {((n+bn-1)/bn)*128,(m+bm-1)/bm,1}, {128,1,1},
                   {{"T",x.dtype()},{"M",m},{"N",n},{"K",k},{"BM",bm},{"BN",bn}},
                   {}, false, {})[0];
+}
+// Logical projection range over the ORIGINAL dense [out, physical_in]
+// tensor. Keep physical leading dimension for down columns; never compact W.
+inline mx::array projection_range(const mx::array &x, const mx::array &w,
+                                  int row_begin, int row_end, int col_begin, int col_end,
+                                  int bm = 32) {
+    return dense_gpu::projection_range(x,w,row_begin,row_end,col_begin,col_end,bm);
 }
 } // namespace tc::z_metal

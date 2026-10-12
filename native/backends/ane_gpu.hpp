@@ -1,0 +1,189 @@
+#pragma once
+
+// Shared Metal/IOSurface W8/A8/FP32 restoration. No private ANE client API.
+#include "ane_runtime.hpp"
+#include <chrono>
+#include <functional>
+#include <limits>
+#include <utility>
+
+namespace tc::ane::gpu {
+bool healthy(); // secondary staging/transfer safety domain; never disables the family's GPU fallback
+enum class Element { FP16, I8 };
+class Device;
+class Transfer;
+class QuantStage;
+class WeightCodeCacheClaim;
+enum class WeightCodeCacheStorage;
+inline constexpr size_t scale_cache_budget_bytes = 4u << 20;
+uint64_t configured_weight_code_cache_bytes();
+
+// Optional adapter to the caller's existing memory ledger. The original
+// IOSurface owns this token; importing its MTLBuffer never charges it again.
+// A token may die on a completion thread, so its release must not call a live
+// request context directly. Empty hooks retain the legacy component behavior.
+struct SurfaceAllocationHooks {
+    std::function<std::shared_ptr<void>(size_t, std::string_view)> reserve;
+    std::function<void(const std::shared_ptr<void>&, void*, size_t)> allocated;
+};
+
+// A retained view of an existing IOSurface-backed allocation, never a second
+// MTLBuffer wrapper or a new memory charge. The owner and allocation_identity
+// share Surface's original backing generation; slices retain that same owner.
+struct SurfaceBufferLease {
+    void *native_buffer = nullptr, *native_device = nullptr;
+    size_t backing_bytes = 0, allocated_bytes = 0;
+    size_t offset_bytes = 0, size_bytes = 0, row_stride_bytes = 0;
+    uint32_t rows = 0, cols = 0;
+    Element element = Element::FP16;
+    std::shared_ptr<void> owner;
+    std::weak_ptr<void> allocation_identity;
+
+    // Metadata validation only; the importing Metal executor must also check
+    // the actual MTLBuffer.device. A lease does not certify data readiness.
+    void validate(void *expected_device) const {
+        const size_t item = element == Element::I8 ? 1 : element == Element::FP16 ? 2 : 0;
+        if (!native_buffer || !native_device || !expected_device || native_device != expected_device ||
+            !owner || allocation_identity.expired() || owner.owner_before(allocation_identity) ||
+            allocation_identity.owner_before(owner) || !item || !rows || !cols ||
+            size_t(cols) > std::numeric_limits<size_t>::max() / item ||
+            row_stride_bytes < size_t(cols) * item || row_stride_bytes % item ||
+            offset_bytes % item || size_t(rows) > std::numeric_limits<size_t>::max() / row_stride_bytes ||
+            size_bytes != size_t(rows) * row_stride_bytes || !backing_bytes || allocated_bytes < backing_bytes ||
+            offset_bytes > backing_bytes || size_bytes > backing_bytes - offset_bytes)
+            throw CapabilityError("ANE SurfaceBufferLease invalid owner/device/geometry");
+    }
+};
+
+class Surface {
+  public:
+    Surface(Device &, uint32_t rows, uint32_t columns, Element);
+    Surface(Device &, uint32_t rows, uint32_t columns, Element,
+            SurfaceAllocationHooks, std::string_view label);
+    size_t bytes() const;
+    size_t pitch() const;
+    uint32_t rows() const;
+    uint32_t columns() const;
+    Element element() const;
+    void *data() const; // caller must not access while the ticket is live
+    void *native_iosurface() const; // borrowed; retain this Surface through Core ML/GPU completion
+    SurfaceBufferLease metal_buffer_lease() const;
+    bool is_view() const { return row_begin_ || row_count_; }
+    Surface slice_rows(uint32_t begin, uint32_t count) const; // consumer view only, not an ANE binding
+  private:
+    struct Impl;
+    std::shared_ptr<Impl> impl_;
+    uint32_t row_begin_ = 0, row_count_ = 0;
+    void retain_cache_claim(std::shared_ptr<WeightCodeCacheClaim>);
+    size_t cache_capacity_bytes() const;
+    friend class Transfer;
+    friend class Device;
+};
+
+struct Upload { DeviceMatrixView source; Surface destination; int begin_row = 0; float scale = 1.f; };
+enum class RowScalePolicy : uint32_t { Positive, SignedFinite };
+struct Download {
+    Surface source;
+    std::optional<DeviceMatrixView> destination; // null: finite/range validation only
+    int begin_row = 0;
+    DType dtype = DType::FP16;
+    float scale = 1.f;
+    std::optional<Surface> row_scales = std::nullopt, token_scales = std::nullopt;
+    std::optional<Surface> second_token_scales = std::nullopt;
+    // Direct ConvRot retains finite signed/zero checkpoint row scales. Token
+    // quantizer scales stay strictly positive; Sylvester's default unchanged.
+    RowScalePolicy row_scale_policy = RowScalePolicy::Positive;
+};
+
+class Device {
+  public:
+    Device(); // legacy Private staging flags, no private client API
+    Device(bool scale_cache, bool specialize);
+    Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes);
+    Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes, WeightCodeCacheStorage);
+    void *native_device() const; // borrowed; retain Device or an exported SurfaceBufferLease
+    void *shared_event() const;
+    void release_after_failure(uint64_t value) const;
+    std::string name() const;
+    // Commit a separate leading command buffer. Do not defer the signal
+    // until the command buffer containing the matching wait is committed.
+    void signal(uint64_t value);
+    // Calibration only: all producers are already joined and all requests
+    // prepared but not submitted. Meet their dependency on the CPU BEFORE
+    // starting the timer; no Metal/ANE handoff is part of an alone sample.
+    // Normal inference continues to signal from its GPU producer.
+    void release_prepared(uint64_t value);
+    bool wait(uint64_t value, std::chrono::milliseconds timeout);
+    uint64_t value() const;
+    Transfer prepare_transfer(std::vector<Upload>, std::vector<Download>,
+                              uint64_t ready, uint64_t done);
+    // Calibration GPU arm: one command buffer, no shared-event signal/wait
+    // and no live ANE output dependency. Producers/source snapshots must be
+    // ready and remain immutable until completion; normal inference uses
+    // prepare_transfer(), never this independent restore path.
+    Transfer prepare_gpu_transfer(std::vector<Upload>, std::vector<Download>);
+    Transfer prepare_upload(std::vector<Upload>); // public CPU/NE input fence, no output dependency
+    // A separate staging queue/event: next-layer readiness MUST NOT advance
+    // the current layer's activation/ANE-done timeline.
+    QuantStage stage_w8(DeviceWeightView, W8StageSpec, Surface codes, Surface scales);
+    // Bank-owned references start at their fixed scratch surfaces on EACH
+    // refill. Only ready immutable native-cache hits bypass all GPU copies.
+    // Returned cached Surface aliases carry capacity until their last reader.
+    QuantStage bind_w8(DeviceWeightView, W8StageSpec, Surface &codes, Surface &scales);
+    WeightCacheStats scale_cache_stats() const;
+    WeightCodeCacheReport weight_code_cache_stats() const;
+    uint64_t weight_code_cache_budget_bytes() const;
+    void clear_weight_code_cache(); // producer tickets retain their own capacity leases
+    StagePipelineStats stage_pipeline_stats() const;
+    A8SinglePassStats a8_single_pass_stats() const;
+  private:
+    struct Impl;
+    std::shared_ptr<Impl> impl_;
+    Transfer prepare_transfer_impl(std::vector<Upload>, std::vector<Download>,
+                                  std::optional<std::pair<uint64_t, uint64_t>>, bool upload_only = false);
+    QuantStage stage_w8_impl(DeviceWeightView,W8StageSpec,Surface,Surface,Surface *,Surface *);
+    friend class Surface;
+    friend class Transfer;
+    friend class QuantStage;
+};
+
+struct Completion {
+    bool ok = false, timed_out = false;
+    std::string error;
+    // Populated by private_api::Ticket. Legacy GPU Transfer/QuantStage callers
+    // conservatively leave these false until their completion contracts migrate.
+    // physical_complete means the driver completion callback was observed under
+    // the current private protocol (or no work was submitted); it does not prove
+    // ANE placement or certify all OS/driver failure modes. A timeout/event
+    // safety-release or enqueue rejection is NOT that evidence. retired is
+    // sticky: late completion cannot publish that output.
+    bool physical_complete = false, retired = false;
+};
+class QuantStage {
+  public:
+    Completion finish(std::chrono::milliseconds timeout = std::chrono::seconds(30));
+    uint32_t validation_flags() const;
+    bool single_pass() const;
+    void *ready_event() const; // opaque MTLSharedEvent retained by this ticket
+    uint64_t ready_value() const { return 1; }
+  private:
+    struct Impl;
+    std::shared_ptr<Impl> impl_;
+    friend class Device;
+};
+// One input CB commits its ready signal before a separate output CB waits for
+// ANE done. A sticky CPU failure flag suppresses output reads after failure/
+// timeout; GPU validation has its own flag, never clearing the CPU flag.
+class Transfer {
+  public:
+    std::function<void()> failure_callback() const;
+    void submit();
+    Completion finish(std::chrono::milliseconds timeout = std::chrono::seconds(30));
+    uint32_t validation_flags() const;
+    bool independent_gpu() const;
+  private:
+    struct Impl;
+    std::shared_ptr<Impl> impl_;
+    friend class Device;
+};
+} // namespace tc::ane::gpu

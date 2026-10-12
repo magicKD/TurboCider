@@ -1,0 +1,135 @@
+{
+  "schema": "tc-private-ane-w8-executor-pilot-v1",
+  "date": "2026-10-03",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "public_coreml_default_retained": true,
+  "data_path": "w8a8_hadamard",
+  "recipe": "sylvester-dh-b128-b512-rne-norm-f16-v2",
+  "native_int8_hardware_mac_observed": false,
+  "two_fixed_weight_banks_implemented": true,
+  "next_layer_staging_overlaps_current_ane_qualified": false,
+  "scale_cache_implemented": false,
+  "source_lease_scheduler_integration_qualified": false,
+  "four_way_1_2x_performance_qualified": false,
+  "lora_media_latent_qualified": false,
+  "initial_private_library_sha256": "7ffa7067272e728c38207c457213e44396c35ad3de298e79a5a2b5570b82a5a5",
+  "current_private_library_sha256": "2666ca28597c22ad22ff1d95b74ffa75501e09442d23abc99afb8a22c3a3bbee",
+  "current_public_library_sha256": "7815f00991661b3cff57ac8a093b783ad51cacdea211f8f6f1f89b248afb9e0a",
+  "current_public_private_class_strings_or_framework_link_observed": false,
+  "tests": {
+    "private_host_and_hardware": {"passed": 12, "skipped": 0},
+    "public_coreml_mlx_and_receipts": {"passed": 13, "skipped": 0},
+    "runtime_host": {"passed": 7, "skipped": 0},
+    "screen_host": {"passed": 47, "skipped": 0},
+    "private_receipt_native_fixture": "passed",
+    "full_make_test_executed": false
+  },
+  "initial_model_pilots": [
+    {
+      "case": "z512",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "seed": 42,
+      "chunks": "auto",
+      "order": "gpu,private",
+      "hot_samples_per_arm": 2,
+      "gpu_hot_median_seconds": 6.9911239795,
+      "private_hot_median_seconds": 6.9935207085,
+      "pilot_speedup": 0.999657,
+      "private_calls_session_total": [64, 64, 64],
+      "private_calls_per_request": [64, 0, 0],
+      "runtime_error_fallbacks": 0,
+      "hot_private_execution_observed": false,
+      "formal_performance_qualified": false,
+      "summary": "outputs/private-ane-w8-z512-pilot-20261003/summary.json",
+      "summary_sha256": "fbcb3506ee069a55832aba404506518e7fbd2a1a28c4279160323a2be04ba32d"
+    },
+    {
+      "case": "qwen1024",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 40,
+      "seed": 42,
+      "chunks": "auto",
+      "qk_norm_rope_on_both_arms": true,
+      "order": "gpu,private",
+      "hot_samples_per_arm": 2,
+      "gpu_hot_median_seconds": 183.227664875,
+      "private_hot_median_seconds": 183.8053841455,
+      "pilot_speedup": 0.9968568969119933,
+      "private_calls_session_total": [128, 192, 224],
+      "private_calls_per_request": [128, 64, 32],
+      "runtime_error_fallbacks": 0,
+      "steady_hybrid_blocks_observed": false,
+      "formal_performance_qualified": false,
+      "summary": "outputs/private-ane-w8-qwen1024-pilot-20261003/summary.json",
+      "summary_sha256": "21c2ff266b4db432a22d5ced86072a6829589069aef60d758f38d6dc6092f6ea"
+    }
+  ],
+  "simd_staging_component": {
+    "scope": "dense BF16 gate/up/down GPU W8 H128/H512 staging, host readiness included; NOT full-model speedup",
+    "first_use_excluded": true,
+    "hot_samples": 8,
+    "original_binary_sha256": "bd7df454c37ed5554830bfe13e4f616d80a6085b45de3367071b427b7fadcbb9",
+    "simd_binary_sha256": "3731d4739ec4c232ad7670ed8e45bb4fcf2f7ee69bf496db5ca304ba72773cec",
+    "z_original_median_seconds": 0.0088915,
+    "z_simd_median_seconds": 0.00658054,
+    "qwen_original_median_seconds": 0.0113109,
+    "qwen_simd_median_seconds": 0.00836075
+  },
+  "rejected_receipt_candidate": {
+    "private_library_sha256": "d89b9ebdde0774a4595021cc545da4265ef06199d6fbdfb7cff46fb73a762ea3",
+    "summary": "outputs/private-ane-w8-simd-z512-20261003/summary.json",
+    "status": "incomplete",
+    "reason": "FP16-only JSON payload/provenance selection omitted W8A8 receipt; fixed using graph contract plus native fixture",
+    "performance_qualified": false
+  },
+  "current_model_campaign": {
+    "status": "complete",
+    "evidence_prefix": "outputs/private-ane-w8-receipt-*-20261003",
+    "cases": ["z512", "z1024", "z512-lora", "qwen512-lora", "qwen512"],
+    "completed_cases": {
+      "z512": {
+        "gpu_hot_median_seconds": 6.9895473545,
+        "private_hot_median_seconds": 6.989985625,
+        "pilot_speedup": 0.9999373002287111,
+        "private_calls_per_request": [64, 0, 0],
+        "runtime_error_fallbacks": 0,
+        "hot_private_execution_observed": false
+      },
+      "z1024": {
+        "gpu_hot_median_seconds": 31.266972375,
+        "private_hot_median_seconds": 31.275824562,
+        "private_calls_per_request": [87, 16, 16],
+        "runtime_error_fallbacks": 0,
+        "performance_qualified": false
+      },
+      "z512-lora": {
+        "adapter": "z_image_turbo_distill_patch_lora_bf16",
+        "gpu_hot_median_seconds": 8.5594715415,
+        "private_hot_median_seconds": 8.593657917,
+        "private_calls_per_request": [68, 8, 8],
+        "runtime_error_fallbacks": 0,
+        "performance_qualified": false
+      },
+      "qwen512-lora": {
+        "adapter": "Viggle v0.2.1 six-step r256",
+        "gpu_hot_median_seconds": 8.1513423535,
+        "private_hot_median_seconds": 8.9477521045,
+        "private_calls_per_request": [98, 33, 0],
+        "runtime_error_fallbacks": 0,
+        "performance_qualified": false
+      },
+      "qwen512": {
+        "gpu_hot_median_seconds": 41.7180425625,
+        "private_hot_median_seconds": 42.4499663545,
+        "private_calls_per_request": [128, 64, 32],
+        "runtime_error_fallbacks": 0,
+        "performance_qualified": false
+      }
+    },
+    "performance_qualified": false
+  }
+}

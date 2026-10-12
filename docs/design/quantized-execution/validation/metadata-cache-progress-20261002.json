@@ -1,0 +1,131 @@
+{
+  "schema": "tc-qwen3-metadata-cache-progress-v1",
+  "production_qualified": false,
+  "formal_performance": "not_run",
+  "whole_request_memory": "unknown",
+  "scope": "same-binary on/off local warm cache-hit screen; no BF16 performance qualification or full media qualification",
+  "library_sha256": "6b042a452a8f2e43e73fff4e06326f1d4a6395ad4d1b655e413a0ba9a70e7ee7",
+  "off_median_seconds": 5.284995979018277,
+  "on_median_seconds": 4.928478540998185,
+  "on_over_off_wall_ratio": 0.9325415876501164,
+  "source_quant_reference_png_exact": true,
+  "tests": {
+    "host_parser_measurement_screen_storage": {
+      "passed": 31
+    },
+    "actual_metal_parser_ordinary_gates": {
+      "passed": 11
+    },
+    "actual_engine_generations_source_rebind_cancel_inflight_failure": {
+      "passed": 1
+    },
+    "native_q4_q8_encoder_n1": {
+      "blocks": 136,
+      "final": 1,
+      "passed": true
+    }
+  },
+  "reports": [
+    {
+      "id": "raw-q8-off-timing",
+      "sha256": "bc0f0c8085030278c23154d4bfcbaebc2a92a8e99597a0c4a55a209c25d2a300",
+      "library_sha256": "6b042a452a8f2e43e73fff4e06326f1d4a6395ad4d1b655e413a0ba9a70e7ee7",
+      "dit_source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+      "samples_seconds": [
+        5.297264042019378,
+        5.277775333030149,
+        5.273461083997972,
+        5.292216625006404
+      ],
+      "median_seconds": 5.284995979018277,
+      "text_samples_seconds": [
+        0.355616833,
+        0.3397935,
+        0.341677709,
+        0.341627166
+      ],
+      "png_sha256": [
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6"
+      ],
+      "peak_bytes": null,
+      "metadata_policy": "reconstruct-per-request-v1"
+    },
+    {
+      "id": "raw-q8-on-timing",
+      "sha256": "401748ce86210f35faf0aad1312ce75652f79434254857dd929fafd9aec304fb",
+      "library_sha256": "6b042a452a8f2e43e73fff4e06326f1d4a6395ad4d1b655e413a0ba9a70e7ee7",
+      "dit_source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+      "samples_seconds": [
+        4.918007541971747,
+        4.922929291031323,
+        4.9465261659934185,
+        4.934027790965047
+      ],
+      "median_seconds": 4.928478540998185,
+      "text_samples_seconds": [
+        0.000223875,
+        0.000227208,
+        0.000215625,
+        0.000231958
+      ],
+      "png_sha256": [
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6"
+      ],
+      "peak_bytes": null,
+      "metadata_policy": "engine-verified-cpu-metadata-only-v1"
+    },
+    {
+      "id": "raw-q8-on-memory",
+      "sha256": "dbe927cdfcbb81edc8da95d8f8f544442ba7465b1ee105e3da3388a6a30ac853",
+      "library_sha256": "6b042a452a8f2e43e73fff4e06326f1d4a6395ad4d1b655e413a0ba9a70e7ee7",
+      "dit_source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+      "samples_seconds": [
+        4.913041833031457
+      ],
+      "median_seconds": 4.913041833031457,
+      "text_samples_seconds": [
+        0.000361
+      ],
+      "png_sha256": [
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6",
+        "cf5392d6f6090096c86fb544f928448eee8ce0417aa9b3275c387296676183b6"
+      ],
+      "peak_bytes": 4928226720,
+      "metadata_policy": "engine-verified-cpu-metadata-only-v1"
+    },
+    {
+      "id": "native-q4-on-memory",
+      "sha256": "a5547bba4101f090c13d8c15ae6538b0d5916b7af932680a4cf74220996deb98",
+      "library_sha256": "6b042a452a8f2e43e73fff4e06326f1d4a6395ad4d1b655e413a0ba9a70e7ee7",
+      "dit_source_sha256": "687360c35c468ae1054f8a848d40a6c852c3c67d81f962dafcfbeff09e66d7d0",
+      "samples_seconds": [
+        6.626193167001475
+      ],
+      "median_seconds": 6.626193167001475,
+      "text_samples_seconds": [
+        0.000281375
+      ],
+      "png_sha256": [
+        "67d980c8ebefbad34e00f935e6d4e9ac4cf8e08b5754035233ea5858a7069059",
+        "67d980c8ebefbad34e00f935e6d4e9ac4cf8e08b5754035233ea5858a7069059"
+      ],
+      "peak_bytes": 7803327000,
+      "metadata_policy": "engine-verified-cpu-metadata-only-v1"
+    }
+  ],
+  "incomplete": [
+    "BF16 same-binary performance screen for changed encoder components",
+    "48-case media and formal campaigns",
+    "6/8/10GB speed target",
+    "whole-request enforced cap",
+    "ConvRot, GPU/ANE W8A8 and M5 static backend"
+  ]
+}

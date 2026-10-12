@@ -1,0 +1,145 @@
+{
+  "schema": "fastest-bf16-low-memory-screen-v1",
+  "production_qualified": false,
+  "whole_request_memory": "unknown",
+  "formal_performance": "not_run",
+  "quality": "not_run",
+  "baseline_fastest_qualification": "screen_only",
+  "identity": {
+    "components": {
+      "vae": [
+        {
+          "bytes": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "tokenizer": [
+        {
+          "bytes": 11422654,
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+        }
+      ],
+      "encoder": [
+        {
+          "bytes": 8044982048,
+          "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a"
+        }
+      ]
+    },
+    "libraries": {
+      "libturbocider.dylib": "945f8253a53a56f3ede0ea751211802102975ae23a5aeb36ba040d75e30ac495",
+      "libmlx.dylib": "1876795e05b3434925e745fbf6e9f0c8c0446b666224c9d881609ab353e94e51",
+      "libjaccl.dylib": "8ee82aae82996938435bcebe724d819296712b8b34fac021ce7aa66073730e1e"
+    },
+    "cache": "hit",
+    "gpu_controls": {
+      "TURBOCIDER_Z_MPP_SWIGLU": "1",
+      "TURBOCIDER_Z_MPP_PROJECTIONS": "1",
+      "TURBOCIDER_Z_MPP_QKV_PREPARE": "1",
+      "TURBOCIDER_Z_GATE_NORM_VIRTUAL_THREADS": "128",
+      "TURBOCIDER_Z_CACHE_CONTEXT": "1"
+    }
+  },
+  "workload": {
+    "inputs": [
+      {
+        "kind": "text",
+        "role": "prompt",
+        "text": "A studio photograph of an adult ceramic artist, both hands visible while holding a small blue cup, neutral background, natural skin texture."
+      }
+    ],
+    "sampling": {
+      "seed": 42,
+      "steps": 4
+    },
+    "operation": "image.generate",
+    "parameters": {
+      "dynamic_text": true
+    },
+    "outputs": [
+      {
+        "kind": "image",
+        "width": 512,
+        "height": 512,
+        "audio": false
+      }
+    ],
+    "tokens": 34
+  },
+  "baseline": {
+    "samples_seconds": [
+      3.7484814999916125,
+      3.7345976670039818,
+      3.7358829159929883,
+      3.734801125014201
+    ],
+    "median_seconds": 3.7353420205035945,
+    "denoise_median_seconds": 3.500165625,
+    "observed_peak_bytes": 23011731128,
+    "maximum_memory_gap_seconds": 0.01530645799357444,
+    "recipe": {
+      "config": null,
+      "import": null,
+      "controls": {},
+      "layout": null,
+      "consumer": null,
+      "graph": null,
+      "retention": null
+    },
+    "source_sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "png_sha256": "633e96cff5e02dcc95fc43ea5e29609a9616fe7d44d21b87d9cc6e254f135cc9"
+  },
+  "candidate": {
+    "samples_seconds": [
+      5.338312499981839,
+      5.312893666996388,
+      5.347353041986935,
+      5.35092729202006
+    ],
+    "median_seconds": 5.342832770984387,
+    "denoise_median_seconds": 4.8193487085,
+    "observed_peak_bytes": 11315419400,
+    "maximum_memory_gap_seconds": 0.015767708013299853,
+    "recipe": {
+      "config": null,
+      "import": "cpu_direct",
+      "controls": {
+        "TURBOCIDER_Z_GGUF_COMPILE_PACKED": "1",
+        "TURBOCIDER_Z_GGUF_RETAIN_PACKED": "1",
+        "TURBOCIDER_Z_GGUF_IMPORT": "cpu_direct"
+      },
+      "layout": "341b10530bdda02d00b09c248377eab7d3c364f8cf0d49a3623587630de35ec5",
+      "consumer": "z-session-packed-experimental-v1",
+      "graph": "z-parameterized-affine-block-v1",
+      "retention": true
+    },
+    "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+    "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1"
+  },
+  "warm_wall_ratio": 1.4303463355315646,
+  "observed_process_memory_ratio": 0.49172395318975937,
+  "preferred_10pct_latency_pass": false,
+  "hard_20pct_latency_pass": false,
+  "observed_lower_memory": true,
+  "empirical_speed_memory_target_pass": false,
+  "scope": "paired local warm screen; no formal fastest/quality/cold/whole-request certification",
+  "raw_reports": [
+    {
+      "id": "final-bf16-timing-v3",
+      "sha256": "f717bba2097093650bc0365eba85b43abd607dd6af6eb18ae9256512b28c91c1"
+    },
+    {
+      "id": "final-bf16-memory",
+      "sha256": "b1cf0a010b76f4dd52836a433b819ca68a3c224a5fc1cda6d1336b07f922fcda"
+    },
+    {
+      "id": "final-q8-compiled-retained-timing",
+      "sha256": "1efe09ef58c060e5434686d688ee162ed66ab0cc584281a7633c31d738473cac"
+    },
+    {
+      "id": "final-q8-compiled-retained-memory",
+      "sha256": "871a9558f20927927b013fc582979b3355aced0abe62e73f8f36e939adce1e5a"
+    }
+  ],
+  "verifier_sha256": "1a55f32514e73dccf643129e0f20337a35d00cd26ceaa6ae7e133fd7238c9abc"
+}

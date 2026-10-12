@@ -61,6 +61,15 @@ void HybridQkv::fail(std::string reason, int layer) {
     ++metrics_.failures;
     metrics_.failure_block = layer;
     metrics_.failure_reason = std::move(reason);
+    // The failed route stays disabled. Drain by destroying the graph before
+    // releasing tensors/scratch borrowed by its worker. This also releases
+    // the private compiled snapshot during GPU fallback, not at session end.
+    graph_.reset();
+    pending_ = false;
+    weights_.clear();
+    scheduler_.reset();
+    std::vector<uint16_t>().swap(output_);
+    chunks_ = 0;
 }
 void HybridQkv::begin_request() {
     drain();
@@ -72,8 +81,6 @@ void HybridQkv::begin_request() {
     const auto decision = admit_memory(observed, {uint64_t(4) << 30, budget_}, resident, 0);
     if (!decision.allowed()) {
         fail("QKV resident admission denied (" + memory_denial_reason(decision.denial, observed) + ")", -1);
-        graph_.reset();
-        std::vector<uint16_t>().swap(output_);
     }
 }
 QkvScheduler::Plan HybridQkv::plan_block(int layer, int rows) {
@@ -105,7 +112,6 @@ bool HybridQkv::admit_output(int ane_rows) {
     if (graph_->estimated_bytes() > budget_ || current > budget_ - graph_->estimated_bytes() ||
         required > budget_ - graph_->estimated_bytes()) {
         fail("QKV output exceeds optional memory budget", layer_);
-        drain(); graph_.reset();
         return false;
     }
     if (required > current) {
@@ -114,7 +120,6 @@ bool HybridQkv::admit_output(int ane_rows) {
                                            graph_->estimated_bytes() + current, required);
         if (!decision.allowed()) {
             fail("QKV output admission denied (" + memory_denial_reason(decision.denial, observed) + ")", layer_);
-            drain(); graph_.reset();
             return false;
         }
         try {
@@ -124,11 +129,9 @@ bool HybridQkv::admit_output(int ane_rows) {
             output_.swap(replacement);
         } catch (const std::bad_alloc &) {
             fail("QKV output allocation failed", layer_);
-            drain(); graph_.reset();
             return false;
         } catch (const MemoryBudgetError &e) {
             fail(e.what(), layer_);
-            drain(); graph_.reset();
             return false;
         }
     }
@@ -224,7 +227,7 @@ Tensor HybridQkv::run(int layer, const Tensor &input, const Gpu &gpu,
         metrics_.wall_seconds += seconds(start);
         return result;
     } catch (...) {
-        if (pending_) { graph_->finish(); pending_ = false; }
+        if (graph_ && pending_) { graph_->finish(); pending_ = false; }
         if (head) { try { mx::eval(*head); } catch (...) {} }
         throw;
     }

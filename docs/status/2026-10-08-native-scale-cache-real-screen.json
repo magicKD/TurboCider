@@ -1,0 +1,344 @@
+{
+  "schema": "tc-native-scale-cache-real-screen-v1",
+  "date": "2026-10-08",
+  "status": "exact_cache_and_actual_mlx_identity_pass_no_consistent_component_gain",
+  "runtime_build_id": "tc-runtime-build-v1-16fecb41f7b0243a518481d5f01d5dac5da5e93ac78c3712033f4bb2c7a13dbf",
+  "source_manifest_entries": 563,
+  "source_manifest_matches_at_recording": true,
+  "model_scope": "existing local Qwen Image 2.1 BF16; layer0 held-out step19 capture; only three projections materialized, not full-model inference",
+  "device": "Apple M4 Pro",
+  "experiment": {
+    "arms": [
+      "register W1S cache OFF",
+      "register W1S cache ON"
+    ],
+    "schedule": "one warm AB, recorded AB/BA",
+    "complete_hybrid_calls": 6,
+    "dense_gpu_calls": 0,
+    "e2e_groups": 0,
+    "downloads": 0,
+    "full_checkpoint_copies": 0
+  },
+  "correctness": {
+    "all_pairs_bf16_bitwise_equal": true,
+    "rrms": 0,
+    "finite": true,
+    "actual_mlx_data_reimport": {
+      "distinct_array_and_view_wrappers": true,
+      "fresh_imports_per_record_round": 3,
+      "gate_offset_bytes": 0,
+      "gate_up_share_actual_mlx_data": true,
+      "scope": "allocation lifetime identity only; immutable source separately held and checked",
+      "up_offset_bytes": 100663296,
+      "verified": true,
+      "weights": [
+        {
+          "extent_bytes": 100663296,
+          "original_offset_bytes": 0,
+          "owner_equals_actual_mlx_data": true,
+          "reimported_offset_bytes": 0,
+          "same_native_buffer": true,
+          "weight": "gate"
+        },
+        {
+          "extent_bytes": 100663296,
+          "original_offset_bytes": 100663296,
+          "owner_equals_actual_mlx_data": true,
+          "reimported_offset_bytes": 100663296,
+          "same_native_buffer": true,
+          "weight": "up"
+        },
+        {
+          "extent_bytes": 100663296,
+          "original_offset_bytes": 0,
+          "owner_equals_actual_mlx_data": true,
+          "reimported_offset_bytes": 0,
+          "same_native_buffer": true,
+          "weight": "down"
+        }
+      ]
+    },
+    "successful_hits": 2,
+    "successful_misses": 1,
+    "cache_payload_bytes": 32768,
+    "source_immutable": true,
+    "physical_complete": true,
+    "ledger_released": true
+  },
+  "performance": {
+    "records": [
+      {
+        "bf16_bitwise_equal": true,
+        "cache_off_w1s": {
+          "branch_join_seconds": 0.0221235,
+          "consumer_seconds": 0.000682958,
+          "controller_seconds": 0.035261084,
+          "device_spans_available": true,
+          "generation": 2,
+          "gpu_complement_span_seconds": 0.02190912503283471,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.01166791666764766,
+          "producer_seconds": 0.012232542,
+          "submit_ane_seconds": 0.000143791,
+          "wall_seconds": 0.035269167,
+          "weight_scale_cache_hit": false,
+          "weight_scale_cache_miss": false
+        },
+        "cache_on_w1s": {
+          "branch_join_seconds": 0.020691083,
+          "consumer_seconds": 0.00070425,
+          "controller_seconds": 0.024401583,
+          "device_spans_available": true,
+          "generation": 2,
+          "gpu_complement_span_seconds": 0.020491916686296463,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.002650874899700284,
+          "producer_seconds": 0.002851625,
+          "submit_ane_seconds": 0.000123416,
+          "wall_seconds": 0.024406375,
+          "weight_scale_cache_hit": true,
+          "weight_scale_cache_miss": false
+        },
+        "error": {
+          "cosine": 1,
+          "finite_elements": 4194304,
+          "max_abs": 0,
+          "max_abs_over_reference_peak": 0,
+          "max_and_cosine_scope": "diagnostic only; no per-element 8% acceptance rule",
+          "rrms": 0,
+          "rrms_limit": 0.08,
+          "screening_pass": true
+        },
+        "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+        "kind": "record",
+        "layer": 0,
+        "order": "AB",
+        "round": 1,
+        "step": 19
+      },
+      {
+        "bf16_bitwise_equal": true,
+        "cache_off_w1s": {
+          "branch_join_seconds": 0.020733375,
+          "consumer_seconds": 0.000728875,
+          "controller_seconds": 0.025922583,
+          "device_spans_available": true,
+          "generation": 3,
+          "gpu_complement_span_seconds": 0.020487875095568597,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.004041708307340741,
+          "producer_seconds": 0.004260708,
+          "submit_ane_seconds": 0.000107417,
+          "wall_seconds": 0.025934375,
+          "weight_scale_cache_hit": false,
+          "weight_scale_cache_miss": false
+        },
+        "cache_on_w1s": {
+          "branch_join_seconds": 0.023517083,
+          "consumer_seconds": 0.000731834,
+          "controller_seconds": 0.037169042,
+          "device_spans_available": true,
+          "generation": 3,
+          "gpu_complement_span_seconds": 0.023311041644774377,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.011671375017613173,
+          "producer_seconds": 0.012594,
+          "submit_ane_seconds": 0.000205042,
+          "wall_seconds": 0.0371895,
+          "weight_scale_cache_hit": true,
+          "weight_scale_cache_miss": false
+        },
+        "error": {
+          "cosine": 1,
+          "finite_elements": 4194304,
+          "max_abs": 0,
+          "max_abs_over_reference_peak": 0,
+          "max_and_cosine_scope": "diagnostic only; no per-element 8% acceptance rule",
+          "rrms": 0,
+          "rrms_limit": 0.08,
+          "screening_pass": true
+        },
+        "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+        "kind": "record",
+        "layer": 0,
+        "order": "BA",
+        "round": 2,
+        "step": 19
+      }
+    ],
+    "recorded_mean_off_seconds": 0.030601771,
+    "recorded_mean_on_seconds": 0.0307979375,
+    "on_mean_increase_percent": 0.6410298933352543,
+    "consistent_net_benefit": false,
+    "prepare_seconds": {
+      "cache_off_controller": 1.314223959,
+      "cache_on_controller": 1.002957834,
+      "dense_pso": 0,
+      "hybrid_program_pso": 1.002957834,
+      "source_materialization": 0.048350375
+    },
+    "timing_scope": "external arm wall includes encode/lookup/submit/physical completion; prepare separately reported; preparation coldness and hardware overlap not established",
+    "decision": "leave default OFF; no E2E escalation; neither positive AB pair nor old cache-off Base E2E transfers cache qualification",
+    "dispatch_scope": {
+      "off_w_dispatches": 6,
+      "on_cold_w_dispatches": 9,
+      "on_hit_w_dispatches": 6,
+      "a8_dispatches_per_invocation": 2,
+      "meaning": "hit replaces scale reduction with scale copy; codes and bank still regenerate, not fewer W dispatches than OFF"
+    },
+    "subsequent_source_review": {
+      "first_arm_producer_gpu_span_slower_in_each_pair": true,
+      "original_comparison_cpu_seconds_not_measured": true,
+      "comparison_cpu_overhead": "original measured replay checks contents/type through element() for every output element; unnecessary repeated host work between pairs",
+      "causation": "GPU frequency/cache/scheduling or CPU-idle effect unproven; no attribution or retry"
+    }
+  },
+  "memory": {
+    "component": {
+      "compiler_driver_budget_certified": false,
+      "imports_coverage": "retained immutable MLX baseline; no synthetic ledger claims",
+      "measurement_scope": "combined simultaneous OFF and ON controllers plus shared workspaces; not the incremental memory cost of scale cache",
+      "mlx_source_active_bytes": 310378496,
+      "native_owned_limit": 536870912,
+      "native_owned_peak": 253874204,
+      "process_baseline_bytes": 321454920,
+      "process_observed_after_bytes": 591692736,
+      "surface_bytes": 178323456,
+      "surfaces": 18,
+      "whole_process_budget_certified": false
+    },
+    "scope": "combined OFF+ON controllers and workspaces; not cache increment or full request capacity certification"
+  },
+  "qualification": {
+    "cache_model_performance": false,
+    "full_request": false,
+    "app": false,
+    "lora": false,
+    "edit": false,
+    "z_image": false,
+    "physical_overlap": false,
+    "hardware_int8_arithmetic": false
+  },
+  "cleanup": {
+    "file_count": 7,
+    "bytes": 12790918,
+    "manifest": "outputs/native-w1-scale-cache-real-20261008/owned-cleanup.json"
+  },
+  "artifacts": [
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/component-receipt.json",
+      "bytes": 9065,
+      "sha256": "0bd6fa728b95cbca9378c8d1c63dde4b7b6ed9a9723168f819ed5f6c6ad80e45"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/component-stdout.log",
+      "bytes": 108,
+      "sha256": "f2e795795533b3b837db42d9ce2767dbcdd30b19feb446deebbe3d49dbec1449"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/component-stderr-time.log",
+      "bytes": 777,
+      "sha256": "c0a39f1024ee7540e8604a2ec49c026789aeabbdf47629eaa8ca919da4263e86"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/component-cpu.log",
+      "bytes": 85,
+      "sha256": "a8132bc7c72b8e73dad98e584f4083884b26c9605e97d0858f9b294cf39832cc"
+    },
+    {
+      "path": "build/native-w1-scale-cache-20261008/runtime-build/runtime-build-manifest.json",
+      "bytes": 154921,
+      "sha256": "1fe8984d94a98e1a23694defe77a7bc610e8919bfcaf1f3223207549d371d765"
+    },
+    {
+      "path": "build/native-w1-scale-cache-20261008/libturbocider.dylib",
+      "bytes": 10065072,
+      "sha256": "9544347849c2f2d23b2e1b5cb2a3d3ceb3e80d0d0245f171816ebbd54078a70e"
+    },
+    {
+      "path": "build/native-w1-scale-cache-20261008/turbocider",
+      "bytes": 309384,
+      "sha256": "3702be1e63bdd435db091118d8f6527e170fc186a4580630fb02ee39fef8aac0"
+    },
+    {
+      "path": "build/native-scale-cache-real-replay-20261008/native-qwen-hybrid-ffn-replay",
+      "bytes": 192720,
+      "sha256": "62a3853875ec4643ed10dc8322b7e0af237417feb807634ba5c0ce38a11bf383"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/measured-native_qwen_hybrid_ffn_replay.cpp",
+      "bytes": 39054,
+      "sha256": "937cb5ec43f638cf40771126339813f5f8ed0353a38e9e244571dea70ea238c0",
+      "original_repository_path": "tools/native/native_qwen_hybrid_ffn_replay.cpp",
+      "scope": "source snapshot of measured binary; later tool changes do not requalify old measurement"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/measured-build_native_qwen_hybrid_ffn_replay.sh",
+      "bytes": 2473,
+      "sha256": "ca974c543c31c1b217d692fdd4662368a9e2fa12915a5619a5a3ceb5ed131ec8",
+      "original_repository_path": "tools/native/build_native_qwen_hybrid_ffn_replay.sh",
+      "scope": "source snapshot of measured binary; later tool changes do not requalify old measurement"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/owned-cleanup.json",
+      "bytes": 2463,
+      "sha256": "0932711e78fdc94427845d9f568eb467f376a42d134c45b18e2a937d8a969953"
+    },
+    {
+      "path": "build/native-replay-compare-cpu-20261008/native-qwen-hybrid-ffn-replay",
+      "bytes": 193104,
+      "sha256": "8c7ec6d4af00c485af5d40cc38c85f6ee36b27141accd4510245510e10baceb3",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    },
+    {
+      "path": "tools/native/native_qwen_hybrid_ffn_replay.cpp",
+      "bytes": 43513,
+      "sha256": "19afcfd831bd7da0eaf4dfd23f9d050363ad6d7eae58ebf991e2dd4978f1a071",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    },
+    {
+      "path": "tools/native/build_native_qwen_hybrid_ffn_replay.sh",
+      "bytes": 2468,
+      "sha256": "85a57bcdbd7ad07a604d32e62f68a38cdb82d4cb8908967b248f37eb4d975aa5",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/compare-cpu-host.log",
+      "bytes": 73,
+      "sha256": "aa1c4b7284bea5166d33eb9d3caac52e6542678753e5e070993fd9503ef7da45",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/compare-cpu-link.log",
+      "bytes": 127,
+      "sha256": "3ee0e5b132e5136c58d0f9ff7a508a2baa2f82a769e1cb5e3c0c658c5d6146e5",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/compare-cpu-contract.log",
+      "bytes": 123,
+      "sha256": "839dd00d330ed978adc89bf22677b516c09f86fdb7994593ba41e344a1e48537",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-real-20261008/compare-cpu-owned-cleanup.json",
+      "bytes": 490,
+      "sha256": "2af7fd733897613c7c1d3e85a6351e8e5dd1ec675e56fd9578abb1f6e96dab4a",
+      "scope": "post-measurement tool CPU contract; not the source/binary of recorded model performance"
+    }
+  ],
+  "subsequent_tool_cpu_validation": {
+    "scope": "new comparison loop only; no model/device run and no transfer of performance qualification",
+    "layout_validation": "once per view; BF16/contiguous/extent/alignment/null/shape/overflow enforced",
+    "numerical_contract": "finite/RRMS/exact BF16 bit distinction preserved, including signed zero",
+    "comparison_cases": 17,
+    "rejected_cases": 14,
+    "comparison_cpu_seconds": "new field for future runs; absent from original six-call device receipt",
+    "model_runs": 0,
+    "gpu_ane_runs": 0,
+    "cleanup": {
+      "file_count": 1,
+      "bytes": 197800
+    }
+  }
+}

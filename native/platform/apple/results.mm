@@ -1,12 +1,23 @@
 #include "bridge.hpp"
+#include "../../core/quantized_execution_profiles.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
+#include "../../models/qwen21/native_route.hpp"
 #include "../../models/qwen21/viggle_adapter.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
 #include "../../runtime/streaming/actual_receipt.hpp"
 namespace tc {
+static bool native_w1_executed(const RunResult &result) {
+    return !result.prepared && result.native_denoiser_hybrid &&
+        result.native_denoiser_hybrid->enabled &&
+        result.native_denoiser_hybrid->successful_ffns > 0 &&
+        result.native_denoiser_hybrid->completed_hybrid_steps > 0;
+}
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "qwen-image-2.1" && r.qwen21_denoiser_backend == "native-metal-graph")
+        return qwen21::native_w1_requested(r) ? @"native_full_dit_euler_w1" :
+            qwen21::native_viggle_lora_requested(r) ? @"native_full_dit_euler_runtime_lora" : @"native_full_dit_euler";
     if (r.hybrid_mlp_mode == "runtime") return @"runtime_weight_token_row_ffn";
     if (r.hybrid_mlp_mode == "runtime_qkv") return @"runtime_weight_token_row_qkv";
     if (r.model == "qwen-image-2.1")
@@ -41,6 +52,29 @@ static NSString *gpu_graph_label(const Request &r) {
                                        : @"compiled_single_blocks";
 }
 static NSString *gpu_graph_label(const RunResult &result) {
+    if(result.qwen_bf16_streaming)return @"qwen21_original_bf16_dynamic_weight_slots";
+    if (result.backend == "native_metal_graph+mlx_encoder_vae")
+        return result.prepared ? @"native_source_preparation" :
+            result.native_denoiser_lora && result.native_denoiser_lora->completed ?
+            @"native_full_dit_euler_runtime_lora" : @"native_full_dit_euler";
+    if (result.backend == "native_metal_graph+private_ane_w1+mlx_encoder_vae")
+        return result.prepared ? @"native_source_preparation" :
+            (native_w1_executed(result) ? @"native_full_dit_euler_w1" : @"native_full_dit_euler");
+    if(result.backend=="mlx_cpp_metal_dense_split_gpu_control")
+        return @"compiled_split_gpu_ffn_control";
+    if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
+        const auto &m = *result.hybrid;
+        if (m.runtime_weight_backend.empty()) {
+            Request gpu = result.request;gpu.execution="gpu";gpu.hybrid_mlp_mode="auto";
+            return gpu_graph_label(gpu);
+        }
+        if (m.runtime_weight_partition_axis == "intermediate_channels")
+            return @"runtime_weight_intermediate_channel_ffn";
+    }
+    if(result.backend=="mlx_cpp_metal_convrot_compiled_experimental")
+        return @"convrot_parameterized_packed_bf16_blocks";
+    if(result.backend=="mlx_cpp_metal_qwen21_gguf")
+        return @"qwen21_mixed_k_affine_parameterized_blocks";
     if (result.request.model == "minimax-h3-vdn")
         return @"h3_vdn_int6_window_delta";
     if (result.backend == "mlx_cpp_metal" &&
@@ -64,9 +98,26 @@ static NSString *encoder_backend_label(const Request &request, bool hybrid) {
         return hybrid ? @"metal_mps+coreml" : @"metal_mps";
     return hybrid ? @"mlx_cpp_metal+coreml" : @"mlx_cpp_metal";
 }
+static bool encoder_executed(const RunResult&);
+static NSString *encoder_backend_label(const RunResult&);
+static NSString *encoder_precision_label(const RunResult&);
+static bool executed_encoder_hybrid(const RunResult& result) {
+    if(result.native_encoder && result.native_encoder->ane_ffns)return true;
+    return encoder_executed(result);
+}
+static NSString *executed_encoder_backend(const RunResult& result) {
+    if(result.native_encoder)return result.native_encoder->ane_ffns?@"native_metal_graph_qwen3_vl_private_ane_w1_experimental":@"native_metal_graph_qwen3_vl_experimental";
+    if(executed_encoder_hybrid(result) && result.encoder_hybrid->runtime_weight_backend=="private_ane")
+        return @"mlx_cpp_metal+private_ane_runtime_weight_experimental";
+    return encoder_backend_label(result);
+}
+static NSString *executed_encoder_precision(const RunResult& result) {
+    if(result.native_encoder)return @(result.native_encoder->precision.c_str());
+    return encoder_precision_label(result);
+}
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
     if (request.model == "qwen-image-2.1")
-        return @"qwen3_vl_deepstack_gpu_only";
+        return hybrid ? @"qwen3_vl_language_runtime_ffn_gpu_complement" : @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
         return hybrid ? @"gemma4_encoder_mlp_complement"
                       : @"gemma4_gpu_only";
@@ -74,6 +125,114 @@ static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
         return hybrid ? @"qwen3_vl_encoder_mlp_complement"
                       : @"qwen3_vl_gpu_only";
     return hybrid ? @"qwen3_encoder_mlp_complement" : @"qwen3_gpu_only";
+}
+static bool encoder_executed(const RunResult &result) {
+    // Keep a cold attempt's failure/decline diagnostics, but never label a
+    // zero-call Qwen encoder or a conditioning cache hit as model ANE work.
+    return result.encoder_hybrid && (result.request.model != "qwen-image-2.1" ||
+        (result.encoder_runtime_reuse ? result.encoder_runtime_reuse->calls_this_request :
+                                      result.encoder_hybrid->runtime_calls) > 0);
+}
+static id encoder_reuse_dictionary(const RunResult &result) {
+    if(!result.encoder_runtime_reuse)return NSNull.null;
+    const auto &m=*result.encoder_runtime_reuse;
+    return @{@"enabled":@(m.enabled),@"executor_reused":@(m.reused),@"executor_retained":@(m.retained),
+        @"actual_calls_this_request":@(m.calls_this_request),@"retained_estimated_bytes":@(m.retained_estimated_bytes),
+        @"weight_residency":result.encoder_weight_residency && result.encoder_weight_residency->retained ? @"resident_source_arrays" : @"request_local",
+        @"scope":@"request-local execution evidence; HybridMetrics remain cumulative; estimate is not a RAM cap"};
+}
+static id encoder_weight_dictionary(const RunResult &result) {
+    if(!result.encoder_weight_residency)return NSNull.null;
+    const auto &m=*result.encoder_weight_residency;
+    return @{@"enabled":@(m.enabled),@"weights_reused":@(m.reused),@"weights_retained":@(m.retained),
+        @"source_bytes":@(m.source_bytes),@"retained_bytes":@(m.retained_bytes),@"loads_session_total":@(m.loads_session_total),
+        @"decline_reason":@(m.decline_reason.c_str()),@"logical_capacity_upper_bytes":@(uint64_t(20)<<30),
+        @"scope":@"admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures"};
+}
+static id qwen_encoder_prefill_dictionary(const QwenEncoderPrefillMetrics &m) {
+    return @{ @"processor_sha256":@(m.processor_sha256.c_str()),@"tokenizer_reused":@(m.tokenizer_reused),
+        @"encoder_evaluated_this_request":@(m.encoder_evaluated_this_request),
+        @"input_rows":@(m.input_rows),@"retained_rows":@(m.retained_rows),
+        @"qkv_fused_layers":@(m.qkv_fused_layers),@"gate_up_fused_layers":@(m.gate_up_fused_layers),
+        @"qk_fused_layers":@(m.qk_fused_layers),
+        @"pack_seconds_this_request":@(m.pack_seconds_this_request),@"encoder_execution":@"gpu",@"native_gqa_attention":@(m.encoder_evaluated_this_request),
+        @"fused_rms_qk_neox_rope":@(m.encoder_evaluated_this_request),@"dense_checkpoint_expansion":@NO,
+        @"scope":@"explicit GPU-only encoder prefill; same original packed/dense codes and coefficients, validated held-fd tokenizer reuse; kernel arithmetic approximate, physical kernel/overlap unqualified"};
+}
+static id shared_lora_rank_dictionary(const RunResult &result) {
+    if (!result.shared_lora_ranks) return NSNull.null;
+    const auto &m = *result.shared_lora_ranks;
+    return @{
+        @"enabled" : @(m.enabled),
+        @"prepared_sets_this_request" : @(m.prepared_sets),
+        @"completed_hybrid_blocks_this_request" : @(m.completed_hybrid_blocks),
+        @"completed_adapter_rank_arrays_this_request" : @(m.completed_adapter_rank_arrays),
+        @"scope" : @"operation-local rank graph outputs consumed by both GPU channel and ANE correction paths in successful hybrid blocks; not physical kernel counts"
+    };
+}
+static id student_ffn_reuse_dictionary(const RunResult &result) {
+    return @{@"enabled":@(result.student_ffn_reuse_enabled),
+        @"requested_final_layers":@(result.student_ffn_requested_layers),
+        @"captured_blocks_this_request":@(result.student_ffn_captured_blocks),
+        @"reused_blocks_this_request":@(result.student_ffn_reused_blocks),
+        @"peak_logical_cache_bytes":@(result.student_ffn_peak_logical_bytes),
+        @"released_before_vae":@YES,
+        @"scope":@"successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"};
+}
+static id qwen_ffn_phase_dictionary(const RunResult &result) {
+    const auto &m=*result.qwen_ffn_phases;
+    auto phase=[](const QwenFfnPhaseCounters &p) {
+        return @{@"steps_this_request":@(p.steps),@"actual_rows":@(p.rows),
+            @"step_seconds":@(p.step_seconds),@"runtime_calls_this_request":@(p.runtime_calls),
+            @"completed_channel_blocks_this_request":@(p.completed_channel_blocks)};
+    };
+    return @{@"policy":@(m.policy.c_str()),@"prefill":phase(m.prefill),@"decode":phase(m.decode),
+        @"scope":@"completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"};
+}
+static id qwen_bf16_stream_dictionary(const QwenBf16StreamingMetrics &metrics) {
+    auto stage=[](const QwenBf16StreamStageMetrics &m) {
+        return @{ @"source_sha256":@(m.source_sha256.c_str()),@"layout_digest":@(m.layout_digest.c_str()),
+            @"source_file_bytes":@(m.source_file_bytes),@"verification_bytes":@(m.verification_bytes),
+            @"verification_cache_hits":@(m.verification_cache_hits),@"verification_seconds":@(m.verification_seconds),
+            @"managed_weight_capacity_bytes":@(m.managed_weight_capacity_bytes),@"managed_weight_budget_bytes":@(m.managed_weight_budget_bytes),
+            @"resident_source_bytes":@(m.resident_source_bytes),@"streamed_source_bytes":@(m.streamed_source_bytes),@"slot_arrays":@(m.slot_arrays),
+            @"fills":@(m.fills),@"completed_layers":@(m.completed_layers),@"completed_prefix_layers":@(m.completed_prefix_layers),
+            @"completed_streamed_layers":@(m.completed_streamed_layers),@"reader_fences":@(m.reader_fences),
+            @"completed_reader_fences":@(m.completed_reader_fences),@"layers":@(m.layers),@"prefix":@(m.prefix),@"slots":@(m.slots),
+            @"completed_passes":@(m.completed_passes),@"resident_load_seconds":@(m.resident_load_seconds),
+            @"streamed_read_seconds":@(m.streamed_read_seconds),@"wait_seconds":@(m.wait_seconds),@"drained":@(m.drained)};
+    };
+    return @{ @"encoder":stage(metrics.encoder),@"denoiser":stage(metrics.denoiser),
+        @"weight_precision":@"original_bf16",@"cpu_refill_workers":@1,@"prefetch_distance":@1,
+        @"dynamic_layer_weight_arguments":@YES,@"components_released_before_vae":@YES,
+        @"public_memory_qualification":@NO,@"physical_overlap_proved":@NO,
+        @"scope":@"private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap"};
+}
+static NSString *encoder_backend_label(const RunResult &result) {
+    if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
+        !result.encoder_hybrid->runtime_weight_backend.empty())
+        return result.encoder_hybrid->runtime_weight_backend == "private_ane"
+            ? @"mlx_cpp_metal+private_ane_runtime_weight_experimental"
+            : @"mlx_cpp_metal+coreml_runtime_weight";
+    return encoder_backend_label(result.request, encoder_executed(result));
+}
+static NSString *encoder_precision_label(const RunResult &result) {
+    if(result.request.model=="qwen-image-2.1" && result.precision.find("q4_k_m_text")!=std::string::npos)
+        return @"q4_k_m_affine_fp16_io";
+    if (!encoder_executed(result)) return @"bf16";
+    const auto &metrics = *result.encoder_hybrid;
+    if (result.request.model == "qwen-image-2.1" &&
+        !metrics.runtime_weight_backend.empty()) {
+        const auto &path = metrics.runtime_weight_data_path;
+        return path == "w8a8_convrot" ? @"bf16_gpu+runtime_convrot_w8a8_ffn_bf16_io" :
+            path == "w8a8_hadamard" ? @"bf16_gpu+runtime_w8a8_ffn_bf16_io" :
+            @"bf16_gpu+runtime_fp16_ffn_bf16_io";
+    }
+    return @(hybrid_precision_label(metrics).c_str());
+}
+static NSString *executed_encoder_gpu_graph(const RunResult& result) {
+    return result.native_encoder ? (result.native_encoder->ane_ffns?@"native_vision_gpu_language_private_ane_w1_padded_ffn":@"native_vision27_language36_two_layer_graph") :
+        encoder_gpu_graph_label(result.request, executed_encoder_hybrid(result));
 }
 static NSString *encoder_weight_validation_label(const Request &request,
                                                   bool hybrid,
@@ -101,6 +260,8 @@ static NSString *encoder_weight_validation_label(const Request &request,
     return @"native Qwen3 checkpoint loaded directly";
 }
 static NSString *encoder_approximation_label(const Request &request) {
+    if (request.model == "qwen-image-2.1")
+        return @"qwen3_vl_language_runtime_ffn_approximation";
     if (ltx_gemma4_encoder(request))
         return @"gemma4_encoder_mlp_coreml_approximation";
     return h3_qwen3_vl_encoder(request)
@@ -112,6 +273,17 @@ static NSArray *strings(const std::vector<std::string> &values) {
     for (auto &value : values)
         [array addObject:@(value.c_str())];
     return array;
+}
+static NSDictionary *quantized_config(const QuantizedExecutionConfig &c) {
+    if (!c.active()) return @{@"enabled": @NO, @"schema_version": @(c.schema_version.value_or(1))};
+    return @{@"enabled": @YES, @"schema_version": @1,
+        @"mode": @(c.mode.value_or(gguf_raw_gpu_profile(c.precision_profile.value_or("")) ? "bounded_raw_packed" : c.precision_profile == "z-source-native-affine-v1" || c.precision_profile == "z-mlx-compat-affine-v1" ? "bounded_packed" : "bounded_dequant").c_str()),
+        @"source_residency": @(c.source_residency.value_or("packed_resident").c_str()),
+        @"decode_backend": @(c.decode_backend.value_or(gguf_raw_gpu_profile(c.precision_profile.value_or("")) ? "cpu_io_gpu_affine" : "cpu_simd").c_str()),
+        @"precision_profile": @(c.precision_profile.value_or("z-source-mixed-v1").c_str()),
+        @"granularity": @"layer", @"prefetch_layers": @(c.prefetch_layers.value_or(1)),
+        @"persistent_dense_layers": @0, @"oversized_layer_policy": @"reject",
+        @"ane_compute": @"off", @"allow_requantization": @NO};
 }
 NSDictionary *to_dictionary(const ModelDescriptor &d) {
     NSMutableDictionary *result = [@{
@@ -161,6 +333,27 @@ NSDictionary *to_dictionary(const ModelDescriptor &d) {
     if (!d.audio_capability.empty()) result[@"audio_capability"] = @(d.audio_capability.c_str());
     if (!d.executor_operations.empty()) result[@"executor_operations"] = strings(d.executor_operations);
     if (!d.candidate_limitations.empty()) result[@"candidate_limitations"] = strings(d.candidate_limitations);
+    if (d.id == "qwen-image-2.1") {
+        result[@"reference_encoding"] = @{
+            @"schema_v1_field": @"qwen21_reference_size",
+            @"schema_v2_field": @"parameters.qwen21_reference_size",
+            @"default": @1024,
+            @"sizing": @"approximate squared-pixel area, preserving aspect ratio with 32-aligned dimensions",
+            @"base_approximation_sizes": @[@256, @512],
+            @"viggle_r128_gpu_edit_opt_in_size": @512,
+            @"resize_requires_allow_approximation": @YES,
+            @"admission": @"plan",
+            @"weight_identity_validation": @"pinned SHA-256 at load",
+            @"constraints": @"Reference resizing is an explicit editing approximation. Base, ordinary LoRA, DiT cache and Viggle r128 have different requirements below; plan validates the complete request and route. This setting does not resize the output canvas.",
+            @"base_constraints": @"No LoRA; image.edit with 1...3 references, size 256 or 512 and allow_approximation=true. Other execution, sampling and cache constraints remain subject to plan.",
+            @"viggle_r128_gpu_edit_constraints": @"512x512 GPU edit, hybrid_mlp_mode=auto, 1...3 references, Viggle v0.2.1 r128, six steps, strength 1, inference_time LoRA, prompt enhancement and DiT cache off; ANE requires its existing full-size or diagnostic routes",
+            @"ordinary_lora_reference_size": @1024,
+            @"ordinary_lora_supported_reference_sizes": @[@512, @1024],
+            @"ordinary_lora_constraints": @"Default reference size 1024; size 512 requires image.edit with 1...3 references and allow_approximation=true. GPU 512x512, hybrid_mlp_mode=auto, 20...40-step base schedule, one transformer adapter, finite strength -8...8 and inference_time LoRA. Ordinary adapter content identity is checked each request; all paired targets must bind. DiT cache presets are supported subject to their constraints.",
+            @"dit_cache_supported_reference_sizes": @[@512, @1024],
+            @"dit_cache_constraints": @"conservative/balanced/fast require allow_approximation=true, GPU 512x512, hybrid_mlp_mode=auto, 20...40-step base schedule, prompt enhancement off, base or one ordinary runtime LoRA. Generation uses size 1024 and no references; editing allows 1...3 references at size 1024 or 512. Viggle six-step, ANE and other experimental cache routes are excluded."
+        };
+    }
     if (d.fps) result[@"default_fps"] = @(d.fps);
     return result;
 }
@@ -174,6 +367,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     auto &r = plan.request;
     auto &recipe = plan.recipe;
     bool hybrid = r.execution == "gpu_ane";
+    const bool native_w1 = qwen21::native_w1_requested(r);
     bool encoder_hybrid = !r.encoder_ane_manifest.empty();
     const auto lora_strategy = effective_lora_strategy(r);
     auto validation = r.model == "z-image-turbo-gguf" ? @"native_gguf_candidate" :
@@ -218,7 +412,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             (r.model.starts_with("flux2-klein-") ? @"load_time_baked" : @"in_memory_delta") :
          r.model == "wan2.1-1.3b-qad" ? @"premerged_manifest_verified" :
          @"premerged_manifest_verified");
-    auto backend = r.hybrid_mlp_mode == "runtime_qkv" ? @"mlx_cpp_metal+coreml_runtime_qkv" :
+    auto backend = native_w1 ? @"native_metal_graph+private_ane_w1+mlx_encoder_vae" :
+        r.model == "qwen-image-2.1" && r.qwen21_denoiser_backend == "native-metal-graph"
+        ? @"native_metal_graph+mlx_encoder_vae" :
+        r.hybrid_mlp_mode == "runtime_qkv" ? @"mlx_cpp_metal+coreml_runtime_qkv" :
         r.hybrid_mlp_mode == "runtime" ?
         (r.model == "z-image-turbo-gguf" ? @"mlx_cpp_metal_gguf+coreml_runtime_weight"
                                        : @"mlx_cpp_metal+coreml_runtime_weight") : hybrid ?
@@ -248,8 +445,16 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         }];
     }
     NSMutableArray *algorithm_approximations = [NSMutableArray array];
-    if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
-            std::getenv("TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC")))
+    if(qwen21::joint_bf16_lora_ab(r))
+        [algorithm_approximations addObject:@"qwen21_joint_bf16_lora_ab_operands"];
+    if(r.model=="qwen-image-2.1" && r.hybrid_mlp_mode=="runtime") {
+        const auto phase=qwen21::runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
+        if(phase!=qwen21::RuntimeFfnPhase::All)
+            [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_runtime_ffn_phase_%s",qwen21::runtime_ffn_phase_name(phase)]];
+    }
+    if (r.model == "qwen-image-2.1" && r.qwen21_dit_cache != "off")
+        [algorithm_approximations addObject:@"qwen21_decode_dit_cache"];
+    if (r.model == "qwen-image-2.1" && qwen21::db_cache_options(r).diagnostic)
         [algorithm_approximations addObject:@"qwen21_decode_dbcache_diagnostic"];
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_RECT_W8A8_DIAGNOSTIC")))
@@ -257,7 +462,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && qwen21::gate_up_ane(r))
         [algorithm_approximations addObject:@"qwen21_w8a8_gate_up_gpu_silu_down_diagnostic"];
     if (r.model == "qwen-image-2.1" && qwen21::fused_lora_ane(r))
-        [algorithm_approximations addObject:@"qwen21_w8a8_fused_lora_pre_silu_diagnostic"];
+        [algorithm_approximations addObject:qwen21::frozen_fp16(r)
+            ? @"qwen21_fp16_fused_lora_pre_silu_diagnostic"
+            : @"qwen21_w8a8_fused_lora_pre_silu_diagnostic"];
     if (r.model == "qwen-image-2.1" && qwen21::lora_base_ane(r) &&
             !qwen21::gate_up_ane(r) && !qwen21::fused_lora_ane(r))
         [algorithm_approximations addObject:@"qwen21_runtime_lora_base_ane_suffix_only_diagnostic"];
@@ -268,6 +475,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && qwen21::option_enabled(
             std::getenv("TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC")))
         [algorithm_approximations addObject:@"qwen21_viggle_reference_resize_512_diagnostic"];
+    if (qwen21::gpu_viggle_ref512_request(r))
+        [algorithm_approximations addObject:@"qwen21_viggle_r128_reference_resize_512"];
     const char *last_target = std::getenv("TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && last_target && std::string_view(last_target) == "1")
         [algorithm_approximations addObject:@"qwen21_prefill_last_target_only_diagnostic"];
@@ -292,6 +501,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     const char *prefix_target_only = std::getenv("TURBOCIDER_QWEN21_TILED_PREFIX_TARGET_ONLY_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && prefix_target_only && std::string_view(prefix_target_only) == "1")
         [algorithm_approximations addObject:@"qwen21_tiled_prefix_target_only_diagnostic"];
+    if(qwen21::student_final_ffn_reuse(r))
+        [algorithm_approximations addObject:@"qwen21_student_final_ffn_reuse"];
     const char *hybrid_reuse = std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_FFN_DIAGNOSTIC");
     if (r.model == "qwen-image-2.1" && hybrid_reuse && std::string_view(hybrid_reuse) == "1")
         [algorithm_approximations addObject:@"qwen21_hybrid_reuse_final_ffn_diagnostic"];
@@ -316,6 +527,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     else if (!r.quantized_cache.empty())
         [algorithm_approximations addObject:
             @"row_symmetric_int8_weight_quantization"];
+    else if (native_w1)
+        [algorithm_approximations addObject:@"qwen21_native_w1_sylvester_w8a8_channel_split"];
     else if (hybrid && r.hybrid_mlp_mode != "runtime" && r.hybrid_mlp_mode != "runtime_qkv")
         [algorithm_approximations addObject:
             r.model == "qwen-image-2.1"
@@ -330,11 +543,15 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const auto *adapter = qwen21::viggle_v021_adapter(
             std::filesystem::path(r.loras[0].path).filename().string());
-        const auto label = adapter
-            ? "qwen21_viggle_v021_" + std::string(adapter->rank) + "_6step_distillation"
-            : "qwen21_unqualified_adapter_6step_schedule";
-        [algorithm_approximations addObject:@(label.c_str())];
+        if (adapter || r.execution == "gpu_ane") {
+            const auto label = adapter
+                ? "qwen21_viggle_v021_" + std::string(adapter->rank) + "_6step_distillation"
+                : "qwen21_unqualified_adapter_6step_schedule";
+            [algorithm_approximations addObject:@(label.c_str())];
+        }
     }
+    if (qwen21::lora_1024_generation(r))
+        [algorithm_approximations addObject:@"qwen21_lora_1024_generation_fp32_diagnostic"];
     if (r.model == "qwen-image-2.1" && !r.loras.empty()) {
         const char *fp16_lora = std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16");
         if (fp16_lora && std::string_view(fp16_lora) == "1")
@@ -392,7 +609,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
-        @"precision" : r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
+        @"precision" : native_w1 ? @"bf16_gpu+w8a8_sylvester_ane_fp16_io" :
+                      r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
                       r.hybrid_mlp_mode == "runtime" ?
                           (r.model == "z-image-turbo-gguf" ? @"gguf_native_gpu+runtime_fp16_ffn"
                                                           : @"bf16_gpu+runtime_fp16_ffn_bf16_io") :
@@ -473,11 +691,38 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
         report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
+        report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
+        report[@"qwen21_denoiser_backend"] = @(r.qwen21_denoiser_backend.c_str());
+        if (r.qwen21_denoiser_backend == "native-metal-graph")
+            report[@"qwen21_denoiser_qualification"] = @"experimental-unqualified";
+        if (qwen21::native_viggle_lora_requested(r)) {
+            report[@"qwen21_native_variant"] = @"viggle-r128-6step";
+            report[@"qwen21_native_lora_kernel"] = @(r.qwen21_native_lora_kernel.c_str());
+            report[@"weight_validation"] = @"r128 adapter content pin and produced factor owners verified at execution";
+        }
+        if (native_w1) {
+            report[@"qwen21_native_ane_cache"] = @(r.qwen21_native_ane_cache.c_str());
+            report[@"qwen21_native_w8_staging"] = @(r.qwen21_native_w8_staging.c_str());
+            report[@"qwen21_native_scale_cache"] = @(r.qwen21_native_scale_cache);
+            report[@"planned_native_w1_phase"] = @"gpu_prefix_build_then_steady_decode";
+            report[@"planned_native_w1_geometry"] = @{@"hidden": @4096, @"intermediate": @12288,
+                @"ane_channels": @6144, @"target_rows": @1024, @"slots": @1};
+            report[@"native_ane_hardware_arithmetic"] = @"unverified";
+            report[@"weight_validation"] = @"held dense sources and runtime MIL geometry checked at execution; Sylvester W8A8 whole-model quality/performance unqualified";
+        }
         report[@"qwen21_gpu_full_ffn_blocks"] = blocks;
         if (r.qwen21_w8a8)
             report[@"planned_w8a8_ffn_layer_coverage"] = @((32. - blocks.count) / 32.);
     }
+    if (r.quantized_execution.specified()) report[@"quantized_execution"] = quantized_config(r.quantized_execution);
+    if (r.quantized_execution.active()) {
+        report[@"executable"] = @NO;
+        report[@"quantized_execution_qualification"] = @"experimental-unqualified";
+        report[@"memory_estimate_kind"] = @"requires_gguf_layout_and_framework_envelope";
+    }
     if (r.streaming.active()) {
+        // Quantized execution remains an explicit experimental candidate;
+        // its typed request is reported separately below.
         report[@"executable"] = @NO;
         report[@"memory_estimate_kind"] = @"requires_layout_metadata";
         NSMutableDictionary *origins = [NSMutableDictionary dictionary];
@@ -808,16 +1053,36 @@ static NSDictionary *runtime_plan(const RunResult &result) {
     if (!result.precision.empty())
         plan[@"precision"] = @(result.precision.c_str());
     plan[@"gpu_graph"] = gpu_graph_label(result);
-    const bool hybrid = result.request.execution == "gpu_ane";
-    const bool encoder_hybrid = result.encoder_hybrid.has_value();
+    const bool runtime_unselected = result.request.hybrid_mlp_mode == "runtime" && result.hybrid &&
+        result.hybrid->runtime_weight_backend.empty();
+    const bool native_dit = qwen21::native_denoiser_requested(result.request);
+    const bool hybrid = result.native_prefill.has_value() || (native_dit ? native_w1_executed(result)
+        : result.request.execution == "gpu_ane" && !runtime_unselected);
+    const bool encoder_hybrid = executed_encoder_hybrid(result);
     plan[@"execution"] = hybrid ? @"gpu_ane_experimental" : @"gpu";
+    if(result.native_prefill){NSMutableArray* approximations=[plan[@"algorithm_approximations"] mutableCopy];
+        [approximations addObject:@"qwen21_native_prefill_w1_w8a8_channel_split"];plan[@"algorithm_approximations"]=approximations;}
+    if (native_dit) {
+        plan[@"native_w1_executed"] = @(native_w1_executed(result));
+        if (!hybrid) {
+            NSMutableArray *approximations = [plan[@"algorithm_approximations"] mutableCopy];
+            [approximations removeObject:@"qwen21_native_w1_sylvester_w8a8_channel_split"];
+            plan[@"algorithm_approximations"] = approximations;
+            plan[@"precision"] = @"bf16";
+            plan[@"backend"] = @"native_metal_graph+mlx_encoder_vae";
+        }
+    }
     plan[@"encoder_execution"] = encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    plan[@"encoder_backend"] = encoder_backend_label(
-        result.request, encoder_hybrid);
+    plan[@"encoder_backend"] = executed_encoder_backend(result);
     plan[@"encoder_gpu_graph"] =
-        encoder_gpu_graph_label(result.request, encoder_hybrid);
-    plan[@"encoder_precision"] = encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
-                                                  : @"bf16";
+        executed_encoder_gpu_graph(result);
+    plan[@"encoder_precision"] = executed_encoder_precision(result);
+    if(encoder_hybrid && result.request.model=="qwen-image-2.1") {
+        NSMutableArray* approximations=[plan[@"algorithm_approximations"] mutableCopy];
+        if(![approximations containsObject:@"qwen21_encoder_runtime_w8a8_channel_split"])
+            [approximations addObject:@"qwen21_encoder_runtime_w8a8_channel_split"];
+        plan[@"algorithm_approximations"]=approximations;
+    }
     if (result.hybrid && result.request.model != "z-image-turbo-gguf")
         plan[@"precision"] = @((result.precision.empty()
             ? hybrid_precision_label(*result.hybrid) : result.precision).c_str());
@@ -843,6 +1108,32 @@ static NSDictionary *runtime_plan(const RunResult &result) {
         if (encoder_hybrid)
             [approximations addObject:encoder_approximation_label(result.request)];
         plan[@"algorithm_approximations"] = approximations;
+    }
+    if (result.request.hybrid_mlp_mode == "runtime" && result.hybrid) {
+        const auto &m = *result.hybrid;
+        NSMutableArray *approximations = [plan[@"algorithm_approximations"] mutableCopy];
+        [approximations removeObject:@"runtime_weight_fp16_token_row_ffn"];
+        // The runtime graph's actual representation/axis, not environment
+        // intent. Auto->Core ML fallback must not retain a W8/channel label.
+        [approximations removeObject:@"single_block_mlp_coreml_approximation"];
+        if (!m.runtime_weight_backend.empty()) {
+            const bool channels = m.runtime_weight_partition_axis == "intermediate_channels";
+            const bool w8 = m.runtime_weight_data_path == "w8a8_hadamard";
+            const bool comfy = m.runtime_weight_data_path == "w8a8_convrot";
+            [approximations addObject:comfy ?
+                (channels ? @"runtime_weight_w8a8_convrot_channel_ffn" : @"runtime_weight_w8a8_convrot_token_row_ffn") : w8 ?
+                (channels ? @"runtime_weight_w8a8_hadamard_channel_ffn" : @"runtime_weight_w8a8_hadamard_token_row_ffn") :
+                (channels ? @"runtime_weight_fp16_channel_ffn" : @"runtime_weight_fp16_token_row_ffn")];
+        }
+        if (m.runtime_weight_s1_hybrid_blocks)
+            [approximations addObject:@"runtime_smoothquant_s1_experimental"];
+        plan[@"algorithm_approximations"] = approximations;
+        plan[@"runtime_weight_contract"] = @{
+            @"executor_backend": m.runtime_weight_backend.empty() ? (id)NSNull.null : @(m.runtime_weight_backend.c_str()),
+            @"data_path": @(m.runtime_weight_data_path.c_str()),
+            @"partition_axis": @(m.runtime_weight_partition_axis.c_str()),
+            @"source": @"selected_executor_receipt_not_environment_or_physical_placement",
+        };
     }
     if (result.streaming_runtime) {
         NSDictionary *actual = actual_streaming_layout(
@@ -875,22 +1166,189 @@ NSDictionary *to_dictionary(const LoadResult &r) {
         @"mlx_active_bytes" : @(r.active_bytes)
     };
 }
+static id calibration_number(double value) {
+    return std::isfinite(value) ? (id)@(value) : (id)NSNull.null;
+}
+static NSArray *calibration_values(const std::vector<double> &values) {
+    NSMutableArray *result=[NSMutableArray arrayWithCapacity:values.size()];
+    for(double value:values)[result addObject:calibration_number(value)];
+    return result;
+}
+static NSDictionary *calibration_dictionary(const ane::ChannelCalibrationReport &r) {
+    id identity=NSNull.null,baseline=NSNull.null,trial=NSNull.null;
+    if(r.identity) {
+        const auto &k=*r.identity;
+        identity=@{@"model_sha256":@(k.model_sha256.c_str()),@"adapter":@(k.adapter.c_str()),
+            @"encoding":@(k.encoding.c_str()),@"precision":@(k.precision.c_str()),@"backend":@(k.backend.c_str()),
+            @"recipe":@(k.recipe.c_str()),@"soc":@(k.soc.c_str()),@"os_build":@(k.os_build.c_str()),
+            @"runtime_build":@(k.runtime_build.c_str()),@"metal_abi":@(k.metal_abi.c_str()),@"graph_abi":@(k.graph_abi.c_str()),
+            @"source_generation":@(k.source_generation.c_str()),@"rows":@(k.rows),@"hidden":@(k.hidden),
+            @"width":@(k.width),@"tile_k":@(k.tile_k),@"tile_n":@(k.tile_n),@"prefetch":@(k.prefetch)};
+    }
+    if(r.baseline)baseline=@{@"layer_seconds":calibration_number(r.baseline->layer_seconds),
+        @"raw_seconds":@[calibration_values(r.baseline->seconds[0]),calibration_values(r.baseline->seconds[1])]};
+    NSMutableArray *points=[NSMutableArray arrayWithCapacity:r.points.size()];
+    for(const auto &sample:r.points) {
+        NSMutableArray *raw=[NSMutableArray arrayWithCapacity:3];
+        for(const auto &part:sample.seconds)[raw addObject:@[calibration_values(part[0]),calibration_values(part[1])]];
+        [points addObject:@{@"share":calibration_number(sample.point.share),@"gpu":calibration_number(sample.point.gpu),
+            @"ane":calibration_number(sample.point.ane),@"both":calibration_number(sample.point.both),
+            @"prefetch":@(sample.prefetch),@"ane_calls":@(sample.ane_calls),@"raw_seconds":raw}];
+        NSMutableDictionary *point=[points.lastObject mutableCopy];
+        point[@"correction_computations"]=@(sample.correction_computations);
+        point[@"correction_uploads"]=@(sample.correction_uploads);
+        points[points.count-1]=point;
+    }
+    if(r.trial) {
+        const auto &t=*r.trial;
+        trial=@{@"gpu_seconds":calibration_values(t.gpu_seconds),@"candidate_seconds":calibration_values(t.candidate_seconds),
+            @"calls":@(t.calls),@"fallbacks":@(t.fallbacks),@"retries":@(t.retries),
+            @"relative_l2":calibration_number(t.relative_l2),@"cosine":calibration_number(t.cosine),
+            @"completed":@(t.completed),@"accepted":@(t.accepts())};
+    }
+    NSMutableArray *depth=[NSMutableArray arrayWithCapacity:r.sampled_depths.size()];
+    for(int value:r.sampled_depths)[depth addObject:@(value)];
+    NSMutableArray *admissions=[NSMutableArray arrayWithCapacity:r.memory_admissions.size()];
+    for(const auto &m:r.memory_admissions) [admissions addObject:@{
+        @"channels":@(m.channels),@"surface_bytes":@(m.surface_bytes),
+        @"gpu_scratch_upper_bytes":@(m.gpu_scratch_upper_bytes),@"gpu_restore_bytes":@(m.gpu_restore_bytes),
+        @"input_bytes":@(m.input_bytes),@"internal_allowance_bytes":@(m.internal_allowance_bytes),
+        @"estimated_bytes":@(m.estimated_bytes),@"optional_limit_bytes":@(m.optional_limit_bytes),
+        @"headroom_bytes":@(m.headroom_bytes),@"admitted":@(m.admitted),@"reason":@(m.reason.c_str())}];
+    return @{@"schema_version":@(r.schema_version),@"enabled":@(r.enabled),@"cache_hit":@(r.cache_hit),
+        @"gpu_retention_layers":@(r.gpu_retention_layers),@"memory_limited_points":@(r.memory_limited_points),
+        @"memory_admission_scope":@"complete calibration payload estimate; preflight observation; not physical RAM cap",
+        @"memory_admissions":admissions,
+        @"trial_passed":@(r.trial_passed),@"complete":@(r.complete),@"lora":@(r.lora),@"selected_channels":@(r.selected_channels),
+        @"proposed_channels":@(r.proposed_channels),@"bucket_rows":@(r.bucket_rows),@"actual_rows":@(r.actual_rows),
+        @"hidden":@(r.hidden),@"width":@(r.width),@"layer_count":@(r.layer_count),@"warmups":@(r.warmups),
+        @"repeats":@(r.repeats),@"status":@(r.status.c_str()),@"reason":@(r.reason.c_str()),@"scope":@(r.scope.c_str()),
+        @"input_recipe":@(r.input_recipe.c_str()),@"sampled_depths":depth,@"identity":identity,
+        @"baseline":baseline,@"points":points,@"trial":trial,@"predicted_layer_seconds":calibration_number(r.predicted_layer_seconds)};
+}
 NSDictionary *to_dictionary(const HybridMetrics &m) {
+    // Runtime provenance/counters belong to the graph contract, not a
+    // particular precision label. W8A8 and FP16 share the same receipt.
+    const bool runtime_weight = m.mlp_output_kind == "runtime_weight_swiglu" ||
+                                m.mlp_output_kind == "runtime_weight_swiglu_lora_inputs";
+    NSMutableArray *overflow_events=[NSMutableArray arrayWithCapacity:m.runtime_weight_overflow_events.size];
+    NSMutableArray *gpu_layers=[NSMutableArray arrayWithCapacity:m.runtime_weight_gpu_layers.size()];
+    for(int layer:m.runtime_weight_gpu_layers)[gpu_layers addObject:@(layer)];
+    for(size_t i=0;i<m.runtime_weight_overflow_events.size;++i) {
+        const auto &e=m.runtime_weight_overflow_events.events[i];
+        [overflow_events addObject:@{@"layer":@(e.layer),@"rows":@(e.rows),
+            @"runtime_call_begin":@(e.runtime_call_begin),@"runtime_call_count":@(e.runtime_call_count),
+            @"retries":@(e.retries),@"headroom_before":calibration_number(e.headroom_before),
+            @"headroom_after":calibration_number(e.headroom_after),@"completed":@(e.completed)}];
+    }
     return @{
-        @"runtime_weight" : m.weight_variant == "runtime_fp16" ? @{
+        @"runtime_weight" : runtime_weight ? @{
+            @"channel_calibration" : m.runtime_weight_calibration ? (id)calibration_dictionary(*m.runtime_weight_calibration) : (id)NSNull.null,
+            @"executor_backend" : m.runtime_weight_backend.empty() ? [NSNull null] : @(m.runtime_weight_backend.c_str()),
+            @"backend_fallback_reason" : @(m.runtime_weight_backend_fallback_reason.c_str()),
+            @"io_path" : @(m.runtime_weight_io_path.c_str()),
+            @"data_path" : @(m.runtime_weight_data_path.c_str()),
+            @"partition_axis" : @(m.runtime_weight_partition_axis.c_str()),
+            @"row_placement" : @(m.runtime_weight_row_placement.c_str()),
+            @"row_suffix_blocks_session_total" : @(m.runtime_weight_row_suffix_blocks),
+            @"row_prefix_blocks_session_total" : @(m.runtime_weight_row_prefix_blocks),
+            @"row_image_tail_blocks_session_total" : @(m.runtime_weight_row_image_tail_blocks),
+            @"row_protected_rows_session_total" : @(m.runtime_weight_row_protected_rows),
+            @"row_pack_peak_logical_bytes" : @(m.runtime_weight_row_pack_peak_bytes),
+            @"ane_channels" : @(m.runtime_weight_ane_channels),
+            @"gpu_channels" : @(m.runtime_weight_gpu_channels),
+            @"channel_blocks_session_total" : @(m.runtime_weight_channel_blocks),
+            @"prefetch_enabled" : @(m.runtime_weight_prefetch_enabled),
+            @"prefetch_after_gpu" : @(m.runtime_weight_prefetch_after_gpu),
+            @"prefetch_submissions_session_total" : @(m.runtime_weight_prefetch_submissions),
+            @"prefetch_hits_session_total" : @(m.runtime_weight_prefetch_hits),
+            @"prefetch_discards_session_total" : @(m.runtime_weight_prefetch_discards),
+            @"prefetch_failures_session_total" : @(m.runtime_weight_prefetch_failures),
+            @"prefetch_wait_seconds_session_total" : @(m.runtime_weight_prefetch_wait_seconds),
+            @"scale_cache_enabled" : @(m.runtime_weight_scale_cache_enabled),
+            @"stage_specialized" : @(m.runtime_weight_stage_specialized),
+            @"stage_pipeline_variants" : @(m.runtime_weight_stage_pipeline_variants),
+            @"launch_fence_enabled" : @(m.runtime_weight_launch_fence_enabled),
+            @"a8_lookahead_enabled" : @(m.runtime_weight_a8_lookahead_enabled),
+            @"fp32_channel_join_enabled" : @(m.runtime_weight_fp32_channel_join_enabled),
+            @"a8_group_size" : @(m.runtime_weight_a8_group_size),
+            @"hidden_a8_group_size" : @(m.runtime_weight_hidden_a8_group_size),
+            @"a8_prefetches_session_total" : @(m.runtime_weight_a8_prefetches),
+            @"a8_wait_seconds_session_total" : @(m.runtime_weight_a8_wait_seconds),
+            @"a8_single_pass_requested" : @(m.runtime_weight_a8_single_pass_requested),
+            @"a8_single_pass_pipeline_compiled" : @(m.runtime_weight_a8_single_pass_pipeline_compiled),
+            @"a8_single_pass_submissions_session_total" : @(m.runtime_weight_a8_single_pass_submissions),
+            @"a8_single_pass_ineligible_submissions_session_total" : @(m.runtime_weight_a8_single_pass_ineligible_submissions),
+            @"a8_single_pass_counter_scope" : @"committed_staging_including_capability_self_test; not_completion_or_speed_evidence",
+            @"scale_cache_hits_session_total" : @(m.runtime_weight_scale_cache_hits),
+            @"scale_cache_misses_session_total" : @(m.runtime_weight_scale_cache_misses),
+            @"scale_cache_entries" : @(m.runtime_weight_scale_cache_entries),
+            @"scale_cache_bytes" : @(m.runtime_weight_scale_cache_bytes),
+            @"scale_cache_evictions_session_total" : @(m.runtime_weight_scale_cache_evictions),
+            @"weight_code_cache" : @{
+                @"enabled" : @(m.runtime_weight_code_cache.enabled),
+                @"native_surface_storage" : @(m.runtime_weight_code_cache.native_surface_storage),
+                @"budget_bytes" : @(m.runtime_weight_code_cache.budget_bytes),
+                @"hits_session_total" : @(m.runtime_weight_code_cache.hits),
+                @"copy_hits_session_total" : @(m.runtime_weight_code_cache.copy_hits),
+                @"surface_bind_hits_session_total" : @(m.runtime_weight_code_cache.surface_bind_hits),
+                @"misses_session_total" : @(m.runtime_weight_code_cache.misses),
+                @"fills_session_total" : @(m.runtime_weight_code_cache.fills),
+                @"failed_fills_session_total" : @(m.runtime_weight_code_cache.failed_fills),
+                @"entries" : @(m.runtime_weight_code_cache.entries),
+                @"ready_entries" : @(m.runtime_weight_code_cache.ready_entries),
+                @"retained_bytes" : @(m.runtime_weight_code_cache.retained_bytes),
+                @"live_capacity_bytes" : @(m.runtime_weight_code_cache.live_capacity_bytes),
+                @"peak_capacity_bytes" : @(m.runtime_weight_code_cache.peak_capacity_bytes),
+                @"evictions_session_total" : @(m.runtime_weight_code_cache.evictions),
+                @"declines_session_total" : @(m.runtime_weight_code_cache.declines),
+                @"ineligible_session_total" : @(m.runtime_weight_code_cache.ineligible),
+                @"policy" : @"first-admitted-live-generations-v1",
+                @"scope" : @"completed converted-code copies or validated immutable ready-surface bindings, separately counted; weak generations; capacity follows producer and surface readers; not physical overlap or whole-process RAM"
+            },
+            @"device_io_calls_session_total" : @(m.runtime_weight_device_io_calls),
+            @"lora_channel_range_calls_session_total" : @(m.runtime_weight_lora_channel_range_calls),
+            @"lora_channel_full_calls_session_total" : @(m.runtime_weight_lora_channel_full_calls),
+            @"split_down_rank_blocks_session_total" : @(m.runtime_weight_down_rank_blocks),
+            @"split_down_rank_arrays_session_total" : @(m.runtime_weight_down_rank_arrays),
             @"slot_bytes" : @(m.runtime_weight_slot_bytes),
             @"estimated_bytes" : @(m.runtime_weight_estimated_bytes),
+            @"session_released" : @(m.runtime_weight_session_released),
+            @"counter_scope" : @"runtime_graph_owner; resets when reconstructed, including every component-staged request",
             @"hybrid_blocks_session_total" : @(m.runtime_weight_hybrid_blocks),
             @"gpu_blocks_session_total" : @(m.runtime_weight_gpu_blocks),
             @"unsplit_gpu_blocks_session_total" : @(m.runtime_weight_unsplit_gpu_blocks),
             @"full_gpu_probe_blocks_session_total" : @(m.runtime_weight_full_gpu_probe_blocks),
             @"untimed_hybrid_blocks_session_total" : @(m.runtime_weight_untimed_hybrid_blocks),
+            @"scheduler_cache_hit" : @(m.runtime_weight_scheduler_cache_hit),
+            @"scheduler_cache_entries" : @(m.runtime_weight_scheduler_cache_entries),
             @"async_hybrid_blocks_session_total" : @(m.runtime_weight_async_hybrid_blocks),
+            @"deferred_channel_join_enabled" : @(m.runtime_weight_deferred_join_enabled),
+            @"deferred_channel_join_blocks_session_total" : @(m.runtime_weight_deferred_join_blocks),
+            @"channel_gpu_first_enabled" : @(m.runtime_weight_channel_gpu_first_enabled),
+            @"channel_gpu_first_blocks_session_total" : @(m.runtime_weight_channel_gpu_first_blocks),
+            @"post_join_scope" : !m.runtime_weight_deferred_join_blocks ? @"evaluated_join_host_span"
+                : m.runtime_weight_deferred_join_blocks == m.runtime_weight_channel_blocks
+                    ? @"host_graph_construction_deferred_gpu_consumption" : @"mixed_evaluated_and_deferred_join_spans",
             @"full_gpu_probe_seconds_session_total" : @(m.runtime_weight_full_gpu_probe_seconds),
             @"fallback_blocks_session_total" : @(m.runtime_weight_fallback_blocks),
             @"ane_rows_session_total" : @(m.runtime_weight_ane_rows),
             @"overflow_retries_session_total" : @(m.runtime_weight_overflow_retries),
+            @"overflow_events" : overflow_events,
+            @"overflow_events_dropped_session_total" : @(m.runtime_weight_overflow_events.dropped),
+            @"overflow_event_scope" : @"aggregated per-FFN launch host telemetry; no chunk/physical-engine trace",
+            @"requested_gpu_layers" : gpu_layers,
+            @"forced_gpu_blocks_session_total" : @(m.runtime_weight_forced_gpu_blocks),
             @"headroom_scale" : @(m.runtime_weight_headroom),
+            @"source_recipe" : @(m.runtime_weight_source_recipe.c_str()),
+            @"s1_requested" : @(m.runtime_weight_s1_requested),
+            @"s1_profile_digest" : @(m.runtime_weight_s1_digest.c_str()),
+            @"s1_vector_bytes" : @(m.runtime_weight_s1_bytes),
+            @"s1_bank_margin_bytes" : @(m.runtime_weight_s1_bank_margin_bytes),
+            @"s1_stage_submissions_profile_total" : @(m.runtime_weight_s1_stage_submissions),
+            @"s1_hybrid_blocks_profile_total" : @(m.runtime_weight_s1_hybrid_blocks),
+            @"s1_counter_scope" : @"since_current_profile_binding; submission_does_not_attest_quality_or_physical_INT8",
+            @"convrot_stage_submissions_session_total" : @(m.runtime_weight_convrot_stage_submissions),
             @"stage_seconds_session_total" : @(m.runtime_weight_stage_seconds),
             @"stage_wait_seconds_session_total" : @(m.runtime_weight_stage_wait_seconds),
             @"join_seconds_session_total" : @(m.runtime_weight_join_seconds),
@@ -905,6 +1363,10 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         } : (id)[NSNull null],
         @"weight_variant" : @(m.weight_variant.c_str()),
         @"load_seconds" : @(m.load_seconds),
+        @"runtime_weight_prepared_early" : @(m.runtime_weight_prepared_early),
+        @"runtime_weight_prepare_seconds" : @(m.runtime_weight_prepare_seconds),
+        @"runtime_weight_prepare_wait_seconds" : @(m.runtime_weight_prepare_wait_seconds),
+        @"runtime_weight_prepare_before_join_seconds" : @(m.runtime_weight_prepare_before_join_seconds),
         @"manifest_validation_seconds" : @(m.manifest_validation_seconds),
         @"output_backing_setup_seconds" : @(m.output_backing_setup_seconds),
         @"model_load_seconds" : @(m.model_load_seconds),
@@ -938,7 +1400,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"ane_mlp_range" : @[ @(m.ane_mlp_start), @(m.ane_mlp_end) ],
         @"output_scale" : @(m.output_scale),
         @"qualified_flexible_backing" : @(m.qualified_flexible_backing),
-        @"compute_units" : @"cpuAndNeuralEngine",
+        @"compute_units" : m.runtime_weight_backend == "private_ane" ? @"not_applicable_private_ane_client" : @"cpuAndNeuralEngine",
         @"observed_ane_residency" : @"unknown",
         @"output_copy_bytes_session_total" : @(m.copied_bytes),
         @"checkpoint_sha256_verified" : @(m.checkpoint_sha_verified),
@@ -957,7 +1419,7 @@ NSDictionary *to_dictionary(const HybridMetrics &m) {
         @"prefill_padding_tokens" : @(m.prefill_padding_tokens),
         @"prefill_fixed_shape" : @(m.prefill_fixed_shape),
         @"prefill_plan_reason" : @(m.prefill_plan_reason.c_str()),
-        @"provenance" : m.weight_variant == "runtime_fp16"
+        @"provenance" : runtime_weight
             ? @"checkpoint-independent graph receipt; weights supplied by the loaded model at runtime"
             : m.checkpoint_sha_verified
             ? @"local checkpoint path, size and SHA-256 verified"
@@ -1164,6 +1626,61 @@ NSDictionary *to_dictionary(const MemoryExecutionReport &report) {
         @"memory_trace" : to_array(report.trace),
     };
 }
+static NSDictionary *to_dictionary(const NativeDenoiserLoRAMetrics &m) {
+    require(m.enabled && m.completed && m.source_generation && m.adapter_count &&
+            !m.adapter_revision.empty() && !m.adapter_sha256.empty() && !m.verified_artifact_digest.empty(),
+            "native LoRA JSON requires an actual completed verified execution");
+    return @{@"schema_version": @1, @"enabled": @(m.enabled), @"completed": @(m.completed),
+        @"variant": @(m.variant.c_str()), @"source_kind": @"verified-held-fd",
+        @"source_generation": @(m.source_generation), @"adapter_count": @(m.adapter_count),
+        @"resolved_bindings": @(m.resolved_bindings), @"logical_projections": @(m.logical_projections),
+        @"ordered_terms": @(m.ordered_terms), @"max_rank": @(m.max_rank),
+        @"completed_steps": @(m.completed_steps), @"scratch_bytes": @(m.scratch_bytes),
+        @"source_strength": @(m.source_strength), @"adapter_sha256": @(m.adapter_sha256.c_str()),
+        @"verified_artifact_digest": @(m.verified_artifact_digest.c_str()),
+        @"adapter_revision": @(m.adapter_revision.c_str()), @"precision_recipe": @(m.precision_recipe.c_str())};
+}
+static NSDictionary *to_dictionary(const NativeDenoiserPhaseMetrics &m) {
+    return @{
+        @"scope" : @"native_denoise_phase",
+        @"full_request_certified" : @NO,
+        @"source_coverage" : @"produced MLX weights and inputs retained in observed phase baseline",
+        @"prepare_seconds" : @(m.prepare_seconds),
+        @"memory_admission" : to_dictionary(m.admission),
+        @"memory_trace" : to_array(m.trace),
+    };
+}
+static NSDictionary *to_dictionary(const NativeHybridDenoiserMetrics &m) {
+    return @{
+        @"enabled": @(m.enabled),
+        @"executor": @"native_metal_graph_private_ane_w1",
+        @"recipe": @"sylvester_w8a8_channel_split_fp16_io",
+        @"successful_ffns": @(m.successful_ffns),
+        @"completed_hybrid_steps": @(m.completed_hybrid_steps),
+        @"surface_bytes": @(m.surface_bytes),
+        @"partial_bytes": @(m.partial_bytes),
+        @"weight_staging": @(m.weight_staging.c_str()),
+        @"weight_scale_cache": @{
+            @"enabled": @(m.weight_scale_cache_enabled),
+            @"entries": @(m.weight_scale_cache_entries),
+            @"payload_bytes": @(m.weight_scale_cache_payload_bytes),
+            @"hits": @(m.weight_scale_cache_hits), @"misses": @(m.weight_scale_cache_misses),
+            @"scope": @"request-local immutable sources; one entry/lookup per gate-up-down layer; successful FFNs only"},
+        @"device_spans_seconds": @{
+            @"producer_gpu": @(m.producer_gpu_span_seconds),
+            @"gpu_complement": @(m.gpu_complement_span_seconds),
+            @"timed_ffns": @(m.device_timed_ffns),
+            @"scope": @"paired coverage only: both positive captured GPU spans; excludes unavailable samples"},
+        @"host_spans_seconds": @{
+            @"producer": @(m.producer_seconds), @"submit_ane": @(m.submit_ane_seconds),
+            @"branch_join": @(m.branch_join_seconds), @"consumer": @(m.consumer_seconds),
+            @"total": @(m.total_seconds)},
+        @"timing_scope": @"host controller spans plus captured Metal ticket first-start/last-end spans; zero device span is unavailable, inter-CB gaps included; not additive kernel busy times or proof of ANE overlap",
+        @"physical_ane_placement_verified": @NO,
+        @"hardware_int8_arithmetic_verified": @NO,
+        @"whole_request_performance_qualified": @NO,
+    };
+}
 RunResult native_run_result(NSDictionary *value, const Request &request,
                             const ExecutionPlan &plan) {
     require([value isKindOfClass:NSDictionary.class], "native session returned an invalid result");
@@ -1203,18 +1720,25 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"block_residency"] = to_dictionary(*result.block_residency);
         if (result.memory_admission)
             copy[@"memory_admission"] = to_dictionary(*result.memory_admission);
+        if (result.native_denoiser_memory_phase)
+            copy[@"native_denoiser_memory_phase"] = to_dictionary(*result.native_denoiser_memory_phase);
+        if (result.native_denoiser_hybrid)
+            copy[@"native_denoiser_hybrid"] = to_dictionary(*result.native_denoiser_hybrid);
+        if (result.native_denoiser_lora)
+            copy[@"native_denoiser_lora"] = to_dictionary(*result.native_denoiser_lora);
         if (!result.memory_trace.empty())
             copy[@"memory_trace"] = to_array(result.memory_trace);
         if (result.memory_admission)
             copy[@"plan"] = runtime_plan(result);
         if (result.encoder_hybrid) {
-            copy[@"encoder_execution"] = @"gpu_ane_experimental";
-            copy[@"encoder_runtime_backend"] = encoder_backend_label(
-                result.request, true);
+            copy[@"encoder_execution"] = executed_encoder_hybrid(result) ? @"gpu_ane_experimental" : @"gpu";
+            copy[@"encoder_runtime_backend"] = executed_encoder_backend(result);
             copy[@"encoder_gpu_graph"] =
-                encoder_gpu_graph_label(result.request, true);
-            copy[@"encoder_runtime_precision"] = @(hybrid_precision_label(*result.encoder_hybrid).c_str());
+                executed_encoder_gpu_graph(result);
+            copy[@"encoder_runtime_precision"] = executed_encoder_precision(result);
             copy[@"encoder_hybrid"] = to_dictionary(*result.encoder_hybrid);
+            copy[@"encoder_runtime_reuse"] = encoder_reuse_dictionary(result);
+            copy[@"encoder_weight_residency"] = encoder_weight_dictionary(result);
             copy[@"plan"] = runtime_plan(result);
         }
         if (result.streaming_runtime) {
@@ -1233,6 +1757,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
             copy[@"public_streaming"] = public_streaming_result(
                 *result.public_streaming);
         attach_streaming_details(copy, result);
+        if (result.shared_lora_ranks)
+            copy[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
         return copy;
     }
     const auto &r = result.request;
@@ -1241,13 +1767,11 @@ NSDictionary *to_dictionary(const RunResult &result) {
     auto encoder_hybrid = result.encoder_hybrid
                               ? to_dictionary(*result.encoder_hybrid)
                               : @{};
-    auto encoder_execution = result.encoder_hybrid ? @"gpu_ane_experimental" : @"gpu";
-    auto encoder_backend = encoder_backend_label(
-        r, result.encoder_hybrid.has_value());
+    auto encoder_execution = result.encoder_quantized_execution ? @"gguf_bounded_gpu_experimental" : executed_encoder_hybrid(result) ? @"gpu_ane_experimental" : @"gpu";
+    auto encoder_backend = result.encoder_quantized_execution ? @"mlx_cpp_metal_gguf_bounded" : executed_encoder_backend(result);
     auto encoder_gpu_graph =
-        encoder_gpu_graph_label(r, result.encoder_hybrid.has_value());
-    auto encoder_precision = result.encoder_hybrid ? @(hybrid_precision_label(*result.encoder_hybrid).c_str())
-                                                    : @"bf16";
+        result.encoder_quantized_execution ? @"each-layer-eager-submission" : executed_encoder_gpu_graph(result);
+    auto encoder_precision = result.encoder_quantized_execution ? @"source_mixed_weights+fp32_residual_rope+bf16_conditioning" : executed_encoder_precision(result);
     if (result.prepared) {
         NSMutableDictionary *prepared = [@{
             @"acceleration_selection" : @(result.selection.c_str()),
@@ -1276,9 +1800,21 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"qkv" : qkv,
             @"encoder_hybrid" : encoder_hybrid
         } mutableCopy];
+        prepared[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
+        prepared[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+        if(result.qwen_encoder_prefill)
+            prepared[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
+        if (result.shared_lora_ranks)
+            prepared[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
         if (result.memory_admission)
             prepared[@"memory_admission"] =
                 to_dictionary(*result.memory_admission);
+        if (result.native_denoiser_memory_phase)
+            prepared[@"native_denoiser_memory_phase"] = to_dictionary(*result.native_denoiser_memory_phase);
+        if (result.native_denoiser_hybrid)
+            prepared[@"native_denoiser_hybrid"] = to_dictionary(*result.native_denoiser_hybrid);
+        if (result.native_denoiser_lora)
+            prepared[@"native_denoiser_lora"] = to_dictionary(*result.native_denoiser_lora);
         if (!result.memory_trace.empty())
             prepared[@"memory_trace"] = to_array(result.memory_trace);
         if (result.public_streaming)
@@ -1337,16 +1873,178 @@ NSDictionary *to_dictionary(const RunResult &result) {
         @"encoder_hybrid" : encoder_hybrid,
         @"validation" : @"candidate; consult recorded parity suite"
     } mutableCopy];
+    value[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
+    value[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+    if(result.student_ffn_reuse_enabled)
+        value[@"student_ffn_reuse"]=student_ffn_reuse_dictionary(result);
+    if (result.shared_lora_ranks)
+        value[@"shared_lora_ranks"] = shared_lora_rank_dictionary(result);
+    if (result.qwen_ffn_phases)
+        value[@"qwen_ffn_phases"] = qwen_ffn_phase_dictionary(result);
+    if(result.qwen_bf16_streaming)
+        value[@"qwen_bf16_streaming"] = qwen_bf16_stream_dictionary(*result.qwen_bf16_streaming);
+    if(result.qwen_encoder_prefill)
+        value[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
+    if(result.backend=="mlx_cpp_metal_convrot_compiled_experimental") {
+        value[@"convrot_experiment"]=@{@"experimental":@YES,@"whole_request_bounded_certified":@NO,
+            @"source_profile":@"convrot-legacy-packed-bf16-scale-v1",@"execution_recipe":@(result.precision.c_str()),
+            @"allocator_cache_limit_bytes":result.convrot_allocator_cache_bytes ? (id)@(*result.convrot_allocator_cache_bytes) : (id)NSNull.null,
+            @"allocator_cache_retention":result.convrot_allocator_cache_retained ? @"bounded-global-bins-between-requests-v1" : @"request-cleanup-v1",
+            @"dense_scope":@"none",@"activation_quantization":@"none",@"physical_int8_arithmetic":@"not_claimed"};
+        NSMutableDictionary *private_plan=[value[@"plan"] mutableCopy];
+        private_plan[@"executable"]=@NO;private_plan[@"validation"]=@"experimental ConvRot compiled GPU; not qualified";
+        private_plan[@"weight_validation"]=@"same-source numerical screen required; no new product qualification";
+        value[@"plan"]=private_plan;
+    }
+    if (result.native_denoiser_memory_phase)
+        value[@"native_denoiser_memory_phase"] = to_dictionary(*result.native_denoiser_memory_phase);
+    if (result.native_denoiser_hybrid)
+        value[@"native_denoiser_hybrid"] = to_dictionary(*result.native_denoiser_hybrid);
+    if (result.native_denoiser_lora)
+        value[@"native_denoiser_lora"] = to_dictionary(*result.native_denoiser_lora);
+    if (result.gguf_import) {
+        const auto &m=*result.gguf_import;
+        value[@"gguf_import"]=@{
+            @"experimental":@YES,@"whole_request_bounded_certified":@NO,
+            @"recipe":@"gguf-mlx-compat-affine-packed-bank-v1",@"allocator_cache_limit_bytes":@(m.allocator_cache_limit_bytes),
+            @"affine_packing_recipe":@(m.affine_packing_recipe.c_str()),@"affine_packing_backend":@(m.affine_packing_backend.c_str()),
+            @"float_import_recipe":@(m.float_import_recipe.c_str()),
+            @"consumer_revision":m.session_packed_retention ? @"z-session-packed-experimental-v1" : @"z-serial-refiners-release-before-vae-v1",
+            @"session_packed_retention":@(m.session_packed_retention),@"reused_packed_bank":@(m.reused_packed_bank),
+            @"gpu_graph_recipe":m.ref_mpp_dynamic ? @"z-gpu-affine-qmm-f16-refmpp-dynamic-v1" : m.f16_refiners ? @"z-gpu-affine-qmm-f16-ref16-fp32-io-down64-v1" : m.qmm_f16_compute ? @"z-gpu-affine-qmm-f16-fp32-io-down64-v1" : m.gpu_f16_mpp ? @"z-gpu-affine-f16-mpp-fp32-io-down64-v1" : m.gpu_f16_compute ? @"z-gpu-affine-f16-fp32-io-down64-v1" : m.compiled_packed_blocks ? @"z-parameterized-affine-block-v1" : @"native-compat-eager-v1",
+            @"dense_weight_capacity_upper_bytes":@(m.dense_weight_capacity_upper),
+            @"dense_scope":m.gpu_f16_compute && !m.qmm_f16_compute ? @"current-main-block-only-eval-v1" : @"none",
+            @"main_eval_policy":m.qmm_f16_compute ? @"whole-pass-immutable-packed-v1" : m.gpu_f16_compute ? @"each-main-block-v1" : @"native-default",
+            @"released_before_vae":@(m.released_before_vae),@"serial_refiner_eval":@(m.serial_refiner_eval),
+            @"source_sha256":@(m.source_sha256.c_str()),@"plan_digest":@(m.plan_digest.c_str()),
+            @"planned_packed_capacity_bytes":@(m.planned_packed_capacity_bytes),
+            @"packed_capacity_bytes":@(m.packed_capacity_bytes),@"read_buffer_capacity_bytes":@(m.read_buffer_capacity_bytes),
+            @"managed_peak_bytes":@(m.managed_peak_bytes),@"output_bytes":@(m.output_bytes),
+            @"source_read_bytes":@(m.source_read_bytes),@"logical_source_bytes":@(m.logical_source_bytes),
+            @"verification_bytes":@(m.verification_bytes),@"tensor_count":@(m.tensor_count),@"field_count":@(m.field_count),
+            @"load_seconds":@(m.load_seconds),@"read_seconds":@(m.read_seconds),@"decode_seconds":@(m.decode_seconds),
+            @"affine_decode_seconds":@(m.affine_decode_seconds),@"float_decode_seconds":@(m.float_decode_seconds),
+            @"request_load_seconds":@(m.reused_packed_bank ? 0 : m.load_seconds),
+            @"request_source_read_bytes":@(m.reused_packed_bank ? 0 : m.source_read_bytes),
+            @"ane_weight_source":m.raw_window_budget_bytes ? @"bounded-raw-ggml-window-v1" : @"mlx-affine-import",
+            @"raw_window_budget_bytes":@(m.raw_window_budget_bytes),@"raw_window_live_bytes":@(m.raw_window_live_bytes),
+            @"raw_window_peak_bytes":@(m.raw_window_peak_bytes),@"raw_window_entries":@(m.raw_window_entries),
+            @"raw_window_hits_session_total":@(m.raw_window_hits),@"raw_window_misses_session_total":@(m.raw_window_misses),
+            @"raw_window_evictions_session_total":@(m.raw_window_evictions),
+            @"raw_window_source_read_bytes_session_total":@(m.raw_window_source_read_bytes),
+            @"raw_window_read_seconds_session_total":@(m.raw_window_read_seconds),
+            @"scope":@"managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS"
+        };
+        NSMutableDictionary *private_plan=[value[@"plan"] mutableCopy];
+        private_plan[@"executable"]=@NO;
+        private_plan[@"gguf_import_qualification"]=@"experimental-unqualified";
+        if (m.compiled_packed_blocks) private_plan[@"gpu_graph"]=m.qmm_f16_compute ? @"compiled_affine_qmm_fp16" : m.gpu_f16_compute ? @"compiled_affine_gpu_decode_fp16" : @"compiled_affine_blocks";
+        value[@"plan"]=private_plan;
+        value[@"validation"]=@"experimental CPU direct packed import; not a production capability";
+    }
+    if (result.quantized_execution) {
+        const auto &m = *result.quantized_execution;
+        value[@"quantized_execution"] = @{
+            @"experimental": @YES, @"whole_request_bounded_certified": @NO,
+            @"source_sha256": @(m.source_sha256.c_str()), @"layout_digest": @(m.layout_digest.c_str()),
+            @"packed_source_bytes": @(m.packed_bytes), @"packed_capacity_bytes": @(m.packed_capacity_bytes),
+            @"source_float_bytes": @(m.source_float_bytes), @"max_dense_pool_capacity_bytes": @(m.dense_capacity_bytes),
+            @"managed_peak_bytes": @(m.managed_peak_bytes), @"slot_count": @(m.slots), @"prefetch_layers": @(m.prefetch),
+            @"fill_count": @(m.fills), @"decoded_bytes": @(m.decoded_bytes),
+            @"slot_filled_bytes":@(m.decoded_bytes),
+            @"source_load_seconds": @(m.source_load_seconds), @"decode_active_seconds": @(m.decode_seconds),
+            @"exposed_ready_wait_seconds": @(m.exposed_wait_seconds),
+            @"scope": @"managed GGUF source/slot and current GPU affine output buffers; excludes encoder/VAE/activations/framework/OS",
+            @"source_residency": @(m.source_residency.c_str()), @"source_logical_bytes": @(m.source_logical_bytes),
+            @"packed_read_buffer_capacity_bytes": @(m.read_buffer_bytes), @"source_read_bytes": @(m.source_read_bytes),
+            @"streamed_read_seconds": @(m.streamed_read_seconds),
+            @"refiner_fill_count": @(m.refiner_fills), @"refiner_slot_count": @(m.refiner_slots),
+            @"refiner_decoded_bytes": @(m.refiner_decoded_bytes),
+            @"refiner_pool_capacity_bytes": @(m.refiner_capacity_bytes),
+            @"decode_backend":@(m.decode_backend.c_str()),
+            @"gpu_affine_preparations":@(m.gpu_affine_preparations),@"gpu_affine_output_bytes":@(m.gpu_affine_output_bytes),
+            @"gpu_prepare_capacity_upper_bytes":@(m.gpu_prepare_capacity_upper),@"gpu_prepare_wall_seconds":@(m.gpu_prepare_seconds),
+            @"gpu_prepare_timing_scope":gguf_dependency_gpu_profile(m.precision_profile) ? @"host-dependency-construction-only-v1" : @"host-wall-through-packing-completion-v1",
+            @"gpu_consumer_ready":gguf_dependency_gpu_profile(m.precision_profile) ? @"dependency-ready-not-status-validated-v1" : @"packing-complete-status-validated-v1",
+            @"allocator_cache_limit_bytes":@(m.allocator_cache_limit_bytes),
+            @"gpu_fixed_output_banks_created":@(m.gpu_fixed_output_banks),@"gpu_fixed_output_bank_capacity_bytes":@(m.gpu_fixed_output_bank_bytes),
+            @"precision_profile":@(m.precision_profile.c_str()),@"ready_representation":gguf_raw_gpu_profile(m.precision_profile) ? @"raw-gguf-v1" : @"cpu-materialized-v1"
+        };
+        value[@"validation"] = @"experimental source-mixed GGUF execution; not a production capability";
+    }
+    if (!result.quantized_source_comparisons.empty()) {
+        NSMutableArray *rows=[NSMutableArray array];bool layers_pass=true,final_pass=true;
+        for (const auto &row:result.quantized_source_comparisons) {
+            const auto &m=row.metrics;const bool pass=row.final_latent ? m.n1_final() : m.n1_layer();
+            if (row.final_latent) final_pass &= pass;else layers_pass &= pass;
+            [rows addObject:@{@"name":@(row.name.c_str()),@"step":@(row.step),@"rel_l2":@(m.rel_l2),@"cosine":@(m.cosine),
+                @"max_abs":@(m.max_abs),@"max_norm_error":@(m.max_norm_error),@"n1_pass":@(pass),@"final_latent":@(row.final_latent)}];
+        }
+        value[@"quantized_source_validation"]=@{@"source_profile":@(result.source_comparison_profile.c_str()),
+            @"scope":@"diagnostic dual-forward independent source trajectory; FP64 valid-row metrics excluding padding; not timing/media/qualification",
+            @"all_block_n1_pass":@(layers_pass),@"final_latent_n1_pass":@(final_pass),@"comparisons":rows};
+    }
+    if(result.native_encoder) {
+        const auto& m=*result.native_encoder;
+        value[@"native_encoder_execution"]=@{@"experimental":@YES,@"release_qualified":@NO,
+            @"precision":@(m.precision.c_str()),@"vision_layers":@(m.vision_layers),@"language_layers":@(m.language_layers),
+            @"graph_submissions":@(m.graph_submissions),@"dispatches":@(m.dispatches),@"future_weight_windows":@(m.future_weight_windows),
+            @"skipped_future_windows":@(m.skipped_future_windows),@"preparation_seconds":@(m.preparation_seconds),
+            @"source_ready_seconds":@(m.source_ready_seconds),@"gpu_wait_seconds":@(m.gpu_wait_seconds),
+            @"ane_ffns":@(m.ane_ffns),@"ane_chunks":@(m.ane_chunks),@"ane_padded_rows":@(m.ane_padded_rows),
+            @"ane_producer_seconds":@(m.ane_producer_seconds),@"ane_branch_seconds":@(m.ane_branch_seconds),@"ane_consumer_seconds":@(m.ane_consumer_seconds),
+            @"physically_complete":@(m.physically_complete),@"conditioning_cache_hit":@(m.conditioning_cache_hit),@"vision_cache_hit":@(m.vision_cache_hit)};
+    }
+    if(result.native_prefill){const auto& m=*result.native_prefill;
+        value[@"native_prefill_execution"]=@{@"experimental":@YES,@"release_qualified":@NO,@"first_step_only":@YES,@"base_only":@YES,
+            @"runtime":@"native_metal+private_ane_w1",@"precision":@"bf16_gpu+w8a8_h128_h512_fp16_io+fp32_join",@"calls":@(m.calls),@"chunks":@(m.chunks),
+            @"valid_rows":@(m.valid_rows),@"padded_rows":@(m.padded_rows),@"bucket_rows":@(m.bucket_rows),@"preparation_seconds":@(m.preparation_seconds),
+            @"input_ready_seconds":@(m.input_ready_seconds),@"producer_seconds":@(m.producer_seconds),@"branch_seconds":@(m.branch_seconds),
+            @"consumer_seconds":@(m.consumer_seconds),@"total_seconds":@(m.total_seconds),@"prewarm_seconds":@(m.prewarm_seconds),@"preparation_reused":@(m.preparation_reused),@"physically_complete":@(m.physically_complete)};
+    }
+    if (result.encoder_quantized_execution) {
+        const auto &m = *result.encoder_quantized_execution;
+        value[@"encoder_quantized_execution"] = @{
+            @"experimental": @YES, @"whole_request_bounded_certified": @NO,
+            @"precision_profile": @"qwen3-z-source-mixed-v1", @"submit_policy": @"each-layer-eval-v1",
+            @"decode_backend": @(m.decode_backend.c_str()),
+            @"source_metadata_policy":@(m.source_metadata_policy.c_str()),
+            @"source_metadata_reused":@(m.source_metadata_reused),
+            @"source_metadata_preparations":@(m.source_metadata_preparations),
+            @"conditioning_producer_generation":@(m.conditioning_producer_generation),
+            @"source_residency": @(m.source_residency.c_str()), @"source_logical_bytes": @(m.source_logical_bytes),
+            @"packed_read_buffer_capacity_bytes": @(m.read_buffer_bytes), @"source_read_bytes": @(m.source_read_bytes),
+            @"streamed_read_seconds": @(m.streamed_read_seconds),
+            @"hidden_tap": @"block34-post-residual-no-final-norm", @"source_sha256": @(m.source_sha256.c_str()),
+            @"layout_digest": @(m.layout_digest.c_str()), @"packed_source_bytes": @(m.packed_bytes),
+            @"packed_capacity_bytes": @(m.packed_capacity_bytes), @"source_float_bytes": @(m.source_float_bytes),
+            @"max_dense_pool_capacity_bytes": @(m.dense_capacity_bytes), @"managed_peak_bytes": @(m.managed_peak_bytes),
+            @"slot_count": @(m.slots), @"prefetch_layers": @(m.prefetch), @"fill_count": @(m.fills),
+            @"decoded_bytes": @(m.decoded_bytes), @"source_load_seconds": @(m.source_load_seconds),
+            @"decode_active_seconds": @(m.decode_seconds), @"exposed_ready_wait_seconds": @(m.exposed_wait_seconds),
+            @"scope": @"managed encoder packed weights, refill slots and gathered embedding; excludes other activations/framework/OS"
+        };
+    }
     if (result.db_cache_enabled)
         value[@"qwen21_dbcache"] = @{
-            @"front_blocks": @8, @"back_blocks": @0, @"warmup_steps": @8,
+            @"mode": @(r.qwen21_dit_cache == "off" ? "diagnostic" : r.qwen21_dit_cache.c_str()),
+            @"front_blocks": @(result.db_cache_front_blocks), @"back_blocks": @0,
+            @"warmup_steps": @(result.db_cache_warmup_steps),
             @"threshold": @(result.db_cache_threshold),
             @"max_consecutive": @(result.db_cache_max_consecutive),
             @"cached_steps": @(result.db_cache_steps),
-            @"saved_middle_blocks": @(result.db_cache_steps * 24)
+            @"saved_middle_blocks": @(result.db_cache_steps * (32 - result.db_cache_front_blocks))
         };
     if (!r.loras.empty() && result.lora_applied_projections)
         value[@"lora_applied_projections"] = @(result.lora_applied_projections);
+    if (result.lora_verification_async)
+        value[@"lora_verification"] = @{
+            @"async_initial_digest": @YES,
+            @"seconds": @(result.lora_verification_seconds),
+            @"join_wait_seconds": @(result.lora_verification_wait_seconds),
+            @"before_join_seconds": @(result.lora_verification_before_join_seconds),
+            @"scope": @"initial full-file SHA-256; post-bind verification remains synchronous; before-join time is not measured speedup"
+        };
     if (result.block_residency)
         value[@"block_residency"] = to_dictionary(*result.block_residency);
     if (result.streaming_runtime) {

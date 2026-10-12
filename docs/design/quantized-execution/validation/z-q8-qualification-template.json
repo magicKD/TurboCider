@@ -1,0 +1,117 @@
+{
+  "schema": "tc-quantized-acceptance-profile-draft-v1",
+  "binding_state": "unbound",
+  "executable": false,
+  "purpose": "R1 Z Q8 qualification template; not a production manifest or a validation receipt",
+  "profile_id": "r1-z-q8-bounded-cpu-v1",
+  "profile_digest": null,
+  "milestone": "R1",
+  "fixtures": {
+    "dit": {
+      "local_candidate": "models/z-image-runtime-gguf-q8/z_image_turbo-Q8_0.gguf",
+      "observed_directory_only": {
+        "bytes": 7224707136,
+        "tensor_count": 453,
+        "gguf_version": 3,
+        "architecture": "lumina2",
+        "type_counts": {"F32": 245, "BF16": 28, "Q8_0": 180}
+      },
+      "content_sha256": null
+    },
+    "encoder_artifact_manifest_sha256": null,
+    "vae_artifact_manifest_sha256": null,
+    "tokenizer_manifest_sha256": null,
+    "model_config_sha256": null,
+    "source_bf16_manifest_sha256": null,
+    "noise_manifest_sha256": null
+  },
+  "identity": {
+    "adapter": "z-comfy-gguf-v1",
+    "precision_profile": "z-source-mixed-v1",
+    "source_residency": "packed_resident",
+    "decode_backend": "cpu_simd",
+    "oracle_ggml_commit": "64e9bceb2c3a856efed96feda784a50947049feb",
+    "oracle_binary_sha256": null,
+    "source_revision": null,
+    "source_diff_sha256": null,
+    "candidate_binary_sha256": null,
+    "baseline_binary_sha256": null,
+    "mlx_version": null,
+    "device_os_sdk_manifest": null
+  },
+  "workload": {
+    "model": "z-image-turbo",
+    "operation": "image.generate",
+    "steps": 4,
+    "seeds": [42, 1234, 20260930],
+    "shapes": [[512, 512], [1024, 1024]],
+    "prompt_ids": ["portrait", "text", "glass", "geometry", "objects", "long", "dark", "colors"],
+    "prompt_utf8_manifest_sha256": null,
+    "resolved_requests_manifest_sha256": null,
+    "token_ids_manifest_sha256": null,
+    "dynamic_text": true,
+    "loras": [],
+    "ane_compute": "off",
+    "allow_requantization": false,
+    "expected_quality_pairs": 48
+  },
+  "layout_cases": [
+    {"prefetch_layers": 0, "slot_count": 1, "layout_digest": null},
+    {"prefetch_layers": 1, "slot_count": 2, "layout_digest": null}
+  ],
+  "memory": {
+    "limit_bytes": null,
+    "buffer_percent": null,
+    "min_free_bytes": null,
+    "required_site_envelope_manifest_sha256": null,
+    "sampling_target_ms": 10,
+    "sampling_max_gap_ms": 50,
+    "require_no_guard_swapout": true,
+    "required_unknown_upper_policy": "reject_bounded_certification"
+  },
+  "numeric_gate": {
+    "source_decode": "D0-bit-exact",
+    "schedule_only": "D1-bit-exact",
+    "execution_vs_existing_source_quant": "N1-and-media-gate",
+    "additional_approximation": "not_authorized",
+    "reference_repeatability_trials": 3
+  },
+  "performance_gate": {
+    "baseline_recipe": null,
+    "sample_scope": "per_performance_cell",
+    "cells": [
+      {"prompt_id": "portrait", "shape": [512, 512], "seed": 42, "prompt_cache": "miss"},
+      {"prompt_id": "long", "shape": [512, 512], "seed": 42, "prompt_cache": "miss"},
+      {"prompt_id": "portrait", "shape": [1024, 1024], "seed": 42, "prompt_cache": "miss"},
+      {"prompt_id": "long", "shape": [1024, 1024], "seed": 42, "prompt_cache": "miss"}
+    ],
+    "sessions": 2,
+    "warmups_per_arm_per_session": 3,
+    "quartets_per_session": 6,
+    "quartet_order": ["ABBA", "BAAB", "ABBA", "BAAB", "ABBA", "BAAB"],
+    "warm_samples_per_arm": 24,
+    "cold_process_samples_per_arm": 5,
+    "warm_median_ratio_max": 0.95,
+    "p90_ratio_max": 1.05,
+    "cold_median_ratio_max": 1.10,
+    "load_prepare_median_ratio_max": 1.10,
+    "baseline_half_drift_max": 0.05,
+    "bootstrap_unit": "paired_quartet_stratified_by_session",
+    "bootstrap_iterations": 10000,
+    "bootstrap_seed": 20260930,
+    "confidence_level": 0.95,
+    "confidence_ratio_upper_strict_max": 1.0
+  },
+  "required_evidence": [
+    "bound_profile",
+    "decoder_oracle_and_negative_fixtures",
+    "slot_lifetime_and_cancellation",
+    "same_profile_dense_reference",
+    "source_quant_and_bf16_comparison",
+    "full_request_quality",
+    "managed_and_whole_request_memory",
+    "raw_performance_samples",
+    "actual_backend_and_fallback_counts"
+  ],
+  "qualification_status": "not_run"
+}

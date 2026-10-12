@@ -1,5 +1,12 @@
 #include "text_encoder.hpp"
+#include "metal/encoder_prefill.hpp"
+#include "../../backends/ane_ffn.hpp"
+#include <chrono>
+#include "encoder_attention.hpp"
 #include <cmath>
+#include <iostream>
+#include <map>
+#include <tuple>
 
 namespace tc::qwen21 {
 namespace {
@@ -14,15 +21,84 @@ Tensor rotate_half(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
     auto halves = mx::split(x, 2, -1);
     return x * cosine + mx::concatenate({-halves[1], halves[0]}, -1) * sine;
 }
+using BlockFunction=std::function<std::vector<Tensor>(const std::vector<Tensor>&)>;
+std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,const Tensor &sine,
+    const std::optional<Tensor> &mask,const Weights &weights,const TextConfig &config,const std::string &p) {
+    auto normalize=[&](const Tensor &x,const std::string &key) {
+        return config.fused_gpu_prefill ? metal::encoder_rms(x,weights.at(key),config.epsilon) : vl_norm(x,weights.at(key),config.epsilon);
+    };
+    auto input=normalize(hidden,p+".input_layernorm.weight");
+    std::vector<Tensor> raw;
+    if(weights.has(p+".self_attn.qkv_proj.weight"))raw=mx::split(linear(input,weights,p+".self_attn.qkv_proj"),
+        mx::Shape{config.heads*config.head_dim,(config.heads+config.kv_heads)*config.head_dim},-1);
+    else if(weights.has(p+".self_attn.qk_proj.weight")) {
+        raw=mx::split(linear(input,weights,p+".self_attn.qk_proj"),mx::Shape{config.heads*config.head_dim},-1);
+        raw.push_back(linear(input,weights,p+".self_attn.v_proj"));
+    }
+    else raw={linear(input,weights,p+".self_attn.q_proj"),linear(input,weights,p+".self_attn.k_proj"),linear(input,weights,p+".self_attn.v_proj")};
+    auto q=raw[0],k=raw[1],v=heads(raw[2],config.kv_heads,config.head_dim);
+    if(config.fused_gpu_prefill) {
+        auto pair=metal::encoder_qk(q,k,weights.at(p+".self_attn.q_norm.weight"),weights.at(p+".self_attn.k_norm.weight"),cosine,sine,config.epsilon);
+        q=pair[0];k=pair[1];
+    }else {
+        q=rotate_half(vl_norm(heads(q,config.heads,config.head_dim),weights.at(p+".self_attn.q_norm.weight"),config.epsilon),cosine,sine);
+        k=rotate_half(vl_norm(heads(k,config.kv_heads,config.head_dim),weights.at(p+".self_attn.k_norm.weight"),config.epsilon),cosine,sine);
+    }
+    if(!config.compiled_gpu_blocks && !(config.efficient_attention && hidden.shape(1)>=128)) {
+        k=mx::repeat(k,config.heads/config.kv_heads,1);
+        v=mx::repeat(v,config.heads/config.kv_heads,1);
+    }
+    // Explicit approximate profile only. SDPA consumes the already rounded
+    // original Q/K/V dtype and native GQA; its softmax remains F32. The mask
+    // contains only 0/-Inf, both exact in the input dtype. Keep legacy F32
+    // attention/repeated K/V unchanged outside the opt-in profile.
+    auto attention_mask=config.compiled_gpu_blocks && mask ? std::optional<Tensor>(mx::astype(*mask,q.dtype())) : mask;
+    auto residual=hidden+linear(attend(q,k,v,!config.compiled_gpu_blocks,attention_mask,false,mask ? "" : "causal"),weights,p+".self_attn.o_proj");
+    return {residual,normalize(residual,p+".post_attention_layernorm.weight")};
+}
+Tensor full_ffn(const Tensor &x,const Weights &weights,const std::string &mlp) {
+    if(weights.has(mlp+".gate_up.weight")) {
+        auto gu=mx::split(linear(x,weights,mlp+".gate_up"),2,-1);
+        return linear(silu(gu[0])*gu[1],weights,mlp+".down_proj");
+    }
+    return linear(silu(linear(x,weights,mlp+".gate_proj"))*linear(x,weights,mlp+".up_proj"),weights,mlp+".down_proj");
+}
+BlockFunction compiled_block(const std::vector<std::string> &keys,const TextConfig &config,
+    const std::string &p,bool split) {
+    return mx::compile([keys,config,p,split](const std::vector<Tensor> &a) {
+        // Dynamic original source arrays, not checkpoint constants captured at
+        // the first trace. Rebinding the owner's Weights cannot read old W.
+        Weights local;local.bind_arrays(keys,a,4);
+        auto result=attention_block(a[0],a[1],a[2],a[3],local,config,p);
+        if(split)return result;
+        return std::vector<Tensor>{result[0]+full_ffn(result[1],local,p+".mlp")};
+    });
+}
+BlockFunction compiled_ffn(const std::vector<std::string> &keys,const std::string &mlp,
+    int first=0,int count=0,int hidden=0,bool fp32=false) {
+    return mx::compile([keys,mlp,first,count,hidden,fp32](const std::vector<Tensor> &a) {
+        Weights local;local.bind_arrays(keys,a,1);
+        if(!count)return std::vector<Tensor>{full_ffn(a[0],local,mlp)};
+        auto gate=local.project_base_slice(a[0],mlp+".gate_proj",first,first+count,0,hidden,false);
+        auto up=local.project_base_slice(a[0],mlp+".up_proj",first,first+count,0,hidden,false);
+        auto intermediate=silu(gate)*up;
+        auto down=fp32 ? local.project_base_slice_fp32(intermediate,mlp+".down_proj",0,hidden,first,first+count) :
+            local.project_base_slice(intermediate,mlp+".down_proj",0,hidden,first,first+count,false);
+        return std::vector<Tensor>{down,intermediate};
+    });
+}
 }
 
-TextEncoder::TextEncoder(const Weights &weights, TextConfig config)
+TextEncoder::TextEncoder(const Weights &weights, TextConfig config,ane::HybridFfn *runtime)
     : weights_(weights), config_(config), language_prefix_(
-          weights.has("model.language_model.embed_tokens.weight") ? "model.language_model." : "model.") {
+          weights.has("model.language_model.embed_tokens.weight") ? "model.language_model." : "model."),runtime_(runtime) {
     require(config.layers > 0 && config.heads > 0 && config.kv_heads > 0 &&
             config.heads % config.kv_heads == 0 && config.head_dim > 0 &&
             config.head_dim % 2 == 0 && config.theta > 0,
             "invalid Qwen21 text encoder geometry");
+    require(!config.compiled_gpu_blocks || config.layers<=128,"compiled Qwen encoder layer count exceeds request-local graph bound");
+    require(!config.fused_gpu_prefill || (config.compiled_gpu_blocks && !runtime && config.heads==32 && config.kv_heads==8 && config.head_dim==128),
+        "fused Qwen GPU prefill requires compiled32Q/8KV/128 original GPU encoder");
     require(config.mrope_sections[0] + config.mrope_sections[1] + config.mrope_sections[2] == config.head_dim / 2,
             "invalid Qwen21 text mRoPE sections");
     for (int axis = 1; axis <= 2; ++axis)
@@ -45,15 +121,20 @@ Tensor TextEncoder::encode(const Tokens &tokens, const Event &event, std::atomic
     const auto &embedding = weights_.at(language_prefix_ + "embed_tokens.weight");
     for (int id : tokens.ids) require(id >= 0 && id < embedding.shape(0), "Qwen21 token ID out of vocabulary");
     int count = int(tokens.ids.size());
-    auto ids = Tensor(tokens.ids.data(), {1, count}, mx::int32);
+    auto ids = Tensor(tokens.ids.data(), {count}, mx::int32);
     auto positions = mx::broadcast_to(mx::reshape(mx::arange(count, mx::int32), {1, count}), {3, count});
-    return encode_embeddings(mx::take(embedding, ids, 0), positions, tokens.valid, event, cancelled);
+    return encode_embeddings(mx::expand_dims(weights_.embedding_rows(ids,language_prefix_+"embed_tokens"),0),
+        positions, tokens.valid, event, cancelled);
 }
 
 Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &positions,
                                       int valid_tokens, const Event &event,
                                       std::atomic<bool> &cancelled,
-                                      const std::vector<Tensor> &deepstack_deltas) const {
+                                      const std::vector<Tensor> &deepstack_deltas,
+                                      const std::function<void(const std::string &)> &release_layer,
+                                      const TextFfnHooks *ffn) const {
+    require(!ffn || (!runtime_ && !config_.fused_gpu_prefill), "encoder FFN hooks conflict with another FFN executor");
+    require(!ffn || (bool(ffn->prepare) && bool(ffn->execute)), "incomplete Qwen encoder FFN bridge");
     require(embeddings.ndim() == 3 && embeddings.shape(0) == 1 && embeddings.shape(1) > 0,
             "Qwen21 text embeddings must be [1,sequence,hidden]");
     int count = embeddings.shape(1);
@@ -79,31 +160,124 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
     angle = mx::concatenate({angle, angle}, -1);
     auto cosine = mx::reshape(mx::astype(mx::cos(angle), embeddings.dtype()), {1, 1, count, config_.head_dim});
     auto sine = mx::reshape(mx::astype(mx::sin(angle), embeddings.dtype()), {1, 1, count, config_.head_dim});
-    auto idx = mx::arange(count, mx::int32);
-    auto key = mx::reshape(idx, {1, count}), query = mx::reshape(idx, {count, 1});
-    auto mask = mx::reshape(mx::where(mx::logical_or(key > query, key >= Tensor(valid_tokens)),
-                                      Tensor(-INFINITY), Tensor(0.f)), {1, 1, count, count});
+    const auto attention = encoder_attention::language_plan(count, valid_tokens, config_.efficient_attention);
+    std::optional<Tensor> mask;
+    if (config_.compiled_gpu_blocks || !attention.causal_without_mask) {
+        auto idx = mx::arange(count, mx::int32);
+        auto key = mx::reshape(idx, {1, count}), query = mx::reshape(idx, {count, 1});
+        mask = mx::reshape(mx::where(mx::logical_or(key > query, key >= Tensor(valid_tokens)),
+                                    Tensor(-INFINITY), Tensor(0.f)), {1, 1, count, count});
+    }
     auto hidden = embeddings;
+    require(!config_.compiled_gpu_blocks || !weights_.has_runtime_loras(),
+            "compiled Qwen encoder requires original base language weights, not encoder LoRA");
+    const auto source_keys=config_.compiled_gpu_blocks ? weights_.sorted_keys() : std::vector<std::string>{};
+    uint64_t full_blocks=0,attention_segments=0,channel_segments=0,full_ffn_segments=0;
+    uint64_t fused_qkv_blocks=0,fused_qk_blocks=0,fused_gate_up_blocks=0;
+    // One encode owns the cache. Canonical layer names let structurally equal
+    // blocks share a traced function while EVERY original W remains an input.
+    // No retained/global graph cache, checkpoint constants or source owners.
+    std::map<std::pair<std::vector<std::string>,bool>,BlockFunction> block_graphs;
+    std::map<std::tuple<std::vector<std::string>,int,int,int,bool>,BlockFunction> ffn_graphs;
     for (int i = 0; i < config_.layers; ++i) {
         checkpoint(cancelled);
+        const Weights &layer_weights=layer_weights_ ? layer_weights_(i) : weights_;
         auto p = language_prefix_ + "layers." + std::to_string(i);
-        auto input = vl_norm(hidden, weights_.at(p + ".input_layernorm.weight"), config_.epsilon);
-        auto q = heads(linear(input, weights_, p + ".self_attn.q_proj"), config_.heads, config_.head_dim);
-        auto k = heads(linear(input, weights_, p + ".self_attn.k_proj"), config_.kv_heads, config_.head_dim);
-        auto v = heads(linear(input, weights_, p + ".self_attn.v_proj"), config_.kv_heads, config_.head_dim);
-        q = rotate_half(vl_norm(q, weights_.at(p + ".self_attn.q_norm.weight"), config_.epsilon), cosine, sine);
-        k = rotate_half(vl_norm(k, weights_.at(p + ".self_attn.k_norm.weight"), config_.epsilon), cosine, sine);
-        k = mx::repeat(k, config_.heads / config_.kv_heads, 1);
-        v = mx::repeat(v, config_.heads / config_.kv_heads, 1);
-        hidden = hidden + linear(attend(q, k, v, true, mask), weights_, p + ".self_attn.o_proj");
-        input = vl_norm(hidden, weights_.at(p + ".post_attention_layernorm.weight"), config_.epsilon);
-        hidden = hidden + linear(silu(linear(input, weights_, p + ".mlp.gate_proj")) *
-                                  linear(input, weights_, p + ".mlp.up_proj"), weights_, p + ".mlp.down_proj");
+        if(layer_weights.has(p+".self_attn.qkv_proj.weight"))++fused_qkv_blocks;
+        if(layer_weights.has(p+".self_attn.qk_proj.weight"))++fused_qk_blocks;
+        if(layer_weights.has(p+".mlp.gate_up.weight"))++fused_gate_up_blocks;
+        auto plan=runtime_ ? runtime_->plan_block(i,count) : ane::RowScheduler::Plan{ane::RowScheduler::Mode::Gpu,0};
+        if(plan.measured())mx::eval(hidden);
+        const auto block_start=std::chrono::steady_clock::now();
+        auto source=[&](int layer) {
+            const auto stem=language_prefix_+"layers."+std::to_string(layer)+".mlp.";
+            return std::vector<ane::FfnWeight>{{weights_.at(stem+"gate_proj.weight"),std::nullopt,std::nullopt},
+                {weights_.at(stem+"up_proj.weight"),std::nullopt,std::nullopt},
+                {weights_.at(stem+"down_proj.weight"),std::nullopt,std::nullopt}};
+        };
+        if(ffn)ffn->prepare(i,p,count);
+        const bool split_ffn=plan.split() || ffn;
+        if(plan.split())runtime_->stage_weights(i,count,source(i)); // before attention, same shared stager/banks
+        Tensor input=hidden;
+        std::vector<std::string> block_keys;
+        std::vector<Tensor> block_sources;
+        if(config_.compiled_gpu_blocks) {
+            for(const auto &key:source_keys)if(key.starts_with(p+".")) {
+                block_keys.push_back("block"+key.substr(p.size()));block_sources.push_back(weights_.at(key));
+            }
+            const auto graph_key=std::make_pair(block_keys,split_ffn);
+            auto found=block_graphs.find(graph_key);
+            if(found==block_graphs.end())found=block_graphs.emplace(graph_key,compiled_block(block_keys,config_,"block",split_ffn)).first;
+            std::vector<Tensor> arguments{hidden,cosine,sine,*mask};
+            arguments.insert(arguments.end(),block_sources.begin(),block_sources.end());
+            auto result=found->second(arguments);hidden=result[0];
+            if(split_ffn) {input=result[1];++attention_segments;} else ++full_blocks;
+        } else {
+            auto result=attention_block(hidden,cosine,sine,mask,layer_weights,config_,p);
+            hidden=result[0];input=result[1];
+        }
+        const auto mlp=p+".mlp";
+        std::optional<BlockFunction> compiled_full,compiled_partial;
+        auto with_sources=[&](const Tensor &x) {
+            std::vector<Tensor> args{x};args.insert(args.end(),block_sources.begin(),block_sources.end());return args;
+        };
+        auto shared_ffn=[&](int first,int count,int width,bool fp32) {
+            const auto key=std::make_tuple(block_keys,first,count,width,fp32);
+            auto found=ffn_graphs.find(key);
+            if(found==ffn_graphs.end())found=ffn_graphs.emplace(key,compiled_ffn(block_keys,"block.mlp",first,count,width,fp32)).first;
+            return found->second;
+        };
+        if(config_.compiled_gpu_blocks && split_ffn)compiled_full=shared_ffn(0,0,0,false);
+        auto gpu=[&](const Tensor &x) {
+            if(compiled_full) {++full_ffn_segments;return (*compiled_full)(with_sources(x))[0];}
+            return full_ffn(x,layer_weights,mlp);
+        };
+        if(ffn) {
+            auto output=ffn->execute(i,input,gpu);
+            require(output.shape()==input.shape() && output.dtype()==input.dtype(),"encoder FFN bridge changed shape/dtype");
+            hidden=hidden+output;
+        } else if(plan.split()) {
+            const int width=weights_.at(mlp+".gate_proj.weight").shape(0),h=input.shape(2);
+            auto channel_gpu=[&](const Tensor &x,int first,int channels) {
+                if(config_.compiled_gpu_blocks) {
+                    if(!compiled_partial)compiled_partial=shared_ffn(first,channels,h,runtime_->fp32_channel_join());
+                    ++channel_segments;
+                    auto result=(*compiled_partial)(with_sources(x));return std::make_pair(result[0],result[1]);
+                }
+                auto gate=weights_.project_base_slice(x,mlp+".gate_proj",first,first+channels,0,h,false);
+                auto up=weights_.project_base_slice(x,mlp+".up_proj",first,first+channels,0,h,false);
+                auto intermediate=silu(gate)*up;
+                auto down=runtime_->fp32_channel_join() ? weights_.project_base_slice_fp32(intermediate,mlp+".down_proj",0,h,first,first+channels) :
+                    weights_.project_base_slice(intermediate,mlp+".down_proj",0,h,first,first+channels,false);
+                return std::make_pair(down,intermediate);
+            };
+            require(width>0,"Qwen21 encoder FFN width missing");
+            ane::HybridFfn::NextWeights next=[&](int layer) {return layer<config_.layers ? source(layer) : std::vector<ane::FfnWeight>{};};
+            hidden=hidden+runtime_->run(i,input,gpu,cancelled,nullptr,channel_gpu,next);
+        } else if(!config_.compiled_gpu_blocks)hidden=hidden+gpu(input);
         // Visual levels enter consecutive early language layers, not layers
         // 8/16/24. The prompt assembler zeros these deltas outside image spans.
         if (size_t(i) < deepstack_deltas.size()) hidden = hidden + deepstack_deltas[i];
-        if ((i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
+        if(plan.measured()) {
+            mx::eval(hidden);checkpoint(cancelled);
+            runtime_->observe_block(i,count,std::chrono::duration<double>(std::chrono::steady_clock::now()-block_start).count());
+        }
+        if (release_layer || retire_weights_ || (i + 1) % 4 == 0 || i + 1 == config_.layers) mx::eval(hidden);
+        if(retire_weights_)retire_weights_(i);
+        if (release_layer) release_layer(p + ".");
         if (event) event("qwen21_text_encode", i + 1, config_.layers);
+    }
+    if(config_.compiled_gpu_blocks) {
+        require(mx::all(mx::isfinite(hidden)).item<bool>(),"compiled Qwen encoder returned nonfinite output");
+        std::cerr<<"{\"qwen_encoder_compiled_gpu\":{\"rows\":"<<count<<",\"layers\":"<<config_.layers
+            <<",\"full_blocks\":"<<full_blocks<<",\"attention_segments\":"<<attention_segments
+            <<",\"channel_ffn_segments\":"<<channel_segments<<",\"full_ffn_segments\":"<<full_ffn_segments
+            <<",\"block_graphs\":"<<block_graphs.size()<<",\"ffn_graphs\":"<<ffn_graphs.size()
+            <<",\"native_gqa_attention\":true"
+            <<",\"fused_gpu_prefill\":"<<(config_.fused_gpu_prefill?"true":"false")
+            <<",\"fused_qkv_blocks\":"<<fused_qkv_blocks<<",\"fused_gate_up_blocks\":"<<fused_gate_up_blocks
+            <<",\"fused_qk_blocks\":"<<fused_qk_blocks
+            <<",\"scope\":\"evaluated language hidden; dynamic original array arguments; graph invocations, not physical kernels\"}}\n";
     }
     return config_.final_norm ? vl_norm(hidden, weights_.at(language_prefix_ + "norm.weight"), config_.epsilon) : hidden;
 }

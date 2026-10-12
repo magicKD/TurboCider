@@ -1,0 +1,101 @@
+{
+  "schema": "tc-private-ane-large-bucket-pilot-v1",
+  "date": "2026-10-04",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "public_default_retained": true,
+  "native_int8_mac_observed": false,
+  "formal_four_way_1_2x_qualified": false,
+  "model_media_latent_quality_qualified": false,
+  "private_library_sha256": "cf87e99c679532ec0ba5915689380df6d2af4aa7d62e463d890913457e900870",
+  "public_library_sha256": "63e8b046b859f40e8b9a17e9c7fdcbdef059a8e91ccc6cbdc3519f6c23224d2a",
+  "emitter_max_rows": 4096,
+  "large_row_hardware_self_test_rows": 2112,
+  "all_4096_geometries_qualified": false,
+  "unselected_executor_reports_pure_gpu": true,
+  "data_path": "w8a8_hadamard",
+  "recipe": "sylvester-dh-b128-b512-rne-norm-f16-v2",
+  "tests": {
+    "private_host_hardware_mlx_passed": 13,
+    "public_coreml_mlx_receipts_passed": 13,
+    "runtime_host_passed": 7,
+    "screen_host_passed": 50,
+    "repository_layout_passed": 8,
+    "release_binary_guard_passed": 3,
+    "full_make_test_passed": false,
+    "full_make_test_reexecuted_this_turn": false,
+    "full_make_test_known_failure": "HEAD preexisting Qwen3 source-string assertion"
+  },
+  "upstream_inspected_commit": "6010c61ddb613fc79e68def24ee90f78bec5d385",
+  "upstream_shared_surface_per128_row_programs_implemented": false,
+  "default_gpu_range_bm": 32,
+  "bm16_promoted_to_default": false,
+  "exclusive_gpu_ownership_proven": false,
+  "post_run_load_observation": "brief ComfyUI Python CPU load observed during receipt verification; PID missing at immediate recheck; start time and overlap unknown",
+  "initial_old_library_2112_trial": {
+    "summary": "outputs/private-ane-bucket-z1024-a4096-c2112-20261004/summary.json",
+    "status": "incomplete",
+    "reason": "old emitter limit 2048 caused GPU fallback; screen rejected private backend mismatch",
+    "performance_valid": false
+  },
+  "cases": [
+    {
+      "case": "private-ane-large-z1024-a4096-c2112-20261004",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "rows_bucket": 2112,
+      "ane_channels": 4096,
+      "order": [
+        "gpu",
+        "runtime"
+      ],
+      "hot_samples_per_arm": 2,
+      "library_sha256": "cf87e99c679532ec0ba5915689380df6d2af4aa7d62e463d890913457e900870",
+      "gpu_hot_median_seconds": 31.227636583,
+      "private_hot_median_seconds": 27.881099875,
+      "pilot_speedup": 1.1200288626705406,
+      "runtime_calls_per_request": [
+        512,
+        512,
+        512
+      ],
+      "slot_bytes": 128401408,
+      "estimated_bytes": 416303552,
+      "error_fallbacks": 0,
+      "performance_qualified": false,
+      "quality_qualified": false,
+      "summary": "outputs/private-ane-large-z1024-a4096-c2112-20261004/summary.json",
+      "summary_sha256": "f3c2c0c4239de113d2892046076329e8cc23f702c08e722454f1fc98a7dfdb24"
+    },
+    {
+      "case": "private-ane-large-qwen1024-a5120-c2112-20261004",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 40,
+      "rows_bucket": 2112,
+      "ane_channels": 5120,
+      "order": [
+        "runtime",
+        "gpu"
+      ],
+      "hot_samples_per_arm": 2,
+      "library_sha256": "cf87e99c679532ec0ba5915689380df6d2af4aa7d62e463d890913457e900870",
+      "gpu_hot_median_seconds": 183.088496104,
+      "private_hot_median_seconds": 154.228248438,
+      "pilot_speedup": 1.187126858784251,
+      "runtime_calls_per_request": [
+        2560,
+        2560,
+        2560
+      ],
+      "slot_bytes": 162316288,
+      "estimated_bytes": 474220992,
+      "error_fallbacks": 0,
+      "performance_qualified": false,
+      "quality_qualified": false,
+      "summary": "outputs/private-ane-large-qwen1024-a5120-c2112-20261004/summary.json",
+      "summary_sha256": "c4bdc742f72277e52ded9908aa127e48cd1272e315248c59c597b02f62c4440d"
+    }
+  ]
+}

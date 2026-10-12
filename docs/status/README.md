@@ -1,6 +1,266 @@
 # TurboCider 状态文档入口
 
+2026-10-10 [dev-graph 合并至 dev-verify：冲突处理与本机验收](dev-graph-into-dev-verify-2026-10-10.md)：
+16 个冲突文件完成整合，保留现有 streaming、LoRA 和缓存路径；普通/Private 库及 App 编译通过。
+同输入六步编辑默认 GPU 请求 38.41→36.58 s，单样本省时 4.76%；显式 Native GPU 冷请求没有收益。
+完整 encoder 资源复用后 GPU/ANE 3.97→3.36 s，省时 15.45%，conditioning 误差 4.51%；
+这是独立 encoder 筛选，尚无本轮 ANE 整图或 App UI 资格，没有下载模型。
+
+2026-10-10 [dev合并至dev-verify的M4 Pro轻量验收](dev-verify-merge-2026-10-10.md)：
+39/43个双方独有提交、19个冲突文件整合；8/6/4步关键对照全图一致，普通路径耗时基本持平。
+新增BF16 streaming峰值28.62→13.67GiB，后续请求23.19→30.38s；编辑木屋指令仍未达标。
+没有下载模型，完整边界与单元测试记录见报告。
+最新[Native encoder / 无 KV 编辑首步 ANE](2026-10-08-qwen-native-prefill-ane.md)已接入共享变长 FFN、Session 预热/资源复用与提交后下一层源准备。
+完整encoder资源复用省时16.56%；同构建预热后的单步base编辑首步少13.22%、生成等待少6.62%，冷全成本少4.67%。
+保留冷启动慢8.62%的负结果；仍为显式BaseOnly实验，无W2/LoRA/App UI发布资格，未下载模型。
+
+上一轮[完整 Native Metal encoder 单图验证](2026-10-08-qwen-native-encoder.md)已执行视觉27层＋语言36层；
+单图1024-reference独立encoder省时24.93%（FP32视觉）／26.77%（BF16视觉GEMM）。
+实际512²六步编辑的FP32路径encoder省时7.49%、请求少1.59%，图像pixel RRMS0.88%，保持显式实验和MLX默认。
+该轮实际为Native GPU，尚无Native encoder ANE/W2或App UI发布资格；没有下载模型。
+
+上一轮[Qwen encoder 调度与校准](2026-10-08-qwen-encoder-scheduling.md)补上有界分区、Session准备复用、当前GPU提交后的下一层预取及36层独立S1校准。
+三图1024-reference完整encoder从12.37s到11.28s，复用准备后11.01s，省时约8.85%／11.01%；
+conditioning误差仍5.754%，通过预声明8%筛选。S1仅通过组件，默认GPU；当时尚无完整Metal encoder／整图发布资格。
+
+上一轮[Qwen encoder runtime 继续优化](2026-10-08-qwen-encoder-followup.md)复用BF16 MPP partial和动态compiled FFN，
+真实三图FFN两顺序省时约22%，完整encoder总时间少3.93%、语言少10.09%；
+新旧hybrid输出逐值一致，conditioning RRMS5.754%通过本轮预声明8%encoder筛选。
+完整收益未达5%性能筛选，单样本、默认GPU；未做整图/UI测试。两个有限设备组、无模型下载，清理owned缓存约215.58MiB。
+
+上一轮[Qwen Edit ANE encoder runtime](2026-10-08-qwen-ane-encoder.md)已接入显式诊断桥。
+三图真实layer0 FFN两顺序省时约16%，但完整encoder慢10.03%、最终conditioning RRMS5.75%超过预声明5%线；
+保留候选、默认GPU，不追加整图或App开关。只有两个成功设备组，没有下载模型；程序与owned编译缓存按本轮结果清理。
+
+本轮[Qwen Edit 1–3 图 encoder GPU 融合加速](2026-10-08-qwen-edit-encoder.md)已接入原生 pipeline，App 编译通过。
+真实1024 reference视觉＋语言计算省时18.70%／20.54%／21.77%；5%张量筛选通过，2%严格线未通过。
+512 reference三图六步完整请求质量通过、总时间少1.21%，但encoder没有净收益，不授稳定性能资格。
+该轮实际执行GPU，Native encoder／ANE／VAE未迁移；没有下载或导出模型，owned缓存已清理约232.06 MiB。
+
+本轮[Native LoRA hybrid 基础实现与验证结论](2026-10-08-native-lora-foundation.md)使用 `47d3ed80…` 新库。
+Spec、MIL emitter 和 low／apply 拆分已落地，CPU 与 tiny 共享 low 检查通过。
+真实单层暖机对照在完成两对后触发 framework 内存预算保护；未重跑，不授性能资格。
+hybrid stages／controller／模型路线仍待接入；owned 编译缓存和生成 fixture 已清理约 33.01 MiB。
+
+独立 paired gate/up base 原语的[真实单层筛选](2026-10-08-native-lora-paired-base-screen.md)使用 `e6ea1909…` 新库。
+暖机后两种顺序分别慢 0.0970%／0.5691%，与 split 输出逐位一致，属于当前输入 NoGain。
+保留组件，未接模型／App、未追加 E2E；570 个身份源与物理释放通过，owned 编译缓存已清理。
+
+新原生 LoRA SGMMA 的[真实单层筛选](2026-10-08-native-lora-sgmma-screen.md)与
+[六步整图配对](2026-10-08-native-lora-sgmma-e2e.md)使用同一 `77863b3f…` 构建。
+单层完整 FFN 省时 7.26%／3.59%，两内核输出逐位一致；整图 Native 23.987 s、MLX 20.960 s，仍慢 14.44%。
+图像目视接近、227 target 和 Native 阶段释放通过，保持显式实验，默认不变；owned 缓存／fixture 已清理。
+
+独立原生后端的 GPU Viggle r128 六步窄域及首次真实配对见
+[2026-10-08 Native GPU LoRA E2E](2026-10-08-native-lora-gpu-e2e.md)。
+全部 227 target／物理释放通过，图片目视接近；完整请求慢 21.48%，保持显式实验，默认不变。没有下载模型，仅一组配对，owned 编译缓存已清理。
+
+此前完整 GPU LoRA 组件、held-fd／重绑／内存接线与 generated 验证见
+[2026-10-08 Native GPU LoRA](2026-10-08-native-lora-gpu-components.md)。
+小型两层图 Base→LoRA→Base 与 MLX 对照一致；当时请求门关闭，历史记录不转授后续构建资格。
+
+请求内 compact row-scale 缓存的真实 FFN OFF／ON 筛选见
+[2026-10-08 Native scale cache real screen](2026-10-08-native-scale-cache-real-screen.md)。
+实际 MLX Data 身份、命中与逐位相同通过；收益随顺序反转，正式均值没有净收益，因此默认关闭且不追加 E2E。
+实现与此前生成数据验证见[Native request scale cache](2026-10-08-native-request-scale-cache.md)；owned 缓存均已清理。
+
+独立 Native Metal Graph 后端的 register W staging、当前完整构建与首次 Base 配对净收益见
+[2026-10-08 Native register W1](2026-10-08-native-register-w1-base-e2e.md)。
+同构建 512²、20 步的一组请求省时 9.97%，图片肉眼接近；仅显式 CLI 实验，LoRA／编辑／Z-image／App 及通用资格仍待验收。本轮没有下载模型，owned 编译与 ANE cache 已清理。
+
+`dev` 合并至 `dev-verify` 的冲突处理、新构建/测试、两次 BF16 Z 生图及 GGUF/Private
+功能与性能缺口见 [2026-10-04 整合评估](2026-10-04-dev-merge-review.md)。本轮没有下载模型。
+
+Runtime 图准备与编码重叠、分阶段计时、取消回收及两次真实编辑对照见
+[2026-10-02 Runtime 提前准备验收](2026-10-02-runtime-early-preparation.md)。
+路径仍为显式诊断；单组结果未证明稳定加速，GPU 默认不变。双参考扩图试验仍未补齐外围。
+
+Playground 五模板与本地 AI 共享请求接口、透明图实测、扩图失败样本和 Runtime 导出发布竞态修复见
+[2026-10-02 共享工作流验收](2026-10-02-shared-playground-workflows.md)。
+扩图仍为试验性提示词引导；本阶段没有新增 ANE 加速结论。
+
+实际 App 的双图编辑、超分、输入缩放与原图恢复、Playground、API 和最终安装包验收见
+[2026-10-02 最终桌面验收](2026-10-02-final-app-acceptance.md)。
+此记录取代此前两份报告中的锁屏待验与旧 App 未替换状态。
+
+历史复用保留参考原图、App API 重启竞态和取消队列容量修复见
+[2026-10-02 历史与 API 验收](2026-10-02-history-and-api-lifecycle.md)。
+
+M4 Pro 48 GiB 的 Qwen Runtime 分阶段驻留、编译图内存释放和单图编辑冷对照见
+[2026-10-02 Runtime 生命周期验收](2026-10-02-runtime-staged-lifecycle.md)。
+该诊断路线未获得加速资格，App 默认仍使用 GPU。
+
+本地 AI 离线发现、两步真实 API 编辑和 48 GiB Runtime 内存准入核查见
+[2026-10-02 API 与准入报告](2026-10-02-ai-api-and-resident-admission.md)。
+
+图片导入取消修复和本机 GPU 整数候选对照见
+[导入回归与 GPU INT8 筛选](2026-10-01-cancellable-import-and-gpu-int8.md)。
+上一版实际更新 App 为 `67563e8`，模式隔离与完整 FFN 候选见 [模式隔离、LoRA 登记和 SwiGLU 对照](2026-10-01-app-refresh-and-swiglu.md)。
+
+更早的 M4 Pro 笔记本阶段验收（历史交付 `0f8dfa7`）：
+[当前验收、包与 Runtime ANE 决策](2026-10-01-runtime-ane-decision.md)。
+本机可选参考编码 512 的单次冷编辑为 25.16 s，标准 1024 为 37.28 s；
+存在画质差异，默认仍为 1024。下面的 M4 Max 历史数据不能替代本机加速证明。
+
 ## 当前加速结论
+
+2026-10-10 [Qwen原始BF16 encoder+DiT双阶段streaming与GGUF完整40步同库对照](qwen21-bf16-streaming-2026-10-10.md)：
+实际峰值14.75GB的BF16 stream热请求45.34s，对15.36GB的GGUF混合36.99s，
+后者少18.42%/约1.23×；GGUF纯GPU44.61s仅小幅胜stream，BF16 resident
+43.45s但峰值37.27GB。原BF16 stream/resident三张40步PNG全SHA相同。
+未缩steps/分辨率、未放宽物理reserve；encoder对Unsloth冷/热与Public完整
+目标仍待完成，不将private managed weight预算冒充public RAM cap。
+
+2026-10-10 [Qwen Q4_K_M有界并行导入与局部embedding](qwen21-q4km-encoder-import-2026-10-10.md)：
+同binary正反序encoder bank导入2.08→.68s（8 workers），完整SHA保留；
+40步cold text2.70–2.96s、混合warm请求36.98s，对GPU44.62s少17.12%。
+六张PNG与改动前SHA一致；新Unsloth cold condition1.48s仍更快，不能
+宣布encoder冷端到端或同预算BF16 streaming完整目标完成。
+
+2026-10-10 [Qwen Q4_K_M实际GPU/ANE正反序与GPU down kernel](qwen21-q4km-hybrid-2026-10-10.md)：
+5120通道混合40步热请求约36.97–37.01s，匹配GPU约44.55–44.58s；typed
+source/1280 actual calls/GPU fallback已接通。kernel额外收益约1%，冷encoder
+与同预算BF16 streaming完整要求仍未完成，保持显式实验与安全边界。
+
+2026-10-10 新的[Qwen2.1 Q4_K_M完整目标接续](qwen21-q4km-support-2026-10-10.md)：
+两份固定source已下载验证，混合Q4/Q5/Q6导入、42次实Metal投影与首个完整
+GPU生成已运行；encoder/DiT对Unsloth、GPU/ANE和同预算BF16 streaming仍待
+完成，不将烟测或有缺口的参考采样当最终加速资格。
+
+2026-10-10 [ConvRot编译GPU实验的工作区收尾](convrot-compiled-commit-2026-10-10.md)
+单独收好此前保留的六个tracked改动和七个untracked实验文件；原历史
+screen重放及当前Private实模型/Public拒绝门禁通过，不改变默认或资格。
+
+2026-10-10 [当前512²性能与代码整理总览](performance-progress-2026-10-10.md)
+汇总Qwen/Z的base/原LoRA、编辑/encoder、GPU kernels与GGUF/ahead边界。
+[编辑首步通道比例正反序](local512-qwen-prefill-shares-2026-10-10.md)
+单图4096/5120排名翻转，双图4096首步约3.25s、整请求约12.17s有同方向
+信号；全部load checks失败，不升默认。另保留
+[LoRA paired-rank实Metal负结果](local512-qwen-paired-ranks-2026-10-10.md)，
+不把减少dispatch直接当整请求收益。
+
+2026-10-10 [Qwen首步GPU/ANE＋W缓存的完整单/双图正反序](local512-qwen-prefill-weight-cache-2026-10-10.md)
+已核对真实cold fill/warm hit及后五步GPU；surface几十ms优势在同任务
+反序翻转，继续cache off，避免额外1.0–1.3GB。保留双图大budget准入
+拒绝/完整GPU回退，不放宽guard、不以首步/缓存组件标签代替整图收益。
+
+2026-10-10 [实际独立stream有界ahead与四层真实FFN链](local512-affine-ahead-2026-10-10.md)
+已实现producer/ready消费、in-flight/escaped claims与独立target epoch，
+不是同步window重新贴标签。12个不同原source的链对immediate更快，
+但Q4/Q8仍输packed，ConvRot仅约.9–1.3%组件信号；不默认接入、不当完整
+模型/LoRA/图像验收，保留GPU库、失败及retirement成本。
+
+2026-10-10 [GPU融合typed解码与finite status](local512-affine-fused-finite-2026-10-10.md)
+已实现并实测：75MiB准备约3.9→1.7–1.8ms，actual R1 decode+GEMM
+约10.3–10.5→8.0ms，仍慢于packed约6.1–6.6ms。不接默认每层dense重解码；
+继续真正有界ahead-decode，不把准备/组件收益或精确系数当完整模型验收。
+
+2026-10-10 GGUF/ConvRot准备路径接续见
+[typed解码与finite scan的实际成本](local512-gguf-prepare-parts-2026-10-10.md)。
+三个真实75MiB权重的归因中finite graph+eval约2.6ms，解码约1.9ms；
+额外eval会扰动调度，不相减宣称盈利。下一步研究融合finite status，
+保留所有guard；真正异步ahead-decode和完整消费者收益仍未实现/资格化。
+
+2026-10-10 同任务正反序的当前库base三路比较见
+[Qwen frozen / Private / GPU完整对照](local512-qwen-frozen-base-2026-10-10.md)。
+同一request-local GPU encoder生命周期：frozen热请求33.00–33.31s，
+Private34.52–34.60s，GPU43.35–43.46s；保留frozen更重冷启动、系统
+compression/swap-out与竞争负载，不追认两个失败窗口或升级默认。
+
+2026-10-10 Qwen512生图base/原LoRA的最新分阶段对照见
+[生图phase选择与完整请求](local512-qwen-generation-phases-2026-10-10.md)。
+base40全阶段并行有约20%名义GPU-relative收益；LoRA6不显著，生成/编辑/
+encoder不共用未经验证的最快假设。竞争负载与少量swap-in均如实保留。
+
+2026-10-10 的实际GPU kernel接续见
+[共享packed-word解码与完整ConvRot base/LoRA](local512-affine-shared-word-2026-10-10.md)。
+新核加速既有opt-in F32 partial到接近BF16路线；同库完整请求已有验证，
+但未超过更快BF16选择，不改普通packed QMM/default，真正跨层ahead-decode
+及Qwen/encoder完整目标仍待推进。
+
+2026-10-09 Qwen首步按层GPU/ANE选路接续见
+[固定前/后八层GPU的完整模型对照](local512-qwen-prefill-layers-2026-10-09.md)。
+新安全机制已接入；两种24层并行策略均未超过全32层首步并行，不改默认。
+单/双参考图与原LoRA的实际phase/call/source/视觉及竞争负载边界均保留。
+
+2026-10-09 Z512 的请求匹配 Private FFN bucket 接续见
+[长caption调用台阶与BF16/ConvRot/GGUF整请求](local512-z-matched-bucket-2026-10-09.md)。
+原桶够用时保持，越界才扩展；长caption有热请求收益，冷启动/可见颜色
+差异和未资格化边界保留。Qwen首步并行、encoder及真正GGUF提前解码
+仍在完整目标内，不因这项default-off优化完成而宣称整体完成。
+
+encoder源数组的有界复用、独立DiT/encoder channel override与真实两
+reference/LoRA组合见 [源复用与独立分区](local512-encoder-source-2026-10-07.md)。
+source只load一次、scale-cache真实命中，但公平GPU对照仍较快；保留
+准入失败和分区负结果，不改默认或宣称完整目标完成。
+
+有界encoder executor复用、取消时staging/source drain与不同prompt配对见
+[复用与512²复测](local512-encoder-retention-2026-10-07.md)。复用少量改善
+但encoder仍慢于GPU；Z512同库双向diagnostic约1.23×，strict窗口仍被
+竞争CPU负载拒绝，不升级默认或声明全部目标完成。
+
+512² 本地模型优先的 encoder 接续见
+[Qwen 语言 FFN 与 1–2 参考图/真实 LoRA](local512-qwen-encoder-2026-10-07.md)。
+Private/Public 共用执行器已接入语言 FFN；cache/实际调用标签和真实
+会话切换通过。窄 channel share 有有限热组件收益，冷编辑整请求仍较慢，
+保持显式实验；视觉接近不替代完整性能/质量资格，DiT/ConvRot/GGUF目标仍 active。
+
+以下 Private ANE 接续记录按实验时间归档；构建哈希和“未提交”等说明描述
+当时快照。组件测试或单向初筛通过，不等于产品默认路线或正式性能/质量验收。
+
+2026-10-03 双后端接续见
+[Private ANE 基础执行器](private-ane-foundation-2026-10-03.md)。这是原生
+私有同步/共用 Executor 的阶段实现，尚非 W8A8 或四格性能目标验收。
+当前接续实现与完整请求负结果见
+[GPU IOSurface I/O](private-ane-gpu-io-2026-10-03.md)。
+GPU 权重转换与实机 W8A8 MatMul 组件见
+[W8 stager](private-ane-w8-stager-2026-10-03.md)。完整 SwiGLU、统一 W8A8
+Executor、两套银行和模型初筛接续见
+[W8A8 Executor](private-ane-w8-executor-2026-10-03.md)；层间预取、性能和
+完整质量验收尚未完成。
+已集成的 intermediate-channel 分区与完整 down-LoRA join 接续见
+[Private channel split](private-ane-channel-split-2026-10-03.md)。原任务四格
+≥1.2×、层间 staging 重叠和画质资格仍未验收。
+下一层 source-matched bank、独立 worker/queue、lease 与双 reuse fence 的
+实现和 matched prefetch 负结果见
+[Private weight prefetch](private-ane-prefetch-2026-10-03.md)。默认 Public 不变。
+紧凑 FP16 scale cache 与 generation/stride/recipe 失效、同库性能接续见
+[Private scale cache](private-ane-scale-cache-2026-10-04.md)，Z512 初筛约1.080×，
+未达到原任务四格1.2×。
+有界 A8 双槽、不可变符号元数据、Z512 channel share 搜索与 Z1024 对照见
+[A8 lookahead 接续](private-ane-a8-lookahead-2026-10-04.md)。Z512 新库初筛
+约1.155×、Qwen512/Fa5120 初筛1.212×，Z1024 lookahead 后仍慢于 GPU；
+单格单向初筛不等于四格性能与完整画质验收，原目标仍 active。
+1024² 的较大固定 bucket、私有行数边界和 fallback 标签修正见
+[大 bucket 接续](private-ane-large-bucket-2026-10-04.md)：Z1024约1.120×、
+Qwen1024约1.187×，仍未达到要求的四格正式1.2×。
+W8 Metal format/dtype/block 专用化、逐位回归和连续负载观察见
+[staging 专用化](private-ane-stage-specialization-2026-10-04.md)。组件有正信号，
+三次完整请求比较被 competing CPU load 拒绝，未填新的有效端到端倍率。
+对齐读取、逐位回归、GPU dual-head 的近乎持平结果和新库512²/1024²
+兼容检查见 [dense-load 接续](private-ane-dense-load-2026-10-04.md)。新的
+整请求 arm 仍被 CPU load gate 拒绝，不更新四格正式倍率或默认路线。
+共用 channel LoRA 子范围 callback、实际执行 counters 和 Z/Qwen512
+新旧 LoRA 逐位兼容见 [LoRA range 接续](private-ane-lora-range-2026-10-04.md)。
+四个 arm 的 timing 仍被 load verifier 拒绝，不以输出缩小代替端到端收益。
+固定分区去测量fences的同库开关、row/channel异常所有权回归与Z512/1024
+数值兼容见 [fixed async](private-ane-fixed-async.md)。默认关闭；host async
+counters不证明device overlap，两个runtime arm仍无有效速度比较。
+负载触发PID的只读 argv 复核见 [load origin](private-ane-load-origin.md)：
+最近捕获到 `download_ltx25.py`，不能表述为已证明ComfyUI GPU推理争抢，
+也没有放宽原 gate 或追认历史速度。
+用户授权的临时安静窗口及同库对照见
+[quiet window](private-ane-quiet-window-2026-10-05.md)：Qwen512 base v1 两方向
+约1.263–1.265×；Z512 中位约1.20×但裕量窄，两个1024²格仍未达标。正式四格、
+LoRA/质量/内存/device trace资格未完成，不升级默认路线。
+1024²显式4224-row bucket、逐元素self-test与长行数physical MPP接续见
+[full bucket](private-ane-full-bucket-2026-10-05.md)：新库Z1024狐/灯塔约
+1.214×/1.209×，Qwen1024约1.258×；保守边界亦超过1.2，但同提示词
+反序、最新库512/LoRA、完整质量/内存/并发与带宽calibration仍待验收。
+1024² Qwen LoRA限定生成开关、FP32 rank门禁、request-local编译GPU
+channel head及实机兼容接续见 [LoRA1024](private-ane-lora1024-2026-10-05.md)：
+Qwen1024约1.055×、Z1024现有LoRA约1.131×，Qwen512仍稍慢于GPU；
+同进程strength切换返回base逐位一致，完整质量与原目标仍未验收。
 
 先读 [GPU/ANE 加速：当前选择与维护入口](acceleration.md)。
 它统一维护默认/最快 base、完整 runtime LoRA、optional 和诊断边界。
@@ -24,6 +284,9 @@ GPU/runtime全热为0.998×、预声明较晚窗口1.016×，不改变默认选�
 
 | 内容 | 入口 |
 | --- | --- |
+| M4 Pro App/API/工作流阶段验收、最终 QKV 回收检查、交付包和研究边界 | [2026-10-01 验收与决策](2026-10-01-runtime-ane-decision.md) |
+| 可选 Qwen 512 参考编码、冷编辑对照、公开三图路径和实际 App 换装 | [参考编码验收](2026-10-01-qwen-reference-encoding.md) |
+| FFN/QKV 失败回收、完整 GPU 回退、取消复用及私有图清理 | [生命周期回归](runtime-ane-failure-retirement-2026-10-01.md) |
 | 当前保留级别、性能表、optional、代码职责和未完成项 | [维护入口](acceleration.md) |
 | 2026-09-30 runtime ANE 代码层次、BF16/Q8/QKV 实测进度、整理范围与提交边界 | [当前代码与进度](runtime-ane-current-2026-09-30.md) |
 | 875b库 Qwen 1024² base-only v1：两提示词 v1/v2 ABBA 与 GPU/v1/冻结图正反向三路；Z v1/v2 组件收益不足 | [v1 base 筛选](runtime-ane-v1-base-2026-09-30.md) |

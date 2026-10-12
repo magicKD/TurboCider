@@ -1,0 +1,700 @@
+{
+  "schema": 1,
+  "date": "2026-10-10",
+  "status": "merge_validated_locally",
+  "branches": {
+    "baseline": "1380e3c871dcf3598b9a8d7c9d203758014cc5da",
+    "graph": "2a86b8924b4082be6a0baedd5eff032fd322d8f1",
+    "conflict_files": [
+      "docs/status/README.md",
+      "native/backends/ane_backend.hpp",
+      "native/backends/ane_backend.mm",
+      "native/backends/ane_ffn.cpp",
+      "native/backends/ane_ffn.hpp",
+      "native/backends/ane_gpu.hpp",
+      "native/backends/mlx.cpp",
+      "native/backends/mlx.hpp",
+      "native/models/qwen21/pipeline.cpp",
+      "native/models/qwen21/pipeline.hpp",
+      "native/models/qwen21/text_encoder.cpp",
+      "native/models/qwen21/text_encoder.hpp",
+      "native/models/z_image/z_image.cpp",
+      "native/platform/apple/results.mm",
+      "native/runtime/session.hpp",
+      "tests/native/test_contract.py"
+    ],
+    "common_ancestor": "8d12b44",
+    "unique_commits_before_merge": {
+      "dev-verify": 40,
+      "dev-graph": 1
+    },
+    "shared_modified_files": 24
+  },
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_gib": 48,
+    "os": "macOS 26.6 (25G72)",
+    "developer_dir": "/Library/Developer/CommandLineTools"
+  },
+  "builds": {
+    "premerge": {
+      "runtime_build_id": "tc-runtime-build-v1-2b9d64ff6581d3fc6fd40e3098579cb3a196b4d98fcf3285b0a56bfe61e55a2f",
+      "source_count": 536,
+      "head_mismatches": [],
+      "library_sha256": "5470db1d35dc337c5db03ddcd5eb27823014c266675150fd6e225f4b4431ff04"
+    },
+    "merged_private": {
+      "runtime_build_id": "tc-runtime-build-v1-5e01b80be9284f24739e93354f2fd1e42f6d9a52e187c0fd79c7e6fdadc5bd5d",
+      "source_count": 605,
+      "source_mismatches": [],
+      "library_sha256": "7046458b72d8ec8c4769f62dc9552c3d809650a886790054e23ea10649e8009e",
+      "private_ane": "-DTURBOCIDER_ENABLE_PRIVATE_ANE=1",
+      "cli_sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+      "path": "build/merge-dev-graph-20261010",
+      "build_method": "verified incremental rebuild; compiler/flags unchanged, affected units and generated identity rebuilt"
+    },
+    "merged_public": {
+      "runtime_build_id": "tc-runtime-build-v1-b16892d5c64d869b2108d18787a874e5b5728f516048201b680396c835951c66",
+      "source_count": 605,
+      "source_mismatches": [],
+      "library_sha256": "ed7ddc70c57cfaa28fe5dba687dd1ccc92764006300aaa309cf2c2a19b9b3ed9",
+      "private_ane": "-DTURBOCIDER_HAS_BUNDLED_CATALOG=1",
+      "cli_sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+      "path": "build/merge-dev-graph-public-20261010",
+      "build_method": "verified incremental rebuild; compiler/flags unchanged, affected units and generated identity rebuilt",
+      "swift_app_sha256": "a8859bc470008e4a581480195e1c433105e2015580ab83648e0319b73919769a"
+    }
+  },
+  "tests": [
+    {
+      "name": "repository-tests-final",
+      "tests": 17,
+      "skipped": 0,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/repository-tests-final.log",
+      "log_sha256": "dc83f7c4109287beb4cfb92a7b275d3aca1f565a311ee84d92d93fe03c97ec4d"
+    },
+    {
+      "name": "public-contracts-final",
+      "tests": 129,
+      "skipped": 3,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/public-contracts-final.log",
+      "log_sha256": "64c2c33027cc8f584dd07293e00766500986d5e4838a601ec90bcd3568227fb6"
+    },
+    {
+      "name": "graph-contracts-layout-final",
+      "tests": 41,
+      "skipped": 0,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/graph-contracts-layout-final.log",
+      "log_sha256": "a1dcc4063c442ad97355aebd6b1839fe1fafae2164e827391dd5a0ba9963c5d0"
+    },
+    {
+      "name": "gpu-regressions-final",
+      "tests": 15,
+      "skipped": 1,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/gpu-regressions-final.log",
+      "log_sha256": "722085b83ea0920d6eb0df3602f77f0031c2ff0fea8f97c2258c7e1f575eb27f"
+    },
+    {
+      "name": "public-contracts-public-build",
+      "tests": 129,
+      "skipped": 3,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/public-contracts-public-build.log",
+      "log_sha256": "f30e666c4c76418ae23d3296c9fa99c88629fd1b42d73299ed012c893690ad61"
+    },
+    {
+      "name": "public-native-route",
+      "tests": 14,
+      "skipped": 0,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/public-native-route.log",
+      "log_sha256": "331c72a962070b13996bffb3c760709e33ecd2816e4ba5d6901da6be0e5d860c"
+    },
+    {
+      "name": "qwen-focused",
+      "status": "pass_after_environment_fix",
+      "unique_tests": 69,
+      "passed": 62,
+      "skipped": 7,
+      "initial_log": "outputs/dev-graph-merge-20261010/qwen-focused-final.log",
+      "initial_failure": "one module could not import Pillow; 60 passed, seven opted-out tests skipped",
+      "repair": "reuse existing local Pillow through PYTHONPATH; reran only the two previously unimportable quality tests",
+      "repair_log": "outputs/dev-graph-merge-20261010/qwen-prefill-quality-final.log",
+      "dependencies_downloaded": 0
+    },
+    {
+      "name": "host-mixed-gguf-affine-and-rotation",
+      "tests": 100,
+      "skipped": 13,
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/host-tests.log",
+      "note": "four independent suites; overlaps other suites, not an aggregate unique count"
+    },
+    {
+      "name": "cpu-contract-binaries",
+      "executables": 7,
+      "status": "pass",
+      "log_directory": "outputs/dev-graph-merge-20261010/cpu-tests"
+    },
+    {
+      "name": "public-release-binary-audit",
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/public-binary-audit.log",
+      "checks": [
+        "private class strings",
+        "private framework linkage",
+        "instrumentation exports"
+      ]
+    },
+    {
+      "name": "native-encoder-generated-full-layers",
+      "status": "pass",
+      "record": {
+        "models_loaded": 0,
+        "native": {
+          "ane_branch_seconds": 0,
+          "ane_chunks": 0,
+          "ane_consumer_seconds": 0,
+          "ane_ffns": 0,
+          "ane_padded_rows": 0,
+          "ane_producer_seconds": 0,
+          "dispatches": 236,
+          "future_weight_windows": 0,
+          "gpu_wait_seconds": 0.020793626000000003,
+          "graph_submissions": 10,
+          "language_layers": 8,
+          "physically_complete": true,
+          "preparation_seconds": 0.8319525399999999,
+          "skipped_future_windows": 0,
+          "source_ready_seconds": 6.4958e-05,
+          "vision_layers": 4
+        },
+        "records": [
+          {
+            "error": {
+              "elements": 16896,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 0.00518079378088185
+            },
+            "final_norm": false,
+            "kind": "full-two-language-layers-GQA-mRoPE-DeepStack",
+            "rows": 33
+          },
+          {
+            "error": {
+              "elements": 16896,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 0.0055553535933169735
+            },
+            "final_norm": true,
+            "kind": "full-two-language-layers-GQA-mRoPE-DeepStack",
+            "rows": 33
+          },
+          {
+            "error": {
+              "elements": 66048,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 0.008424579778708221
+            },
+            "final_norm": false,
+            "kind": "full-two-language-layers-GQA-mRoPE-DeepStack",
+            "rows": 129
+          },
+          {
+            "error": {
+              "elements": 66048,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 0.00778980282592341
+            },
+            "final_norm": true,
+            "kind": "full-two-language-layers-GQA-mRoPE-DeepStack",
+            "rows": 129
+          },
+          {
+            "deep0": {
+              "elements": 2048,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 1.7542762561302747e-06
+            },
+            "deep1": {
+              "elements": 2048,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 2.0714103682334775e-06
+            },
+            "error": {
+              "elements": 2048,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 3.4799246279290655e-06
+            },
+            "grid": 4,
+            "kind": "complete-two-vision-layers-FP32-D72-rope-mergers"
+          },
+          {
+            "deep0": {
+              "elements": 8192,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 2.569348542772657e-06
+            },
+            "deep1": {
+              "elements": 8192,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 3.0158235972576343e-06
+            },
+            "error": {
+              "elements": 8192,
+              "finite": true,
+              "limit": 0.025,
+              "rrms": 2.5143591063145996e-06
+            },
+            "grid": 8,
+            "kind": "complete-two-vision-layers-FP32-D72-rope-mergers"
+          }
+        ],
+        "scope": "generated complete language and vision layers, source tails, GQA, RoPE, FP32 norms, residual/DeepStack/mergers",
+        "status": "pass",
+        "vision_bf16_gemm": false
+      },
+      "models_loaded": 0
+    },
+    {
+      "name": "native-encoder-result-bridge",
+      "status": "pass",
+      "log": "outputs/dev-graph-merge-20261010/native-encoder-results.log"
+    }
+  ],
+  "performance": {
+    "scope": "two bounded serial groups, one sample per state, fixed arm order, shared OS/driver caches, 12-second rests; not a stable average or fresh-machine cold qualification",
+    "models_downloaded": 0,
+    "model_exports": 0,
+    "models_copied": 0,
+    "model": "existing local Qwen Image 2.1 BF16",
+    "lora": "existing Viggle v0.2.1 six-step r128 transformer LoRA",
+    "edit": {
+      "width": 512,
+      "height": 512,
+      "reference_size": 1024,
+      "seed": 29,
+      "steps": 6,
+      "prompt": "Edit the reference image. Keep the subject distinct. Warm studio light.",
+      "reference": "outputs/qwen21-gpu-acceptance-20260930/references/teapot.png",
+      "reference_sha256": "b8ee2b30de4ee2a2bd548e122435abd4899cb7151647b1b63e071ff8c2f5a6d3",
+      "dit_cache": "off",
+      "residency": "component_staged",
+      "results": [
+        {
+          "name": "premerge-default",
+          "returncode": 0,
+          "timings_seconds": {
+            "denoise": 27.412708709,
+            "hybrid_setup": 0,
+            "image_encode": 0.898229459,
+            "request_wall": 38.410124541,
+            "text_encode": 5.993336708,
+            "vae_decode": 0.925224709
+          },
+          "actual_denoise_steps": 6,
+          "lora_applied_projections": 227,
+          "mlx_memory": {
+            "mlx_active_bytes": 2162917898,
+            "mlx_peak_bytes": 21459275534,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "library_sha256": "5470db1d35dc337c5db03ddcd5eb27823014c266675150fd6e225f4b4431ff04",
+          "env_overrides": {},
+          "output": "outputs/dev-graph-merge-20261010/premerge-default/0.png",
+          "output_sha256": "4cc0604bee14a1fa7fccd70f5de22ff525b7be328421200ee04c69722c4d14a7",
+          "thermal_before": [
+            "Note: No thermal warning level has been recorded",
+            "Note: No performance warning level has been recorded",
+            "Note: No CPU power status has been recorded"
+          ],
+          "thermal_after": [
+            "Note: No thermal warning level has been recorded",
+            "Note: No performance warning level has been recorded",
+            "Note: No CPU power status has been recorded"
+          ]
+        },
+        {
+          "name": "merged-default",
+          "returncode": 0,
+          "timings_seconds": {
+            "denoise": 27.016457583,
+            "hybrid_setup": 0,
+            "image_encode": 0.845067916,
+            "request_wall": 36.582371291,
+            "text_encode": 4.609453667,
+            "vae_decode": 0.926738333
+          },
+          "actual_denoise_steps": 6,
+          "lora_applied_projections": 227,
+          "mlx_memory": {
+            "mlx_active_bytes": 2230026762,
+            "mlx_peak_bytes": 21526384398,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "library_sha256": "7046458b72d8ec8c4769f62dc9552c3d809650a886790054e23ea10649e8009e",
+          "env_overrides": {},
+          "output": "outputs/dev-graph-merge-20261010/merged-default/0.png",
+          "output_sha256": "b797552a90758aed713675ca1a77ec6b333f35a4d1fa0ddc8137a67b86c1082e",
+          "thermal_before": [
+            "Note: No thermal warning level has been recorded",
+            "Note: No performance warning level has been recorded",
+            "Note: No CPU power status has been recorded"
+          ],
+          "thermal_after": [
+            "Note: No thermal warning level has been recorded",
+            "Note: No performance warning level has been recorded",
+            "Note: No CPU power status has been recorded"
+          ]
+        },
+        {
+          "name": "merged-native-gpu-encoder",
+          "returncode": 0,
+          "timings_seconds": {
+            "denoise": 27.277162958,
+            "hybrid_setup": 0,
+            "image_encode": 0.874938375,
+            "request_wall": 38.652691333,
+            "text_encode": 6.498367,
+            "vae_decode": 0.971586458
+          },
+          "actual_denoise_steps": 6,
+          "lora_applied_projections": 227,
+          "mlx_memory": {
+            "mlx_active_bytes": 2230026762,
+            "mlx_peak_bytes": 21526384398,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "library_sha256": "7046458b72d8ec8c4769f62dc9552c3d809650a886790054e23ea10649e8009e",
+          "env_overrides": {
+            "TURBOCIDER_QWEN21_ENCODER_BACKEND": "metal",
+            "TURBOCIDER_QWEN21_NATIVE_VISION_PRECISION": "fp32"
+          },
+          "output": "outputs/dev-graph-merge-20261010/merged-native-gpu-encoder/0.png",
+          "output_sha256": "0d4170329161a72024c70392c87fbae4e8df3386df616d334781379fea105ce3",
+          "thermal_before": [
+            "Note: No thermal warning level has been recorded",
+            "Note: No performance warning level has been recorded",
+            "Note: No CPU power status has been recorded"
+          ],
+          "thermal_after": [
+            "Note: No thermal warning level has been recorded",
+            "Note: No performance warning level has been recorded",
+            "Note: No CPU power status has been recorded"
+          ],
+          "native_encoder_execution": {
+            "ane_branch_seconds": 0,
+            "ane_chunks": 0,
+            "ane_consumer_seconds": 0,
+            "ane_ffns": 0,
+            "ane_padded_rows": 0,
+            "ane_producer_seconds": 0,
+            "conditioning_cache_hit": false,
+            "dispatches": 1053,
+            "experimental": true,
+            "future_weight_windows": 30,
+            "gpu_wait_seconds": 1.3349753750000006,
+            "graph_submissions": 33,
+            "language_layers": 36,
+            "physically_complete": true,
+            "precision": "vision-fp32+language-bf16",
+            "preparation_seconds": 2.4573535820000005,
+            "release_qualified": false,
+            "skipped_future_windows": 0,
+            "source_ready_seconds": 2.294474041,
+            "vision_cache_hit": false,
+            "vision_layers": 27
+          }
+        }
+      ]
+    },
+    "encoder_reuse": [
+      {
+        "name": "native-gpu-reuse",
+        "returncode": 0,
+        "results": [
+          {
+            "completed_language_layers": 36,
+            "completed_vision_layers": 27,
+            "conditioning_path": "outputs/dev-graph-merge-20261010/native-gpu-reuse.json.0.json.conditioning.f32",
+            "language_seconds": 2.694378167,
+            "metal": true,
+            "model_exports": 0,
+            "models_downloaded": 0,
+            "native": {
+              "ane_branch_seconds": 0,
+              "ane_chunks": 0,
+              "ane_consumer_seconds": 0,
+              "ane_ffns": 0,
+              "ane_padded_rows": 0,
+              "ane_producer_seconds": 0,
+              "dispatches": 1053,
+              "future_weight_windows": 30,
+              "gpu_wait_seconds": 1.424691707,
+              "graph_submissions": 33,
+              "language_layers": 36,
+              "physically_complete": true,
+              "preparation_seconds": 0.6374709159999999,
+              "skipped_future_windows": 0,
+              "source_ready_seconds": 2.3052502090000004,
+              "vision_layers": 27
+            },
+            "prepared_reused": true,
+            "retained_elements": 114688,
+            "rows": 1066,
+            "scope": "complete single-reference vision27+language36, reference1024, no DiT/VAE",
+            "source_stat_revalidated": true,
+            "status": "pass",
+            "total_encoder_seconds": 4.768519042,
+            "vision_bf16_gemm": false,
+            "vision_seconds": 1.728126375,
+            "conditioning_sha256": "76b02aa4ff4b799bf47be9823aceea941b244b9f24483c7b713327b07f1ba1a0"
+          },
+          {
+            "completed_language_layers": 36,
+            "completed_vision_layers": 27,
+            "conditioning_path": "outputs/dev-graph-merge-20261010/native-gpu-reuse.json.1.json.conditioning.f32",
+            "language_seconds": 2.394257625,
+            "metal": true,
+            "model_exports": 0,
+            "models_downloaded": 0,
+            "native": {
+              "ane_branch_seconds": 0,
+              "ane_chunks": 0,
+              "ane_consumer_seconds": 0,
+              "ane_ffns": 0,
+              "ane_padded_rows": 0,
+              "ane_producer_seconds": 0,
+              "dispatches": 1053,
+              "future_weight_windows": 30,
+              "gpu_wait_seconds": 3.190733001999999,
+              "graph_submissions": 33,
+              "language_layers": 36,
+              "physically_complete": true,
+              "preparation_seconds": 1.875e-06,
+              "skipped_future_windows": 0,
+              "source_ready_seconds": 0.45208995799999996,
+              "vision_layers": 27
+            },
+            "prepared_reused": true,
+            "retained_elements": 114688,
+            "rows": 1066,
+            "scope": "complete single-reference vision27+language36, reference1024, no DiT/VAE",
+            "source_stat_revalidated": true,
+            "status": "pass",
+            "total_encoder_seconds": 3.970895875,
+            "vision_bf16_gemm": false,
+            "vision_seconds": 1.296771292,
+            "conditioning_sha256": "76b02aa4ff4b799bf47be9823aceea941b244b9f24483c7b713327b07f1ba1a0"
+          }
+        ],
+        "scope": "complete single-image vision27 plus language36 encoder; no DiT/VAE, no conditioning or KV-cache hit; source reads repeated; same prepared owner"
+      },
+      {
+        "name": "native-gpu-ane-reuse",
+        "returncode": 0,
+        "results": [
+          {
+            "completed_language_layers": 36,
+            "completed_vision_layers": 27,
+            "conditioning_path": "outputs/dev-graph-merge-20261010/native-gpu-ane-reuse.json.0.json.conditioning.f32",
+            "language_seconds": 2.091550584,
+            "metal": true,
+            "model_exports": 0,
+            "models_downloaded": 0,
+            "native": {
+              "ane_branch_seconds": 0.8781430880000001,
+              "ane_chunks": 36,
+              "ane_consumer_seconds": 0.06128875099999999,
+              "ane_ffns": 36,
+              "ane_padded_rows": 3096,
+              "ane_producer_seconds": 0.8086886270000002,
+              "dispatches": 981,
+              "future_weight_windows": 48,
+              "gpu_wait_seconds": 1.218680751,
+              "graph_submissions": 123,
+              "language_layers": 36,
+              "physically_complete": true,
+              "preparation_seconds": 0.312532708,
+              "skipped_future_windows": 0,
+              "source_ready_seconds": 0.6632392520000001,
+              "vision_layers": 27
+            },
+            "prepared_reused": true,
+            "retained_elements": 114688,
+            "rows": 1066,
+            "scope": "complete single-reference vision27+language36, reference1024, no DiT/VAE",
+            "source_stat_revalidated": true,
+            "status": "pass",
+            "total_encoder_seconds": 3.651752791,
+            "vision_bf16_gemm": false,
+            "vision_seconds": 1.3026295,
+            "conditioning_sha256": "24c6fb22d27a241405967a4b55b9db0948719dc024069654031745b120ff7b39"
+          },
+          {
+            "completed_language_layers": 36,
+            "completed_vision_layers": 27,
+            "conditioning_path": "outputs/dev-graph-merge-20261010/native-gpu-ane-reuse.json.1.json.conditioning.f32",
+            "language_seconds": 1.798766459,
+            "metal": true,
+            "model_exports": 0,
+            "models_downloaded": 0,
+            "native": {
+              "ane_branch_seconds": 0.882584711,
+              "ane_chunks": 36,
+              "ane_consumer_seconds": 0.061718454,
+              "ane_ffns": 36,
+              "ane_padded_rows": 3096,
+              "ane_producer_seconds": 0.822218711,
+              "dispatches": 981,
+              "future_weight_windows": 48,
+              "gpu_wait_seconds": 1.1987770009999998,
+              "graph_submissions": 123,
+              "language_layers": 36,
+              "physically_complete": true,
+              "preparation_seconds": 2.917e-06,
+              "skipped_future_windows": 0,
+              "source_ready_seconds": 0.670971416,
+              "vision_layers": 27
+            },
+            "prepared_reused": true,
+            "retained_elements": 114688,
+            "rows": 1066,
+            "scope": "complete single-reference vision27+language36, reference1024, no DiT/VAE",
+            "source_stat_revalidated": true,
+            "status": "pass",
+            "total_encoder_seconds": 3.357473292,
+            "vision_bf16_gemm": false,
+            "vision_seconds": 1.279920291,
+            "conditioning_sha256": "24c6fb22d27a241405967a4b55b9db0948719dc024069654031745b120ff7b39"
+          }
+        ],
+        "scope": "complete single-image vision27 plus language36 encoder; no DiT/VAE, no conditioning or KV-cache hit; source reads repeated; same prepared owner"
+      }
+    ],
+    "output_quality": {
+      "image_comparisons": {
+        "premerge-default__merged-default": {
+          "elements": 786432,
+          "shape": [
+            512,
+            512,
+            3
+          ],
+          "all_finite": true,
+          "relative_l2": 0.005773875895012465,
+          "mae": 0.46473948160807294,
+          "max_abs": 30.0,
+          "equal": false
+        },
+        "merged-default__merged-native-gpu-encoder": {
+          "elements": 786432,
+          "shape": [
+            512,
+            512,
+            3
+          ],
+          "all_finite": true,
+          "relative_l2": 0.01014008243068359,
+          "mae": 1.2880935668945312,
+          "max_abs": 30.0,
+          "equal": false
+        },
+        "premerge-default__merged-native-gpu-encoder": {
+          "elements": 786432,
+          "shape": [
+            512,
+            512,
+            3
+          ],
+          "all_finite": true,
+          "relative_l2": 0.011155446651565737,
+          "mae": 1.4341278076171875,
+          "max_abs": 25.0,
+          "equal": false
+        }
+      },
+      "conditioning_comparisons": {
+        "0": {
+          "elements": 114688,
+          "shape": [
+            114688
+          ],
+          "all_finite": true,
+          "relative_l2": 0.045098866295012585,
+          "mae": 0.3256595491298607,
+          "max_abs": 44.0,
+          "equal": false,
+          "screen_gate_relative_l2": 0.08,
+          "passes_declared_gate": true
+        },
+        "1": {
+          "elements": 114688,
+          "shape": [
+            114688
+          ],
+          "all_finite": true,
+          "relative_l2": 0.045098866295012585,
+          "mae": 0.3256595491298607,
+          "max_abs": 44.0,
+          "equal": false,
+          "screen_gate_relative_l2": 0.08,
+          "passes_declared_gate": true
+        }
+      },
+      "timing_savings": {
+        "default_encoder_fraction": 0.23090360318864966,
+        "default_request_fraction": 0.04758519457673216,
+        "native_cold_request_vs_premerge_fraction": -0.006315178482201311,
+        "native_ane_encoder_0_fraction": 0.2341956152767315,
+        "native_ane_encoder_1_fraction": 0.15447964447065743
+      }
+    },
+    "source_stamps_unchanged": true,
+    "candidate_identity_unchanged": true,
+    "visual_inspection": "three six-step RGB PNGs inspected separately; teapot subject and warm studio lighting appear close; not a full edit-quality qualification"
+  },
+  "remaining_limits": [
+    "Native encoder selection and its ANE cache are not exposed by the normal App worker environment whitelist",
+    "Keep MLX GPU default: fresh Native GPU encoder request was slower",
+    "No six-step GPU/ANE LoRA E2E in this round; independent encoder error screen is not image-quality acceptance",
+    "No new 20-step Native W1 DiT comparison, W2 scheduling, all-model qualification or long stress campaign",
+    "Public release library excludes Private ANE",
+    "W8/A8 storage and operations do not certify end-to-end hardware INT8 execution"
+  ],
+  "cleanup": {
+    "scope": "only intermediates/stale probe created for this merge; no model files, baseline library, pre-existing ANE programs or OS caches removed",
+    "objects_removed": 479,
+    "object_logical_bytes": 39194384,
+    "directories_removed": [
+      "build/merge-dev-graph-20261010/module-cache",
+      "build/merge-dev-graph-public-20261010/module-cache",
+      "/Users/kd/Documents/project/TurboCider/build/merge-dev-graph-encoder-probe-20261010",
+      "/private/tmp/turbocider-graph-merge-20261010/objects"
+    ],
+    "owned_directory_allocated_bytes_before": 293093376,
+    "owned_directory_allocated_bytes_after": 41930752,
+    "owned_directory_allocation_reduction_bytes": 251162624,
+    "retained": [
+      "public and Private-enabled runtime libraries/CLIs",
+      "Swift App binary and helper",
+      "final matching encoder probe",
+      "runtime build manifests and resources",
+      "source identities, logs and experiment reports",
+      "pre-existing effective ANE program cache"
+    ]
+  }
+}

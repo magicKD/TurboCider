@@ -8,6 +8,18 @@
 
 namespace tc::ane {
 
+inline constexpr uint64_t packed_conversion_max_workers = 8;
+inline constexpr uint64_t packed_conversion_scratch_per_worker = 2048;
+struct ConversionPlan { uint64_t groups, workers, scratch_upper_bytes; };
+inline std::optional<ConversionPlan> plan_packed_conversion(uint64_t rows, uint64_t cols,
+                                                           uint64_t hardware_threads) {
+    if (!rows || rows > 1048576 || !cols || cols > 32768) return std::nullopt;
+    const auto groups = (rows + 15) / 16;
+    const auto workers = rows * cols < 65536 ? 1 :
+        std::min({groups, packed_conversion_max_workers, std::max(uint64_t(1), hardware_threads)});
+    return ConversionPlan{groups, workers, workers * packed_conversion_scratch_per_worker};
+}
+
 // An opportunistic guard, not a promise that Core ML/driver memory is bounded.
 // free_bytes is raw Mach free_count (which includes speculative pages).
 // Inactive pages are distinct; only half, capped at 8 GiB, are credited to

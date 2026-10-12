@@ -1,0 +1,400 @@
+{
+  "schema": "tc-local512-qwen-encoder-evidence-v1",
+  "record_date_utc": "2026-10-07",
+  "artifact_date_basis": "Asia/Singapore run suffix 20261008; UTC record date 2026-10-07",
+  "qualification_passed": false,
+  "cleanup": {"scope":"regular .o files in five validated completed local512 encoder builds only","files_deleted":1077,"logical_bytes_deleted":83304424,"rebuildable":true,"binaries_logs_manifests_images_models_retained":true},
+  "builds": {
+    "private": {
+      "root": "build/local512-encoder-v4-private",
+      "runtime_build_id": "tc-runtime-build-v1-173b613ffd7cd111e1845febcb08cb1743ace2343f9701fdf4802fed40308211",
+      "source_input_count": 488,
+      "source_mismatches": [],
+      "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "64ce8b87a8b2d2752402b54274d63dea573a979dbaac66f07e3cb2b25e907d80",
+      "includes_preserved_convrot_drafts": true
+    },
+    "public": {
+      "root": "build/local512-encoder-v4-public",
+      "runtime_build_id": "tc-runtime-build-v1-1318d272f3d8dac866be4bfce5c106377727bff7ecccfe90f680c9a0d46061d0",
+      "source_input_count": 488,
+      "source_mismatches": [],
+      "library_sha256": "34a421cb9d04697708c945e5b6a07e2be4b2b154ac2361176b90799f3314c7ec",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "manifest_sha256": "075880000c4f1d2e37a5fd571e607a86221e4218f791a0b95cc6f48e3e7ad9eb",
+      "includes_preserved_convrot_drafts": true
+    }
+  },
+  "generation_pairs": [
+    {
+      "workload": "base",
+      "references": 1,
+      "arms": [
+        {
+          "arm": "gpu",
+          "receipt": "outputs/local512-qwen-edit1-encoder-20261008/gpu-v3/generation-receipt.json",
+          "receipt_sha256": "93a8d4c439f24055660467842a5ab69e29bd85aa8c556466aae5e3d0b0c6b57c",
+          "library_sha256": "6243b282fab76b62e6950d8ef0527b5a4c9557181dfeafd9547fbd3e67f3238f",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 44.915785792,
+            "hybrid_setup": 0,
+            "image_encode": 0.152062916,
+            "request_wall": 47.164966542,
+            "text_encode": 1.094385834,
+            "vae_decode": 0.592764875
+          },
+          "actual_steps": 40,
+          "lora_applied_projections": 0,
+          "actual_encoder_calls": 0,
+          "runtime_failed": null,
+          "fallback_blocks": null,
+          "encoder_bucket": null,
+          "ane_channels": null,
+          "png_sha256": "83eb62b0fc76ad968e0f17e073174048641a6a9331eacfc1c155876b23eff0df"
+        },
+        {
+          "arm": "encoder",
+          "receipt": "outputs/local512-qwen-edit1-encoder-20261008/encoder/generation-receipt-v3.json",
+          "receipt_sha256": "621ec7910325ea2879fbeeb106cd5ae7c41f865d861397fe2857cde2a3151903",
+          "library_sha256": "6243b282fab76b62e6950d8ef0527b5a4c9557181dfeafd9547fbd3e67f3238f",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 44.922285708,
+            "hybrid_setup": 0,
+            "image_encode": 0.154211833,
+            "request_wall": 48.71808175,
+            "text_encode": 2.623633,
+            "vae_decode": 0.60821825
+          },
+          "actual_steps": 40,
+          "lora_applied_projections": 0,
+          "actual_encoder_calls": 36,
+          "runtime_failed": false,
+          "fallback_blocks": 0,
+          "encoder_bucket": 512,
+          "ane_channels": 5120,
+          "png_sha256": "844bdfd7ef0da5e0cc6931fbd2c20484e3e6da7544893835d3178240b148a473"
+        }
+      ]
+    },
+    {
+      "workload": "base",
+      "references": 2,
+      "arms": [
+        {
+          "arm": "gpu",
+          "receipt": "outputs/local512-qwen-edit2-encoder-20261008/gpu/generation-receipt.json",
+          "receipt_sha256": "ac396491cf6480fe4b4aabccefdccb5b23cdaae83fe07da327c4554f77e8ea6f",
+          "library_sha256": "6243b282fab76b62e6950d8ef0527b5a4c9557181dfeafd9547fbd3e67f3238f",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 47.829809416,
+            "hybrid_setup": 0,
+            "image_encode": 0.288771792,
+            "request_wall": 50.653334708,
+            "text_encode": 1.484108708,
+            "vae_decode": 0.609026417
+          },
+          "actual_steps": 40,
+          "lora_applied_projections": 0,
+          "actual_encoder_calls": 0,
+          "runtime_failed": null,
+          "fallback_blocks": null,
+          "encoder_bucket": null,
+          "ane_channels": null,
+          "png_sha256": "385ac4882a597dc36d713fff1ddebb6cd7272c717d13890d97698cbf99a7c0a9"
+        },
+        {
+          "arm": "encoder",
+          "receipt": "outputs/local512-qwen-edit2-encoder-20261008/encoder/generation-receipt.json",
+          "receipt_sha256": "5ab36a843d54670d3c329444af3be989bdb3078b8b73fbc6e99cdd45bf7bcfd9",
+          "library_sha256": "6243b282fab76b62e6950d8ef0527b5a4c9557181dfeafd9547fbd3e67f3238f",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 47.817399208,
+            "hybrid_setup": 0,
+            "image_encode": 0.289926459,
+            "request_wall": 52.387182167,
+            "text_encode": 3.255878541,
+            "vae_decode": 0.578982167
+          },
+          "actual_steps": 40,
+          "lora_applied_projections": 0,
+          "actual_encoder_calls": 72,
+          "runtime_failed": false,
+          "fallback_blocks": 0,
+          "encoder_bucket": 512,
+          "ane_channels": 5120,
+          "png_sha256": "441fa591569dcb1f84ec78cac86cbcab1f7a67dd7ff7643b973436d46c81064c"
+        }
+      ]
+    },
+    {
+      "workload": "lora",
+      "references": 1,
+      "arms": [
+        {
+          "arm": "gpu",
+          "receipt": "outputs/local512-qwen-edit1-lora-encoder-20261008/gpu/generation-receipt.json",
+          "receipt_sha256": "6565dff6a56d0825925ba851453f366b2f25dcc65952357f0616f81ae5f158ad",
+          "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 9.133351459,
+            "hybrid_setup": 0,
+            "image_encode": 0.1519535,
+            "request_wall": 12.136152125,
+            "text_encode": 0.794873666,
+            "vae_decode": 0.680355791
+          },
+          "actual_steps": 6,
+          "lora_applied_projections": 227,
+          "actual_encoder_calls": 0,
+          "runtime_failed": null,
+          "fallback_blocks": null,
+          "encoder_bucket": null,
+          "ane_channels": null,
+          "png_sha256": "164416bc2227ebd7e7e85825f8c35f464c764a359f79aff5d93df2884dd47e79"
+        },
+        {
+          "arm": "encoder",
+          "receipt": "outputs/local512-qwen-edit1-lora-encoder-20261008/encoder/generation-receipt.json",
+          "receipt_sha256": "7ab8b805a06b7d35c93623a1ff10584c3985c2326fab7fdabf150abc5ae4d941",
+          "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 8.949542167,
+            "hybrid_setup": 0,
+            "image_encode": 0.151862375,
+            "request_wall": 12.819889583,
+            "text_encode": 2.111240584,
+            "vae_decode": 0.616850333
+          },
+          "actual_steps": 6,
+          "lora_applied_projections": 227,
+          "actual_encoder_calls": 36,
+          "runtime_failed": false,
+          "fallback_blocks": 0,
+          "encoder_bucket": 320,
+          "ane_channels": 3072,
+          "png_sha256": "4fd7ab943bc6bcbd469628f0cde0473c9e3e49a183dba34089b99f32f6b95278"
+        }
+      ]
+    },
+    {
+      "workload": "lora",
+      "references": 2,
+      "arms": [
+        {
+          "arm": "gpu",
+          "receipt": "outputs/local512-qwen-edit2-lora-encoder-20261008/gpu/generation-receipt.json",
+          "receipt_sha256": "19ee88668d7fbcad4e93156ee9ca725657576b389d9a03643dbd41681a91ff8e",
+          "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 10.524863709,
+            "hybrid_setup": 0,
+            "image_encode": 0.286895334,
+            "request_wall": 13.865924667,
+            "text_encode": 1.408436625,
+            "vae_decode": 0.619081583
+          },
+          "actual_steps": 6,
+          "lora_applied_projections": 227,
+          "actual_encoder_calls": 0,
+          "runtime_failed": null,
+          "fallback_blocks": null,
+          "encoder_bucket": null,
+          "ane_channels": null,
+          "png_sha256": "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680"
+        },
+        {
+          "arm": "encoder",
+          "receipt": "outputs/local512-qwen-edit2-lora-encoder-20261008/encoder/generation-receipt.json",
+          "receipt_sha256": "b31642f0e85a7eb8c3354b5f04352dfbb462e62d6e6af12360004e525d8cf51b",
+          "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+          "exit_code": 0,
+          "artifacts_unchanged": true,
+          "timings_seconds": {
+            "denoise": 10.497886791,
+            "hybrid_setup": 0,
+            "image_encode": 0.292896542,
+            "request_wall": 14.625359291,
+            "text_encode": 2.207806458,
+            "vae_decode": 0.599170834
+          },
+          "actual_steps": 6,
+          "lora_applied_projections": 227,
+          "actual_encoder_calls": 72,
+          "runtime_failed": false,
+          "fallback_blocks": 0,
+          "encoder_bucket": 320,
+          "ane_channels": 3072,
+          "png_sha256": "3d6284522a75c55c836d4145cfbdb92e333c7f57bc468a9eef930614302a3e61"
+        }
+      ]
+    }
+  ],
+  "component_screens": [
+    {
+      "receipt": "outputs/local512-qwen-encoder-c512-f5120-component-20261008.json",
+      "receipt_sha256": "3afe221648d1e0e81bedf94d158355861b48c67fabb8511b2f3ff260be18652e",
+      "binary_sha256": "ed339990ed86598ff2b91c692a844058023ba258c81eea8aa79bd726d4b08644",
+      "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+      "bucket": 512,
+      "ane_channels": 5120,
+      "rows": 302,
+      "gpu_median_seconds": 0.358409834,
+      "hybrid_median_seconds": 0.376189125,
+      "hybrid_first_with_setup_seconds": 1.618554541,
+      "cold_rel_l2": 0.0407153107226,
+      "scale_cache_hits": 324,
+      "scale_cache_misses": 108,
+      "samples_retained": 3,
+      "scope": "host language component; retained source owners/executor; not production request or physical overlap proof",
+      "qualification_passed": false
+    },
+    {
+      "receipt": "outputs/local512-qwen-encoder-c512-f1536-component-20261008.json",
+      "receipt_sha256": "2d0638de98bdbf2d5376a27cf8adc4aafe9a2363b289c5c992a97107bb19baf6",
+      "binary_sha256": "ed339990ed86598ff2b91c692a844058023ba258c81eea8aa79bd726d4b08644",
+      "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+      "bucket": 512,
+      "ane_channels": 1536,
+      "rows": 302,
+      "gpu_median_seconds": 0.356371667,
+      "hybrid_median_seconds": 0.368666375,
+      "hybrid_first_with_setup_seconds": 0.924316166,
+      "cold_rel_l2": 0.0325357168913,
+      "scale_cache_hits": 324,
+      "scale_cache_misses": 108,
+      "samples_retained": 3,
+      "scope": "host language component; retained source owners/executor; not production request or physical overlap proof",
+      "qualification_passed": false
+    },
+    {
+      "receipt": "outputs/local512-qwen-encoder-c512-f3072-component-20261008.json",
+      "receipt_sha256": "1dd9e29d26aa432801e4d6b9f75e36e96d27472c1f9b399f9cf4f44f76b85957",
+      "binary_sha256": "ed339990ed86598ff2b91c692a844058023ba258c81eea8aa79bd726d4b08644",
+      "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+      "bucket": 512,
+      "ane_channels": 3072,
+      "rows": 302,
+      "gpu_median_seconds": 0.357048334,
+      "hybrid_median_seconds": 0.343037208,
+      "hybrid_first_with_setup_seconds": 1.114287417,
+      "cold_rel_l2": 0.0358608625829,
+      "scale_cache_hits": 324,
+      "scale_cache_misses": 108,
+      "samples_retained": 3,
+      "scope": "host language component; retained source owners/executor; not production request or physical overlap proof",
+      "qualification_passed": false
+    },
+    {
+      "receipt": "outputs/local512-qwen-encoder-c320-f3072-component-20261008.json",
+      "receipt_sha256": "1361fd5edf8f611004e5ca2ee25ae7447b9aa8040fe3a8e555725636262d311d",
+      "binary_sha256": "ed339990ed86598ff2b91c692a844058023ba258c81eea8aa79bd726d4b08644",
+      "library_sha256": "6bd4d56d15baf40ba4e3b2f842eb570a68f19b9d5bf6a8334f92622b7ae12bbe",
+      "bucket": 320,
+      "ane_channels": 3072,
+      "rows": 302,
+      "gpu_median_seconds": 0.358681375,
+      "hybrid_median_seconds": 0.343522333,
+      "hybrid_first_with_setup_seconds": 0.802332583,
+      "cold_rel_l2": 0.0358608625829,
+      "scale_cache_hits": 324,
+      "scale_cache_misses": 108,
+      "samples_retained": 3,
+      "scope": "host language component; retained source owners/executor; not production request or physical overlap proof",
+      "qualification_passed": false
+    }
+  ],
+  "tests": [
+    {
+      "scope": "private selected regression",
+      "passed": 16,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-v4-regression-20261008.log",
+      "log_sha256": "2438dae0e8bd928ce6e3688e950a1a26bb510879432b1f4e716d180af0fe9d7a"
+    },
+    {
+      "scope": "public selected regression",
+      "passed": 16,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-v4-public-regression-20261008.log",
+      "log_sha256": "0d0030fdb4c68faf874736290e33045303f5322f6b32339831d13e8a04466cb1"
+    },
+    {
+      "scope": "actual session transitions and malformed templates",
+      "passed": 1,
+      "skipped": 0,
+      "log": "outputs/local512-encoder-v4-session-switch-v2-20261008.log",
+      "log_sha256": "bda842900e006d8291d3ee7f8cc44f05f2471b1e70d934ea006acbde61f95250"
+    }
+  ],
+  "visual_reviews": [
+    {
+      "manifest": "outputs/local512-qwen-edit1-encoder-20261008/visual/manifest.json",
+      "manifest_sha256": "e8037da6531e3d918236fc76dff516896963f5c19eaa60c1a5f3e37ff654865d",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited single-prompt/seed inspection, not user approval",
+        "whole_image": "Shape, framing, handle and sunlight remain very close; small glaze/texture differences.",
+        "detail_crops": "Inspected unresized center, top-left and bottom-right pairs; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing, ghosting or gross shape/lighting inconsistency in these inspected pairs; no broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-qwen-edit2-encoder-20261008/visual/manifest.json",
+      "manifest_sha256": "0f9efba36d12ba3ccd3460ffea989fbdc0f70caf3e095b573d706af5a3e440f7",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited single-prompt/seed inspection, not user approval",
+        "whole_image": "Both teapots, left/right composition and lighting remain very close; small ceramic texture differences. Blue teapot is opaque in both arms; no transparency-fidelity claim.",
+        "detail_crops": "Inspected unresized center, top-left and bottom-right pairs; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing, ghosting or gross shape/lighting inconsistency in these inspected pairs; no broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-qwen-edit1-lora-encoder-20261008/visual/manifest.json",
+      "manifest_sha256": "497e7722e50c902cdb12f5c01277da62fb3d9bf494b71292bb80c9bfa19b0611",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited single-prompt/seed inspection, not user approval",
+        "whole_image": "Real LoRA pair retains teapot shape/composition/handle and lighting; subtle mid-body glaze and fine texture differences.",
+        "detail_crops": "Inspected unresized center, top-left and bottom-right pairs; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing, ghosting or gross shape/lighting inconsistency in these inspected pairs; no broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    },
+    {
+      "manifest": "outputs/local512-qwen-edit2-lora-encoder-20261008/visual/manifest.json",
+      "manifest_sha256": "148c46a274db3e19945b5b20a708be4c0e12986cdc5b84a7bad627e046ab77a9",
+      "review": {
+        "status": "agent_reviewed_user_acceptance_pending",
+        "reviewer": "Codex agent; limited single-prompt/seed inspection, not user approval",
+        "whole_image": "Real LoRA pair retains two-teapot layout, recognizable shapes and sunlight; small highlights/glaze/wood-grain differences. Blue teapot is opaque in both arms.",
+        "detail_crops": "Inspected unresized center, top-left and bottom-right pairs; minor texture/highlight differences without an obvious new structural artifact.",
+        "artifact_checks": "No obvious new tearing, ghosting or gross shape/lighting inconsistency in these inspected pairs; no broader quality qualification.",
+        "visually_very_similar": true
+      },
+      "qualification_passed": false
+    }
+  ],
+  "public_release_binary_guard": "passed",
+  "encoder_probe_source_sha256": "fa5815658ea631f7cdbf1951fef3c3e09e7245fc625472d815e1aa449900ae22"
+}

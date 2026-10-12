@@ -4,6 +4,30 @@ import Foundation
     static func main() throws {
         func check(_ ok: Bool, _ text: String) throws { if !ok { throw NativeFailure(message: text) } }
         let empty = RunInsights(json: "{}")
+        try check(empty.qwen21DiTCacheMode == nil && empty.qwen21DiTCacheSteps == nil && empty.qwen21DiTCacheSavedBlocks == nil,
+                  "Missing DiT cache telemetry became measured zero")
+        let dit = RunInsights(json: #"{"qwen21_dbcache":{"mode":"balanced","threshold":0.25,"max_consecutive":2,"cached_steps":8,"saved_middle_blocks":320}}"#)
+        try check(dit.qwen21DiTCacheMode == "balanced" && dit.qwen21DiTCacheThreshold == 0.25 && dit.qwen21DiTCacheMaxConsecutive == 2 &&
+                  dit.qwen21DiTCacheSteps == 8 && dit.qwen21DiTCacheSavedBlocks == 320 && dit.editPrefixCacheHit == nil,
+                  "DiT receipt fields lost or confused with prefix reuse")
+        for value in ["-1", "true", "1.2", "1e100"] {
+            let bad = RunInsights(json: "{\"qwen21_dbcache\":{\"cached_steps\":\(value),\"saved_middle_blocks\":\(value),\"max_consecutive\":\(value)}}")
+            try check(bad.qwen21DiTCacheSteps == nil && bad.qwen21DiTCacheSavedBlocks == nil && bad.qwen21DiTCacheMaxConsecutive == nil,
+                      "Invalid DiT receipt counts accepted")
+        }
+        let diagnostic = RunInsights(json: #"{"qwen21_dbcache":{"mode":"diagnostic","cached_steps":0,"saved_middle_blocks":0}}"#)
+        try check(diagnostic.qwen21DiTCacheMode == "diagnostic" && diagnostic.qwen21DiTCacheSteps == 0,
+                  "Diagnostic or measured zero cache activity misreported")
+        try check(empty.editPrefixCacheHit == nil, "Missing edit-prefix telemetry became a cache miss")
+        for hit in [true, false] {
+            let marker = hit ? "hit" : "miss"
+            let edit = RunInsights(json: "{\"model\":\"qwen-image-2.1\",\"operation\":\"image.edit\",\"acceleration_selection\":\"gpu; edit prefix KV snapshot \(marker)\"}")
+            try check(edit.editPrefixCacheHit == hit, "Edit-prefix cache receipt was lost")
+        }
+        let unrelated = RunInsights(json: #"{"model":"qwen-image-2.1","operation":"image.generate","acceleration_selection":"gpu; edit prefix KV snapshot hit"}"#)
+        try check(unrelated.editPrefixCacheHit == nil, "Non-edit result advertised reference caching")
+        let textOnly = RunInsights(json: #"{"model":"qwen-image-2.1","operation":"image.edit","prompt_cache_hit":true}"#)
+        try check(textOnly.editPrefixCacheHit == nil, "Text cache hit was mistaken for a denoising prefix hit")
         let streamed = RunInsights(json: #"{"block_residency":{"streamed_blocks":17,"request_bytes_loaded":1073741824,"request_wait_seconds":1.5}}"#)
         try check(streamed.streamedBlocks == 17 && streamed.streamReadBytes == 1073741824 && streamed.streamWaitSeconds == 1.5,
                   "Streaming measurements were lost")

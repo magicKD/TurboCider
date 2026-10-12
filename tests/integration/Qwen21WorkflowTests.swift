@@ -52,7 +52,112 @@ import ImageIO
         try check(studio.draft.assets.count == 10, "Ten-image file import failed")
         let original = studio.draft.assets
         let output = root.appendingPathComponent("unused.png")
+        // Explicit low-memory ANE opt-in must survive persistence and history,
+        // while unsupported configurations fail before model allocation.
+        let eligibleHardware = #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803776}"#
+        try check(Qwen21LowMemoryANEHardware.isEligible(systemJSON: eligibleHardware),
+                  "M5 Pro with exactly 24 GiB was rejected")
+        let unsupportedHardware = [
+            #"{"gpu":"Apple M5","physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M5 Max","physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M4 Pro","physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":17179869184}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":34359738368}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":51539607552}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803775}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803777}"#,
+            #"{"gpu":"Apple M5 Pro"}"#,
+            #"{"physical_memory_bytes":25769803776}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":"25769803776"}"#,
+            #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803776.5}"#,
+            "{}", "invalid JSON"
+        ]
+        var aneDraft = studio.draft
+        aneDraft.operation = "image.generate"; aneDraft.assets = []
+        aneDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/qwen-compiled.json")
+        try check(try aneDraft.request(output: output, systemJSON: "{}").qwen21_w8a8 == nil,
+                  "Existing FP16 ANE selection silently enabled W8A8")
+        aneDraft.acceleration?.qwen21W8A8 = true
+        let aneRequest = try aneDraft.request(output: output, systemJSON: eligibleHardware)
+        let savedANE = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(aneDraft))
+        let savedRequest = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(aneRequest))
+        try check(savedANE.acceleration?.qwen21W8A8 == true && savedRequest.qwen21_w8a8 == true &&
+                  aneRequest.hybrid_mlp_mode == "base_fused" && savedRequest.hybrid_mlp_mode == "base_fused" &&
+                  aneRequest.qwen21_dit_cache == "off" && savedRequest.qwen21_dit_cache == "off" &&
+                  aneRequest.residency == "component_staged" && aneRequest.allow_approximation == true,
+                  "Low-memory ANE opt-in was not forwarded or persisted")
+        for systemJSON in unsupportedHardware {
+            try check(!Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON),
+                      "Unsupported or unknown hardware passed the low-memory ANE gate")
+            var rejected = false
+            do { _ = try savedANE.request(output: output, systemJSON: systemJSON) }
+            catch { rejected = error.localizedDescription.contains("Apple M5 Pro") }
+            try check(rejected, "A migrated low-memory ANE draft bypassed the hardware gate")
+            var ordinaryANE = savedANE; ordinaryANE.acceleration?.qwen21W8A8 = false
+            let ordinaryRequest = try ordinaryANE.request(output: output, systemJSON: systemJSON)
+            try check(ordinaryRequest.execution == "gpu_ane" && ordinaryRequest.qwen21_w8a8 == nil &&
+                      ordinaryRequest.hybrid_mlp_mode == nil,
+                      "Hardware gate disabled the existing ordinary Qwen ANE path")
+        }
+        let invalidANEChanges: [(inout StudioDraft) -> Void] = [
+            { $0.width = 1024 }, { $0.steps = 1 }, { $0.residency = "resident" },
+            { $0.operation = "image.edit"; $0.assets = Array(original.prefix(1)) },
+            { $0.promptEnhance = true },
+            { $0.loras = [StudioLoRA(path: fixture.path)] }
+        ]
+        for change in invalidANEChanges {
+            var invalid = aneDraft; change(&invalid)
+            var rejected = false
+            do { _ = try invalid.request(output: output, systemJSON: eligibleHardware) } catch { rejected = true }
+            try check(rejected, "Unsupported low-memory ANE configuration accepted")
+        }
+        var gpuDraft = aneDraft; gpuDraft.acceleration?.policy = "gpu"
+        try check(try gpuDraft.request(output: output, systemJSON: "{}").qwen21_w8a8 == nil,
+                  "Disabling ANE retained its approximation flag")
+        let reuseStudio = StudioState(directory: root.appendingPathComponent("ane-reuse"))
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: aneRequest,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.acceleration?.qwen21W8A8 == true &&
+                  (try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)).qwen21_w8a8 == true,
+                  "History reuse lost the ANE mode")
+        for oldMode in ["auto", "lora_fused", "lora_gate_up", "lora_suffix", "runtime", "runtime_qkv"] {
+            var historical = aneRequest; historical.hybrid_mlp_mode = oldMode
+            let restored = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(historical))
+            try check(restored.hybrid_mlp_mode == oldMode, "Native request roundtrip changed an existing MLP mode")
+            reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: restored,
+                state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+            let submitted = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)
+            try check(submitted.qwen21_w8a8 == true && submitted.hybrid_mlp_mode == "base_fused",
+                      "Low-memory ANE history retained an unqualified MLP mode")
+        }
+        for cacheMode in Qwen21DiTCacheMode.allCases where cacheMode != .off {
+            var cachedANE = aneDraft; cachedANE.qwen21DiTCache = cacheMode.rawValue
+            let migrated = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(cachedANE))
+            try check(migrated.qwen21DiTCache == cacheMode.rawValue &&
+                      migrated.acceleration?.qwen21W8A8 == true,
+                      "Draft migration silently changed cache or ANE selection")
+            var rejected = false
+            do { _ = try migrated.request(output: output, systemJSON: eligibleHardware) }
+            catch { rejected = error.localizedDescription.contains("DiT 缓存") }
+            try check(rejected, "Low-memory ANE accepted an approximation cache")
+
+            var historical = aneRequest; historical.qwen21_dit_cache = cacheMode.rawValue
+            reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: historical,
+                state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+            rejected = false
+            do { _ = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware) }
+            catch { rejected = error.localizedDescription.contains("DiT 缓存") }
+            try check(rejected, "History reuse bypassed the low-memory ANE cache restriction")
+
+            cachedANE.acceleration?.policy = "gpu"
+            let gpuCacheRequest = try cachedANE.request(output: output, systemJSON: "{}")
+            try check(gpuCacheRequest.qwen21_dit_cache == cacheMode.rawValue &&
+                      gpuCacheRequest.allow_approximation == true &&
+                      gpuCacheRequest.qwen21_w8a8 == nil && gpuCacheRequest.hybrid_mlp_mode == nil,
+                      "Switching to GPU lost its selected cache or retained ANE flags")
+        }
         try await verifyTurboAndEditing(root: root, fixture: fixture, assets: original)
+        try verifyDiTCacheAndOrdinaryLoRA(root: root, fixture: fixture, assets: original)
         let expectedCanvases = [(2048, 2048), (2400, 1792), (1792, 2400),
                                 (2528, 1696), (1696, 2528), (2752, 1536), (1536, 2752)]
         try check(Qwen21CanvasPreset.recommended.count == expectedCanvases.count,
@@ -233,6 +338,144 @@ import ImageIO
         await studio.addFiles([fixture])
         try check(studio.draft.assets.count == 8, "Existing model overflow behavior changed")
         print("PASS Qwen21 ten-reference import/request contracts, annotation/mask rendering/orientation/alpha/copy/order/undo/limits, prompt examples (no inference quality)")
+    }
+
+    @MainActor static func verifyDiTCacheAndOrdinaryLoRA(root: URL, fixture: URL, assets: [StudioAsset]) throws {
+        func check(_ ok: @autoclosure () throws -> Bool, _ message: String) throws {
+            if try !ok() { throw NativeFailure(message: message) }
+        }
+        func rejects(_ draft: StudioDraft, _ message: String) throws {
+            do { _ = try draft.request(output: root.appendingPathComponent("unused-cache.png")) }
+            catch { return }
+            throw NativeFailure(message: message)
+        }
+        let stateRoot = root.appendingPathComponent("dit-cache-state")
+        let studio = StudioState(directory: stateRoot)
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.modelPaths[studio.draft.modelID] = root.path
+        studio.draft.prompt = "A ceramic teapot."
+        studio.draft.steps = 25
+        let base = studio.draft, output = root.appendingPathComponent("unused-cache.png")
+        try check(base.qwen21DiTCache == "off" && base.qwen21DiTCacheUnavailableReason == nil, "Cache default or base capability changed")
+        for mode in Qwen21DiTCacheMode.allCases {
+            var draft = base; draft.qwen21DiTCache = mode.rawValue
+            let request = try draft.request(output: output)
+            let data = try JSONEncoder().encode(request)
+            let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            try check(json["qwen21_dit_cache"] as? String == mode.rawValue, "Legacy request dropped selected cache mode")
+            let decoded = try JSONDecoder().decode(NativeRequest.self, from: data)
+            try check(decoded.qwen21_dit_cache == mode.rawValue, "Request cache roundtrip failed")
+            try check((request.allow_approximation == true) == (mode != .off), "Approximation opt-in differs from cache selection")
+            let v2 = NativeRequestV2(legacy: request)
+            let v2JSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(v2)) as! [String: Any]
+            try check((v2JSON["execution"] as? [String: Any])?["qwen21_dit_cache"] as? String == mode.rawValue,
+                      "V2 execution dropped cache mode")
+            for planData in [try NativeEngine.plan(request), try NativeEngine.plan(v2)] {
+                let plan = try JSONSerialization.jsonObject(with: planData) as! [String: Any]
+                try check(plan["qwen21_dit_cache"] as? String == mode.rawValue, "Native plan lost explicit DiT cache mode")
+            }
+            let restored = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(draft))
+            try check(restored.qwen21DiTCache == mode.rawValue && restored.steps == 25, "Draft roundtrip lost mode or silently changed steps")
+        }
+        var cached = base; cached.qwen21DiTCache = "balanced"
+        for count in 1...3 {
+            var edit = cached; edit.operation = "image.edit"; edit.assets = Array(assets.prefix(count))
+            try check(try edit.request(output: output).inputs?.map(\.path) == edit.assets.map(\.path), "Cached editing changed ordered references")
+        }
+        let invalid: [(String, (inout StudioDraft) -> Void)] = [
+            ("low steps", { $0.steps = 19 }), ("high steps", { $0.steps = 41 }),
+            ("canvas", { $0.width = 1024 }),
+            ("ANE", { $0.acceleration = StudioAcceleration(policy: "gpu_ane") }),
+            ("profile", { $0.profilePath = "/tmp/profile.json" }),
+            ("PE", { $0.promptEnhance = true }), ("upscale operation", { $0.operation = "image.upscale" }),
+            ("references", { $0.operation = "image.edit"; $0.assets = Array(assets.prefix(4)) })
+        ]
+        for (name, mutate) in invalid {
+            var draft = cached; mutate(&draft)
+            try check(draft.qwen21DiTCacheUnavailableReason != nil, "Unavailable cache capability not reported: \(name)")
+            try rejects(draft, "Invalid cache request accepted: \(name)")
+        }
+        var followedByUpscale = cached; followedByUpscale.upscaleAfterGeneration = true
+        try check(followedByUpscale.qwen21DiTCacheUnavailableReason == nil, "Sequential post-generation upscale incorrectly disables DiT cache")
+        let upscaleGeneration = try followedByUpscale.request(output: output)
+        try check(upscaleGeneration.operation == "image.generate" && upscaleGeneration.qwen21_dit_cache == "balanced" &&
+                  upscaleGeneration.width == 512 && upscaleGeneration.height == 512,
+                  "Post-generation upscale changed the preceding Qwen request or dropped its cache mode")
+        var unknown = base; unknown.qwen21DiTCache = "future-mode"
+        try rejects(unknown, "Unknown cache mode silently normalized")
+        var legacyFields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(cached)) as! [String: Any]
+        legacyFields.removeValue(forKey: "qwen21DiTCache")
+        let legacyDraft = try JSONDecoder().decode(StudioDraft.self, from: JSONSerialization.data(withJSONObject: legacyFields))
+        try check(legacyDraft.qwen21DiTCache == "off" && legacyDraft.steps == 25, "Old draft enabled approximation or lost its schedule")
+
+        let ordinary = root.appendingPathComponent("ordinary-style-lora.safetensors")
+        try Data([0]).write(to: ordinary)
+        studio.draft = cached; studio.addLoRA(ordinary.path)
+        try check(studio.draft.qwen21TurboLoRA == nil && studio.draft.steps == 25 && studio.draft.qwen21DiTCache == "balanced" &&
+                  studio.draft.loras[0].strength == 1, "Ordinary LoRA was converted into Turbo or lost explicit cache selection")
+        try check(studio.imageImportLimit == 3, "Ordinary LoRA exposes more references than its request contract")
+        for steps in [20, 25, 40] {
+            for strength in [-8.0, 1.0, 8.0] {
+                var draft = studio.draft; draft.steps = steps; draft.loras[0].strength = strength
+                let request = try draft.request(output: output)
+                try check(request.steps == steps && request.loras?.first?.strength == strength && request.lora_strategy == "inference_time",
+                          "Ordinary LoRA schedule/strength/strategy lost")
+                _ = try NativeEngine.plan(request)
+            }
+        }
+        var invalidLoRA = studio.draft; invalidLoRA.steps = 6; invalidLoRA.qwen21DiTCache = "off"
+        try rejects(invalidLoRA, "Ordinary LoRA accepted a Turbo six-step schedule")
+        invalidLoRA = studio.draft; invalidLoRA.loras[0].strength = 8.01
+        try rejects(invalidLoRA, "LoRA strength exceeds native contract")
+        invalidLoRA = studio.draft; invalidLoRA.loras.append(StudioLoRA(path: ordinary.path))
+        try check(invalidLoRA.qwen21DiTCacheUnavailableReason != nil, "Cache picker remains available for multiple adapters")
+        try rejects(invalidLoRA, "Multiple ordinary adapters accepted")
+        invalidLoRA = studio.draft; invalidLoRA.loras[0].role = "text_encoder"
+        try check(invalidLoRA.qwen21DiTCacheUnavailableReason != nil, "Cache picker accepts unsupported LoRA role")
+        try rejects(invalidLoRA, "Ordinary Qwen LoRA accepted text-encoder role")
+        invalidLoRA = studio.draft; invalidLoRA.loraStrategy = "in_memory_merge"
+        try check(invalidLoRA.qwen21DiTCacheUnavailableReason != nil, "Cache picker accepts unsupported merge strategy")
+        try rejects(invalidLoRA, "Ordinary Qwen LoRA accepted merge strategy")
+        for rank in [128, 256] {
+            let file = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r\(rank).safetensors")
+            try Data([0]).write(to: file)
+            var turbo = cached; turbo.steps = 6; turbo.loras = [StudioLoRA(path: file.path)]
+            try check(turbo.qwen21TurboLoRA != nil && turbo.qwen21DiTCacheUnavailableReason != nil, "Known Viggle not distinguished from ordinary LoRA")
+            try rejects(turbo, "Viggle accepted DiT cache")
+            turbo.qwen21DiTCache = "off"
+            try check(try turbo.request(output: output).steps == 6, "Existing GPU Turbo contract changed")
+            turbo.loras.append(StudioLoRA(path: ordinary.path))
+            try rejects(turbo, "Viggle mixed with ordinary LoRA")
+        }
+        studio.save()
+        let reloaded = StudioState(directory: stateRoot)
+        try check(reloaded.draft.qwen21DiTCache == "balanced", "Persisted cache mode was not loaded")
+        let configuration = root.appendingPathComponent("cache-configuration.json")
+        try JSONEncoder().encode(studio.draft).write(to: configuration)
+        studio.draft.qwen21DiTCache = "off"
+        try studio.importConfiguration(from: configuration)
+        try check(studio.draft.qwen21DiTCache == "balanced" && studio.draft.steps == 25, "Configuration import lost explicit cache mode or schedule")
+        let request = try studio.draft.request(output: fixture)
+        let job = NativeJob(id: UUID(), createdAt: Date(), request: request, state: "succeeded", phase: "complete",
+                            completed: 25, total: 25, elapsed: 1, modelPath: root.path)
+        let savedJob = try JSONDecoder().decode(NativeJob.self, from: JSONEncoder().encode(job))
+        studio.selectModel("flux2-klein-4b")
+        try check(studio.draft.qwen21DiTCache == "off", "Changing models retained Qwen cache mode")
+        studio.draft.modelPaths[studio.draft.modelID] = root.path
+        let fluxRequest = try studio.draft.request(output: output)
+        let fluxFields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fluxRequest)) as! [String: Any]
+        try check(fluxFields["qwen21_dit_cache"] == nil, "Unrelated model serialized Qwen-specific cache field")
+        studio.reuse(savedJob)
+        try check(studio.draft.qwen21DiTCache == "balanced" && studio.draft.steps == 25 && studio.draft.qwen21TurboLoRA == nil,
+                  "History reuse lost cache mode or converted ordinary LoRA to Turbo")
+        var oldRequestFields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+        oldRequestFields.removeValue(forKey: "qwen21_dit_cache")
+        let oldRequest = try JSONDecoder().decode(NativeRequest.self, from: JSONSerialization.data(withJSONObject: oldRequestFields))
+        let oldJob = NativeJob(id: UUID(), createdAt: Date(), request: oldRequest, state: "succeeded", phase: "complete",
+                               completed: 25, total: 25, elapsed: 1, modelPath: root.path)
+        studio.reuse(oldJob)
+        try check(studio.draft.qwen21DiTCache == "off", "Old history reused stale cache approximation")
+        print("PASS Qwen DiT mode serialization/persistence/history/capabilities and ordinary-vs-Viggle LoRA (CPU only)")
     }
 
     @MainActor static func verifyTurboAndEditing(root: URL, fixture: URL, assets: [StudioAsset]) async throws {

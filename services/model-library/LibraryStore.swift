@@ -74,9 +74,9 @@ struct LibraryStore: Sendable {
             .appendingPathComponent("TurboCider/Models", isDirectory: true)
     }
 
-    init(root: URL = LibraryStore.defaultRoot) throws {
+    init(root: URL = LibraryStore.defaultRoot, createIfMissing: Bool = true) throws {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
-        try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
+        if createIfMissing { try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true) }
     }
 
     func acquireLease() throws -> LibraryLease {

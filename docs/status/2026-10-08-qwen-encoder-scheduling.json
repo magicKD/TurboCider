@@ -1,0 +1,728 @@
+{
+  "schema": "qwen21-encoder-scheduling-status-v1",
+  "date": "2026-10-08",
+  "branch": "dev-graph",
+  "runtime_build_id": "tc-runtime-build-v1-c4e2cc0d6b5f3598590a199045805cb06d10e6dc169d19c5225a38f54c9ef76b",
+  "machine": {
+    "chip": "Apple M4 Pro",
+    "memory_gib": 48
+  },
+  "implementation": {
+    "native_metal_encoder": false,
+    "device_event_only_encoder": false,
+    "app_switch": false,
+    "default": "GPU",
+    "bounded_buckets": [
+      1152,
+      1664
+    ],
+    "prepared_cache": "one Session geometry, exclusive drained checkout, fresh dynamic weight binding",
+    "prefetch": "submit current GPU then future source eval/alternate bank",
+    "encoder_s1": "36-layer GPU trajectory alpha=.5 before input128 Hadamard; hidden512/down unchanged"
+  },
+  "experiment": {
+    "successful_logical_groups": 2,
+    "harness_failed_attempts": 1,
+    "repair": "BF16 multiplication promoted test weight to FP32; cast explicitly; original 36-layer calibration reused",
+    "complete_samples": "one GPU, one1152, one1664, two1664 prefetched fresh-source encoders",
+    "final_images": 0
+  },
+  "plan": {
+    "schema": "qwen21-encoder-scheduling-plan-v1",
+    "experiment_groups": 2,
+    "component_max_rrms": 0.05,
+    "complete_conditioning_max_rrms": 0.08,
+    "minimum_component_gain_percent": 5,
+    "minimum_complete_gain_percent": 5,
+    "samples": "one calibration trajectory, real FFN layers 0/17/35 AB+BA one pair each; one uninstrumented full sample per arm; two fresh-source requests for reuse",
+    "candidates": [
+      "1152 unscaled",
+      "1664 unscaled",
+      "1664 encoder S1 alpha=.5 plus same Hadamard"
+    ],
+    "full_candidate_selection": "component gate all six pairs: RRMS<=.05 and savings>=5%; select candidate with best mean saving, then full GPU /1152 no-prefetch /selected no-prefetch /selected prefetch two fresh-source requests",
+    "quantization": "S1 applies only ANE gate/up input basis; hidden rotation/down unchanged",
+    "reference_size": 1024,
+    "output_target_size": 512,
+    "refs": [
+      "teapot",
+      "fox",
+      "puffin"
+    ],
+    "ane_channels": 6144,
+    "scope": "complete vision x3 +language encoder; no DiT/VAE/final-image qualification; no App UI/automatic routing",
+    "models_downloaded": 0,
+    "full_exports": 0,
+    "qualified": false
+  },
+  "component_records": [
+    {
+      "bucket_rows": 1152,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.0073989698995402375
+      },
+      "gpu_seconds": 0.128718167,
+      "hybrid_seconds": 0.099845375,
+      "layer": 0,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 22.431015506925295,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.325189667
+    },
+    {
+      "bucket_rows": 1152,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.0073989698995402375
+      },
+      "gpu_seconds": 0.13053475,
+      "hybrid_seconds": 0.099006375,
+      "layer": 0,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 24.15324271889287,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.325189667
+    },
+    {
+      "bucket_rows": 1152,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.01350419318309246
+      },
+      "gpu_seconds": 0.130285042,
+      "hybrid_seconds": 0.098786708,
+      "layer": 17,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 24.176477603622367,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.325189667
+    },
+    {
+      "bucket_rows": 1152,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.01350419318309246
+      },
+      "gpu_seconds": 0.131136125,
+      "hybrid_seconds": 0.099157167,
+      "layer": 17,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 24.386078206901406,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.325189667
+    },
+    {
+      "bucket_rows": 1152,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.022765105242991093
+      },
+      "gpu_seconds": 0.139403667,
+      "hybrid_seconds": 0.105115167,
+      "layer": 35,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 24.59655526852103,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.325189667
+    },
+    {
+      "bucket_rows": 1152,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.022765105242991093
+      },
+      "gpu_seconds": 0.138642042,
+      "hybrid_seconds": 0.10531675,
+      "layer": 35,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 24.036931019812876,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.325189667
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.0073989698995402375
+      },
+      "gpu_seconds": 0.129583084,
+      "hybrid_seconds": 0.091531875,
+      "layer": 0,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 29.36433354217746,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 1.942841
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.0073989698995402375
+      },
+      "gpu_seconds": 0.129288792,
+      "hybrid_seconds": 0.091152875,
+      "layer": 0,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 29.49669218040185,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 1.942841
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.01350419318309246
+      },
+      "gpu_seconds": 0.128825292,
+      "hybrid_seconds": 0.093559208,
+      "layer": 17,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 27.375124443731128,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 1.942841
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.01350419318309246
+      },
+      "gpu_seconds": 0.141578458,
+      "hybrid_seconds": 0.094372791,
+      "layer": 17,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 33.342407924798835,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 1.942841
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.022765105242991093
+      },
+      "gpu_seconds": 0.135882041,
+      "hybrid_seconds": 0.096992708,
+      "layer": 35,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 28.619921156468358,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 1.942841
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.022765105242991093
+      },
+      "gpu_seconds": 0.131764583,
+      "hybrid_seconds": 0.090169333,
+      "layer": 35,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": false,
+      "saving_percent": 31.56785310055585,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 1.942841
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.007351547230367919
+      },
+      "gpu_seconds": 0.128541125,
+      "hybrid_seconds": 0.094048375,
+      "layer": 0,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": true,
+      "saving_percent": 26.834019073662223,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.290580917
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.007351547230367919
+      },
+      "gpu_seconds": 0.131115333,
+      "hybrid_seconds": 0.092500834,
+      "layer": 0,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": true,
+      "saving_percent": 29.450788185085873,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.290580917
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.013096883612777149
+      },
+      "gpu_seconds": 0.128668917,
+      "hybrid_seconds": 0.092468709,
+      "layer": 17,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": true,
+      "saving_percent": 28.134384623754936,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.290580917
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.013096883612777149
+      },
+      "gpu_seconds": 0.132052084,
+      "hybrid_seconds": 0.094479917,
+      "layer": 17,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": true,
+      "saving_percent": 28.45253619776269,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.290580917
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.02051111339778465
+      },
+      "gpu_seconds": 0.129818875,
+      "hybrid_seconds": 0.092021291,
+      "layer": 35,
+      "numeric_pass": true,
+      "order": "AB",
+      "rows": 3131,
+      "s1": true,
+      "saving_percent": 29.115630527533067,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.290580917
+    },
+    {
+      "bucket_rows": 1664,
+      "error": {
+        "elements": 12824576,
+        "finite": true,
+        "limit": 1,
+        "rrms": 0.02051111339778465
+      },
+      "gpu_seconds": 0.130710708,
+      "hybrid_seconds": 0.091910916,
+      "layer": 35,
+      "numeric_pass": true,
+      "order": "BA",
+      "rows": 3131,
+      "s1": true,
+      "saving_percent": 29.683713441442006,
+      "screen_rrms_limit": 0.05,
+      "setup_seconds": 0.290580917
+    }
+  ],
+  "selected_component": {
+    "bucket_rows": 1664,
+    "s1": false,
+    "mean_saving_percent": 29.961055391355583
+  },
+  "complete_comparisons": {
+    "base1152": {
+      "rrms": 0.05753988586277748,
+      "limit": 0.08,
+      "numeric_pass": true,
+      "savings_percent": {
+        "total_encoder_seconds": 2.851023961971707,
+        "language_seconds": 8.837126715723468,
+        "vision_seconds": -0.7310196209644797
+      }
+    },
+    "selected": {
+      "rrms": 0.05753988586277748,
+      "limit": 0.08,
+      "numeric_pass": true,
+      "savings_percent": {
+        "total_encoder_seconds": 5.909879862650762,
+        "language_seconds": 14.086647079477537,
+        "vision_seconds": -0.04753183242752404
+      }
+    },
+    "prefetch-0": {
+      "rrms": 0.05753988586277748,
+      "limit": 0.08,
+      "numeric_pass": true,
+      "savings_percent": {
+        "total_encoder_seconds": 8.854127866643887,
+        "language_seconds": 19.019767532961914,
+        "vision_seconds": -0.06233453295262184
+      }
+    },
+    "prefetch-1": {
+      "rrms": 0.05753988586277748,
+      "limit": 0.08,
+      "numeric_pass": true,
+      "savings_percent": {
+        "total_encoder_seconds": 11.008873877100713,
+        "language_seconds": 18.620745675686617,
+        "vision_seconds": -0.28361579184213315
+      }
+    }
+  },
+  "reuse_bitexact": true,
+  "quality": {
+    "rrms_vs_gpu": 0.05753988586277748,
+    "limit": 0.08,
+    "hybrid_geometry_prefetch_reuse_bitexact": true,
+    "s1_full_encoder_tested": false
+  },
+  "performance_pass_for_current_complete_sample": true,
+  "qualified_for_release": false,
+  "tests": {
+    "native_build": true,
+    "app_build": true,
+    "model_library_helper": true,
+    "cpu_encoder_policy_checks": 57,
+    "shape_mil_two_buckets_two_channels": true,
+    "dynamic_gpu_weight_cases": 4,
+    "cache_changed_up_weight": true,
+    "encoder_profile_domain_and_ownership": true,
+    "metadata_export": true,
+    "s1_regression_cases": 9,
+    "contract_cases": 129,
+    "contract_skipped": 3,
+    "worker_protocol": true,
+    "test_repairs": "two stale LoRA source assertions updated for shared apply_loras_impl/bind_runtime; original sandbox device-access failures retained"
+  },
+  "receipts": {
+    "experiment-plan.json": "outputs/qwen21-encoder-scheduling-20261008/experiment-plan.json",
+    "screen-supervisor.json": "outputs/qwen21-encoder-scheduling-20261008/screen-supervisor.json",
+    "screen-r2-supervisor.json": "outputs/qwen21-encoder-scheduling-20261008/screen-r2-supervisor.json",
+    "full-r2-supervisor.json": "outputs/qwen21-encoder-scheduling-20261008/full-r2-supervisor.json",
+    "calibration-r2-screen.json.calibration-screen.json": "outputs/qwen21-encoder-scheduling-20261008/calibration-r2-screen.json.calibration-screen.json",
+    "calibration-r2-screen.json.cache-rebind.json": "outputs/qwen21-encoder-scheduling-20261008/calibration-r2-screen.json.cache-rebind.json",
+    "cleanup.json": "outputs/qwen21-encoder-scheduling-20261008/cleanup.json"
+  },
+  "cleanup": {
+    "deleted_mib": 214.78705883026123,
+    "kept_programs": [
+      "/Users/kd/Documents/project/TurboCider/outputs/qwen21-encoder-scheduling-20261008/private-program-cache/43e2cb610dbb22b99bfcb476cea79c681b73f76ebefc06a003e07d433dde1604"
+    ],
+    "profile_bytes": 590484,
+    "model_files_deleted": 0
+  },
+  "models_downloaded": 0,
+  "model_exports": 0,
+  "system_before": {
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+    "swap": "vm.swapusage: total = 5120.00M  used = 4581.69M  free = 538.31M  (encrypted)\n"
+  },
+  "system_after": {
+    "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+    "swap": "vm.swapusage: total = 5120.00M  used = 4581.69M  free = 538.31M  (encrypted)\n"
+  },
+  "complete_timings": {
+    "gpu": {
+      "ane_channels": 0,
+      "ane_evaluations": 0,
+      "assembly_seconds": 0.134730375,
+      "async_ane_host_wait_seconds": 0,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "gpu_recipe": "full-gpu-original",
+      "graph_stats": {
+        "bucket_rows": 0,
+        "gpu_graph_builds": 0,
+        "gpu_graph_calls": 0,
+        "gpu_graph_encode_host_seconds": 0,
+        "input_ready_seconds": 0,
+        "next_source_skips": 0,
+        "next_source_submissions": 0,
+        "preparation_reused": false
+      },
+      "hybrid_ffns": 0,
+      "language_seconds": 7.380756834,
+      "load_seconds": 0.139935542,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0,
+      "pre_seconds": 0,
+      "prefetch_failures": 0,
+      "prefetch_hits": 0,
+      "prefetch_submissions": 0,
+      "prefetch_wait_seconds": 0,
+      "program_setup_seconds": 4.1e-08,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-encoder-scheduling-20261008/gpu-full.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "s1_hybrid_ffns": 0,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 0,
+      "stage_specialized": false,
+      "stage_wait_seconds": 0,
+      "status": "pass",
+      "total_encoder_seconds": 12.372657042,
+      "vision_seconds": 4.708600291
+    },
+    "base1152": {
+      "ane_channels": 6144,
+      "ane_evaluations": 108,
+      "assembly_seconds": 0.13570275,
+      "async_ane_host_wait_seconds": 3.4891463779999996,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "gpu_recipe": "mpp-bf16-operands-fp32-partial-dynamic-v1",
+      "graph_stats": {
+        "bucket_rows": 1152,
+        "gpu_graph_builds": 1,
+        "gpu_graph_calls": 36,
+        "gpu_graph_encode_host_seconds": 0.0006618339999999999,
+        "input_ready_seconds": 4.589999999999999e-07,
+        "next_source_skips": 0,
+        "next_source_submissions": 0,
+        "preparation_reused": false
+      },
+      "hybrid_ffns": 36,
+      "language_seconds": 6.72851,
+      "load_seconds": 0.14371525,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0.081045917,
+      "pre_seconds": 3.1254505830000006,
+      "prefetch_failures": 0,
+      "prefetch_hits": 0,
+      "prefetch_submissions": 0,
+      "prefetch_wait_seconds": 0,
+      "program_setup_seconds": 0.259097708,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-encoder-scheduling-20261008/base1152-full.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "s1_hybrid_ffns": 0,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 1.10199846,
+      "stage_specialized": true,
+      "stage_wait_seconds": 5.7001000000000005e-05,
+      "status": "pass",
+      "total_encoder_seconds": 12.019909625,
+      "vision_seconds": 4.743021083
+    },
+    "selected": {
+      "ane_channels": 6144,
+      "ane_evaluations": 72,
+      "assembly_seconds": 0.1316375,
+      "async_ane_host_wait_seconds": 3.160057127,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "gpu_recipe": "mpp-bf16-operands-fp32-partial-dynamic-v1",
+      "graph_stats": {
+        "bucket_rows": 1664,
+        "gpu_graph_builds": 1,
+        "gpu_graph_calls": 36,
+        "gpu_graph_encode_host_seconds": 0.000631419,
+        "input_ready_seconds": 4.5899999999999997e-07,
+        "next_source_skips": 0,
+        "next_source_submissions": 0,
+        "preparation_reused": false
+      },
+      "hybrid_ffns": 36,
+      "language_seconds": 6.341055667,
+      "load_seconds": 0.142290708,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0.083168163,
+      "pre_seconds": 3.0644601270000003,
+      "prefetch_failures": 0,
+      "prefetch_hits": 0,
+      "prefetch_submissions": 0,
+      "prefetch_wait_seconds": 0,
+      "program_setup_seconds": 0.307274292,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-encoder-scheduling-20261008/selected-full.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "s1_hybrid_ffns": 0,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 1.083105086,
+      "stage_specialized": true,
+      "stage_wait_seconds": 5.6126999999999986e-05,
+      "status": "pass",
+      "total_encoder_seconds": 11.641447875,
+      "vision_seconds": 4.710838375
+    },
+    "prefetch-0": {
+      "ane_channels": 6144,
+      "ane_evaluations": 72,
+      "assembly_seconds": 0.131242416,
+      "async_ane_host_wait_seconds": 2.7838129609999998,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "gpu_recipe": "mpp-bf16-operands-fp32-partial-dynamic-v1",
+      "graph_stats": {
+        "bucket_rows": 1664,
+        "gpu_graph_builds": 1,
+        "gpu_graph_calls": 36,
+        "gpu_graph_encode_host_seconds": 0.000700752,
+        "input_ready_seconds": 9.579999999999998e-07,
+        "next_source_skips": 0,
+        "next_source_submissions": 35,
+        "preparation_reused": false
+      },
+      "hybrid_ffns": 36,
+      "language_seconds": 5.976954042,
+      "load_seconds": 0.142294709,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0.062092498,
+      "pre_seconds": 2.6084672500000003,
+      "prefetch_failures": 0,
+      "prefetch_hits": 35,
+      "prefetch_submissions": 35,
+      "prefetch_wait_seconds": 3.6997e-05,
+      "program_setup_seconds": 0.307456542,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-encoder-scheduling-20261008/prefetch-reuse-full.json.0.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "s1_hybrid_ffns": 0,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 1.716030876,
+      "stage_specialized": true,
+      "stage_wait_seconds": 5.366500000000001e-05,
+      "status": "pass",
+      "total_encoder_seconds": 11.277166167,
+      "vision_seconds": 4.711535375
+    },
+    "prefetch-1": {
+      "ane_channels": 6144,
+      "ane_evaluations": 72,
+      "assembly_seconds": 0.131664625,
+      "async_ane_host_wait_seconds": 2.8097581239999987,
+      "completed_layers": 36,
+      "conditioning_elements": 184320,
+      "gpu_recipe": "mpp-bf16-operands-fp32-partial-dynamic-v1",
+      "graph_stats": {
+        "bucket_rows": 1664,
+        "gpu_graph_builds": 0,
+        "gpu_graph_calls": 36,
+        "gpu_graph_encode_host_seconds": 0.000577501,
+        "input_ready_seconds": 9.149999999999999e-07,
+        "next_source_skips": 0,
+        "next_source_submissions": 35,
+        "preparation_reused": true
+      },
+      "hybrid_ffns": 36,
+      "language_seconds": 6.006404875,
+      "load_seconds": 0.141936333,
+      "mlx_peak_bytes": 2321059364,
+      "model_exports": 0,
+      "models_downloaded": 0,
+      "physical_completion": "eval+synchronize; private finish/drain; phase owner destroyed before source generation check",
+      "post_join_seconds": 0.063769454,
+      "pre_seconds": 2.612178125999999,
+      "prefetch_failures": 0,
+      "prefetch_hits": 35,
+      "prefetch_submissions": 35,
+      "prefetch_wait_seconds": 3.6038e-05,
+      "program_setup_seconds": 0.000200458,
+      "retained_conditioning_path": "/Users/kd/Documents/project/TurboCider/outputs/qwen21-encoder-scheduling-20261008/prefetch-reuse-full.json.1.json.conditioning.f32",
+      "retained_rows": 45,
+      "rows": 3131,
+      "s1_hybrid_ffns": 0,
+      "scope": "complete 27-layer vision x3 and 36-layer language encoder; no DiT/VAE/image qualification",
+      "source_stat_revalidated": true,
+      "stage_seconds": 1.7995222540000004,
+      "stage_specialized": true,
+      "stage_wait_seconds": 5.7001999999999994e-05,
+      "status": "pass",
+      "total_encoder_seconds": 11.010566833,
+      "vision_seconds": 4.721954625
+    }
+  }
+}

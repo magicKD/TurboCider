@@ -1,0 +1,187 @@
+{
+  "schema": "tc-native-w1-session-components-v1",
+  "date": "2026-10-08",
+  "status": "complete_components_passed_held_out_gain_inconclusive",
+  "runtime_build_id": "tc-runtime-build-v1-8b0ff447bb5ee33be46e6b5797f1833e60ca3a2895525f53365a3d04368624b5",
+  "full_native_private_build": "passed_native_only_package_only",
+  "source_manifest_matches_current": true,
+  "host_tests": {
+    "native_routes": {
+      "tests": 7,
+      "status": "passed"
+    },
+    "native_contract": {
+      "tests": 129,
+      "skipped": 3,
+      "status": "passed"
+    },
+    "e2e_supervision": {
+      "tests": 5,
+      "status": "passed"
+    }
+  },
+  "artifacts": [
+    {
+      "path": "build/native-w1-session-20261008/libturbocider.dylib",
+      "bytes": 10045680,
+      "sha256": "ce8dfdaede882287117493d2abc6a7dec12362e2ac6f415f6f26817161d3208c"
+    },
+    {
+      "path": "build/native-w1-session-20261008/turbocider",
+      "bytes": 309384,
+      "sha256": "3702be1e63bdd435db091118d8f6527e170fc186a4580630fb02ee39fef8aac0"
+    },
+    {
+      "path": "build/native-w1-session-components-20261008/native-qwen-hybrid-denoiser-component",
+      "bytes": 99688,
+      "sha256": "1976e9ebc188fc3d0cdaee8cc42ad4bac4016885f5b59065e4a4538586180cd5"
+    },
+    {
+      "path": "build/native-hybrid-replay-20261008-audited/native-qwen-hybrid-ffn-replay",
+      "bytes": 156784,
+      "sha256": "39032f54de71379202cc200dc8eb94c9f56de063c330b8bab6fc685b0a2db80b"
+    }
+  ],
+  "tool_sources": [
+    {
+      "path": "tools/native/native_qwen_hybrid_denoiser_component.cpp",
+      "bytes": 19060,
+      "sha256": "972064b83a1bd478761ff23a57c5d84d658f982f129857b8bb942d7f96421991"
+    },
+    {
+      "path": "tools/native/build_native_qwen_hybrid_denoiser_component.sh",
+      "bytes": 1708,
+      "sha256": "4b46a28047509cf28e839d7742c248309951cebf18cfd37e242d9e74c2b4052b"
+    },
+    {
+      "path": "tools/native/native_qwen_hybrid_ffn_replay.cpp",
+      "bytes": 26252,
+      "sha256": "3b01553f98bf8a42169f334c2e458415ca66001d47c1742f1b279d6d7671fb4a"
+    },
+    {
+      "path": "tools/native/build_native_qwen_hybrid_ffn_replay.sh",
+      "bytes": 2033,
+      "sha256": "c428335076293d26c9c4ef5ce766429577c06f9802429cbd20e6335c407ec87d"
+    },
+    {
+      "path": "tools/validation/run_qwen_native_e2e.py",
+      "bytes": 9305,
+      "sha256": "35e196591b51bdca9ca309af99272c3bd7aa4fe7c67f1e7801b023b3b9fd0732"
+    },
+    {
+      "path": "tests/native/test_qwen_native_e2e_supervisor.py",
+      "bytes": 4424,
+      "sha256": "e9db769c0c9c3b23d2f2a564918fe662a367df62dfe289078a18c916248523c2"
+    }
+  ],
+  "tiny_complete_denoiser": {
+    "geometry": {
+      "hidden": 128,
+      "width": 1024,
+      "layers": 2,
+      "target_rows": 32,
+      "text_rows": 7
+    },
+    "gpu_runs": 1,
+    "hybrid_runs": 1,
+    "steps_per_run": 2,
+    "successful_hybrid_ffns": 2,
+    "completed_hybrid_steps": 1,
+    "rrms": 0.00276522720579,
+    "rrms_limit": 0.08,
+    "max_error_scope": "diagnostic",
+    "source_and_padding_unchanged": true,
+    "aggregate_physical_complete": true,
+    "same_phase_hooks_and_zero_ledger": true,
+    "model_loads": 0,
+    "receipt": "outputs/native-w1-session-20261008/tiny-denoiser.log"
+  },
+  "real_complete_ffn": {
+    "receipt": "outputs/native-w1-session-20261008/real-ffn-receipt.json",
+    "checkpoint": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors",
+    "layer": 0,
+    "rows": 1024,
+    "hidden": 4096,
+    "width": 12288,
+    "ane_channels": 6144,
+    "inputs": "existing forced-GPU BaseOnly step1 and held-out step19",
+    "samples": "one warmup and one record per arm per input; AB step1, BA step19; different inputs, no repeat statistics",
+    "ffn_executions": 8,
+    "prepare_seconds": {
+      "dense_pso": 0.086914458,
+      "hybrid_program_pso": 1.212701458,
+      "source_materialization": 0.049339167
+    },
+    "memory": {
+      "compiler_driver_budget_certified": false,
+      "imports_coverage": "retained immutable MLX baseline; no synthetic ledger claims",
+      "mlx_source_active_bytes": 318767104,
+      "native_owned_limit": 536870912,
+      "native_owned_peak": 164677644,
+      "process_baseline_bytes": 329827144,
+      "process_observed_after_bytes": 506446784,
+      "surface_bytes": 89161728,
+      "surfaces": 9,
+      "whole_process_budget_certified": false
+    },
+    "source_immutable": true,
+    "physical_complete": true,
+    "ledger_released": true,
+    "recorded_samples": [
+      {
+        "step": 1,
+        "order": "AB",
+        "gpu_wall_ms": 50.589625,
+        "hybrid_wall_ms": 30.935417,
+        "hybrid_wall_reduction_percent": 38.850274142178364,
+        "rrms": 0.0033882077214639045,
+        "host_spans_seconds": {
+          "branch_join_seconds": 0.020695667,
+          "consumer_seconds": 0.000789959,
+          "controller_seconds": 0.030919958,
+          "generation": 2,
+          "physical_complete": true,
+          "producer_seconds": 0.0091465,
+          "submit_ane_seconds": 0.000196,
+          "wall_seconds": 0.030935417
+        }
+      },
+      {
+        "step": 19,
+        "order": "BA",
+        "gpu_wall_ms": 41.048874999999995,
+        "hybrid_wall_ms": 41.490083,
+        "hybrid_wall_reduction_percent": -1.0748357902622185,
+        "rrms": 0.002726540412031423,
+        "host_spans_seconds": {
+          "branch_join_seconds": 0.020671042,
+          "consumer_seconds": 0.000731584,
+          "controller_seconds": 0.041482416,
+          "generation": 4,
+          "physical_complete": true,
+          "producer_seconds": 0.019889709,
+          "submit_ane_seconds": 0.00012475,
+          "wall_seconds": 0.041490083
+        }
+      }
+    ]
+  },
+  "qualification": {
+    "complete_hybrid_e2e_run": false,
+    "full_model_quality": false,
+    "performance": false,
+    "physical_overlap": false,
+    "hardware_int8_arithmetic": false,
+    "full_request_memory": false,
+    "lora_edit_zimage_app": false
+  },
+  "next": "source-bound W8 staging/row-scale reuse and timing attribution before another bounded FFN pair; E2E only after held-out net gain",
+  "model_downloads": 0,
+  "full_checkpoint_copies": 0,
+  "cleanup_receipt": "outputs/native-w1-session-20261008/owned-cleanup.json",
+  "cleanup_summary": {
+    "deleted_file_count": 187,
+    "deleted_bytes": 23079227,
+    "verified_deleted": true
+  }
+}

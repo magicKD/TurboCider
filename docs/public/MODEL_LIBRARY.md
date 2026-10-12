@@ -33,6 +33,53 @@ The alias must match the request model. `library catalog` shows download recipes
 Registration does not prove that the weights can run; native model loading
 still validates the actual layout and tensors.
 
+## Model hub and local components
+
+The App's **Models → Base models** page separates **Discover** from **On device**.
+Search covers model names, download formats, precision variants and configured
+paths. On-device results include every registered installation, even when the
+current draft uses a different path. Browsing does not select a creation model
+or unload its session; use the explicit installation or creation actions.
+
+For Qwen-Image-2.1, FLUX.2 Klein and Z-Image, the details show independent
+**Encoder / DiT / VAE** cards. Replace a component by selecting an existing
+local file or component directory. Saving creates another linked installation,
+checks its component architecture and file layout, and retains the original
+installation. No weights are copied or converted. The base installation supplies
+the tokenizer/processor; changing the encoder does not automatically replace it.
+Keep linked source files available. Other model families retain their complete
+installation workflow until separate components have an executable route.
+
+The same operations are available to local agents without GUI automation:
+
+```sh
+turbocider library components qwen-image-2.1 /absolute/existing-model
+turbocider library compose components.json
+```
+
+```json
+{
+  "modelID": "qwen-image-2.1",
+  "basePath": "/absolute/existing-model",
+  "name": "My component selection",
+  "components": {"vae": "/absolute/compatible-vae.safetensors"}
+}
+```
+
+Composition validates bounded metadata, tensor shapes and byte ranges. It does
+not load tensor data or establish image quality. The returned installation path
+can be used with the usual generation API. Removing a registration retains its
+files, including linked component installations.
+
+**Models → LoRA** manages adapters independently from the base-model list.
+Import existing `.safetensors` files under a chosen base model, search and filter
+them, then explicitly add or enable them in a creation draft. Folder scans support
+`lora` and `loras` at the root, under `split_files`, and under `models`. Registration
+does not prove adapter compatibility; the native loader checks actual tensors.
+Removing a registration does not delete the file. The creation draft retains
+its own enabled adapters and strengths. Recognized Qwen Viggle six-step adapters
+use the same preset behavior as the creation page.
+
 Use the installation-inspection control beside the selected path, or:
 
 ```sh
@@ -72,6 +119,35 @@ ANE preparation, see [FLUX preparation](FLUX_PREPARATION.md).
 
 ## Preview before downloading
 
+### Qwen-Image-2.1 and Unsloth GGUF
+
+ModelScope is the default source; Hugging Face is selectable in the download
+sheet. Preview checks that selected files exist at that provider rather than
+silently switching sources. Review the source and license before downloading.
+
+The Qwen recipe offers BF16 and the published Unsloth DiT variants:
+`Q4_K_M`, `Q4_K_S`, `Q5_K_M`, `Q5_K_S`, `Q6_K`, `Q6_K_XL`, `Q8_0`.
+Each precision receives a separate installation and source integrity records.
+The GGUF file contains the DiT only; the recipe also includes the compatible
+BF16 encoder, VAE and processor/tokenizer. A small DiT file does not imply
+equally small total download size or runtime memory.
+
+| Selection | Current native execution |
+|---|---|
+| BF16 | Supported generation, reference editing and supported LoRA routes |
+| Q4_K_M DiT | Experimental approximate text-to-image; explicit approximate opt-in; no editing, LoRA, prompt enhancement or encoder ANE |
+| Other listed GGUF precisions | Download and storage only; native execution is not connected |
+
+The sheet labels these boundaries before download. It does not advertise all
+quantizations as runnable. **Complete model**, **DiT**, **Encoder + tokenizer**
+and **VAE** selections let users download individual components. A partial or
+unsupported installation is not automatically made the active generation model.
+The BF16 recipe includes the processor tokenizer that the Comfy weight
+repository omits. File sizes come from preview metadata, not fixed estimates.
+
+Published files: [ModelScope](https://modelscope.cn/models/unsloth/Qwen-Image-2.1-GGUF)
+and [Hugging Face](https://huggingface.co/unsloth/Qwen-Image-2.1-GGUF/tree/main).
+
 ### Z-Image precision choices
 
 The App defaults Z-Image downloads to `Comfy-Org/z_image_turbo` on ModelScope.
@@ -88,7 +164,7 @@ loader now performs without requantizing weights. Activations remain BF16;
 this is **not** NVIDIA W4A4 execution. Smaller weights do not guarantee faster
 inference or identical images. Inspection checks files, not numerical quality.
 
-The Comfy repository has no tokenizer. When downloading Qwen BF16, the App
+The Comfy repository has no tokenizer. When downloading the Qwen3 BF16 encoder, the App
 adds the two tokenizer JSON files from `Tongyi-MAI/Z-Image-Turbo` with their own
 source revision/integrity record. See `examples/requests/download-z-image-int8.json`.
 Reusing a local encoder skips both its weights and tokenizer downloads.
@@ -267,8 +343,8 @@ register them. LoRA aliases resolve to a canonical path and deduplicate per
 model. CLI commands are `register-lora MODEL_ID FILE` and `remove-lora ID`.
 Removing registration always retains the original weights.
 
-Each model's **LoRA 模型库** supports registering files, scanning its `loras/`,
-`split_files/loras/` and `models/loras/` directories, and adding a registered
+Each model's **LoRA 模型库** supports registering files, scanning its `lora/`
+and `loras/` directories at the root or under `split_files/` and `models/`, and adding a registered
 adapter to the creation draft. Registration records the intended base model;
 it does not prove tensor compatibility. Discovered adapters are not automatically
 enabled. Switching models preserves each model's draft adapters and strengths.

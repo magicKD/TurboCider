@@ -1,6 +1,7 @@
 #include "../../native/backends/ane_ffn.hpp"
 #include "../../native/backends/ane_runtime_quant.hpp"
 #include <cassert>
+#include <array>
 #include <iostream>
 #include <limits>
 
@@ -307,6 +308,14 @@ void lora_tests(const char *manifest) {
         assert(mx::max(mx::abs(mx::astype(actual, mx::float32) - mx::astype(expected_base, mx::float32)) /
             mx::abs(mx::astype(expected_base, mx::float32))).item<float>() < .025f);
         assert(base_runtime.metrics().runtime_weight_overflow_retries > 0 && !base_runtime.metrics().runtime_failed);
+        const auto &events=base_runtime.metrics().runtime_weight_overflow_events;
+        assert(events.size==1 && events.events[0].layer==1 && events.events[0].rows==97 &&
+            events.events[0].completed && events.events[0].headroom_after>events.events[0].headroom_before &&
+            events.events[0].retries==base_runtime.metrics().runtime_weight_overflow_retries);
+        const auto prior_calls=base_runtime.metrics().runtime_calls;
+        base_runtime.set_gpu_layers({1});base_runtime.begin_request("public-explicit-gpu");
+        assert(base_runtime.plan_block(1,97).mode==ane::RowScheduler::Mode::Gpu &&
+            base_runtime.metrics().runtime_weight_forced_gpu_blocks==1 && base_runtime.metrics().runtime_calls==prior_calls);
     }
     auto high_gate_up = [](const Tensor &input) {
         return std::make_pair(mx::full({1, input.shape(1), 96}, 16.f, mx::bfloat16),
@@ -345,6 +354,7 @@ void lora_tests(const char *manifest) {
     y = runtime.run(2, x, high_gpu, cancelled, &high);
     assert(mx::all(y == expected).item<bool>());
     assert(runtime.metrics().runtime_failed && runtime.metrics().runtime_weight_fallback_blocks == 1);
+    assert(!runtime.retains_resources());
     std::cout << "PASS runtime LoRA activation corrections: base/adapter/signed-adapter/base, "
                  "all projections, headroom+hidden restore, whole-tail fallback; worst relative L2=" << worst << '\n';
     std::cout << "PASS runtime base v2: validation-only hidden, exact copy accounting, consecutive base, "
@@ -513,9 +523,25 @@ void output_lifetime_tests(const char *manifest) {
 
 void async_head_tests(const char *base_manifest, const char *lora_manifest) {
     using namespace tc;
-    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", "auto", 1);
+    {
+        std::atomic<bool> cancelled{false};
+        for (const auto &policy : {std::array<const char*,3>{"2","1","0"}, {"1","auto","0"},
+                                   {"1","0","0"}, {"1","1","1"}}) {
+            setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",policy[0],1);
+            setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS",policy[1],1);
+            setenv("TURBOCIDER_RUNTIME_ANE_PROFILE",policy[2],1);
+            bool rejected=false;
+            try { ane::HybridFfn invalid(base_manifest,64,96,128ull<<20,cancelled); }
+            catch (const std::invalid_argument&) { rejected=true; }
+            assert(rejected);
+        }
+    }
+    for (bool fixed : {false,true})
     for (bool profile : {false, true}) for (bool with_adapter : {false, true})
     for (auto dtype : {mx::bfloat16, mx::float16, mx::float32}) {
+        if (fixed && profile) continue; // invalid combinations tested above
+        setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", fixed ? "1" : "auto", 1);
+        setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC", fixed ? "1" : "0", 1);
         setenv("TURBOCIDER_RUNTIME_ANE_PROFILE", profile ? "1" : "0", 1);
         std::atomic<bool> cancelled{false};
         std::vector<Tensor> weights{mx::full({96, 64}, .01f, dtype),
@@ -550,6 +576,7 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
         // make the controller choose its steady plan, never claim a speedup.
         for (int visit = 1; visit <= 12; ++visit) {
             const auto plan = runtime.plan_block(0, 64);
+            if (fixed) assert(plan.mode==ane::RowScheduler::Mode::HybridUntimed && plan.chunks==1 && !plan.measured());
             auto input = mx::full({1, 64, 64}, visit == 11 ? .25f : .5f, dtype);
             const auto before = runtime.metrics();
             if (plan.split()) {
@@ -581,7 +608,7 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
                                       mx::astype(expected, mx::float32))).item<float>() < .03f);
                 if (poison_gate) assert(mx::all(output == expected).item<bool>());
                 const auto after = runtime.metrics();
-                const bool asynchronous = !profile && visit >= 7;
+                const bool asynchronous = !profile && (fixed || visit >= 7);
                 assert(after.runtime_weight_async_hybrid_blocks - before.runtime_weight_async_hybrid_blocks ==
                        uint64_t(asynchronous));
                 if (asynchronous) {
@@ -598,14 +625,19 @@ void async_head_tests(const char *base_manifest, const char *lora_manifest) {
             if (plan.measured()) runtime.observe_block(0, 64, plan.split() ? .1 : 1.);
         }
         assert(runtime.metrics().runtime_failed == with_adapter);
-        if (with_adapter) assert(runtime.metrics().runtime_weight_fallback_blocks == 1);
+        if (with_adapter) {
+            assert(runtime.metrics().runtime_weight_fallback_blocks == 1);
+            assert(!runtime.retains_resources());
+        }
         if (retained_hidden) assert(mx::all(*retained_hidden == *hidden_snapshot).item<bool>());
         assert(mx::all(*saved == *snapshot).item<bool>());
     }
+    unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
     setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", "2", 1);
     unsetenv("TURBOCIDER_RUNTIME_ANE_PROFILE");
     std::cout << "PASS async head join: base/LoRA, BF16/FP16/FP32, profile isolation, "
                  "owned output, cancellation/down failure drain and complete tail fallback\n";
+    std::cout << "PASS fixed async row plan: policy validation, untimed ownership, base/LoRA, failure/cancellation drain\n";
 }
 
 void request_scheduler_tests(const char *manifest) {
@@ -679,6 +711,72 @@ void request_scheduler_tests(const char *manifest) {
     assert(runtime.metrics().runtime_weight_full_gpu_probe_blocks == 8);
     setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS", "2", 1);
     std::cout << "PASS request scheduler isolation: base/A/same-A/B/base on one v2 graph\n";
+}
+
+void raw_gguf_tests(const char *manifest) {
+    using namespace tc;
+    std::atomic<bool> cancelled{false};
+    std::vector<ane::FfnWeight> weights;std::vector<Tensor> dense;
+    for(int projection=0;projection<3;++projection) {
+        const int rows=projection==2?64:96,cols=projection==2?96:64;
+        std::vector<uint8_t> packed(size_t(rows)*size_t(cols)/32*34);
+        std::vector<mx::float16_t> values(size_t(rows)*size_t(cols));
+        for(int row=0;row<rows;++row)for(int block=0;block<cols/32;++block) {
+            auto *q=packed.data()+(size_t(row)*(cols/32)+block)*34;
+            q[0]=0;q[1]=0x20; // exact FP16 scale 1/128
+            for(int c=0;c<32;++c) {
+                const int8_t code=int8_t((row*7+(block*32+c)*11+projection*3)%15-7);
+                q[2+c]=uint8_t(code);values[size_t(row)*cols+block*32+c]=mx::float16_t(float(code)/128.f);
+            }
+        }
+        Tensor raw(packed.data(),{rows,cols/32*34},mx::uint8);
+        ane::FfnWeight source{raw,std::nullopt,std::nullopt};source.raw_gguf=ane::FfnWeight::RawGguf{8,cols};
+        weights.push_back(std::move(source));dense.emplace_back(values.data(),mx::Shape{rows,cols},mx::float16);
+    }
+    mx::eval(dense);
+    auto input=mx::full({1,97,64},.25f,mx::float16);
+    auto gpu=[&](const Tensor &x) {
+        auto gate=mx::matmul(x,mx::transpose(dense[0]));
+        return mx::matmul((gate*mx::sigmoid(gate))*mx::matmul(x,mx::transpose(dense[1])),mx::transpose(dense[2]));
+    };
+    ane::HybridFfn runtime(manifest,64,96,128ull<<20,cancelled);
+    runtime.stage_weights(0,97,weights);auto actual=runtime.run(0,input,gpu,cancelled);
+    auto expected=gpu(input);
+    assert(mx::max(mx::abs(actual-expected)).item<mx::float16_t>()<.0001f);
+    assert(runtime.metrics().runtime_calls==2 && !runtime.metrics().runtime_failed);
+    auto bad=weights;bad[0].raw_gguf->columns=65;
+    runtime.stage_weights(1,97,std::move(bad));actual=runtime.run(1,input,gpu,cancelled);
+    assert(mx::all(actual==expected).item<bool>() && runtime.metrics().runtime_failed);
+    // A model-side source acquisition error must end both measured and
+    // untimed plans, retain failure evidence, and never publish stale scratch.
+    const char *old=std::getenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+    const std::optional<std::string> previous=old?std::optional<std::string>(old):std::nullopt;
+    const char *order=std::getenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
+    const std::optional<std::string> previous_order=order?std::optional<std::string>(order):std::nullopt;
+    for(const char *invalid:{"", "2", "true"}) {
+        setenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",invalid,1);bool rejected=false;
+        try {ane::HybridFfn invalid_order(manifest,64,96,128ull<<20,cancelled);}
+        catch(const std::exception &error) {rejected=std::string(error.what()).find("prefetch placement")!=std::string::npos;}
+        assert(rejected);
+    }
+    for(bool untimed:{false,true})for(bool after_gpu:{false,true}) {
+        setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",untimed?"1":"0",1);
+        setenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",after_gpu?"1":"0",1);
+        ane::HybridFfn failed(manifest,64,96,128ull<<20,cancelled);
+        const auto plan=failed.plan_block(0,97);assert(plan.split());
+        failed.fail_staging(0,97,"owned raw source acquisition failure");
+        if(plan.measured())failed.observe_block(0,97,.001);
+        const auto after=failed.plan_block(1,97);assert(!after.split());
+        const auto metrics=failed.metrics();
+        assert(metrics.runtime_failed && metrics.runtime_calls==0 && metrics.runtime_failures==1 &&
+            metrics.runtime_weight_fallback_blocks==1 && failed.reason()=="owned raw source acquisition failure");
+        assert(metrics.runtime_weight_prefetch_after_gpu==after_gpu);
+    }
+    if(previous)setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC",previous->c_str(),1);
+    else unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");
+    if(previous_order)setenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU",previous_order->c_str(),1);
+    else unsetenv("TURBOCIDER_RUNTIME_ANE_PREFETCH_AFTER_GPU");
+    std::cout<<"PASS raw GGUF FFN source: host graph, immutable bytes, invalid geometry/full GPU fallback and measured/untimed acquisition failure\n";
 }
 
 void quantized_tests(const char *manifest) {
@@ -785,10 +883,98 @@ void quantized_tests(const char *manifest) {
         y = runtime.run(2, x, dense_gpu, cancelled);
         assert(mx::all(y == expected).item<bool>());
         assert(runtime.metrics().runtime_failed && runtime.metrics().runtime_calls == 4);
+        assert(!runtime.retains_resources());
     }
     std::cout << "PASS Q4/Q8 staging vs MLX dequantize and packed GPU FFN; mixed sources, owned metadata, "
                  "invalid-source fallback; worst relative L2=" << worst << '\n';
 }
+}
+
+void row_placement_tests(const char *base_manifest,const char *lora_manifest) {
+    using namespace tc;
+    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","1",1);
+    setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","1",1);
+    unsetenv("TURBOCIDER_RUNTIME_ANE_PROFILE");
+    std::atomic<bool> cancelled{false};
+    std::vector<Tensor> weights{mx::full({96,64},.01f,mx::bfloat16),
+        mx::full({96,64},.01f,mx::bfloat16),mx::full({64,96},.01f,mx::bfloat16)};mx::eval(weights);
+    for(bool lora:{false,true})for(auto placement:{ane::RowPlacement::Suffix,ane::RowPlacement::ImagePrefix,ane::RowPlacement::ImageTail}) {
+        const ane::RowPolicy policy{placement,placement==ane::RowPlacement::Suffix?0:1};
+        const auto window=ane::plan_row_window(97,32,policy);
+        ane::HybridFfn runtime(lora?lora_manifest:base_manifest,64,96,128ull<<20,cancelled,lora);
+        bool poison=false;
+        std::optional<Tensor> saved,snapshot;
+        auto corrections=[&](const Tensor &x) {
+            auto first=mx::slice(x,{0,0,0},{1,x.shape(1),1});
+            auto g=mx::broadcast_to(first*.015625f+.0625f,{1,x.shape(1),96});
+            auto u=mx::broadcast_to(first*.03125f+.125f,{1,x.shape(1),96});
+            return std::make_pair(mx::astype(g,x.dtype()),mx::astype(u,x.dtype()));
+        };
+        auto down=[](const Tensor &h,const Tensor &base){return mx::astype(base+mx::sum(h,-1,true)*.0078125f,base.dtype());};
+        auto gpu=[&](const Tensor &x) {
+            auto g=mx::matmul(x,mx::transpose(weights[0])),u=mx::matmul(x,mx::transpose(weights[1]));
+            if(lora){auto delta=corrections(x);g=g+delta.first;u=u+delta.second;}
+            auto h=(g*mx::sigmoid(g))*u,base=mx::matmul(h,mx::transpose(weights[2]));
+            return lora?down(h,base):base;
+        };
+        std::optional<Tensor> expected_ane;
+        ane::HybridFfn::Adapter adapter{
+            [&](const Tensor &x) {
+                assert(expected_ane && mx::all(x==*expected_ane).item<bool>());
+                auto delta=corrections(x);
+                if(poison)delta.first=mx::full(delta.first.shape(),std::numeric_limits<float>::infinity(),x.dtype());
+                return delta;
+            },down};
+        for(int visit=0;visit<(lora?4:3);++visit) {
+            auto input=mx::astype(mx::broadcast_to(mx::reshape(mx::arange(1,98,mx::float32)/128.f+visit*.03125f,{1,97,1}),
+                {1,97,64}),mx::bfloat16);mx::eval(input);
+            expected_ane=slice_axis(input,1,window.first,window.end());
+            auto expected_gpu=window.gpu_before()==0?slice_axis(input,1,window.end(),97):
+                window.gpu_after()==0?slice_axis(input,1,0,window.first):
+                mx::concatenate({slice_axis(input,1,0,window.first),slice_axis(input,1,window.end(),97)},1);
+            auto plan=runtime.plan_block(0,97,policy);
+            assert(plan.split()&&plan.chunks==1&&!plan.measured());runtime.stage(0,97,weights);
+            poison=lora&&visit==3;int gpu_calls=0;
+            auto output=runtime.run(0,input,[&](const Tensor &x) {
+                ++gpu_calls;
+                assert(mx::all(x==(x.shape(1)==65?expected_gpu:*expected_ane)).item<bool>());
+                return gpu(x);
+            },cancelled,lora?&adapter:nullptr);
+            auto expected=gpu(input);mx::eval({output,expected});
+            assert(output.shape()==input.shape() && mx::all(mx::isfinite(output)).item<bool>());
+            assert(mx::max(mx::abs(mx::astype(output,mx::float32)-mx::astype(expected,mx::float32))).item<float>()<.03f);
+            assert(gpu_calls==(poison?2:1));
+            if(policy.protected_suffix_rows)assert(mx::all(slice_axis(output,1,96,97)==slice_axis(expected,1,96,97)).item<bool>());
+            if(poison)assert(mx::all(output==expected).item<bool>());
+            if(!visit){saved=output;snapshot=mx::copy(output);mx::eval(*snapshot);}
+            else assert(mx::all(*saved==*snapshot).item<bool>());
+        }
+        const auto m=runtime.metrics();assert(m.runtime_failed==lora && m.runtime_weight_fallback_blocks==uint64_t(lora));
+        assert(m.runtime_weight_row_suffix_blocks==(placement==ane::RowPlacement::Suffix?3u:0u));
+        assert(m.runtime_weight_row_prefix_blocks==(placement==ane::RowPlacement::ImagePrefix?3u:0u));
+        assert(m.runtime_weight_row_image_tail_blocks==(placement==ane::RowPlacement::ImageTail?3u:0u));
+        assert(m.runtime_weight_row_protected_rows==(placement==ane::RowPlacement::Suffix?0u:3u));
+        assert(m.runtime_weight_row_pack_peak_bytes==(placement==ane::RowPlacement::ImageTail?65u*64u*2u:0u));
+    }
+    setenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC","0",1);
+    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","0",1);
+    {
+        ane::HybridFfn probe(base_manifest,64,96,128ull<<20,cancelled);
+        const auto plan=probe.plan_block(0,97,{ane::RowPlacement::ImagePrefix,1});
+        assert(plan.mode==ane::RowScheduler::Mode::SplitProbe&&plan.chunks==0&&plan.measured());
+        probe.stage(0,97,weights);
+        auto input=mx::full({1,97,64},.5f,mx::bfloat16);
+        auto output=probe.run(0,input,[](const Tensor &x){return mx::copy(x);},cancelled);
+        assert(mx::all(output==input).item<bool>());probe.observe_block(0,97,1.);
+    }
+    setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","1",1);
+    {
+        ane::HybridFfn protected_only(base_manifest,64,96,128ull<<20,cancelled);
+        const auto plan=protected_only.plan_block(0,97,{ane::RowPlacement::ImageTail,97});
+        assert(plan.mode==ane::RowScheduler::Mode::Gpu&&plan.chunks==0&&!plan.measured());
+    }
+    unsetenv("TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC");setenv("TURBOCIDER_RUNTIME_ANE_CHUNKS","2",1);
+    std::cout<<"PASS actual row placement: prefix/suffix/interior, exact callback row IDs, protected suffix, base/LoRA, typed lifetime and whole-span failure recomputation\n";
 }
 
 int main(int argc, char **argv) {
@@ -940,10 +1126,28 @@ int main(int argc, char **argv) {
     auto metrics = runtime.metrics();
     assert(metrics.runtime_failed && metrics.runtime_failures == 1);
     assert(metrics.runtime_weight_fallback_blocks == 1);
+    assert(!runtime.retains_resources());
     runtime.stage(2, 97, weights);
     y = runtime.run(2, x, gpu, cancelled);
     assert(mx::all(y == expected).item<bool>());
     assert(runtime.metrics().runtime_calls == metrics.runtime_calls);
+    assert(!runtime.retains_resources());
+    // A GPU error during tail recomputation must preserve its exception after
+    // the failed ANE graph has already been retired. Cleanup cannot dereference
+    // that graph again, nor leave its scratch/lease in the resident session.
+    ane::HybridFfn failed_gpu_runtime(argv[1], 64, 96, 128ull << 20, cancelled);
+    failed_gpu_runtime.stage(0, 97, weights);
+    bool fallback_error = false;
+    try {
+        failed_gpu_runtime.run(0, x, [&](const Tensor &part) -> Tensor {
+            if (part.shape(1) == 64) throw std::runtime_error("GPU tail recomputation failed");
+            return gpu(part);
+        }, cancelled);
+    } catch (const std::runtime_error &error) {
+        fallback_error = std::string(error.what()) == "GPU tail recomputation failed";
+    }
+    assert(fallback_error && !failed_gpu_runtime.retains_resources());
+    assert(failed_gpu_runtime.metrics().runtime_failed);
     // Cancellation while staging is pending must be drained before buffers
     // and the graph are destroyed, and must not poison the next request.
     ane::HybridFfn cancelled_runtime(argv[1], 64, 96, 128ull << 20, cancelled);
@@ -963,6 +1167,7 @@ int main(int argc, char **argv) {
     // Memory admission failure is a real GPU fallback, not uncomputed output.
     ane::HybridFfn no_budget(argv[1], 64, 96, 1, cancelled);
     assert(!no_budget.available());
+    assert(!no_budget.retains_resources());
     no_budget.stage(0, 97, weights);
     y = no_budget.run(0, x, gpu, cancelled);
     expected = gpu(x);
@@ -979,6 +1184,7 @@ int main(int argc, char **argv) {
                                       (4ull << 30) - 1, 18ull << 30};
     pressured.begin_request("next-adapter", low); // drains, releases graph + scratch
     assert(!pressured.available() && pressured.reason().find("memory admission") != std::string::npos);
+    assert(!pressured.retains_resources());
     pressured.stage(0, 97, weights);
     y = pressured.run(0, x, gpu, cancelled);
     assert(mx::all(y == gpu(x)).item<bool>() && pressured.metrics().runtime_calls == 2);
@@ -1017,6 +1223,7 @@ int main(int argc, char **argv) {
     assert(fp32_runtime.metrics().runtime_calls >= 2 && !fp32_runtime.metrics().runtime_failed);
     assert(fp32_runtime.metrics().runtime_weight_overflow_retries > 0);
     quantized_tests(argv[1]);
+    raw_gguf_tests(argv[1]);
     output_lifetime_tests(argv[1]);
     if (argc == 3) {
         lora_alpha_tests(std::filesystem::path(argv[2]).parent_path());
@@ -1025,6 +1232,7 @@ int main(int argc, char **argv) {
         correction_input_isolation_tests(argv[2]);
         async_head_tests(argv[1], argv[2]);
         request_scheduler_tests(argv[2]);
+        row_placement_tests(argv[1],argv[2]);
         // LoRA graph compatibility is checked before memory fallback.
         bool rejected = false;
         try { ane::HybridFfn unsupported(argv[1], 64, 96, 1, cancelled, true); }

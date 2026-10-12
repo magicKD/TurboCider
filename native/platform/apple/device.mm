@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "platform.hpp"
+#include "sha256_fd.hpp"
 #import <Metal/Metal.h>
 #include <CommonCrypto/CommonDigest.h>
 #include <vector>
@@ -83,6 +84,9 @@ std::string sha256_file(const std::filesystem::path &path) {
     }
     return result;
 }
+std::string sha256_file(int source_fd, const std::atomic<bool> &cancelled) {
+    return detail::sha256_fd(source_fd, cancelled);
+}
 } // namespace tc
 
 #include "../../backends/mlx.hpp"
@@ -105,7 +109,8 @@ NSDictionary *system_info() {
             @"z_image_memory_lifecycle" : @(optimizations.z_image_memory_lifecycle),
             @"z_image_smallest_partition" : @(optimizations.z_image_smallest_partition),
             @"external_automatic_partitions" : @(optimizations.external_automatic_partitions),
-            @"coreml_output_copy" : @(optimizations.coreml_output_copy)
+            @"coreml_output_copy" : @(optimizations.coreml_output_copy),
+            @"qwen21_layer_streaming" : @(optimizations.qwen21_layer_streaming)
         },
         @"physical_memory_bytes" : @([NSProcessInfo processInfo].physicalMemory),
         @"recommended_working_set_bytes" : @(d ? d.recommendedMaxWorkingSetSize : 0),

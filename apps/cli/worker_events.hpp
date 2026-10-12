@@ -36,6 +36,9 @@ public:
     void resolved(NSDictionary *resolution) {
         std::lock_guard lock(mutex_);resolved_sent_=emit(@"resolved",resolution);
     }
+    // Runtime workers have no public streaming resolution. This only enables
+    // bounded progress telemetry; it grants no streaming selector authority.
+    void begin_runtime() {std::lock_guard lock(mutex_);resolved_sent_=true;}
     static void progress(const char *json,void *context) noexcept {
         @autoreleasepool {
             try {

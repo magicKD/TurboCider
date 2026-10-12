@@ -1,0 +1,293 @@
+{
+  "schema": "tc-gguf-private-diagnostics-v1",
+  "scope": "selected real inputs; not full R1/model/memory/performance certification",
+  "cases": [
+    {
+      "id": "receipt-final-retained-prompt-aba",
+      "raw_report_sha256": "f87ac51b26fcf474f30d7ba8dcad8b2a488181e8d2e77228622aed67fe87e9d4",
+      "library_sha256": "0afd7dfeb9b4c48a5ec461e900654eb3f5a5a3bb87d290ec8dcb89b2c68ffc6a",
+      "runs": [
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1",
+          "cancellation_triggered": false,
+          "wall_seconds": 10.411131417000433,
+          "timings_seconds": {
+            "denoise": 4.831395333,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 10.254492,
+            "text_encode": 0.429465125,
+            "vae_decode": 0.477547709
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7903806352,
+            "mlx_peak_bytes": 11508090032,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "gguf_import": {
+            "allocator_cache_limit_bytes": 0,
+            "consumer_revision": "z-session-packed-experimental-v1",
+            "decode_seconds": 1.8156795670000003,
+            "experimental": true,
+            "field_count": 813,
+            "gpu_graph_recipe": "z-parameterized-affine-block-v1",
+            "load_seconds": 2.112068917,
+            "logical_source_bytes": 7224676608,
+            "managed_peak_bytes": 7565989120,
+            "output_bytes": 7563825408,
+            "packed_capacity_bytes": 7564939520,
+            "plan_digest": "341b10530bdda02d00b09c248377eab7d3c364f8cf0d49a3623587630de35ec5",
+            "planned_packed_capacity_bytes": 7566213120,
+            "read_buffer_capacity_bytes": 1048576,
+            "read_seconds": 0.2684675790000001,
+            "recipe": "gguf-mlx-compat-affine-packed-bank-v1",
+            "released_before_vae": false,
+            "request_load_seconds": 2.112068917,
+            "request_source_read_bytes": 7224676608,
+            "reused_packed_bank": false,
+            "scope": "managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS",
+            "serial_refiner_eval": true,
+            "session_packed_retention": true,
+            "source_read_bytes": 7224676608,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "tensor_count": 453,
+            "verification_bytes": 7224707136,
+            "whole_request_bounded_certified": false
+          },
+          "warmup": false,
+          "encoder_quantized_execution": null,
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 42713088,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        },
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "183bef45714feb6afac8077ba535183ea71c9b28ed08286a5009c78b7d4945f1",
+          "cancellation_triggered": false,
+          "wall_seconds": 7.960568832990248,
+          "timings_seconds": {
+            "denoise": 4.849635917,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 7.960104958,
+            "text_encode": 0.418036541,
+            "vae_decode": 0.475682584
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7903839120,
+            "mlx_peak_bytes": 11283940516,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "gguf_import": {
+            "allocator_cache_limit_bytes": 0,
+            "consumer_revision": "z-session-packed-experimental-v1",
+            "decode_seconds": 1.8498554330000025,
+            "experimental": true,
+            "field_count": 813,
+            "gpu_graph_recipe": "z-parameterized-affine-block-v1",
+            "load_seconds": 2.152687625,
+            "logical_source_bytes": 7224676608,
+            "managed_peak_bytes": 7565989120,
+            "output_bytes": 7563825408,
+            "packed_capacity_bytes": 7564939520,
+            "plan_digest": "341b10530bdda02d00b09c248377eab7d3c364f8cf0d49a3623587630de35ec5",
+            "planned_packed_capacity_bytes": 7566213120,
+            "read_buffer_capacity_bytes": 1048576,
+            "read_seconds": 0.27217595999999966,
+            "recipe": "gguf-mlx-compat-affine-packed-bank-v1",
+            "released_before_vae": false,
+            "request_load_seconds": 2.152687625,
+            "request_source_read_bytes": 7224676608,
+            "reused_packed_bank": false,
+            "scope": "managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS",
+            "serial_refiner_eval": true,
+            "session_packed_retention": true,
+            "source_read_bytes": 7224676608,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "tensor_count": 453,
+            "verification_bytes": 0,
+            "whole_request_bounded_certified": false
+          },
+          "warmup": false,
+          "encoder_quantized_execution": null,
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 180224,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": false
+        },
+        {
+          "prefetch": -1,
+          "status": 0,
+          "error": null,
+          "png_sha256": "a5065dd36b157667a930fddbf0e87f699db1c014825215174bfb6da18c3c9df1",
+          "cancellation_triggered": false,
+          "wall_seconds": 7.9777183329861145,
+          "timings_seconds": {
+            "denoise": 4.831908791,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 7.977304625,
+            "text_encode": 0.413171167,
+            "vae_decode": 0.493709
+          },
+          "quantized_execution": null,
+          "mlx_memory": {
+            "mlx_active_bytes": 7903806352,
+            "mlx_peak_bytes": 11283907748,
+            "scope": "MLX allocator; excludes Core ML/OS/file cache"
+          },
+          "gguf_import": {
+            "allocator_cache_limit_bytes": 0,
+            "consumer_revision": "z-session-packed-experimental-v1",
+            "decode_seconds": 1.871343576000001,
+            "experimental": true,
+            "field_count": 813,
+            "gpu_graph_recipe": "z-parameterized-affine-block-v1",
+            "load_seconds": 2.177392333,
+            "logical_source_bytes": 7224676608,
+            "managed_peak_bytes": 7565989120,
+            "output_bytes": 7563825408,
+            "packed_capacity_bytes": 7564939520,
+            "plan_digest": "341b10530bdda02d00b09c248377eab7d3c364f8cf0d49a3623587630de35ec5",
+            "planned_packed_capacity_bytes": 7566213120,
+            "read_buffer_capacity_bytes": 1048576,
+            "read_seconds": 0.2741126720000003,
+            "recipe": "gguf-mlx-compat-affine-packed-bank-v1",
+            "released_before_vae": false,
+            "request_load_seconds": 2.177392333,
+            "request_source_read_bytes": 7224676608,
+            "reused_packed_bank": false,
+            "scope": "managed immutable packed bank and import buffer; excludes encoder/VAE/activations/cache/framework/OS",
+            "serial_refiner_eval": true,
+            "session_packed_retention": true,
+            "source_read_bytes": 7224676608,
+            "source_sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "tensor_count": 453,
+            "verification_bytes": 0,
+            "whole_request_bounded_certified": false
+          },
+          "warmup": false,
+          "encoder_quantized_execution": null,
+          "vm_deltas": {
+            "Swapins": 0,
+            "Swapouts": 0,
+            "Pageins": 3129344,
+            "Compressions": 0,
+            "Decompressions": 0
+          },
+          "size": 512,
+          "seed": 42,
+          "steps": 4,
+          "profile": "native-packed",
+          "reference_tensors_bytes_exact": true
+        }
+      ],
+      "native_import": "cpu_direct",
+      "gpu_eval_policy": "default",
+      "numerical_gates": {
+        "vs-initial-a.json": {
+          "scope": "diagnostic tensor comparison; not complete model/media qualification",
+          "tensors": [
+            {
+              "name": "z_conditioning.safetensors",
+              "exact": true,
+              "reference_sha256": "3b84be9dbadd9614aa6bbbf29e5717d0495523e265f1cd3463f0fcc8d0f4f01d",
+              "candidate_sha256": "3b84be9dbadd9614aa6bbbf29e5717d0495523e265f1cd3463f0fcc8d0f4f01d",
+              "rel_l2": 0.0,
+              "cosine": 0.9999999999999999,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_decoded.safetensors",
+              "exact": true,
+              "reference_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+              "candidate_sha256": "c6c03cc6d750e3e80d72a6b0b31c5c9c50b4ac5b965f693cf182c3c5a15cf16e",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_final.safetensors",
+              "exact": true,
+              "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "candidate_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_initial.safetensors",
+              "exact": true,
+              "reference_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+              "candidate_sha256": "22192ff00b85447a96918c049f8a742320207d82fe41703ae85aceedb8b9ae8a",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_1.safetensors",
+              "exact": true,
+              "reference_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+              "candidate_sha256": "9d9fae5663842a190f3ddbfa97f8eae4fba8f30a89a9a1922e4e2a3fcf3be089",
+              "rel_l2": 0.0,
+              "cosine": 1.0000000000000002,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_2.safetensors",
+              "exact": true,
+              "reference_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+              "candidate_sha256": "f7cededd8c940f3f6561e902db44a76c0f6eea4381e1a461190fe563ad44d27c",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_3.safetensors",
+              "exact": true,
+              "reference_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+              "candidate_sha256": "8f179e955da10091a0d8597a2cd498377cb64e880e30166715d996863cfbfaef",
+              "rel_l2": 0.0,
+              "cosine": 1.0000000000000002,
+              "max_abs": 0.0
+            },
+            {
+              "name": "z_latent_step_4.safetensors",
+              "exact": true,
+              "reference_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "candidate_sha256": "dda963836af64bc1a23c39ab2d68a6111163aa15a5e1235186ddc5497ebf03c3",
+              "rel_l2": 0.0,
+              "cosine": 1.0,
+              "max_abs": 0.0
+            }
+          ],
+          "n1_final_latent_pass": true
+        }
+      }
+    }
+  ]
+}

@@ -1,9 +1,15 @@
 #pragma once
 #include "common.hpp"
+#include "../core/ane_calibration_report.hpp"
+#include "../core/ane_overflow_report.hpp"
+#include "../core/ane_weight_code_cache_report.hpp"
 #include "memory_accounting.hpp"
 #include "memory_manifest.hpp"
 #include "memory_policy.hpp"
 #include "memory_trace.hpp"
+#include "streaming/gguf_packed_metrics.hpp"
+#include "streaming/qwen_bf16_metrics.hpp"
+#include "tensor_metrics.hpp"
 #include <chrono>
 #include <map>
 #include <memory>
@@ -33,16 +39,62 @@ ExecutionPlan make_plan(const Request &);
 ExecutionPlan make_plan_after_public_streaming_preflight(const Request &);
 std::string effective_lora_strategy(const Request &);
 struct HybridMetrics {
+    std::shared_ptr<const ane::ChannelCalibrationReport> runtime_weight_calibration;
+    std::string runtime_weight_backend, runtime_weight_backend_fallback_reason;
+    std::string runtime_weight_io_path;
+    std::string runtime_weight_data_path;
+    std::string runtime_weight_partition_axis = "rows";
+    std::string runtime_weight_row_placement = "suffix";
+    uint64_t runtime_weight_row_suffix_blocks=0,runtime_weight_row_prefix_blocks=0;
+    uint64_t runtime_weight_row_image_tail_blocks=0,runtime_weight_row_protected_rows=0;
+    uint64_t runtime_weight_row_pack_peak_bytes=0;
+    int runtime_weight_ane_channels = 0, runtime_weight_gpu_channels = 0;
+    uint64_t runtime_weight_channel_blocks = 0;
+    bool runtime_weight_prefetch_enabled = false;
+    bool runtime_weight_prefetch_after_gpu = true;
+    uint64_t runtime_weight_prefetch_submissions = 0, runtime_weight_prefetch_hits = 0;
+    uint64_t runtime_weight_prefetch_discards = 0, runtime_weight_prefetch_failures = 0;
+    double runtime_weight_prefetch_wait_seconds = 0;
+    bool runtime_weight_scale_cache_enabled = false;
+    ane::WeightCodeCacheReport runtime_weight_code_cache;
+    bool runtime_weight_stage_specialized = false;
+    uint64_t runtime_weight_stage_pipeline_variants = 0;
+    bool runtime_weight_launch_fence_enabled = false;
+    bool runtime_weight_a8_lookahead_enabled = false;
+    bool runtime_weight_fp32_channel_join_enabled = false;
+    int runtime_weight_a8_group_size = 0;
+    int runtime_weight_hidden_a8_group_size = 0;
+    uint64_t runtime_weight_a8_prefetches = 0;
+    double runtime_weight_a8_wait_seconds = 0;
+    bool runtime_weight_a8_single_pass_requested = false, runtime_weight_a8_single_pass_pipeline_compiled = false;
+    uint64_t runtime_weight_a8_single_pass_submissions = 0, runtime_weight_a8_single_pass_ineligible_submissions = 0;
+    uint64_t runtime_weight_scale_cache_hits = 0, runtime_weight_scale_cache_misses = 0;
+    uint64_t runtime_weight_scale_cache_entries = 0, runtime_weight_scale_cache_bytes = 0, runtime_weight_scale_cache_evictions = 0;
+    uint64_t runtime_weight_device_io_calls = 0;
+    uint64_t runtime_weight_lora_channel_range_calls = 0, runtime_weight_lora_channel_full_calls = 0;
+    uint64_t runtime_weight_down_rank_blocks = 0, runtime_weight_down_rank_arrays = 0;
     // Runtime-weight route only; all times/counts are session cumulative.
     uint64_t runtime_weight_slot_bytes = 0, runtime_weight_estimated_bytes = 0;
+    // Owner destroyed before returning from a phase-scoped request. Core ML
+    // system caches are outside this lifetime; byte counters remain historical.
+    bool runtime_weight_session_released = false;
+    bool runtime_weight_scheduler_cache_hit = false;
+    uint64_t runtime_weight_scheduler_cache_entries = 0;
     uint64_t runtime_weight_hybrid_blocks = 0, runtime_weight_gpu_blocks = 0;
     uint64_t runtime_weight_untimed_hybrid_blocks = 0; // hybrid subset without whole-block timing fences
     uint64_t runtime_weight_async_hybrid_blocks = 0; // untimed subset without a separate GPU-head wait
+    bool runtime_weight_deferred_join_enabled = false;
+    uint64_t runtime_weight_deferred_join_blocks = 0; // explicit channel/untimed subset; output remains owned
+    bool runtime_weight_channel_gpu_first_enabled = false;
+    uint64_t runtime_weight_channel_gpu_first_blocks = 0; // successful async channel subset, not physical overlap
     uint64_t runtime_weight_unsplit_gpu_blocks = 0; // subset of GPU blocks; no FFN bridge
     uint64_t runtime_weight_full_gpu_probe_blocks = 0; // measured subset of unsplit GPU blocks
     double runtime_weight_full_gpu_probe_seconds = 0;
     uint64_t runtime_weight_fallback_blocks = 0, runtime_weight_ane_rows = 0;
     uint64_t runtime_weight_overflow_retries = 0;
+    ane::OverflowReport runtime_weight_overflow_events;
+    std::vector<int> runtime_weight_gpu_layers;
+    uint64_t runtime_weight_forced_gpu_blocks = 0;
     double runtime_weight_stage_seconds = 0, runtime_weight_stage_wait_seconds = 0;
     double runtime_weight_join_seconds = 0, runtime_weight_gpu_seconds = 0;
     // Async steady blocks are excluded from the two branch timers above.
@@ -52,6 +104,8 @@ struct HybridMetrics {
     // output restoration, optional down-LoRA and final concatenation/eval;
     // async post_join also includes any GPU-head work still outstanding at
     // the final output fence. None is a GPU kernel/physical overlap timer.
+    // For a deferred block this is only host graph construction;
+    // subsequent GPU consumption is charged to the complete request wall.
     double runtime_weight_lora_gate_up_seconds = 0, runtime_weight_post_join_seconds = 0;
     // Combined attention/input + LoRA correction readiness; subset of pre,
     // not a pure LoRA kernel timer or part of the parallel FFN window.
@@ -59,9 +113,21 @@ struct HybridMetrics {
     double runtime_weight_wall_seconds = 0;
     double runtime_weight_pre_seconds = 0;
     float runtime_weight_headroom = 1.f;
+    std::string runtime_weight_source_recipe;
+    uint64_t runtime_weight_convrot_stage_submissions = 0;
+    bool runtime_weight_s1_requested = false;
+    std::string runtime_weight_s1_digest;
+    uint64_t runtime_weight_s1_bytes = 0, runtime_weight_s1_stage_submissions = 0;
+    uint64_t runtime_weight_s1_hybrid_blocks = 0;
+    uint64_t runtime_weight_s1_bank_margin_bytes = 0;
     // Exporter-declared weight variant; unknown for legacy manifests without it.
     std::string weight_variant = "unknown";
     double load_seconds = 0;
+    // Host preparation spans, not measured GPU overlap or an end-to-end saving.
+    bool runtime_weight_prepared_early = false;
+    double runtime_weight_prepare_seconds = 0;
+    double runtime_weight_prepare_wait_seconds = 0;
+    double runtime_weight_prepare_before_join_seconds = 0;
     double manifest_validation_seconds = 0;
     double output_backing_setup_seconds = 0;
     double model_load_seconds = 0;
@@ -126,8 +192,26 @@ inline std::string hybrid_precision_label(const HybridMetrics &metrics) {
 struct LoadResult {
     uint64_t weight_bytes = 0, active_bytes = 0;
 };
+// Request-local evidence for an optional encoder executor. HybridMetrics
+// counters remain session cumulative when a resident graph is reused.
+struct EncoderRuntimeReuseMetrics {
+    bool enabled = false, reused = false, retained = false;
+    uint64_t calls_this_request = 0, retained_estimated_bytes = 0;
+};
+struct EncoderWeightResidencyMetrics {
+    bool enabled = false, reused = false, retained = false;
+    uint64_t source_bytes = 0, retained_bytes = 0, loads_session_total = 0;
+    std::string decline_reason;
+};
 struct Timings {
     double wall = 0, text = 0, image = 0, hybrid = 0, denoise = 0, decode = 0;
+};
+struct QwenEncoderPrefillMetrics {
+    std::string processor_sha256;
+    bool tokenizer_reused=false, encoder_evaluated_this_request=false;
+    uint32_t input_rows=0, retained_rows=0;
+    uint32_t qkv_fused_layers=0,qk_fused_layers=0,gate_up_fused_layers=0;
+    double pack_seconds_this_request=0;
 };
 struct BlockResidencyMetrics {
     bool enabled = false, fully_resident = false, quantized = false;
@@ -202,9 +286,105 @@ struct PublicStreamingSelectionMetrics {
     std::string receipt_digest, receipt_verifier_revision;
     bool actual_plan_verified = false;
 };
+struct QuantizedExecutionMetrics {
+    std::string source_sha256, layout_digest, decode_backend;
+    uint64_t packed_bytes = 0, packed_capacity_bytes = 0, source_float_bytes = 0;
+    uint64_t dense_capacity_bytes = 0, managed_peak_bytes = 0, fills = 0, decoded_bytes = 0;
+    double source_load_seconds = 0, decode_seconds = 0, exposed_wait_seconds = 0;
+    uint32_t slots = 0, prefetch = 0;
+    std::string source_residency;
+    uint64_t source_logical_bytes = 0, read_buffer_bytes = 0, source_read_bytes = 0;
+    double streamed_read_seconds = 0;
+    uint64_t refiner_fills = 0, refiner_capacity_bytes = 0, refiner_decoded_bytes = 0;
+    uint32_t refiner_slots = 0;
+    std::string precision_profile;
+    uint64_t gpu_affine_preparations=0,gpu_affine_output_bytes=0,gpu_prepare_capacity_upper=0;
+    uint64_t allocator_cache_limit_bytes=0;
+    double gpu_prepare_seconds=0;
+    uint64_t gpu_fixed_output_banks=0,gpu_fixed_output_bank_bytes=0;
+    std::string source_metadata_policy;
+    bool source_metadata_reused=false;
+    uint64_t source_metadata_preparations=0,conditioning_producer_generation=0;
+};
+struct QuantizedSourceComparison {
+    std::string name;
+    uint32_t step=0;
+    Float32Comparison metrics;
+    bool final_latent=false;
+};
+struct SharedLoraRankMetrics {
+    bool enabled = false;
+    uint64_t prepared_sets = 0;
+    uint64_t completed_hybrid_blocks = 0;
+    uint64_t completed_adapter_rank_arrays = 0;
+};
+struct QwenFfnPhaseCounters {
+    uint64_t steps = 0, rows = 0, runtime_calls = 0, completed_channel_blocks = 0;
+    double step_seconds = 0;
+};
+struct QwenFfnPhaseMetrics {
+    std::string policy;
+    QwenFfnPhaseCounters prefill, decode;
+};
+// Independent native DiT phase only. These metrics never grant encoder/VAE or
+// complete-request constrained-memory certification, and must not overwrite
+// the MLX allocator counters or whole-request memory_admission.
+struct NativeDenoiserPhaseMetrics {
+    MemoryAdmissionMetrics admission;
+    std::vector<MemoryTraceEvent> trace;
+    double prepare_seconds = 0;
+};
+// Actual independent GPU adapter execution, published only after all native
+// steps and latent publication physically complete. Never a request echo or
+// a model/performance qualification record.
+struct NativeDenoiserLoRAMetrics {
+    bool enabled = false, completed = false;
+    uint64_t source_generation = 0, adapter_count = 0, resolved_bindings = 0;
+    uint64_t logical_projections = 0, ordered_terms = 0, max_rank = 0;
+    uint64_t completed_steps = 0, scratch_bytes = 0;
+    float source_strength = 0;
+    std::string variant, adapter_sha256, verified_artifact_digest;
+    std::string adapter_revision, precision_recipe;
+};
+// Actual native W1 controller observations. Serialized host spans are not
+// additive GPU/ANE kernel time or proof of physical overlap/performance gain.
+// Completed FFNs may precede a failed step; only committed steps count below.
+struct NativeHybridDenoiserMetrics {
+    bool enabled = false;
+    uint64_t successful_ffns = 0, completed_hybrid_steps = 0;
+    uint64_t surface_bytes = 0, partial_bytes = 0;
+    double producer_seconds = 0, submit_ane_seconds = 0;
+    double branch_join_seconds = 0, consumer_seconds = 0, total_seconds = 0;
+    double producer_gpu_span_seconds = 0, gpu_complement_span_seconds = 0;
+    uint64_t device_timed_ffns = 0;
+    std::string weight_staging = "generic";
+    bool weight_scale_cache_enabled = false;
+    uint32_t weight_scale_cache_entries = 0;
+    uint64_t weight_scale_cache_payload_bytes = 0;
+    uint64_t weight_scale_cache_hits = 0, weight_scale_cache_misses = 0;
+};
+struct NativeEncoderExecutionMetrics {
+    std::string precision;
+    uint64_t vision_layers=0, language_layers=0, graph_submissions=0, dispatches=0;
+    uint64_t future_weight_windows=0, skipped_future_windows=0;
+    double preparation_seconds=0, source_ready_seconds=0, gpu_wait_seconds=0;
+    uint64_t ane_ffns=0, ane_chunks=0, ane_padded_rows=0;
+    double ane_producer_seconds=0, ane_branch_seconds=0, ane_consumer_seconds=0;
+    bool physically_complete=false, conditioning_cache_hit=false, vision_cache_hit=false;
+};
+struct NativePrefillExecutionMetrics {
+    uint64_t calls=0,chunks=0,valid_rows=0,padded_rows=0;
+    uint32_t bucket_rows=0;
+    double preparation_seconds=0,input_ready_seconds=0,producer_seconds=0,branch_seconds=0,consumer_seconds=0,total_seconds=0;
+    double prewarm_seconds=0;
+    bool physically_complete=false,preparation_reused=false;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
+    std::string source_comparison_profile="z-mlx-compat-affine-v1";
+    std::optional<uint64_t> convrot_allocator_cache_bytes;
+    bool convrot_allocator_cache_retained=false;
     std::string original_prompt, enhanced_prompt, enhanced_wh_ratio;
     std::string enhanced_ratio_follow;
     double prompt_enhance_seconds = 0;
@@ -215,14 +395,32 @@ struct RunResult {
     int text_tokens = 0, valid_text_tokens = 0, total_tokens = 0, reference_tokens = 0,
         actual_steps = 0;
     size_t lora_applied_projections = 0;
+    // Initial request-owned CPU digest only; post-bind verification stays
+    // synchronous. Time spent before joining is not measured time saved.
+    bool lora_verification_async = false;
+    double lora_verification_seconds = 0, lora_verification_wait_seconds = 0;
+    double lora_verification_before_join_seconds = 0;
     bool db_cache_enabled = false;
     float db_cache_threshold = 0.f;
     int db_cache_steps = 0, db_cache_max_consecutive = 0;
+    int db_cache_front_blocks = 8, db_cache_warmup_steps = 8;
+    bool student_ffn_reuse_enabled=false;
+    int student_ffn_requested_layers=0;
+    int student_ffn_captured_blocks=0,student_ffn_reused_blocks=0;
+    uint64_t student_ffn_peak_logical_bytes=0;
     Timings timings;
     uint64_t active_bytes = 0, peak_bytes = 0;
     std::optional<HybridMetrics> hybrid;
     std::optional<QkvMetrics> qkv;
     std::optional<HybridMetrics> encoder_hybrid;
+    std::optional<EncoderRuntimeReuseMetrics> encoder_runtime_reuse;
+    std::optional<EncoderWeightResidencyMetrics> encoder_weight_residency;
+    std::optional<SharedLoraRankMetrics> shared_lora_ranks;
+    std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
+    std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
+    std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
+    std::optional<NativeEncoderExecutionMetrics> native_encoder;
+    std::optional<NativePrefillExecutionMetrics> native_prefill;
     std::optional<BlockResidencyMetrics> block_residency;
     std::optional<StreamingRuntimeMetrics> streaming_runtime;
     std::vector<StreamingStageRuntimeMetrics> streaming_stages;
@@ -231,6 +429,13 @@ struct RunResult {
         streaming_receipt;
     std::optional<PublicStreamingSelectionMetrics> public_streaming;
     std::optional<MemoryAdmissionMetrics> memory_admission;
+    std::optional<NativeDenoiserPhaseMetrics> native_denoiser_memory_phase;
+    std::optional<NativeDenoiserLoRAMetrics> native_denoiser_lora;
+    std::optional<NativeHybridDenoiserMetrics> native_denoiser_hybrid;
+    std::optional<QuantizedExecutionMetrics> quantized_execution;
+    std::optional<QuantizedExecutionMetrics> encoder_quantized_execution;
+    std::optional<streaming::GgufPackedBankMetrics> gguf_import;
+    std::vector<QuantizedSourceComparison> quantized_source_comparisons;
     std::vector<MemoryTraceEvent> memory_trace;
     std::string native_json;
 };

@@ -1,6 +1,24 @@
 # GPU/ANE 后端维护说明
 
 本页说明代码职责与不可破坏的边界，不维护另一套跑分。
+双后端共用 Executor/graph/source/scheduler 合同，Public Core ML 仍是默认；
+Private client 动态加载，仅显式启用的 private build 包含私有 API。
+[W8A8 Executor](../../docs/status/private-ane-w8-executor-2026-10-03.md) 已接
+GPU dense/affine/raw-GGUF decode + Hadamard staging、完整 SwiGLU、LoRA
+hidden ABI 和恰好两套权重银行；[channel split](../../docs/status/private-ane-channel-split-2026-10-03.md)
+与[layer-ahead prefetch](../../docs/status/private-ane-prefetch-2026-10-03.md)也已实现。
+[compact scale cache 与首次提交 ordering](../../docs/status/private-ane-scale-cache-2026-10-04.md)
+保留 immutable generation、实际 pitch 与完整 GPU 失败重算边界。
+实现存在不等于资格通过：四格 ≥1.2×、完整 LoRA/画质、实际 device overlap、
+带宽校准与低内存资格仍未完成；不声称已观察到硬件 INT8 MAC。
+有界 A8 双槽、只读符号 metadata 与最新 share/LoRA 初筛见
+[A8 接续](../../docs/status/private-ane-a8-lookahead-2026-10-04.md)。稳定
+App package 检查 manifest flags、实际 private class strings 和 private
+framework link，拒绝 private research build；Public 默认与可分发边界不变。
+较大固定 bucket 与加载失败的真实 GPU label 见
+[1024² 接续](../../docs/status/private-ane-large-bucket-2026-10-04.md)。
+W8 staging 的 bounded function-constant variants 与同库开关见
+[专用化接续](../../docs/status/private-ane-stage-specialization-2026-10-04.md)。
 选路、性能、optional 开关及未完成项统一见
 [加速维护入口](../../docs/status/acceleration.md)；调用方式见
 [CLI 文档](../../docs/public/USAGE.md)。
@@ -11,9 +29,12 @@
 | --- | --- | --- |
 | 模型计算 | `../models/qwen21/`、`../models/z_image/` | 完整 GPU block、模型自己的 LoRA 修正与残差；不在通用后端复制模型实现 |
 | 冻结图桥接 | `coreml.mm`、模型 hybrid 实现 | 保留已测最快 base 图和独立的 base-only `lora_fused` 图；两类 manifest 不混用 |
-| FFN 编排 | `ane_ffn.hpp`、`ane_ffn.cpp` | token-row 分区、staging/输入就绪、GPU head 与 Core ML tail、输出所有权、失败后完整 GPU 重算 |
+| 共用执行器/选路 | `ane_runtime.hpp::Executor`、`ane_backend.{hpp,mm}` | 统一 shape/WeightView/LoRA/lifetime 合同；Public 默认，显式 Private 自测与 auto 失败回退 |
+| FFN 编排 | `ane_ffn.hpp`、`ane_ffn.cpp` | row/channel 分区、staging/输入就绪、future source callback、GPU/ANE 分支、一次 full-hidden down-LoRA、输出所有权、失败后完整 GPU 重算 |
 | 调度 | `ane_scheduler.hpp` | 按 layer/rows 采样完整 block，调整 chunks、周期复测；adapter 切换重置状态 |
 | Core ML 执行 | `ane_runtime.hpp`、`ane_runtime.mm` | 单个固定形状 runtime-weight 图、单层 slots、持久 worker、逐 chunk 执行与有限性检查 |
+| Private 基础执行 | `private/ane_{program,mil,executor}.*` | 动态 client、原生 FP16 MIL、对齐 surfaces、shared events/async owners、up-only headroom；非 W8A8/双缓冲资格 |
+| Private W8A8 | `private/ane_w8_executor.*`、`private/ane_w8_kernels.hpp`、`ane_w8a8_math.hpp` | GPU dense/affine/GGUF decode + H128/H512、row/channel、两套 W bank、有界 A8 双槽、ANE hidden rotation/quantization、GPU FP32 epilogue；prefetch 的两种机制可独立消融，不以 hits 推断收益 |
 | QKV 研究路由 | `ane_qkv.hpp`、`ane_qkv.cpp`、`ane_qkv_scheduler.hpp` | Qwen 1024² base 三份独立 Q/K/V 权重直填单一 MatMul 图；GPU 保留 norm/RoPE/attention/FFN，单独计数与失败重算 |
 | 可选内存准入 | `ane_memory.hpp`、`ane_memory.cpp` | 图加载前、resident 请求与 host scratch 扩容前的机会性余量检查；压力不足安全释放并回 GPU，非内存认证 |
 | 数据转换 | `ane_runtime_convert.hpp`、`ane_runtime_quant.hpp` | dense/affine SIMD staging、dtype/headroom 处理；不是 INT8 ANE 算术 |
@@ -42,7 +63,27 @@ y = h Wd^T + LoRA_down(h)
   加载 Core ML；先 drain worker/释放模型，后删快照。不可改回从用户原图
   延迟加载，否则源文件在校验后被替换会产生验证—使用间隙。真实移动源图
   后继续 prediction 的回归与旧/新库比较见[图快照记录](../../docs/status/runtime-ane-artifact-lease.md)。
+- 私有快照的新格式在 0700 目录中持有独占 `flock`；仅在锁已释放且
+  marker 的 uid/device/inode 与目录及锁文件一致时回收崩溃遗留。回收及析构删除
+  使用 descriptor-relative、no-follow 操作，拒绝外部链接、不明条目和
+  身份变化，失败写入 stderr。每次建图最多回收 16 个；旧格式、无完整
+  marker 的极早期崩溃空目录、最后移除 marker 后留下的空目录及权限受损
+  目录保守保留，不自动推断归属。
+  最后 rmdir 失败且原目录身份仍可证明时，重新独占创建并锁定 marker
+  以供重试；恢复失败或该短窗口崩溃仍可能留空目录，不承诺任意点零残留。
+  临时目录扫描最多 4096 项，单图删除最多 4096 项/32 层；超过限制保留
+  未删内容并记录诊断。快照子目录/文件显式采用 0700/0600，独立于 umask。
+  这是临时图生命周期保护，不承诺 Core ML 系统缓存完全不落盘，也不
+  改变权重、精度、选路或硬件资格。对应纯 host 回归不加载模型。
 - 部分 chunk 失败也不能发布半成品；保留整段 GPU 重算和失败计数。
+- runtime FFN/QKV 永久降级时立即退役本实例的 graph、worker、slots 和
+  host scratch，不把不可再用的图留到 GPU fallback 请求结束。先析构图
+  并等待 worker，再释放其借用的权重/输出存储；私有 lease 随图销毁。
+  失败的 GPU 尾段重算仍抛出原异常，清理不再访问已释放的图。取消及
+  外部 GPU/adapter callback 异常保持原有 drain/可重用语义，不因此
+  将正常图标为永久失效。模型层下一请求的重新准入策略保持不变。
+  这是源码修正；[本轮记录](../../docs/status/runtime-ane-failure-retirement-2026-10-01.md)
+  只有编译/静态证据，测试仍暂停。
 - 同 adapter 的 resident 请求可保留调度状态，切换 adapter/返回 base
   必须隔离。保留数值、非有限值、headroom、失败后状态回归。
   Qwen ref512 的 batch 诊断开关也允许显式 runtime 的 base 请求，便于

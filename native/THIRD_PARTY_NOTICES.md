@@ -1,5 +1,15 @@
 # Third-party notices
 
+The optional private ANE program layer adapts selectors, IOSurface layout and
+shared-event handoff from Splash PR #260, commit
+`0ac3d5b170523774d8c85cd86493908a64c80eee`, under Apache-2.0. TurboCider adds
+checked capabilities, SHA256/OS/device/ABI cache identity, named bindings,
+retained async ownership and distribution isolation. Source attribution and
+modification details are in `THIRD_PARTY_NOTICES/splash-ane.md`; the complete
+license is in `THIRD_PARTY_NOTICES/Apache-2.0.txt` (source), or
+`Splash-ANE-NOTICE.md` and `Splash-Apache-2.0.txt` (distribution). Model weights
+and Splash inference binaries are not distributed.
+
 The FLUX.2/Qwen3/VAE implementation was ported with reference to mflux
 (commit 12fd27ea7015c6c872ced51b56b313306a543dd2). Model weights are not distributed.
 

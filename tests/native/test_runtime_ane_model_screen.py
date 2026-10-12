@@ -21,6 +21,310 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class ScreenTests(unittest.TestCase):
+    def test_fp32_partial_requires_actual_private_channel_recipe(self):
+        row=copy.deepcopy(self.row)
+        runtime=row["hybrid"]["runtime_weight"]
+        runtime.update(fp32_channel_join_enabled=True,executor_backend="private_ane",partition_axis="intermediate_channels",
+            data_path="w8a8_hadamard",source_recipe="sylvester-dh-b128-b512-rne-norm-f16-v2+fp32-partial-join-v1")
+        SCREEN.validate_fp32_channel_join([row],True)
+        for changed in ({"fp32_channel_join_enabled":False},{"fp32_channel_join_enabled":1},
+                        {"source_recipe":"fp32_ane"},{"executor_backend":"public_coreml"},{"partition_axis":"rows"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(changed)
+            with self.subTest(changed=changed),self.assertRaises(ValueError):SCREEN.validate_fp32_channel_join([bad],True)
+        with self.assertRaises(ValueError):SCREEN.validate_fp32_channel_join([row],False)
+        declined=dict(hybrid=dict(runtime_calls_session_total=0,runtime_weight=dict(executor_backend=None,fp32_channel_join_enabled=False)))
+        SCREEN.validate_fp32_channel_join([declined],True,allow_gpu_decline=True)
+        with self.assertRaises(ValueError):SCREEN.validate_fp32_channel_join([declined],True)
+
+    def test_invalid_fp32_partial_options_fail_before_writes(self):
+        for extra in ([],["--runtime-backend","private"],
+                      ["--runtime-backend","private","--private-gpu-io","--private-data-path","w8a8"],
+                      ["--runtime-backend","private","--private-gpu-io","--private-data-path","w8a8","--private-channels","4096","--chunks","0"]):
+            with tempfile.TemporaryDirectory() as directory:
+                output=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id","qwen-image-2.1","--steps","6","--routes","gpu,runtime",
+                    "--fp32-channel-join","--output",str(output),*extra],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr);self.assertFalse(output.exists())
+    def test_invalid_explicit_gpu_policy_fails_before_output(self):
+        for model,routes,policy in (("qwen-image-2.1","gpu,runtime","2"),
+                                    ("z-image-turbo","gpu","2"),("z-image-turbo","gpu,runtime","2,2")):
+            with tempfile.TemporaryDirectory() as directory:
+                out=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,"-B",str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id",model,"--steps","8","--routes",routes,
+                    "--z-runtime-gpu-blocks",policy,"--output",str(out)],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertFalse(out.exists())
+    def test_deferred_channel_join_requires_actual_owned_untimed_execution(self):
+        row=copy.deepcopy(self.row)
+        r=row["hybrid"]["runtime_weight"]
+        r.update(executor_backend="private_ane",partition_axis="intermediate_channels",
+                 channel_blocks_session_total=2,async_hybrid_blocks_session_total=2,
+                 deferred_channel_join_enabled=True,deferred_channel_join_blocks_session_total=2,
+                 post_join_scope="host_graph_construction_deferred_gpu_consumption")
+        COMMON.validate_deferred_channel_join([row],True)
+        for change in ({"deferred_channel_join_enabled":False},
+                       {"deferred_channel_join_blocks_session_total":0},
+                       {"async_hybrid_blocks_session_total":1},
+                       {"post_join_scope":"evaluated_join_host_span"},
+                       {"executor_backend":"public_coreml"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.assertRaises(ValueError):COMMON.validate_deferred_channel_join([bad],True)
+        r.update(deferred_channel_join_enabled=False,deferred_channel_join_blocks_session_total=0,
+                 post_join_scope="evaluated_join_host_span")
+        COMMON.validate_deferred_channel_join([row],False)
+        with self.assertRaises(ValueError):COMMON.validate_deferred_channel_join([],True)
+
+    def test_deferred_join_receipts_are_complete_bounded_and_monotonic(self):
+        row=copy.deepcopy(self.row)
+        receipt=row["hybrid"]["runtime_weight"]
+        group=dict(deferred_channel_join_enabled=True,deferred_channel_join_blocks_session_total=1,
+                   post_join_scope="mixed_evaluated_and_deferred_join_spans")
+        receipt.update(channel_blocks_session_total=2,hybrid_blocks_session_total=2,
+                       untimed_hybrid_blocks_session_total=2,async_hybrid_blocks_session_total=2,
+                       async_ane_wait_seconds_session_total=.1,hybrid_ffn_seconds_session_total=.2,**group)
+        SCREEN.validate_results([row],"runtime",1)
+        for change in ({"deferred_channel_join_enabled":False},{"deferred_channel_join_enabled":1},
+                       {"deferred_channel_join_blocks_session_total":True},
+                       {"deferred_channel_join_blocks_session_total":-1},
+                       {"deferred_channel_join_blocks_session_total":3},
+                       {"async_hybrid_blocks_session_total":0},
+                       {"post_join_scope":"evaluated_join_host_span"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                SCREEN.validate_results([bad],"runtime",1)
+        for name in group:
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.subTest(name=name),self.assertRaises(ValueError):
+                SCREEN.validate_results([bad],"runtime",1)
+        later=copy.deepcopy(row)
+        later["hybrid"]["runtime_weight"].update(deferred_channel_join_blocks_session_total=2,
+                                               post_join_scope="host_graph_construction_deferred_gpu_consumption")
+        SCREEN.validate_results([row,later],"runtime",2)
+        with self.assertRaises(ValueError):SCREEN.validate_results([later,row],"runtime",2)
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,self.row],"runtime",2)
+        changed=copy.deepcopy(row)
+        changed["hybrid"]["runtime_weight"].update(deferred_channel_join_enabled=False,
+            deferred_channel_join_blocks_session_total=0,post_join_scope="evaluated_join_host_span")
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,changed],"runtime",2)
+
+    def test_deferred_join_invalid_screen_options_are_rejected_before_output(self):
+        for options in ([],["--fixed-async","1"],["--private-channels","4096"],
+                        ["--fixed-async","1","--profile"]):
+            with tempfile.TemporaryDirectory() as directory:
+                out=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,"-B",str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id","z-image-turbo","--steps","8",
+                    "--routes","gpu,runtime","--chunks","1","--defer-channel-join","1",
+                    "--output",str(out),*options],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertFalse(out.exists())
+
+    def test_qwen_lora_1024_environment_is_matched_and_limited(self):
+        options=dict(model_id="qwen-image-2.1",size=1024,steps=6,enabled=True,
+                     has_lora=True,references=False,fp16=False,routes=("gpu","runtime"))
+        self.assertEqual(COMMON.qwen_lora_1024_environment(**options),
+                         {"TURBOCIDER_QWEN21_LORA_1024_DIAGNOSTIC":"1"})
+        self.assertEqual(COMMON.qwen_lora_1024_environment(**{**options,"enabled":False}),{})
+        for changes in ({"model_id":"z-image-turbo"},{"size":512},{"steps":40},
+                        {"has_lora":False},{"references":True},{"fp16":True},
+                        {"routes":("gpu","frozen")},{"routes":()}):
+            with self.subTest(changes=changes),self.assertRaises(ValueError):
+                COMMON.qwen_lora_1024_environment(**{**options,**changes})
+
+    def test_qwen_lora_1024_requires_actual_plan_and_fp32_execution(self):
+        row=dict(width=1024,height=1024,actual_denoise_steps=6,lora_strategy="inference_time",
+                 acceleration_selection="experimental 1024px six-step runtime LoRA generation, FP32 rank",
+                 plan={"algorithm_approximations":["qwen21_lora_1024_generation_fp32_diagnostic"]})
+        COMMON.validate_qwen_lora_1024_receipts([row],True)
+        COMMON.validate_qwen_lora_1024_receipts([{}],False)
+        for change in ({"width":512},{"width":1024.0},{"actual_denoise_steps":True},
+                       {"actual_denoise_steps":40},{"lora_strategy":"in_memory_merge"},
+                       {"plan":{}},{"acceleration_selection":"configured only"},
+                       {"plan":{"algorithm_approximations":["qwen21_lora_1024_generation_fp32_diagnostic",
+                                                             "qwen21_viggle_lora_fp16_matmuls"]}},
+                       {"acceleration_selection":row["acceleration_selection"]+
+                        "; experimental FP16 low-rank LoRA matmuls"}):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                COMMON.validate_qwen_lora_1024_receipts([{**row,**change}],True)
+        with self.assertRaises(ValueError):
+            COMMON.validate_qwen_lora_1024_receipts([row],False)
+        with self.assertRaises(ValueError):
+            COMMON.validate_qwen_lora_1024_receipts([],True)
+
+    def test_qwen_lora_1024_invalid_options_do_not_create_output(self):
+        for extras in ([],["--lora","missing.safetensors","--qwen-lora-fp16"],
+                       ["--lora","missing.safetensors","--reference","missing.png"],
+                       ["--lora","missing.safetensors","--routes","gpu,frozen"]):
+            with tempfile.TemporaryDirectory() as directory:
+                output=Path(directory)/"unused"
+                result=subprocess.run([sys.executable,"-B",str(ROOT/"tools/validation/runtime_ane_model_screen.py"),
+                    "--model","unused","--model-id","qwen-image-2.1","--size","1024",
+                    "--steps","6","--routes","gpu","--output",str(output),"--qwen-lora-1024",*extras],
+                    capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertFalse(output.exists())
+
+    def test_fixed_async_requires_actual_successful_untimed_heads(self):
+        row=copy.deepcopy(self.row);runtime=row["hybrid"]["runtime_weight"]
+        runtime.update(hybrid_blocks_session_total=8,untimed_hybrid_blocks_session_total=8,async_hybrid_blocks_session_total=8)
+        SCREEN.validate_fixed_async([row],True)
+        with self.assertRaises(ValueError):SCREEN.validate_fixed_async([row],False)
+        for change in ({"hybrid_blocks_session_total":0},{"untimed_hybrid_blocks_session_total":7},
+                       {"async_hybrid_blocks_session_total":7},{"async_hybrid_blocks_session_total":True}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_fixed_async([bad],True)
+        runtime.update(untimed_hybrid_blocks_session_total=0,async_hybrid_blocks_session_total=0)
+        SCREEN.validate_fixed_async([row],False)
+        with self.assertRaises(ValueError):SCREEN.validate_fixed_async([],True)
+    def test_lora_channel_correction_counters_are_complete_and_monotonic(self):
+        row=copy.deepcopy(self.row)
+        row["hybrid"]["runtime_weight"].update(lora_channel_range_calls_session_total=2,lora_channel_full_calls_session_total=1)
+        SCREEN.validate_results([row],"runtime",1)
+        for key in ("lora_channel_range_calls_session_total","lora_channel_full_calls_session_total"):
+            for value in (-1,True,.5):
+                bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"][key]=value
+                with self.subTest(key=key,value=value),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][key]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+            later=copy.deepcopy(row);later["hybrid"]["runtime_weight"][key]=0
+            with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",2)
+        later=copy.deepcopy(self.row)
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",2)
+
+    def test_explicit_lora_channel_ablation_requires_actual_executed_receipt(self):
+        row=copy.deepcopy(self.row);row["lora_strategy"]="inference_time"
+        runtime=row["hybrid"]["runtime_weight"]
+        runtime.update(executor_backend="private_ane",partition_axis="intermediate_channels",
+                       lora_channel_range_calls_session_total=2,lora_channel_full_calls_session_total=0)
+        SCREEN.validate_lora_channel_range([row],True)
+        with self.assertRaises(ValueError):SCREEN.validate_lora_channel_range([row],False)
+        for change in ({"lora_channel_range_calls_session_total":0},{"lora_channel_full_calls_session_total":1},
+                       {"executor_backend":"public_coreml"},{"partition_axis":"rows"}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_lora_channel_range([bad],True)
+        runtime.update(lora_channel_range_calls_session_total=0,lora_channel_full_calls_session_total=2)
+        SCREEN.validate_lora_channel_range([row],False)
+        with self.assertRaises(ValueError):SCREEN.validate_lora_channel_range([],False)
+
+    def test_specialized_stage_receipts_are_complete_and_bounded(self):
+        row=copy.deepcopy(self.row)
+        row["hybrid"]["runtime_weight"].update(stage_specialized=True,stage_pipeline_variants=18)
+        SCREEN.validate_results([row],"runtime",1)
+        for change in ({"stage_specialized":False},{"stage_specialized":1},{"stage_pipeline_variants":19},
+                       {"stage_pipeline_variants":True}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        for name in ("stage_specialized","stage_pipeline_variants"):
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        later=copy.deepcopy(row);later["hybrid"]["runtime_weight"]["stage_pipeline_variants"]=17
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",1)
+        later=copy.deepcopy(row)
+        for name in ("stage_specialized","stage_pipeline_variants"):del later["hybrid"]["runtime_weight"][name]
+        with self.assertRaises(ValueError):SCREEN.validate_results([row,later],"runtime",1)
+    def test_a8_lookahead_receipts_are_complete_and_bounded(self):
+        row = copy.deepcopy(self.row)
+        runtime = row["hybrid"]["runtime_weight"]
+        good = {"a8_lookahead_enabled": True, "a8_prefetches_session_total": 1,
+                "a8_wait_seconds_session_total": .001}
+        runtime.update(good)
+        SCREEN.validate_results([row], "runtime", 1)
+        for change in ({"a8_lookahead_enabled": False}, {"a8_lookahead_enabled": 1},
+                       {"a8_prefetches_session_total": True}, {"a8_prefetches_session_total": 999},
+                       {"a8_wait_seconds_session_total": float("nan")}, {"a8_wait_seconds_session_total": True}):
+            bad = copy.deepcopy(row)
+            bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                SCREEN.validate_results([bad], "runtime", 1)
+        for name in good:
+            bad = copy.deepcopy(row)
+            del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):
+                SCREEN.validate_results([bad], "runtime", 1)
+        for change in ({"a8_prefetches_session_total": 0}, {"a8_wait_seconds_session_total": 0},
+                       {"a8_lookahead_enabled": False, "a8_prefetches_session_total": 0}):
+            later = copy.deepcopy(row)
+            later["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                SCREEN.validate_results([row, later], "runtime", 1)
+        runtime.update(a8_lookahead_enabled=False, a8_prefetches_session_total=0)
+        SCREEN.validate_results([row], "runtime", 1)
+    def test_scale_cache_receipts_are_complete_bounded_metadata(self):
+        row=copy.deepcopy(self.row);runtime=row["hybrid"]["runtime_weight"]
+        good={"scale_cache_enabled":True,"scale_cache_hits_session_total":4,"scale_cache_misses_session_total":3,
+              "scale_cache_entries":3,"scale_cache_bytes":1536,"scale_cache_evictions_session_total":0}
+        runtime.update(good);SCREEN.validate_results([row],"runtime",1)
+        for change in ({"scale_cache_enabled":False},{"scale_cache_enabled":1},{"scale_cache_entries":129},
+                       {"scale_cache_bytes":(4<<20)+1},{"scale_cache_hits_session_total":True},{"scale_cache_entries":0}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        for name in good:
+            if name=="scale_cache_enabled":continue
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+    def test_future_bank_receipts_require_complete_bounded_counters(self):
+        row=copy.deepcopy(self.row)
+        receipt=row["hybrid"]["runtime_weight"]
+        good={"prefetch_enabled":True,"prefetch_submissions_session_total":5,"prefetch_hits_session_total":3,
+              "prefetch_discards_session_total":1,"prefetch_failures_session_total":0,"prefetch_wait_seconds_session_total":.01}
+        receipt.update(good);SCREEN.validate_results([row],"runtime",1)
+        for change in ({"prefetch_hits_session_total":5},{"prefetch_enabled":False},{"prefetch_enabled":1},
+                       {"prefetch_discards_session_total":True},{"prefetch_wait_seconds_session_total":float("nan")}):
+            bad=copy.deepcopy(row);bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change),self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+        for name in good:
+            if name=="prefetch_enabled":continue
+            bad=copy.deepcopy(row);del bad["hybrid"]["runtime_weight"][name]
+            with self.assertRaises(ValueError):SCREEN.validate_results([bad],"runtime",1)
+    def test_w8a8_screen_rejects_fp16_or_missing_data_path(self):
+        row = copy.deepcopy(self.row)
+        row["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        runtime = row["hybrid"]["runtime_weight"]
+        runtime.update(executor_backend="private_ane", io_path="gpu_iosurface", data_path="w8a8_hadamard",
+                       device_io_calls_session_total=row["hybrid"]["runtime_calls_session_total"])
+        SCREEN.validate_results([row], "runtime", 1, runtime_backend="private", expect_device_io=True,
+                                expected_data_path="w8a8_hadamard")
+        for path in (None, "fp16", "w8a8"):
+            bad = copy.deepcopy(row); bad["hybrid"]["runtime_weight"]["data_path"] = path
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "data path"):
+                SCREEN.validate_results([bad], "runtime", 1, runtime_backend="private", expect_device_io=True,
+                                        expected_data_path="w8a8_hadamard")
+
+    def test_private_gpu_io_requires_matching_receipt_for_all_predictions(self):
+        row = copy.deepcopy(self.row)
+        row["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        runtime = row["hybrid"]["runtime_weight"]
+        runtime.update(executor_backend="private_ane", io_path="gpu_iosurface",
+                       device_io_calls_session_total=row["hybrid"]["runtime_calls_session_total"])
+        SCREEN.validate_results([row], "runtime", 1, runtime_backend="private", expect_device_io=True)
+        for change in ({"io_path": "host"}, {"device_io_calls_session_total": 0},
+                       {"device_io_calls_session_total": True}, {"executor_backend": "public_coreml"}):
+            bad = copy.deepcopy(row); bad["hybrid"]["runtime_weight"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                SCREEN.validate_results([bad], "runtime", 1, runtime_backend="private", expect_device_io=True)
+    def test_private_backend_is_explicit_and_cannot_masquerade_as_public(self):
+        row = copy.deepcopy(self.row)
+        row["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        runtime = row["hybrid"]["runtime_weight"]
+        runtime["executor_backend"] = "private_ane"
+        for policy in ("private", "auto"):
+            SCREEN.validate_results([row], "runtime", 1, runtime_backend=policy)
+        with self.assertRaisesRegex(ValueError, "backend"):
+            SCREEN.validate_results([row], "runtime", 1)
+        runtime["executor_backend"] = "public_coreml"
+        with self.assertRaisesRegex(ValueError, "telemetry"):
+            SCREEN.validate_results([row], "runtime", 1, runtime_backend="private")
+        row["runtime_backend"] = "mlx_cpp_metal+coreml_runtime_weight"
+        SCREEN.validate_results([row], "runtime", 1, runtime_backend="auto")
+        with self.assertRaisesRegex(ValueError, "backend"):
+            SCREEN.validate_results([row], "runtime", 1, runtime_backend="private")
+        private = copy.deepcopy(row)
+        private["runtime_backend"] = "mlx_cpp_metal+private_ane_runtime_weight_experimental"
+        private["hybrid"]["runtime_weight"]["executor_backend"] = "private_ane"
+        with self.assertRaisesRegex(ValueError, "changed"):
+            SCREEN.validate_results([row, private], "runtime", 2, runtime_backend="auto")
     def test_qkv_receipts_do_not_accept_gpu_fallback_or_ffn_counts(self):
         row = {"runtime_backend": "mlx_cpp_metal+coreml_runtime_qkv",
                "timings_seconds": {"request_wall": 2., "denoise": 1.},
@@ -130,6 +434,10 @@ assert not any(name in sys.modules for name in (
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch)/"screen"
             for option in (("--chunks", "129"), ("--timeout", "0"),
+                           ("--private-data-path", "w8a8"),
+                           ("--private-lora-channel-range", "0"), ("--private-lora-channel-range", "1"),
+                           ("--fixed-async", "1"),
+                           ("--private-channels", "512"), ("--private-channels", "-1"),
                            ("--sample-memory", "--memory-interval-ms", "0"),
                            ("--sample-memory", "--memory-max-gap-ms", "99"),
                            ("--memory-interval-ms", "200"), ("--qwen-qk-norm-rope",)):
@@ -222,7 +530,7 @@ assert not any(name in sys.modules for name in (
             with mock.patch.object(SCREEN, "ROOT", root), \
                     mock.patch.object(SCREEN, "wait_for_idle", return_value="idle"), \
                     mock.patch.object(SCREEN, "system_memory", return_value={}), \
-                    mock.patch.object(SCREEN.subprocess, "run", side_effect=run), \
+                    mock.patch.object(SCREEN, "run_owned", side_effect=run), \
                     mock.patch.dict(COMMON.os.environ, {"TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE": "1"}), \
                     mock.patch("builtins.print"):
                 for enabled in (False, True):
@@ -315,7 +623,7 @@ assert not any(name in sys.modules for name in (
             with mock.patch.object(SCREEN, "ROOT", root), \
                     mock.patch.object(SCREEN, "wait_for_idle", return_value="idle"), \
                     mock.patch.object(SCREEN, "system_memory", return_value={}), \
-                    mock.patch.object(SCREEN.subprocess, "run", side_effect=run), \
+                    mock.patch.object(SCREEN, "run_owned", side_effect=run), \
                     mock.patch.dict(COMMON.os.environ, {"TURBOCIDER_QWEN21_VIGGLE_LORA_FP16": "1",
                                                       "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE": "1"}), \
                     mock.patch("builtins.print"):
@@ -505,7 +813,7 @@ assert not any(name in sys.modules for name in (
             with mock.patch.object(SCREEN, "ROOT", root), \
                     mock.patch.object(SCREEN, "wait_for_idle", return_value="idle"), \
                     mock.patch.object(SCREEN, "system_memory", return_value={}), \
-                    mock.patch.object(SCREEN.subprocess, "run", side_effect=run), \
+                    mock.patch.object(SCREEN, "run_owned", side_effect=run), \
                     mock.patch("builtins.print"):
                 output = root/"good"
                 with mock.patch.object(sys, "argv", [*args, "--output", str(output)]):
@@ -551,7 +859,7 @@ assert not any(name in sys.modules for name in (
                 (isolated / "libturbocider.dylib").write_bytes(b"isolated library")
                 output = root / "isolated-screen"
                 with mock.patch.object(sys, "argv", [*args, "--cli", str(cli), "--output", str(output)]), \
-                        mock.patch.object(SCREEN.subprocess, "run", side_effect=run) as launch:
+                        mock.patch.object(SCREEN, "run_owned", side_effect=run) as launch:
                     SCREEN.main()
                 summary = json.loads((output / "summary.json").read_text())
                 self.assertEqual(summary["library_sha256"], hashlib.sha256(b"isolated library").hexdigest())
@@ -620,6 +928,8 @@ assert not any(name in sys.modules for name in (
     def test_benchmark_environment_is_shared_and_does_not_modify_parent(self):
         source = {"PATH": "bin", "TURBOCIDER_QWEN21_PROFILE_GPU_OPS": "1",
                   "TURBOCIDER_Z_RUNTIME_LORA_DIRECT_FP16": "1",
+                  "TURBOCIDER_PRIVATE_ANE_DATA_PATH": "w8a8",
+                  "TURBOCIDER_ALLOW_PRIVATE_ANE": "1", "TURBOCIDER_ANE_BACKEND": "private",
                   "TURBOCIDER_RUNTIME_ANE_CHUNKS": "99"}
         with mock.patch.dict(COMMON.os.environ, source, clear=True):
             self.assertEqual(SCREEN.benchmark_environment(), {"PATH": "bin"})

@@ -1,5 +1,9 @@
 #import <Foundation/Foundation.h>
 #include "turbocider/turbocider.h"
+#include "../../native/core/json_keys.hpp"
+#include "capabilities.hpp"
+#include "rpc_page_numbers.hpp"
+#include "library_inventory.hpp"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -13,6 +17,7 @@
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -33,7 +38,60 @@ std::string encode(id object) {NSData *data=[NSJSONSerialization dataWithJSONObj
 id decode(const std::string& text) {return [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:text.data() length:text.size()] options:0 error:nil];}
 std::string take(char *text){if(!text)return {};std::string value(text);tc_string_free(text);return value;}
 void check(bool condition,const char *message){if(!condition)throw std::invalid_argument(message);}
-std::string field(NSDictionary *object,NSString *key){id v=object[key];check([v isKindOfClass:NSString.class],"missing or invalid string field");return [v UTF8String];}
+std::string field(NSDictionary *object,NSString *key){
+    check([object isKindOfClass:NSDictionary.class],"RPC must be object");
+    id value=object[key];
+    if(![value isKindOfClass:NSString.class] || [value length]==0)
+        throw std::invalid_argument(std::string(key.UTF8String)+" must be a nonempty string");
+    const char *bytes=[value UTF8String];
+    check(bytes && strlen(bytes)==[value lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
+          "embedded NUL is not allowed in RPC string fields");
+    return bytes;
+}
+constexpr size_t rpc_max_bytes=1048576;
+std::string validate_rpc(NSDictionary *request);
+NSDictionary *parse_rpc(const std::string &text) {
+    check(text.size()<=rpc_max_bytes,"RPC request exceeds 1 MiB");
+    // Preserve the wire representation until duplicate and escaped keys have
+    // been checked; a Foundation dictionary would already have folded them.
+    tc::reject_duplicate_json_keys(text);
+    id request=decode(text);
+    if(!request)request=tc_service::decode_exact_jobs_envelope(text);
+    check([request isKindOfClass:NSDictionary.class],"RPC must be a valid JSON object");
+    if(validate_rpc(request)=="jobs") tc_service::validate_page_number_tokens(text);
+    return request;
+}
+std::string validate_rpc(NSDictionary *request) {
+    const auto name=field(request,@"action");
+    NSDictionary *schema=nil;
+    for(NSDictionary *action in tc_service_capabilities()[@"actions"])
+        if([action[@"name"] isEqual:request[@"action"]]) {schema=action[@"input_schema"];break;}
+    check(schema!=nil,"unknown action");
+    NSDictionary *properties=schema[@"properties"];
+    for(NSString *key in request)
+        if(!properties[key])throw std::invalid_argument("unknown RPC field: "+std::string(key.UTF8String));
+    for(NSString *key in schema[@"required"])
+        if(!request[key])throw std::invalid_argument("missing RPC field: "+std::string(key.UTF8String));
+    for(NSString *key in properties) {
+        id value=request[key];if(!value)continue;
+        NSDictionary *property=properties[key];NSString *type=property[@"type"];
+        if([type isEqual:@"string"]) {(void)field(request,key);}
+        else if([type isEqual:@"object"]) {
+            if(![value isKindOfClass:NSDictionary.class])
+                throw std::invalid_argument(std::string(key.UTF8String)+" must be object");
+        } else if([type isEqual:@"integer"]) {
+            check([value isKindOfClass:NSNumber.class] &&
+                  CFGetTypeID((__bridge CFTypeRef)value)!=CFBooleanGetTypeID(),
+                  "RPC page fields must be integers, not booleans or strings");
+            const double number=[value doubleValue];
+            if(!std::isfinite(number) || number!=std::floor(number) ||
+               number<[property[@"minimum"] doubleValue] ||
+               number>[property[@"maximum"] doubleValue])
+                throw std::invalid_argument(std::string(key.UTF8String)+" is outside the supported integer range");
+        } else if(type) throw std::invalid_argument("unsupported RPC envelope field type");
+    }
+    return name;
+}
 std::string read_text(const std::filesystem::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream.good()) return {};
@@ -361,7 +419,9 @@ class Service {
             bool resident_candidate=job.route_resolved ?
                 job.resident_candidate :
                 resident_ltx_candidate_request(job.value[@"request"]);
-            bool resident_reuse=!external_worker && resident_candidate &&
+            // Every native model can reuse the service-owned engine. This
+            // does not promise weight residency or a conditioning-cache hit.
+            bool session_reuse=!external_worker &&
                 engine_ != nullptr && loaded_ == identity;
             char *error=nullptr,*result=nullptr;int status=0;
             try {
@@ -372,8 +432,10 @@ class Service {
                 persist(job);
             }catch(const std::exception& e){job.value[@"state"]=@"failed";job.value[@"error"]=@(e.what());continue;}
             if(external_worker){tc_engine_free(engine_);engine_=nullptr;loaded_.clear();}
-            else if(loaded_!=identity){
-                tc_engine_free(engine_);engine_=nullptr;
+            else if(!engine_ || loaded_!=identity){
+                // A failed replacement must not leave the previous identity
+                // attached to a freed engine and block a later retry.
+                tc_engine_free(engine_);engine_=nullptr;loaded_.clear();
                 status=tc_engine_create_model(
                     model.c_str(),path.c_str(),&engine_,&error);
                 if(!status)loaded_=identity;
@@ -401,7 +463,7 @@ class Service {
                 result_value[@"service_execution_path"] =
                     external_worker ? @"disposable_worker" :
                     (resident_candidate ? @"resident_session" : @"native_session");
-                result_value[@"service_session_reused"] = @(resident_reuse);
+                result_value[@"service_session_reused"] = @(session_reuse);
                 job.value[@"result"] = result_value;
             }
             try{persist(job);}catch(const std::exception& e){job.value[@"storage_error"]=@(e.what());}
@@ -442,10 +504,25 @@ public:
         }
         worker_=std::thread([this]{run();});
     }
-    ~Service(){ {std::lock_guard<std::mutex> lock(mutex_);closing_=true;tc_engine_cancel(engine_);if(active_child_>0)::kill(active_child_,SIGTERM);for(auto& id:pending_){auto&job=jobs_.at(id);job.value[@"state"]=@"interrupted";try{persist(job);}catch(...){}}}available_.notify_one();worker_.join();tc_engine_free(engine_);}
-    id rpc(NSDictionary *request) {
-        auto action=field(request,@"action");
+    ~Service(){ {std::lock_guard<std::mutex> lock(mutex_);closing_=true;tc_engine_cancel(engine_);if(active_child_>0)::kill(active_child_,SIGTERM);for(auto& id:pending_){auto&job=jobs_.at(id);if(![job.value[@"state"] isEqual:@"queued"])continue;job.value[@"state"]=@"interrupted";try{persist(job);}catch(...){}}}available_.notify_one();worker_.join();tc_engine_free(engine_);}
+    id rpc(NSDictionary *request, const std::function<bool()> &shouldStop) {
+        auto action=validate_rpc(request);
+        if(action=="capabilities")return tc_service_capabilities();
         if(action=="models")return decode(take(tc_models_json()));
+        if(action=="workflows")return decode(take(tc_workflows_json()));
+        if(action=="workflow_request") {
+            char *result=nullptr,*error=nullptr;auto text=encode(request[@"input"]);
+            auto status=tc_workflow_request_json(text.c_str(),&result,&error);
+            auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);
+        }
+        if(action=="image_prepare") {
+            // Explicit CPU file preparation runs on serial RPC dispatch, never
+            // under the inference/progress mutex. No model is loaded here.
+            char *result=nullptr,*error=nullptr;auto text=encode(request[@"input"]);
+            auto status=tc_image_prepare_json(text.c_str(),&result,&error);
+            auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);
+        }
+        if(action=="installations")return tc_service::library_inventory(executable_,shouldStop);
         if(action=="doctor")return decode(take(tc_system_json()));
         if(action=="plan") {char *result=nullptr,*error=nullptr;auto text=encode(request[@"request"]);auto status=tc_plan_json(text.c_str(),&result,&error);auto value=take(result),message=take(error);check(status==0,message.c_str());return decode(value);}
         std::lock_guard<std::mutex> lock(mutex_);
@@ -488,15 +565,25 @@ public:
         if(action=="cancel") {
             if([@[@"queued",@"running",@"cancelling"] containsObject:job.value[@"state"]]){
                 job.cancellation=true;job.value[@"state"]=active_==id?@"cancelling":@"cancelled";if(active_==id){if(active_child_>0)::kill(active_child_,SIGTERM);else tc_engine_cancel(engine_);}persist(job);
+                if(active_!=id)std::erase(pending_,id);
             }
         }else check(action=="status","unknown action");
         return decode(encode(job.value));
     }
 };
 sockaddr_un address(const char *path){sockaddr_un a{};a.sun_family=AF_UNIX;check(strlen(path)<sizeof(a.sun_path),"socket path too long");strcpy(a.sun_path,path);return a;}
-std::string receive(int fd){std::string text;char buffer[4096];while(text.size()<=1<<20){ssize_t n=read(fd,buffer,sizeof(buffer));check(n>0,"connection ended before newline");text.append(buffer,n);auto end=text.find('\n');if(end!=std::string::npos){text.resize(end);return text;}}throw std::invalid_argument("request exceeds 1 MiB");}
+std::string receive(int fd,size_t maximum=rpc_max_bytes){
+    std::string text;char buffer[4096];
+    for(;;){
+        ssize_t n=read(fd,buffer,sizeof(buffer));check(n>0,"connection ended before newline");
+        const char *newline=static_cast<const char*>(memchr(buffer,'\n',size_t(n)));
+        const size_t count=newline?size_t(newline-buffer):size_t(n);
+        check(count<=maximum-text.size(),"JSON message exceeds the transport size limit");
+        text.append(buffer,count);if(newline)return text;
+    }
+}
 void send_all(int fd,const std::string& text){size_t offset=0;while(offset<text.size()){auto n=write(fd,text.data()+offset,text.size()-offset);check(n>0,"connection write failed");offset+=n;}}
-void configure(int fd){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));timeval timeout{5,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));}
+void configure(int fd,int seconds=5){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));timeval timeout{seconds,0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));}
 }
 int tc_service_main(const char *socket_path,const char *directory,const char *executable) {@autoreleasepool{try {
     pid_t owner=0;
@@ -522,12 +609,17 @@ int tc_service_main(const char *socket_path,const char *directory,const char *ex
     check(executable&&*executable,"service executable path is required");
     Service service(directory,executable);stopping=0;std::signal(SIGINT,stop_service);std::signal(SIGTERM,stop_service);
     std::cout<<"{\"ready\":true}"<<std::endl;
-    while(!stopping){if(owner&&getppid()!=owner)break;pollfd p{server.fd,POLLIN,0};if(poll(&p,1,200)<=0)continue;File client{accept(server.fd,nullptr,nullptr)};if(client.fd<0)continue;configure(client.fd);
-        @autoreleasepool {try{id request=decode(receive(client.fd));check([request isKindOfClass:NSDictionary.class],"RPC must be object");id result=service.rpc(request);send_all(client.fd,encode(@{@"ok":@YES,@"result":result})+"\n");}catch(const std::exception& e){try{send_all(client.fd,encode(@{@"ok":@NO,@"error":@(e.what())})+"\n");}catch(...){}}}
+    while(!stopping){tc_service::reap_inventory_children();if(owner&&getppid()!=owner)break;pollfd p{server.fd,POLLIN,0};if(poll(&p,1,200)<=0)continue;File client{accept(server.fd,nullptr,nullptr)};if(client.fd<0)continue;configure(client.fd);
+        @autoreleasepool {try{NSDictionary *request=parse_rpc(receive(client.fd));id result=service.rpc(request,[owner]{return stopping||(owner&&getppid()!=owner);});send_all(client.fd,encode(@{@"ok":@YES,@"result":result})+"\n");}catch(const std::exception& e){try{send_all(client.fd,encode(@{@"ok":@NO,@"error":@(e.what())})+"\n");}catch(...){}}}
     }
+    tc_service::reap_inventory_children();
     std::signal(SIGINT,SIG_DFL);std::signal(SIGTERM,SIG_DFL);return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}}}
 int tc_rpc_main(const char *socket_path,const char *file) {@autoreleasepool{try{
-    NSData *data=[NSData dataWithContentsOfFile:@(file)];check(data!=nil,"cannot read RPC request");auto a=address(socket_path);File client{socket(AF_UNIX,SOCK_STREAM,0)};check(client.fd>=0,"cannot create socket");configure(client.fd);check(connect(client.fd,(sockaddr*)&a,sizeof(a))==0,"cannot connect to service");
-    id payload=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];check([payload isKindOfClass:NSDictionary.class],"RPC request must be object");send_all(client.fd,encode(payload)+"\n");std::cout<<receive(client.fd)<<std::endl;return 0;
+    NSData *data=[NSData dataWithContentsOfFile:@(file)];check(data!=nil,"cannot read RPC request");
+    auto payload=parse_rpc(std::string((const char*)data.bytes,data.length));
+    auto encoded=encode(payload);check(encoded.size()<=rpc_max_bytes,"RPC request exceeds 1 MiB");
+    const bool inventory=[payload[@"action"] isEqual:@"installations"];
+    auto a=address(socket_path);File client{socket(AF_UNIX,SOCK_STREAM,0)};check(client.fd>=0,"cannot create socket");configure(client.fd,inventory?12:5);check(connect(client.fd,(sockaddr*)&a,sizeof(a))==0,"cannot connect to service");
+    send_all(client.fd,encoded+"\n");std::cout<<receive(client.fd,inventory?tc_service::library_inventory_stdout_max+65536:rpc_max_bytes)<<std::endl;return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}}}

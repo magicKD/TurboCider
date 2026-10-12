@@ -1,5 +1,8 @@
 #include "session.hpp"
+#include "quantized_execution_profiles.hpp"
 #include "streaming/public_request_validation.hpp"
+#include "../models/qwen21/memory_policy.hpp"
+#include "../models/qwen21/native_route.hpp"
 #include <set>
 #include <cmath>
 #include <algorithm>
@@ -67,6 +70,31 @@ static ExecutionPlan make_plan_impl(
         const Request &requested,
         bool public_streaming_prevalidated) {
     Request r = requested;
+    qwen21::validate_native_denoiser_request(r);
+    validate_quantized_execution(r.quantized_execution);
+    if (r.quantized_execution.active()) {
+        const bool dense_bf16 = r.quantized_execution.precision_profile == "z-dense-bf16-v1";
+        const bool raw_gpu=gguf_raw_gpu_profile(r.quantized_execution.precision_profile.value_or(""));
+        require(!(dense_bf16 || raw_gpu) || (r.allow_approximation && r.compile_gpu),
+                "qe_config_conflict: dense BF16 candidate requires allow_approximation and compile_gpu");
+        require(r.model == "z-image-turbo-gguf" && r.execution == "gpu" && r.operation == "image.generate" &&
+                    r.frames == 1 && r.inputs.empty() && r.loras.empty() && r.ane_manifest.empty() &&
+                    r.encoder_ane_manifest.empty(), "qe_config_conflict: R1 is Z GGUF GPU text-to-image only");
+        require(!r.streaming_selector && !r.residency_specified && !r.memory_budget_specified &&
+                    !r.streaming_offload_specified && !r.streaming_offload && r.quantized_cache.empty() &&
+                    r.profile.empty() && (dense_bf16 || raw_gpu || !r.compile_gpu) && r.hybrid_mlp_mode == "auto",
+                "qe_config_conflict: legacy/profile/compile/acceleration options conflict");
+        require(!r.memory_constrained.enabled, "qe_envelope_unknown: experimental GGUF is not whole-request certified");
+        if (r.streaming.specified()) {
+            require(r.streaming.active() && r.streaming.stages.size() == 1 && r.streaming.stages.count("denoiser"),
+                    "qe_config_conflict: manual layout must select only denoiser");
+            const auto &s = r.streaming.stages.at("denoiser");
+            const auto p = r.quantized_execution.prefetch_layers.value_or(1);
+            require(s.residency == "streamed" && s.slot_count == 1 + p && s.prefetch_distance == p &&
+                        s.resident_prefix_blocks == 0 && s.block_group_size == 1 && s.io_workers == 1,
+                    "qe_config_conflict: manual layout differs from quantized lookahead");
+        }
+    }
     const bool selector_active = r.streaming_selector &&
         r.streaming_selector->active();
     if (r.streaming.specified()) validate_streaming_config(r.streaming);
@@ -115,15 +143,24 @@ static ExecutionPlan make_plan_impl(
     if (hybrid) {
         require(r.allow_approximation,
                 "gpu_ane requires allow_approximation=true");
-        require(!r.ane_manifest.empty(), "gpu_ane requires an explicit ANE manifest or profile");
+        require(qwen21::native_w1_requested(r) || !r.ane_manifest.empty(),
+                "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(r.qwen21_dit_cache == "off" || r.qwen21_dit_cache == "conservative" ||
+                r.qwen21_dit_cache == "balanced" || r.qwen21_dit_cache == "fast",
+            "qwen21_dit_cache must be off, conservative, balanced or fast");
     require(r.hybrid_mlp_mode == "auto" || r.model == "qwen-image-2.1" ||
                 r.model == "z-image-turbo" || r.model == "z-image-turbo-gguf",
             "hybrid_mlp_mode is supported only for Qwen-Image-2.1 and Z-Image Turbo (including native GGUF)");
     require(r.model == "qwen-image-2.1" ||
                 (!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
-                 r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty()),
+                 r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty() &&
+                 r.qwen21_dit_cache == "off" && r.qwen21_denoiser_backend == "mlx" &&
+                 r.qwen21_native_ane_cache.empty() && r.qwen21_native_w8_staging=="generic" &&
+                 !r.qwen21_native_w8_staging_specified && !r.qwen21_native_scale_cache &&
+                 !r.qwen21_native_scale_cache_specified && r.qwen21_native_lora_kernel=="scalar" &&
+                 !r.qwen21_native_lora_kernel_specified),
             "Qwen21-only acceleration options cannot be used with other models");
     require((!r.prompt_enhance && !r.prompt_enhance_edit_experimental && r.prompt_enhancer_path.empty()) || r.model == "qwen-image-2.1",
             "native prompt enhancement is currently supported only for Qwen21");
@@ -220,9 +257,32 @@ static ExecutionPlan make_plan_impl(
         // A 2048-square one-step probe peaked at 62,259,019,410 MLX bytes;
         // include the observed VAE/DiT working-set growth so high-resolution
         // plans do not under-report unified-memory pressure. This is not a cap.
-        plan.memory_estimate_bytes = ((r.residency == "resident" ? 40ull : 22ull) << 30) +
-                                     (hybrid ? ((r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv" ? 2ull : 10ull) << 30) : 0) + uint64_t(r.width) * r.height * 10240 +
+        // The exact small-canvas GPU T2I route streams text/DiT layers and
+        // releases compiled graphs before loading the VAE. Retain generous
+        // headroom for long prompts and allocator/cache variation; measured
+        // short-prompt 512px MLX peaks are about 5.5 GiB on M5 Pro/24 GiB.
+        const auto device = device_info();
+        const bool staged_hybrid = qwen21::layer_staged_hybrid_t2i(r, device);
+        // The explicit 512px W8A8 route streams original DiT layers, building
+        // only a compact request-owned BF16 suffix cache (4.5 GiB for the
+        // qualified 6144 prefix). Core ML stays loaded during denoising. Reserve
+        // 17 GiB before pixel working space for both banks and layer staging.
+        const uint64_t base_gib = r.residency == "resident" ? 40ull :
+            staged_hybrid ? 17ull :
+            qwen21::layer_staged_t2i(r, device) ? 16ull : 22ull;
+        // Native W1 retains one runtime MIL slot, not the frozen Core ML
+        // model bank. This extra allowance is only a planning heuristic;
+        // the native phase separately admits its measured baseline/backings.
+        const uint64_t hybrid_gib = qwen21::native_w1_requested(r) ||
+            r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv" ? 2ull : 10ull;
+        plan.memory_estimate_bytes = (base_gib << 30) +
+                                     (hybrid && !staged_hybrid ? hybrid_gib << 30 : 0) + uint64_t(r.width) * r.height * 10240 +
                                      uint64_t(r.inputs.size()) * (reference_prefix_bytes + (512ull << 20));
+        // Pinned r128 factors occupy about 648 MiB; native shared rank/gate/up
+        // scratch adds roughly 50 MiB at short prompts. Explicit heuristic
+        // headroom does not grant full-request memory certification.
+        if (qwen21::native_viggle_lora_requested(r))
+            *plan.memory_estimate_bytes += uint64_t(1) << 30;
     }
     else if (r.model == "z-image-turbo")
         plan.memory_estimate_bytes = r.residency == "streamed"

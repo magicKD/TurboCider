@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace tc {
@@ -51,17 +52,12 @@ class MlxLeaseFdReader final : public mx::io::Reader {
     int fd_ = -1;
     std::string label_;
     mutable std::mutex cursor_mutex_;
+    off_t cursor_ = 0;
 
     [[noreturn]] void fail(const char *operation) const {
         throw std::runtime_error(
             std::string("streaming source ") + operation + " failed for " +
             label_ + ": " + std::strerror(errno));
-    }
-
-    static int whence(std::ios_base::seekdir direction) {
-        if (direction == std::ios_base::beg) return SEEK_SET;
-        if (direction == std::ios_base::end) return SEEK_END;
-        return SEEK_CUR;
     }
 
   public:
@@ -80,31 +76,35 @@ class MlxLeaseFdReader final : public mx::io::Reader {
 
     size_t tell() override {
         std::lock_guard lock(cursor_mutex_);
-        const off_t value = ::lseek(fd_, 0, SEEK_CUR);
-        if (value < 0) fail("tell");
-        return static_cast<size_t>(value);
+        return static_cast<size_t>(cursor_);
     }
 
     void seek(int64_t offset,
               std::ios_base::seekdir direction = std::ios_base::beg) override {
         std::lock_guard lock(cursor_mutex_);
-        if (::lseek(fd_, static_cast<off_t>(offset),
-                    whence(direction)) < 0)
-            fail("seek");
+        off_t base = 0;
+        if (direction == std::ios_base::cur) base = cursor_;
+        else if (direction == std::ios_base::end) {
+            struct stat info{};
+            if (::fstat(fd_, &info) < 0) fail("stat");
+            base = info.st_size;
+        } else if (direction != std::ios_base::beg)
+            throw std::invalid_argument("streaming source invalid seek direction");
+        if (base < 0 || offset < -base ||
+            (offset > 0 && base > std::numeric_limits<off_t>::max() - offset))
+            throw std::overflow_error("streaming source seek offset overflows");
+        cursor_ = base + offset;
     }
 
     void read(char *destination, size_t bytes) override {
         std::lock_guard lock(cursor_mutex_);
-        size_t done = 0;
-        while (done < bytes) {
-            const size_t chunk = std::min(
-                bytes - done,
-                static_cast<size_t>(std::numeric_limits<ssize_t>::max()));
-            const ssize_t count = ::read(fd_, destination + done, chunk);
-            if (count < 0 && errno == EINTR) continue;
-            if (count <= 0) fail(count == 0 ? "short read" : "read");
-            done += static_cast<size_t>(count);
-        }
+        // dup() shares the kernel file position with every reader of the
+        // lease. Keep a private logical cursor so repeated/concurrent header
+        // loads always start at zero without disturbing another lazy reader.
+        if (bytes > static_cast<size_t>(std::numeric_limits<off_t>::max() - cursor_))
+            throw std::overflow_error("streaming source read range overflows");
+        read(destination, bytes, static_cast<size_t>(cursor_));
+        cursor_ += static_cast<off_t>(bytes);
     }
 
     void read(char *destination, size_t bytes, size_t offset) override {

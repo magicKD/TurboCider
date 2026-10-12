@@ -1,0 +1,1776 @@
+{
+  "schema": "tc-local512-student-ffn-reuse-20261008-v1",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "default_promoted": false,
+  "scope": "Real six-step local LoRA temporal FFN reuse and an unintegrated approximate BF16 B-operand GPU probe; native host spans, not physical INT8 MAC, overlap or broad image-quality qualification",
+  "policy": {
+    "flag": "TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE",
+    "values": {
+      "0": "off",
+      "1": "32 final layers, research only",
+      "16": "last16 final layers, smaller but visible detail loss",
+      "32": "32 final layers, visually rejected"
+    },
+    "default": "off",
+    "captures_layers": 32,
+    "logical_bank_upper_bytes": 268435456,
+    "allocator_admission_system_reserve_bytes": 8589934592,
+    "owner_cleared_before_vae": true,
+    "physical_release_proven": false,
+    "source_load_finite_and_full_gpu_fallback_checks_unchanged": true
+  },
+  "source_identities": {
+    "build/local512-qwen-student-reuse-v2-private/turbocider": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+    "build/local512-qwen-student-reuse-v2-private/libturbocider.dylib": "5cb072df91b1a314bf3810ddf9ff4e3cb002968b7eb9c631b0fd15e993db119b",
+    "outputs/runtime-ane/qwen-encoder-c320-h4096-f12288-v1-20261008/manifest.json": "5cdc658f390d9f6972e26b97f7b9ebe3e5649fb6457195bc3efc54afd20ea678",
+    "results/qwen21/teapot-native-512.png": "3bf5eb3e347387598c9a9948c83cbef98af70b60c8fb184a909de5052d04fd65",
+    "models/Viggle-Qwen-Image-2.1-viggle-turbo/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+    "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v2/manifest.json": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4",
+    "results/qwen21/teapot-rgba-blue-native-1024.png": "2240ab7e7d67df1776fdae38b853dc57fea2e077cb259a7926c25fe640212192",
+    "build/local512-qwen-student-reuse-v3-private/turbocider": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+    "build/local512-qwen-student-reuse-v3-private/libturbocider.dylib": "73a981710de6b3df12c0a46e1c2393f04c1cdf502d2cb664fbbd1f2931d997a5"
+  },
+  "model_screens": [
+    {
+      "version": "v2",
+      "final_reused_layers": 32,
+      "reference_count": 1,
+      "summary": "outputs/local512-qwen-edit1-student-reuse-v2-diagnostic-20261008/summary.json",
+      "sha256": "74b2b60b5cd6a8aa78d7a1111c5010a54e82433b68fd781afcd9e92e355b29fd",
+      "status": "complete_diagnostic",
+      "order": [
+        "hybrid_student_on",
+        "hybrid_student_off",
+        "gpu_student_on",
+        "gpu_student_off"
+      ],
+      "trials": [
+        {
+          "mode": "hybrid_student_on",
+          "cold_seconds": 15.506803917,
+          "warm_fresh_seconds": [
+            11.473535708,
+            10.772182791
+          ],
+          "warm_fresh_median_seconds": 11.1228592495,
+          "denoise_seconds": [
+            8.553658916,
+            8.637212834,
+            8.696978417
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            192,
+            384,
+            576
+          ],
+          "channel_blocks_session_total": [
+            160,
+            320,
+            480
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "7507bdb1dae3c9ba70d3be39a3a33a4e25c76547567441df134c241a49a232bf",
+            "50b3423fb121c568ca43daeb9438e55561bab63208df0090c856077867a2b70f",
+            "dd473bc65d833e2dca5304868826522532a217f7877c47314178144fb29d760a"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-reuse-v2-diagnostic-20261008/hybrid_student_on-memory-report.json",
+            "sha256": "bf4407791baadb31bcb1bb4fdf1be17684c0aab323f97fdf6a96c1086a4319ac",
+            "complete": true,
+            "maximum_gap_ns": 109968458,
+            "peak_phys_footprint_bytes": 40150495384,
+            "swap_in_bytes": 393216,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "hybrid_student_off",
+          "cold_seconds": 15.951318875,
+          "warm_fresh_seconds": [
+            12.223948709,
+            11.707603875
+          ],
+          "warm_fresh_median_seconds": 11.965776292000001,
+          "denoise_seconds": [
+            9.062557542,
+            9.429828042,
+            9.613269375
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "9c2adf7209740a6e06a9dbed6c3e157343cfda31c2fb1fb92886a99bc7202315",
+            "0fe5ddaf8a2d86f4a63299105be625ebcac5289d0837c0d59f53a7810d5b5cec",
+            "e8aa27274a0678ed68e51ad9aa4a4fb87b789c81a0262668255b5b6a7bdf9dc4"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-reuse-v2-diagnostic-20261008/hybrid_student_off-memory-report.json",
+            "sha256": "486cb15488f06458ddbc5cb01c98824c03f6deaa522f1a2b7df85a0419823200",
+            "complete": true,
+            "maximum_gap_ns": 109851084,
+            "peak_phys_footprint_bytes": 38301936688,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gpu_student_on",
+          "cold_seconds": 15.263909416,
+          "warm_fresh_seconds": [
+            10.774846208,
+            9.9436365
+          ],
+          "warm_fresh_median_seconds": 10.359241354,
+          "denoise_seconds": [
+            8.340383292,
+            8.249306458,
+            8.306368542
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "c6be0fc1b4b3afa6ae0ede3aa2e3e9ed900cb9fcd4949d78fbce32cdc1e03d6f",
+            "8f6b34c9e354763771ca8ed565e9a0007b0e5a8e9e3b1d41a3b0eb82e12622ea",
+            "4dd2db6b35288f7093583209c24e39e2fb4dcd389dcb8781a75474d4e0d4c24e"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-reuse-v2-diagnostic-20261008/gpu_student_on-memory-report.json",
+            "sha256": "537693beb1b9c820ae548cc4d69a4bc74c802a05c05cedf0b8b15cbb2af715b2",
+            "complete": true,
+            "maximum_gap_ns": 109914875,
+            "peak_phys_footprint_bytes": 42261639224,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gpu_student_off",
+          "cold_seconds": 15.80412875,
+          "warm_fresh_seconds": [
+            11.290497458,
+            10.578546917
+          ],
+          "warm_fresh_median_seconds": 10.9345221875,
+          "denoise_seconds": [
+            9.00504775,
+            8.988152792,
+            9.045168167
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "ed074a436c6c4230909da4121ce6781963f88cf3e0ba1e372b1c4036c700c533",
+            "474b39937ae92741970088691f79638ad7801b2f36be5a7e55a2a7074678cbfb",
+            "6c1bb6ee17810a0d411819b6f4bbaa5c190ce0aaee2ebca3935f168779932c18"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-reuse-v2-diagnostic-20261008/gpu_student_off-memory-report.json",
+            "sha256": "1d6ae976e27d541380a67125ec412dbf68e174407fbe38170d20532f22d5920a",
+            "complete": true,
+            "maximum_gap_ns": 109994209,
+            "peak_phys_footprint_bytes": 40229186176,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        }
+      ],
+      "gpu_wall_reduction_percent": 5.261142861437906,
+      "hybrid_wall_reduction_percent": 7.044399142440538,
+      "load_qualification_requested": false,
+      "qualification_passed": false,
+      "png_diagnostics": [
+        {
+          "left": "gpu_student_off",
+          "right": "gpu_student_on",
+          "rmse_u8": [
+            10.011447394289677,
+            9.90707474252719,
+            10.130631313302787
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.8729543079544009,
+            0.8698542365570922,
+            0.8686045196738097
+          ],
+          "alpha_max_abs_u8": [
+            23,
+            3,
+            21
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "hybrid_student_off",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            10.075247578067684,
+            9.951157435792599,
+            10.167755402182912
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.8729962334631153,
+            0.8704100835496013,
+            0.8677357058009306
+          ],
+          "alpha_max_abs_u8": [
+            13,
+            3,
+            12
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "gpu_student_on",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            3.177517086916526,
+            3.3993615542094044,
+            1.7026904190386276
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.977510793650721,
+            0.9799627589612567,
+            0.9914586217848816
+          ],
+          "alpha_max_abs_u8": [
+            12,
+            3,
+            14
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        }
+      ],
+      "default_control_png_exact_to_previous_round": {
+        "gpu_student_off": [
+          true,
+          true,
+          true
+        ],
+        "hybrid_student_off": [
+          true,
+          true,
+          true
+        ]
+      },
+      "visual_observation": "32-layer reuse has obvious new block texture and coarsened details; not recommended",
+      "visual_scope": "Limited agent whole/detail observations listed in the status document; one scene family/seed29, no user approval; automatic review manifests remain pending"
+    },
+    {
+      "version": "v2",
+      "final_reused_layers": 32,
+      "reference_count": 2,
+      "summary": "outputs/local512-qwen-edit2-student-reuse-v2-diagnostic-20261008/summary.json",
+      "sha256": "d30c68b1e1d3710d3b86124ecae4b818334f2b0fc05cd0ef24baf368c1ec417e",
+      "status": "complete_diagnostic",
+      "order": [
+        "gpu_student_off",
+        "gpu_student_on",
+        "hybrid_student_off",
+        "hybrid_student_on"
+      ],
+      "trials": [
+        {
+          "mode": "gpu_student_off",
+          "cold_seconds": 17.767261625,
+          "warm_fresh_seconds": [
+            13.488855208,
+            12.862045834
+          ],
+          "warm_fresh_median_seconds": 13.175450521,
+          "denoise_seconds": [
+            10.545693125,
+            10.578848,
+            10.560994125
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-reuse-v2-diagnostic-20261008/gpu_student_off-memory-report.json",
+            "sha256": "4ac3b08250610429180848a680215e79f1655527d15ab105dcd4fe478ab0d09e",
+            "complete": true,
+            "maximum_gap_ns": 109999750,
+            "peak_phys_footprint_bytes": 40788486544,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gpu_student_on",
+          "cold_seconds": 17.074599917,
+          "warm_fresh_seconds": [
+            12.780414,
+            12.1627705
+          ],
+          "warm_fresh_median_seconds": 12.47159225,
+          "denoise_seconds": [
+            9.797598709,
+            9.846429875,
+            9.816497625
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "cd8b1020cc680c1c8c12b654e85f42601109e13f0d5902da5aae5cba331efe9e",
+            "d10e5290dd08c87ccc67f3a9925208cac5121a0ea1d022c18720e35f301e8212",
+            "31fe19a065b81365f2fd976d495ccfe826e5d3b0979898695e180168a8ba5427"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-reuse-v2-diagnostic-20261008/gpu_student_on-memory-report.json",
+            "sha256": "c65651632fc67d83b97452a667f5c1de610e92cb51f0bb4aad0e256ac62c45a3",
+            "complete": true,
+            "maximum_gap_ns": 109997084,
+            "peak_phys_footprint_bytes": 42625757144,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "hybrid_student_off",
+          "cold_seconds": 18.470116208,
+          "warm_fresh_seconds": [
+            14.808636166,
+            14.302567542
+          ],
+          "warm_fresh_median_seconds": 14.555601853999999,
+          "denoise_seconds": [
+            11.206816375,
+            11.490084709,
+            11.573223834
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-reuse-v2-diagnostic-20261008/hybrid_student_off-memory-report.json",
+            "sha256": "5ba0b27884dbff7fd4643c19b73f3e5a1c890dc4f154792c32d3c9d59deca74a",
+            "complete": true,
+            "maximum_gap_ns": 109940333,
+            "peak_phys_footprint_bytes": 38886747232,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "hybrid_student_on",
+          "cold_seconds": 17.870406125,
+          "warm_fresh_seconds": [
+            14.15459625,
+            13.482691917
+          ],
+          "warm_fresh_median_seconds": 13.8186440835,
+          "denoise_seconds": [
+            10.525641417,
+            10.836728333,
+            10.725261417
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "channel_blocks_session_total": [
+            160,
+            320,
+            480
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "reused_blocks_this_request": 32,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "a00932be75469681967a89fd257080dd80bf10c623498d14f9825d3b356e3d86",
+            "d8f5a504b006b0962c3100fe3719435e8a712a6b472bb0983dfe67cb057bf1e1",
+            "8d7d0795600fb5e83516ae96058ad89c8fdfdb006fcd264a9712231903c1489f"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-reuse-v2-diagnostic-20261008/hybrid_student_on-memory-report.json",
+            "sha256": "23cecf1252741e07e95d0575b924b62d4bdcd6d290f14af4b949e60add8d6076",
+            "complete": true,
+            "maximum_gap_ns": 110019416,
+            "peak_phys_footprint_bytes": 40673718520,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        }
+      ],
+      "gpu_wall_reduction_percent": 5.34219509137952,
+      "hybrid_wall_reduction_percent": 5.0630525476861425,
+      "load_qualification_requested": false,
+      "qualification_passed": false,
+      "png_diagnostics": [
+        {
+          "left": "gpu_student_off",
+          "right": "gpu_student_on",
+          "rmse_u8": [
+            10.464400903497742,
+            10.574185079524032,
+            10.670322348085097
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.844303019945616,
+            0.8439276557909375,
+            0.8438999547763488
+          ],
+          "alpha_max_abs_u8": [
+            47,
+            151,
+            81
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "hybrid_student_off",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            10.548375182659205,
+            10.539604457741811,
+            10.723275373936826
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.8433320178838856,
+            0.8458146336735968,
+            0.8426815858488553
+          ],
+          "alpha_max_abs_u8": [
+            158,
+            125,
+            75
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "gpu_student_on",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            3.948091340373674,
+            8.924704686968253,
+            2.3468406813576266
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9776546908074241,
+            0.9700333896146951,
+            0.9896030504899697
+          ],
+          "alpha_max_abs_u8": [
+            111,
+            66,
+            22
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        }
+      ],
+      "default_control_png_exact_to_previous_round": {
+        "gpu_student_off": [
+          true,
+          true,
+          true
+        ],
+        "hybrid_student_off": [
+          true,
+          true,
+          true
+        ]
+      },
+      "visual_observation": "32-layer reuse has obvious new block texture and coarsened details; not recommended",
+      "visual_scope": "Limited agent whole/detail observations listed in the status document; one scene family/seed29, no user approval; automatic review manifests remain pending"
+    },
+    {
+      "version": "v3",
+      "final_reused_layers": 16,
+      "reference_count": 1,
+      "summary": "outputs/local512-qwen-edit1-student-last16-v3-diagnostic-20261008/summary.json",
+      "sha256": "c8139ecf43d924665e1fe27c953b49ce28024ad35549e59037808e5bc10c0ba5",
+      "status": "complete_diagnostic",
+      "order": [
+        "gpu_student_off",
+        "gpu_student_on",
+        "hybrid_student_off",
+        "hybrid_student_on"
+      ],
+      "trials": [
+        {
+          "mode": "gpu_student_off",
+          "cold_seconds": 15.78363925,
+          "warm_fresh_seconds": [
+            11.352699667,
+            10.64942075
+          ],
+          "warm_fresh_median_seconds": 11.0010602085,
+          "denoise_seconds": [
+            8.946322167,
+            9.047391916,
+            9.037804333
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "ed074a436c6c4230909da4121ce6781963f88cf3e0ba1e372b1c4036c700c533",
+            "474b39937ae92741970088691f79638ad7801b2f36be5a7e55a2a7074678cbfb",
+            "6c1bb6ee17810a0d411819b6f4bbaa5c190ce0aaee2ebca3935f168779932c18"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-last16-v3-diagnostic-20261008/gpu_student_off-memory-report.json",
+            "sha256": "a122bb1feb9b72052ccabcbd5eb46bb3a7900d3dd13aca8ab2fbad1718100020",
+            "complete": true,
+            "maximum_gap_ns": 110018208,
+            "peak_phys_footprint_bytes": 40336255664,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gpu_student_on",
+          "cold_seconds": 15.56182775,
+          "warm_fresh_seconds": [
+            11.196258958,
+            10.330540083
+          ],
+          "warm_fresh_median_seconds": 10.7633995205,
+          "denoise_seconds": [
+            8.650216708,
+            8.681918709,
+            8.710322541
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "64c39cb8ea1fa02216b857763dde30e356a112a6d7842f2b811fb34fba824861",
+            "dde8c986d9c944907f27e4a1860ddd2d7ac34666e65a6e7dc8157f77b39ce8bf",
+            "fd874b0204a2be7a82c99a929dc71c5a759654308fa8f1c54ec3ae2dc32e43f2"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-last16-v3-diagnostic-20261008/gpu_student_on-memory-report.json",
+            "sha256": "544783c7878c99e46b27a3edcc0e876b9141f0a21beb01ea07d403cc4b7b1950",
+            "complete": true,
+            "maximum_gap_ns": 110014209,
+            "peak_phys_footprint_bytes": 42473812312,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "hybrid_student_off",
+          "cold_seconds": 16.167658917,
+          "warm_fresh_seconds": [
+            12.20755,
+            11.59083725
+          ],
+          "warm_fresh_median_seconds": 11.899193624999999,
+          "denoise_seconds": [
+            9.31833875,
+            9.468215458,
+            9.551510042
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            224,
+            448,
+            672
+          ],
+          "channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "9c2adf7209740a6e06a9dbed6c3e157343cfda31c2fb1fb92886a99bc7202315",
+            "0fe5ddaf8a2d86f4a63299105be625ebcac5289d0837c0d59f53a7810d5b5cec",
+            "e8aa27274a0678ed68e51ad9aa4a4fb87b789c81a0262668255b5b6a7bdf9dc4"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-last16-v3-diagnostic-20261008/hybrid_student_off-memory-report.json",
+            "sha256": "7a68f82b0beca578b73666d93cb4c4f90add966332b40ffcd65d5b35cede447c",
+            "complete": true,
+            "maximum_gap_ns": 110019875,
+            "peak_phys_footprint_bytes": 38300052672,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "hybrid_student_on",
+          "cold_seconds": 15.557224667,
+          "warm_fresh_seconds": [
+            11.955043125,
+            11.203204292
+          ],
+          "warm_fresh_median_seconds": 11.5791237085,
+          "denoise_seconds": [
+            8.691984166,
+            9.087379,
+            9.096664708
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            208,
+            416,
+            624
+          ],
+          "channel_blocks_session_total": [
+            176,
+            352,
+            528
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "a09fcbde468ac454bbe5a9881f63a3b5c4ad0186e41343aeaccaf4c5ce5d64f7",
+            "f693168a2117a5da21e1fc90a76acf8bdc4f71c5fb1f41f02d061a758a99d27d",
+            "f14db764dd1d813eb7d65aa02e02f5b097506dcf3a8fb4a1b4a7b0cefd04de4c"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit1-student-last16-v3-diagnostic-20261008/hybrid_student_on-memory-report.json",
+            "sha256": "447ca1b8bfbcbf3b058842791e2101f5eee7fd40742dd1a9bb31e6b723d1e0b6",
+            "complete": true,
+            "maximum_gap_ns": 109994458,
+            "peak_phys_footprint_bytes": 40142237968,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        }
+      ],
+      "gpu_wall_reduction_percent": 2.1603434895881346,
+      "hybrid_wall_reduction_percent": 2.689845434799365,
+      "load_qualification_requested": false,
+      "qualification_passed": false,
+      "png_diagnostics": [
+        {
+          "left": "gpu_student_off",
+          "right": "gpu_student_on",
+          "rmse_u8": [
+            7.189496280036648,
+            7.359622851259207,
+            7.036976382717312
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.8965688390748713,
+            0.8887843176032745,
+            0.8942656007882137
+          ],
+          "alpha_max_abs_u8": [
+            3,
+            8,
+            2
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "hybrid_student_off",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            7.0625047711831686,
+            7.426990339027806,
+            6.989606861997781
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.8992011448459589,
+            0.890168203208962,
+            0.8949323706623239
+          ],
+          "alpha_max_abs_u8": [
+            2,
+            26,
+            2
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "gpu_student_on",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            3.2822142137989214,
+            3.7065715819679785,
+            1.80946112885105
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.976944864012419,
+            0.977417055610806,
+            0.990319530539751
+          ],
+          "alpha_max_abs_u8": [
+            3,
+            19,
+            1
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        }
+      ],
+      "default_control_png_exact_to_previous_round": {
+        "gpu_student_off": [
+          true,
+          true,
+          true
+        ],
+        "hybrid_student_off": [
+          true,
+          true,
+          true
+        ]
+      },
+      "visual_observation": "Last16 preserves recognizable outlines/placement, but visible coarse glaze/grid texture remains, especially with two references; not promoted",
+      "visual_scope": "Limited agent whole/detail observations listed in the status document; one scene family/seed29, no user approval; automatic review manifests remain pending"
+    },
+    {
+      "version": "v3",
+      "final_reused_layers": 16,
+      "reference_count": 2,
+      "summary": "outputs/local512-qwen-edit2-student-last16-v3-diagnostic-20261008/summary.json",
+      "sha256": "350ace3252e57948231f710cebd7e374f94ad7bfcb5460becccadd01c9ab2563",
+      "status": "complete_diagnostic",
+      "order": [
+        "hybrid_student_on",
+        "hybrid_student_off",
+        "gpu_student_on",
+        "gpu_student_off"
+      ],
+      "trials": [
+        {
+          "mode": "hybrid_student_on",
+          "cold_seconds": 18.20605375,
+          "warm_fresh_seconds": [
+            14.605502,
+            14.145985417
+          ],
+          "warm_fresh_median_seconds": 14.3757437085,
+          "denoise_seconds": [
+            10.91063875,
+            11.270378708,
+            11.385183209
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            240,
+            480,
+            720
+          ],
+          "channel_blocks_session_total": [
+            176,
+            352,
+            528
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "62d0e0874c88fdb6d6d7e9b4037863689171ba665aaabe38e31d704459e8860b",
+            "2ad2df6560c822071ddc11b5ac5a0c4116afda3ff9b4e21a43ae8f333607d5f7",
+            "3edd9230e2e7df6255b4568a07e81e964531dbefb0d22d920ff3b8d651bbd29c"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-last16-v3-diagnostic-20261008/hybrid_student_on-memory-report.json",
+            "sha256": "d0003cc76c74f4bb5a9410549823450943453f0d684d90f9bbc8c586dc253bc1",
+            "complete": true,
+            "maximum_gap_ns": 110015709,
+            "peak_phys_footprint_bytes": 40646062400,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "hybrid_student_off",
+          "cold_seconds": 18.369470167,
+          "warm_fresh_seconds": [
+            14.790147125,
+            14.280782583
+          ],
+          "warm_fresh_median_seconds": 14.535464854,
+          "denoise_seconds": [
+            11.139077584,
+            11.453896125,
+            11.500204958
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            256,
+            512,
+            768
+          ],
+          "channel_blocks_session_total": [
+            192,
+            384,
+            576
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "4a7e1d43f9396deaafc42755fa40a0b39625471d9abf62c7fbc56fd2fba111ef",
+            "91ae38e50bafd1f4b369c1b9373adac9ff976c6d96866a124b9dd32f7167b46e",
+            "e7e6f1b11f4f0f7ceed1d34224878f83b88719e05a62da1c23e83706b3e9cfd6"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-last16-v3-diagnostic-20261008/hybrid_student_off-memory-report.json",
+            "sha256": "a6902191f4f862659c9c55856db0bb5a2439833ff17fd4296b529bae532d1647",
+            "complete": true,
+            "maximum_gap_ns": 110012375,
+            "peak_phys_footprint_bytes": 38886993088,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gpu_student_on",
+          "cold_seconds": 17.556416542,
+          "warm_fresh_seconds": [
+            13.136014875,
+            12.571218334
+          ],
+          "warm_fresh_median_seconds": 12.8536166045,
+          "denoise_seconds": [
+            10.248896542,
+            10.254642209,
+            10.282738875
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            },
+            {
+              "captured_blocks_this_request": 32,
+              "enabled": true,
+              "peak_logical_cache_bytes": 268435456,
+              "released_before_vae": true,
+              "requested_final_layers": 16,
+              "reused_blocks_this_request": 16,
+              "scope": "successful native request graph outputs; complete FFN including LoRA, attention/modulation still recomputed; logical bytes not physical RAM/overlap proof"
+            }
+          ],
+          "png_sha256": [
+            "c97e731a9160786d1ce99c199a980d40d9d8d268c59fd0af2530881c14f1b385",
+            "f9b664b3c55186a491a4c0fda1999c1c6b283ec631428d5ea2a8d91c0149fca1",
+            "edf96d139c2cf3b3510bc32bf283e6c186ba0030c9b378465084eea1fe5afb79"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-last16-v3-diagnostic-20261008/gpu_student_on-memory-report.json",
+            "sha256": "480834200195a9d5cd5c27d9ae74cb11b16b3d09146417b6128710fd2320dfc9",
+            "complete": true,
+            "maximum_gap_ns": 109962584,
+            "peak_phys_footprint_bytes": 43180864120,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        },
+        {
+          "mode": "gpu_student_off",
+          "cold_seconds": 17.714272375,
+          "warm_fresh_seconds": [
+            13.422686041,
+            12.814735
+          ],
+          "warm_fresh_median_seconds": 13.1187105205,
+          "denoise_seconds": [
+            10.585522792,
+            10.579618375,
+            10.571625042
+          ],
+          "actual_steps": 6,
+          "adapter_bindings": 227,
+          "prompt_cache_hit": false,
+          "encoder_source_loads": [
+            1,
+            1,
+            1
+          ],
+          "runtime_calls_session_total": [
+            0,
+            0,
+            0
+          ],
+          "channel_blocks_session_total": [
+            0,
+            0,
+            0
+          ],
+          "fallbacks": [
+            0,
+            0,
+            0
+          ],
+          "overflow_retries": [
+            0,
+            0,
+            0
+          ],
+          "cache_receipts": [
+            null,
+            null,
+            null
+          ],
+          "png_sha256": [
+            "c2d33436f4774b1f5891087b2968c26204b6a563b539cc8fe6b0a65cf3acf680",
+            "9e5b7da6c29cd3ddc9f747bcb3190ccb9a12fc928d22ce7f22ba518b0996ef29",
+            "f2efb53b8b2d21c21218d9cc0823b74d7263dc3e653e000ebc9e3d906d7c0f01"
+          ],
+          "memory": {
+            "report": "outputs/local512-qwen-edit2-student-last16-v3-diagnostic-20261008/gpu_student_off-memory-report.json",
+            "sha256": "d8bc9f2c037e39c0e5e8c97e03166fcf4f454b9928c3939e1949af2ce0219784",
+            "complete": true,
+            "maximum_gap_ns": 110017542,
+            "peak_phys_footprint_bytes": 40967891584,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0
+          }
+        }
+      ],
+      "gpu_wall_reduction_percent": 2.0207315009028504,
+      "hybrid_wall_reduction_percent": 1.0988375473664158,
+      "load_qualification_requested": false,
+      "qualification_passed": false,
+      "png_diagnostics": [
+        {
+          "left": "gpu_student_off",
+          "right": "gpu_student_on",
+          "rmse_u8": [
+            8.398222047866257,
+            8.475874978118425,
+            8.57043623856662
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.8674377675001987,
+            0.8687860964656932,
+            0.8647026232072824
+          ],
+          "alpha_max_abs_u8": [
+            21,
+            87,
+            41
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "hybrid_student_off",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            8.570193136584269,
+            8.625101429808183,
+            8.636617677471873
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.864582824630384,
+            0.8706059909647075,
+            0.8636615591912169
+          ],
+          "alpha_max_abs_u8": [
+            97,
+            27,
+            35
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        },
+        {
+          "left": "gpu_student_on",
+          "right": "hybrid_student_on",
+          "rmse_u8": [
+            3.8978611093813162,
+            9.167428580322252,
+            2.5381984707762277
+          ],
+          "ssim_rgb_gaussian11_valid": [
+            0.9774271896436154,
+            0.9667332946554733,
+            0.9878916820052845
+          ],
+          "alpha_max_abs_u8": [
+            97,
+            60,
+            5
+          ],
+          "scope": "Unresized CPU PNG diagnostics, not latent/perceptual/semantic acceptance"
+        }
+      ],
+      "default_control_png_exact_to_previous_round": {
+        "gpu_student_off": [
+          true,
+          true,
+          true
+        ],
+        "hybrid_student_off": [
+          true,
+          true,
+          true
+        ]
+      },
+      "visual_observation": "Last16 preserves recognizable outlines/placement, but visible coarse glaze/grid texture remains, especially with two references; not promoted",
+      "visual_scope": "Limited agent whole/detail observations listed in the status document; one scene family/seed29, no user approval; automatic review manifests remain pending"
+    }
+  ],
+  "builds": [
+    {
+      "kind": "private",
+      "manifest": "build/local512-qwen-student-reuse-v3-private/runtime-build/runtime-build-manifest.json",
+      "manifest_sha256": "63eb8b6d05e896d03bb94247975e3fe64d636a80625ba134879363184e0df592",
+      "source_count": 494,
+      "source_mismatches": [],
+      "library": "build/local512-qwen-student-reuse-v3-private/libturbocider.dylib",
+      "library_sha256": "73a981710de6b3df12c0a46e1c2393f04c1cdf502d2cb664fbbd1f2931d997a5",
+      "cli": "build/local512-qwen-student-reuse-v3-private/turbocider",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "native_library_build_exit_code": 0,
+      "public_actual_release_binary_guard_passed": false,
+      "scope": "Current working-tree source snapshot including pre-existing uncommitted ConvRot drafts, not staged-only provenance"
+    },
+    {
+      "kind": "public",
+      "manifest": "build/local512-qwen-student-reuse-v3-public/runtime-build/runtime-build-manifest.json",
+      "manifest_sha256": "77df348c2e86aec8dc1d77186489d4cfec7e628b6341b3a80e95fa034033f3c4",
+      "source_count": 494,
+      "source_mismatches": [],
+      "library": "build/local512-qwen-student-reuse-v3-public/libturbocider.dylib",
+      "library_sha256": "897423a13dfaac38220f2b2f73691c3b057d52a569885fa19e2718fa87ea3d9e",
+      "cli": "build/local512-qwen-student-reuse-v3-public/turbocider",
+      "cli_sha256": "02c55923be1dff7fc8dfd5681fd26b1cfaf15d8553eec28d1d9ce09b16d11ebb",
+      "native_library_build_exit_code": 0,
+      "public_actual_release_binary_guard_passed": true,
+      "scope": "Current working-tree source snapshot including pre-existing uncommitted ConvRot drafts, not staged-only provenance"
+    }
+  ],
+  "regressions": [
+    {
+      "log": "outputs/local512-qwen-student-reuse-v3-private-regression-20261008.log",
+      "sha256": "acbf90ab35190c88cf21d21570a5d5448c23902e28bfaedab6a9193b494bb810",
+      "passed": 41,
+      "skipped": 0,
+      "scope": "Selected regressions, not full repository or actual-model Public performance matrix"
+    },
+    {
+      "log": "outputs/local512-qwen-student-reuse-v3-public-regression-20261008.log",
+      "sha256": "1e72afe85746489dbabfc01addf5bfe7cdd94b29a1a31a07fbb330f3364088ff",
+      "passed": 43,
+      "skipped": 0,
+      "scope": "Selected regressions, not full repository or actual-model Public performance matrix"
+    }
+  ],
+  "failure_logs_preserved": [
+    {
+      "log": "outputs/local512-qwen-student-reuse-v2-first-test-20261008.log",
+      "sha256": "833832469b93ce624dfefe28396ffe2c00547054ce1192606b38fd8d1dd8c44c"
+    },
+    {
+      "log": "outputs/local512-qwen-student-reuse-v2-second-test-20261008.log",
+      "sha256": "5543b4fa0172f314a7c0efa26af3c218cef37134d44c8cb85c8d91231fc3f932"
+    },
+    {
+      "log": "outputs/local512-qwen-student-reuse-v2-third-test-20261008.log",
+      "sha256": "e91667e50b422407b0953c717dfe4d049f939a989f9713265f9a215627e740c4"
+    }
+  ],
+  "cleanup": {
+    "objects": 851,
+    "object_logical_bytes": 67111856,
+    "empty_module_cache_directories": 4,
+    "build_directories": [
+      "build/local512-qwen-student-reuse-v1-private",
+      "build/local512-qwen-student-reuse-v2-private",
+      "build/local512-qwen-student-reuse-v3-private",
+      "build/local512-qwen-student-reuse-v3-public"
+    ],
+    "scope": "Completed owned .o and empty module-cache only, recoverable by rebuild; libraries/CLI/probes/logs/PNG/manifests/models retained"
+  },
+  "b_operand_component": {
+    "receipt": "outputs/local512-qwen-b-operands-v1-component-20261008.json",
+    "sha256": "c6f845e3d22b7c6392ae834de6b573ce599019fa9d5a1dd1da1b3bd82b4acbde",
+    "binary": "build/local512-qwen-b-operands-v1/qwen-lora-b-operand-probe",
+    "binary_sha256": "0f55676e597f8fdb4e0753091751a25dafebc29958eefea764dd1868b435fa9f",
+    "adjacent_library_sha256": null,
+    "configured_rpath_library": "build/local512-qwen-rank-operands-v2-private/libturbocider.dylib",
+    "configured_library_sha256_observed_post_run": "1a9a1b4af05f5c0c17268ffc19766db08e600723a904f144c495b884ee06ab42",
+    "loaded_image_trace": false,
+    "exit_code": 0,
+    "maximum_observer_gap_seconds": 0.20615800004452467,
+    "observer_errors": [],
+    "artifact_unchanged": true,
+    "delta_component_relative_l2_budget": 0.05,
+    "model_integrated": false,
+    "cases": [
+      {
+        "M": 1056,
+        "projection": "gate_layer",
+        "first": 0,
+        "N": 7168,
+        "rank": 256,
+        "original_median_seconds": 0.000606875,
+        "m16n128_median_seconds": 0.000513208,
+        "relative_l2": 0.00168170058168,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 1056,
+        "projection": "gate_layer",
+        "first": 7168,
+        "N": 5120,
+        "rank": 256,
+        "original_median_seconds": 0.000441834,
+        "m16n128_median_seconds": 0.000407625,
+        "relative_l2": 0.00167386303656,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 1056,
+        "projection": "out",
+        "first": 0,
+        "N": 4096,
+        "rank": 256,
+        "original_median_seconds": 0.000390333,
+        "m16n128_median_seconds": 0.00037275,
+        "relative_l2": 0.00143233046401,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 2113,
+        "projection": "gate_layer",
+        "first": 0,
+        "N": 7168,
+        "rank": 256,
+        "original_median_seconds": 0.001048667,
+        "m16n128_median_seconds": 0.000941875,
+        "relative_l2": 0.0016854587011,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 2113,
+        "projection": "gate_layer",
+        "first": 7168,
+        "N": 5120,
+        "rank": 256,
+        "original_median_seconds": 0.000762708,
+        "m16n128_median_seconds": 0.00070875,
+        "relative_l2": 0.00167657772545,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 2113,
+        "projection": "out",
+        "first": 0,
+        "N": 4096,
+        "rank": 256,
+        "original_median_seconds": 0.000674417,
+        "m16n128_median_seconds": 0.000568541,
+        "relative_l2": 0.00143568927888,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 3137,
+        "projection": "gate_layer",
+        "first": 0,
+        "N": 7168,
+        "rank": 256,
+        "original_median_seconds": 0.001483209,
+        "m16n128_median_seconds": 0.001337416,
+        "relative_l2": 0.00168855779339,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 3137,
+        "projection": "gate_layer",
+        "first": 7168,
+        "N": 5120,
+        "rank": 256,
+        "original_median_seconds": 0.001050333,
+        "m16n128_median_seconds": 0.0009745,
+        "relative_l2": 0.00167967297602,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      },
+      {
+        "M": 3137,
+        "projection": "out",
+        "first": 0,
+        "N": 4096,
+        "rank": 256,
+        "original_median_seconds": 0.000861917,
+        "m16n128_median_seconds": 0.00081525,
+        "relative_l2": 0.00143530021887,
+        "samples_per_recipe": 15,
+        "recipe_count": 7
+      }
+    ],
+    "scope": "original local BF16 adapter A/B, prepared original F32 ranks from synthetic BF16 activation; includes rank narrowing/B projection/F32 scaling; serial operator host spans, not whole-model/visual/GPU timestamp qualification"
+  }
+}

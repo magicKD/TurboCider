@@ -1,0 +1,837 @@
+{
+  "schema": "tc-private-ane-quiet-window-v1",
+  "implementation_commit": "393c258",
+  "date": "2026-10-05",
+  "hardware": "Apple M4 Max 64GB",
+  "objective_complete": false,
+  "formal_four_way_1_2x_qualified": false,
+  "model_media_latent_quality_qualified": false,
+  "native_int8_mac_observed": false,
+  "public_default_retained": true,
+  "checkpoint_or_adapter_modified": false,
+  "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+  "workload": {
+    "prompt": "A curious red fox sitting in falling snow beside pine trees, detailed fur, natural winter light, photorealistic.",
+    "seed": 42,
+    "residency": "resident",
+    "scope": "native request_wall including VAE/PNG, excluding cold; all declared hot samples retained"
+  },
+  "policy": {
+    "data_path": "w8a8_hadamard",
+    "io_path": "gpu_iosurface",
+    "recipe": "sylvester-dh-b128-b512-rne-norm-f16-v2",
+    "chunks": 1,
+    "weight_prefetch": 0,
+    "scale_cache": 1,
+    "launch_fence": 1,
+    "stage_specialize": 1,
+    "fixed_async": 1,
+    "a8_lookahead_512": 0,
+    "a8_lookahead_1024": 1,
+    "qwen_base_qk_norm_rope_on_both_routes": true
+  },
+  "load_gate_relaxed": false,
+  "historical_rejected_timings_requalified": false,
+  "continuous_load_is_cpu_heuristic_only": true,
+  "gpu_exclusivity_proven": false,
+  "physical_device_overlap_proven": false,
+  "checkpoint_bytes_provenance_qualified": false,
+  "independent_full_driver_memory_qualified": false,
+  "cases": [
+    {
+      "case": "z512-a5120-fixed",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "ane_channels": 5120,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "warm_repeats": 3,
+      "summary": "outputs/private-ane-quiet-z512-a5120-fixed/summary.json",
+      "summary_sha256": "ddf9f5d449d0c7790724eed2c9f6ac7c43a7f17d192f0728df13b18129ea8a0c",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        6.992905834,
+        6.991084959,
+        7.015632125
+      ],
+      "private_hot_seconds": [
+        6.191972875,
+        6.196786166,
+        6.220169083
+      ],
+      "gpu_hot_median_seconds": 6.992905834,
+      "private_hot_median_seconds": 6.196786166,
+      "median_speedup": 1.1284729933668007,
+      "conservative_min_gpu_over_max_private": 1.123938090060437,
+      "continuous_load": {
+        "gpu": {
+          "samples": 57,
+          "evidence_sha256": "74242ea637134d207b0286d0f45576d49d507997f5c1d3bc50e9643d5d6e05fa",
+          "observed_max_gap_ns": 590522334
+        },
+        "runtime": {
+          "samples": 52,
+          "evidence_sha256": "c387075d5ccf020b1b08a3cfb45b58f3ec0c4df61c0c96c68b4383354becb14b",
+          "observed_max_gap_ns": 572778084
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 1024,
+      "async_blocks_session_total": 1024,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 1056,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c1056-k1024-n512-v1/manifest.json",
+        "template_manifest_sha256": "0cb09bbe163c2b5a53dcb2a0fbe9001c1ca914b29fa1c51718e0fc2e79be02bf"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "z512-a4096-fixed-reverse",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "ane_channels": 4096,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "warm_repeats": 3,
+      "summary": "outputs/private-ane-quiet-z512-a4096-fixed-reverse/summary.json",
+      "summary_sha256": "ad5a110a016f7eccbd4b85211edc8f25dedab10c90c924b27228eb356d98334e",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        7.004448833,
+        7.014136541,
+        7.008713667
+      ],
+      "private_hot_seconds": [
+        5.816988834,
+        5.818902417,
+        5.821151667
+      ],
+      "gpu_hot_median_seconds": 7.008713667,
+      "private_hot_median_seconds": 5.818902417,
+      "median_speedup": 1.2044734839553162,
+      "conservative_min_gpu_over_max_private": 1.2032754399285093,
+      "continuous_load": {
+        "runtime": {
+          "samples": 46,
+          "evidence_sha256": "7ea4c28c558096c477c2b3fb83bbffa5fd1890cab91cd894254a5be028c38db2",
+          "observed_max_gap_ns": 587907292
+        },
+        "gpu": {
+          "samples": 54,
+          "evidence_sha256": "ec1cf3b57e29f7b441f72dca6fdfc7bbbc8e6fb6190502a89fdaf1bd3181d080",
+          "observed_max_gap_ns": 590794250
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 1024,
+      "async_blocks_session_total": 1024,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 1056,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c1056-k1024-n512-v1/manifest.json",
+        "template_manifest_sha256": "0cb09bbe163c2b5a53dcb2a0fbe9001c1ca914b29fa1c51718e0fc2e79be02bf"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "z512-a4096-fixed-forward5",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "ane_channels": 4096,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "warm_repeats": 5,
+      "summary": "outputs/private-ane-quiet-z512-a4096-fixed-forward5/summary.json",
+      "summary_sha256": "f895ddce67a2c541e7741ac46adbf097fe9f090e363801ac23a3691840af09bc",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        6.990005375,
+        7.019356208,
+        7.008253667,
+        6.992894708,
+        6.992662542
+      ],
+      "private_hot_seconds": [
+        5.824080458,
+        5.820821958,
+        5.832720167,
+        5.817202042,
+        5.816268791
+      ],
+      "gpu_hot_median_seconds": 6.992894708,
+      "private_hot_median_seconds": 5.820821958,
+      "median_speedup": 1.2013586325878136,
+      "conservative_min_gpu_over_max_private": 1.1984126059308684,
+      "continuous_load": {
+        "gpu": {
+          "samples": 79,
+          "evidence_sha256": "6ebe02e7376169fb018601268638f48ba456d43a29fc0c45ca32643165ed5d3b",
+          "observed_max_gap_ns": 581786708
+        },
+        "runtime": {
+          "samples": 67,
+          "evidence_sha256": "24d7f3c152e0994fc516b9e8c96822b81fe43bf7ca292607a7b3c9b755f0ae28",
+          "observed_max_gap_ns": 589790875
+        }
+      },
+      "runtime_calls_per_request": [
+        256,
+        256,
+        256,
+        256,
+        256,
+        256
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 1536,
+      "async_blocks_session_total": 1536,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 1056,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c1056-k1024-n512-v1/manifest.json",
+        "template_manifest_sha256": "0cb09bbe163c2b5a53dcb2a0fbe9001c1ca914b29fa1c51718e0fc2e79be02bf"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "z1024-a5120-fixed",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "ane_channels": 5120,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-z1024-a5120-fixed/summary.json",
+      "summary_sha256": "edc86e767c5dbde30b1d6f14248540241f5475f05b3ba054d14f8cc01e0da3d0",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        31.259183916,
+        31.262826584
+      ],
+      "private_hot_seconds": [
+        28.310846917,
+        28.309420625
+      ],
+      "gpu_hot_median_seconds": 31.26100525,
+      "private_hot_median_seconds": 28.310133771,
+      "median_speedup": 1.1042337525802433,
+      "conservative_min_gpu_over_max_private": 1.1041416036632092,
+      "continuous_load": {
+        "gpu": {
+          "samples": 173,
+          "evidence_sha256": "cd689a0d1fba10c2222c6640d72f9c6e7972dfb91b2806ea6d13ba654abfe5eb",
+          "observed_max_gap_ns": 597926541
+        },
+        "runtime": {
+          "samples": 165,
+          "evidence_sha256": "259fdb899cc1ce1f198130d85e4aa51184f8a240d69891df345114e1a8106a2f",
+          "observed_max_gap_ns": 574419667
+        }
+      },
+      "runtime_calls_per_request": [
+        512,
+        512,
+        512
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 768,
+      "async_blocks_session_total": 768,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 2112,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c2112-k1024-n512-v1/manifest.json",
+        "template_manifest_sha256": "6bfddc3d77df1d7fba2be3028d2a56b2a6d265e1e20cc83936f4315fb8adb584"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "qwen512-a5120-base-v1-fixed",
+      "model": "qwen-image-2.1",
+      "size": 512,
+      "steps": 40,
+      "ane_channels": 5120,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-qwen512-a5120-base-v1-fixed/summary.json",
+      "summary_sha256": "7d6837d0f6ef5c977e48431e110ecb7fd84bd10dee3a96a6ea2c7a14add4d9d7",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        41.719843375,
+        41.727735209
+      ],
+      "private_hot_seconds": [
+        33.030997,
+        33.04463925
+      ],
+      "gpu_hot_median_seconds": 41.723789292000006,
+      "private_hot_median_seconds": 33.037818125,
+      "median_speedup": 1.2629099516843474,
+      "conservative_min_gpu_over_max_private": 1.2625298481659168,
+      "continuous_load": {
+        "runtime": {
+          "samples": 194,
+          "evidence_sha256": "49f26191a30a6c5dddda23b62efa17c6b1b995e3a32889961c20df3337bb5d9a",
+          "observed_max_gap_ns": 582890708
+        },
+        "gpu": {
+          "samples": 231,
+          "evidence_sha256": "eafc799a7234be4f8ca61ed7425a6c30defb2b840d1176356ad0f6bdc6a521eb",
+          "observed_max_gap_ns": 587047541
+        }
+      },
+      "runtime_calls_per_request": [
+        1280,
+        1280,
+        1280
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 3840,
+      "async_blocks_session_total": 3840,
+      "qwen_qk_norm_rope": true,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 1056,
+        "hidden": 4096,
+        "width": 12288,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v1-base/manifest.json",
+        "template_manifest_sha256": "1157095b89899aabf5e36c59248e84dba718e06518b75804eeeba85996744ac8"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "qwen1024-a5120-base-v1-fixed",
+      "model": "qwen-image-2.1",
+      "size": 1024,
+      "steps": 40,
+      "ane_channels": 5120,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-qwen1024-a5120-base-v1-fixed/summary.json",
+      "summary_sha256": "59f8ae93826e0fc06df77616704b6cf31095d7c270bef43b065d3835999d5eb4",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        183.146565084,
+        183.220086208
+      ],
+      "private_hot_seconds": [
+        154.269349041,
+        154.489002625
+      ],
+      "gpu_hot_median_seconds": 183.18332564600001,
+      "private_hot_median_seconds": 154.379175833,
+      "median_speedup": 1.1865805388426154,
+      "conservative_min_gpu_over_max_private": 1.185499045058645,
+      "continuous_load": {
+        "runtime": {
+          "samples": 844,
+          "evidence_sha256": "8ad0eb01ecb986e4ad940929f307eaa26f17c886dac91aefbb455f04b7c051e5",
+          "observed_max_gap_ns": 591532417
+        },
+        "gpu": {
+          "samples": 1002,
+          "evidence_sha256": "32ad3b5b60e2484ef1391f16cc4b9f7583e2b2c61b6f96ecf121d374799fbac6",
+          "observed_max_gap_ns": 600481000
+        }
+      },
+      "runtime_calls_per_request": [
+        2560,
+        2560,
+        2560
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 3840,
+      "async_blocks_session_total": 3840,
+      "qwen_qk_norm_rope": true,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 2112,
+        "hidden": 4096,
+        "width": 12288,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-qwen-c2112-k1024-n512-v1/manifest.json",
+        "template_manifest_sha256": "2c68c9bbcdb1403cf73f458a411f93c4ad10ffd80c2af5ee6024f30bb96b2718"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "z512-lora-a4096-fixed",
+      "model": "z-image-turbo",
+      "size": 512,
+      "steps": 8,
+      "ane_channels": 4096,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-z512-lora-a4096-fixed/summary.json",
+      "summary_sha256": "5f24b644f6e8a7624b3fb1a84ace53213e69cd455e483fa4529d3567d2c3949a",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        8.593094708,
+        8.588681042
+      ],
+      "private_hot_seconds": [
+        7.211814166,
+        7.236300458
+      ],
+      "gpu_hot_median_seconds": 8.590887875,
+      "private_hot_median_seconds": 7.224057311999999,
+      "median_speedup": 1.1892053874945783,
+      "conservative_min_gpu_over_max_private": 1.1868883957830818,
+      "continuous_load": {
+        "runtime": {
+          "samples": 48,
+          "evidence_sha256": "f59923d5aca98c8101842acffed5c53f90b34f69e1b91b80af57a8f873e2b732",
+          "observed_max_gap_ns": 654226500
+        },
+        "gpu": {
+          "samples": 50,
+          "evidence_sha256": "b07426d60f5a05f199d6cc49a86e281bb64dc83ac64b20d3019d39b9e53f8a82",
+          "observed_max_gap_ns": 588279333
+        }
+      },
+      "runtime_calls_per_request": [
+        258,
+        256,
+        256
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 2,
+      "untimed_blocks_session_total": 768,
+      "async_blocks_session_total": 768,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 2,
+        "rows": 1056,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c1056-k1024-n512-v2/manifest.json",
+        "template_manifest_sha256": "612d361c6802bfb50b1d5c114867a38ba3a75588c993ed842dd7829af929eb73"
+      },
+      "lora": {
+        "sha256": "340cc573d887681b89a45d850af77db43fb82dd994872be5d0a9d48649eb91c8",
+        "strength": 1,
+        "strategy": "inference_time"
+      },
+      "independent_process_tree_memory": {
+        "runtime": {
+          "sample_count": 257,
+          "max_gap_ns": 110015042,
+          "tree_peak_rss_bytes": 13143719936,
+          "tree_peak_phys_footprint_bytes": 24204732304,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "evidence_sha256": "0e45c9f9fa3e63d64936bca4a425aec37fd3cc7c0f585576a89081c18d4ea3cd",
+          "report_sha256": "ac8ff26b66913050342f802135487d3634ed5dd8fededbcad81c292d0c374001"
+        },
+        "gpu": {
+          "sample_count": 267,
+          "max_gap_ns": 110011250,
+          "tree_peak_rss_bytes": 12913754112,
+          "tree_peak_phys_footprint_bytes": 25455781656,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "evidence_sha256": "ad9118d73a9cbb8b0c362d8d68a62a7a0960a0a8203b05f97321b0bc6461c62c",
+          "report_sha256": "f89ab1ac337611e1dbdbe413855826d6f158e7fa3a09c79fd041bfe538a02a94"
+        }
+      },
+      "lora_range_callbacks_session": 768,
+      "lora_full_callbacks_session": 0,
+      "overflow_retries_per_request": [
+        2,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "qwen512-lora-a5120-fixed",
+      "model": "qwen-image-2.1",
+      "size": 512,
+      "steps": 6,
+      "ane_channels": 5120,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-qwen512-lora-a5120-fixed/summary.json",
+      "summary_sha256": "676e7cdc59566489de94fe968ac5fdc2efacf34ea74b49c11edf3ff52f4b4d95",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        8.129227417,
+        8.071299916
+      ],
+      "private_hot_seconds": [
+        8.188406542,
+        8.229503167
+      ],
+      "gpu_hot_median_seconds": 8.100263666499998,
+      "private_hot_median_seconds": 8.2089548545,
+      "median_speedup": 0.9867594365023924,
+      "conservative_min_gpu_over_max_private": 0.980776087232776,
+      "continuous_load": {
+        "gpu": {
+          "samples": 55,
+          "evidence_sha256": "5fd2a101ad4cb9283f617aca73c9014da22e3b0e4f7c16adc2f4d017208e5c49",
+          "observed_max_gap_ns": 596662833
+        },
+        "runtime": {
+          "samples": 48,
+          "evidence_sha256": "d5a7e02c2d3606eb322400d914b598025eae440d892137dfd848dda67a22cda1",
+          "observed_max_gap_ns": 583862375
+        }
+      },
+      "runtime_calls_per_request": [
+        192,
+        192,
+        192
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 576,
+      "async_blocks_session_total": 576,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 2,
+        "rows": 1056,
+        "hidden": 4096,
+        "width": 12288,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v2/manifest.json",
+        "template_manifest_sha256": "e2294ca16876f55b523c5fd3e5fc5a601c463474d1a3abd1ca8bc2eb1b0acfb4"
+      },
+      "lora": {
+        "sha256": "2a0148f5c73abbed5f97da5ea356e439318aadb281d01fce4af39cdf43728803",
+        "strength": 1,
+        "strategy": "inference_time",
+        "rank_matmul_dtype": "fp32"
+      },
+      "independent_process_tree_memory": {
+        "gpu": {
+          "sample_count": 302,
+          "max_gap_ns": 110016625,
+          "tree_peak_rss_bytes": 17739087872,
+          "tree_peak_phys_footprint_bytes": 22133094512,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 313458688,
+          "decompression_bytes": 16252928,
+          "evidence_sha256": "5630673409215b9aeba08b9dc50ae1d22c556ff6256a08efd1236d0d8a3467a8",
+          "report_sha256": "be3d796705068eeea6738c5e5e26d0cc43ce7e41bce4c3a2346972b397bf6677"
+        },
+        "runtime": {
+          "sample_count": 265,
+          "max_gap_ns": 110015625,
+          "tree_peak_rss_bytes": 17769807872,
+          "tree_peak_phys_footprint_bytes": 20108374856,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 36782080,
+          "decompression_bytes": 3391488,
+          "evidence_sha256": "342847bc4960260b625b0fa1c3f574587833962fb9fec19423a6adb0a55cd951",
+          "report_sha256": "bf7247ffdccb7b7c3e7b72198ee0f44f689232163e0fb9d49a475e61071955ae"
+        }
+      },
+      "lora_range_callbacks_session": 576,
+      "lora_full_callbacks_session": 0,
+      "overflow_retries_per_request": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "z1024-a4096-k2048-fixed",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "ane_channels": 4096,
+      "route_order": [
+        "runtime",
+        "gpu"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-z1024-a4096-k2048-fixed/summary.json",
+      "summary_sha256": "08dd5fc3d4a300356dd7562185ae549618b202c5f7610f73df862e1017a2c08d",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        31.278072417,
+        31.302664833
+      ],
+      "private_hot_seconds": [
+        28.307614875,
+        28.254374667
+      ],
+      "gpu_hot_median_seconds": 31.290368625,
+      "private_hot_median_seconds": 28.280994771,
+      "median_speedup": 1.1064097595706175,
+      "conservative_min_gpu_over_max_private": 1.104934928467724,
+      "continuous_load": {
+        "runtime": {
+          "samples": 164,
+          "evidence_sha256": "71d37dfc300057508e7b5d3ebf44bbcffda9bc84f7b9bcff841b4ada4024c909",
+          "observed_max_gap_ns": 577497416
+        },
+        "gpu": {
+          "samples": 176,
+          "evidence_sha256": "2bad97d8cbd41356fc1d5b929ea3ceb246fe5d97be60b7f310dd1c1a8d6854a1",
+          "observed_max_gap_ns": 594783250
+        }
+      },
+      "runtime_calls_per_request": [
+        512,
+        512,
+        512
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 768,
+      "async_blocks_session_total": 768,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 2112,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 2048,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c2112-k2048-n512-v1/manifest.json",
+        "template_manifest_sha256": "5b00c2fb4338a119ca742c4809ee6b9db1a63f5ef60c11533889d0bf7e16b633"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "z1024-a4096-k1024-fixed",
+      "model": "z-image-turbo",
+      "size": 1024,
+      "steps": 8,
+      "ane_channels": 4096,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "warm_repeats": 2,
+      "summary": "outputs/private-ane-quiet-z1024-a4096-k1024-fixed/summary.json",
+      "summary_sha256": "6e118f2ddc3cd148ae3ee40242feb511b603b23517273551abe60491a2c033bd",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        31.295307625,
+        31.304910709
+      ],
+      "private_hot_seconds": [
+        28.684230458,
+        28.277079291
+      ],
+      "gpu_hot_median_seconds": 31.300109167000002,
+      "private_hot_median_seconds": 28.480654874499997,
+      "median_speedup": 1.0989954165353266,
+      "conservative_min_gpu_over_max_private": 1.0910283150465965,
+      "continuous_load": {
+        "gpu": {
+          "samples": 175,
+          "evidence_sha256": "6aa1e61117ca687bd7f56ad9233389689ef4d8244408f11bf13b4e941df71b19",
+          "observed_max_gap_ns": 594929375
+        },
+        "runtime": {
+          "samples": 161,
+          "evidence_sha256": "6a53e09a1e28afb6659a1ad09ca6386cd0d540918ddc414d0ff03aed6a5ea3be",
+          "observed_max_gap_ns": 574641834
+        }
+      },
+      "runtime_calls_per_request": [
+        512,
+        512,
+        512
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 768,
+      "async_blocks_session_total": 768,
+      "qwen_qk_norm_rope": false,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 2112,
+        "hidden": 3840,
+        "width": 10240,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-z-c2112-k1024-n512-v1/manifest.json",
+        "template_manifest_sha256": "6bfddc3d77df1d7fba2be3028d2a56b2a6d265e1e20cc83936f4315fb8adb584"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    },
+    {
+      "case": "qwen512-a5120-base-v1-fixed-forward3",
+      "model": "qwen-image-2.1",
+      "size": 512,
+      "steps": 40,
+      "ane_channels": 5120,
+      "route_order": [
+        "gpu",
+        "runtime"
+      ],
+      "warm_repeats": 3,
+      "summary": "outputs/private-ane-quiet-qwen512-a5120-base-v1-fixed-forward3/summary.json",
+      "summary_sha256": "9018047c68b15a88fb8f1f0873b7650a5e3965e6bce6dbcf1daac62a1076cdef",
+      "library_sha256": "da79328f140eb65312b1a5e48b9b03911141d2c54e8fbc130c2c1f5c1401638c",
+      "gpu_hot_seconds": [
+        41.743515875,
+        41.723974291,
+        41.721023917
+      ],
+      "private_hot_seconds": [
+        33.009501708,
+        32.994036625,
+        32.968079333
+      ],
+      "gpu_hot_median_seconds": 41.723974291,
+      "private_hot_median_seconds": 32.994036625,
+      "median_speedup": 1.264591379503568,
+      "conservative_min_gpu_over_max_private": 1.2639095338688109,
+      "continuous_load": {
+        "gpu": {
+          "samples": 313,
+          "evidence_sha256": "b05d70c794cf52d3ec383ee0fb6f66653f35f0f2593a66fb2b07fed1c5dd4c5e",
+          "observed_max_gap_ns": 588566209
+        },
+        "runtime": {
+          "samples": 246,
+          "evidence_sha256": "693840b3b904b5a573425fedb4b138dab4b9e5bd566abe1b04c68b68a6a94d59",
+          "observed_max_gap_ns": 582982041
+        }
+      },
+      "runtime_calls_per_request": [
+        1280,
+        1280,
+        1280,
+        1280
+      ],
+      "fallback_blocks_session_total": 0,
+      "overflow_retries_session_total": 0,
+      "untimed_blocks_session_total": 5120,
+      "async_blocks_session_total": 5120,
+      "qwen_qk_norm_rope": true,
+      "graph_template": {
+        "graph_version": 1,
+        "rows": 1056,
+        "hidden": 4096,
+        "width": 12288,
+        "tile_k": 1024,
+        "tile_n": 512,
+        "template_manifest": "outputs/runtime-ane/private-channel-qwen-c1056-k1024-n512-v1-base/manifest.json",
+        "template_manifest_sha256": "1157095b89899aabf5e36c59248e84dba718e06518b75804eeeba85996744ac8"
+      },
+      "lora": null,
+      "independent_process_tree_memory": null
+    }
+  ],
+  "download_window": {
+    "authorized_by_user": true,
+    "reversible_pause": true,
+    "download_files_modified_or_removed": false,
+    "restore_ledger": "outputs/private-ane-download-pause-ledger.json",
+    "state": "resumed after verified process birth, executable, kernel argv and stopped state"
+  },
+  "pending": [
+    "Z1024 and Qwen1024 >=1.2x; stable margin for Z512",
+    "valid 1024 LoRA model performance/compatibility; 512 LoRA multi-prompt reverse checks and Qwen LoRA optimization",
+    "multi-prompt latent/perceptual/media quality, memory and device trace",
+    "bandwidth-aware share/prefetch calibration"
+  ],
+  "all_owned_benchmark_handles_terminal": true,
+  "device_trace_collection": {
+    "performed": false,
+    "reason": "Only Command Line Tools are installed; no Instruments/xctrace found; developer configuration unchanged"
+  },
+  "verification_this_turn": {
+    "private_host_hardware_mlx_passed": 13,
+    "public_coreml_mlx_receipt_passed": 13,
+    "screen_host_passed": 54,
+    "runtime_host_passed": 7,
+    "memory_runner_host_passed": 6,
+    "load_observer_host_passed": 4,
+    "repository_layout_passed": 8,
+    "release_guard_passed": 3,
+    "actual_public_binary_distribution_guard_passed": true,
+    "archived_binaries_include_independent_convrot_worktree_edits": true,
+    "clean_staged_tree_rebuilt": false,
+    "full_make_test_executed": false,
+    "known_preexisting_full_suite_failure": "Qwen3 stale if (used_hybrid_output || source-string assertion; untouched"
+  }
+}

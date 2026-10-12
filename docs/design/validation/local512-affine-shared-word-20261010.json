@@ -1,0 +1,1957 @@
+{
+  "schema": "tc-local512-affine-shared-word-v1",
+  "date_local": "2026-10-10",
+  "component_date_local": "2026-10-09",
+  "timezone": "Asia/Singapore",
+  "hardware": "M4 Max64GB/macOS26.6.2",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "default_changed": false,
+  "builds": [
+    {
+      "backend": "private",
+      "directory": "build/local512-affine-shared-v2-private",
+      "library_sha256": "21c3f40677e91ece8792590532b4821ac894ff44e5d3139f8aa8bb1c37f86b84",
+      "cli_sha256": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+      "manifest_sha256": "867c609d7010a744223498b16ffbd7362e121bd8dca2a44b26951c6a938b8eef",
+      "runtime_build_id": "tc-runtime-build-v1-cfffe2164a2241314dd39a4cce4fd4414625cc1f32417342bcfdeb879e7d0bae",
+      "source_inputs_matched": 502
+    },
+    {
+      "backend": "public",
+      "directory": "build/local512-affine-shared-v2-public",
+      "library_sha256": "88ac0f369ce50dd5abcb45eca94c7e94650d9b5971ef8ea127fe264d1a6d5e84",
+      "cli_sha256": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+      "manifest_sha256": "bfee6e68f0fbf344096880c04dbdcffc833b5be049ce4f4e2021a5b1b7b704e9",
+      "runtime_build_id": "tc-runtime-build-v1-9d5622fd5be25065e595a3382e23fb917464718543b90d872880bc5d5cc69773",
+      "source_inputs_matched": 502
+    }
+  ],
+  "components": [
+    {
+      "name": "q4-gate1056",
+      "receipt": "outputs/local512-affine-shared-v1-q4-gate1056-component-20261009.json",
+      "receipt_sha256": "f17c52d6aada84f154631012d2b783777b547fb224a4d9e42dc5d2912a8ad140",
+      "binary_sha256": "c86a726b091cb2b8190ffe4ed4ec2af0f6af40cba4027366e72da836b77d5a78",
+      "adjacent_library_sha256": null,
+      "maximum_observation_gap_seconds": 0.3181712500518188,
+      "observation_errors": 0,
+      "data": {
+        "schema": "tc-affine-shared-word-screen-v1",
+        "scope": "real original weight/synthetic prepared input, full operator host span including final output cast; not model/device trace",
+        "basis": "GGUF-native-affine-FP16",
+        "source_payload_or_codes_sha256": "79dcaebad7d53a6310d296e7158572ffffb7548ca1074b283720009b58aa5881",
+        "stored_scales_sha256": "77257956cc649b254a593fdea7c3fb19a9afac966180705d3f6762f87a5c02c3",
+        "bits": 4,
+        "M": 1056,
+        "N": 10240,
+        "K": 3840,
+        "physical_W_pitch": 3840,
+        "warmups_per_recipe": 3,
+        "samples_per_recipe": 15,
+        "control_dense_setup_ms": 4.558583,
+        "control_dense_bytes": 78643200,
+        "candidate_global_dense_bytes": 0,
+        "recipes": [
+          {
+            "name": "packed_qmm",
+            "median_ms": 6.086542,
+            "requested_BM": 0,
+            "requested_BN": 0,
+            "requested_BK": 0,
+            "effective_BK": 0,
+            "explicit_threadgroup_weight_bytes": 0,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.5025,
+              6.086542,
+              6.499834,
+              6.089083,
+              6.069541,
+              6.124625,
+              6.084,
+              6.121917,
+              6.052209,
+              6.080459,
+              6.080333,
+              6.1275,
+              6.08325,
+              6.110667,
+              6.068
+            ]
+          },
+          {
+            "name": "original_mpp_m64",
+            "median_ms": 12.969125,
+            "requested_BM": 0,
+            "requested_BN": 0,
+            "requested_BK": 0,
+            "effective_BK": 0,
+            "explicit_threadgroup_weight_bytes": 0,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              12.943292,
+              13.033458,
+              12.964292,
+              12.904,
+              12.8765,
+              12.978375,
+              13.002583,
+              13.027708,
+              12.969125,
+              12.960666,
+              13.032667,
+              12.982,
+              13.009125,
+              12.937666,
+              12.953333
+            ]
+          },
+          {
+            "name": "shared_32x64k32_f32_cast",
+            "median_ms": 6.441,
+            "requested_BM": 32,
+            "requested_BN": 64,
+            "requested_BK": 32,
+            "effective_BK": 32,
+            "explicit_threadgroup_weight_bytes": 4096,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.441,
+              6.451166,
+              6.471541,
+              6.485541,
+              6.43625,
+              6.410542,
+              6.475083,
+              6.438208,
+              6.425292,
+              6.440875,
+              6.606834,
+              6.432084,
+              6.455333,
+              6.47675,
+              6.430292
+            ]
+          },
+          {
+            "name": "shared_32x64k32_narrow",
+            "median_ms": 6.514875,
+            "requested_BM": 32,
+            "requested_BN": 64,
+            "requested_BK": 32,
+            "effective_BK": 32,
+            "explicit_threadgroup_weight_bytes": 4096,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.527958,
+              6.556,
+              6.543458,
+              6.608583,
+              6.558958,
+              6.474375,
+              6.555084,
+              6.511792,
+              6.514875,
+              6.513458,
+              6.511,
+              6.5045,
+              6.50275,
+              6.603125,
+              6.504
+            ]
+          },
+          {
+            "name": "shared_64x64k64_f32_cast",
+            "median_ms": 6.287375,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.181209,
+              6.323959,
+              6.251541,
+              6.221542,
+              6.403,
+              6.287375,
+              6.248292,
+              6.301917,
+              6.295375,
+              6.310792,
+              6.249917,
+              6.221542,
+              6.2315,
+              6.319875,
+              6.320875
+            ]
+          },
+          {
+            "name": "shared_64x64k64_narrow",
+            "median_ms": 6.136,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.103,
+              6.139417,
+              6.205125,
+              6.070958,
+              6.115209,
+              6.211833,
+              6.122333,
+              6.137833,
+              6.117625,
+              6.217959,
+              6.193209,
+              6.142667,
+              6.136,
+              6.118791,
+              6.124917
+            ]
+          },
+          {
+            "name": "shared_128x64k64_f32_cast",
+            "median_ms": 6.980584,
+            "requested_BM": 128,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.973042,
+              6.980584,
+              6.994,
+              6.8525,
+              6.963375,
+              6.968667,
+              7.008,
+              6.9965,
+              6.988875,
+              7.006042,
+              6.971958,
+              6.991209,
+              7.029833,
+              6.975833,
+              6.963625
+            ]
+          },
+          {
+            "name": "shared_128x64k64_narrow",
+            "median_ms": 6.862667,
+            "requested_BM": 128,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.996834,
+              6.862667,
+              6.877791,
+              6.851167,
+              6.83425,
+              6.881459,
+              6.872333,
+              6.847208,
+              6.869959,
+              6.855333,
+              6.865833,
+              6.753042,
+              6.891417,
+              6.8455,
+              6.786166
+            ]
+          },
+          {
+            "name": "shared_64x128k64_f32_cast",
+            "median_ms": 6.676666,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.701334,
+              6.748041,
+              6.606583,
+              6.70925,
+              6.62475,
+              6.628833,
+              6.670416,
+              6.609792,
+              6.669708,
+              6.676666,
+              6.703208,
+              6.691708,
+              6.744959,
+              6.736833,
+              6.6635
+            ]
+          },
+          {
+            "name": "shared_64x128k64_narrow",
+            "median_ms": 6.566583,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.582541,
+              6.532208,
+              6.6265,
+              6.582167,
+              6.498167,
+              6.521708,
+              6.566583,
+              6.631583,
+              6.498084,
+              6.506208,
+              6.534375,
+              6.583333,
+              6.58825,
+              6.572959,
+              6.535791
+            ]
+          },
+          {
+            "name": "shared_64x64k128_f32_cast",
+            "median_ms": 6.190417,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.182333,
+              6.185583,
+              6.187833,
+              6.189708,
+              6.303333,
+              6.2625,
+              6.19075,
+              6.186625,
+              6.139333,
+              6.191834,
+              6.192875,
+              6.230542,
+              6.190417,
+              6.23275,
+              6.186792
+            ]
+          },
+          {
+            "name": "shared_64x64k128_narrow",
+            "median_ms": 6.128875,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.162458,
+              6.093541,
+              6.139166,
+              6.2,
+              6.153958,
+              6.128875,
+              6.211542,
+              6.085166,
+              6.0555,
+              6.082958,
+              6.067667,
+              6.070458,
+              6.162667,
+              6.215041,
+              6.081833
+            ]
+          },
+          {
+            "name": "shared_64x128k128_f32_cast",
+            "median_ms": 8.258584,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 32768,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              8.258541,
+              8.255583,
+              8.218625,
+              8.263583,
+              8.267917,
+              8.265583,
+              8.258584,
+              8.493708,
+              8.219542,
+              8.2645,
+              8.247958,
+              8.251375,
+              8.504417,
+              8.255416,
+              8.315167
+            ]
+          },
+          {
+            "name": "shared_64x128k128_narrow",
+            "median_ms": 8.166292,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 32768,
+            "output_relative_l2_vs_typed_f32": 0.000207595570828,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              8.370458,
+              8.160083,
+              8.131583,
+              8.169041,
+              8.166292,
+              8.148666,
+              8.166458,
+              8.166709,
+              8.35875,
+              8.166292,
+              8.160666,
+              8.159833,
+              8.175833,
+              8.154625,
+              8.16675
+            ]
+          }
+        ],
+        "dense_control_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "default_route_changed": false,
+        "asynchronous_layer_ahead_decode_implemented": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "LoRA/full-model/media",
+          "whole-process-memory",
+          "ANE/physical-overlap"
+        ]
+      }
+    },
+    {
+      "name": "q4-down1088-k6144",
+      "receipt": "outputs/local512-affine-shared-v1-q4-down1088-k6144-component-20261009.json",
+      "receipt_sha256": "bb8ed0b7859d399880f5e78f49dad1516e0b62fb2befb571c53ab9bf4c236a3f",
+      "binary_sha256": "c86a726b091cb2b8190ffe4ed4ec2af0f6af40cba4027366e72da836b77d5a78",
+      "adjacent_library_sha256": null,
+      "maximum_observation_gap_seconds": 0.28008075000252575,
+      "observation_errors": 0,
+      "data": {
+        "schema": "tc-affine-shared-word-screen-v1",
+        "scope": "real original weight/synthetic prepared input, full operator host span including final output cast; not model/device trace",
+        "basis": "GGUF-native-affine-FP16",
+        "source_payload_or_codes_sha256": "6062807de21048e3897267467c86997eba13db2deabb96b631e0b73c2d581350",
+        "stored_scales_sha256": "2742506d882ee1dcfc9576ef0d163181d2f9d8bb007a7fb1e353cd058c3cdf15",
+        "bits": 4,
+        "M": 1088,
+        "N": 3840,
+        "K": 6144,
+        "physical_W_pitch": 10240,
+        "warmups_per_recipe": 3,
+        "samples_per_recipe": 15,
+        "control_dense_setup_ms": 4.0755,
+        "control_dense_bytes": 78643200,
+        "candidate_global_dense_bytes": 0,
+        "recipes": [
+          {
+            "name": "packed_qmm",
+            "median_ms": 3.940375,
+            "requested_BM": 0,
+            "requested_BN": 0,
+            "requested_BK": 0,
+            "effective_BK": 0,
+            "explicit_threadgroup_weight_bytes": 0,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.030042,
+              3.9195,
+              3.911375,
+              3.952708,
+              3.998458,
+              3.942042,
+              3.94125,
+              3.935416,
+              3.940375,
+              3.94,
+              3.923958,
+              3.929959,
+              3.962,
+              4.042208,
+              3.930959
+            ]
+          },
+          {
+            "name": "original_mpp_m64",
+            "median_ms": 7.64575,
+            "requested_BM": 0,
+            "requested_BN": 0,
+            "requested_BK": 0,
+            "effective_BK": 0,
+            "explicit_threadgroup_weight_bytes": 0,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              7.676542,
+              7.64575,
+              7.662333,
+              7.644958,
+              7.681042,
+              7.662208,
+              7.637167,
+              7.644459,
+              7.633708,
+              7.616958,
+              7.614125,
+              7.652417,
+              7.689459,
+              7.662875,
+              7.599709
+            ]
+          },
+          {
+            "name": "shared_32x64k32_f32_cast",
+            "median_ms": 4.164166,
+            "requested_BM": 32,
+            "requested_BN": 64,
+            "requested_BK": 32,
+            "effective_BK": 32,
+            "explicit_threadgroup_weight_bytes": 4096,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.156291,
+              4.168834,
+              4.118875,
+              4.150959,
+              4.16375,
+              4.164166,
+              4.216959,
+              4.1685,
+              4.150709,
+              4.209416,
+              4.152042,
+              4.123667,
+              4.169208,
+              4.16725,
+              4.16575
+            ]
+          },
+          {
+            "name": "shared_32x64k32_narrow",
+            "median_ms": 4.234667,
+            "requested_BM": 32,
+            "requested_BN": 64,
+            "requested_BK": 32,
+            "effective_BK": 32,
+            "explicit_threadgroup_weight_bytes": 4096,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.218333,
+              4.231416,
+              4.219167,
+              4.243417,
+              4.234708,
+              4.212042,
+              4.242333,
+              4.243167,
+              4.18725,
+              4.241708,
+              4.271959,
+              4.175625,
+              4.234667,
+              4.233208,
+              4.2855
+            ]
+          },
+          {
+            "name": "shared_64x64k64_f32_cast",
+            "median_ms": 3.927792,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              3.880333,
+              3.925541,
+              3.925875,
+              3.928417,
+              3.98325,
+              3.876792,
+              3.928125,
+              3.93125,
+              3.925042,
+              3.93125,
+              3.927792,
+              3.866708,
+              3.918417,
+              3.930083,
+              3.929041
+            ]
+          },
+          {
+            "name": "shared_64x64k64_narrow",
+            "median_ms": 3.888,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              3.888625,
+              3.87025,
+              3.892458,
+              3.888,
+              3.902375,
+              3.890834,
+              3.857333,
+              3.883041,
+              3.890708,
+              3.885291,
+              3.883667,
+              3.832875,
+              3.89125,
+              3.939084,
+              3.884791
+            ]
+          },
+          {
+            "name": "shared_128x64k64_f32_cast",
+            "median_ms": 4.344167,
+            "requested_BM": 128,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.359334,
+              4.28375,
+              4.344167,
+              4.350542,
+              4.361875,
+              4.34225,
+              4.339125,
+              4.351375,
+              4.34325,
+              4.367166,
+              4.34025,
+              4.285125,
+              4.357209,
+              4.353833,
+              4.335125
+            ]
+          },
+          {
+            "name": "shared_128x64k64_narrow",
+            "median_ms": 4.297583,
+            "requested_BM": 128,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.288625,
+              4.259125,
+              4.308875,
+              4.297583,
+              4.300334,
+              4.302625,
+              4.29275,
+              4.223791,
+              4.299333,
+              4.322875,
+              4.250542,
+              4.265917,
+              4.314625,
+              4.305375,
+              4.285125
+            ]
+          },
+          {
+            "name": "shared_64x128k64_f32_cast",
+            "median_ms": 4.155542,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.172208,
+              4.156875,
+              4.138875,
+              4.142333,
+              4.155542,
+              4.127416,
+              4.131375,
+              4.083084,
+              4.158958,
+              4.42025,
+              4.1085,
+              4.171875,
+              4.17675,
+              4.129083,
+              4.156958
+            ]
+          },
+          {
+            "name": "shared_64x128k64_narrow",
+            "median_ms": 4.109667,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.092833,
+              4.1135,
+              4.083125,
+              4.127958,
+              4.118333,
+              4.07875,
+              4.1185,
+              4.058959,
+              4.09075,
+              4.103583,
+              4.1175,
+              4.119667,
+              4.109667,
+              4.063875,
+              4.122584
+            ]
+          },
+          {
+            "name": "shared_64x64k128_f32_cast",
+            "median_ms": 3.887708,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              3.848375,
+              3.96625,
+              3.834458,
+              3.909834,
+              3.89025,
+              3.903417,
+              4.043791,
+              3.838709,
+              3.865875,
+              3.883,
+              3.887708,
+              3.880458,
+              3.887667,
+              3.901583,
+              3.904
+            ]
+          },
+          {
+            "name": "shared_64x64k128_narrow",
+            "median_ms": 3.86375,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              3.858125,
+              3.89675,
+              3.948875,
+              3.874833,
+              3.825167,
+              3.857834,
+              3.878625,
+              3.885041,
+              3.86375,
+              3.858583,
+              3.82525,
+              3.860167,
+              3.828125,
+              3.894875,
+              3.866
+            ]
+          },
+          {
+            "name": "shared_64x128k128_f32_cast",
+            "median_ms": 5.108542,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 32768,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              5.168375,
+              5.120375,
+              5.052417,
+              5.07725,
+              5.100583,
+              5.108542,
+              5.111291,
+              5.119083,
+              5.108666,
+              5.091584,
+              5.11425,
+              5.1035,
+              5.065083,
+              5.125708,
+              5.108334
+            ]
+          },
+          {
+            "name": "shared_64x128k128_narrow",
+            "median_ms": 5.072417,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 32768,
+            "output_relative_l2_vs_typed_f32": 0.000206981232623,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              5.117959,
+              5.0655,
+              5.009209,
+              5.044667,
+              5.086333,
+              5.079542,
+              5.072417,
+              5.092458,
+              5.072375,
+              5.025375,
+              5.438459,
+              5.044667,
+              5.091334,
+              5.073917,
+              5.071875
+            ]
+          }
+        ],
+        "dense_control_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "default_route_changed": false,
+        "asynchronous_layer_ahead_decode_implemented": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "LoRA/full-model/media",
+          "whole-process-memory",
+          "ANE/physical-overlap"
+        ]
+      }
+    },
+    {
+      "name": "convrot-down1088-k6144",
+      "receipt": "outputs/local512-affine-shared-v1-convrot-down1088-k6144-component-20261009.json",
+      "receipt_sha256": "993f7662ddafb266e834a8a91c94773980a0b21909e1ffca0ac89139e8c670d1",
+      "binary_sha256": "c86a726b091cb2b8190ffe4ed4ec2af0f6af40cba4027366e72da836b77d5a78",
+      "adjacent_library_sha256": null,
+      "maximum_observation_gap_seconds": 0.2795465000672266,
+      "observation_errors": 0,
+      "data": {
+        "schema": "tc-affine-shared-word-screen-v1",
+        "scope": "real original weight/synthetic prepared input, full operator host span including final output cast; not model/device trace",
+        "basis": "Comfy-H256-legacy-BF16-scale",
+        "source_payload_or_codes_sha256": "e093eef804d2ac860a07edfac758b0217aab8056c867a01e9f41325c33cbeb0e",
+        "stored_scales_sha256": "500fc96589160c153d6d12ae0e4d766cfca1543410799c61e4dfaf68d860a0f2",
+        "bits": 8,
+        "M": 1088,
+        "N": 3840,
+        "K": 6144,
+        "physical_W_pitch": 10240,
+        "warmups_per_recipe": 3,
+        "samples_per_recipe": 15,
+        "control_dense_setup_ms": 4.460625,
+        "control_dense_bytes": 78643200,
+        "candidate_global_dense_bytes": 0,
+        "recipes": [
+          {
+            "name": "packed_qmm",
+            "median_ms": 4.3325,
+            "requested_BM": 0,
+            "requested_BN": 0,
+            "requested_BK": 0,
+            "effective_BK": 0,
+            "explicit_threadgroup_weight_bytes": 0,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.449666,
+              4.324459,
+              4.302917,
+              4.336416,
+              4.306917,
+              4.332541,
+              4.3325,
+              4.3365,
+              4.3305,
+              4.3325,
+              4.298917,
+              4.32025,
+              4.374792,
+              4.288917,
+              4.341291
+            ]
+          },
+          {
+            "name": "original_mpp_m64",
+            "median_ms": 8.237292,
+            "requested_BM": 0,
+            "requested_BN": 0,
+            "requested_BK": 0,
+            "effective_BK": 0,
+            "explicit_threadgroup_weight_bytes": 0,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              8.205542,
+              8.309458,
+              8.239209,
+              8.26375,
+              8.238791,
+              8.197083,
+              8.245,
+              8.2965,
+              8.21325,
+              8.211208,
+              8.237292,
+              8.216709,
+              8.211292,
+              8.259125,
+              8.204125
+            ]
+          },
+          {
+            "name": "shared_32x64k32_f32_cast",
+            "median_ms": 5.577917,
+            "requested_BM": 32,
+            "requested_BN": 64,
+            "requested_BK": 32,
+            "effective_BK": 32,
+            "explicit_threadgroup_weight_bytes": 4096,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              5.586542,
+              5.580084,
+              5.542083,
+              5.586791,
+              5.545625,
+              5.536125,
+              5.577917,
+              5.592958,
+              5.590375,
+              5.525708,
+              5.572709,
+              5.529166,
+              5.593709,
+              5.5295,
+              5.594042
+            ]
+          },
+          {
+            "name": "shared_32x64k32_narrow",
+            "median_ms": 5.568458,
+            "requested_BM": 32,
+            "requested_BN": 64,
+            "requested_BK": 32,
+            "effective_BK": 32,
+            "explicit_threadgroup_weight_bytes": 4096,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              5.572708,
+              5.57125,
+              5.519834,
+              5.568958,
+              5.574417,
+              5.517458,
+              5.57075,
+              5.570625,
+              5.567708,
+              5.5085,
+              5.556667,
+              5.55825,
+              5.568458,
+              5.537084,
+              5.571334
+            ]
+          },
+          {
+            "name": "shared_64x64k64_f32_cast",
+            "median_ms": 4.509583,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.510583,
+              4.50825,
+              4.459583,
+              4.517083,
+              4.5505,
+              4.459833,
+              4.512333,
+              4.523708,
+              4.475,
+              4.465209,
+              4.487125,
+              4.492,
+              4.509583,
+              4.511125,
+              4.531875
+            ]
+          },
+          {
+            "name": "shared_64x64k64_narrow",
+            "median_ms": 4.477292,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.511917,
+              4.456625,
+              4.427792,
+              4.485667,
+              4.479166,
+              4.472791,
+              4.477292,
+              4.480875,
+              4.422375,
+              4.614583,
+              4.455125,
+              4.47025,
+              4.48275,
+              4.475833,
+              4.48525
+            ]
+          },
+          {
+            "name": "shared_128x64k64_f32_cast",
+            "median_ms": 4.718833,
+            "requested_BM": 128,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.752041,
+              4.684292,
+              4.76275,
+              4.718833,
+              4.712167,
+              4.720541,
+              4.778333,
+              4.716834,
+              4.696042,
+              4.738833,
+              4.7045,
+              4.743209,
+              4.763958,
+              4.696375,
+              4.705792
+            ]
+          },
+          {
+            "name": "shared_128x64k64_narrow",
+            "median_ms": 4.693666,
+            "requested_BM": 128,
+            "requested_BN": 64,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 8192,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.702084,
+              4.678875,
+              4.720291,
+              4.683583,
+              4.671666,
+              4.693666,
+              4.695666,
+              4.682875,
+              4.681958,
+              4.717,
+              4.704208,
+              4.704042,
+              4.713625,
+              4.636292,
+              4.667583
+            ]
+          },
+          {
+            "name": "shared_64x128k64_f32_cast",
+            "median_ms": 4.964792,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.965125,
+              4.973959,
+              5.013125,
+              4.966125,
+              4.920708,
+              4.962542,
+              4.941125,
+              4.964125,
+              4.980542,
+              5.014208,
+              4.939417,
+              4.96575,
+              4.964792,
+              4.957791,
+              4.960834
+            ]
+          },
+          {
+            "name": "shared_64x128k64_narrow",
+            "median_ms": 4.93,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 64,
+            "effective_BK": 64,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.961791,
+              4.949458,
+              4.942584,
+              5.005709,
+              4.93,
+              4.913917,
+              5.002291,
+              4.928458,
+              4.916917,
+              4.916416,
+              4.920292,
+              4.951458,
+              4.939709,
+              4.897125,
+              4.888875
+            ]
+          },
+          {
+            "name": "shared_64x64k128_f32_cast",
+            "median_ms": 4.54575,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.552291,
+              4.552916,
+              4.52625,
+              4.556917,
+              4.719541,
+              4.537958,
+              4.550833,
+              4.536167,
+              4.517334,
+              4.537583,
+              4.545958,
+              4.5425,
+              4.54575,
+              4.554709,
+              4.542167
+            ]
+          },
+          {
+            "name": "shared_64x64k128_narrow",
+            "median_ms": 4.514083,
+            "requested_BM": 64,
+            "requested_BN": 64,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 16384,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              4.517084,
+              4.521666,
+              4.49975,
+              4.515375,
+              4.509417,
+              4.513333,
+              4.500875,
+              4.514083,
+              4.507208,
+              4.501625,
+              4.518792,
+              4.67425,
+              4.514375,
+              4.499042,
+              4.520292
+            ]
+          },
+          {
+            "name": "shared_64x128k128_f32_cast",
+            "median_ms": 6.788833,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 32768,
+            "output_relative_l2_vs_typed_f32": 0,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.848334,
+              6.729833,
+              6.788833,
+              6.756542,
+              6.877833,
+              6.79525,
+              6.749625,
+              6.866,
+              6.754792,
+              6.810209,
+              6.741208,
+              6.752,
+              6.778459,
+              6.809791,
+              6.792833
+            ]
+          },
+          {
+            "name": "shared_64x128k128_narrow",
+            "median_ms": 6.781583,
+            "requested_BM": 64,
+            "requested_BN": 128,
+            "requested_BK": 128,
+            "effective_BK": 128,
+            "explicit_threadgroup_weight_bytes": 32768,
+            "output_relative_l2_vs_typed_f32": 0.00165650271811,
+            "narrow_relative_l2_vs_packed": 0,
+            "output_byte_exact_vs_packed": true,
+            "samples_ms": [
+              6.732208,
+              6.716916,
+              6.726625,
+              6.75425,
+              6.731583,
+              6.804834,
+              6.781583,
+              6.800417,
+              6.880584,
+              6.796167,
+              6.699167,
+              6.838958,
+              6.863625,
+              6.84525,
+              6.716334
+            ]
+          }
+        ],
+        "dense_control_claim_bytes_after_cleanup": 0,
+        "qualification_passed": false,
+        "default_route_changed": false,
+        "asynchronous_layer_ahead_decode_implemented": false,
+        "excludes": [
+          "source-read/packing",
+          "input-rotation",
+          "LoRA/full-model/media",
+          "whole-process-memory",
+          "ANE/physical-overlap"
+        ]
+      }
+    }
+  ],
+  "experiments": [
+    {
+      "name": "base9",
+      "summary": "outputs/local512-convrot-shared-base9-v2-diagnostic-20261010/summary.json",
+      "summary_sha256": "0ef824b907e2f140e691c36634ae69f0ed5c75ca85b6ec0aa86f41db1b7a3625",
+      "order": [
+        "gpu",
+        "mpp",
+        "bf16"
+      ],
+      "steps": 9,
+      "seed": 42,
+      "matched_rows": true,
+      "trials": [
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 12.391566416,
+          "warm_request_seconds": [
+            9.596869708,
+            9.606599667
+          ],
+          "warm_median_seconds": 9.601734687499999,
+          "nominal_reduction_vs_own_gpu_pct": 0,
+          "increase_vs_same_bf16_pct": 23.84482494437328,
+          "stdout": "outputs/local512-convrot-shared-base9-v2-diagnostic-20261010/gpu.stdout.jsonl",
+          "stdout_sha256": "1d22706b54152a9244d38cee1399942f73331a8361657d1ca1a88a5da39d842c",
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "actual_buckets": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "headroom": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "c4aeff5baf5a32dbe2d1a1c1268f7bcfc44f1e32ccde598737c976d587c507da",
+            "c4aeff5baf5a32dbe2d1a1c1268f7bcfc44f1e32ccde598737c976d587c507da",
+            "c4aeff5baf5a32dbe2d1a1c1268f7bcfc44f1e32ccde598737c976d587c507da"
+          ],
+          "memory_report_sha256": "dde21f770f6f13eae1029c486350d680ee6cadb58e40726cdcc1c2e61c28290f",
+          "phys_footprint_peak_bytes": 12051007072,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "pngs_exact_previous_corresponding_control": true
+        },
+        {
+          "mode": "mpp",
+          "cold_request_seconds": 9.460363208,
+          "warm_request_seconds": [
+            7.785136166,
+            7.771328208
+          ],
+          "warm_median_seconds": 7.778232187,
+          "nominal_reduction_vs_own_gpu_pct": 18.991386034378998,
+          "increase_vs_same_bf16_pct": 0.324976155586465,
+          "stdout": "outputs/local512-convrot-shared-base9-v2-diagnostic-20261010/mpp.stdout.jsonl",
+          "stdout_sha256": "a6b25936ddcb33926a43d7ce7beb3fdf0cfabe235902d578348fec47a165000f",
+          "actual_calls_cumulative": [
+            290,
+            578,
+            866
+          ],
+          "actual_buckets": [
+            1056,
+            1056,
+            1056
+          ],
+          "overflow_retries_cumulative": [
+            2,
+            2,
+            2
+          ],
+          "headroom": [
+            16,
+            16,
+            16
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "027d38906f9c93f2e62a08beb65f27bd8b3db2bfbb2894a36699d796852f3793",
+            "ecfb105e562db5439c446be07c159b79cfc4589122f86bbacd41207a507d26ce",
+            "ecfb105e562db5439c446be07c159b79cfc4589122f86bbacd41207a507d26ce"
+          ],
+          "memory_report_sha256": "ff3c5f2d17eb8e9440a85304044ff6003f98010a9aa278f370e6c885f5cc39f2",
+          "phys_footprint_peak_bytes": 17354475320,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "bf16",
+          "cold_request_seconds": 9.05564525,
+          "warm_request_seconds": [
+            7.757417792,
+            7.748655541
+          ],
+          "warm_median_seconds": 7.7530366665,
+          "nominal_reduction_vs_own_gpu_pct": 19.253791957058787,
+          "increase_vs_same_bf16_pct": 0,
+          "stdout": "outputs/local512-convrot-shared-base9-v2-diagnostic-20261010/bf16.stdout.jsonl",
+          "stdout_sha256": "e284613cb50fe0e8f0e6317bb59dc36a369081279521623556f1f43abfd0152c",
+          "actual_calls_cumulative": [
+            290,
+            578,
+            866
+          ],
+          "actual_buckets": [
+            1056,
+            1056,
+            1056
+          ],
+          "overflow_retries_cumulative": [
+            2,
+            2,
+            2
+          ],
+          "headroom": [
+            16,
+            16,
+            16
+          ],
+          "applied_lora_projections": [
+            0,
+            0,
+            0
+          ],
+          "png_sha256": [
+            "cd5a4faf9b0133a90eb6d48ec597347d6498e55af440095202dffcf7b2efc0a2",
+            "c972d02e42d212e5ec0e0a04293313bea6d20a9959f6f1d785a4dbc4e7a169e3",
+            "c972d02e42d212e5ec0e0a04293313bea6d20a9959f6f1d785a4dbc4e7a169e3"
+          ],
+          "memory_report_sha256": "44e3f6169c924410ae05de5ed65f3c33c22cd70cd9c6af16418a40730abe2eed",
+          "phys_footprint_peak_bytes": 17359996656,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "pngs_exact_previous_corresponding_control": true
+        }
+      ]
+    },
+    {
+      "name": "lora-fox8",
+      "summary": "outputs/local512-convrot-shared-lora-fox8-v2-diagnostic-20261010/summary.json",
+      "summary_sha256": "9f91a8e9f169ba9d9399f21a613159694a56d9bd234b667498f76ee3a95c499b",
+      "order": [
+        "gpu",
+        "mpp",
+        "bf16"
+      ],
+      "steps": 8,
+      "seed": 42,
+      "matched_rows": true,
+      "trials": [
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 10.534851458,
+          "warm_request_seconds": [
+            9.492099334,
+            9.4977905
+          ],
+          "warm_median_seconds": 9.494944917000002,
+          "nominal_reduction_vs_own_gpu_pct": 0,
+          "increase_vs_same_bf16_pct": 17.4067510378068,
+          "stdout": "outputs/local512-convrot-shared-lora-fox8-v2-diagnostic-20261010/gpu.stdout.jsonl",
+          "stdout_sha256": "010bd5cf315b3fc8afb3e654f4fec633b7239807166222b31647d4be559f181e",
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "actual_buckets": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "headroom": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "png_sha256": [
+            "e50a74b9e8e829f699d87e834feecf27816f9d01ed2411715b90b41ab10ca542",
+            "e50a74b9e8e829f699d87e834feecf27816f9d01ed2411715b90b41ab10ca542",
+            "e50a74b9e8e829f699d87e834feecf27816f9d01ed2411715b90b41ab10ca542"
+          ],
+          "memory_report_sha256": "30cb4f76b2b3031d9f36aa3e680dc7dec9d0865ac057dcea8ee2dcdb21e3f37d",
+          "phys_footprint_peak_bytes": 19462719384,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "pngs_exact_previous_corresponding_control": true
+        },
+        {
+          "mode": "mpp",
+          "cold_request_seconds": 9.390288292,
+          "warm_request_seconds": [
+            8.117425208,
+            8.116159125
+          ],
+          "warm_median_seconds": 8.1167921665,
+          "nominal_reduction_vs_own_gpu_pct": 14.514594476820186,
+          "increase_vs_same_bf16_pct": 0.36563723625926414,
+          "stdout": "outputs/local512-convrot-shared-lora-fox8-v2-diagnostic-20261010/mpp.stdout.jsonl",
+          "stdout_sha256": "618091b852fd40b1e320157d9db10dc205210c0642b888edf9ed71885e0a1073",
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "actual_buckets": [
+            1056,
+            1056,
+            1056
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "headroom": [
+            1,
+            1,
+            1
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "png_sha256": [
+            "d259e962d5c80ef480cf464a4de1e768752c1e2b478df96e5d9f135d71ff4062",
+            "d259e962d5c80ef480cf464a4de1e768752c1e2b478df96e5d9f135d71ff4062",
+            "d259e962d5c80ef480cf464a4de1e768752c1e2b478df96e5d9f135d71ff4062"
+          ],
+          "memory_report_sha256": "8d34d0e4294494e94b86e66212cebe7f39774998d0e7885c7f3113655f141ab4",
+          "phys_footprint_peak_bytes": 19278284960,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "bf16",
+          "cold_request_seconds": 9.382238042,
+          "warm_request_seconds": [
+            8.107599708,
+            8.066844833
+          ],
+          "warm_median_seconds": 8.0872222705,
+          "nominal_reduction_vs_own_gpu_pct": 14.826022255058879,
+          "increase_vs_same_bf16_pct": 0,
+          "stdout": "outputs/local512-convrot-shared-lora-fox8-v2-diagnostic-20261010/bf16.stdout.jsonl",
+          "stdout_sha256": "72b656bb2e3906be2e85b56c80b6eaafa91dd9a4b8eb7896a1b9be8de3141de4",
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "actual_buckets": [
+            1056,
+            1056,
+            1056
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "headroom": [
+            1,
+            1,
+            1
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "png_sha256": [
+            "ae21429914328c1de0b6403092203c331ec9049a7e799a5b256336f0a82e5ab3",
+            "ae21429914328c1de0b6403092203c331ec9049a7e799a5b256336f0a82e5ab3",
+            "ae21429914328c1de0b6403092203c331ec9049a7e799a5b256336f0a82e5ab3"
+          ],
+          "memory_report_sha256": "82e791c1bbb5011ddb5a9761267209e98b530584ce6afa761b92a9fe26e7d405",
+          "phys_footprint_peak_bytes": 19281512320,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "pngs_exact_previous_corresponding_control": true
+        }
+      ]
+    },
+    {
+      "name": "lora-lighthouse8",
+      "summary": "outputs/local512-convrot-shared-lora-lighthouse8-v2-diagnostic-20261010/summary.json",
+      "summary_sha256": "f8e08e08b375afb0717cba4da45a45c1caed97344a315ddf851ca6448f1d5ef2",
+      "order": [
+        "bf16",
+        "mpp",
+        "gpu"
+      ],
+      "steps": 8,
+      "seed": 17,
+      "matched_rows": true,
+      "trials": [
+        {
+          "mode": "bf16",
+          "cold_request_seconds": 9.64940475,
+          "warm_request_seconds": [
+            8.392330625,
+            8.378471333
+          ],
+          "warm_median_seconds": 8.385400979,
+          "nominal_reduction_vs_own_gpu_pct": 14.286942201078446,
+          "increase_vs_same_bf16_pct": 0,
+          "stdout": "outputs/local512-convrot-shared-lora-lighthouse8-v2-diagnostic-20261010/bf16.stdout.jsonl",
+          "stdout_sha256": "96e6c0a8b5f5ebdbd258a891e8d26a3a01558dc9b7f3dafa10e32348a31d8eac",
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "actual_buckets": [
+            1152,
+            1152,
+            1152
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "headroom": [
+            1,
+            1,
+            1
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "png_sha256": [
+            "7fab42cff96a373cf522f2654501e8dd66344fbae298ee5a3072075192bf4030",
+            "7fab42cff96a373cf522f2654501e8dd66344fbae298ee5a3072075192bf4030",
+            "7fab42cff96a373cf522f2654501e8dd66344fbae298ee5a3072075192bf4030"
+          ],
+          "memory_report_sha256": "4797401142d2ef3766ea266d7d9d4e46ce0987c6e853b0bf7626fe3b517620c3",
+          "phys_footprint_peak_bytes": 19370526664,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "pngs_exact_previous_corresponding_control": true
+        },
+        {
+          "mode": "mpp",
+          "cold_request_seconds": 9.726879083,
+          "warm_request_seconds": [
+            8.42716475,
+            8.4190735
+          ],
+          "warm_median_seconds": 8.423119125,
+          "nominal_reduction_vs_own_gpu_pct": 13.901398607365689,
+          "increase_vs_same_bf16_pct": 0.4498073031266925,
+          "stdout": "outputs/local512-convrot-shared-lora-lighthouse8-v2-diagnostic-20261010/mpp.stdout.jsonl",
+          "stdout_sha256": "8bf8357e53845635917ed238c27d108239a4e761f9460c347df0b44579c0439e",
+          "actual_calls_cumulative": [
+            248,
+            496,
+            744
+          ],
+          "actual_buckets": [
+            1152,
+            1152,
+            1152
+          ],
+          "overflow_retries_cumulative": [
+            0,
+            0,
+            0
+          ],
+          "headroom": [
+            1,
+            1,
+            1
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "png_sha256": [
+            "b9acad9ffa715f8e266a0389d75abd48dfe8eebb05c3993303c8b7b4f91b0b3a",
+            "b9acad9ffa715f8e266a0389d75abd48dfe8eebb05c3993303c8b7b4f91b0b3a",
+            "b9acad9ffa715f8e266a0389d75abd48dfe8eebb05c3993303c8b7b4f91b0b3a"
+          ],
+          "memory_report_sha256": "da3dd17ad25526f8353d8faa6a4885356608d85c38b7b612378f389ba83f118d",
+          "phys_footprint_peak_bytes": 19372476312,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0
+        },
+        {
+          "mode": "gpu",
+          "cold_request_seconds": 10.835759291,
+          "warm_request_seconds": [
+            9.786578625,
+            9.779637292
+          ],
+          "warm_median_seconds": 9.7831079585,
+          "nominal_reduction_vs_own_gpu_pct": 0,
+          "increase_vs_same_bf16_pct": 16.66833801985559,
+          "stdout": "outputs/local512-convrot-shared-lora-lighthouse8-v2-diagnostic-20261010/gpu.stdout.jsonl",
+          "stdout_sha256": "dfc5ae69939bcf11e7676671fcab050dc7ca847a61ac8d078e60ef35ad31be25",
+          "actual_calls_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "actual_buckets": [
+            null,
+            null,
+            null
+          ],
+          "overflow_retries_cumulative": [
+            null,
+            null,
+            null
+          ],
+          "headroom": [
+            null,
+            null,
+            null
+          ],
+          "applied_lora_projections": [
+            238,
+            238,
+            238
+          ],
+          "png_sha256": [
+            "c04bf97075737ee469eccfea889941dd4c17fdb8d7979cf0a9253922efff0b01",
+            "c04bf97075737ee469eccfea889941dd4c17fdb8d7979cf0a9253922efff0b01",
+            "c04bf97075737ee469eccfea889941dd4c17fdb8d7979cf0a9253922efff0b01"
+          ],
+          "memory_report_sha256": "869502ab21954cd192cc31ad895f0b6a05897347a4a4520af3d46772f1795cb0",
+          "phys_footprint_peak_bytes": 19418941288,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "pngs_exact_previous_corresponding_control": true
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "complete_reports": 9,
+    "maximum_phys_footprint_bytes": 19462719384,
+    "sum_system_swap_in_bytes": 0,
+    "sum_system_swap_out_bytes": 0,
+    "scope": "100ms process-tree load+cold+warm+exit, not whole-system cap or driver attribution"
+  },
+  "log_sha256": {
+    "outputs/local512-affine-shared-v1-test-20261009.log": "a03e3da30c989f8117087beb398cd25d37f9d499cde924059b50bdcb94c3f431",
+    "outputs/local512-affine-shared-v2-test-20261009.log": "8dbd39458408f29075c89db38c048e4438a66127d4a7ec80bfba3fa71aa38a66",
+    "outputs/local512-affine-shared-v3-test-20261009.log": "d20b337aadd30a2abbe0580c66c2ac1e6c90d4f51fad1610f466ba3bb126b230",
+    "outputs/local512-affine-shared-v4-test-20261009.log": "ef3f185f7f1886b77a7e6d86570ae18f8c3266c6a675dcb280d2407a7a14e709",
+    "outputs/local512-affine-shared-v5-test-20261009.log": "34c65e86a215439267d6c99df558988437b38fbad37ab7dfcc1bf24f54b56833",
+    "outputs/local512-affine-shared-v1-build-20261009.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "outputs/local512-affine-shared-v2-private-build-20261010.log": "5382949ddb24c10faf024afe1ca9b7967586beed53cab2544fe9687858a8a340",
+    "outputs/local512-affine-shared-v2-public-build-20261010.log": "21b105091854c7e841fd88dc58c34b534abaf12e46603dbfa82cfedb22fc8157",
+    "outputs/local512-affine-shared-v2-private-test-20261010.log": "b0f547fc2260f1c4d98cb824b12a9463b04cf111e780850e62880dab0b19bf94",
+    "outputs/local512-affine-shared-v2-public-test-20261010.log": "b0bf7499ccbd81ce5cba8e31e96fe3d49c7b7585eec95b677370d2a4447f08c6",
+    "outputs/local512-affine-shared-v2-host-test-20261010.log": "4a619e82bc8eefed66688c7028b08aea8297fcc76370e36156fa188a9f6c15fa",
+    "outputs/local512-affine-shared-v2-public-release-guard-20261010.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "decision": "Wire the faster shared-word kernel into existing default-off ConvRot MPP F32 APIs. Keep ordinary packed QMM and the current BF16 partial choice unchanged; same-library full requests are within0.3..0.5% of faster BF16, not a new fastest/default claim.",
+  "implementation": {
+    "header": "native/backends/affine_gpu_shared.hpp",
+    "scheme": "vector packed-word decode into one typed bounded threadgroup weight tile, consumed by all four SIMD groups; original physical pitch/row/column offsets and metadata dtype",
+    "tiles": "BM32/64/128 BN64/128 BK32/64/128; up to32KiB explicit TG cache; production experimental F32 consumer64/64/64, K-tail declared32",
+    "tail": "shared_effective_k_tile reports K32 when requested64/128 does not divide K; avoids demonstrated SDK partial regular-device-left NaN, not silently claiming the larger tile ran",
+    "typed_coefficients": "no widened scale/bias bank, inverse ConvRot or source requantization",
+    "precision": "F32 accumulation/output in model consumer; narrow prototype outputs exact same-kernel F32 cast and bounded by original epsilon plus unchanged2e-5 F32 absolute envelope",
+    "integration": "existing Weights::project_range_fp32 and project_base_slice_fp32 under existing affine_fp32_mpp request snapshot; original signatures/class data layout retained; no new runtime flag",
+    "identity": "convrot-gpu-f32-mpp-shared-word-m64-n64-k64-tail32-v2 and matching new selection marker; old register kernel retained as explicit component control",
+    "unchanged": "default dense/packed projection, BF16 partial, ANE W8/A8/hidden ABI/source/shape/finite/memory admission and complete late-GPU fallback",
+    "new_tool_option": "--bf16-partial-screen --runtime-match-rows applies the same Private actual bucket to F32/BF16 arms and verifies exact work",
+    "no_default_model_route_changed": true,
+    "no_global_candidate_dense_weight_bank": true,
+    "no_original_model_adapter_reference_writes_or_downloads": true
+  },
+  "verification": {
+    "private_selected_tests": 9,
+    "public_selected_tests": 8,
+    "host_tests": 75,
+    "skips": 0,
+    "metal_numeric_cases": 576,
+    "malformed_contract_rejections": 108,
+    "maximum_observed_relative_l2": 0.000193838,
+    "f32_gates": "unchanged relL2<=3e-6 and maxabs<=2e-5 versus independent original-typed decode/F32 GEMM",
+    "narrow_contract": "relL2<=0.003, exact same-kernel F32-to-original-dtype cast, per-element absolute bound2e-5+original dtype epsilon*abs(reference); observed largest relative0.0194%",
+    "native": "8 original/candidate/original Weights cases and both F32 APIs; BF16 partial18; actual Private source/async/lifetime/late complete-GPU fallback; Qwen compiled phase24+prefill GPU layers18; not full repository/model matrix",
+    "public_actual_release_guard_exit_code": 0,
+    "builds_native_only_exit_zero": true,
+    "native_source_inputs_each": 502,
+    "working_tree_contains_pre_existing_user_convrot_drafts": true,
+    "clean_staged_only_or_app_distribution": false
+  },
+  "retained_failures": [
+    {
+      "log": "outputs/local512-affine-shared-v1-test-20261009.log",
+      "cause": "FP16 Q4 M128/K480 partial BK64 read generated NaN; fixed explicit K32 tail policy"
+    },
+    {
+      "log": "outputs/local512-affine-shared-v2-test-20261009.log",
+      "cause": "BF16 narrow abs-only0.003 gate mislabeled one representable0.00390625 step as computation failure"
+    },
+    {
+      "log": "outputs/local512-affine-shared-v3-test-20261009.log",
+      "cause": "diagnostic confirmed output=narrow, rel0.000194, abs0.003906; original F32 gates already passed"
+    },
+    {
+      "log": "outputs/local512-affine-shared-v4-test-20261009.log",
+      "cause": "standalone test used undefined Tensor alias; corrected to mx::array"
+    },
+    {
+      "log": "outputs/local512-affine-shared-v5-test-20261009.log",
+      "scope": "576/84 initial corrected tests; final selected suites include576/108 and extra output contracts; repeated runs not duplicate cases"
+    }
+  ],
+  "visual_review": {
+    "scope": "agent whole512 warm case1 only; not all scenes/seeds/details or user approval",
+    "base_fox": "GPU/shared-F32/BF16: posture/face/ears/tail/snow close, minor fur/texture differences",
+    "lora_lighthouse": "geometry/light/stonework close; GPU red roof versus both candidate dark/black roofs, visible approximation difference retained; new F32 kernel did not remove it",
+    "gpu_and_bf16_controls_exact_previous": "all3 corresponding PNGs in each of3workloads; new MPP not claimed exact to either control",
+    "no_strict_latent_gate_used_as_image_acceptance": true
+  },
+  "probe_provenance": {
+    "binary": "build/local512-affine-shared-v1/gpu-weight-consumer-probe",
+    "new_header_inline_in_probe": true,
+    "rpath_library": "build/local512-qwen-prefill-layers-v2-private/libturbocider.dylib",
+    "rpath_library_sha256": "83c9484f9e4a6ff9a99d20e0e427c2ea3e89745dde9eb2bc66378f59f7c81768",
+    "adjacent_library": null,
+    "native501_snapshot_does_not_include_new_research_header": true,
+    "not_new502_library_or_loaded_image_trace": true,
+    "source_reference": "Apple Metal Performance Primitives Programming Guide, original typed affine source/SDK behavior verified by actual Metal tests"
+  },
+  "ahead_decode": {
+    "new_asynchronous_layer_ahead_decode_implemented": false,
+    "scheme": "fused tile-local decode at consumer, not layer-ahead prefetch or retained dense sidecar",
+    "current_decision": "retain packed source at512; prior synchronous two-matrix window needs genuine reuse and admission/ownership/whole-request benefit before model wiring",
+    "remaining": "real bounded ahead-decode/fused raw consumer, profitable Public/Private operation choice, Qwen generation/base/LoRA/1-2refs/encoder and more scenes/seeds/quiet-window confirmation; full goal active"
+  },
+  "cleanup": {
+    "owned_jobs_terminal_before_cleanup": true,
+    "directories": [
+      "build/local512-affine-shared-v2-private",
+      "build/local512-affine-shared-v2-public"
+    ],
+    "removed_rebuildable_objects": 429,
+    "removed_object_logical_bytes": 33488120,
+    "removed_empty_module_cache_directories": 2,
+    "remaining_owned_objects": 0,
+    "standalone_probe_objects_left": 0,
+    "kept": "all libraries/CLI/probe, source/binary manifests, logs/failed diagnostics and PNGs, original models/adapters/references and user caches",
+    "recoverability": "objects rebuild from original build commands; no external process signals or broad cache deletion"
+  }
+}

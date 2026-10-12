@@ -1,0 +1,622 @@
+{
+  "schema": "tc-native-register-w1-base-e2e-v1",
+  "date": "2026-10-08",
+  "device": "Apple M4 Pro",
+  "machine_memory_gib": 48,
+  "status": "one_paired_base_request_succeeded_net_gain_observed",
+  "runtime_build_id": "tc-runtime-build-v1-4fd1e980da701fa564cafc1f77702fcba49542d251cb5324ce42907c48324c23",
+  "build": {
+    "full_native_private": "passed",
+    "mode": "native-only package-only, process-local CLT",
+    "source_manifest_entries": 562,
+    "source_manifest_matches_at_recording": true
+  },
+  "implementation": {
+    "weight_staging": "register, explicit experimental native-private-W1 only; generic remains default",
+    "weight_kernel_block_sizes": [
+      128,
+      512
+    ],
+    "threads_per_block": 32,
+    "extra_prepare_pso_count": 4,
+    "additional_backings": 0,
+    "a8_restore": "generic unchanged",
+    "control_plane": "synchronous_host_admission",
+    "device_timing": "paired successful FFN ticket interval spans; not additive busy time or overlap proof"
+  },
+  "host_checks": {
+    "native_route_tests": 8,
+    "native_contract_tests": 129,
+    "native_contract_skips": 3,
+    "e2e_supervisor_tests": 5,
+    "denoiser_register_gate": "passed",
+    "stage_mm_warning_as_error": "passed",
+    "stage_source_checks": 412,
+    "stage_layout_checks": 82
+  },
+  "byte_equivalence": {
+    "generated_cases": 4,
+    "paired_gpu_submissions": 8,
+    "dispatches": 64,
+    "ane_requests": 0,
+    "model_loads": 0,
+    "case_flags": [
+      0,
+      1,
+      1,
+      4
+    ],
+    "codes_scales_padding_flags": "exact",
+    "source_immutable": true
+  },
+  "tiny_complete_denoiser": {
+    "gpu_runs": 1,
+    "hybrid_runs": 1,
+    "steps_per_run": 2,
+    "hybrid_ffns": 2,
+    "hybrid_steps": 1,
+    "rrms": 0.00276522720579,
+    "rrms_limit": 0.08,
+    "source_padding_physical_phase": "passed",
+    "model_loads": 0,
+    "performance_qualified": false
+  },
+  "real_ffn": {
+    "scope": "BaseOnly layer0 complete FFN component; not DiT/E2E/quality or performance qualification",
+    "samples": "only step19: one warmup AB, two recorded rounds AB/BA; at most six complete FFNs; single same-input crossover, not performance qualification",
+    "prepare_seconds": {
+      "dense_pso": 0.087812083,
+      "hybrid_program_pso": 1.234191792,
+      "source_materialization": 0.021490167
+    },
+    "memory": {
+      "compiler_driver_budget_certified": false,
+      "imports_coverage": "retained immutable MLX baseline; no synthetic ledger claims",
+      "mlx_source_active_bytes": 310378496,
+      "native_owned_limit": 536870912,
+      "native_owned_peak": 164677644,
+      "process_baseline_bytes": 321438512,
+      "process_observed_after_bytes": 497959800,
+      "surface_bytes": 89161728,
+      "surfaces": 9,
+      "whole_process_budget_certified": false
+    },
+    "records": [
+      {
+        "dense_gpu": {
+          "gpu_span_seconds": 0.05148095823824406,
+          "physical_complete": true,
+          "submitted_buffers": 1,
+          "wall_seconds": 0.056478583
+        },
+        "error": {
+          "cosine": 0.9999963841686165,
+          "finite_elements": 4194304,
+          "max_abs": 0.25,
+          "max_abs_over_reference_peak": 0.003875968992248062,
+          "max_and_cosine_scope": "diagnostic only; no per-element 8% acceptance rule",
+          "rrms": 0.002726540412031423,
+          "rrms_limit": 0.08,
+          "screening_pass": true
+        },
+        "hybrid_w1s": {
+          "branch_join_seconds": 0.020995083,
+          "consumer_seconds": 0.001323875,
+          "controller_seconds": 0.02927925,
+          "device_spans_available": true,
+          "generation": 1,
+          "gpu_complement_span_seconds": 0.020483125001192093,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.0040597083279863,
+          "producer_seconds": 0.00568525,
+          "submit_ane_seconds": 0.001204791,
+          "wall_seconds": 0.029290583
+        },
+        "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+        "kind": "warmup",
+        "layer": 0,
+        "order": "AB",
+        "round": 0,
+        "step": 19
+      },
+      {
+        "dense_gpu": {
+          "gpu_span_seconds": 0.05311566672753543,
+          "physical_complete": true,
+          "submitted_buffers": 1,
+          "wall_seconds": 0.053965208
+        },
+        "error": {
+          "cosine": 0.9999963841686165,
+          "finite_elements": 4194304,
+          "max_abs": 0.25,
+          "max_abs_over_reference_peak": 0.003875968992248062,
+          "max_and_cosine_scope": "diagnostic only; no per-element 8% acceptance rule",
+          "rrms": 0.002726540412031423,
+          "rrms_limit": 0.08,
+          "screening_pass": true
+        },
+        "hybrid_w1s": {
+          "branch_join_seconds": 0.020678667,
+          "consumer_seconds": 0.000758833,
+          "controller_seconds": 0.025981292,
+          "device_spans_available": true,
+          "generation": 2,
+          "gpu_complement_span_seconds": 0.02047999994829297,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.004040875006467104,
+          "producer_seconds": 0.00427025,
+          "submit_ane_seconds": 0.00018225,
+          "wall_seconds": 0.026009583
+        },
+        "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+        "kind": "record",
+        "layer": 0,
+        "order": "AB",
+        "round": 1,
+        "step": 19
+      },
+      {
+        "dense_gpu": {
+          "gpu_span_seconds": 0.04082129162270576,
+          "physical_complete": true,
+          "submitted_buffers": 1,
+          "wall_seconds": 0.041039083
+        },
+        "error": {
+          "cosine": 0.9999963841686165,
+          "finite_elements": 4194304,
+          "max_abs": 0.25,
+          "max_abs_over_reference_peak": 0.003875968992248062,
+          "max_and_cosine_scope": "diagnostic only; no per-element 8% acceptance rule",
+          "rrms": 0.002726540412031423,
+          "rrms_limit": 0.08,
+          "screening_pass": true
+        },
+        "hybrid_w1s": {
+          "branch_join_seconds": 0.022082084,
+          "consumer_seconds": 0.000774584,
+          "controller_seconds": 0.035370375,
+          "device_spans_available": true,
+          "generation": 3,
+          "gpu_complement_span_seconds": 0.021862041670829058,
+          "physical_complete": true,
+          "producer_gpu_span_seconds": 0.011587916756980121,
+          "producer_seconds": 0.012266375,
+          "submit_ane_seconds": 0.000196667,
+          "wall_seconds": 0.035376959
+        },
+        "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+        "kind": "record",
+        "layer": 0,
+        "order": "BA",
+        "round": 2,
+        "step": 19
+      }
+    ],
+    "all_work_physical_complete": true,
+    "ledger_released": true,
+    "source_immutable": true
+  },
+  "e2e": {
+    "comparison": "hybrid-vs-native",
+    "order": [
+      "native",
+      "hybrid"
+    ],
+    "samples_per_route": 1,
+    "cache_state": "fresh process; shared OS source/driver caches not reset",
+    "prompt": "A blue ceramic teapot on a wooden table, soft daylight, realistic photograph.",
+    "seed": 42,
+    "width": 512,
+    "height": 512,
+    "steps": 20,
+    "text_tokens": 24,
+    "dit_cache": "off",
+    "runs": {
+      "native": {
+        "actual_backend": "native_metal_graph+mlx_encoder_vae",
+        "actual_steps": 20,
+        "timings_seconds": {
+          "denoise": 41.616892042,
+          "hybrid_setup": 0,
+          "image_encode": 3.75e-07,
+          "request_wall": 48.602237417,
+          "text_encode": 2.792080875,
+          "vae_decode": 0.995711292
+        },
+        "native_prepare_seconds": 0.4587425,
+        "supervised_wall_seconds": 50.2824062500149,
+        "phase_memory_admission": {
+          "allocation_ceiling_bytes": 14639672072,
+          "automatic_epoch_transition_count": 0,
+          "budget_bytes": 47244640256,
+          "cleanup_failure": null,
+          "compressed_pages_begin": 0,
+          "compressed_pages_end": 0,
+          "current_epoch": 1,
+          "execution_state": "succeeded",
+          "explicit_epoch_transition_count": 1,
+          "failure_disposition": "none",
+          "failure_reason": null,
+          "final_process_footprint_bytes": 14595468064,
+          "final_system_available_bytes": 11929632768,
+          "framework_upper_bytes": 1073741824,
+          "initial_process_footprint_bytes": 14413884168,
+          "last_phase": "native_phase_owners_released",
+          "ledger_active_bytes": 14413884168,
+          "ledger_budget_bytes": 14639672072,
+          "ledger_cached_bytes": 0,
+          "ledger_committed_bytes": 14413884168,
+          "ledger_known_bytes": 14413884168,
+          "ledger_peak_committed_bytes": 14639648520,
+          "ledger_peak_unknown_bytes": 0,
+          "ledger_pending_release_bytes": 0,
+          "ledger_process_baseline_bytes": 14413884168,
+          "ledger_reserved_bytes": 0,
+          "ledger_site_active_count": 0,
+          "ledger_site_allocation_count": 0,
+          "ledger_site_cached_count": 0,
+          "ledger_site_pending_count": 0,
+          "ledger_site_reserved_count": 0,
+          "ledger_storage_bytes": 0,
+          "ledger_storage_count": 0,
+          "ledger_unknown_bytes": 0,
+          "minimum_system_available_bytes": 11592269824,
+          "observation_count": 44,
+          "observation_source": "task_vm_info.phys_footprint+host_vm_info64",
+          "observed_within_budget": true,
+          "peak_observed_over_budget_bytes": 0,
+          "peak_process_footprint_bytes": 14652304160,
+          "peak_unattributed_process_footprint_bytes": 181583896,
+          "planned_increment_bytes": 1299529728,
+          "planned_peak_epoch": 0,
+          "planned_process_upper_bytes": 15713413896,
+          "pressure_state": "normal",
+          "pressure_transitions": 0,
+          "schedule_cursor_complete": false,
+          "schedule_cursor_state": "disabled",
+          "schedule_event_attempted_count": 0,
+          "schedule_event_count": 0,
+          "schedule_event_rejected_count": 0,
+          "schedule_expected_event_count": 0,
+          "schedule_first_failure": null,
+          "schedule_mismatch_count": 0,
+          "schedule_next_sequence": 0,
+          "swap_activity_detected": false,
+          "swap_counter_invalid": false,
+          "swap_first_observed_phase": null,
+          "swap_observation_available": false,
+          "swap_observation_source": null,
+          "swap_sample_count": 0,
+          "swapins_begin": 0,
+          "swapins_delta": 0,
+          "swapins_end": 0,
+          "swapouts_begin": 0,
+          "swapouts_delta": 0,
+          "swapouts_end": 0,
+          "system_available_bytes_at_admission": 13419511808,
+          "tainted": false,
+          "trace_dropped_events": 0,
+          "trace_event_count": 137,
+          "trace_overflowed": false,
+          "unattributed_process_footprint_bytes": 181583896,
+          "watchdog_critical": false,
+          "watchdog_dropped_samples": 0,
+          "watchdog_failure_reason": null,
+          "watchdog_sample_count": 43,
+          "worker_quarantined": false
+        },
+        "phase_owned_peak_bytes": 225764352,
+        "phase_physical_footprint_peak_bytes": 14652304160,
+        "time_l_whole_request_peak_footprint_bytes": 15415979360,
+        "time_l_scope": "OS /usr/bin/time reported peak; sampled/accounting scopes differ; not full-request budget certification",
+        "actual_hybrid_metrics": {},
+        "image_sha256": "c99558879da16cd4e4d6d4c98ddb2a01fe2ab1a3de1422afd886991a52bc0083",
+        "exit_code": 0,
+        "route_and_released_phase_verified": true
+      },
+      "hybrid": {
+        "actual_backend": "native_metal_graph+private_ane_w1+mlx_encoder_vae",
+        "actual_steps": 20,
+        "timings_seconds": {
+          "denoise": 35.956603708,
+          "hybrid_setup": 0,
+          "image_encode": 4.16e-07,
+          "request_wall": 43.758467125,
+          "text_encode": 2.766668958,
+          "vae_decode": 1.004731042
+        },
+        "native_prepare_seconds": 1.329489417,
+        "supervised_wall_seconds": 43.890735500026494,
+        "phase_memory_admission": {
+          "allocation_ceiling_bytes": 14762666760,
+          "automatic_epoch_transition_count": 0,
+          "budget_bytes": 47244640256,
+          "cleanup_failure": null,
+          "compressed_pages_begin": 0,
+          "compressed_pages_end": 0,
+          "current_epoch": 1,
+          "execution_state": "succeeded",
+          "explicit_epoch_transition_count": 1,
+          "failure_disposition": "none",
+          "failure_reason": null,
+          "final_process_footprint_bytes": 14556244816,
+          "final_system_available_bytes": 13511540736,
+          "framework_upper_bytes": 1073741824,
+          "initial_process_footprint_bytes": 14414080776,
+          "last_phase": "native_phase_owners_released",
+          "ledger_active_bytes": 14414080776,
+          "ledger_budget_bytes": 14762666760,
+          "ledger_cached_bytes": 0,
+          "ledger_committed_bytes": 14414080776,
+          "ledger_known_bytes": 14414080776,
+          "ledger_peak_committed_bytes": 14762563352,
+          "ledger_peak_unknown_bytes": 0,
+          "ledger_pending_release_bytes": 0,
+          "ledger_process_baseline_bytes": 14414080776,
+          "ledger_reserved_bytes": 0,
+          "ledger_site_active_count": 0,
+          "ledger_site_allocation_count": 0,
+          "ledger_site_cached_count": 0,
+          "ledger_site_pending_count": 0,
+          "ledger_site_reserved_count": 0,
+          "ledger_storage_bytes": 0,
+          "ledger_storage_count": 0,
+          "ledger_unknown_bytes": 0,
+          "minimum_system_available_bytes": 11724718080,
+          "observation_count": 44,
+          "observation_source": "task_vm_info.phys_footprint+host_vm_info64",
+          "observed_within_budget": true,
+          "peak_observed_over_budget_bytes": 0,
+          "peak_process_footprint_bytes": 14782311248,
+          "peak_unattributed_process_footprint_bytes": 142164040,
+          "planned_increment_bytes": 1422327808,
+          "planned_peak_epoch": 0,
+          "planned_process_upper_bytes": 15836408584,
+          "pressure_state": "normal",
+          "pressure_transitions": 0,
+          "schedule_cursor_complete": false,
+          "schedule_cursor_state": "disabled",
+          "schedule_event_attempted_count": 0,
+          "schedule_event_count": 0,
+          "schedule_event_rejected_count": 0,
+          "schedule_expected_event_count": 0,
+          "schedule_first_failure": null,
+          "schedule_mismatch_count": 0,
+          "schedule_next_sequence": 0,
+          "swap_activity_detected": false,
+          "swap_counter_invalid": false,
+          "swap_first_observed_phase": null,
+          "swap_observation_available": false,
+          "swap_observation_source": null,
+          "swap_sample_count": 0,
+          "swapins_begin": 0,
+          "swapins_delta": 0,
+          "swapins_end": 0,
+          "swapouts_begin": 0,
+          "swapouts_delta": 0,
+          "swapouts_end": 0,
+          "system_available_bytes_at_admission": 15076147200,
+          "tainted": false,
+          "trace_dropped_events": 0,
+          "trace_event_count": 1367,
+          "trace_overflowed": false,
+          "unattributed_process_footprint_bytes": 142164040,
+          "watchdog_critical": false,
+          "watchdog_dropped_samples": 0,
+          "watchdog_failure_reason": null,
+          "watchdog_sample_count": 43,
+          "worker_quarantined": false
+        },
+        "phase_owned_peak_bytes": 348482576,
+        "phase_physical_footprint_peak_bytes": 14782311248,
+        "time_l_whole_request_peak_footprint_bytes": 15416192352,
+        "time_l_scope": "OS /usr/bin/time reported peak; sampled/accounting scopes differ; not full-request budget certification",
+        "actual_hybrid_metrics": {
+          "completed_hybrid_steps": 19,
+          "device_spans_seconds": {
+            "gpu_complement": 12.456846708781086,
+            "producer_gpu": 15.754880958935246,
+            "scope": "paired coverage only: both positive captured GPU spans; excludes unavailable samples",
+            "timed_ffns": 608
+          },
+          "enabled": true,
+          "executor": "native_metal_graph_private_ane_w1",
+          "hardware_int8_arithmetic_verified": false,
+          "host_spans_seconds": {
+            "branch_join": 12.571460831000005,
+            "consumer": 0.5352062840000004,
+            "producer": 19.263116622000002,
+            "submit_ane": 0.06794053399999994,
+            "total": 32.464763046
+          },
+          "partial_bytes": 33554432,
+          "physical_ane_placement_verified": false,
+          "recipe": "sylvester_w8a8_channel_split_fp16_io",
+          "successful_ffns": 608,
+          "surface_bytes": 89161728,
+          "timing_scope": "host controller spans plus captured Metal ticket first-start/last-end spans; zero device span is unavailable, inter-CB gaps included; not additive kernel busy times or proof of ANE overlap",
+          "weight_staging": "register",
+          "whole_request_performance_qualified": false
+        },
+        "image_sha256": "584af40d441df89772172f0dd6e9460274bef4782b8a337827c0d4365b9a55ea",
+        "exit_code": 0,
+        "route_and_released_phase_verified": true
+      }
+    },
+    "denoise_reduction_percent": 13.600939561482884,
+    "request_reduction_percent": 9.966146723742696,
+    "source_proof": "four held source files canonical stat/generation unchanged, not whole-checkpoint content certification",
+    "sources_unchanged": true,
+    "swap_before": "vm.swapusage: total = 4096.00M  used = 3305.75M  free = 790.25M  (encrypted)",
+    "swap_after": "vm.swapusage: total = 4096.00M  used = 3305.75M  free = 790.25M  (encrypted)",
+    "system_swapin_swapout_delta": 0,
+    "thermal_before_after": "no warning recorded by pmset; not continuous thermal tracing",
+    "pair_complete": true
+  },
+  "final_image_diagnostics": {
+    "schema": "native-base-image-comparison-v1",
+    "scope": "one same-seed final RGB pair; diagnostic, not tensor parity or full quality qualification",
+    "shape": [
+      512,
+      512,
+      3
+    ],
+    "relative_l2": 0.008680382805647468,
+    "mean_absolute_error_255": 0.5268592834472656,
+    "rmse_255": 1.2776418604411146,
+    "psnr_db": 46.00262095839425,
+    "max_absolute_error_255": 74.0,
+    "visual_review": {
+      "reviewer": "Codex",
+      "similar": true,
+      "observed": "Both images retain the same blue teapot shape, lid, handle, spout, ceramic reflections, tabletop and background; no obvious composition or object defect in this pair. Small texture/pixel changes remain."
+    },
+    "images": {
+      "native": {
+        "path": "outputs/native-w1-register-20261008/e2e-pair/native.png",
+        "sha256": "c99558879da16cd4e4d6d4c98ddb2a01fe2ab1a3de1422afd886991a52bc0083",
+        "bytes": 450150
+      },
+      "hybrid": {
+        "path": "outputs/native-w1-register-20261008/e2e-pair/hybrid.png",
+        "sha256": "584af40d441df89772172f0dd6e9460274bef4782b8a337827c0d4365b9a55ea",
+        "bytes": 449892
+      }
+    }
+  },
+  "qualification": {
+    "this_base_success_path": true,
+    "visual_pair_review": true,
+    "general_quality": false,
+    "stable_performance": false,
+    "physical_overlap": false,
+    "hardware_int8_arithmetic": false,
+    "full_request_memory_budget": false,
+    "native_gpu_vs_best_mlx_same_build": false,
+    "exception_cancel_late_callback_device_paths": false,
+    "lora_edit_zimage_app": false,
+    "w1r_w2": false
+  },
+  "artifacts": [
+    {
+      "path": "build/native-w1-register-20261008/libturbocider.dylib",
+      "bytes": 10046192,
+      "sha256": "4a1ff4b205b598aa502bbaf527036806fa37b578105b8a075476f5f91b73c1ae"
+    },
+    {
+      "path": "build/native-w1-register-20261008/turbocider",
+      "bytes": 309384,
+      "sha256": "3702be1e63bdd435db091118d8f6527e170fc186a4580630fb02ee39fef8aac0"
+    },
+    {
+      "path": "build/native-w1-register-20261008/runtime-build/runtime-build-manifest.json",
+      "bytes": 154733,
+      "sha256": "e39c961e4b9887715bad10dd38ed99c20c9359dd02d9ce18236ebd3ac77d769f"
+    },
+    {
+      "path": "build/native-w1-register-20261008/stage-component/native-ane-register-stage-component",
+      "bytes": 407456,
+      "sha256": "f3f8e6e005839fbb3907ce46a4fb2730bb242e4c1ce9e6b155f8af868bb31689"
+    },
+    {
+      "path": "build/native-w1-register-components-20261008/native-qwen-hybrid-denoiser-component",
+      "bytes": 99752,
+      "sha256": "6bfbc2eb610b41985c3f7fafb8225dbeb67e5f037119f61d8d89a7a132390096"
+    },
+    {
+      "path": "build/native-register-replay-20261008/native-qwen-hybrid-ffn-replay",
+      "bytes": 173600,
+      "sha256": "89d6101ee952f8087f13bcbdea92e8e90c5a7fe7c233c726923e8a83d8ff0adb"
+    }
+  ],
+  "tool_sources": [
+    {
+      "path": "tools/native/native_ane_register_stage_component.mm",
+      "bytes": 13369,
+      "sha256": "9f6fe6d3e98a8ec597b298370dc8c9a3cd2b7be42ab99d37628efd17fa8de89e"
+    },
+    {
+      "path": "tools/native/build_native_ane_register_stage_component.sh",
+      "bytes": 982,
+      "sha256": "07985d71cb005f9a612b0ad543f6b594996f4dcf3a31f61d4a5833b94ebf7cd4"
+    },
+    {
+      "path": "tools/native/native_qwen_hybrid_denoiser_component.cpp",
+      "bytes": 21263,
+      "sha256": "d1a9febc18b0c366aa0634edbde30398a722af6f73e3943490dd951dcbb4d4b5"
+    },
+    {
+      "path": "tools/native/build_native_qwen_hybrid_denoiser_component.sh",
+      "bytes": 2061,
+      "sha256": "d4ff5247dbead666f189e49bcef6acacbba96693e219ce078a566d015b8538e8"
+    },
+    {
+      "path": "tools/native/native_qwen_hybrid_ffn_replay.cpp",
+      "bytes": 28596,
+      "sha256": "1bf7ca2e1d4b9c06894c1d4557e064d860d00de58c3ec1acb00f0efbda4167c1"
+    },
+    {
+      "path": "tools/native/build_native_qwen_hybrid_ffn_replay.sh",
+      "bytes": 2103,
+      "sha256": "36fbe7e24f06e1ee8986ad29891df05f3f13d5a091575f4151f74c99aea184a8"
+    },
+    {
+      "path": "tools/validation/run_qwen_native_e2e.py",
+      "bytes": 9882,
+      "sha256": "7506c5bf885db36f82f914b54179d0cbf9d799d4d31d64264479f5267ec1afd5"
+    },
+    {
+      "path": "tests/native/test_qwen_native_e2e_supervisor.py",
+      "bytes": 4817,
+      "sha256": "e6d9dbf102aa71aac31de8c6b4529f34b5251ac836376f4e77b1adb237ee51c4"
+    },
+    {
+      "path": "tests/native/test_qwen_native_route.py",
+      "bytes": 12959,
+      "sha256": "6d62f560decf488c0a429900a4953faf46235e7147f9072265e06278527bab11"
+    }
+  ],
+  "receipts": [
+    {
+      "path": "outputs/native-w1-register-20261008/e2e-pair/receipt.json",
+      "bytes": 836689,
+      "sha256": "9e0bd107962ff9d8f0917b181324b27737efc462e2f965e4d72a6ad1e1ef0581"
+    },
+    {
+      "path": "outputs/native-w1-register-20261008/e2e-pair/image-comparison.json",
+      "bytes": 1099,
+      "sha256": "5338a61d570a757783bd61e3cb90632d61e28748ecaeec3f42311541a51df4c8"
+    },
+    {
+      "path": "outputs/native-w1-register-20261008/real-ffn-receipt.json",
+      "bytes": 6169,
+      "sha256": "1e058f8202b474765d82b3d2181b7619a8114f52e3968b7b3c679b40927b46c5"
+    },
+    {
+      "path": "outputs/native-w1-register-20261008/tiny-denoiser.log",
+      "bytes": 2185,
+      "sha256": "e01160e8507269a298a5e97765a6679f643e5b534238e15da88a349bf87e536b"
+    },
+    {
+      "path": "outputs/native-w1-register-20261008/stage-byte-equivalence.log",
+      "bytes": 635,
+      "sha256": "82d00f94bc75cbe01dbfbc1124f0fbc0f572ed95de57780a8b2791566fe2c63a"
+    },
+    {
+      "path": "outputs/native-w1-register-20261008/owned-cleanup.json",
+      "bytes": 52982,
+      "sha256": "3a83714512c15b3d7389ff30e21cf30f2c90827e5c096c5cc4fa48382790f953"
+    }
+  ],
+  "owned_cleanup": {
+    "removed_file_count": 248,
+    "removed_bytes": 33710258,
+    "verified_removed": true,
+    "preserved_artifacts_sha256_unchanged": true
+  },
+  "model_downloads": 0,
+  "full_checkpoint_copies": 0,
+  "next": "source-bound compact row-scale reuse and bounded prepared-session costs; then native GPU LoRA/full-target semantics and hybrid ABI, each with independent validation; no more model runs in this experimental group"
+}

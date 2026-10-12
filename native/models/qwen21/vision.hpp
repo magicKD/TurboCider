@@ -15,6 +15,9 @@ struct VisionConfig {
     bool pe_fp32 = false;
     // Experimental reduction diagnostic; never selected by production routing.
     bool pe_compensated_projection = false;
+    // Qwen21 FP32-only 72->80 zero-padded GPU SDPA. The PE eager precision path
+    // below is independent and does not take this optimization.
+    bool efficient_attention = true;
 };
 struct VisionFeatures {
     Tensor merged;

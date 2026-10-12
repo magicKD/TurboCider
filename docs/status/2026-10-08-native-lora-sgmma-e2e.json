@@ -1,0 +1,304 @@
+{
+  "schema": "turbocider.native_lora_sgmma_e2e_status.v1",
+  "date": "2026-10-08",
+  "status": "bounded_e2e_execution_pass_no_net_speedup_vs_mlx",
+  "build": {
+    "runtime_build_id": "tc-runtime-build-v1-77863b3f55434af37ee12615039845b576878a6f310e39656bc2bc1cf308c2fb",
+    "manifest_sha256": "9c3bd2425c7842b29c1c77e3396481eb003cfa5c3372526cdf98c8ccf54deb28",
+    "cli_sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641",
+    "library_sha256": "e45ecae722fb2632b5974112ade35b75f1d27e548affe71707399ef9e9ae5099"
+  },
+  "build_unchanged": true,
+  "conclusion": {
+    "actual_execution_passed": true,
+    "native_sgmma_faster_than_mlx_in_this_pair": false,
+    "same_build_scalar_e2e_available": false,
+    "causal_scalar_to_sgmma_e2e_gain_established": false,
+    "performance_qualified": false,
+    "general_image_quality_qualified": false,
+    "full_request_memory_certified": false,
+    "ane_or_w2_qualified": false,
+    "app_acceptance_performed": false,
+    "automatic_selection_authorized": false,
+    "default_change_recommended": false
+  },
+  "configuration": {
+    "model": "qwen-image-2.1",
+    "operation": "image.generate",
+    "width": 512,
+    "height": 512,
+    "steps": 6,
+    "seed": 42,
+    "prompt": "A blue ceramic teapot on a wooden table, soft daylight, realistic photograph.",
+    "reference_images": 0,
+    "adapter_strength": 1.0,
+    "adapter_rank": 128,
+    "execution": "gpu",
+    "residency": "component_staged",
+    "compile_gpu": false,
+    "qwen21_dit_cache": "off",
+    "allowed_approximation": "pinned Viggle six-step distilled schedule only",
+    "samples_per_route": 1,
+    "order": [
+      "mlx",
+      "native"
+    ],
+    "max_model_requests": 2,
+    "timeout_seconds": 120,
+    "processes": "fresh per route; shared OS/source/driver caches not reset; not independent cold starts"
+  },
+  "requested_native_kernel": "sgmma",
+  "actual_native_recipe": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2",
+  "actual_native_lora": {
+    "adapter_count": 1,
+    "adapter_revision": "9cefbea6f41fa5f4cebcda4983133cf6f45d23723b2ee6b8c7e78a9718ce5d75",
+    "adapter_sha256": "bafb91d0047df3f9b8a5a850b0c967f051164314d8aad778dfa34d9c24ec345b",
+    "completed": true,
+    "completed_steps": 6,
+    "enabled": true,
+    "logical_projections": 227,
+    "max_rank": 128,
+    "ordered_terms": 227,
+    "precision_recipe": "runtime-lora-fp32-sgmma8x8-aligned-r128-scalar-tail-ordered-bf16-bias-last-v2",
+    "resolved_bindings": 195,
+    "schema_version": 1,
+    "scratch_bytes": 52047872,
+    "source_generation": 3,
+    "source_kind": "verified-held-fd",
+    "source_strength": 1,
+    "variant": "viggle-r128-6step",
+    "verified_artifact_digest": "d2ba4f7b04f3025b1c04b7a13825267f5f581f7c5616c36e23ba688b95378c80"
+  },
+  "actual_execution": {
+    "native_runtime_backend": "native_metal_graph+mlx_encoder_vae",
+    "native_gpu_graph": "native_full_dit_euler_runtime_lora",
+    "native_runtime_precision": "bf16_gpu+runtime_lora_fp32_rank",
+    "native_actual_steps": 6,
+    "mlx_actual_steps": 6,
+    "mlx_applied_projections": 227,
+    "native_applied_projections": 227,
+    "note": "Actual v2 bundle retains scalar-tail fallback; receipt does not prove every projection used SGMMA."
+  },
+  "timing": {
+    "mlx": {
+      "timings_seconds": {
+        "denoise": 14.325801417,
+        "hybrid_setup": 0,
+        "image_encode": 2.0208e-05,
+        "request_wall": 20.95951425,
+        "text_encode": 2.779910875,
+        "vae_decode": 0.959651666
+      },
+      "supervised_wall_seconds": 21.658253792091273,
+      "process_memory": {
+        "scope": "whole CLI process time-l counters, not native ledger or MLX allocator",
+        "peak_footprint_bytes": 18313032904,
+        "max_rss_bytes": 12499763200,
+        "process_swaps": 0
+      },
+      "mlx_allocator_memory": {
+        "mlx_active_bytes": 197130,
+        "mlx_peak_bytes": 17817685782,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      }
+    },
+    "native_sgmma": {
+      "timings_seconds": {
+        "denoise": 16.795572375,
+        "hybrid_setup": 0,
+        "image_encode": 7.708e-06,
+        "request_wall": 23.986534208,
+        "text_encode": 2.6916995,
+        "vae_decode": 0.986027917
+      },
+      "supervised_wall_seconds": 24.070941166952252,
+      "process_memory": {
+        "scope": "whole CLI process time-l counters, not native ledger or MLX allocator",
+        "peak_footprint_bytes": 15415881032,
+        "max_rss_bytes": 13619920896,
+        "process_swaps": 0
+      },
+      "mlx_allocator_memory": {
+        "mlx_active_bytes": 196608,
+        "mlx_peak_bytes": 15200124196,
+        "scope": "MLX allocator; excludes Core ML/OS/file cache"
+      }
+    },
+    "native_prepare_seconds": 0.626528625,
+    "native_relative_to_mlx_percent": {
+      "request_wall": 14.442223812510324,
+      "denoise": 17.24001950124199
+    },
+    "external_time_l_real_seconds": {
+      "mlx": 21.64,
+      "native_sgmma": 24.06
+    },
+    "scope": "Request wall is the primary full-request comparison. Native prepare is included in request wall and excluded from denoise; external/supervised wall includes process lifecycle and is not additive."
+  },
+  "source": {
+    "sources_unchanged": true,
+    "artifacts": {
+      "diffusion_models/qwen_image_2.1_bf16.safetensors": {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors",
+        "canonical_path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors",
+        "bytes": 14230280616,
+        "inode": 75574303,
+        "device": 16777229,
+        "mtime_ns": 1790584882817233443,
+        "ctime_ns": 1790584882819648434
+      },
+      "text_encoders/qwen3vl_8b_bf16.safetensors": {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors",
+        "canonical_path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors",
+        "bytes": 17534334616,
+        "inode": 75695072,
+        "device": 16777229,
+        "mtime_ns": 1790743602406676647,
+        "ctime_ns": 1790743602408073402
+      },
+      "vae/qwen_image_2.1_vae_bf16.safetensors": {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors",
+        "canonical_path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors",
+        "bytes": 675509688,
+        "inode": 75574539,
+        "device": 16777229,
+        "mtime_ns": 1790582428321612493,
+        "ctime_ns": 1790582428322485997
+      },
+      "processor/tokenizer.json": {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/processor/tokenizer.json",
+        "canonical_path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/processor/tokenizer.json",
+        "bytes": 11422654,
+        "inode": 75719522,
+        "device": 16777229,
+        "mtime_ns": 1790746650872939059,
+        "ctime_ns": 1790746650872939059
+      },
+      "adapter": {
+        "path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/lora/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+        "canonical_path": "/Users/kd/Documents/project/mac_image_generation/models/Qwen-Image-2.1/lora/Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+        "bytes": 679604800,
+        "inode": 75715152,
+        "device": 16777229,
+        "mtime_ns": 1790745549708180376,
+        "ctime_ns": 1790745566944108611
+      }
+    },
+    "model_downloads": 0,
+    "checkpoint_copies": 0,
+    "proof_scope": "supervisor stat only; MLX existing runtime pin check is pathname-based; native reports verified held-fd provenance",
+    "supervisor_hashed_model_payloads": false
+  },
+  "lifecycle": {
+    "native_phase_state": "succeeded",
+    "native_physical_completion_verified": true,
+    "native_zero_owned_ledger_verified": true,
+    "worker_quarantined": false,
+    "tainted": false,
+    "zero_owned_ledger": {
+      "ledger_storage_count": 0,
+      "ledger_storage_bytes": 0,
+      "ledger_reserved_bytes": 0,
+      "ledger_pending_release_bytes": 0,
+      "ledger_unknown_bytes": 0
+    },
+    "retained_process_baseline_bytes": 15094213840,
+    "native_owned_peak_over_baseline_bytes": 277816320,
+    "phase_framework_guard_bytes": 1073741824,
+    "full_request_certified": false,
+    "note": "Zero means tracked owned native allocations released after physical completion; baseline/MLX/process memory is not zero."
+  },
+  "image_comparison": {
+    "scope": "final exported RGB diagnostic only, not intermediate tensor equivalence",
+    "shape": [
+      512,
+      512,
+      3
+    ],
+    "rgb_relative_l2_percent": 1.0348640737414305,
+    "mae_255": 0.6683985392252604,
+    "psnr_db": 44.642956809530716,
+    "max_abs_255": 63.0,
+    "visual_review": {
+      "performed": true,
+      "observation": "Both show the same blue ceramic teapot, wooden table, spout/handle/lid and soft daylight; composition and reflections are visually close.",
+      "scope": "one prompt and seed only"
+    }
+  },
+  "observation_limits": {
+    "thermal": "pmset reported no recorded thermal/performance warning; no clock or kernel-level causal evidence",
+    "swap": "time-l swaps zero and vm.swapusage snapshots unchanged; native phase swap_observation_available=false",
+    "same_build_scalar_e2e": "absent; old 6d914 build times cannot isolate the kernel change",
+    "scope": "single prompt/seed/rank/strength/shape only; no edit, ANE, W2 or App qualification"
+  },
+  "cpu_validation": {
+    "tests": 18,
+    "result": "PASS",
+    "seconds": 0.033,
+    "log": "outputs/native-lora-sgmma-20261008/supervisor-cpu.log",
+    "device_execution": false,
+    "model_loads": false
+  },
+  "cleanup": {
+    "status": "completed",
+    "files_removed": 244,
+    "bytes_removed": 29332442,
+    "scope": "only freshly owned 20261008 SGMMA build intermediates/module caches and explicitly generated fixtures",
+    "runtime_device_work_completed_before_cleanup": true,
+    "no_original_models_removed": true,
+    "preserved": "runtime CLI/libraries/manifests, probe binaries, original model/capture files, raw receipts/logs and both E2E images",
+    "receipt": "outputs/native-lora-sgmma-20261008/owned-cleanup.json"
+  },
+  "artifacts": [
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/receipt.json",
+      "bytes": 98355,
+      "sha256": "a949b0f8400bbace0bfe4cb5ed107571f1c7506d2d0dbe87e79b1561553c810d"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/image-comparison.json",
+      "bytes": 518,
+      "sha256": "e12c9901926c1febc716ec4cf1537a6ac87623c1eac0239c5d6974fe3a1c1f0f"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/mlx-stdout.json",
+      "bytes": 3445,
+      "sha256": "a3c01d2fc4fdafb0a42374044e028ea4cf8404c02728ef28b318eb8593ca0cb2"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/native-stdout.json",
+      "bytes": 38612,
+      "sha256": "91d29666af1720fe9b1d20c697739c7865514395a7907644788f6bed45233b0c"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/mlx-stderr.log",
+      "bytes": 7982,
+      "sha256": "e77696bf6dfb756d4738cf241e203e250cb23a84ca06eacf4323de8150cdaac5"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-pair/native-stderr.log",
+      "bytes": 8233,
+      "sha256": "2a0248aac6e336a14f45ce5143b4a6fa67e612324c880a9a4340bd13a284c715"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/supervisor-cpu.log",
+      "bytes": 847,
+      "sha256": "82b7313cddc00f1798f2b98e089fc3f091213a4b6779e79240dd18ee2fa34d1c"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/e2e-supervisor.log",
+      "bytes": 216,
+      "sha256": "3ce6d992463a70cf1e07ff6de0f205f8ce7caf641f11226fb2fe103c622b0d72"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/real-ffn.json",
+      "bytes": 7767,
+      "sha256": "e2bb5e9f9fa49554c8916c37642f1cb5c94f472e1c596b7e6251f063767274a2"
+    },
+    {
+      "path": "outputs/native-lora-sgmma-20261008/owned-cleanup.json",
+      "bytes": 51686,
+      "sha256": "b14ca812f398ae95f6cc290d0a392bbaac3683aa81e409ea13a8cc764cfa1a05"
+    }
+  ]
+}

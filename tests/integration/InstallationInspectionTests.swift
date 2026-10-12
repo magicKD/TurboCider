@@ -28,7 +28,7 @@ import Foundation
         }
         try check(inspect().issues.contains { $0.code == "missing_root" }, "Missing directory accepted")
         try json("qwen/processor/tokenizer.json", ["model": ["type": "BPE"]])
-        for path in LibraryRecipe.all.first(where: { $0.modelID == "qwen-image-2.1" })!.include {
+        for path in LibraryRecipe.all.first(where: { $0.modelID == "qwen-image-2.1" })!.include where path.hasSuffix(".safetensors") {
             try tensor("qwen/" + path)
         }
         try check(inspect("qwen-image-2.1", at: "qwen").status == "files_present", "Qwen21 assets rejected")

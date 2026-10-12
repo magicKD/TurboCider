@@ -14,6 +14,32 @@ with mock.patch.object(sys, "path", [str(ROOT / "tools/validation"), *sys.path])
 
 
 class MemoryScreenTests(unittest.TestCase):
+    def test_exact_owned_child_role_and_wildcard_rejection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "tools/native").mkdir(parents=True)
+            for name in ("process_tree_sampler.py", "verify_process_tree_samples.py", "reference"):
+                (root / ("reference" if name == "reference" else "tools/native/" + name)).write_text("fixture")
+            raw, report = root / "child-memory.jsonl", root / "child-memory-report.json"
+            def run(command, **kwargs):
+                self.assertEqual(command[command.index("--role") + 1], "reference_inference=" + str((root / "reference").resolve()))
+                self.assertEqual(command[-2:], ["--", "fixture"])
+                raw.write_text("raw fixture evidence\n")
+                report.write_text(json.dumps(dict(complete=True, command_exit_code=0, allowed_max_gap_ns=500_000_000,
+                    correlation_id=command[command.index("--correlation-id") + 1])))
+                return subprocess.CompletedProcess(command, 0)
+            args = dict(repo=root, output=root, stem="child", env={}, stdout=None, stderr=None,
+                        timeout=30, interval_ms=100, max_gap_ms=500)
+            with mock.patch.object(MEMORY, "run_owned", side_effect=run) as launch, \
+                 mock.patch.object(MEMORY.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
+                MEMORY.run_sampled(["fixture"], child_roles=(("reference_inference", str(root / "reference")),), **args)
+                self.assertEqual(launch.call_count, 1)
+                for role, path in (("reference_inference", "*"), ("reference_inference", "/tmp/*"),
+                                   ("reference_inference", "reference"), ("", str(root / "reference"))):
+                    with self.assertRaises(ValueError):
+                        MEMORY.run_sampled(["fixture"], child_roles=((role, path),), **args)
+                self.assertEqual(launch.call_count, 1)
+
     def test_nonmain_caller_rejected_before_any_process_launch(self):
         with mock.patch.object(MEMORY.threading, "current_thread", return_value=object()), \
                 mock.patch.object(MEMORY.subprocess, "Popen") as launch:

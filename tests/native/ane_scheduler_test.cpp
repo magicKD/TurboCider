@@ -4,9 +4,31 @@
 int main() {
     using tc::ane::RowScheduler;
     using Mode = RowScheduler::Mode;
+    using tc::ane::PartitionAxis;
+    // Channels cover ALL rows, including a short/tail bucket. The common
+    // whole-block on/off controller must not apply the row chunk balancer.
+    RowScheduler channels(32,-1,PartitionAxis::IntermediateChannels);
+    for(int visit=1;visit<=4;++visit) {
+        auto p=channels.plan(0,17);
+        assert(p.chunks==(visit<=2?1:0));
+        channels.observe(0,17,p.chunks,p.chunks?.5:1.,100.,.0001);
+    }
+    assert(channels.plan(0,17).chunks==1);
+    assert(channels.plan(1,17).chunks==1);
+    assert(channels.plan(0,65).chunks==1);
+    assert(RowScheduler(32,1,PartitionAxis::IntermediateChannels).plan(0,1).chunks==1);
+    bool rejected=false;
+    try { RowScheduler invalid(32,2,PartitionAxis::IntermediateChannels); } catch(const std::runtime_error&) { rejected=true; }
+    assert(rejected);
     // Decisions distinguish measured GPU probes from genuinely unsplit GPU
     // work. Shape and layer isolation still apply, and disabled layers retry.
     RowScheduler plans(32);
+    const auto preview=plans.peek_plan(0,97);
+    assert(preview.chunks==1&&plans.peek_plan(0,97).chunks==1);
+    assert(plans.plan(0,97).chunks==1); // only this call advances the visit
+    assert(plans.plan(0,97).chunks==1);
+    assert(plans.plan(0,97).mode==Mode::GpuProbe);
+    plans=RowScheduler(32);
     assert(plans.plan(0, 32).mode == Mode::Gpu);
     for (int visit = 1; visit <= 4; ++visit) {
         const auto plan = plans.plan(0, 97);
@@ -133,6 +155,54 @@ int main() {
         assert(plan.mode == Mode::Hybrid && plan.chunks == 1);
         forced.observe(0, 97, plan.chunks, 10.0, 1.0, 9.0);
     }
+    // Production fixed partitions skip profiling fences, while an explicit
+    // measurement still retains the old timing contract. This matters for
+    // six-step requests that never reach adaptive steady state.
+    RowScheduler fixed_async(32, 1, PartitionAxis::Rows, false);
+    for (int visit = 0; visit < 6; ++visit) {
+        const auto plan = fixed_async.plan(0, 97);
+        assert(plan.mode == Mode::HybridUntimed && plan.split() && !plan.measured());
+        assert(plan.chunks == 1);
+    }
+    assert(fixed_async.plan(0, 32).mode == Mode::Gpu);
+    const auto async_channels = RowScheduler(32, 1, PartitionAxis::IntermediateChannels, false).plan(0, 17);
+    assert(async_channels.mode == Mode::HybridUntimed && async_channels.chunks == 1);
+    assert(RowScheduler(32, 0, PartitionAxis::Rows, false).plan(0, 97).mode == Mode::SplitProbe);
+
+    // A retired staged owner can recover its metadata in the same process.
+    // Model/adapter/config identities are supplied by the caller; misses do
+    // not import a different shape's timing history or retain device storage.
+    tc::ane::RowSchedulerCache cache;
+    RowScheduler learned(32);
+    for (int visit = 1; visit <= 6; ++visit) {
+        const auto plan = learned.plan(0, 97);
+        learned.observe(0, 97, plan.chunks, plan.chunks ? .5 : 1.);
+    }
+    cache.save("model-a:adapter-a:shape-97", learned);
+    RowScheduler rebuilt(32);
+    assert(cache.restore("model-a:adapter-a:shape-97", rebuilt));
+    assert(rebuilt.plan(0, 97).mode == Mode::HybridUntimed);
+    assert(rebuilt.plan(1, 97).mode == Mode::Hybrid);
+    assert(rebuilt.plan(0, 193).mode == Mode::Hybrid);
+    RowScheduler unrelated(32);
+    assert(!cache.restore("model-a:adapter-b:shape-97", unrelated));
+    assert(unrelated.plan(0, 97).mode == Mode::Hybrid);
+    for (int key = 0; key < 8; ++key) cache.save("other-" + std::to_string(key), learned);
+    assert(cache.size() == tc::ane::RowSchedulerCache::capacity);
+    assert(!cache.restore("model-a:adapter-a:shape-97", rebuilt));
+    assert(cache.restore("other-0", rebuilt)); // touch before LRU eviction
+    cache.save("newest", learned);
+    assert(cache.restore("other-0", rebuilt));
+    assert(!cache.restore("other-1", rebuilt));
+    cache.erase("other-0");
+    assert(!cache.restore("other-0", rebuilt));
+    tc::ane::RowSchedulerCache fixed_cache;
+    fixed_cache.save("fixed", fixed_async);
+    assert(fixed_cache.size() == 0);
+    RowScheduler unbounded_shapes(32);
+    for (int layer = 0; layer <= 256; ++layer) unbounded_shapes.plan(layer, 97);
+    fixed_cache.save("too-many-shapes", unbounded_shapes);
+    assert(fixed_cache.size() == 0);
 
     // Keep the measured one-chunk seed: a quarter-share start did not improve
     // edit request latency. Long shapes must still leave a nonempty GPU head,

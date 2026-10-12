@@ -1,6 +1,8 @@
 import AppKit
 import Combine
 import Foundation
+import CoreGraphics
+import ImageIO
 
 @MainActor private final class DeferredStudioImageProvider {
     private var reply: ((Data?, Error?) -> Void)?
@@ -27,6 +29,10 @@ import Foundation
 @main
 struct StudioBehaviorTests {
     @MainActor static func main() async throws {
+        if ProcessInfo.processInfo.environment["TURBOCIDER_TEST_ACCELERATION_ONLY"] == "1" {
+            try await verifyAccelerationRouting()
+            return
+        }
         func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
             guard try condition() else { throw NativeFailure(message: message) }
         }
@@ -523,12 +529,56 @@ struct StudioBehaviorTests {
         let restored = StudioState(directory: root)
         try check(restored.draft.assets.map(\.id) == studio.draft.assets.map(\.id), "Draft identity/order did not persist")
         var telemetry = StepTelemetry()
-        func event(_ sequence: Int, _ completed: Int, _ seconds: Double, _ phase: String = "denoise") -> NativeEvent { NativeEvent(sequence: sequence, phase: phase, completed: completed, total: 4, elapsed_seconds: seconds) }
+        func event(_ sequence: Int, _ completed: Int, _ seconds: Double, _ phase: String = "denoise") -> NativeEvent { NativeEvent(sequence: sequence, phase: phase, completed: completed, total: 6, elapsed_seconds: seconds) }
         try check(telemetry.observe(event(1, 1, 10)) == nil, "Transform offset counted as completed sample")
         try check(telemetry.observe(event(2, 2, 12)) == nil, "Single sample shown as reliable speed")
+        try check(telemetry.firstDenoiseStepSeconds == nil, "Missing step-zero boundary fabricated a first-step timing")
         _ = telemetry.observe(event(3, 2, 13)); _ = telemetry.observe(event(4, 30, 13.5, "block"))
         try check(telemetry.observe(event(5, 3, 15)) == 2.5, "Step duration includes wrong boundaries")
         try check(telemetry.observe(event(2, 4, 50)) == 2.5, "Out-of-order telemetry altered speed")
+        try check(telemetry.firstDenoiseStepSeconds == nil, "Later progress fabricated the unobserved first interval")
+
+        // A slow initial sampling step must age out of the rolling window,
+        // while its separate duration remains available in result history.
+        var editTelemetry = StepTelemetry()
+        _ = editTelemetry.observe(event(1, 0, 10, "load_qwen21_transformer"))
+        _ = editTelemetry.observe(event(2, 1, 20, "qwen21_text_encode"))
+        try check(editTelemetry.secondsPerStep == nil && editTelemetry.firstDenoiseStepSeconds == nil,
+                  "Preparation phases created sampling timing")
+        _ = editTelemetry.observe(event(3, 0, 30))
+        try check(editTelemetry.firstDenoiseStepSeconds == nil, "Initial denoise boundary counted as a completed step")
+        _ = editTelemetry.observe(event(4, 1, 42))
+        try check(editTelemetry.firstDenoiseStepSeconds == 12 && editTelemetry.secondsPerStep == nil,
+                  "First sampling duration included preparation or appeared as a reliable average")
+        _ = editTelemetry.observe(event(5, 1, 43))
+        _ = editTelemetry.observe(event(6, 31, 43.5, "transformer_block"))
+        try check(editTelemetry.observe(event(7, 2, 44)) == 7,
+                  "Repeated boundaries or block detail altered the sampling window")
+        for completed in 3...5 {
+            _ = editTelemetry.observe(event(completed + 5, completed, 40 + Double(completed) * 2))
+        }
+        try check(editTelemetry.secondsPerStep == 4, "Five-step window dropped the first step too early")
+        try check(editTelemetry.observe(event(11, 6, 52)) == 2 && editTelemetry.firstDenoiseStepSeconds == 12,
+                  "Six-step result did not retain its first duration separately from the last five steps")
+
+        var timedJob = NativeJob(id: UUID(), createdAt: Date(), request: NativeRequest(prompt: "timing history fixture", output: root.appendingPathComponent("timing.png").path),
+                                 state: "succeeded", phase: "complete", completed: 6, total: 6, elapsed: 60)
+        timedJob.secondsPerStep = editTelemetry.secondsPerStep
+        timedJob.firstDenoiseStepSeconds = editTelemetry.firstDenoiseStepSeconds
+        let timingData = try JSONEncoder().encode(timedJob)
+        let decodedTiming = try JSONDecoder().decode(NativeJob.self, from: timingData)
+        try check(decodedTiming.firstDenoiseStepSeconds == 12 && decodedTiming.secondsPerStep == 2,
+                  "Sampling history lost the distinct first-step and rolling timings")
+        var legacyTiming = try JSONSerialization.jsonObject(with: timingData) as! [String: Any]
+        legacyTiming.removeValue(forKey: "firstDenoiseStepSeconds")
+        let decodedLegacy = try JSONDecoder().decode(NativeJob.self, from: JSONSerialization.data(withJSONObject: legacyTiming))
+        try check(decodedLegacy.firstDenoiseStepSeconds == nil && decodedLegacy.secondsPerStep == 2,
+                  "Older job history without a first-step field is no longer compatible")
+        _ = editTelemetry.observe(event(12, 0, 54))
+        try check(editTelemetry.firstDenoiseStepSeconds == nil && editTelemetry.secondsPerStep == nil,
+                  "A restarted sampling sequence retained stale timings")
+        _ = editTelemetry.observe(event(13, 1, 57))
+        try check(editTelemetry.firstDenoiseStepSeconds == 3, "Restarted sampling did not record its own first interval")
         for model in studio.models { studio.draft.modelPaths[model.id] = "/test/\(model.id)" }
         studio.selectModel("minimax-h3-turbo")
         try check(studio.draft.operation == "video.generate" && studio.draft.frames == 22 && studio.draft.fps == 24 && studio.draft.audio,
@@ -653,6 +703,23 @@ struct StudioBehaviorTests {
         try check(zImageLoRAHybrid.execution == "gpu_ane" &&
                     zImageLoRAHybrid.ane_manifest == loraManifest.path,
                   "Z-Image LoRA-bound ANE artifact was not forwarded")
+        try check(studio.draft.executionDeviceLabel == "GPU + Core ML" && studio.draft.aneConfigurationNotice == nil,
+                  "Bound frozen LoRA partition was incorrectly displayed as GPU")
+        var runtimeZ = studio.draft
+        runtimeZ.loraStrategy = "inference_time"
+        let runtimeLoRAStore = NativeJobStore(directory: root.appendingPathComponent("runtime-lora-routing"))
+        let resolvedRuntimeZ = try await runtimeLoRAStore.resolveAcceleration(runtimeZ)
+        try check(resolvedRuntimeZ.acceleration?.manifest == runtimeZ.acceleration?.manifest &&
+                  !runtimeLoRAStore.resolvingAcceleration && runtimeLoRAStore.accelerationStatus?.contains("GPU") == true,
+                  "GPU runtime LoRA tried to resolve an unused frozen ANE partition")
+        let runtimeZRequest = try runtimeZ.request(output: root.appendingPathComponent("unused-runtime-z.png"))
+        try check(runtimeZRequest.execution == "gpu" && runtimeZRequest.ane_manifest == nil &&
+                  runtimeZ.executionDeviceLabel == "GPU" && runtimeZ.aneConfigurationNotice?.contains("运行时加载") == true &&
+                  runtimeZ.accelerationHint.hasPrefix("GPU"),
+                  "Runtime LoRA display disagreed with the GPU request")
+        runtimeZ.loras[0].enabled = false
+        try check(runtimeZ.executionDeviceLabel == "GPU + Core ML" && runtimeZ.aneConfigurationNotice == nil,
+                  "Disabled LoRA left a stale GPU notice")
         let preparedZ = try studio.preparationRequest(modelID: "z-image-turbo", output: output)
         try check(preparedZ.loras?.first?.strength == 0.8 && preparedZ.ane_manifest == loraManifest.path && preparedZ.width == 512,
                   "Loading the current model discarded LoRA, dimensions or acceleration")
@@ -798,6 +865,235 @@ struct StudioBehaviorTests {
         print("PASS: seed policies, input roles/order/undo, clipboard, persistence, telemetry, FLUX9/H3/LTX/Wan/Z-Image defaults and separate LoRA forwarding")
     }
 
+    /// Request/preflight coverage without model loading or AppKit image-provider services.
+    @MainActor private static func verifyAccelerationRouting() async throws {
+        func check(_ value: Bool, _ message: String) throws {
+            guard value else { throw NativeFailure(message: message) }
+        }
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("tc-acceleration-routing-\(UUID())")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let adapter = root.appendingPathComponent("adapter.safetensors")
+        try Data([1]).write(to: adapter)
+        let output = root.appendingPathComponent("unused.png")
+        for modelID in ["z-image-turbo"] {
+            var draft = StudioDraft()
+            draft.modelID = modelID; draft.modelPaths[modelID] = root.path
+            draft.steps = modelID == "z-image-turbo" ? 8 : 4
+            draft.loras = [StudioLoRA(path: adapter.path)]
+            draft.loraStrategy = "inference_time"
+            draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/missing/unused-manifest.json")
+            let store = NativeJobStore(directory: root.appendingPathComponent(modelID))
+            let resolved = try await store.resolveAcceleration(draft)
+            let request = try resolved.request(output: output)
+            try check(request.execution == "gpu" && request.ane_manifest == nil &&
+                      draft.executionDeviceLabel == "GPU" && draft.aneConfigurationNotice?.contains("运行时加载") == true &&
+                      store.accelerationStatus?.contains("GPU") == true && !store.resolvingAcceleration,
+                      "\(modelID): runtime LoRA required an unused ANE partition or showed the wrong device")
+            draft.loras[0].enabled = false
+            try check(draft.executionDeviceLabel == "GPU + Core ML" && draft.aneConfigurationNotice == nil,
+                      "\(modelID): disabled LoRA left a stale GPU notice")
+        }
+        let turbo = root.appendingPathComponent("Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors")
+        try Data([1]).write(to: turbo)
+        var qwen = StudioDraft()
+        qwen.modelID = "qwen-image-2.1"; qwen.modelPaths[qwen.modelID] = root.path
+        qwen.steps = 6; qwen.residency = "component_staged"
+        qwen.loras = [StudioLoRA(path: turbo.path)]; qwen.loraStrategy = "inference_time"
+        qwen.acceleration = StudioAcceleration(policy: "gpu_ane")
+        let turboRequest = try qwen.request(output: output)
+        try check(turboRequest.execution == "gpu" && turboRequest.ane_manifest == nil &&
+                  qwen.executionDeviceLabel == "GPU" && qwen.aneConfigurationNotice?.contains("不会参与") == true,
+                  "Qwen six-step LoRA device display disagreed with the GPU request")
+        qwen.loras = [StudioLoRA(path: adapter.path)]; qwen.steps = 25
+        try check(qwen.executionDeviceLabel == "GPU" && qwen.aneConfigurationNotice?.contains("请关闭 ANE") == true,
+                  "Ordinary Qwen LoRA did not explain the invalid ANE combination")
+        do {
+            _ = try qwen.request(output: output)
+            throw NativeFailure(message: "Ordinary Qwen LoRA unexpectedly bypassed the GPU admission gate")
+        } catch {
+            try check(error.localizedDescription.contains("仅支持纯 GPU"), "Unexpected ordinary Qwen LoRA admission error: \(error)")
+        }
+        qwen.acceleration?.policy = "gpu"
+        try check((try qwen.request(output: output)).execution == "gpu" && qwen.aneConfigurationNotice == nil,
+                  "Switching to GPU did not recover the ordinary Qwen LoRA request")
+        qwen.loras = []; qwen.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/unused/manifest.json", qwen21W8A8: true)
+        do {
+            _ = try qwen.request(output: output, systemJSON: #"{"gpu":"Apple M4 Pro","physical_memory_bytes":51539607552}"#)
+            throw NativeFailure(message: "Frozen Qwen W8A8 experiment was enabled on an unsupported device")
+        } catch {
+            try check(error.localizedDescription.contains("Apple M5 Pro"), "Frozen W8A8 hardware gate changed: \(error)")
+        }
+        let eligibleSystem = #"{"gpu":"Apple M4 Pro","physical_memory_bytes":51539607552}"#
+        let runtimeStore = root.appendingPathComponent("runtime-tests")
+        try fm.createDirectory(at: runtimeStore, withIntermediateDirectories: true)
+        let zOptions = try RuntimeImageWorker.options(model: "z-image-turbo", store: runtimeStore)
+        let qOptions = try RuntimeImageWorker.options(model: "qwen-image-2.1", store: runtimeStore)
+        var z = StudioDraft()
+        z.modelID = "z-image-turbo"; z.modelPaths[z.modelID] = root.path; z.steps = 8
+        z.acceleration = StudioAcceleration(policy: "gpu_ane", runtimeAneProfileID: RuntimeImageWorker.profileID,
+                                            runtimeDescriptor: zOptions.descriptor_path)
+        for adapters in [[], [StudioLoRA(path: adapter.path)]] {
+            z.loras = adapters; z.loraStrategy = "inference_time"
+            let request = try z.request(output: output, systemJSON: eligibleSystem)
+            try check(request.execution == "gpu_ane" && request.hybrid_mlp_mode == "runtime" &&
+                      request.ane_manifest == zOptions.descriptor_path && !z.aneLoRARequiresGPU &&
+                      z.executionDeviceLabel.contains("Private ANE"), "Explicit Z Runtime was forced onto frozen GPU-LoRA route")
+        }
+        z.steps = 9
+        try check(z.runtimeANEIssue?.contains("8 步") == true, "Unverified Z Runtime steps admitted")
+        qwen.loras = []; qwen.steps = 20; qwen.residency = "component_staged"
+        qwen.acceleration = StudioAcceleration(policy: "gpu_ane", runtimeAneProfileID: RuntimeImageWorker.profileID,
+                                               runtimeDescriptor: qOptions.descriptor_path)
+        for count in 0...2 {
+            qwen.assets = (0..<count).map { _ in StudioAsset(path: adapter.path, name: "CPU fixture", width: 32, height: 32) }
+            qwen.operation = count == 0 ? "image.generate" : "image.edit"
+            let request = try qwen.request(output: output, systemJSON: eligibleSystem)
+            try check(request.execution == "gpu_ane" && request.hybrid_mlp_mode == "runtime" &&
+                      request.qwen21_reference_size == 1024 && request.inputs?.count == count,
+                      "Qwen Runtime base/reference request was normalized away")
+        }
+        qwen.loras = [StudioLoRA(path: turbo.path)]; qwen.steps = 6
+        let runtimeTurbo = try qwen.request(output: output, systemJSON: eligibleSystem)
+        try check(runtimeTurbo.execution == "gpu_ane" && runtimeTurbo.lora_strategy == "inference_time" &&
+                  runtimeTurbo.ane_manifest == qOptions.descriptor_path && !qwen.aneLoRARequiresGPU,
+                  "Qualified r128 Runtime request hit the old unconditional GPU guard")
+        qwen.qwen21ReferenceSize = 512
+        try check(qwen.runtimeANEIssue != nil, "Unverified Runtime reference encoding admitted")
+        qwen.qwen21ReferenceSize = 1024; qwen.qwen21DiTCache = "balanced"
+        try check(qwen.runtimeANEIssue != nil, "Unverified Runtime DiT cache combination admitted")
+        qwen.qwen21DiTCache = "off"; qwen.assets = []; qwen.operation = "image.generate"
+        qwen.loras = [StudioLoRA(path: adapter.path)]; qwen.steps = 20
+        try check(qwen.runtimeANEIssue?.contains("r128") == true, "Ordinary Qwen adapter bypassed Runtime qualification")
+        let decoded = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(qwen))
+        try check(decoded.acceleration?.runtimeAneProfileID == RuntimeImageWorker.profileID, "Saved Runtime opt-in lost")
+        let old = try JSONDecoder().decode(StudioAcceleration.self, from: Data(#"{"policy":"gpu","manifest":"","sourceManifest":""}"#.utf8))
+        try check(old.runtimeAneProfileID == nil, "Old settings enabled Runtime by default")
+        try await verifyRuntimeWorkerLifecycle(root: root.appendingPathComponent("runtime-lifecycle"))
+        print("PASS acceleration routing: runtime LoRA GPU preflight, Qwen Turbo/ordinary LoRA recovery, disabled adapter state, frozen W8A8 hardware gate and explicit qualified Runtime routes; no model loaded")
+    }
+
+    @MainActor private static func verifyRuntimeWorkerLifecycle(root: URL) async throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        func check(_ value: Bool, _ reason: String) throws { if !value { throw NativeFailure(message: reason) } }
+        let fixture = root.appendingPathComponent("fixture.png")
+        let context = CGContext(data: nil, width: 512, height: 512, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 512, height: 512))
+        let writer = CGImageDestinationCreateWithURL(fixture as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(writer, context.makeImage()!, nil)
+        try check(CGImageDestinationFinalize(writer), "Runtime CPU fixture encode failed")
+        let png = try Data(contentsOf: fixture)
+        func worker(_ mode: String) throws -> URL {
+            let path = root.appendingPathComponent("runtime-fixture-\(mode).py")
+            let code = """
+            #!/usr/bin/python3
+            import sys,json,base64,hashlib,time
+            from pathlib import Path
+            if sys.stdin.buffer.read(1)!=b'\\1':sys.exit(1)
+            wire=json.loads(Path(sys.argv[2]).read_text());request=wire['native_request_v2'];out=request['outputs'][0]
+            pixels=base64.b64decode('\(png.base64EncodedString())');Path(out['path']).write_bytes(pixels)
+            if '\(mode)'=='hang':
+                while True:time.sleep(0.1)
+            metrics=dict(executor_backend=None,data_path='',partition_axis='rows',ane_channels=0,gpu_channels=0,
+                         backend_fallback_reason='CPU fixture fallback',failure_reason='',hybrid_blocks_session_total=0,gpu_blocks_session_total=1,fallback_blocks_session_total=1)
+            contract=dict(executor_backend=None,data_path='',partition_axis='rows')
+            result=dict(schema_version=1,model=request['model'],operation=request['operation'],output=out['path'],width=512,height=512,
+                        steps=request['sampling']['steps'],seed=request['sampling']['seed'],warmup=False,
+                        plan=dict(execution='gpu',runtime_weight_contract=contract),hybrid=dict(runtime_weight=metrics,runtime_failed=False))
+            receipt=dict(backend='gpu',selected_backend=None,actual_execution='gpu',partial_fallback=False,data_path='',partition_axis='',ane_channels=0,
+                         fallback_reason='CPU fixture fallback',hybrid_blocks=0,gpu_blocks=1,fallback_blocks=1)
+            terminal=dict(protocol_version=1,job_id=wire['job_id'],request_id=wire['request_id'],request_digest=wire['request_digest'],status='succeeded',
+                          actual_container='cli_worker',runtime_fingerprint='\(NativeEngine.runtimeBuildIdentity())',resolution_digest=None,record_digest=None,
+                          layout_digest=None,public_streaming_summary=None,error=None,runtime_options=wire['runtime_options'],runtime_receipt=receipt,result=result,
+                          artifact=dict(path=out['path'],size=len(pixels),sha256=hashlib.sha256(pixels).hexdigest()))
+            print(json.dumps(terminal))
+            """
+            try Data(code.utf8).write(to: path)
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path.path)
+            return path
+        }
+        func request(store: NativeJobStore, options: RuntimeImageWorker.Options) -> NativeRequest {
+            var request = NativeRequest(prompt: "CPU fixture", output: store.directory.appendingPathComponent("outputs/final.png").path)
+            request.model = "z-image-turbo"; request.operation = "image.generate"; request.steps = 8
+            request.execution = "gpu_ane"; request.residency = "resident"; request.hybrid_mlp_mode = "runtime"
+            request.allow_approximation = true; request.ane_manifest = options.descriptor_path
+            return request
+        }
+        let success = NativeJobStore(directory: root.appendingPathComponent("success"), workerExecutable: try worker("success"))
+        let options = try RuntimeImageWorker.options(model: "z-image-turbo", store: success.directory)
+        let original = request(store: success, options: options)
+        let job = try await success.generate(modelURL: root, request: original, runtimeOptions: options)
+        try check(job.state == "succeeded" && job.runtimeWorker?.exitConfirmed == true && job.publicWorker == nil,
+                  "Runtime worker did not persist its own confirmed exit")
+        try check(job.routeSummary?.hasPrefix("GPU · Runtime 实验回退") == true && success.actualRoute == job.routeSummary,
+                  "Runtime actual fallback display differs from its receipt")
+        let published = try Data(contentsOf: URL(fileURLWithPath: original.output))
+        try check(published == png, "Runtime transaction published different pixels")
+        let reopened = NativeJobStore(directory: success.directory)
+        try check(!reopened.busy && reopened.jobs[0].runtimeOptions == options && reopened.jobs[0].runtimeReceipt == job.runtimeReceipt,
+                  "Runtime Options/Receipt did not restore after restart")
+        guard let reference = reopened.jobs[0].runtimeWorker else { throw NativeFailure(message: "Runtime recovery lost worker reference") }
+        let diagnostics = reference.directory(jobID: job.id, store: success.directory)
+        let inputURL = diagnostics.appendingPathComponent("input.json")
+        let input = try Data(contentsOf: inputURL)
+        let wire = try JSONSerialization.jsonObject(with: input) as! [String: Any]
+        let intent = try JSONDecoder().decode(NativeRequestV2.self, from: JSONSerialization.data(withJSONObject: wire["native_request_v2"]!))
+        let prepared = RuntimeImageWorker.Prepared(reference: reference, input: input, inputURL: inputURL, request: intent, options: reopened.jobs[0].runtimeOptions!)
+        let terminal = try RuntimeImageWorker.validateTerminal(Data(contentsOf: diagnostics.appendingPathComponent("stdout.json")), prepared: prepared, exitCode: 0)
+        try check(terminal.receipt == job.runtimeReceipt, "Restored Runtime binding could not reconstruct terminal validation")
+        try await reopened.clearRuntimeProgramCache()
+        try check(!fm.fileExists(atPath: options.cache_dir) && fm.fileExists(atPath: options.descriptor_path),
+                  "Runtime cache cleanup removed descriptor or retained programs")
+
+        let live = NativeJobStore(directory: root.appendingPathComponent("live"), workerExecutable: try worker("hang"))
+        let liveOptions = try RuntimeImageWorker.options(model: "z-image-turbo", store: live.directory)
+        let liveRequest = request(store: live, options: liveOptions)
+        let task = Task { try await live.generate(modelURL: root, request: liveRequest, runtimeOptions: liveOptions) }
+        var restored: NativeJobStore?
+        do {
+            var ready = false
+            for _ in 0..<200 {
+                if let reference = live.jobs.first?.runtimeWorker, fm.fileExists(atPath: reference.stagedOutput) { ready = true; break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try check(ready, "Runtime CPU fake child never wrote staging")
+            let recovered = NativeJobStore(directory: live.directory); restored = recovered
+            try check(recovered.busy && recovered.workerCleanupPending && recovered.jobs.first?.state == "cleanup_pending",
+                      "Restart admitted work while Runtime child was still alive")
+            await recovered.refreshWorkerCleanup()
+            try check(recovered.busy, "Live Runtime identity journal incorrectly released admission")
+            do { try await live.clearRuntimeProgramCache(); throw NativeFailure(message: "Cache cleared while child alive") }
+            catch let error as NativeFailure { try check(!error.message.hasPrefix("Cache cleared"), error.message) }
+            // A second store has no persisted busy flag, but the shared runner
+            // must still prevent manual cleanup while a child is active.
+            let unaware = NativeJobStore(directory: root.appendingPathComponent("unaware"))
+            let unawareOptions = try RuntimeImageWorker.options(model: "z-image-turbo", store: unaware.directory)
+            do { try await unaware.clearRuntimeProgramCache(); throw NativeFailure(message: "Cache cleared despite shared active runner") }
+            catch let error as NativeFailure { try check(!error.message.hasPrefix("Cache cleared"), error.message) }
+            try check(!unaware.busy && fm.fileExists(atPath: unawareOptions.cache_dir),
+                      "Rejected shared-runner cache cleanup changed contents or retained its busy latch")
+        } catch {
+            live.cancel(); _ = try? await task.value; throw error
+        }
+        live.cancel()
+        do { _ = try await task.value; throw NativeFailure(message: "Cancelled Runtime CPU fixture succeeded") }
+        catch is CancellationError {}
+        try check(live.jobs[0].state == "cancelled" && live.jobs[0].runtimeWorker?.exitConfirmed == true && !live.busy,
+                  "Runtime cancellation did not confirm exit and release admission")
+        guard let restored else { throw NativeFailure(message: "Missing restored Runtime store") }
+        await restored.refreshWorkerCleanup()
+        try check(!restored.busy && !restored.workerCleanupPending && restored.jobs[0].state == "interrupted",
+                  "Exited Runtime worker did not unblock recovered App")
+        try check(!fm.fileExists(atPath: liveRequest.output), "Cancelled Runtime worker published output")
+        let leftovers = try fm.contentsOfDirectory(atPath: live.directory.appendingPathComponent("outputs").path)
+        try check(!leftovers.contains(where: { $0.hasPrefix(".tc-image-staging-") }), "Cancelled Runtime staging leaked")
+        print("PASS Runtime CPU fake worker: publication, fallback display, Options/Reference/Receipt restart reconstruction, live-worker admission, cancellation/confirmed cleanup and owned cache cleanup")
+    }
+
     @MainActor private static func verifyEditingWorkflows(root: URL, source: URL, png: Data) async throws {
         func check(_ condition: @autoclosure () throws -> Bool, _ reason: String) throws {
             if try !condition() { throw NativeFailure(message: reason) }
@@ -925,6 +1221,60 @@ struct StudioBehaviorTests {
             try check(try snapshot(studio) == changed && (try stagedCount(studio)) == before && !studio.importing,
                       "Deferred \(changedField) change was overwritten or left a staged file/locked controls")
         }
+        // Reserve the UI task synchronously, before its async import body can
+        // run. Draft/input mutation must already be locked in this window.
+        studio.draft.modelID = "qwen-image-2.1"; studio.draft.operation = "image.edit"
+        studio.draft.assets = originals; studio.draft.initImageID = originals[1].id
+        let reservedBefore = try snapshot(studio), resetBefore = studio.workspaceResetID
+        let notStarted = DeferredStudioImageProvider()
+        try check(studio.beginImageImportProviders([notStarted.makeProvider()]), "Cannot reserve a UI provider import")
+        guard let notStartedTask = studio.imageImportTask else { throw NativeFailure(message: "Reserved import lost its task handle") }
+        try check(studio.imageInputsBusy && !studio.importing, "UI task did not lock inputs before beginning its async work")
+        studio.remove(originals[0].id); studio.move(originals[0].id, offset: 1)
+        studio.undoAssetChange(); studio.selectModel("flux2-klein-4b"); studio.newDraft()
+        let blockedPreparation = await studio.prepareAsset(id: originals[0].id, preset: .fit512)
+        try check(!blockedPreparation && (try snapshot(studio)) == reservedBefore && studio.workspaceResetID == resetBefore,
+                  "A reserved import allowed deleting/resetting/resizing its reference context")
+        studio.cancelImageImport(); await notStartedTask.value
+        try check(!studio.imageInputsBusy && studio.imageImportTask == nil && !studio.cancellingImageImport,
+                  "Cancellation before the import body began did not release its task handle")
+
+        // Unlike the earlier cancel case, the provider deliberately does NOT
+        // finish. Cancellation must complete without a callback or staged copy.
+        let stalled = DeferredStudioImageProvider(), filesBeforeCancel = try stagedCount(studio)
+        let draftBeforeCancel = try snapshot(studio)
+        var cancellationFinished = false
+        let cancelledImport = Task {
+            await studio.importProviders([stalled.makeProvider()])
+            cancellationFinished = true
+        }
+        try await stalled.waitUntilRequested()
+        cancelledImport.cancel()
+        let cancellationStart = ContinuousClock.now
+        while !cancellationFinished && cancellationStart.duration(to: .now) < .seconds(2) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try check(cancellationFinished && !studio.imageInputsBusy && (try snapshot(studio)) == draftBeforeCancel &&
+                  (try stagedCount(studio)) == filesBeforeCancel && studio.message?.contains("已取消") == true,
+                  "A provider without a callback kept the cancelled import locked or changed its inputs")
+        await cancelledImport.value
+
+        // An old provider can still attempt its callback after a fresh retry
+        // starts. It must neither append its old image nor unlock the new task.
+        let retryProvider = DeferredStudioImageProvider()
+        try check(studio.beginImageImportProviders([retryProvider.makeProvider()]), "Cannot retry after cancelling a stalled provider")
+        guard let retryTask = studio.imageImportTask else { throw NativeFailure(message: "Retry lost its task handle") }
+        try await retryProvider.waitUntilRequested()
+        try check(!studio.beginImageImportProviders([notStarted.makeProvider()]), "A second UI import replaced a pending retry")
+        stalled.finish(png)
+        try await Task.sleep(for: .milliseconds(50))
+        try check(studio.importing && studio.imageImportTask != nil && (try snapshot(studio)) == draftBeforeCancel &&
+                  (try stagedCount(studio)) == filesBeforeCancel,
+                  "A late cancelled-provider callback changed references or cleared the retry lock")
+        retryProvider.finish(png); await retryTask.value
+        try check(!studio.imageInputsBusy && studio.imageImportTask == nil && studio.draft.assets.count == originals.count + 1 &&
+                  Array(studio.draft.assets.prefix(originals.count)) == originals,
+                  "A successful retry lost original reference order or failed to release its task handle")
         studio.selectModel("flux2-klein-4b")
         studio.draft.assets = originals; studio.draft.initImageID = originals[0].id
         studio.draft.prompt = "Modify the second image"
@@ -1005,7 +1355,10 @@ struct StudioBehaviorTests {
             try studio.draft.validate()
             throw NativeFailure(message: "Multiple Turbo adapters unexpectedly validated")
         } catch {
-            try check(error.localizedDescription.contains("单个"), "Multiple adapters lost their actionable validation reason")
+            let reason = error.localizedDescription
+            let explainsIsolation = ["混用", "单个", "一个", "单独"].contains { reason.contains($0) }
+            try check(reason.contains("适配器") && explainsIsolation,
+                      "Multiple adapters lost their actionable validation reason: \(reason)")
         }
         studio.removeLoRA(secondID)
         try check(studio.draft.loras.count == 1 && studio.draft.loras[0].id == id && studio.draft.steps == 6,
@@ -1080,6 +1433,8 @@ struct StudioBehaviorTests {
         studio.applyQwen21TurboPreset()
         studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane")
         try check(studio.draft.accelerationHint == "GPU · BF16 · LoRA 运行时加载" &&
+                  studio.draft.executionDeviceLabel == "GPU" &&
+                  studio.draft.aneConfigurationNotice?.contains("不会参与") == true &&
                   (try studio.draft.request(output: root.appendingPathComponent("unused-gpu.png"))).execution == "gpu",
                   "Turbo device hint disagreed with the forced pure GPU request")
         studio.draft.acceleration = StudioAcceleration(policy: "gpu")
