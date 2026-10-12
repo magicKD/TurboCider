@@ -39,6 +39,8 @@ rm -rf "$APP" "$DIST/cli"
 mkdir -p "$BIN" "$RES" "$DIST/cli"
 cp "$OUT"/TurboCiderNativeApp "$BIN/"
 cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
+mkdir -p "$RES/ModelBrands"
+cp assets/branding/model-brands/* "$RES/ModelBrands/"
 cp assets/config/local-streaming-profile.json "$RES/"
 cp "$OUT"/turbocider "$BIN/"
 for folder in "$BIN" "$DIST/cli"; do

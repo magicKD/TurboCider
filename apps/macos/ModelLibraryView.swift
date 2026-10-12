@@ -499,10 +499,23 @@ struct ModelLibraryView: View {
     }
 }
 
-/// Native, offline brand tiles: no remote image request or borrowed logo asset.
+/// Publisher logos are bundled locally; a missing resource keeps the native fallback.
 struct ModelBrandBadge: View {
     let modelID: String
     var size: CGFloat = 40
+    private static let brandKeys = ["qwen", "flux", "z-image", "ltx", "minimax", "wan", "llada"]
+    private static let logos: [String: NSImage] = Dictionary(uniqueKeysWithValues:
+        brandKeys.compactMap { key -> (String, NSImage)? in
+            for ext in ["png", "jpg"] {
+                if let url = Bundle.main.url(forResource: key, withExtension: ext, subdirectory: "ModelBrands"),
+                   let image = NSImage(contentsOf: url) { return (key, image) }
+            }
+            return nil
+        })
+    private var logo: NSImage? {
+        guard let key = Self.brandKeys.first(where: { modelID.hasPrefix($0) }) else { return nil }
+        return Self.logos[key]
+    }
     private var tint: Color {
         if modelID.hasPrefix("qwen") { return .indigo }
         if modelID.hasPrefix("flux") { return .primary }
@@ -510,6 +523,7 @@ struct ModelBrandBadge: View {
         if modelID.hasPrefix("ltx") { return .blue }
         if modelID.hasPrefix("minimax") { return .orange }
         if modelID.hasPrefix("wan") { return .cyan }
+        if modelID.hasPrefix("llada") { return .blue }
         return .teal
     }
     private var glyph: String {
@@ -519,6 +533,7 @@ struct ModelBrandBadge: View {
         if modelID.hasPrefix("ltx") { return "L" }
         if modelID.hasPrefix("minimax") { return "M" }
         if modelID.hasPrefix("wan") { return "W" }
+        if modelID.hasPrefix("llada") { return "L" }
         return "↑"
     }
     static func publisher(_ id: String) -> String {
@@ -528,12 +543,21 @@ struct ModelBrandBadge: View {
         if id.hasPrefix("ltx") { return "Lightricks" }
         if id.hasPrefix("minimax") { return "MiniMax" }
         if id.hasPrefix("wan") { return "Wan · Alibaba" }
-        return "Real-ESRGAN"
+        if id.hasPrefix("llada") { return "inclusionAI" }
+        return id.hasPrefix("real-esrgan") ? "Real-ESRGAN" : "模型"
     }
     var body: some View {
-        Text(glyph).font(.system(size: size * 0.5, weight: .heavy, design: .rounded)).foregroundStyle(tint)
+        Group {
+            if let logo {
+                Image(nsImage: logo).resizable().interpolation(.high).scaledToFit()
+                    .padding(size * 0.10).background(Color.white)
+            } else {
+                Text(glyph).font(.system(size: size * 0.5, weight: .heavy, design: .rounded)).foregroundStyle(tint)
+            }
+        }
             .frame(width: size, height: size)
             .background(tint.opacity(0.08).gradient, in: RoundedRectangle(cornerRadius: size * 0.26))
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.26))
             .overlay(RoundedRectangle(cornerRadius: size * 0.26).stroke(tint.opacity(0.14)))
             .accessibilityHidden(true)
     }
