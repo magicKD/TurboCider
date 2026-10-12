@@ -2,18 +2,20 @@
 
 2026-10-12 · Apple M4 Max /64GiB · macOS26.6.2 · base-only，无额外LoRA。
 范围仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5；FLUX9B不参与排名。
-本报告收敛已有完整实验与刚结束的Unsloth对照，不再扩大参数网格。
+本报告收敛已有完整实验与刚结束的Unsloth/ComfyUI对照，不再扩大参数网格。
 
 ## 核心结论
 
 **在已测完整任务中，TurboCider GPU/ANE相对固定Unsloth/Metal路径达到
-3.40×（Qwen GGUF）和3.15×（Z-Image）；相对mflux0.22约快1.32–1.34×。**
+3.40×（Qwen GGUF）和3.15×（Z-Image）；相对mflux0.22约快1.32–1.34×，
+新增Z-Image对ComfyUI v0.39同机完整生成为1.46×。**
 这是指定硬件、模型、任务和配置的实测优势，不是全部框架/设备的全局最优。
 
 | 模型与完整任务 | TurboCider GPU | TurboCider GPU/ANE | 兼容开源参考 | 混合路线优势 |
 | --- | ---: | ---: | ---: | --- |
 | [Qwen2.1 GGUF Q4_K_M，512²/40步](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成) | 44.428s | **36.870s** | 固定Unsloth/sd-server Metal 125.365s | **3.40×，耗时减少70.6%** |
 | [Z-Image Turbo BF16源，512²/8步](Z_UNSLOTH_FRAMEWORKS.md) | 7.356s | **5.955s** | Unsloth Metal GPU-text 18.735s；mflux0.22 7.971s | **对Unsloth3.15×，减少68.2%；对mflux1.34×** |
+| [Z-Image Turbo BF16源，独立ComfyUI组，512²/8步](COMFYUI_MAC.md) | 7.392s | **5.840s** | ComfyUI v0.39默认MPS 8.535s；SDPA/GPU-only 8.840s | **对更快默认路线1.46×，减少31.6%** |
 | [Qwen2.1 BF16源，512²/40步](QWEN_BF16_FRAMEWORKS.md) | 43.309s | **31.810s** | mflux0.22 BF16 41.952s | **1.32×，耗时减少24.2%** |
 
 各行使用自己同组的实际样本，不跨实验挑最快native/最慢reference拼倍率。
@@ -39,6 +41,24 @@ Unsloth开启原`max`速度选项；默认CPU-text和可运行的GPU-text都实�
 混合路线冷启动更贵、内存更高；一次性请求不只看热态排名。
 这些是pinned Unsloth native后端计时，不包含Desktop UI；噪声生成、
 tokenizer/模板、内部算术与组件生命周期可能不同，不作跨engine逐像素parity。
+
+### ComfyUI Mac：当前正式版，不把缓存跳过算加速
+
+新组使用2026-10-12核验的ComfyUI v0.39.0，同一原BF16三组件源、
+8进程/32PNG/8完整memory，每路四fresh，正反序。保留本机PyTorch2.12.1，
+五个版本pin精确匹配的依赖装到隔离overlay，不升级用户Desktop或改原源码。
+
+默认是PyTorch MPS /sub-quadratic attention，encoder在CPU；另测显式
+SDPA/GPU-only/BF16路线。GPU encoder更快，但该组合的sampler更慢，故
+**采用8.535s而不是8.840s作分母**；不是所有Mac配置/插件/Torch版本最优。
+两边重复prompt都改seed43，核验Comfy每次8个真实sampler steps和VAE/
+SaveImage执行，fresh必须重编码；没有把相同prompt+seed整图cache命中当推理。
+混合cold11.689–17.664s、peak30.91–32.00GB，Comfy默认cold10.679–11.839s、
+peak27.18–27.78GB，所有swap-out0。16对正反序同路线RGBA exact；完整图已检查。
+
+本轮Comfy速度榜仅新增Z；v0.39源码有Qwen2.1/其prefix KV cache支持，
+缺少配对不是不兼容。FLUX4B当前saved-MLX Q4/g64和LTX完整含音频任务
+也未形成Comfy分母，不推算倍数。实现、阶段口径与复现见[Mac专页](COMFYUI_MAC.md)。
 
 ## FLUX4B与LTX：保留已测结果，不制造外部分母
 
@@ -69,4 +89,4 @@ LTX最快已测近似GPU Sol+text256为61.869s，只比自身quality省3.1%，
 [逐请求样本catalog](results-20261011.json) · [已测最优配置](best-local-configs-20261011.json) ·
 [Z完整机器证据](../design/validation/z-unsloth-mflux-current-20261012.json) ·
 [框架身份与公开评测](OPEN_SOURCE_COMPARISONS.md)。
-保留54组历史/当前记录，其中42组在当前四家族范围、12组9B为历史deferred。
+保留55组历史/当前记录，其中43组在当前四家族范围、12组9B为历史deferred。

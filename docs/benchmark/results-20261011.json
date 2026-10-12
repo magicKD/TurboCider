@@ -87,6 +87,24 @@
       "reference_warm_sample_count": 4,
       "precision_note": "same BF16 source; approximate frozen W8A8 FFN; reference uses less memory",
       "timing_scope": "complete512 PNG wall: native C API/export, mflux image/save, sd-server HTTP/PNG reply/export; constructor/readiness/cold/repeat separate"
+    },
+    {
+      "model": "z-image-turbo-comfy039-bf16-cohort",
+      "evidence": {
+        "path": "docs/design/validation/z-comfy039-current-20261012.json",
+        "sha256": "f9358fb76efa5b63d28b5a1f3c54b395f565813a485463880116c39f10e7e4d9",
+        "status": "complete_diagnostic"
+      },
+      "native_route": "native-frozen",
+      "reference_route": "comfy-default",
+      "native_seconds": 5.839859979460016,
+      "reference_seconds": 8.535402354435064,
+      "speedup": 1.4615765419814555,
+      "reduction_percent": 31.580730035232875,
+      "native_warm_sample_count": 4,
+      "reference_warm_sample_count": 4,
+      "precision_note": "same BF16 source; approximate frozen W8A8 FFN; fastest of two measured ComfyUI v0.39 MPS presets, not an exhaustive backend optimum",
+      "timing_scope": "full512 PNG: native C API/export or owned ComfyUI HTTP submit/WebSocket success/history/PNG download/export; readiness/cold/repeat separate"
     }
   ],
   "primary_report": "docs/benchmark/PERFORMANCE_REPORT.md",
@@ -100,7 +118,7 @@
   "deferred_model_families": [
     "flux2-klein-9b"
   ],
-  "active_campaign_count": 42,
+  "active_campaign_count": 43,
   "deferred_campaign_count": 12,
   "historical_report": "docs/benchmark/HISTORICAL_RESULTS.md",
   "expansion_status": "docs/benchmark/EXPANSION_STATUS.md",
@@ -5509,6 +5527,167 @@
       "reference_comparison_valid": true,
       "timing_scope": "complete512 PNG wall: native C API/export, mflux image/save, sd-server HTTP/PNG reply/export; constructor/readiness/cold/repeat separate",
       "note": "same originalBF16 encoder/DiT/VAE; ten serial processes,40PNG/10complete memory,4fresh/route; nativeGPU7.356123/frozen5.955417/mflux7.970898/UnslothMetal GPUtext18.735300/defaultCPUtext22.599736s; use fasterGPUtext denominator: GPU2.547x,mixed3.146x,not3.795x against slowerdefault; frozen approximate with higher cold/RAM; reference templates/RNG/lifecycles differ; UI overhead not timed",
+      "in_current_scope": true
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-comfy039-current-20261012.json",
+        "sha256": "f9358fb76efa5b63d28b5a1f3c54b395f565813a485463880116c39f10e7e4d9",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-comfy039-bf16-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            7.586535000009462,
+            7.968973166076466
+          ],
+          "warm_seconds": [
+            7.443760457914323,
+            7.355715958867222,
+            7.398183583049104,
+            7.385257083922625
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.391720333485864,
+          "repeated_prompt_seconds": [
+            6.9823398338630795,
+            6.985731750028208
+          ],
+          "constructor_seconds": [
+            0.1428600838407874,
+            0.158140541985631
+          ],
+          "physical_peaks": [
+            31974063752,
+            31178849256
+          ],
+          "compression_bytes": [
+            0,
+            4538368
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            17.664404792012647,
+            11.688832000130787
+          ],
+          "warm_seconds": [
+            5.881645708112046,
+            5.732562499819323,
+            5.86088079190813,
+            5.818839167011902
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.839859979460016,
+          "repeated_prompt_seconds": [
+            5.33119733305648,
+            5.333168624900281
+          ],
+          "constructor_seconds": [
+            0.14874324994161725,
+            0.15375154092907906
+          ],
+          "physical_peaks": [
+            30906826640,
+            32003620776
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "comfy-default",
+          "cold_seconds": [
+            11.838525208178908,
+            10.678685541963205
+          ],
+          "warm_seconds": [
+            8.501454999903217,
+            8.56934970896691,
+            8.477601374965161,
+            8.572818875079975
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.535402354435064,
+          "repeated_prompt_seconds": [
+            8.109265209175646,
+            8.120422458043322
+          ],
+          "constructor_seconds": [
+            3.82788645895198,
+            3.044753790833056
+          ],
+          "physical_peaks": [
+            27180531720,
+            27783266048
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "comfy-sdpa-gpu",
+          "cold_seconds": [
+            11.320981292054057,
+            11.36004429217428
+          ],
+          "warm_seconds": [
+            8.79004649980925,
+            8.893065874930471,
+            8.784862459171563,
+            8.890091208042577
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 8.840068853925914,
+          "repeated_prompt_seconds": [
+            8.69507549982518,
+            8.698846792103723
+          ],
+          "constructor_seconds": [
+            3.0320291249081492,
+            3.039987000171095
+          ],
+          "physical_peaks": [
+            27876205304,
+            27634933680
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        }
+      ],
+      "reference_comparison_valid": true,
+      "best_measured_comfy_route": "comfy-default",
+      "timing_scope": "full512 PNG: native C API/export or owned ComfyUI HTTP submit/WebSocket success/history/PNG download/export; readiness/cold/repeat separate",
+      "note": "same original BF16 encoder/DiT/VAE; ComfyUI v0.39 pinned current release, existing PyTorch2.12.1/MPS with exact five pinned package overlay; eight serial processes/32PNG/8complete memory;4fresh/route; default and SDPA+GPU-only both retained; frozen W8A8 approximate/higher cold+RAM; HTTP submit/history/download/export vs native C API/export, no frontend UI; repeat prompt seed43 forces actual8steps/VAE, no cached sampler latency; independent RNG/token/compute lifecycles; not all Mac presets/Torch versions or global optimum",
       "in_current_scope": true
     }
   ],

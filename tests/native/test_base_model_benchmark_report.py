@@ -55,7 +55,7 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertIs(COMPARISON_POLICY["adapt_unsupported_frameworks"], False)
         self.assertIs(COMPARISON_POLICY["preserve_reference_wins"], True)
         self.assertEqual(self.report["verified_advantages"], verified_advantages(self.report["campaigns"]))
-        self.assertEqual(len(self.report["verified_advantages"]), 4)
+        self.assertEqual(len(self.report["verified_advantages"]), 5)
         for row, expected in zip(self.report["verified_advantages"], (3.40, 3.146, 1.319, 1.338)):
             self.assertAlmostEqual(row["speedup"], expected, delta=.005)
             self.assertIn("approximate", row["precision_note"])

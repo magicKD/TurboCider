@@ -31,6 +31,11 @@ Qwen / Z-Image 当前实验、runtime LoRA 共用 base 图及 optional 边界统
 
 ## 性能亮点
 
+当前Qwen /Z /FLUX4B /LTX范围见[收敛性能报告](docs/benchmark/PERFORMANCE_REPORT.md)。
+新增Z-Image 512²/8步同机配对：GPU/ANE相对更快的ComfyUI v0.39 MPS
+实测配置为 **1.46×，8.535 →5.840s**，详见[Mac实现与冷启动/内存边界](docs/benchmark/COMFYUI_MAC.md)。
+下方1024² ComfyUI记录仍作为独立历史观察，不与新组拼倍率。
+
 **同一台 Mac，用上更多算力：M4 Max FLUX 的 GPU → 混合加速达到 1.39×，
 Z-Image 相对记录中的 ComfyUI 为 1.34×；历史 M4 Pro FLUX 快照最高达到 1.64×。**
 

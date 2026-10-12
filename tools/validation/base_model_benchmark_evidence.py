@@ -73,6 +73,11 @@ def verified_advantages(campaigns):
         if len(rows) != 1:
             raise ValueError("one source-bound headline cohort required")
         result.append(matched_comparison(rows[0], native, reference, note))
+    comfy = [row for row in campaigns if row["model"] == "z-image-turbo-comfy039-bf16-cohort"]
+    if len(comfy) != 1:
+        raise ValueError("one source-bound current ComfyUI cohort required")
+    result.append(matched_comparison(comfy[0], "native-frozen", comfy[0]["best_measured_comfy_route"],
+        "same BF16 source; approximate frozen W8A8 FFN; fastest of two measured ComfyUI v0.39 MPS presets, not an exhaustive backend optimum"))
     return result
 
 
@@ -102,6 +107,45 @@ def z_unsloth_campaign(path):
     return dict(evidence=binding,model="z-image-turbo-unsloth-mflux-bf16-cohort",geometry=[512,512],steps=8,date=data["date"],
         routes=routes,reference_comparison_valid=True,timing_scope=data["timing_scope"],
         note="same originalBF16 encoder/DiT/VAE; ten serial processes,40PNG/10complete memory,4fresh/route; nativeGPU7.356123/frozen5.955417/mflux7.970898/UnslothMetal GPUtext18.735300/defaultCPUtext22.599736s; use fasterGPUtext denominator: GPU2.547x,mixed3.146x,not3.795x against slowerdefault; frozen approximate with higher cold/RAM; reference templates/RNG/lifecycles differ; UI overhead not timed")
+
+
+def z_comfy_campaign(path):
+    from z_comfy_framework_screen import ORDER, ROUTES, validate_trial
+    data, binding = source(path, ("complete_diagnostic",))
+    if (data["order"] != list(ORDER) or data["steps"] != 8 or data["requests_per_process"] != 4 or
+            len(data["trials"]) != 8 or data["reference_latency_ranking_valid"] is not True or
+            data["comfy_commit"] != "b0b743566f65daafc423b4fea8a2fbda94b3384a" or data["comfy_local_changes"]):
+        raise ValueError("complete current four-route ComfyUI/native cohort required")
+    required_packages = {"comfyui-frontend-package": "1.53.10", "comfyui-workflow-templates": "0.11.76",
+        "comfyui-embedded-docs": "0.5.13", "comfy-kitchen": "0.2.37", "comfy-aimdo": "0.5.5"}
+    for index, trial in enumerate(data["trials"]):
+        if (trial["index"], trial["route"]) != (index, ORDER[index]):
+            raise ValueError("actual ComfyUI cohort order differs")
+        validate_trial(trial)
+        if trial["route"].startswith("comfy-"):
+            actual = trial["report"]["system_stats"]["system"]
+            installed = {p["name"]: p["installed"] for p in actual["comfy_package_versions"] if p["installed"] == p["required"]}
+            if actual["comfyui_version"] != "0.39.0" or actual["pytorch_version"] != "2.12.1" or installed != required_packages:
+                raise ValueError("actual current ComfyUI version and exact pinned packages required")
+    routes = []
+    for row in data["routes"]:
+        trials = [t for t in data["trials"] if t["route"] == row["route"]]
+        samples = [r["request_wall_including_export"] for t in trials for r in t["report"]["runs"][1:3]]
+        if len(trials) != 2 or len(samples) != 4 or samples != row["fresh_warm_seconds"] or statistics.median(samples) != row["fresh_warm_median"]:
+            raise ValueError("actual same-window four fresh samples required")
+        routes.append(measured(row["route"], row["cold_seconds"], samples, repeated_prompt_seconds=row["repeat_seconds"],
+            constructor_seconds=row["constructor_seconds"], physical_peaks=row["physical_peaks"],
+            compression_bytes=row["compression_bytes"], swap_out_bytes=row["swap_out_bytes"]))
+    if {r["route"] for r in routes} != set(ROUTES):
+        raise ValueError("all declared routes required")
+    values = {r["route"]: r["warm_median_seconds"] for r in routes}
+    best = min(ROUTES[2:], key=values.get)
+    if data["comparisons"]["best_measured_comfy_route"] != best:
+        raise ValueError("fastest measured valid ComfyUI preset must be the denominator")
+    return dict(evidence=binding, model="z-image-turbo-comfy039-bf16-cohort", geometry=[512, 512], steps=8,
+        date=data["date"], routes=routes, reference_comparison_valid=True, best_measured_comfy_route=best,
+        timing_scope=data["timing_scope"],
+        note="same original BF16 encoder/DiT/VAE; ComfyUI v0.39 pinned current release, existing PyTorch2.12.1/MPS with exact five pinned package overlay; eight serial processes/32PNG/8complete memory;4fresh/route; default and SDPA+GPU-only both retained; frozen W8A8 approximate/higher cold+RAM; HTTP submit/history/download/export vs native C API/export, no frontend UI; repeat prompt seed43 forces actual8steps/VAE, no cached sampler latency; independent RNG/token/compute lifecycles; not all Mac presets/Torch versions or global optimum")
 
 
 def runtime_campaign(path, model, size, steps, note):
@@ -533,6 +577,7 @@ def export():
         geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=decoded["timing_scope"],
         note="same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"))
     campaigns.append(z_unsloth_campaign("docs/design/validation/z-unsloth-mflux-current-20261012.json"))
+    campaigns.append(z_comfy_campaign("docs/design/validation/z-comfy039-current-20261012.json"))
     active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
     for row in campaigns:
         row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")

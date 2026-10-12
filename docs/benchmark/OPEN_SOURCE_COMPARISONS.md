@@ -13,6 +13,7 @@ base-only。主榜只比较兼容且完整生成成功的路线；不兼容者�
 | mflux0.22，fixed release commit | Qwen2.1 BF16源512²/40步 | 41.952 | frozen31.810 | mixed1.319×，省24.2%；nativeGPU43.309略输；W8A8不是严格BF16 |
 | Unsloth native sd-server/Metal，最快已测GPU-text | Z-Image Turbo原BF16源512²/8步 | 18.735 | frozen5.955 | **mixed3.146×，省68.2%**；默认CPU-text22.600s更慢，未用作宣传分母 |
 | mflux0.22，同release | Z-Image Turbo原BF16源512²/8步，同一新cohort | 7.971 | frozen5.955 | mixed1.338×；referencepeak22.48–22.52GB比native约32GB低 |
+| ComfyUI v0.39.0 /PyTorch2.12.1 MPS | Z-Image Turbo原BF16源512²/8步，独立四路线cohort | 默认8.535；SDPA/GPU-only8.840 | frozen5.840；GPU7.392 | **对更快默认配置mixed1.462×，省31.6%**；8进程/32PNG/8memory，不代表全部Mac presets |
 
 每行只用自己的cohort和完整生成，不跨组拼最快分子/最慢分母。
 Qwen/Z mflux组为完整正反序、原尺寸PNG、独立进程树内存和
@@ -21,6 +22,9 @@ Qwen/Z mflux组为完整正反序、原尺寸PNG、独立进程树内存和
 [Qwen](QWEN_BF16_FRAMEWORKS.md)、[Z最新Unsloth/mflux](Z_UNSLOTH_FRAMEWORKS.md)、
 [固定GGUF路径](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成)。
 Model checkpoint/数学/组件生命周期、cold、repeat缓存边界另列。
+[ComfyUI Mac完整对照](COMFYUI_MAC.md)另列当前v0.39正式版/精确依赖overlay、
+MPS attention与encoder放置；不动本机原v0.32安装，强制核验实际sampler执行，
+不把DAG整图cache命中计入速度。Comfy峰值更低、mixed cold更高也保留。
 
 FLUX4B Q4/g64已经通过mflux0.22完整PNG单cold预检（3.998s），当前
 mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)

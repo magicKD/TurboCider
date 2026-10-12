@@ -6,6 +6,19 @@
   "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls; compare compatible successful frameworks only, no mandatory unsupported adaptation;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
   "consolidated_report": "docs/benchmark/PERFORMANCE_REPORT.md",
   "additional_experiments_scheduled": false,
+  "comfy_current_comparison": {
+    "model": "z-image-turbo",
+    "evidence": "docs/design/validation/z-comfy039-current-20261012.json",
+    "comfy_commit": "b0b743566f65daafc423b4fea8a2fbda94b3384a",
+    "pytorch_version": "2.12.1",
+    "native_gpu_seconds": 7.391720333485864,
+    "native_frozen_seconds": 5.839859979460016,
+    "comfy_default_seconds": 8.535402354435064,
+    "comfy_sdpa_gpu_seconds": 8.840068853925914,
+    "reference_selector": "fastest of two measured presets: comfy-default, not slower SDPA/GPU-only",
+    "speedup": 1.4615765419814555,
+    "scope": "same original BF16 sources,512x512/8steps,Euler/simple/shift3/cfg1,8processes/32PNG/8memory;4fresh per route seed42,repeat prompt seed43 forces actual sampler; frozen W8A8 approximate/higher cold+RAM; not global Mac preset/Torch optimum"
+  },
   "matched_comparison_configurations": [
     {
       "model": "z-image-turbo",
