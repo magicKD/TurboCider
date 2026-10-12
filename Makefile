@@ -6,6 +6,8 @@ export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 .PHONY: help setup build build-app build-vision-quality package test test-qwen21 test-app test-reference-preparation test-editing-canvas test-model doctor h3-quant-cache test-library test-api test-video-preview
 .PHONY: test-streaming-host test-streaming-contract test-streaming-metal test-streaming-campaign test-streaming-catalog-builder test-streaming-source-identity test-streaming-source-lease test-streaming-audit test-streaming-pager test-ltx-streaming-lifecycle test-ltx-streaming-lifecycle-faults test-process-tree-sampler
 .PHONY: build-runtime-ane-probe test-runtime-ane test-runtime-ane-host test-runtime-ane-cpu-bridge test-acceleration-contract test-quantized-host
+.PHONY: test-comfyui
+COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-playground
 .PHONY: test-qwen21-runtime-activation
 help:
@@ -239,6 +241,7 @@ test-video-preview:
 	@test -n "$(VIDEO)" || (echo 'VIDEO=/path/to/generated.mp4 is required'; exit 1)
 	@build/native/turbocider-video-preview-tests "$(VIDEO)"
 test-api:
+	@build/native/turbocider-http-gateway-tests
 	@"$(PYTHON)" -B tests/native/test_cli_discovery.py
 	@build/native/turbocider-local-api-tests
 	@"$(PYTHON)" tests/native/test_service_lifecycle.py
@@ -265,3 +268,8 @@ doctor:
 h3-quant-cache: build
 	@test -n "$(MODEL)" -a -n "$(OUTPUT)" || (echo 'MODEL and OUTPUT are required'; exit 1)
 	@build/native/h3-quantize-stream-cache --transformer "$(MODEL)" --shader build/native/h3_shaders.metal --output "$(OUTPUT)"
+
+# HTTP fixture tests plus real CPU tensor contracts; no model weights.
+test-comfyui:
+	@"$(PYTHON)" tests/comfyui/test_gateway.py
+	@"$(COMFYUI_PYTHON)" tests/comfyui/test_nodes.py

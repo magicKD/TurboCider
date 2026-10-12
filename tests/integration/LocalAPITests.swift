@@ -68,7 +68,7 @@ import Foundation
         let transport = PausedAPITransport(executable: executable, socket: socket)
         defer { transport.releaseAll() }
         let api = LocalAPIController(directory: root, executable: executable, socketPath: socket,
-                                     rpcTransport: { try await transport.send($0) })
+                                     rpcTransport: { try await transport.send($0) }, httpPort: 0)
         defer { api.terminateNow() }
         func check(_ ok: Bool, _ text: String) throws { if !ok { throw NativeFailure(message: text) } }
         func wait(_ text: String, until condition: () -> Bool) async throws {
@@ -80,13 +80,32 @@ import Foundation
         }
         await api.start(store: store)
         try check(api.running && store.externalServiceActive, "App service did not start: \(api.error ?? "")")
+        let firstHTTPURL = api.httpURL
+        func health(_ url: String) async throws -> [String: Any] {
+            var request = URLRequest(url: URL(string: url + "/v1/health")!)
+            request.timeoutInterval = 3
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try check((response as? HTTPURLResponse)?.statusCode == 200, "App HTTP health failed")
+            return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        }
+        let initialHealth = try await health(firstHTTPURL)
+        try check(initialHealth["pid"] as? Int != nil && api.httpPort > 0, "App did not start an owned HTTP gateway")
+        let conflictSocket = "/private/tmp/tc-conflict-\(UUID().uuidString.prefix(8)).sock"
+        let conflict = LocalAPIController(directory: root.appendingPathComponent("port-conflict"), executable: executable,
+                                          socketPath: conflictSocket, httpPort: api.httpPort)
+        let conflictStore = NativeJobStore(directory: root.appendingPathComponent("conflict-studio"))
+        await conflict.start(store: conflictStore)
+        try await wait("HTTP startup rollback", until: { !conflict.changing })
+        try check(!conflict.running && conflict.error != nil && !conflictStore.externalServiceActive &&
+                  !FileManager.default.fileExists(atPath: conflictSocket), "Port conflict did not roll back its native service")
+        _ = try await health(firstHTTPURL)
         await api.refresh()
         try check(api.error == nil && api.jobCount == 0 && api.activeJob.isEmpty, "App service status failed")
         do {
             try await store.load(modelURL: root, modelID: "z-image-turbo")
             throw NativeFailure(message: "Embedded model loaded while API owned execution")
         } catch { try check(error.localizedDescription.contains("API"), "Wrong execution ownership error") }
-        let other = LocalAPIController(directory: root.appendingPathComponent("other"), executable: executable, socketPath: socket)
+        let other = LocalAPIController(directory: root.appendingPathComponent("other"), executable: executable, socketPath: socket, httpPort: 0)
         let otherStore = NativeJobStore(directory: root.appendingPathComponent("other-studio"))
         await other.start(store: otherStore)
         try check(!other.running && other.error != nil, "Second App attached to another process's socket")
@@ -94,6 +113,10 @@ import Foundation
         api.stop()
         for _ in 0..<100 { if !api.changing && !api.running { break }; try await Task.sleep(for: .milliseconds(100)) }
         try check(!api.running && !store.externalServiceActive && !FileManager.default.fileExists(atPath: socket), "App stop left socket or execution reservation")
+        try check(api.httpPort == 0, "App stop retained gateway port")
+        do { _ = try await health(firstHTTPURL); throw NativeFailure(message: "HTTP listener survived App stop") }
+        catch is URLError { }
+
         await api.start(store: store)
         try check(api.running, "App service cannot restart: \(api.error ?? "")")
         api.stop()
@@ -267,6 +290,14 @@ import Foundation
         api.stop()
         try await wait("final service stop", until: { !api.changing && !api.running })
         try check(!store.externalServiceActive && !FileManager.default.fileExists(atPath: socket), "Final stop left service ownership")
-        print("PASS: App API lifecycle, execution ownership, history/result validation, safe pagination, retained stale history, slow-page and restarted-service isolation")
+        await api.start(store: store)
+        let interruptedURL = api.httpURL
+        let ownedPID = try await health(interruptedURL)["pid"] as! Int
+        kill(pid_t(ownedPID), SIGTERM)
+        try await wait("native exit closes HTTP", until: { !api.running && !api.changing })
+        try check(api.httpPort == 0 && !store.externalServiceActive, "Native exit retained HTTP/execution ownership")
+        do { _ = try await health(interruptedURL); throw NativeFailure(message: "HTTP survived native exit") }
+        catch is URLError { }
+        print("PASS: App API lifecycle, execution ownership, history/result validation, safe pagination, retained stale history, slow-page and restarted-service isolation; automatic HTTP startup, occupied-port rollback, stop and native-exit shutdown")
     }
 }

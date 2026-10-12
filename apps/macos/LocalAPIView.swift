@@ -10,7 +10,14 @@ struct LocalAPIView: View {
     @State private var resultMessage: String?
     private var connectionInstructions: String {
         """
-        使用本机 TurboCider 的 Unix socket API：
+        使用本机 TurboCider 的 HTTP API 或 Unix socket API：
+        HTTP: \(api.httpURL)
+        App“本地 API”页启动服务时自动启动 HTTP 网关，无需 Python 或手动运行网关脚本。仅本机可访问。
+        HTTP JSON 路由：GET /v1/health、GET /v1/catalog、POST /v1/plan、POST /v1/jobs、GET /v1/jobs、GET /v1/jobs/{id}、POST /v1/jobs/{id}/cancel、GET /v1/jobs/{id}/artifact。
+        先用 catalog 读取已登记 installations、loras 和 models，再用 {"installation_id":"登记ID","request":{...原生schema-1请求...}} plan / jobs；不要提供 output 或 model_path，由网关分配输出。
+        图片上传：POST /v1/assets，Content-Type: image/png，二进制 PNG；返回 id。请求 inputs 使用 {"kind":"image","role":"reference","asset_id":"上传ID"}；LoRA 使用 {"id":"登记ID","role":"transformer","strength":1}。
+        ComfyUI Model (API) 的 api_url 填 HTTP 地址；Desktop Remote Connection 填 ComfyUI 自身地址（通常 http://127.0.0.1:8188），不是网关地址。
+        HTTP 同时接受多个客户端，任务由原生队列执行。Unix RPC 调用格式如下：
         Socket: \(api.socketPath)
         先在 App 的“本地 API”页启动服务。每个连接发送一个 UTF-8 JSON 对象，以换行结尾；每个连接只处理一次请求。
         首先发送 {"action":"capabilities"} 获取操作、字段类型和限制；再发送 {"action":"models"} 查询模型能力（不是已安装模型列表）。
@@ -41,20 +48,35 @@ struct LocalAPIView: View {
                                 if api.running { api.stop() } else { Task { await api.start(store: store) } }
                             }.disabled(api.changing || store.busy).accessibilityIdentifier("toggleLocalAPI")
                         }
+                        HStack {
+                            Text("HTTP 端口")
+                            TextField("8765", value: $api.requestedHTTPPort, format: .number.grouping(.never))
+                                .frame(width: 90).disabled(api.running || api.changing)
+                                .accessibilityIdentifier("localAPIHTTPPort")
+                            Text("默认 8765 · 修改后重新启动生效").font(.caption).foregroundStyle(.secondary)
+                        }
+                        LabeledContent("HTTP API", value: api.httpURL).font(.callout.monospaced()).textSelection(.enabled)
+                            .accessibilityIdentifier("localAPIHTTPURL")
                         LabeledContent("Socket", value: api.socketPath).font(.callout.monospaced()).textSelection(.enabled)
                         Text("启动时释放 App 的嵌入式模型会话；API 服务按需加载并复用模型。停止服务后可回到创作页生成。").font(.caption).foregroundStyle(.secondary)
                         HStack {
+                            Button("复制 HTTP 地址") { copy(api.httpURL) }.accessibilityIdentifier("copyAPIHTTPURL")
                             Button("复制 Socket 路径") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(api.socketPath, forType: .string) }
                             Button("复制 AI 接入说明") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(connectionInstructions, forType: .string) }
                                 .accessibilityIdentifier("copyAIConnectionInstructions")
                             Button("打开日志目录") { NSWorkspace.shared.open(api.directory) }
                             if api.running { Button("刷新状态") { Task { await api.refresh() } }; Text("历史任务 \(api.jobCount)").font(.caption) }
                         }
+                        if let error = api.error {
+                            Text(error).foregroundStyle(.red).textSelection(.enabled)
+                                .accessibilityIdentifier("localAPIError")
+                        }
                     }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 }
+                httpUsageSection
                 jobsSection
-                Text("调用方式").font(.title2)
-                Text("此服务使用 Unix socket JSON RPC，适合当前 Mac 的本地进程；不监听公网端口。每个连接发送一个以换行结尾的 JSON 对象。").foregroundStyle(.secondary)
+                Text("Unix socket 调用").font(.title2)
+                Text("原生接口也可通过 Unix socket JSON RPC 调用，适合当前 Mac 的本地进程。每个连接发送一个以换行结尾的 JSON 对象。").foregroundStyle(.secondary)
                 Text("turbocider rpc \(api.socketPath) rpc.json\n\nrpc.json:\n{\"action\":\"capabilities\"}")
                     .font(.system(.body, design: .monospaced)).textSelection(.enabled).padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
@@ -65,9 +87,8 @@ struct LocalAPIView: View {
                 }
                 Text("先用 capabilities 获取接口格式，用 models 查询模型能力、installations 读取已登记模型与 LoRA 路径。需要缩放参考图时显式调用 image_prepare，使用返回的 image_path；workflows 和 workflow_request 按图片角色组合请求，再用 plan 检查生成参数。submit 提交后保存任务 ID，用 status 查询进度，cancel 停止任务。复制接入说明后，可以交给本机 AI 编排多步创作。")
                     .font(.callout)
-                Text("退出 App 会停止由此页面启动的服务；独立运行请使用 CLI 的 serve 命令。API 任务记录位于服务目录中，与创作页历史分开保存。")
+                Text("停止服务或退出 App 会同时关闭 HTTP 网关和原生服务；独立运行可使用配套 start.py 启动器。API 任务记录位于服务目录中，与创作页历史分开保存。")
                     .font(.caption).foregroundStyle(.secondary)
-                if let error = api.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             }.padding(28)
         }.task {
             if api.running { await api.refreshJobs() }
@@ -82,6 +103,100 @@ struct LocalAPIView: View {
                 if let url = job.outputURL { MediaPreview(path: url.path, maxPixel: 1600).frame(maxWidth: .infinity, maxHeight: .infinity) }
                 Text(job.id).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             }.padding(20).frame(width: 680, height: 620)
+        }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+    }
+    private func example(_ title: String, _ code: String) -> some View {
+        DisclosureGroup(title) {
+            VStack(alignment: .leading, spacing: 8) {
+                Button("复制示例") { copy(code) }.buttonStyle(.borderless)
+                ScrollView(.horizontal) {
+                    Text(code).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                }.background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+            }.padding(.top, 8)
+        }
+    }
+    private var httpUsageSection: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("HTTP 调用方法").font(.title2)
+                Text("启动服务即开启网关。ComfyUI、Python、Node.js 和本机脚本可以共用已登记模型与 LoRA；无需另启网关或复制模型权重。")
+                    .foregroundStyle(.secondary)
+                Text("ComfyUI：安装配套 TurboCider 节点后，Model (API) 的 api_url 填 \(api.httpURL)。Comfy Desktop 的 Remote Connection 仍连接 ComfyUI 地址，通常为 http://127.0.0.1:8188。")
+                    .font(.callout).textSelection(.enabled)
+                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
+                    route("GET /v1/health", "服务状态")
+                    route("GET /v1/catalog", "已登记模型、LoRA、能力与工作流")
+                    route("POST /v1/assets", "上传参考图 PNG，返回 asset ID")
+                    route("POST /v1/plan", "校验模型与参数，不执行生成")
+                    route("POST /v1/jobs", "提交生成任务，返回任务 ID")
+                    route("GET /v1/jobs", "查询近期任务，恢复丢失的回执")
+                    route("GET /v1/jobs/{id}", "查询任务进度、状态与结果")
+                    route("POST /v1/jobs/{id}/cancel", "取消任务；请求体为 {}")
+                    route("GET /v1/jobs/{id}/artifact", "下载成功任务的图片或视频")
+                }
+                example("1 · 检查服务与模型目录（curl）", """
+                curl --fail '\(api.httpURL)/v1/health'
+                curl --fail '\(api.httpURL)/v1/catalog'
+                """)
+                example("2 · 校验和提交任务（curl）", """
+                # 将 installation_id 替换为 catalog 中 installations 的 id。
+                # 此示例用于 FLUX.2 Klein 4B；Z-Image 用 8 步，Qwen 基础模型用 20 步。
+                cat > request.json <<'JSON'
+                {"installation_id":"替换为模型登记ID","request":{
+                  "schema_version":1,"operation":"image.generate",
+                  "prompt":"A blue ceramic teapot on a wooden table",
+                  "width":512,"height":512,"steps":4,"seed":42,
+                  "execution":"gpu","prompt_enhance":false
+                }}
+                JSON
+                curl --fail '\(api.httpURL)/v1/plan' \\
+                  -H 'Content-Type: application/json' --data-binary @request.json
+                # 确认 plan 可执行后提交一次；不要在回复丢失时自动重试。
+                curl --fail '\(api.httpURL)/v1/jobs' \\
+                  -H 'Content-Type: application/json' --data-binary @request.json
+                """)
+                example("3 · 查询、下载和取消（curl）", """
+                JOB_ID='替换为提交返回的任务ID'
+                curl --fail "\(api.httpURL)/v1/jobs/$JOB_ID"
+                # state 为 succeeded 后下载图片；视频任务使用 .mp4 扩展名。
+                curl --fail "\(api.httpURL)/v1/jobs/$JOB_ID/artifact" -o result.png
+                # 需要取消尚未结束的任务时执行：
+                curl --fail "\(api.httpURL)/v1/jobs/$JOB_ID/cancel" \\
+                  -H 'Content-Type: application/json' -d '{}'
+                """)
+                example("4 · Python：列出模型并校验参数", """
+                import json, urllib.request
+                API = "\(api.httpURL)"
+                def call(path, payload=None):
+                    data = None if payload is None else json.dumps(payload).encode()
+                    request = urllib.request.Request(API + path, data=data,
+                        headers={"Content-Type": "application/json"})
+                    with urllib.request.urlopen(request, timeout=30) as response:
+                        return json.load(response)
+                catalog = call("/v1/catalog")
+                for item in catalog["installations"]:
+                    print(item["id"], item["modelID"], item["name"])
+                # 根据上方列表选择模型，参数同 curl 示例。
+                # plan = call("/v1/plan", payload)
+                # job = call("/v1/jobs", payload)  # 只提交一次
+                # status = call("/v1/jobs/" + job["id"])
+                """)
+                Text("输出路径由网关分配。参考图使用上传返回的 asset_id；LoRA 使用 catalog 中的登记 id。请求在原生队列执行，取消在安全边界完成。仅关闭客户端不会取消任务；回复丢失时先查询 /v1/jobs。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("仅监听 127.0.0.1；适合可信的本机服务。浏览器页面的跨域请求不开放，请从应用后端调用。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityIdentifier("apiHTTPUsage")
+    }
+    private func route(_ path: String, _ description: String) -> some View {
+        GridRow {
+            Text(path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+            Text(description).font(.callout)
         }
     }
 
