@@ -78,6 +78,9 @@ class Weights {
     std::vector<std::shared_ptr<const streaming::SourceLease>> source_leases_;
     size_t lora_source_count_ = 0;
     std::string native_lora_rejection_;
+    int affine_group_size_ = 32;
+    int affine_bits_ = 0;
+    void read_affine_metadata(const std::unordered_map<std::string, std::string> &);
     bool metal_convrot_ = false;
     bool affine_fp32_mpp_ = false;
     bool affine_bf16_fp32_partial_ = false;
@@ -113,6 +116,10 @@ class Weights {
     void remap_keys(const std::function<std::string(const std::string &)> &);
     void fuse_keys(const std::string &, const std::vector<std::string> &, int axis);
     void cast_unquantized_float32(mx::Dtype);
+    // Explicit saved-MLX geometry. Packed shape alone cannot distinguish
+    // Q4/g64 from Q8/g32. Legacy GGUF/g32 keeps its original default.
+    void set_affine_quantization(int group_size, int bits);
+    int logical_input_width(const std::string &prefix) const;
     void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
     bool metal_convrot() const { return metal_convrot_; }
     // Owner-thread request snapshot; never mutate while a compiled closure or
@@ -167,9 +174,12 @@ class Weights {
     void select_dense_indices(const std::string &prefix,
                               const std::vector<int> &channel_indexes, int axis);
     void dequantize(const std::vector<std::string> &);
+    // Explicit dense operand dtype; the historical overload remains FP16.
+    void dequantize(const std::vector<std::string> &, mx::Dtype);
     // Gather token rows before affine decode; never expand a full vocabulary.
     // Host-side vocabulary validation belongs to the prompt assembler.
     Tensor embedding_rows(const Tensor &ids,const std::string &prefix) const;
+    Tensor embedding_rows(const Tensor &ids, const std::string &prefix, mx::Dtype) const;
     const Tensor &at(const std::string &) const;
     bool has(const std::string &) const;
     void erase(const std::string &);

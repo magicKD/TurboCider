@@ -23,8 +23,34 @@ bool flux_force_fused_sdpa() {
 }
 
 std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
+make_single_gpu_graph(int hidden, int head_count) {
+    require((hidden == 3072 || hidden == 4096) && head_count * 128 == hidden,
+            "unsupported FLUX Klein compiled single-block geometry");
+    auto graph = std::function<std::vector<Tensor>(const std::vector<Tensor> &)>(
+        [hidden, head_count](const std::vector<Tensor> &args) {
+            auto input = norm(args[0]) * (1 + args[2]) + args[1];
+            auto parts = mx::split(mx::matmul(input, mx::transpose(args[6])),
+                                   mx::Shape{hidden, hidden * 2, hidden * 3, hidden * 6}, -1);
+            auto q = mx::astype(
+                mx::fast::rms_norm(mx::astype(heads(parts[0], head_count, 128), mx::float32),
+                                  args[7], 1e-5f), mx::bfloat16);
+            auto k = mx::astype(
+                mx::fast::rms_norm(mx::astype(heads(parts[1], head_count, 128), mx::float32),
+                                  args[8], 1e-5f), mx::bfloat16);
+            auto rotated = flux_rope_pair(q, k, args[4], args[5]);
+            auto attention = attend(rotated[0], rotated[1], heads(parts[2], head_count, 128),
+                                    false, {}, flux_force_fused_sdpa());
+            auto mlp = silu(parts[3]) * parts[4];
+            return std::vector<Tensor>{args[0] + args[3] *
+                mx::matmul(mx::concatenate({attention, mlp}, -1), mx::transpose(args[9]))};
+        });
+    return mx::compile(std::move(graph));
+}
+
+std::function<std::vector<Tensor>(const std::vector<Tensor> &)>
 make_hybrid_gpu_graph(int hidden, int head_count, int mlp_width, int gpu_mlp_start) {
-    require(hidden == 3072 && mlp_width == 9216 && head_count == 24,
+    require((hidden == 3072 && mlp_width == 9216 && head_count == 24) ||
+                (hidden == 4096 && mlp_width == 12288 && head_count == 32),
             "unsupported FLUX hybrid graph geometry");
     require(gpu_mlp_start > 0 && gpu_mlp_start <= mlp_width,
             "invalid FLUX GPU MLP complement");
@@ -988,11 +1014,18 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
         event("transformer_block", dual_layers_ + i, total_blocks);
         auto p = "single_transformer_blocks." + std::to_string(i) + ".attn";
         auto a = norm(x) * (1 + ms[1]) + ms[0];
+        // Packed/runtime-adapter projections need Weights::project semantics;
+        // never reinterpret their stored arrays as dense compiled matmuls.
+        const bool compiled_single = compile_blocks &&
+            (model_id_ == "flux2-klein-4b" || model_id_ == "flux2-klein-9b") &&
+            !hybrid_ && !w.has_runtime_loras() &&
+            !w.quantized(p + ".to_qkv_mlp_proj") && !w.quantized(p + ".to_out") &&
+            !w.has(p + ".to_qkv_mlp_proj.bias") && !w.has(p + ".to_out.bias");
         if (hybrid_) {
             auto packed = mx::astype(a, mx::float16);
             if (n < hybrid_->rows)
                 packed = mx::concatenate(
-                    {packed, mx::zeros({1, hybrid_->rows - n, 3072}, mx::float16)}, 1);
+                    {packed, mx::zeros({1, hybrid_->rows - n, hidden_}, mx::float16)}, 1);
             mx::eval({a, packed});
             // The ANE model may own only a prefix of the 9,216-channel MLP.
             // Compile attention plus the complementary GPU suffix as one graph,
@@ -1010,30 +1043,13 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
             mx::async_eval({gpu});
             auto ane = slice_axis(hybrid_->predict(i, packed), 1, 0, n);
             x = x + ms[2] * (gpu + mx::astype(ane, gpu.dtype()));
-        } else if (compile_blocks && model_id_ == "flux2-klein-4b") {
-            static auto single_graph = mx::compile([](const std::vector<Tensor> &args) {
-                auto input = norm(args[0]) * (1 + args[2]) + args[1];
-                auto parts = mx::split(mx::matmul(input, mx::transpose(args[6])),
-                                       mx::Shape{3072, 6144, 9216, 18432}, -1);
-                auto q =
-                    mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[0], 24, 128), mx::float32),
-                                                  args[7], 1e-5f),
-                               mx::bfloat16);
-                auto k =
-                    mx::astype(mx::fast::rms_norm(mx::astype(heads(parts[1], 24, 128), mx::float32),
-                                                  args[8], 1e-5f),
-                               mx::bfloat16);
-                auto rotated = flux_rope_pair(q, k, args[4], args[5]);
-                auto att = attend(rotated[0], rotated[1], heads(parts[2], 24, 128),
-                                  false, {}, flux_force_fused_sdpa());
-                auto mlp = silu(parts[3]) * parts[4];
-                return std::vector<Tensor>{
-                    args[0] +
-                    args[3] * mx::matmul(mx::concatenate({att, mlp}, -1), mx::transpose(args[9]))};
-            });
-            x = single_graph({x, ms[0], ms[1], ms[2], cos, sin, w.at(p + ".to_qkv_mlp_proj.weight"),
+        } else if (compiled_single) {
+            if (!single_gpu_graph_)
+                single_gpu_graph_ = make_single_gpu_graph(hidden_, heads_);
+            x = single_gpu_graph_({x, ms[0], ms[1], ms[2], cos, sin, w.at(p + ".to_qkv_mlp_proj.weight"),
                               w.at(p + ".norm_q.weight"), w.at(p + ".norm_k.weight"),
                               w.at(p + ".to_out.weight")})[0];
+            event("compiled_single_gpu_block", i + 1, single_layers_);
         } else {
             auto proj = linear(a, w, p + ".to_qkv_mlp_proj");
             auto parts = mx::split(proj, mx::Shape{hidden_, hidden_ * 2, hidden_ * 3,
@@ -1054,9 +1070,9 @@ Tensor Flux::denoise(const Tensor &latent, const Tensor &text, float sigma, int 
         }
         // A compiled pure-GPU block retains its allocator dependency chain;
         // the caller synchronizes the final denoiser output once per step.
-        // Avoiding twenty host waits per FLUX.2 Klein 4B step is safe because
-        // hybrid Core ML boundaries and eager/9B paths still synchronize.
-        if (hybrid_ || !compile_blocks || model_id_ != "flux2-klein-4b" ||
+        // Skip the per-block fence only for the actually selected compiled
+        // dense graph; hybrid/packed/bias/runtime-LoRA/eager paths still sync.
+        if (!compiled_single ||
             std::getenv("TURBOCIDER_FLUX_SYNC_BLOCKS"))
             mx::eval(x);
       }

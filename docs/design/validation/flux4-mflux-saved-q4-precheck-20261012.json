@@ -1,0 +1,98 @@
+{
+  "schema": "tc-flux4-compatible-runtime-prechecks-v1",
+  "date": "2026-10-12",
+  "status": "complete_precheck_only",
+  "model": "flux2-klein-4b",
+  "qualification_passed": false,
+  "latency_comparison_valid": false,
+  "performance_verified": false,
+  "scope": "compatibility and complete PNG prechecks only; not a paired fresh median benchmark, native speedup or independent physical-memory measurement",
+  "source": {
+    "repo": "mflux-community/flux2-klein-4b-mflux-q4",
+    "revision": "794cd159538149ad9830848508c31f0ea7088e58",
+    "model_root": "models/FLUX.2-klein-4B-mflux-Q4",
+    "representation": "upstream saved Q4/g64 encoder including embedding and DiT; VAE BF16 convolutions/norms with Q4/g64 attention linears; not original BF16 or locally derived g32 pack",
+    "asset_receipt": "outputs/flux4-q4-asset-restore-20261012/receipt.json",
+    "asset_receipt_sha256": "bb50af73cc902a61f379cbf2af6fd0cd09053b11144b05bfe4ce308e839abf84",
+    "download_bytes": 4619699678,
+    "verified_asset_files": 11,
+    "identity_scope": "asset receipt records initial size/SHA verification; not a new runtime immutable source lease or per-inference weight rehash"
+  },
+  "mflux": {
+    "evidence": "outputs/flux4-mflux-q4-precheck-v3-20261012/report.json",
+    "evidence_sha256": "404237a2b6b6a70dbc79fb6821c3b6e453d86be15db5876bd636f044db9ecebc",
+    "status": "complete_precheck_only",
+    "runtime_verified": true,
+    "performance_verified": false,
+    "mflux_commit": "31c9640399572ea394d07092763be9a36007a754",
+    "packages": {
+      "mflux": "0.22.0",
+      "mlx": "0.32.3",
+      "torch": "2.14.1",
+      "transformers": "5.19.0"
+    },
+    "request": {
+      "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+      "seed": 42,
+      "width": 512,
+      "height": 512,
+      "steps": 4,
+      "guidance": 1.0,
+      "loras": [],
+      "cache_limit_bytes": 0
+    },
+    "actual_steps": [0, 1, 2, 3],
+    "actual_quantization": 4,
+    "required_weight_coverage": {
+      "transformer": {"required_targets": 387, "covered_targets": 387, "missing": []},
+      "text_encoder": {"required_targets": 905, "covered_targets": 905, "missing": []},
+      "vae": {"required_targets": 266, "covered_targets": 266, "missing": []}
+    },
+    "constructor_seconds": 0.49573504202999175,
+    "single_cold_wall_including_png_export_seconds": 3.997900999849662,
+    "png_sha256": "aa70f1dfb242731412cfe0016f4ddd1d833f56d387e79c0bfb4c822f34ce3ce3",
+    "mlx_allocator_peak_bytes": 5763601236,
+    "independent_process_tree_memory_verified": false,
+    "visual_check": "complete fox in snowy forest, not noise",
+    "reproduction_command": "HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .deps/mflux-0.22-env/bin/python3 -B tools/validation/flux4_mflux_saved_precheck.py --model models/FLUX.2-klein-4B-mflux-Q4 --mflux .deps/mflux-v0.22.0-20261012 --output outputs/new-flux4-mflux-precheck"
+  },
+  "mlx_serve": {
+    "evidence": "outputs/flux4-mlxserve-q4-compatibility-20261012/summary.json",
+    "evidence_sha256": "dc6d289813ffaeca84abe137c0e31883faac85e8dc3b7a5708cef92a875d448c",
+    "status": "loaded_generation_succeeded",
+    "version": "26.10.1",
+    "mlx_version": "0.32.3",
+    "binary_sha256": "46d017b5f6e49890e654dbefd2b750eda44b627a20f4ec7a01015a4d0d8ea1e0",
+    "latency_comparison_valid": false,
+    "server_terminal": true,
+    "derived_layout": false,
+    "request": {
+      "prompt": "A red fox sitting in a snowy forest.",
+      "seed": 42,
+      "width": 512,
+      "height": 512,
+      "steps": 4
+    },
+    "http_status": 200,
+    "returned_png": {
+      "bytes": 567768,
+      "sha256": "b403b8ee698f09dfd410ce0f5f999e900e1a139a1ac278e1d9f93ba252e290b4",
+      "dimensions": [512, 512],
+      "mode": "RGB",
+      "format": "PNG",
+      "visual_check": "complete fox in snowy forest, not noise"
+    },
+    "logged_loaded_weight_counts": {"transformer": 387, "text_encoder": 905, "vae": 266},
+    "coverage_scope": "loader log counts only, not independent per-parameter shape/dtype coverage or actual per-step telemetry",
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "3d675ad9725f774fdeddf3ce75ac8e706a48f0f37af3bdef2036b1e6cf235aeb",
+    "reproduction_command": ".venv/bin/python3 -B tools/validation/mlxserve_local_model_probe.py --binary .deps/mlx-serve-v26.10.1/mlx-serve-macos-arm64/mlx-serve --model models/FLUX.2-klein-4B-mflux-Q4 --layout-label 'upstream FLUX4B Q4/g64 saved pack' --output outputs/new-flux4-mlxserve-precheck"
+  },
+  "limitations": [
+    "Different prompts and runtime lifecycles: these two prechecks are not paired latency or numerical-quality controls.",
+    "No native4B Q4/g64 generation or GPU/ANE speed result is claimed.",
+    "Stored F32 rotary_emb.inv_freq is validated when present; generated absent constants do not count as missing saved learned weights.",
+    "Earlier v1/v2 prechecks failed a local stored-RoPE coverage verifier; failures are retained, not rewritten into passes.",
+    "Asset-download runtime/performance flags remain unchanged; this separate evidence records subsequent execution."
+  ]
+}

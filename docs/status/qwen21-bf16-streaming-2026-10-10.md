@@ -2,6 +2,8 @@
 
 2026-10-10，M4 Max64GB/macOS26.6.2，接续
 [GGUF encoder 并行导入](qwen21-q4km-encoder-import-2026-10-10.md)。
+本文是当时原库/原profile窗口；新增首次注册后、GPU encoder prefill优化
+profile的同库40步对比见[新同内存窗口](qwen21-matched-gguf-bf16-2026-10-10.md)。
 本轮实现此前缺失的 encoder **和** DiT 原始 BF16 有界 streaming，继续
 完整512²/40steps同版本对照；完整目标仍 active，尤其 encoder 对
 Unsloth 的冷/热匹配与 Public ANE 全覆盖不能用本项代替。

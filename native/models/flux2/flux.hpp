@@ -23,11 +23,15 @@ class Flux : public ModelSession {
     bool test_fail_drain_ = false;
 #endif
     Weights transformer_, vae_;
+    bool affine_predecoded_ = false;
+    void select_gpu_affine(const Request &, const Event &, std::atomic<bool> &);
     std::string cached_prompt_;
     std::string cached_encoder_manifest_;
     bool cached_dynamic_ = true;
     std::optional<Tensor> cached_conditioning_;
     std::function<std::vector<Tensor>(const std::vector<Tensor> &)> hybrid_gpu_graph_;
+    // Geometry belongs to this model session; weights stay explicit inputs.
+    std::function<std::vector<Tensor>(const std::vector<Tensor> &)> single_gpu_graph_;
     int hybrid_gpu_mlp_start_ = -1;
     std::vector<LoRAAsset> active_loras_;
     std::string cached_lora_identity_;

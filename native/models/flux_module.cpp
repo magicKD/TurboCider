@@ -1,5 +1,7 @@
 #include "../runtime/session.hpp"
 #include "flux2/flux.hpp"
+#include <cstdlib>
+#include <cstring>
 namespace tc {
 ModelModule flux_module() {
     return {"flux2-klein-4b",
@@ -81,6 +83,18 @@ ModelModule flux9_module() {
                         r.operation == "image.edit", "unsupported FLUX operation");
             require(r.model_variant == "auto" || r.model_variant == "flux2-klein-9b",
                     "model_variant does not match the selected FLUX module");
+            if (const char *predecode = std::getenv("TURBOCIDER_FLUX9_PREDECODE_AFFINE")) {
+#ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+                require(std::strcmp(predecode, "1") == 0 && r.execution == "gpu" &&
+                            r.compile_gpu && r.allow_approximation && r.residency == "resident" &&
+                            !r.streaming.active() && r.operation == "image.generate" &&
+                            r.width == 512 && r.height == 512 && r.steps == 4 &&
+                            !r.dynamic_text && r.loras.empty(),
+                        "FLUX9B affine predecode requires exact512/4 base GPU experimental opt-in");
+#else
+                require(false, "FLUX9B affine predecode is experimental-only");
+#endif
+            }
             if (r.operation == "image.generate")
                 require(r.inputs.empty(), "image.generate does not accept image inputs");
             else {
@@ -92,7 +106,18 @@ ModelModule flux9_module() {
                                 input.role == (r.operation == "image.transform" ? "init_image" : "reference"),
                             "incorrect FLUX image role");
             }
-            require(r.execution != "gpu_ane", "FLUX.2 Klein 9B GPU+ANE partition is not validated");
+            if (r.execution == "gpu_ane") {
+#ifdef TURBOCIDER_ENABLE_QUANTIZED_EXECUTION_EXPERIMENTS
+                const char *candidate = std::getenv("TURBOCIDER_FLUX9_EXPERIMENTAL_HYBRID");
+                require(candidate && std::strcmp(candidate, "1") == 0 &&
+                            r.allow_approximation && !r.ane_manifest.empty() &&
+                            r.operation == "image.generate" && r.width == 512 &&
+                            r.height == 512 && r.steps == 4 && !r.dynamic_text && r.loras.empty(),
+                        "FLUX9B hybrid requires explicit source-bound512/4 base experimental opt-in");
+#else
+                require(false, "FLUX.2 Klein 9B GPU+ANE partition is not validated");
+#endif
+            }
             require(r.residency == "resident" || r.residency == "component_staged",
                     "FLUX block streaming is not supported");
             require(r.loras.size() <= 8, "at most eight LoRA adapters may be active");

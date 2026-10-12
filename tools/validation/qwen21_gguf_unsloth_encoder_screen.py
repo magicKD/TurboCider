@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Read-only Unsloth placement/max flags; fresh prompts in one owned sd-server.
 
-Two-step requests are only an encoder lifecycle comparison, not full denoising
-or image-quality qualification. Model loading and first native condition are
-kept separate from the subsequent fresh-prompt conditions.
+Two-step requests are only an encoder lifecycle comparison. Explicit40-step
+requests also retain full native sampling/generation spans, without subtracting
+first lazy loads or claiming tensor/image parity across engines.
 """
 import argparse
 import base64
@@ -56,7 +56,7 @@ def worker(output):
                 stderr.flush()
                 paths = [output / "server.stdout.txt", output / "server.stderr.txt"]
                 offsets = [p.stat().st_size for p in paths]
-                request = dict(prompt=prompt, width=512, height=512, steps=2, seed=29,
+                request = dict(prompt=prompt, width=512, height=512, steps=launch["steps"], seed=29,
                                cfg_scale=1, batch_size=1, sampler_name="euler")
                 (output / f"request-{index}.json").write_text(json.dumps(request, indent=2) + "\n")
                 start = time.perf_counter()
@@ -86,6 +86,7 @@ def worker(output):
                 rows.append(dict(index=index, fresh_prompt=prompt, http_request_seconds=request_seconds,
                                  condition_seconds=measured_time(log, "get_learned_condition completed"),
                                  sampling_seconds=measured_time(log, "sampling completed"),
+                                 generation_seconds=measured_time(log, "generate_image completed"),
                                  png_sha256=sha256_file(png), info=info))
                 (output / "conditions.json").write_text(json.dumps(dict(ready_seconds=ready_seconds, requests=rows), indent=2) + "\n")
                 print(json.dumps(rows[-1]), flush=True)
@@ -106,6 +107,7 @@ def main():
     parser.add_argument("--model", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--encoder-placement", choices=("default", "gpu"), default="default")
+    parser.add_argument("--steps", type=int, choices=(2, 40), default=2)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
@@ -142,11 +144,11 @@ def main():
                *flags, "--threads", "12", "--verbose", "--cfg-scale", "1", "--listen-ip", "127.0.0.1", "--listen-port", str(port)]
     args.output.mkdir(parents=True)
     output = args.output.resolve()
-    (output / "launch.json").write_text(json.dumps(dict(command=command, port=port), indent=2) + "\n")
+    (output / "launch.json").write_text(json.dumps(dict(command=command, port=port, steps=args.steps), indent=2) + "\n")
     summary = dict(schema="tc-qwen21-unsloth-encoder-session-screen-v1", status="running", qualification_passed=False,
-                   source_identities=identities, command=command, steps=2,
+                   source_identities=identities, command=command, steps=args.steps,
                    encoder_placement=args.encoder_placement,
-                   scope="original Unsloth Apple default/explicit GPU text placement and Metal DiT; one process, three fresh prompts; native condition spans, not40-step or numerical parity")
+                   scope="original Unsloth Apple default/explicit GPU text placement and Metal DiT; one process, three fresh prompts; actual full native condition/sampling/generation spans, no cross-engine tensor/noise parity")
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     try:
         with (output / "driver.stdout.jsonl").open("x") as stdout, (output / "driver.stderr.txt").open("x") as stderr:
@@ -165,7 +167,9 @@ def main():
         any(sha256_file(p) != identities[str(p)] for p in sources)):
         raise ValueError("incomplete original reference source/placement/lifecycle evidence")
     summary.update(**conditions, memory=memory, status="complete_diagnostic",
-                   warm_condition_median_seconds=statistics.median(r["condition_seconds"] for r in conditions["requests"][1:]))
+                   warm_condition_median_seconds=statistics.median(r["condition_seconds"] for r in conditions["requests"][1:]),
+                   warm_native_medians={k:statistics.median(r[k] for r in conditions["requests"][1:])
+                                        for k in ("condition_seconds", "sampling_seconds", "generation_seconds", "http_request_seconds")})
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary), flush=True)
 

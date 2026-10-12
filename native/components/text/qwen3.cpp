@@ -419,13 +419,14 @@ Tensor qwen3_conditioning(const Tokens &tokens, const Weights &weights,
         0, 1 << 20);
     if (std::getenv("TURBOCIDER_QWEN3_DEFER_LAYER_EVAL"))
         eval_interval = 0;
-    auto ids = Tensor(tokens.ids.data(), {1, count}, mx::int32);
-    Qwen3ConditioningState state(tokens, mx::take(weights.at("model.embed_tokens.weight"), ids, 0), config);
+    auto ids = Tensor(tokens.ids.data(), {count}, mx::int32);
+    auto gathered = weights.embedding_rows(ids, "model.embed_tokens", mx::bfloat16);
+    Qwen3ConditioningState state(tokens, mx::expand_dims(gathered, 0), config);
     const int layers = config.output_layers.back() + 1;
     int hybrid_mlp_width = 0;
     int hybrid_ane_end = 0;
     if (active_hybrid) {
-        const int hidden = weights.at("model.embed_tokens.weight").shape(1);
+        const int hidden = weights.logical_input_width("model.embed_tokens");
         require(hybrid->hidden == hidden,
                 "Qwen3 Core ML hidden dimension mismatch");
         require(hybrid->block_count >= layers,
@@ -436,9 +437,7 @@ Tensor qwen3_conditioning(const Tokens &tokens, const Weights &weights,
         auto logical_columns = [&](const std::string &prefix, const Tensor &weight) {
             require(!weights.convrot(prefix) && !weights.nvfp4(prefix),
                     "Qwen3 hybrid supports dense or affine MLX weights only");
-            return weights.quantized(prefix)
-                       ? weights.at(prefix + ".scales").shape(1) * 32
-                       : weight.shape(1);
+            return weights.logical_input_width(prefix);
         };
         require(gate.ndim() == 2 && up.ndim() == 2 && down.ndim() == 2 &&
                     gate.shape(0) == up.shape(0) && down.shape(0) == hidden &&

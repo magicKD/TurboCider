@@ -1,0 +1,4848 @@
+{
+  "schema": "tc-ltx-full-config-validation-v1",
+  "status": "complete_diagnostic",
+  "date": "2026-10-11",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "evidence": "outputs/ltx-full-configs-v2-explicit-diagnostics-20261011/summary.json",
+  "evidence_sha256": "017bf9ea72707bc8fe79b99a7cecabf92e676026b921da51c7d006c44b344e22",
+  "native_inputs_matched": 514,
+  "source_sha256": {
+    "build/benchmark-async-v1-private/libturbocider.dylib": "f615e9e18a8d5f10127eea6637c7f260128cc4aa456b8bf86f8ebdfdeb19991b",
+    "build/benchmark-async-v1-private/ltx-audio-mux": "bc294a46baed1e69950ca4215de466ad5e26b0f7a4ca59ec9946a570d2c50dc2",
+    "build/benchmark-async-v1-private/ltx-audio-vae-decode": "0400dfc008ca7cf3bf13ba04ff5493b63ad74e9c933c6fa489564c3949e16a4a",
+    "build/benchmark-async-v1-private/ltx-bwe-decode": "ea706c5a3404d167b821d68244ea12a9da8f4e068e2d538df76abb377f18994a",
+    "build/benchmark-async-v1-private/ltx-gemma-encode": "90af5f96211ca071081d084c1591d641094bd9048cad9ed920d385e8363f4086",
+    "build/benchmark-async-v1-private/ltx-video-finalizer": "0e7fa004905b6be5ab821f678fb8789cd08e50f4245712ebdd5d055b1d2ab0a8",
+    "build/benchmark-async-v1-private/ltx-video-vae-decode": "e1d6ec890c4f23d4d8e6d8bb5ec871d098fb6edd160e47040f1e8dc8bee08abd",
+    "build/benchmark-async-v1-private/ltx-vocoder-decode": "2c13a04b287eb8203fb6f4b7d8a000f3390a82779c6fbab109ebde6a9a275fcf",
+    "build/benchmark-async-v1-private/turbocider": "f09144aed59e0899e0f3cd06ec97e54958ac91094f7b54453aeb84faf62ea02f",
+    "models/LTX-2.5/config.json": "8a2b961cd343473ad73915dbca041a1257aca86807e36c4922dec97337333568",
+    "models/LTX-2.5/connector.safetensors": "028792ba757f509fef60b364a72976a86990930f29757f616a29149150476243",
+    "models/LTX-2.5/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors": "c4279eeff115cbeaca494bd2183e7d768c38fe85a184dc6afbb7159157c44334",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/model-00001-of-00003.safetensors": "8df4b6af847f62d8766600b8f30997dc977cd3f89967e7661f5a706c04c19435",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/model-00002-of-00003.safetensors": "44c3d0b2309a0182c78f9cdb9f7077f6ce019b41cb6e6fae4afe2f72397e14c1",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/model-00003-of-00003.safetensors": "05a72ace62325e5947b012160e8c401dc8881b2755d2fe52348541942c038178",
+    "models/LTX-2.5/gemma4-12b-ltx-v1/tokenizer.json": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+    "models/LTX-2.5/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors": "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8",
+    "models/LTX-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors": "09a89e084de1a149c3de60cfe9dfd3e5161967eb09eea39e806fcdeffdd568de",
+    "models/LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors": "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5",
+    "models/LTX-2.5/vae/ltx-2.5-video-vae-conv-bf16.safetensors": "685b06ee3d9b2039647698fc4ea33175112462fc374e2777312c907897dfce8d",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-0/manifest.json": "1c3a50e8a04810873ee0dcbb8a4229bfa782df8c8ac6b181be7f3107d8df266c",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-1/manifest.json": "2cf60e64f63018f1275f526cb7a9ac917c8bb74d2f2b85059b992ca5c4c1b965",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-10/manifest.json": "06a2c1bcfa41e77c312e2b5d2d4262fbdd6f6cc806596563f340fc64a05b624c",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-11/manifest.json": "d4c7b9635c9dd520ce45713d5c48e8679dae05658993d32a969dc484ac1aede6",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-12/manifest.json": "991979485b40a17439d96a848f8a084afc1722f39c5020fd8e29d82d369b2b6d",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-13/manifest.json": "55ba74c4e4a97ffbf5560776b5b778ff01a225ae6fb923cfa3b65e927ec96f32",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-14/manifest.json": "02fe33d8cafc2834efc94891b03aa8b334c1ba3493b31fa54b070261b1a66f6a",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-15/manifest.json": "122e808738f9bdc7a91b487a0e3d2f05e01804377c5b6bd3b1de8dc2fc95af00",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-16/manifest.json": "09166ee449e4ced4fcfada194d240fd147dcf55512696e0b79ce814108f8236e",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-17/manifest.json": "596734a3c186b697b2e92d1affc9c48787c28ed4f689f34500f59fdccf84e07c",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-18/manifest.json": "67db4595ab56da1002f7acc738a5f6374204d7e6e6f80df6aa8cc6a2302f886b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-19/manifest.json": "d4853be66e2277419687885fa3369d8c056b5a5b00987100a0f1a8f492681764",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-2/manifest.json": "de1310402bc9a917f8302e7dd583963ddf48308d6f36b4b0ce4f5a99bad9b860",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-20/manifest.json": "e68c2d81f30b33c31f4e456ea810ddd46a862c031bea07dfe01607a75f012d4e",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-21/manifest.json": "ddc27cddbb5e190b36a3de85f83c73c57de9f7b621e8c380580a592ba8a7f39b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-22/manifest.json": "6d6c605ef5fea14dd1c87f52323d450777e7113ba11d3accc7be91b1618fa592",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-23/manifest.json": "5652f4c493c99313fdb12d45f201d320e187bc89b382df17ac9624c43e5333a6",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-24/manifest.json": "7bf7c7281cbf854b5aade5ca18ac0f3d4c914874192a7aaf6b2a88d33c560537",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-25/manifest.json": "77e9d492707f259673fb5b6db51345e5d9a6103805e333e235cbcbf20ea8ee96",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-26/manifest.json": "0e7529a2c4a6f8cc2e90d4d46b71dde35df826e8e3b7948517b13c65f7e1cdf5",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-27/manifest.json": "db050773f1c25adafe98b6ccbbd7ce6350b2f831e17265514bb93db21f8e4a40",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-28/manifest.json": "d65e737431f4d24a127f222e4ed45fe941d7f7aeb3ea43f114c40cf7070de25f",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-29/manifest.json": "1bd33e21e0e2a07a3e1040e455eb2a56187bfa9d42f22f8ebfd5a04337da5bbe",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-3/manifest.json": "9e059e5a1beecf1c692b8405c773a77c1d1fa22de858f8e3ccc76938dfe480e7",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-30/manifest.json": "15e115bc101273e51131dd2b75b4bff0017abe198a03114de4a50269f5629768",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-31/manifest.json": "7a8d59ef064624b2f563684bca59ebc37d89ae3cc41cee8b614441f4f0e6df8b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-32/manifest.json": "b3d009847dcb5d547c2420254353f6eb791979d3bddfe7e6ed53250a52bc0e0e",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-33/manifest.json": "49aece6a4915d61899c75b17dc84d7628475c15299091563fdbf74422caf07a0",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-34/manifest.json": "13e7d83fbc371592640c0866a94250fcd20a327ca3cf55e61d67c17de1c3ce9b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-35/manifest.json": "f3ecac0b2dd43523ae074285f5f09c70e5915ee9b588e808c765a40fefa52262",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-36/manifest.json": "b385dd19774bd3330f32405ba9dfff800c50fddecba55209066d9d42b447d898",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-37/manifest.json": "538b49a67bfe8f186b936480bf3fcc1171ab0a8237fc66796e8dd2cc4aa9b4cf",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-38/manifest.json": "a1f17915a99d9ad88aa57583eea38d49ac332757977ecae0436a7d8982aaf583",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-39/manifest.json": "cc4c4eccca233932d7369f3f57563532159e0e5733978727dc276432aaa07c26",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-4/manifest.json": "871877756e04049c514c24185ab40b5d63f5cf89f5c07bbe4ab3a33269a9589b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-40/manifest.json": "3b716372accd8ad3d7e322f5b93569d227fd6ab50cb23ca7c6b93c6009d9ffa1",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-41/manifest.json": "d75396ceeb0355b43a8893d45a29688749da3ac36e5078be9f41d4947db1128f",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-42/manifest.json": "b75c1e63c6af8f185e6bd16723a0b1884c20dd1123d230d970199e65d5bf5bfd",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-43/manifest.json": "04e3ffdca7a52c519fc55c1cbce9a248b2e370c9780f5ba23dd39d35274d1c86",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-44/manifest.json": "176a3de20e12ba7fef6ce2772b64a3254f935b19495955b4e6db70b1b9f1657b",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-45/manifest.json": "9bd7c7fbe770b05ac7cf12966e3c4f6e5de40fbc65a6c1b3c6e994bb49a66776",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-46/manifest.json": "528c01c3ec9373bb272e15207c152d6506b8625e4622dae9f32cd1e17c8bcbdf",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-47/manifest.json": "d5a0b7bc73686de30fdbb655dcad0ec769573918eac4eac16d9321201b4973f0",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-5/manifest.json": "02809ca12ca7f78946cbb9cfde88e6432b79f8b8c90d7dfa9ef5b83a6f9302ab",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-6/manifest.json": "351002f08fde65af0b2127a3483ebfa96bc488dde1eb058f181350f0f31a2c1f",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-7/manifest.json": "8a540c3b47808d0132bad71a994af8cb5530c217f3cb391e66da87c24c6a7335",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-8/manifest.json": "9822613aba8415f60185391cce42de65e67317c95f07f4c6e02d37f225e163e8",
+    "models/coreml/ltx_mlp_a6912_dual_int8_20260913/block-9/manifest.json": "e47d3e0e91b5effc2421083b0eae28bc087fdfa34244852a5b9e623a8e9a51a3",
+    "outputs/ltx-full-configs-v2-explicit-diagnostics-20261011/int8-profile.json": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a",
+    "tools/validation/ltx_full_config_screen.py": "ed4de182bce94b6fe5f2c8a6abfb411e1eff6d27183bf08b29a479a01c8196ec"
+  },
+  "order": [
+    "gpu-quality-batch",
+    "int8-quality-batch",
+    "gpu-sol-batch",
+    "int8-sol-batch",
+    "gpu-text256-batch",
+    "int8-text256-batch",
+    "gpu-quality-exec",
+    "int8-quality-exec",
+    "int8-quality-exec",
+    "gpu-quality-exec",
+    "int8-text256-batch",
+    "gpu-text256-batch",
+    "int8-sol-batch",
+    "gpu-sol-batch",
+    "int8-quality-batch",
+    "gpu-quality-batch"
+  ],
+  "scope": "original local ConvRot base; full704x448x97/24fps/11step/stereo; persistent cold/warm versus separate new-process cache-hit scopes, no LoRA",
+  "routes": [
+    {
+      "name": "gpu-quality-batch",
+      "configured": {
+        "mode": "quality",
+        "hybrid": false,
+        "single": false
+      },
+      "cold_seconds": [
+        72.597396166,
+        72.899583584
+      ],
+      "warm_seconds": [
+        63.769034916,
+        63.926909334
+      ],
+      "warm_median": 63.847972125,
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "native_timing_boundary": "native request_wall",
+      "physical_peaks": [
+        50576878040,
+        50577140256
+      ]
+    },
+    {
+      "name": "gpu-quality-exec",
+      "configured": {
+        "mode": "quality",
+        "hybrid": false,
+        "single": true
+      },
+      "cold_seconds": [
+        72.773575208,
+        73.21951654200001
+      ],
+      "warm_seconds": [
+        62.633128542,
+        62.644317375
+      ],
+      "warm_median": 62.6387229585,
+      "warm_scope": "new process, conditioning cache hit, constructor/model load still counted",
+      "native_timing_boundary": "request_wall_estimate from clean finalizer",
+      "physical_peaks": [
+        37603813440,
+        37604370304
+      ]
+    },
+    {
+      "name": "gpu-sol-batch",
+      "configured": {
+        "mode": "sol",
+        "hybrid": false,
+        "single": false
+      },
+      "cold_seconds": [
+        72.32946475,
+        72.187409958
+      ],
+      "warm_seconds": [
+        62.855934541,
+        62.841964917
+      ],
+      "warm_median": 62.848949729,
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "native_timing_boundary": "native request_wall",
+      "physical_peaks": [
+        50578876912,
+        50582776256
+      ]
+    },
+    {
+      "name": "gpu-text256-batch",
+      "configured": {
+        "mode": "fast_approx",
+        "hybrid": false,
+        "single": false
+      },
+      "cold_seconds": [
+        70.95645725,
+        71.107542167
+      ],
+      "warm_seconds": [
+        61.997820208,
+        61.73954325
+      ],
+      "warm_median": 61.868681729,
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "native_timing_boundary": "native request_wall",
+      "physical_peaks": [
+        50757151552,
+        50573404776
+      ]
+    },
+    {
+      "name": "int8-quality-batch",
+      "configured": {
+        "mode": "quality",
+        "hybrid": true,
+        "single": false
+      },
+      "cold_seconds": [
+        88.148145125,
+        75.338000709
+      ],
+      "warm_seconds": [
+        67.6812885,
+        74.984910458
+      ],
+      "warm_median": 71.333099479,
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "native_timing_boundary": "native request_wall",
+      "physical_peaks": [
+        50769341464,
+        50537933488
+      ]
+    },
+    {
+      "name": "int8-quality-exec",
+      "configured": {
+        "mode": "quality",
+        "hybrid": true,
+        "single": true
+      },
+      "cold_seconds": [
+        75.418666208,
+        77.23931437499999
+      ],
+      "warm_seconds": [
+        68.998837416,
+        62.481190917000006
+      ],
+      "warm_median": 65.7400141665,
+      "warm_scope": "new process, conditioning cache hit, constructor/model load still counted",
+      "native_timing_boundary": "request_wall_estimate from clean finalizer",
+      "physical_peaks": [
+        42928339376,
+        42919655808
+      ]
+    },
+    {
+      "name": "int8-sol-batch",
+      "configured": {
+        "mode": "sol",
+        "hybrid": true,
+        "single": false
+      },
+      "cold_seconds": [
+        92.678085375,
+        80.282488208
+      ],
+      "warm_seconds": [
+        66.60146225,
+        67.729661041
+      ],
+      "warm_median": 67.16556164549999,
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "native_timing_boundary": "native request_wall",
+      "physical_peaks": [
+        50770095008,
+        50645560104
+      ]
+    },
+    {
+      "name": "int8-text256-batch",
+      "configured": {
+        "mode": "fast_approx",
+        "hybrid": true,
+        "single": false
+      },
+      "cold_seconds": [
+        72.457131375,
+        81.150498625
+      ],
+      "warm_seconds": [
+        70.637168125,
+        61.435208416
+      ],
+      "warm_median": 66.0361882705,
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "native_timing_boundary": "native request_wall",
+      "physical_peaks": [
+        50762427272,
+        50697055040
+      ]
+    }
+  ],
+  "best_measured": [
+    {
+      "single": false,
+      "name": "gpu-text256-batch",
+      "seconds": 61.868681729,
+      "timing_boundary": "native request_wall",
+      "scope": "tested configuration median only; attention/INT8 approximations separate; not global optimum or broad quality qualification"
+    },
+    {
+      "single": true,
+      "name": "gpu-quality-exec",
+      "seconds": 62.6387229585,
+      "timing_boundary": "request_wall_estimate from clean finalizer",
+      "scope": "tested configuration median only; attention/INT8 approximations separate; not global optimum or broad quality qualification"
+    }
+  ],
+  "quality_scope": "full97-frame decoded RGB/motion when explicitly requested; original gate/ffmpeg decoder with equivalent float64 sufficient statistics vectorized offline; no resize or frame sampling; configured profile not physical NE trace; no broad perceptual or latent quality promotion",
+  "full_audit": "outputs/ltx-full-configs-v2-complete-audit-20261011.json",
+  "full_audit_sha256": "64cdd2a5cf887ffb1b0c15c52c40a6611ca3ac42d665830eee683117e7871c18",
+  "trials": [
+    {
+      "index": 0,
+      "name": "gpu-quality-batch",
+      "configured": {
+        "mode": "quality",
+        "hybrid": false,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "9f8a35b42d3bf90dcb87373ef28a60b9b2f9f5f72605e4e6aa02bbc692c9e6d8",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50576878040,
+          "tree_peak_rss_bytes": 26338033664,
+          "compression_bytes": 19479363584,
+          "decompression_bytes": 16030859264,
+          "swap_in_bytes": 589824,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "27fff1f5fee7a037e20496c0580b2e5859061aa650eeceaede2f3cdf43ef74d5",
+          "report_sha256": "3d7248705dcd035d511a0b20d5e47c3bc738f2ec3f26e2676f80b9181c015f6d"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        137.2143126660958
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.590008959,
+            "audio_mux": 0.041898,
+            "conditioning_and_rng": 3.68349875,
+            "latent_upsample": 0.374339166,
+            "model_load": 4.791624292,
+            "pre_model_load": 1.977298291,
+            "request_wall": 72.597396166,
+            "rgb_convert": 0.010750542,
+            "stage1": 24.910133292,
+            "stage2": 30.155225834,
+            "video_export": 0.166156791,
+            "video_vae_decode": 5.895986083
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.586220083,
+            "audio_mux": 0.033634125,
+            "conditioning_and_rng": 0.000582833,
+            "latent_upsample": 0.214182709,
+            "model_load": 3.39791525,
+            "pre_model_load": 0.160689625,
+            "request_wall": 63.769034916,
+            "rgb_convert": 0.008242958,
+            "stage1": 23.462086208,
+            "stage2": 30.0712425,
+            "video_export": 0.080636709,
+            "video_vae_decode": 5.753142083
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "f037d716c555ea50b5b89f4209efaa8d8ce677c1722e0e3aad7040ac5c819e32",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "int8-quality-batch",
+      "configured": {
+        "mode": "quality",
+        "hybrid": true,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "c913f6f6e64c0090fdf5ed6439d3f65d8fb4fded36404f60c27fac2906c24b60",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/75F70E80AD2220F1D95B1690208BA03589A757B0BC8068753B69100B60642A7D/041B5BD6565203A91008ECF4CE8CF159A60CC0FE86021EC7D0E908C1F9951BAD.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 0
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/5065AB8C9EE043F6AF3FD88DBE4B71D0825EFFD94CBDFBEFE913CEF9551C0BF2/F1623CCDF8800EDB54D354408EFBCAF5499D23D77A5C8386022A0E334EB4E5F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 388
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/26C47515CBE151CA53B4D196241A42FDDD8547805452F45B521690932A4824F0/82F2353B3BB7B0A149A390DE82A67851A80C4E3DCA099F171694F2CEB38B3C2A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 776
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/90C7429727BC907BA5842293B6B8CED79B9EF662584D0682259F24BB64634057/F1E07B7F1668153175DB88AF670D682E1324DD833A42E52C5D6CC31734C9DACB.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1164
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/3A4B4F46D0D938825266208380FA7E01DC3BE97E5DF5DCB7A175C4D13CC9A109/57E1ED637C8B97D614F4FE2C7A11EC43D8791E67EE4CE3B36EC1E0E47B91A8D9.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1552
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/C083BD28FAE705F463905068D2CB416862F069CFD4BA5DD18BD5568B23BC4ABC/65370A1E468B51EED312D5D01205AD75E09A7C2046881D914611EE1B18A5413A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1940
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/7324246AB5BB9E25D935709CFBA73E646E28BACEBF843A80839C7D5DC7E904CB/9F520A917EFBF309B4A89589B7892F3800110730A014C226797325E6DF2F1856.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2328
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/C102781B19E3915DE7BEE8C410A3836BAA9627C5AE36C7DCD71A463CF6A21897/C9D564B1EE18CEB1D8B472588EB60B2DB5693D6572B6073E9F6D8B1FFCB2ECBF.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2716
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/42EACDEA4BEB45AC027F2A74CDFB640A1DDC96C76EA6F32C0D2C3C46FD0702C1/6C57AA4CDB180CD6AF7BCCB9913E167BB22997E4294A38E488DD1A1740CC40B1.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3104
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/D9668B471068B93F5BBA0F417EE41083ECADB76D0C73E6CBF90192A5BBB5A45B/E22C2E1349917502F9EDEEBA8FE3265B633A9453B07BB34922E73F17B3B14217.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3492
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/39633163D0FB247ABB54E00ACA8CEAB8D6F4FF9DDD180317C8BC8F119C567C8D/0A3A2D85230E34DEF92C5931FE1D041B672049C95913C06262E73FE4C3F5A3F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3880
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/03E5F527747740712A0DB3E350D714BEA8DE30FC5F14B4AB9236A39B685760AB/8188EE1A53A2B9CB5BDA40A5122057AE1BFF2C918E5AC66D23B3C2262460369C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4268
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/A4E4C39A649624D3B6CCBDE5D209D9E42ACA8A2B677F01F41B40DA72B3563779/F9D62DC29B42A6D96DCE29B6D7D91D931A3DA662D69F3DB890FB3B6C2CC16107.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4656
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/477F52A94E0EC157D7B50EF2C5E199913E2FF19A56CB2ED66E67BCD5E2F8116E/CD102BBB41C19A12D731F12C9E668190557DC8AFE594B17101D4321E0DB21A19.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5044
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/358A6786CAE90E30782168AEE16DCEE7FFE6C1B17F26BEADD2150E7B756EA6C2/DD4AD6BD85ED377E4922E6EEEC5ABA6768BE2B9B8F19242AC923CA45B7C1DAB9.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5432
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/222AE08A6C3B1437E6363088EDB689365389B43CEA77C05C0EEA4913C05021EF/4D49AA3C6D44010A6F52854D4016F8DE8C7D1301D66A222F4E3FC72A2423AF60.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5820
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/AF456AAC9E72E9F5540BBBFF72EF3C05324BCE4189539541751588ABE787CD22/90E4BC8FD53604D4E57E0412DE8F40B16A7EC3ABDD7C6F991FA02D865431B9FE.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 6208
+            }
+          ],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50769341464,
+          "tree_peak_rss_bytes": 27133689856,
+          "compression_bytes": 33558052864,
+          "decompression_bytes": 16895229952,
+          "swap_in_bytes": 2998272,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "074e4fc6cf51f101975f2992e84e6cae644d5949097047779d06f8f4b4256bda",
+          "report_sha256": "81adc08f69c349d462d7743735f5f984cfb00b145716ad831204db1bea107589"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        156.87744187493809
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.590238834,
+            "audio_mux": 0.043431166,
+            "conditioning_and_rng": 3.567592084,
+            "latent_upsample": 0.384717416,
+            "model_load": 19.614175166,
+            "pre_model_load": 3.11351225,
+            "request_wall": 88.148145125,
+            "rgb_convert": 0.011240875,
+            "stage1": 22.767854625,
+            "stage2": 31.981574625,
+            "video_export": 0.167696833,
+            "video_vae_decode": 5.905664917
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.585773667,
+            "audio_mux": 0.033197667,
+            "conditioning_and_rng": 0.000605875,
+            "latent_upsample": 0.359768167,
+            "model_load": 12.925092625,
+            "pre_model_load": 0.165190917,
+            "request_wall": 67.6812885,
+            "rgb_convert": 0.009442083,
+            "stage1": 20.916711083,
+            "stage2": 26.718784291,
+            "video_export": 0.080479,
+            "video_vae_decode": 5.885785792
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "98a01e79a26651e6d59308c51838fac264a9ece069d30e2a88531437f50882a5",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "fab1a4ff8ae6f56afbf4b0a8967d707170c9f0464473f1e292ae53d8caba89fc",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "gpu-sol-batch",
+      "configured": {
+        "mode": "sol",
+        "hybrid": false,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "067f861fddae5ba869ca14eb8ebbc6b3b221e3da1bd13d61984652469a584b0f",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50578876912,
+          "tree_peak_rss_bytes": 25146818560,
+          "compression_bytes": 21437415424,
+          "decompression_bytes": 17442340864,
+          "swap_in_bytes": 704512,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "1c63f00a7c85afa3510cda0efa86e689a6171cd22ff22668c9ac595621de949c",
+          "report_sha256": "5c0442cc372928fceabb59af6b924fdbd2fdac58de4bbd4e697d437eb2b92974"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        135.96470599994063
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.586973042,
+            "audio_mux": 0.040472583,
+            "conditioning_and_rng": 3.72774525,
+            "latent_upsample": 0.371508791,
+            "model_load": 4.319892041,
+            "pre_model_load": 3.1370055,
+            "request_wall": 72.32946475,
+            "rgb_convert": 0.010929625,
+            "stage1": 24.962275334,
+            "stage2": 29.100832167,
+            "video_export": 0.163736916,
+            "video_vae_decode": 5.907681792
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.582770792,
+            "audio_mux": 0.033413416,
+            "conditioning_and_rng": 0.000624458,
+            "latent_upsample": 0.215993125,
+            "model_load": 3.575755042,
+            "pre_model_load": 0.162474791,
+            "request_wall": 62.855934541,
+            "rgb_convert": 0.00846725,
+            "stage1": 23.506099125,
+            "stage2": 28.9555145,
+            "video_export": 0.077435917,
+            "video_vae_decode": 5.736971625
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "29e5c5a56083b414fc8327e2444fd5723f7078af3d35a922dcfe121504deb94d",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "8f640c050f652be15b76b0371cbc02d37570c720a6fc1a1718517155fb674e0e",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "int8-sol-batch",
+      "configured": {
+        "mode": "sol",
+        "hybrid": true,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "7f731fc61020e3cc4fee2aeff5a441acbe243771a4773208002474aaa97b5867",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/75F70E80AD2220F1D95B1690208BA03589A757B0BC8068753B69100B60642A7D/041B5BD6565203A91008ECF4CE8CF159A60CC0FE86021EC7D0E908C1F9951BAD.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 0
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/59A0F71CD884FBCE4530DFF451CB4BDBC59380BB8B7C1F09377BEF54E7AF3F12/0E4BD20DF52D69E592A6A7418834EBBD901C1EF2F8C13BC3839AAF16719C3F7F.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 388
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/5065AB8C9EE043F6AF3FD88DBE4B71D0825EFFD94CBDFBEFE913CEF9551C0BF2/F1623CCDF8800EDB54D354408EFBCAF5499D23D77A5C8386022A0E334EB4E5F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 776
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/26C47515CBE151CA53B4D196241A42FDDD8547805452F45B521690932A4824F0/82F2353B3BB7B0A149A390DE82A67851A80C4E3DCA099F171694F2CEB38B3C2A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1164
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/9BD56547F5CA7651C3E882F7D5D71EE4960559052AD996232B54C371537C0613/0DFBA14DE4ED2C0A8DDBCBC30ED833A96B0EB212279104A156F9297AFF7F364C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1552
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/63BFC79AB4D412EF82EAB02698D667DD0A50C955C8B4B3670297D93EC3002E7E/A2C510EE2AFE183EC3B81513AB441DB610C1D551C4A0DA70B75876666A1D9EA7.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1940
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/90C7429727BC907BA5842293B6B8CED79B9EF662584D0682259F24BB64634057/F1E07B7F1668153175DB88AF670D682E1324DD833A42E52C5D6CC31734C9DACB.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2328
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/C083BD28FAE705F463905068D2CB416862F069CFD4BA5DD18BD5568B23BC4ABC/65370A1E468B51EED312D5D01205AD75E09A7C2046881D914611EE1B18A5413A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2716
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/2795A4C6F3AC872AEF15D4C7CAAF9B46E821BDCAF2BEA1AB18C393EA9445046F/E3A99E41BEC65440E31647EFA0E33BEF44DD1E33244AAA5BE09D1D898C8BA7A2.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3104
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/1D657F5659E9344CE880D2FB84E89AEA520A128256D99697BCA0367BA2A198BA/D828B486E7537435198C0C78BA90D3A3E5AA4E19F9329AE1A4392EB011B69307.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3492
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/7C8F4A0DF7B7F1B366394162A19F2E2918DEC1A3039538AA21E40CF40B8F67D7/24ED4DADCFD9453B0A931F048A93F400C56384A530E138CB84570CD8512F99B1.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3880
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/42EACDEA4BEB45AC027F2A74CDFB640A1DDC96C76EA6F32C0D2C3C46FD0702C1/6C57AA4CDB180CD6AF7BCCB9913E167BB22997E4294A38E488DD1A1740CC40B1.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4268
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/17980F105341F053333CA2F967E9A1FE26DB8FDBF02CA2A28CB82B7CCAAD9B2A/45ED3C080A916F389DCD9B34CCE407B4D119A532469A0767E3B77594C2891B31.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4656
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/D9668B471068B93F5BBA0F417EE41083ECADB76D0C73E6CBF90192A5BBB5A45B/E22C2E1349917502F9EDEEBA8FE3265B633A9453B07BB34922E73F17B3B14217.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5044
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/39633163D0FB247ABB54E00ACA8CEAB8D6F4FF9DDD180317C8BC8F119C567C8D/0A3A2D85230E34DEF92C5931FE1D041B672049C95913C06262E73FE4C3F5A3F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5432
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/A38105E0A3D21A054EF72D39F9723DB918FFB831B6C715DAF5B7BCAD554FC587/582A7202CCD90EF9D59887A4D7FD9F3EDD11A2DD5BB33BACC5F7C9C2DE09E6F2.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5820
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/477F52A94E0EC157D7B50EF2C5E199913E2FF19A56CB2ED66E67BCD5E2F8116E/CD102BBB41C19A12D731F12C9E668190557DC8AFE594B17101D4321E0DB21A19.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 6208
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/B1EE63900FE310BE04216D35B547B0D97F0142DE43BC940FB0D320C064AB23FE/4EF826454D8E14DD605FDF2F49985D2708E266C96DAA26424852502CD7603988.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 6596
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/222AE08A6C3B1437E6363088EDB689365389B43CEA77C05C0EEA4913C05021EF/4D49AA3C6D44010A6F52854D4016F8DE8C7D1301D66A222F4E3FC72A2423AF60.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 6984
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/1AFB80CC4F0F92726F339AF7346618EA19BDF49F5D56D0987A4DBA936BE3A6FE/76AD25B920C36025A364C380826479C8A166867F72B2E5928675A4933FE8C636.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 7372
+            }
+          ],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50770095008,
+          "tree_peak_rss_bytes": 27139538944,
+          "compression_bytes": 27402862592,
+          "decompression_bytes": 14767177728,
+          "swap_in_bytes": 3047424,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "f4e23259828b641ad6e9c7fe5ca18b9ac33d9dc24deca9cf6ac6940104471828",
+          "report_sha256": "42189107e61a82a885deb44da575ff4f3fdc6c84dac931b9e0363844524d0f4d"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        160.30172833288088
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.59351125,
+            "audio_mux": 0.044162959,
+            "conditioning_and_rng": 3.868763292,
+            "latent_upsample": 0.368387583,
+            "model_load": 21.366923417,
+            "pre_model_load": 3.1354025,
+            "request_wall": 92.678085375,
+            "rgb_convert": 0.01194225,
+            "stage1": 22.66431425,
+            "stage2": 34.515433542,
+            "video_export": 0.165253833,
+            "video_vae_decode": 5.943501083
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.586007666,
+            "audio_mux": 0.034698459,
+            "conditioning_and_rng": 0.000601417,
+            "latent_upsample": 0.35408275,
+            "model_load": 12.842896458,
+            "pre_model_load": 0.167756458,
+            "request_wall": 66.60146225,
+            "rgb_convert": 0.008384166,
+            "stage1": 21.222308708,
+            "stage2": 25.517490792,
+            "video_export": 0.080229084,
+            "video_vae_decode": 5.786538292
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "782bdb12a4b9e7a9a88cdac39b4c2a786e6f982eec559f3a51181a54a00cc128",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "e87160a1ba79e8e97691236281ed82f5a841ac4324cfce1ca153e73ac7227a5f",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "gpu-text256-batch",
+      "configured": {
+        "mode": "fast_approx",
+        "hybrid": false,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "15a5f5ac146a51166ccffd2ae31efd5e2eb9c56542ea3df9199fdc49deea2fd7",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50757151552,
+          "tree_peak_rss_bytes": 25015107584,
+          "compression_bytes": 21688025088,
+          "decompression_bytes": 17346510848,
+          "swap_in_bytes": 360448,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "d4eb7b9c9835847e2f915e7636427a0296f7dd920560c407046bf00ff170c74c",
+          "report_sha256": "c1e3e951904b824c93c78c80de2c8e8f2dca10b282b8a6c0103b317f4b300d42"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        133.80414020782337
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.584574167,
+            "audio_mux": 0.041206583,
+            "conditioning_and_rng": 3.653668042,
+            "latent_upsample": 0.367958333,
+            "model_load": 4.267093667,
+            "pre_model_load": 3.2157835,
+            "request_wall": 70.95645725,
+            "rgb_convert": 0.011394625,
+            "stage1": 24.839826125,
+            "stage2": 27.894733292,
+            "video_export": 0.164733042,
+            "video_vae_decode": 5.915037666
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.585180083,
+            "audio_mux": 0.037417042,
+            "conditioning_and_rng": 0.000628667,
+            "latent_upsample": 0.215684416,
+            "model_load": 3.829812458,
+            "pre_model_load": 0.166339,
+            "request_wall": 61.997820208,
+            "rgb_convert": 0.008730583,
+            "stage1": 23.468811917,
+            "stage2": 27.810477584,
+            "video_export": 0.08345975,
+            "video_vae_decode": 5.790771375
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "20469468ea824830fc5c66829689231c4087527c06b312846df521dcb0ab0475",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "952ae4f649882aae3a110146a4febcc03c4ebdc9861f6df7798ed554f5e48f15",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "int8-text256-batch",
+      "configured": {
+        "mode": "fast_approx",
+        "hybrid": true,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "e316d50df7679a3b8e7bb2e9c3384f5ca16a53d9f3707f0080d779bf7ffaf4fc",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50762427272,
+          "tree_peak_rss_bytes": 27131117568,
+          "compression_bytes": 36349345792,
+          "decompression_bytes": 18227871744,
+          "swap_in_bytes": 313540608,
+          "swap_out_bytes": 800260096
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "7d4a2c459e8b233b07b797601fe970a2b07e88c44707b5256c6f9d4f829aecbe",
+          "report_sha256": "9f8e80568f9821be96a61755bb3137ea7ccfeb37cb384f3bcc5939056d8705f6"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        144.30706970812753
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.591434917,
+            "audio_mux": 0.045052292,
+            "conditioning_and_rng": 4.248558958,
+            "latent_upsample": 0.376814375,
+            "model_load": 9.949295333,
+            "pre_model_load": 3.1469905,
+            "request_wall": 72.457131375,
+            "rgb_convert": 0.011368208,
+            "stage1": 23.362234292,
+            "stage2": 24.631679833,
+            "video_export": 0.168023875,
+            "video_vae_decode": 5.925246542
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.581825709,
+            "audio_mux": 0.033777666,
+            "conditioning_and_rng": 0.000599125,
+            "latent_upsample": 0.362739208,
+            "model_load": 17.685196709,
+            "pre_model_load": 0.172457958,
+            "request_wall": 70.637168125,
+            "rgb_convert": 0.008526542,
+            "stage1": 21.535136708,
+            "stage2": 24.361324625,
+            "video_export": 0.083123208,
+            "video_vae_decode": 5.81201225
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "c90f6a2c7a1681bd442b726d3fa3e481d8dac8570de28b5aae3909c0ee72f0e0",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "718977f1dda91fb3b4b656c6c3707622a65d6e9f31df2c26a47080b67a717c51",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "gpu-quality-exec",
+      "configured": {
+        "mode": "quality",
+        "hybrid": false,
+        "single": true
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "86535ea16f59af4860cc49658de8704250bcf0b5511894c13a653e792e5c05a4",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        },
+        {
+          "iteration": 1,
+          "sha256": "29dc0622c38c2460a3c8a1143a7d3af9c2c297a36ef68be1856cd76209f18391",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 37603813440,
+          "tree_peak_rss_bytes": 25001410560,
+          "compression_bytes": 20928593920,
+          "decompression_bytes": 16238968832,
+          "swap_in_bytes": 14712832,
+          "swap_out_bytes": 0
+        },
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 22255844592,
+          "tree_peak_rss_bytes": 20628455424,
+          "compression_bytes": 0,
+          "decompression_bytes": 18907136,
+          "swap_in_bytes": 6619136,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "ca7ad688683241eab733742c3ccb727f836ab800809ec5c108d135f41683a5e2",
+          "report_sha256": "876fdd384d83b735e49f961e60990ab5ed9552ccb07b70b766bd6c354b769f80"
+        },
+        {
+          "evidence_sha256": "6910f88e5d60a05576749f6f60aa1153e75760a549465a21fe56440e9762c262",
+          "report_sha256": "e77d390ac04ec635fb875e5d5ec1929c34ad1a0ea8a0303307e2c56d8ef71570"
+        }
+      ],
+      "native_timing_boundary": "request_wall_estimate from clean finalizer",
+      "warm_scope": "new process, conditioning cache hit, constructor/model load still counted",
+      "parent_wall_including_sampler_and_verification": [
+        74.98868258320726,
+        62.99590083421208
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.206153292,
+            "audio_mux": 0.036407583,
+            "request_wall_estimate": 72.773575208,
+            "video_input_read": 0.00089525,
+            "video_vae_compute": 5.616528167,
+            "audio_decode": 0.85830875,
+            "video_vae_weight_load": 0.176070208,
+            "finalizer_wall": 6.904439208,
+            "rgb_convert": 0.010075958,
+            "pre_finalizer": 65.869136,
+            "video_vae_decode": 5.793493625
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.148314917,
+            "audio_mux": 0.035475542,
+            "request_wall_estimate": 62.633128542,
+            "video_input_read": 0.00022125,
+            "video_vae_compute": 5.611502542,
+            "audio_decode": 0.563817708,
+            "video_vae_weight_load": 0.050477542,
+            "finalizer_wall": 6.419843542,
+            "rgb_convert": 0.010034041,
+            "pre_finalizer": 56.213285,
+            "video_vae_decode": 5.662201334
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        }
+      ],
+      "media": [
+        {
+          "sha256": "6a7b348ae9953278a768fd60e4b89f26bed092a4050c795053a951f9eadd734c",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "05e6c66cbfdfa60c19e8fa0d7accd3fd9aff971221bc7de7a865c024a55f8573",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "int8-quality-exec",
+      "configured": {
+        "mode": "quality",
+        "hybrid": true,
+        "single": true
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "a115947fb60d6a7d303bd2fc2019a295e387d0b2ae6d7cf5e10547c4eff05e37",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        },
+        {
+          "iteration": 1,
+          "sha256": "440598442f38092a88fb98920e1ebaa020716c2eab7c0eecb5914b78bd8176de",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/75F70E80AD2220F1D95B1690208BA03589A757B0BC8068753B69100B60642A7D/041B5BD6565203A91008ECF4CE8CF159A60CC0FE86021EC7D0E908C1F9951BAD.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 0
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/26C47515CBE151CA53B4D196241A42FDDD8547805452F45B521690932A4824F0/82F2353B3BB7B0A149A390DE82A67851A80C4E3DCA099F171694F2CEB38B3C2A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 388
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/9BD56547F5CA7651C3E882F7D5D71EE4960559052AD996232B54C371537C0613/0DFBA14DE4ED2C0A8DDBCBC30ED833A96B0EB212279104A156F9297AFF7F364C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 776
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/63BFC79AB4D412EF82EAB02698D667DD0A50C955C8B4B3670297D93EC3002E7E/A2C510EE2AFE183EC3B81513AB441DB610C1D551C4A0DA70B75876666A1D9EA7.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1164
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/2795A4C6F3AC872AEF15D4C7CAAF9B46E821BDCAF2BEA1AB18C393EA9445046F/E3A99E41BEC65440E31647EFA0E33BEF44DD1E33244AAA5BE09D1D898C8BA7A2.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1552
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/1D657F5659E9344CE880D2FB84E89AEA520A128256D99697BCA0367BA2A198BA/D828B486E7537435198C0C78BA90D3A3E5AA4E19F9329AE1A4392EB011B69307.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1940
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/7C8F4A0DF7B7F1B366394162A19F2E2918DEC1A3039538AA21E40CF40B8F67D7/24ED4DADCFD9453B0A931F048A93F400C56384A530E138CB84570CD8512F99B1.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2328
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/D9668B471068B93F5BBA0F417EE41083ECADB76D0C73E6CBF90192A5BBB5A45B/E22C2E1349917502F9EDEEBA8FE3265B633A9453B07BB34922E73F17B3B14217.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2716
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/39633163D0FB247ABB54E00ACA8CEAB8D6F4FF9DDD180317C8BC8F119C567C8D/0A3A2D85230E34DEF92C5931FE1D041B672049C95913C06262E73FE4C3F5A3F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3104
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/03E5F527747740712A0DB3E350D714BEA8DE30FC5F14B4AB9236A39B685760AB/8188EE1A53A2B9CB5BDA40A5122057AE1BFF2C918E5AC66D23B3C2262460369C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3492
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/477F52A94E0EC157D7B50EF2C5E199913E2FF19A56CB2ED66E67BCD5E2F8116E/CD102BBB41C19A12D731F12C9E668190557DC8AFE594B17101D4321E0DB21A19.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3880
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/0F6EBAC65444ACB2D6E5E0E752E3DD9425B51EF551E2F1F6A3A0D0DA7357CAC3/2F6E4088BEC31B88941F0F576B189FBD0D83CA26B68EBD2C2C1E95C12899C13A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4268
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/28C43B05EEC020472EE50A11FE6D19857274E6838918500DC94CD3B218D92B9D/D72FA031B688F19CF92B2B8987EDBA6A5989A3559A87753AD0DBEFBCF926FD6D.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4656
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/138DD668E2867115C58ECB9C4D0712238837C0C257A7B0048C37713376A2E718/45E3F83D295C0933425B78E98C9ACCA2109B55EFBE10AE1A5FED54843241F595.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5044
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/1AFB80CC4F0F92726F339AF7346618EA19BDF49F5D56D0987A4DBA936BE3A6FE/76AD25B920C36025A364C380826479C8A166867F72B2E5928675A4933FE8C636.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5432
+            }
+          ],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 42928339376,
+          "tree_peak_rss_bytes": 24900583424,
+          "compression_bytes": 37591859200,
+          "decompression_bytes": 18605588480,
+          "swap_in_bytes": 617234432,
+          "swap_out_bytes": 1489764352
+        },
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 27663470128,
+          "tree_peak_rss_bytes": 26717896704,
+          "compression_bytes": 0,
+          "decompression_bytes": 6930432,
+          "swap_in_bytes": 11599872,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "02ab0cd573c1836ce977f989a701edeb197d4e3292377a0b1afc3e9124487523",
+          "report_sha256": "64f6168d0292d986c290f7ca661d5acee80560e177c91e5f451fbc21213d2d35"
+        },
+        {
+          "evidence_sha256": "efa1cb2c7a2e240205dd7894d3b8e74bdfa303fda7ac63b73bfad619ffea2d45",
+          "report_sha256": "96b321992252ff298ec820778185e45e663ff853e46a4679fdbe93b880501835"
+        }
+      ],
+      "native_timing_boundary": "request_wall_estimate from clean finalizer",
+      "warm_scope": "new process, conditioning cache hit, constructor/model load still counted",
+      "parent_wall_including_sampler_and_verification": [
+        76.48761729197577,
+        69.4720557499677
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.177497375,
+            "audio_mux": 0.040006625,
+            "request_wall_estimate": 75.418666208,
+            "video_input_read": 0.000416583,
+            "video_vae_compute": 5.622825542,
+            "audio_decode": 0.62154925,
+            "video_vae_weight_load": 0.155599667,
+            "finalizer_wall": 6.628193208,
+            "rgb_convert": 0.010298166,
+            "pre_finalizer": 68.790473,
+            "video_vae_decode": 5.778841792
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.161735958,
+            "audio_mux": 0.038988833,
+            "request_wall_estimate": 68.998837416,
+            "video_input_read": 0.000426666,
+            "video_vae_compute": 5.616525917,
+            "audio_decode": 0.626228042,
+            "video_vae_weight_load": 0.053446917,
+            "finalizer_wall": 6.508455416,
+            "rgb_convert": 0.011103083,
+            "pre_finalizer": 62.490382,
+            "video_vae_decode": 5.6703995
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        }
+      ],
+      "media": [
+        {
+          "sha256": "0ac69973b4bc15d60c21e51d82f71e2619b1961690e2a2f6606a8a35317f81fb",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "62f13ffc7816baaa937a9b115b7f1b1e738a50cc207843bb35dc39599eb25c39",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "int8-quality-exec",
+      "configured": {
+        "mode": "quality",
+        "hybrid": true,
+        "single": true
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "a3a0380003445665be49795307e432663df0d3259f870261d66e9fc398e6eec3",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        },
+        {
+          "iteration": 1,
+          "sha256": "f7fda87c4649fe995d64710c9998ecf166854d038fe161b9bdc02e86ff13595a",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 42919655808,
+          "tree_peak_rss_bytes": 24217026560,
+          "compression_bytes": 37095735296,
+          "decompression_bytes": 17385963520,
+          "swap_in_bytes": 232013824,
+          "swap_out_bytes": 661127168
+        },
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 27659767368,
+          "tree_peak_rss_bytes": 26713686016,
+          "compression_bytes": 0,
+          "decompression_bytes": 2965504,
+          "swap_in_bytes": 5554176,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "b4b8b05833e5458a7ec1078feeae2aaa5ff542850defc62e877231ad45976bad",
+          "report_sha256": "03dcf8916a6d27d091b5c6aefdf2154171f5599d98f9416cf23e63bfad45d1d1"
+        },
+        {
+          "evidence_sha256": "cad4c9581fc95745e1bc3f7e1d24ddeef88234a06d24878a5c373a0c95534e7b",
+          "report_sha256": "225fd56c3f8fb21a439b5e655e9e0ac7be856f957993c535b1c81696dc34d37f"
+        }
+      ],
+      "native_timing_boundary": "request_wall_estimate from clean finalizer",
+      "warm_scope": "new process, conditioning cache hit, constructor/model load still counted",
+      "parent_wall_including_sampler_and_verification": [
+        78.29609049996361,
+        62.90656137489714
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.174733583,
+            "audio_mux": 0.048155084,
+            "request_wall_estimate": 77.23931437499999,
+            "video_input_read": 0.00041975,
+            "video_vae_compute": 5.619332125,
+            "audio_decode": 0.618706583,
+            "video_vae_weight_load": 0.154172041,
+            "finalizer_wall": 6.626515375,
+            "rgb_convert": 0.010996209,
+            "pre_finalizer": 70.612799,
+            "video_vae_decode": 5.773923916
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.157009625,
+            "audio_mux": 0.035111292,
+            "request_wall_estimate": 62.481190917000006,
+            "video_input_read": 0.00046575,
+            "video_vae_compute": 5.620990042,
+            "audio_decode": 0.61986075,
+            "video_vae_weight_load": 0.052001875,
+            "finalizer_wall": 6.496650917,
+            "rgb_convert": 0.011211583,
+            "pre_finalizer": 55.98454,
+            "video_vae_decode": 5.673457667
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        }
+      ],
+      "media": [
+        {
+          "sha256": "c108fa83b32f1bcac3b466cc41c7d85e3df1bb757505d10cd2f2edbad3984e84",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "b4331d7440e3b135017077cd290216d85a652ef194e74b4805f36e9e0ae8411b",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "gpu-quality-exec",
+      "configured": {
+        "mode": "quality",
+        "hybrid": false,
+        "single": true
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "256228aa03eaac91b34cac0fa3d97ca1c677017b6d16ceb99969cf076f1de4f9",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        },
+        {
+          "iteration": 1,
+          "sha256": "2d3407cb0e62757d6424bf052c2c2b4e0ace471ee88a03a4fbe037118158f100",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 37604370304,
+          "tree_peak_rss_bytes": 24520114176,
+          "compression_bytes": 21597962240,
+          "decompression_bytes": 17473847296,
+          "swap_in_bytes": 8224768,
+          "swap_out_bytes": 0
+        },
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 22254484648,
+          "tree_peak_rss_bytes": 20627144704,
+          "compression_bytes": 0,
+          "decompression_bytes": 1245184,
+          "swap_in_bytes": 1753088,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "d5e4c1d5e1f5f2566028cb0421985425dc58a1af7f9ca60090e6eb5d701e2c3a",
+          "report_sha256": "62fff5574e2d8dd9c9a0f9280939eee5d01ffa7c110e86bafc73a97267071683"
+        },
+        {
+          "evidence_sha256": "8e91a5b6fc347ca485d1e14fc936156e6f4df51beb16a007b9f90ccf59b89bc0",
+          "report_sha256": "94ab9ffa2cbe0a35a3ed58940b6be64e2223c3877ec6fbbde72418c9ef2ede4d"
+        }
+      ],
+      "native_timing_boundary": "request_wall_estimate from clean finalizer",
+      "warm_scope": "new process, conditioning cache hit, constructor/model load still counted",
+      "parent_wall_including_sampler_and_verification": [
+        73.77443266706541,
+        62.98329641693272
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.175342417,
+            "audio_mux": 0.03661575,
+            "request_wall_estimate": 73.21951654200001,
+            "video_input_read": 0.000456,
+            "video_vae_compute": 5.616346708,
+            "audio_decode": 0.62784475,
+            "video_vae_weight_load": 0.151069625,
+            "finalizer_wall": 6.618129542,
+            "rgb_convert": 0.010454292,
+            "pre_finalizer": 66.601387,
+            "video_vae_decode": 5.767872333
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "exec",
+          "timings_seconds": {
+            "export": 0.166929875,
+            "audio_mux": 0.035014792,
+            "request_wall_estimate": 62.644317375,
+            "video_input_read": 0.00021225,
+            "video_vae_compute": 5.614699625,
+            "audio_decode": 0.563967875,
+            "video_vae_weight_load": 0.050082458,
+            "finalizer_wall": 6.441004375,
+            "rgb_convert": 0.0100975,
+            "pre_finalizer": 56.203313,
+            "video_vae_decode": 5.664994333
+          },
+          "validation": "native_gpu_audio_video_exec_finalizer"
+        }
+      ],
+      "media": [
+        {
+          "sha256": "9ee6e10a6af74b4565c5d15dd42abb9cdb6fd3b91b75a83a76ee7f499c80570c",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "434d6b2f60cafb734615a29605a2156ad333dec43ce0ff08a140e414b25c58a8",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "int8-text256-batch",
+      "configured": {
+        "mode": "fast_approx",
+        "hybrid": true,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "1c5b5e9e03e9e61130fc63289f261d884f6f8465ec941c6c81d7bd7600800e67",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50697055040,
+          "tree_peak_rss_bytes": 27124957184,
+          "compression_bytes": 29399695360,
+          "decompression_bytes": 16053518336,
+          "swap_in_bytes": 9519104,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "1e5bddedc836ec8f20d00b5d30f29fe751d0134c773bfbf71eb08549b608b83b",
+          "report_sha256": "4b6786c762dea596e191cdc39571d1e142b10683d86976900f23551125ba9f45"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        143.650290499907
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.586293,
+            "audio_mux": 0.044069958,
+            "conditioning_and_rng": 3.770012625,
+            "latent_upsample": 0.3772225,
+            "model_load": 19.492542,
+            "pre_model_load": 3.145609584,
+            "request_wall": 81.150498625,
+            "rgb_convert": 0.01133525,
+            "stage1": 22.944261125,
+            "stage2": 24.672084916,
+            "video_export": 0.169270667,
+            "video_vae_decode": 5.937338417
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.585100167,
+            "audio_mux": 0.033920291,
+            "conditioning_and_rng": 0.000590416,
+            "latent_upsample": 0.358299916,
+            "model_load": 8.53643825,
+            "pre_model_load": 0.168189875,
+            "request_wall": 61.435208416,
+            "rgb_convert": 0.008655084,
+            "stage1": 21.526128959,
+            "stage2": 24.345380334,
+            "video_export": 0.079633083,
+            "video_vae_decode": 5.792390166
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "2432a544070882d7cc8ba2fa15a9223d38cf3cb02dd827cebbdfeffa7f3fbedc",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "b399b1e106195ff8c9d78900ec34cdb565a81ea41eb981512d929157b1679142",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "gpu-text256-batch",
+      "configured": {
+        "mode": "fast_approx",
+        "hybrid": false,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "fa531ebf9187d4c686949771d7f459520665af3f288f0ba6c5775c7dd998bc0a",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50573404776,
+          "tree_peak_rss_bytes": 24513265664,
+          "compression_bytes": 22354198528,
+          "decompression_bytes": 17321410560,
+          "swap_in_bytes": 2539520,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "5ed645f8f612052e6f68e15da5f9cc077ab29179855eaff678871734ee0f911e",
+          "report_sha256": "73c864e211c1d8867ff5c5a19e33e7911915bb005a54b1d7852b478f6ef54df1"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        133.75585258286446
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.585198125,
+            "audio_mux": 0.046744,
+            "conditioning_and_rng": 3.638464292,
+            "latent_upsample": 0.372003833,
+            "model_load": 4.233081458,
+            "pre_model_load": 3.141872417,
+            "request_wall": 71.107542167,
+            "rgb_convert": 0.011295833,
+            "stage1": 25.071631625,
+            "stage2": 27.918514834,
+            "video_export": 0.167525542,
+            "video_vae_decode": 5.920773875
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.584219916,
+            "audio_mux": 0.033475125,
+            "conditioning_and_rng": 0.000637625,
+            "latent_upsample": 0.216567584,
+            "model_load": 3.555162834,
+            "pre_model_load": 0.16486525,
+            "request_wall": 61.73954325,
+            "rgb_convert": 0.008682167,
+            "stage1": 23.541581541,
+            "stage2": 27.784238416,
+            "video_export": 0.08172225,
+            "video_vae_decode": 5.768002417
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2",
+              "ltx_stage2_text_context_pruning"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 256,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "d4d5543309256a885d19d8819fe91d7a57ff67e05e19806262a06cb9857d736a",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "97df84c16edb18b17cec6939d5e1b9def7ed035e269fe5a72f18b279a6623e44",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "name": "int8-sol-batch",
+      "configured": {
+        "mode": "sol",
+        "hybrid": true,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "32d314c6a83b8cd91b7702da8b110d7ff7cec4877f04de877e2fe7116165a55f",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/5065AB8C9EE043F6AF3FD88DBE4B71D0825EFFD94CBDFBEFE913CEF9551C0BF2/F1623CCDF8800EDB54D354408EFBCAF5499D23D77A5C8386022A0E334EB4E5F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 0
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/26C47515CBE151CA53B4D196241A42FDDD8547805452F45B521690932A4824F0/82F2353B3BB7B0A149A390DE82A67851A80C4E3DCA099F171694F2CEB38B3C2A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 388
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/9BD56547F5CA7651C3E882F7D5D71EE4960559052AD996232B54C371537C0613/0DFBA14DE4ED2C0A8DDBCBC30ED833A96B0EB212279104A156F9297AFF7F364C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 776
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/63BFC79AB4D412EF82EAB02698D667DD0A50C955C8B4B3670297D93EC3002E7E/A2C510EE2AFE183EC3B81513AB441DB610C1D551C4A0DA70B75876666A1D9EA7.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1164
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/2795A4C6F3AC872AEF15D4C7CAAF9B46E821BDCAF2BEA1AB18C393EA9445046F/E3A99E41BEC65440E31647EFA0E33BEF44DD1E33244AAA5BE09D1D898C8BA7A2.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1552
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/1D657F5659E9344CE880D2FB84E89AEA520A128256D99697BCA0367BA2A198BA/D828B486E7537435198C0C78BA90D3A3E5AA4E19F9329AE1A4392EB011B69307.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 1940
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/7C8F4A0DF7B7F1B366394162A19F2E2918DEC1A3039538AA21E40CF40B8F67D7/24ED4DADCFD9453B0A931F048A93F400C56384A530E138CB84570CD8512F99B1.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2328
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/03E5F527747740712A0DB3E350D714BEA8DE30FC5F14B4AB9236A39B685760AB/8188EE1A53A2B9CB5BDA40A5122057AE1BFF2C918E5AC66D23B3C2262460369C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 2716
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/A38105E0A3D21A054EF72D39F9723DB918FFB831B6C715DAF5B7BCAD554FC587/582A7202CCD90EF9D59887A4D7FD9F3EDD11A2DD5BB33BACC5F7C9C2DE09E6F2.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3104
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/349AB9B77968D3B7DA797B7478E947CF09AB9252761E5F5894348A5ABBFE03F6/5A0DCF159AA11F29FF088BC700A62E95BD7F968CE40B47D89A3BE3B483B3FD69.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3492
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/0F6EBAC65444ACB2D6E5E0E752E3DD9425B51EF551E2F1F6A3A0D0DA7357CAC3/2F6E4088BEC31B88941F0F576B189FBD0D83CA26B68EBD2C2C1E95C12899C13A.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 3880
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/4B4063286FD8858B0A086132F28836BA1A5337D1028329367DF22852B95AB0DB/A2BD06DE11A5237EF368E52728ACA2602413D7020AAB88D30E32CCDFFCAA4F81.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4268
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/3F7D50FBB743598292109BA5A208EB7D213C54F7CD6419CB7BC7D4F7B1693780/8422D56C8E650BEE78048A95198D996AEAA7540AD8C9FDBA16CEF78ACBC6B55D.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4656
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/B1EE63900FE310BE04216D35B547B0D97F0142DE43BC940FB0D320C064AB23FE/4EF826454D8E14DD605FDF2F49985D2708E266C96DAA26424852502CD7603988.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5044
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/138DD668E2867115C58ECB9C4D0712238837C0C257A7B0048C37713376A2E718/45E3F83D295C0933425B78E98C9ACCA2109B55EFBE10AE1A5FED54843241F595.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5432
+            }
+          ],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50645560104,
+          "tree_peak_rss_bytes": 27131019264,
+          "compression_bytes": 37082071040,
+          "decompression_bytes": 17997152256,
+          "swap_in_bytes": 299253760,
+          "swap_out_bytes": 1173880832
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "23a33594eebb3055c6ee9b181177db356e84eda1083a229387820894d814d638",
+          "report_sha256": "37c4efc97970a61620688653fcbd6841a15c059969609aec98af9003265d1d66"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        149.3474790409673
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.591921,
+            "audio_mux": 0.043783917,
+            "conditioning_and_rng": 4.699107459,
+            "latent_upsample": 0.376119333,
+            "model_load": 9.86322375,
+            "pre_model_load": 3.193241541,
+            "request_wall": 80.282488208,
+            "rgb_convert": 0.011590583,
+            "stage1": 23.28537025,
+            "stage2": 32.1263265,
+            "video_export": 0.167961792,
+            "video_vae_decode": 5.923382625
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.5858395,
+            "audio_mux": 0.034369709,
+            "conditioning_and_rng": 0.000639041,
+            "latent_upsample": 0.356831042,
+            "model_load": 14.116281834,
+            "pre_model_load": 0.167658916,
+            "request_wall": 67.729661041,
+            "rgb_convert": 0.009051667,
+            "stage1": 21.02098275,
+            "stage2": 25.5638545,
+            "video_export": 0.079672083,
+            "video_vae_decode": 5.794032208
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation",
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "4fe856aa0b21742241b29fce618a4adec91856b8d10e86c548382fed90199d35",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "76ebd4dcacb6b501751552da70646d9571c2c99860966183634b59d65dbcf57d",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "gpu-sol-batch",
+      "configured": {
+        "mode": "sol",
+        "hybrid": false,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "168e49bf27806fa2c862c2366211216f7d336ce7800ac6e29f43aa6c7df3e798",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50582776256,
+          "tree_peak_rss_bytes": 24725700608,
+          "compression_bytes": 21585477632,
+          "decompression_bytes": 17634000896,
+          "swap_in_bytes": 5128192,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "cb2ca5ca0b4d3ac6a5468f700723036c0d119bc60103f115fc838d104902b854",
+          "report_sha256": "ac800f0a3766e5862bc375281d13d756d0d1658b580c206cb04783a350879209"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        135.76547208288684
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.590383125,
+            "audio_mux": 0.041017584,
+            "conditioning_and_rng": 3.645330125,
+            "latent_upsample": 0.371547709,
+            "model_load": 4.070661417,
+            "pre_model_load": 3.191230375,
+            "request_wall": 72.187409958,
+            "rgb_convert": 0.011099125,
+            "stage1": 25.089596416,
+            "stage2": 29.116445541,
+            "video_export": 0.163489416,
+            "video_vae_decode": 5.896166209
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.578717208,
+            "audio_mux": 0.033927208,
+            "conditioning_and_rng": 0.00063475,
+            "latent_upsample": 0.215517417,
+            "model_load": 3.538836542,
+            "pre_model_load": 0.165101708,
+            "request_wall": 62.841964917,
+            "rgb_convert": 0.009227375,
+            "stage1": 23.520234458,
+            "stage2": 28.956646958,
+            "video_export": 0.078036875,
+            "video_vae_decode": 5.744650334
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "ltx_sol_stage2"
+            ],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": true,
+            "ltx_sol_tau": 1,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 0,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "72b01b452aba32dc0f8e40a0d993cfc612c6e597d5179476b935ef62549cc06e",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "247403a541a97c63978687e24ab31107d2d7a3cda5c980d29d886a9595d9d314",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "int8-quality-batch",
+      "configured": {
+        "mode": "quality",
+        "hybrid": true,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "1932ea773535854d01281b8d0d7f7e3703065940066cdd437d3f3a73a0c24628",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/75F70E80AD2220F1D95B1690208BA03589A757B0BC8068753B69100B60642A7D/041B5BD6565203A91008ECF4CE8CF159A60CC0FE86021EC7D0E908C1F9951BAD.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 4793
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/5065AB8C9EE043F6AF3FD88DBE4B71D0825EFFD94CBDFBEFE913CEF9551C0BF2/F1623CCDF8800EDB54D354408EFBCAF5499D23D77A5C8386022A0E334EB4E5F5.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5181
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/9BD56547F5CA7651C3E882F7D5D71EE4960559052AD996232B54C371537C0613/0DFBA14DE4ED2C0A8DDBCBC30ED833A96B0EB212279104A156F9297AFF7F364C.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5569
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/1D657F5659E9344CE880D2FB84E89AEA520A128256D99697BCA0367BA2A198BA/D828B486E7537435198C0C78BA90D3A3E5AA4E19F9329AE1A4392EB011B69307.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 5957
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/349AB9B77968D3B7DA797B7478E947CF09AB9252761E5F5894348A5ABBFE03F6/5A0DCF159AA11F29FF088BC700A62E95BD7F968CE40B47D89A3BE3B483B3FD69.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 6345
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/A4E4C39A649624D3B6CCBDE5D209D9E42ACA8A2B677F01F41B40DA72B3563779/F9D62DC29B42A6D96DCE29B6D7D91D931A3DA662D69F3DB890FB3B6C2CC16107.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 6733
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/3F7D50FBB743598292109BA5A208EB7D213C54F7CD6419CB7BC7D4F7B1693780/8422D56C8E650BEE78048A95198D996AEAA7540AD8C9FDBA16CEF78ACBC6B55D.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 7121
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/222AE08A6C3B1437E6363088EDB689365389B43CEA77C05C0EEA4913C05021EF/4D49AA3C6D44010A6F52854D4016F8DE8C7D1301D66A222F4E3FC72A2423AF60.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 7509
+            },
+            {
+              "kind": "coreml_e5_missing_bundle_resource",
+              "resource_path": "<USER_CACHE>/turbocider/com.apple.e5rt.e5bundlecache/25G83/138DD668E2867115C58ECB9C4D0712238837C0C257A7B0048C37713376A2E718/45E3F83D295C0933425B78E98C9ACCA2109B55EFBE10AE1A5FED54843241F595.bundle/H16C.bundle/main_1d3b60d7/main_ane/model.anehash",
+              "recompile_required": true,
+              "stdout_offset": 7897
+            }
+          ],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50537933488,
+          "tree_peak_rss_bytes": 27120320512,
+          "compression_bytes": 37052465152,
+          "decompression_bytes": 17980129280,
+          "swap_in_bytes": 684883968,
+          "swap_out_bytes": 1203961856
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "2f41c6af5872569aac9089c340a0eb33cfe8fc2bda7f2ad7b27fcc299c97b66b",
+          "report_sha256": "cae4211fb6401435837739a299f4db1aea72e2e401d4edbd135ef80e1e0105af"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        151.66289449995384
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.591645041,
+            "audio_mux": 0.045739459,
+            "conditioning_and_rng": 4.376217,
+            "latent_upsample": 0.386372875,
+            "model_load": 9.835224375,
+            "pre_model_load": 3.149628584,
+            "request_wall": 75.338000709,
+            "rgb_convert": 0.01135725,
+            "stage1": 23.87796375,
+            "stage2": 26.978951083,
+            "video_export": 0.168284292,
+            "video_vae_decode": 5.916159875
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu_ane",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": "f7a81e37e87603d54ccf4dbc687bc9bec1414f5bb1f1cc4c36eb51b17d7fd53a:int8_pc:parallel:preload=1:release_gpu=1:detach=11:kv=0:fused=none:mlp_window=0+48:mlp_stages=3",
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": false,
+          "gpu_batch_audio_commands": false,
+          "timings_seconds": {
+            "audio_decode": 0.583438208,
+            "audio_mux": 0.033914083,
+            "conditioning_and_rng": 0.000653459,
+            "latent_upsample": 0.359966917,
+            "model_load": 16.522247625,
+            "pre_model_load": 0.174309541,
+            "request_wall": 74.984910458,
+            "rgb_convert": 0.00868275,
+            "stage1": 20.976769541,
+            "stage2": 30.317840708,
+            "video_export": 0.081234084,
+            "video_vae_decode": 5.925392125
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [
+              "single_block_mlp_coreml_approximation"
+            ],
+            "execution": "gpu_ane_experimental",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "7a62cb8c93a2bf05eaede0b50aa6f5ffe461c3f81dcce3a368df326b90dfdf5c",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "cb07315fe23cdd0125dd6c102a4b678a596029a417bb4db356638f2d701c5865",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "gpu-quality-batch",
+      "configured": {
+        "mode": "quality",
+        "hybrid": false,
+        "single": false
+      },
+      "stdout_logs": [
+        {
+          "iteration": 0,
+          "sha256": "7cd480a1ea438aa82b767d1c58a6ff2c0cf44db2c4c0082f715e5a7fc037aaaf",
+          "parser_policy": "json-objects-with-explicit-coreml-e5-diagnostics-v1",
+          "diagnostics": [],
+          "diagnostic_scope": "Core ML resource/recompile messages retained; exit/media/configuration proof does not establish physical NE execution or a warning-free cold setup"
+        }
+      ],
+      "memory": [
+        {
+          "complete": true,
+          "tree_peak_phys_footprint_bytes": 50577140256,
+          "tree_peak_rss_bytes": 25825443840,
+          "compression_bytes": 21155495936,
+          "decompression_bytes": 17054318592,
+          "swap_in_bytes": 2097152,
+          "swap_out_bytes": 0
+        }
+      ],
+      "memory_bindings": [
+        {
+          "evidence_sha256": "58aafcec72f2e13681a294d943fdb4c7468a5fbe4dab9746cabc299c2f7c4bef",
+          "report_sha256": "0a51e8d35879606cfae827498a43d48fd62e8ad4e168b94d8b4ebcc38c059522"
+        }
+      ],
+      "native_timing_boundary": "native request_wall",
+      "warm_scope": "same process immediate warm/conditioning cache hit",
+      "parent_wall_including_sampler_and_verification": [
+        137.74559545796365
+      ],
+      "hybrid_evidence_scope": "configured execution/profile; clean finalizer forwards execution but not ane_profile or common image call counters; not physical ANE trace",
+      "rows": [
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": false,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.58631,
+            "audio_mux": 0.04222825,
+            "conditioning_and_rng": 3.601952458,
+            "latent_upsample": 0.371461458,
+            "model_load": 3.76565175,
+            "pre_model_load": 3.180605792,
+            "request_wall": 72.899583584,
+            "rgb_convert": 0.011430292,
+            "stage1": 25.066357334,
+            "stage2": 30.205698583,
+            "video_export": 0.164474625,
+            "video_vae_decode": 5.902973917
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        },
+        {
+          "model": "ltx-2.5-distilled",
+          "operation": "video.generate",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": 24,
+          "audio": true,
+          "execution": "gpu",
+          "conditioning_cache_hit": true,
+          "video_vae_isolation": "process",
+          "ane_profile": null,
+          "denoiser_implementation": "c_metal",
+          "gpu_parallel_av": true,
+          "gpu_batch_audio_commands": true,
+          "timings_seconds": {
+            "audio_decode": 0.585216541,
+            "audio_mux": 0.033878625,
+            "conditioning_and_rng": 0.000630166,
+            "latent_upsample": 0.216627542,
+            "model_load": 3.497886584,
+            "pre_model_load": 0.166495875,
+            "request_wall": 63.926909334,
+            "rgb_convert": 0.008613167,
+            "stage1": 23.489382375,
+            "stage2": 30.101070583,
+            "video_export": 0.07747675,
+            "video_vae_decode": 5.749202917
+          },
+          "validation": "native_gpu_audio_video_aac_candidate",
+          "plan": {
+            "algorithm_approximations": [],
+            "execution": "gpu",
+            "ltx_sol_stage1": false,
+            "ltx_sol_stage2": false,
+            "ltx_sol_tau": 0.5,
+            "ltx_sol_dense_edge_blocks": 1,
+            "ltx_sol_dense_edge_steps": 1,
+            "ltx_stage2_text_rows": 0,
+            "stages": [
+              {
+                "dependencies": [],
+                "id": "text_encode",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "text_encode"
+                ],
+                "id": "connector",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "connector"
+                ],
+                "id": "av_stage1",
+                "iterations": 8
+              },
+              {
+                "dependencies": [
+                  "av_stage1"
+                ],
+                "id": "latent_upsample",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "latent_upsample"
+                ],
+                "id": "av_stage2",
+                "iterations": 3
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "video_vae",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "av_stage2"
+                ],
+                "id": "audio_vae_vocoder",
+                "iterations": 1
+              },
+              {
+                "dependencies": [
+                  "video_vae",
+                  "audio_vae_vocoder"
+                ],
+                "id": "mux",
+                "iterations": 1
+              }
+            ]
+          }
+        }
+      ],
+      "media": [
+        {
+          "sha256": "c2c2c580edf828a5a7fd5b8b81343059a2750ec0997dda64fa0b7f0920367bf5",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        },
+        {
+          "sha256": "4e2bbe8d2eb890f3ea1217e2a515d68ad1fab54270be32ae9e0638c995f720e1",
+          "width": 704,
+          "height": 448,
+          "frames": 97,
+          "fps": "24/1",
+          "video_codec": "h264",
+          "channels": 2,
+          "sample_rate": 48000,
+          "audio_codec": "aac"
+        }
+      ]
+    }
+  ],
+  "quality": [
+    {
+      "name": "gpu-quality-batch",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 1.0,
+        "minimum_correlation": 1.0,
+        "mean_cosine": 1.0,
+        "minimum_cosine": 1.0,
+        "mean_mae_255": 0.0,
+        "maximum_mae_255": 0.0,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 32.406619469668804,
+        "maximum_motion_relative_error": 0.0,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "gpu-quality-exec",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "05e6c66cbfdfa60c19e8fa0d7accd3fd9aff971221bc7de7a865c024a55f8573",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 1.0,
+        "minimum_correlation": 1.0,
+        "mean_cosine": 1.0,
+        "minimum_cosine": 1.0,
+        "mean_mae_255": 0.0,
+        "maximum_mae_255": 0.0,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 32.406619469668804,
+        "maximum_motion_relative_error": 0.0,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "gpu-sol-batch",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "8f640c050f652be15b76b0371cbc02d37570c720a6fc1a1718517155fb674e0e",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 0.8360780075497198,
+        "minimum_correlation": 0.7706223970880349,
+        "mean_cosine": 0.9757200718906424,
+        "minimum_cosine": 0.965266338358203,
+        "mean_mae_255": 23.025927773599633,
+        "maximum_mae_255": 28.034093022862553,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 31.983463843319488,
+        "maximum_motion_relative_error": 0.07916926527363259,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "gpu-text256-batch",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "952ae4f649882aae3a110146a4febcc03c4ebdc9861f6df7798ed554f5e48f15",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 0.8157424355803057,
+        "minimum_correlation": 0.7459691187753547,
+        "mean_cosine": 0.9722463421116033,
+        "minimum_cosine": 0.962377040486348,
+        "mean_mae_255": 25.0304630776829,
+        "maximum_mae_255": 30.69977467194264,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 32.232869620275025,
+        "maximum_motion_relative_error": 0.07965527256600152,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "int8-quality-batch",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "fab1a4ff8ae6f56afbf4b0a8967d707170c9f0464473f1e292ae53d8caba89fc",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 0.8585218108047998,
+        "minimum_correlation": 0.8082754746407204,
+        "mean_cosine": 0.9784017745748429,
+        "minimum_cosine": 0.9713332939157586,
+        "mean_mae_255": 20.49477046357583,
+        "maximum_mae_255": 24.15193579207251,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 32.73377640629227,
+        "maximum_motion_relative_error": 0.0534469445631216,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "int8-quality-exec",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "62f13ffc7816baaa937a9b115b7f1b1e738a50cc207843bb35dc39599eb25c39",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 0.8585218108047998,
+        "minimum_correlation": 0.8082754746407204,
+        "mean_cosine": 0.9784017745748429,
+        "minimum_cosine": 0.9713332939157586,
+        "mean_mae_255": 20.49477046357583,
+        "maximum_mae_255": 24.15193579207251,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 32.73377640629227,
+        "maximum_motion_relative_error": 0.0534469445631216,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "int8-sol-batch",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "e87160a1ba79e8e97691236281ed82f5a841ac4324cfce1ca153e73ac7227a5f",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 0.8072166081391017,
+        "minimum_correlation": 0.7708514156083145,
+        "mean_cosine": 0.9712025098442556,
+        "minimum_cosine": 0.9646856314404453,
+        "mean_mae_255": 25.378038219867815,
+        "maximum_mae_255": 28.643599076704547,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 31.853317635055916,
+        "maximum_motion_relative_error": 0.08502460349739228,
+        "vision_feature_print": null
+      }
+    },
+    {
+      "name": "int8-text256-batch",
+      "reference_sha256": "6c4a52721a00bc72ee27bfab25f718a454e5f74733b1a4414457dac1c2dd21ac",
+      "candidate_sha256": "718977f1dda91fb3b4b656c6c3707622a65d6e9f31df2c26a47080b67a717c51",
+      "metrics": {
+        "shape_equal": true,
+        "frame_count_equal": true,
+        "fps_equal": true,
+        "finite": true,
+        "reference": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "candidate": {
+          "width": 704,
+          "height": 448,
+          "fps": 24.0,
+          "declared_frames": 97,
+          "duration": 4.041667,
+          "decoded_frames": 97
+        },
+        "frame_count_compared": 97,
+        "mean_correlation": 0.8011903828014556,
+        "minimum_correlation": 0.7519200429543296,
+        "mean_cosine": 0.970079492050619,
+        "minimum_cosine": 0.9633701386937743,
+        "mean_mae_255": 26.193038375894666,
+        "maximum_mae_255": 29.91895799512987,
+        "mean_motion_energy_reference": 32.406619469668804,
+        "mean_motion_energy_candidate": 32.138128283391936,
+        "maximum_motion_relative_error": 0.06714762857815398,
+        "vision_feature_print": null
+      }
+    }
+  ]
+}

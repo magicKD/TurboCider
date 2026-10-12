@@ -68,7 +68,7 @@ def run_owned(command, **kwargs):
 
 
 def run_sampled(command, *, repo, output, stem, env, stdout, stderr, timeout,
-                interval_ms, max_gap_ms, observer=None, child_roles=()):
+                interval_ms, max_gap_ms, observer=None, child_roles=(), async_evidence=False):
     """Run then independently verify; incomplete evidence never returns success."""
     role_arguments = []
     for role, executable in child_roles:
@@ -90,6 +90,10 @@ def run_sampled(command, *, repo, output, stem, env, stdout, stderr, timeout,
                "--correlation-id", correlation, "--root-role", "inference",
                "--interval-ms", str(interval_ms), "--max-gap-ms", str(max_gap_ms), *role_arguments,
                "--", *command]
+    if type(async_evidence) is not bool:
+        raise ValueError("evidence write policy requires explicit boolean")
+    if async_evidence:
+        wrapped.insert(wrapped.index("--"), "--async-evidence")
     result = run_owned(wrapped, cwd=repo, env=env, stdout=stdout, stderr=stderr, timeout=timeout, observer=observer)
     verification = subprocess.run(
         [sys.executable, str(verifier), str(raw.resolve()), "--output", str(report.resolve())],
@@ -104,10 +108,14 @@ def run_sampled(command, *, repo, output, stem, env, stdout, stderr, timeout,
             verified["command_exit_code"] != 0 or
             verified.get("allowed_max_gap_ns") != max_gap_ms * 1_000_000):
         raise ValueError("memory report is incomplete or does not match this trial")
+    if async_evidence and (verified.get("evidence_writer_policy") != "bounded-async-record-fsync-v1" or
+                           verified.get("evidence_queue_capacity") != 64):
+        raise ValueError("asynchronous evidence policy/drain proof differs from request")
     if any(sha256(repo / name) != digest for name, digest in sources.items()):
         raise ValueError("memory sampler/verifier changed during the trial")
     return {
         "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1" if async_evidence else "synchronous-record-fsync-v1",
         "correlation_id": correlation, "interval_ms": interval_ms, "max_gap_ms": max_gap_ms,
         "evidence": raw.name, "evidence_sha256": sha256(raw),
         "report": report.name, "report_sha256": sha256(report),

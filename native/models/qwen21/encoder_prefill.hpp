@@ -3,6 +3,7 @@
 #include "../../backends/mlx.hpp"
 #include "../../core/tokenizer.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
+#include "source_registration.hpp"
 #include <limits>
 
 namespace tc::qwen21 {
@@ -79,7 +80,7 @@ class VerifiedEncoderTokenizer final {
         streaming::SourceFileIdentity source;
         source.logical_id = "processor";
         source.path = root / "tokenizer.json";
-        lease_ = streaming::SourceLease::capture_verified({source}, &cancel);
+        lease_ = capture_model_source(source, cancel);
         auto fd = lease_->duplicate_fd("processor");
         tokenizer_ = std::make_unique<Tokenizer>(fd.get(), lease_->file("processor").bytes);
         lease_->revalidate_after_drain();

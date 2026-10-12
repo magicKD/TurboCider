@@ -10,6 +10,7 @@ export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-playground
 .PHONY: test-qwen21-runtime-activation
+.PHONY: test-base-benchmark
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -22,6 +23,7 @@ help:
 	@echo 'make test-app                     Run App behavior tests (macOS clipboard access)'
 	@echo 'make test-library                 Verify model library using tiny loopback downloads'
 	@echo 'make test                         Verify repository boundaries and request contracts'
+	@echo 'make test-base-benchmark          Verify published base evidence and framework boundaries (no inference)'
 	@echo 'make test-streaming-host           Verify layout/executor/LTX metadata with synthetic fixtures'
 	@echo 'make test-streaming-contract       Verify streaming API/snapshot contracts (requires native build)'
 	@echo 'make test-streaming-metal          Verify synthetic GPU slots (requires Metal access)'
@@ -159,6 +161,8 @@ test-streaming-source-identity:
 	@"$(PYTHON)" -B tests/native/test_streaming_source_identity.py
 test-streaming-source-lease:
 	@"$(PYTHON)" -B tests/native/test_streaming_source_lease.py
+	@"$(PYTHON)" -B tests/native/test_source_registration.py
+	@"$(PYTHON)" -B tests/native/test_read_ahead_worker.py
 test-streaming-audit:
 	@"$(PYTHON)" -B tests/native/test_streaming_audit.py
 test-ltx-streaming-lifecycle:
@@ -185,6 +189,43 @@ build-runtime-ane-probe:
 	@bash tools/native/build_ane_runtime_probe.sh
 # Keep no-inference contracts separate from opt-in GPU/Core ML micrographs.
 # CLI checks report SKIP if a native CLI has not been built.
+test-base-benchmark:
+	@"$(PYTHON)" -B tests/native/test_base_model_benchmark_report.py
+	@"$(PYTHON)" -B tests/native/test_flux4_restore_assets.py
+	@"$(PYTHON)" -B tests/native/test_flux4_saved_precheck.py
+	@"$(PYTHON)" -B tests/native/test_flux4_native_saved_view.py
+	@"$(PYTHON)" -B tests/native/test_flux4_native_saved_precheck.py
+	@"$(PYTHON)" -B tests/native/test_unsloth_image_reference_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_unsloth_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_base_formats_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_base_formats_evidence.py
+	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_screen.py
+	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_evidence.py
+	@"$(PYTHON)" -B tests/native/test_mlxserve_local_model_probe.py
+	@"$(PYTHON)" -B tests/native/test_mflux_original_layout.py
+	@"$(PYTHON)" -B tests/native/test_qwen21_mflux_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_qwen21_mflux_framework_evidence.py
+	@"$(PYTHON)" -B tests/native/test_z_mflux_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_private_partition_sweep.py
+	@"$(PYTHON)" -B tests/native/test_z_private_partition_evidence.py
+	@"$(PYTHON)" -B tests/native/test_z_mflux_framework_evidence.py
+	@"$(PYTHON)" -B tests/native/test_flux9_mflux_quant_screen.py
+	@"$(PYTHON)" -B tests/native/test_flux9_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_flux9_current_framework_screen.py
+	@"$(PYTHON)" -B tests/native/test_flux9_current_framework_evidence.py
+	@"$(PYTHON)" -B tests/native/test_flux9_hybrid_gate.py
+	@"$(PYTHON)" -B tests/native/test_flux_coreml_checkpoint.py
+	@"$(PYTHON)" -B tests/native/test_flux_coreml_manifest_compile.py
+	@"$(PYTHON)" -B tests/native/test_flux9_mflux_quant_evidence.py
+	@"$(PYTHON)" -B tests/native/test_flux9_affine_pack.py
+	@"$(PYTHON)" -B tests/native/test_flux9_matched_affine_screen.py
+	@"$(PYTHON)" -B tests/native/test_mflux_cow_text_layout.py
+	@"$(PYTHON)" -B tests/native/test_mflux_weight_coverage.py
+	@"$(PYTHON)" -B tests/native/test_qwen_native_cohort_evidence.py
+	@"$(PYTHON)" -B tests/native/test_process_tree_async_writer.py
+	@"$(PYTHON)" -B tests/native/test_process_tree_async_live.py
+	@"$(PYTHON)" -B tests/native/test_ltx_full_config_screen.py
+	@"$(PYTHON)" -B tests/native/test_ltx_full_config_evidence.py
 test-acceleration-contract: test-runtime-ane-host
 	@"$(PYTHON)" -B tests/native/test_ane_placement.py
 	@"$(PYTHON)" -B tests/native/test_runtime_ane_model_screen.py

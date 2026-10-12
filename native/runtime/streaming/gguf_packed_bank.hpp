@@ -17,6 +17,9 @@ struct GgufKImportOptions {
     // Explicit bounded CPU row parallelism; MLX allocation/publication and
     // source ownership remain on the caller. One shared fixed read buffer.
     uint32_t decode_workers=1;
+    // Two shared fixed buffers and ONE bounded I/O worker. No per-decoder
+    // payload buffers or all-model raw cache; default synchronous schedule.
+    bool read_ahead=false;
 };
 
 // Immutable, compute-ready MLX affine packed bank. Only Q4_0/Q4_1/Q8_0 and
@@ -36,6 +39,14 @@ class GgufPackedBank final {
     GgufPackedBank &operator=(const GgufPackedBank &) = delete;
     const gguf::Directory &directory() const;
     void load(Weights &, const std::atomic<bool> *cancel = nullptr, const Event & = {});
+    // CPU candidate import may overlap a native hash worker. No dictionary,
+    // bank or native proof is returned until BOTH tasks finish and all held-fd
+    // generations pass. Ordinary metadata-only construction still fails.
+    static std::unique_ptr<GgufPackedBank> load_verifying(
+        PendingSourceVerification &, std::string logical_id, MemoryLedger &, Weights &,
+        uint64_t read_buffer_bytes, GgufKImportOptions,
+        const std::function<void(const GgufPackedBankMetrics &)> &admit,
+        const std::atomic<bool> *cancel = nullptr, const Event & = {});
     void check_unchanged() const;
     GgufPackedBankMetrics metrics() const;
     struct RawMatrix {
@@ -48,6 +59,12 @@ class GgufPackedBank final {
     RawMatrix raw_matrix(const std::string &,const std::atomic<bool> *cancel=nullptr);
     void clear_raw_window();
   private:
+    enum class ProofMode { Required, PendingNative };
+    GgufPackedBank(std::shared_ptr<const SourceLease>, std::string logical_id, MemoryLedger &,
+                  uint64_t read_buffer_bytes, bool fused_affine, uint64_t raw_window_bytes,
+                  uint32_t raw_window_entries, GgufKImportOptions, ProofMode);
+    void load_candidate(Weights &, const std::atomic<bool> *, const Event &,
+                        const std::function<void()> &before_publication);
     struct State;
     std::unique_ptr<State> state_;
 };

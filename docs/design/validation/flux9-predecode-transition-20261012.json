@@ -1,0 +1,85 @@
+{
+  "schema": "tc-flux9-predecode-transition-v1",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "library_sha256": "c1c0fcd81269cc99f8bc49dae76c2aaa907a0f24a95b1ef63fd8dd8090d6410e",
+  "order": [
+    "packed",
+    "predecoded",
+    "packed",
+    "predecoded"
+  ],
+  "scope": "one actual same-source session, same prompt/seed, state restoration and RGB; untimed diagnostic, not full-framework latency or memory qualification",
+  "runs": [
+    {
+      "index": 0,
+      "decoded": false,
+      "events": {
+        "load_text_encoder": 1,
+        "text_encode": 28,
+        "route_gpu": 1,
+        "load_transformer": 1,
+        "denoise": 8,
+        "transformer_block": 128,
+        "load_vae": 1,
+        "vae_decode": 5,
+        "export": 2
+      },
+      "png_sha256": "c2e7a2c11c77d73d6d7ac9e80b20f656c27c91e295d334f1e2f2a96b2149035d",
+      "pixels_sha256": "e7fa852ccb5996a777194f64226496448c0d21c502aead1df5ca25b377bf236d"
+    },
+    {
+      "index": 1,
+      "decoded": true,
+      "events": {
+        "text_cache_hit": 1,
+        "route_gpu": 1,
+        "affine_predecode_projection": 153,
+        "affine_predecoded_gpu_route": 1,
+        "denoise": 8,
+        "transformer_block": 128,
+        "compiled_single_gpu_block": 96,
+        "vae_decode": 5,
+        "export": 2
+      },
+      "png_sha256": "7bcd453d46d018b03dae0a53b5f6a6136a2bc7d96dd905093a06b796b5d016ef",
+      "pixels_sha256": "0b1561b253348ada4d0bd4d85bc996563d66d50d3d7a2d0a77c03b3d4fc234dc"
+    },
+    {
+      "index": 2,
+      "decoded": false,
+      "events": {
+        "text_cache_hit": 1,
+        "route_gpu": 1,
+        "load_transformer": 1,
+        "denoise": 8,
+        "transformer_block": 128,
+        "vae_decode": 5,
+        "export": 2
+      },
+      "png_sha256": "c2e7a2c11c77d73d6d7ac9e80b20f656c27c91e295d334f1e2f2a96b2149035d",
+      "pixels_sha256": "e7fa852ccb5996a777194f64226496448c0d21c502aead1df5ca25b377bf236d"
+    },
+    {
+      "index": 3,
+      "decoded": true,
+      "events": {
+        "text_cache_hit": 1,
+        "route_gpu": 1,
+        "affine_predecode_projection": 153,
+        "affine_predecoded_gpu_route": 1,
+        "denoise": 8,
+        "transformer_block": 128,
+        "compiled_single_gpu_block": 96,
+        "vae_decode": 5,
+        "export": 2
+      },
+      "png_sha256": "7bcd453d46d018b03dae0a53b5f6a6136a2bc7d96dd905093a06b796b5d016ef",
+      "pixels_sha256": "0b1561b253348ada4d0bd4d85bc996563d66d50d3d7a2d0a77c03b3d4fc234dc"
+    }
+  ],
+  "date": "2026-10-12",
+  "evidence": "outputs/flux9-predecode-v2-session-transition-20261012/summary.json",
+  "evidence_sha256": "4a39e0bc390f1763f2b303b2451e6f3668a884ba97aec83e69071c5c98a9a212",
+  "pixel_restoration_verified": true
+}

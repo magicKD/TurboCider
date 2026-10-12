@@ -1,6 +1,7 @@
 #include "gguf_packed_bank.hpp"
 #include "gguf_storage.hpp"
 #include "canonical_encoding.hpp"
+#include "read_ahead_worker.hpp"
 #include "../../core/gguf_affine.hpp"
 
 #include <chrono>
@@ -128,6 +129,38 @@ struct GgufPackedBank::State {
     void owner_check() const {
         require(owner == std::this_thread::get_id(), "gguf_packed_bank: owner violation");
     }
+    std::string plan_digest() const {
+        CanonicalEncoder encoding("gguf-mlx-compat-affine-packed-bank-v1");
+        encoding.string_field("affine_packing",metrics.affine_packing_recipe);
+        encoding.string_field("float_import",metrics.float_import_recipe);
+        encoding.string_field("affine_packing_backend",metrics.affine_packing_backend);
+        encoding.string_field("source",metrics.source_sha256);
+        encoding.string_field("logical_id",logical_id);
+        encoding.unsigned_field("read_bytes",read_bytes);
+        encoding.unsigned_field("raw_window_bytes",metrics.raw_window_budget_bytes);
+        encoding.unsigned_field("raw_window_limit",raw_window_limit);
+        if(k_import.enabled) {
+            encoding.unsigned_field("decode_workers",k_import.decode_workers);
+            // Preserve the established synchronous plan identity.
+            if(k_import.read_ahead)encoding.string_field("read_schedule","bounded-two-slot-pread-v1");
+        }
+        encoding.begin_list("tensors",directory.tensors.size());
+        for(const auto &task:tasks) {
+            const auto &tensor=directory.tensors[task.tensor];
+            encoding.string_field("tensor",tensor.name);encoding.unsigned_field("type",tensor.type);
+            encoding.unsigned_field("offset",tensor.file_offset);encoding.unsigned_field("bytes",tensor.bytes);
+            encoding.begin_list("fields",task.fields.size());
+            for(const auto &field:task.fields) {
+                encoding.string_field("key",field.key);
+                encoding.string_field("dtype",field.dtype==mx::uint32 ? "U32" : field.dtype==mx::float32 ? "F32" : field.dtype==mx::bfloat16 ? "BF16" : "F16");
+                encoding.unsigned_field("bytes",field.bytes);encoding.unsigned_field("capacity",field.capacity);
+                encoding.begin_list("shape",field.shape.size());
+                for(auto dim:field.shape)encoding.unsigned_field("dim",uint64_t(dim));
+            }
+        }
+        return encoding.sha256();
+    }
+    std::string logical_id;
 };
 
 GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::string logical,
@@ -139,6 +172,12 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease, std::st
 GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::string logical,
                               MemoryLedger &ledger,uint64_t read_bytes,bool fused_affine,
                               uint64_t raw_window_bytes,uint32_t raw_window_entries,GgufKImportOptions options)
+    : GgufPackedBank(std::move(lease),std::move(logical),ledger,read_bytes,fused_affine,
+                     raw_window_bytes,raw_window_entries,std::move(options),ProofMode::Required) {}
+
+GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::string logical,
+                              MemoryLedger &ledger,uint64_t read_bytes,bool fused_affine,
+                              uint64_t raw_window_bytes,uint32_t raw_window_entries,GgufKImportOptions options,ProofMode proof)
     : state_(std::make_unique<State>(std::move(lease), ledger, read_bytes,fused_affine)) {
     auto &s = *state_;
     require(!options.enabled || (fused_affine && (options.floating_dtype==mx::float16 || options.floating_dtype==mx::bfloat16)),
@@ -148,8 +187,13 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
             (options.enabled || options.decode_workers==1),
             "gguf_packed_bank: row workers require explicit mixed K recipe and bound 1..8");
     s.k_import=std::move(options);
+    require(!s.k_import.read_ahead || s.k_import.enabled,"gguf_packed_bank: read ahead requires explicit K recipe");
     s.metrics.decode_workers=s.k_import.decode_workers;
-    require(s.lease && s.lease->has_verified_content(), "gguf_packed_bank: native content proof required");
+    s.metrics.read_ahead_enabled=s.k_import.read_ahead;
+    s.metrics.read_buffer_slots=s.k_import.read_ahead ? 2 : 1;
+    require(s.lease && (s.lease->has_verified_content() || proof==ProofMode::PendingNative),
+            "gguf_packed_bank: native content proof required");
+    s.logical_id=logical;
     require(raw_window_entries>0 && raw_window_entries<=6,"gguf_packed_bank: raw source window exceeds two three-matrix FFNs");
     if(raw_window_bytes) {
         require(raw_window_bytes%gguf_storage::alignment==0,"gguf_packed_bank: unaligned raw source budget");
@@ -164,8 +208,12 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
     require(::fcntl(s.fd.get(), F_NOCACHE, 1) == 0, "gguf_packed_bank: cannot disable source file cache");
 #endif
     s.directory = gguf::read_directory(s.fd.get(), file.bytes, {}, !s.k_import.enabled);
-    s.metrics.source_sha256 = file.content_digest;
+    if(s.lease->has_verified_content())s.metrics.source_sha256 = file.content_digest;
     s.metrics.verification_bytes = s.lease->verification_bytes_read();
+    s.metrics.verification_cache_hits = s.lease->verification_cache_hits();
+    s.metrics.registration_cache_hits = s.lease->registration_cache_hits();
+    s.metrics.registration_records_written = s.lease->registration_records_written();
+    s.metrics.verification_seconds = s.lease->verification_seconds();
     s.metrics.affine_packing_recipe=fused_affine ? "fused-affine-one-pass-v1" : "legacy-affine-three-pass-v1";
     s.metrics.float_import_recipe=fused_affine ? "direct-bf16-read-inplace-f16-v1" : "buffered-row-rne-v1";
     if(s.k_import.enabled) {
@@ -184,17 +232,6 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
         s.metrics.affine_packing_backend="cpu_mixed_k_scalar";
 #endif
     }
-    CanonicalEncoder encoding("gguf-mlx-compat-affine-packed-bank-v1");
-    encoding.string_field("affine_packing",s.metrics.affine_packing_recipe);
-    encoding.string_field("float_import",s.metrics.float_import_recipe);
-    encoding.string_field("affine_packing_backend",s.metrics.affine_packing_backend);
-    encoding.string_field("source", file.content_digest);
-    encoding.string_field("logical_id", logical);
-    encoding.unsigned_field("read_bytes", read_bytes);
-    encoding.unsigned_field("raw_window_bytes",raw_window_bytes);
-    encoding.unsigned_field("raw_window_limit",s.raw_window_limit);
-    if(s.k_import.enabled)encoding.unsigned_field("decode_workers",s.k_import.decode_workers);
-    encoding.begin_list("tensors", s.directory.tensors.size());
     std::set<std::string> keys;
     for (size_t index = 0; index < s.directory.tensors.size(); ++index) {
         const auto &tensor = s.directory.tensors[index];
@@ -228,15 +265,7 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
             field(prefix+".biases",shape({tensor.rows(),tensor.columns()/32}),metadata_dtype,
                   gguf::checked_mul(groups,2),gguf::AffinePart::biases);
         }
-        encoding.string_field("tensor",tensor.name); encoding.unsigned_field("type",tensor.type);
-        encoding.unsigned_field("offset",tensor.file_offset); encoding.unsigned_field("bytes",tensor.bytes);
-        encoding.begin_list("fields",task.fields.size());
         for (const auto &f : task.fields) {
-            encoding.string_field("key",f.key);
-            encoding.string_field("dtype",f.dtype==mx::uint32 ? "U32" : f.dtype==mx::float32 ? "F32" : f.dtype==mx::bfloat16 ? "BF16" : "F16");
-            encoding.unsigned_field("bytes",f.bytes); encoding.unsigned_field("capacity",f.capacity);
-            encoding.begin_list("shape",f.shape.size());
-            for (auto dim : f.shape) encoding.unsigned_field("dim",uint64_t(dim));
             s.metrics.planned_packed_capacity_bytes = gguf::checked_add(s.metrics.planned_packed_capacity_bytes,f.capacity);
             s.metrics.output_bytes = gguf::checked_add(s.metrics.output_bytes,f.bytes);
             ++s.metrics.field_count;
@@ -245,7 +274,7 @@ GgufPackedBank::GgufPackedBank(std::shared_ptr<const SourceLease> lease,std::str
         s.tasks.push_back(std::move(task));
     }
     require(!s.tasks.empty(),"gguf_packed_bank: component filter removed all tensors");
-    s.metrics.plan_digest = encoding.sha256();
+    if(s.lease->has_verified_content())s.metrics.plan_digest = s.plan_digest();
     s.metrics.tensor_count = uint32_t(s.tasks.size());
     check_unchanged();
 }
@@ -309,24 +338,72 @@ GgufPackedBank::RawMatrix GgufPackedBank::raw_matrix(const std::string &name,con
 }
 
 void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, const Event &event) {
+    load_candidate(output,cancel,event,{});
+}
+
+std::unique_ptr<GgufPackedBank> GgufPackedBank::load_verifying(
+        PendingSourceVerification &pending,std::string logical,MemoryLedger &ledger,Weights &output,
+        uint64_t read_bytes,GgufKImportOptions options,
+        const std::function<void(const GgufPackedBankMetrics &)> &admit,
+        const std::atomic<bool> *cancel,const Event &event) {
+    const auto start=Clock::now();
+    try {
+        require(options.enabled && bool(admit),"gguf_packed_bank: verifying import requires explicit mixed-K recipe/admission");
+        auto bank=std::unique_ptr<GgufPackedBank>(new GgufPackedBank(pending.metadata(),logical,ledger,
+            read_bytes,true,0,6,std::move(options),ProofMode::PendingNative));
+        admit(bank->metrics());
+        bank->load_candidate(output,cancel,event,[&] {
+            auto verified=pending.finish();
+            auto &s=*bank->state_;
+            require(verified->generation()==s.lease->generation(),"gguf_packed_bank: verified capture generation differs");
+            s.lease=std::move(verified);
+            s.metrics.source_sha256=s.lease->file(logical).content_digest;
+            s.metrics.verification_bytes=s.lease->verification_bytes_read();
+            s.metrics.verification_cache_hits=s.lease->verification_cache_hits();
+            s.metrics.registration_cache_hits=s.lease->registration_cache_hits();
+            s.metrics.registration_records_written=s.lease->registration_records_written();
+            s.metrics.verification_overlap=true;
+            s.metrics.verification_seconds=pending.verification_seconds();
+            s.metrics.plan_digest=s.plan_digest();
+        });
+        bank->state_->metrics.verified_import_seconds=seconds(start);
+        return bank;
+    } catch(...) {pending.cancel_and_drain();throw;}
+}
+
+void GgufPackedBank::load_candidate(Weights &output,const std::atomic<bool> *cancel,const Event &event,
+        const std::function<void()> &before_publication) {
     auto &s = *state_; s.owner_check();
     require(!s.used && output.sorted_keys().empty(), "gguf_packed_bank: load requires fresh bank and empty output");
     s.used = true; cancelled(cancel); check_unchanged();
     const auto snapshot = s.ledger.snapshot();
-    const uint64_t upper = gguf::checked_add(s.metrics.planned_packed_capacity_bytes,s.read_bytes);
+    const uint64_t scratch = gguf::checked_mul(s.read_bytes,s.metrics.read_buffer_slots);
+    const uint64_t upper = gguf::checked_add(s.metrics.planned_packed_capacity_bytes,scratch);
     require(snapshot.committed_bytes <= snapshot.budget_bytes && snapshot.reserved_bytes <= snapshot.budget_bytes-snapshot.committed_bytes &&
             upper <= snapshot.budget_bytes-snapshot.committed_bytes-snapshot.reserved_bytes,
             "qe_budget_floor: prepared packed bank and read buffer exceed managed weight ceiling");
     const auto start = Clock::now();
-    RowDecodePool decode_pool(s.k_import.decode_workers);
     // No output binding is published until ALL tensors and source generation
     // checks succeed. Fail/cancel only leaves local arrays, which are released.
     auto buffer = gguf_storage::allocate(s.ledger,s.read_bytes,s.read_bytes,{int(s.read_bytes)},mx::uint8,
                                         MemoryClass::ConversionScratch,s.lease->generation());
     auto *read = buffer.data<std::byte>();
     s.metrics.read_buffer_capacity_bytes = actual(buffer);
+    std::optional<Tensor> second_buffer;
+    if(s.k_import.read_ahead) {
+        second_buffer=gguf_storage::allocate(s.ledger,s.read_bytes,s.read_bytes,{int(s.read_bytes)},mx::uint8,
+                                            MemoryClass::ConversionScratch,s.lease->generation());
+        s.metrics.read_buffer_capacity_bytes=gguf::checked_add(s.metrics.read_buffer_capacity_bytes,actual(*second_buffer));
+    }
+    std::array<std::byte *,2> reads{read,second_buffer ? second_buffer->data<std::byte>() : nullptr};
     std::vector<std::string> keys; std::vector<Tensor> arrays;
     keys.reserve(s.metrics.field_count); arrays.reserve(s.metrics.field_count);
+    RowDecodePool decode_pool(s.k_import.decode_workers);
+    // Declared AFTER both input buffers and candidate arrays: on ANY failure
+    // pread drains before their backing/ledger claims or borrowed fd can die.
+    std::unique_ptr<ReadAheadWorker> reader;
+    if(s.k_import.read_ahead)reader=std::make_unique<ReadAheadWorker>(s.fd.get(),
+        s.lease->file(s.logical_id).bytes,s.read_bytes,cancel);
     for (const auto &task : s.tasks) {
         cancelled(cancel); check_unchanged();
         if (event) event("load_gguf_direct_tensor",int(task.tensor),int(s.tasks.size()));
@@ -345,6 +422,15 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             !task.fields[0].part && task.fields[0].dtype==mx::float16;
         const bool bf16_direct=s.k_import.enabled && tensor.type==30 && task.fields.size()==1 &&
             !task.fields[0].part && task.fields[0].dtype==mx::bfloat16;
+        const bool pipelined=bool(reader) && tensor.bytes>s.read_bytes;
+        unsigned slot=0;
+        auto submit=[&](uint64_t row,unsigned target_slot) {
+            const auto count=std::min(rows_per_chunk,tensor.rows()-row)*task.row_bytes;
+            auto *target=(bf16_alias || bf16_direct) ? pointers[0]+row*task.row_bytes : reads[target_slot];
+            reader->submit({target,size_t(count)},tensor.file_offset+row*task.row_bytes);
+            ++s.metrics.read_ahead_jobs;
+        };
+        if(pipelined)submit(0,0);
         for (uint64_t row = 0; row < tensor.rows();) {
             cancelled(cancel);
             const uint64_t rows = std::min(rows_per_chunk,tensor.rows()-row), bytes = rows*task.row_bytes;
@@ -353,14 +439,23 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             // final backing, convert in place, and publish only after the
             // complete bank succeeds. No extra raw/dense floating checkpoint.
             auto *destination=(bf16_alias || bf16_direct) ? pointers[0]+row*task.row_bytes : read;
-            while (done < bytes) {
+            if(pipelined) {
+                const auto waited=Clock::now();const auto completed=reader->take();
+                s.metrics.read_wait_seconds+=seconds(waited);
+                require(completed.bytes==bytes,"gguf_packed_bank: read ahead returned wrong range");
+                s.metrics.source_read_bytes=gguf::checked_add(s.metrics.source_read_bytes,completed.bytes);
+                s.metrics.read_ahead_bytes=gguf::checked_add(s.metrics.read_ahead_bytes,completed.bytes);
+                s.metrics.read_seconds+=completed.seconds;
+                read=reads[slot];
+                if(row+rows<tensor.rows())submit(row+rows,slot^1);
+            } else while (done < bytes) {
                 cancelled(cancel);
                 const auto n = ::pread(s.fd.get(),destination+done,size_t(bytes-done),off_t(tensor.file_offset+row*task.row_bytes+done));
                 if (n < 0 && errno == EINTR) continue;
                 require(n > 0,"gguf_packed_bank: payload read failed or source changed");
                 done += uint64_t(n); s.metrics.source_read_bytes = gguf::checked_add(s.metrics.source_read_bytes,uint64_t(n));
             }
-            s.metrics.read_seconds += seconds(read_start);
+            if(!pipelined)s.metrics.read_seconds += seconds(read_start);
             const gguf::PackedMatrix source{{read,size_t(bytes)},tensor.type,rows,tensor.columns()};
             const auto decode_start = Clock::now();
             if(bf16_direct) {
@@ -400,11 +495,19 @@ void GgufPackedBank::load(Weights &output, const std::atomic<bool> *cancel, cons
             if (task.fields[0].part) s.metrics.affine_decode_seconds+=elapsed;
             else s.metrics.float_decode_seconds+=elapsed;
             row += rows;
+            if(pipelined)slot^=1;
         }
         require(arrays.size()==first+task.fields.size(),"gguf_packed_bank: output field accounting mismatch");
         cancelled(cancel); check_unchanged();
     }
+    if(reader) {
+        require(reader->idle(),"gguf_packed_bank: pending read at publication boundary");
+        reader->stop_and_drain();s.metrics.read_ahead_drained=true;
+    }
     cancelled(cancel); check_unchanged();
+    if(before_publication)before_publication();
+    require(s.lease->has_verified_content(),"gguf_packed_bank: unverified candidate cannot publish");
+    cancelled(cancel);check_unchanged();
     Weights candidate; candidate.bind_arrays(keys,arrays);
     if (event) event("load_gguf_direct_tensor",int(s.tasks.size()),int(s.tasks.size()));
     cancelled(cancel); check_unchanged();

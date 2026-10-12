@@ -1,0 +1,4473 @@
+{
+  "schema": "tc-qwen21-mflux-framework-validation-v1",
+  "date": "2026-10-12",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "steps": 40,
+  "requests_per_process": 4,
+  "order": [
+    "native-gpu",
+    "native-frozen",
+    "mflux-bf16",
+    "mflux-bf16",
+    "native-frozen",
+    "native-gpu"
+  ],
+  "evidence": "outputs/qwen21-mflux-cache4096-v1-20261012/summary.json",
+  "evidence_sha256": "f4637a26d715290b908e0f68ade5a5507f05354fefe0d33943d1d373676c12c6",
+  "native_inputs_matched": 514,
+  "library_sha256": "c1c0fcd81269cc99f8bc49dae76c2aaa907a0f24a95b1ef63fd8dd8090d6410e",
+  "model_sha256": {
+    "models/Comfy-Org-Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+    "models/Comfy-Org-Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+    "models/Comfy-Org-Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+    "models/Comfy-Org-Qwen-Image-2.1/processor/tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+  },
+  "mflux_commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
+  "mflux_source_snapshot": "c90a2e1fadec82fb07a8b5eaddf89f5123d69f57729548cb299aea5b5d172812",
+  "layout_proof": {
+    "receipt_sha256": "0ea6390918217054220efb423e4a8ead2c3db054870c392d268b93fa7d3ab035",
+    "components": [
+      {
+        "kind": "qwen-text",
+        "source_sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+        "derived_sha256": "fce5bccc1838c6021dfd5cbd32f370c08a00cf53bf252b3fb938c8d0d5548818",
+        "payload_sha256": "543305cbb19c28513306c083cdfa2693c30102c733a39179fb580ddf5ebe5d8f",
+        "full_payload_equal": true,
+        "tensor_bindings": 750,
+        "preparation_seconds": 22.76936137501616
+      },
+      {
+        "kind": "qwen-dit",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "derived_sha256": "19a700d9594e38a753614de1ef03e39972bb88c10da1a6aedc679a78a99c3db8",
+        "payload_sha256": "27720cfe3d6e42d777f004a33efdc832d67ad5ad80b7e2d84044423f281b7828",
+        "full_payload_equal": true,
+        "tensor_bindings": 297,
+        "preparation_seconds": 19.84992887498811
+      },
+      {
+        "kind": "qwen-vae",
+        "source_sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+        "derived_sha256": "e82d7d48020aa105405637c3cad54be067a6270a67f6b28667c751d8fbab9322",
+        "payload_sha256": "1e1c9913e83a24d1aa34487ed827a82c2906d132c331b626133c6b631c3314b4",
+        "full_payload_equal": true,
+        "tensor_bindings": 238,
+        "preparation_seconds": 0.9206316249910742
+      }
+    ]
+  },
+  "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation",
+  "representation_scope": "same original BF16 values through lossless layout; Q4/Q8 are explicitly separate mflux affine recipes, not original GGUF equality",
+  "source_policy": "first verified source generation only; persistent metadata-bound reuse; no per-inference model SHA",
+  "reference_cache_mib": 4096,
+  "trials": [
+    {
+      "route": "native-gpu",
+      "index": 0,
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 5.074986256659031e-05,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 44.774244165979326,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 1,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264836,
+                "mlx_peak_bytes": 20601289448,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/0-native-gpu/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.036516625,
+                "hybrid_setup": 0,
+                "image_encode": 8.3e-08,
+                "request_wall": 44.735950417,
+                "text_encode": 0.592668291,
+                "vae_decode": 0.576302375
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 43.326782708987594,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 2,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264914,
+                "mlx_peak_bytes": 30106389152,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/0-native-gpu/1.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.005817834,
+                "hybrid_setup": 0,
+                "image_encode": 2.08e-07,
+                "request_wall": 43.3071505,
+                "text_encode": 0.67012925,
+                "vae_decode": 0.614140833
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 43.33514695800841,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264950,
+                "mlx_peak_bytes": 30106389230,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/0-native-gpu/2.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.03244475,
+                "hybrid_setup": 0,
+                "image_encode": 2.91e-07,
+                "request_wall": 43.317022291,
+                "text_encode": 0.6780925,
+                "vae_decode": 0.590981791
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 42.63826300017536,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 0,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906265004,
+                "mlx_peak_bytes": 20601289608,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/0-native-gpu/3.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.019451208,
+                "hybrid_setup": 0,
+                "image_encode": 8.3e-08,
+                "request_wall": 42.637970041,
+                "text_encode": 0.001118375,
+                "vae_decode": 0.603004
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 30212576856,
+        "compression_bytes": 0,
+        "decompression_bytes": 6848512,
+        "swap_in_bytes": 327680,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "03cf36cf5e075feb2836401c9c354270a34fb7e7f9ac7dd87bfe26357ab89605",
+      "memory_report_sha256": "3f4b5bc65e8286f22627e1832a75ca5a12802b7672e6e997bed96f4d22066ab1",
+      "pngs": [
+        {
+          "file_sha256": "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+          "rgb_sha256": "9c80cd156b04bd0a1601b7858a6fc11d762387233c40777653c5d1dad2f2cd3e"
+        },
+        {
+          "file_sha256": "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+          "rgb_sha256": "fea0920de94a0dd42ee576f1eee89985dca16ca562be6cf16a5e3c4b7f8c8466"
+        },
+        {
+          "file_sha256": "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1",
+          "rgb_sha256": "2213086ee6d19cfe7a05cb4bfaad0656c832210f761dfcb3487ce05d2d48ca02"
+        },
+        {
+          "file_sha256": "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1",
+          "rgb_sha256": "2213086ee6d19cfe7a05cb4bfaad0656c832210f761dfcb3487ce05d2d48ca02"
+        }
+      ]
+    },
+    {
+      "route": "native-frozen",
+      "index": 1,
+      "report": {
+        "engine": "native-frozen",
+        "constructor_seconds": 5.466700531542301e-05,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 45.86404437501915,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 1,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 1280,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.004032899,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.329975546,
+                "hidden": 4096,
+                "load_seconds": 13.326580542,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.895942458,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.0002691630000000028,
+                "model_load_seconds": 7.0410482499999985,
+                "model_prediction_seconds_session_total": 12.166257708,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.003628625,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.0022478359999999996,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 12.172538442999999,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 1248,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 1216,
+                "subsequent_runtime_prediction_seconds_session_total": 11.466215729,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.379634125
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491658,
+                "mlx_peak_bytes": 25441519726,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/1-native-frozen/0.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 29.527663541,
+                "hybrid_setup": 13.4966405,
+                "image_encode": 1.25e-07,
+                "request_wall": 45.823717125,
+                "text_encode": 0.609924208,
+                "vae_decode": 0.657064708
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 32.70925091695972,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 2,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 2528,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.0081197,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.329975546,
+                "hidden": 4096,
+                "load_seconds": 13.326580542,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.895942458,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.0002691630000000028,
+                "model_load_seconds": 7.0410482499999985,
+                "model_prediction_seconds_session_total": 24.28963745,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.003628625,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.004558757000000001,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 24.302315906999993,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 2496,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 2464,
+                "subsequent_runtime_prediction_seconds_session_total": 23.595993193,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.379634125
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491664,
+                "mlx_peak_bytes": 34946615974,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/1-native-frozen/1.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 29.978611583,
+                "hybrid_setup": 0.001609458,
+                "image_encode": 1.25e-07,
+                "request_wall": 32.690135458,
+                "text_encode": 2.1097575,
+                "vae_decode": 0.584769375
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 31.909828291041777,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 3776,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.012779875999999999,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.329975546,
+                "hidden": 4096,
+                "load_seconds": 13.326580542,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.895942458,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.0002691630000000028,
+                "model_load_seconds": 7.0410482499999985,
+                "model_prediction_seconds_session_total": 36.56869666499999,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.003628625,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.007430976,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 36.588907517,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 3744,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 3712,
+                "subsequent_runtime_prediction_seconds_session_total": 35.882584803,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.379634125
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491700,
+                "mlx_peak_bytes": 34946615980,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/1-native-frozen/2.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 29.998879625,
+                "hybrid_setup": 0.000884709,
+                "image_encode": 2.08e-07,
+                "request_wall": 31.892151583,
+                "text_encode": 1.301672125,
+                "vae_decode": 0.575132916
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 30.95066270790994,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 0,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 5024,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.017354137,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.329975546,
+                "hidden": 4096,
+                "load_seconds": 13.326580542,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.895942458,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.0002691630000000028,
+                "model_load_seconds": 7.0410482499999985,
+                "model_prediction_seconds_session_total": 49.023203994,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.003628625,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.010252703000000002,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 49.050810834,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 4992,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 4960,
+                "subsequent_runtime_prediction_seconds_session_total": 48.344488119999994,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.379634125
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491730,
+                "mlx_peak_bytes": 25441519798,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/1-native-frozen/3.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 30.360026625,
+                "hybrid_setup": 8.5375e-05,
+                "image_encode": 1.66e-07,
+                "request_wall": 30.950338875,
+                "text_encode": 6.7166e-05,
+                "vae_decode": 0.57518025
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 35795524000,
+        "compression_bytes": 5251481600,
+        "decompression_bytes": 5255692288,
+        "swap_in_bytes": 1179648,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "fdcfaa97630aaf4658dba666f577a6f4f9a13f7002983cf6dbdc188818fac583",
+      "memory_report_sha256": "ae684aecfa012897128c97ef9656c07a36f16ece72b61e19a067cc918de74343",
+      "pngs": [
+        {
+          "file_sha256": "9c09682c3a9318aaaa9d7a224518e05d60da46b0c54af0bf7ef1238bc46bbf25",
+          "rgb_sha256": "dce40a2c691f175939781971dcfc582ab92198e4f86d6d5466abe3c1bd01934a"
+        },
+        {
+          "file_sha256": "f9e0b34735bc793ed4181b6161a5957a9f84ef14fedf37a1f2e21b7d0a28beff",
+          "rgb_sha256": "f503a6afb03136bf8f69199a1347f5f7712c449b59cbde364d10659c3f5de632"
+        },
+        {
+          "file_sha256": "0f3520de1f255112609d5f48b4f58b568b001b2b70f9088dbf8e2635758447d8",
+          "rgb_sha256": "288b0c97ebf006562237e335bce1519722937ba9e6b34bd4e4e3c17f259168ee"
+        },
+        {
+          "file_sha256": "0f3520de1f255112609d5f48b4f58b568b001b2b70f9088dbf8e2635758447d8",
+          "rgb_sha256": "288b0c97ebf006562237e335bce1519722937ba9e6b34bd4e4e3c17f259168ee"
+        }
+      ]
+    },
+    {
+      "route": "mflux-bf16",
+      "index": 2,
+      "report": {
+        "engine": "mflux-bf16",
+        "constructor_seconds": 1.0617080421652645,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "text_embedding_dtype": "mlx.core.bfloat16",
+        "transformer_input_weight_dtype": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 226,
+            "covered_targets": 226,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 297,
+            "covered_targets": 297,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "reference_cache_limit_bytes": 4294967296,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "instrumentation": "host step counter only; stock model, cache and synchronization",
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 48.66541562508792,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 34869688308
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 45.51476345793344,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 35652773104
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 45.39238837501034,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 35653082980
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 45.24463416589424,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": true,
+            "mlx_peak_bytes": 35653082980
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 37714091456,
+        "compression_bytes": 5307367424,
+        "decompression_bytes": 4766171136,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "a189af995bff119ebd38cb52b279df7a3eb92b5031c05942fe722ee54d7ea140",
+      "memory_report_sha256": "41d0fdc893375b57b5accb8632b4737d548573374ac02576d096deee784f9a25",
+      "pngs": [
+        {
+          "file_sha256": "ed6b16e1c93f1822af2308c96235def62b6f553d2d3a63230b507a6c3a573b44",
+          "rgb_sha256": "ddb04229f9f416e8915fea5676e8cbf4038fff52e181ef996fb1fb09d4b75871"
+        },
+        {
+          "file_sha256": "3bd81cb5fac41b0626e8d2b6e8fbec52e1d05a23fcf73107c2efc2bbcfc4df74",
+          "rgb_sha256": "355c4a6d2061eb643f39288d1b74f373e31661d224c63af49e6efd7b68a8fde4"
+        },
+        {
+          "file_sha256": "112a37210ee5d0dcbf4787703918d7cbdf78182e94fa7d4cb5c492d7c4512862",
+          "rgb_sha256": "08c4f69abe0d83e50b703983e984754561624040b77851f8cb12a4343dcf6bde"
+        },
+        {
+          "file_sha256": "60b8fd70cccd7f63b502572e0bbbce090673ff4e815179b77020a652a076fe1c",
+          "rgb_sha256": "08c4f69abe0d83e50b703983e984754561624040b77851f8cb12a4343dcf6bde"
+        }
+      ]
+    },
+    {
+      "route": "mflux-bf16",
+      "index": 3,
+      "report": {
+        "engine": "mflux-bf16",
+        "constructor_seconds": 1.029759082943201,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "text_embedding_dtype": "mlx.core.bfloat16",
+        "transformer_input_weight_dtype": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 226,
+            "covered_targets": 226,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 297,
+            "covered_targets": 297,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "reference_cache_limit_bytes": 4294967296,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "instrumentation": "host step counter only; stock model, cache and synchronization",
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 48.27593516581692,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 34869688308
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 45.59044116688892,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 35652772336
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 45.48096033418551,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 35653081812
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 45.22867066599429,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ],
+            "actual_quantization": null,
+            "loras": null,
+            "prompt_cache_hit": true,
+            "mlx_peak_bytes": 35653081812
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 37764406768,
+        "compression_bytes": 4902731776,
+        "decompression_bytes": 4799660032,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "72cff8ed2cee2d986e1a6c79790ced84130cec39e738de549a9caa76337aa8d0",
+      "memory_report_sha256": "b91c86432f45a059cfde0a9de33d301441b229e4c1ef7ace70a4d9bda75ecc7b",
+      "pngs": [
+        {
+          "file_sha256": "623beec4ec0f16c1f3e07827fc97076ccc583c71650d1390b6616feb4a049ba0",
+          "rgb_sha256": "ddb04229f9f416e8915fea5676e8cbf4038fff52e181ef996fb1fb09d4b75871"
+        },
+        {
+          "file_sha256": "6774fddb2a2c29b94634e2936b01ef10406f00ed63c2d09deca57f778c025bcf",
+          "rgb_sha256": "355c4a6d2061eb643f39288d1b74f373e31661d224c63af49e6efd7b68a8fde4"
+        },
+        {
+          "file_sha256": "5d86850e63239c752da9f45d35cc337953c5b34f610eaf9d7ff6153fad178e0d",
+          "rgb_sha256": "08c4f69abe0d83e50b703983e984754561624040b77851f8cb12a4343dcf6bde"
+        },
+        {
+          "file_sha256": "e9a46ba777c1b9a417f3252ee1173729db476acd35373054c2e3478c7adfadf6",
+          "rgb_sha256": "08c4f69abe0d83e50b703983e984754561624040b77851f8cb12a4343dcf6bde"
+        }
+      ]
+    },
+    {
+      "route": "native-frozen",
+      "index": 4,
+      "report": {
+        "engine": "native-frozen",
+        "constructor_seconds": 0.0014596250839531422,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 47.5804590000771,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 1,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 1280,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.003965415999999999,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.33280279400000007,
+                "hidden": 4096,
+                "load_seconds": 12.368245334,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.962798375,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.00026821000000001177,
+                "model_load_seconds": 6.002800831000002,
+                "model_prediction_seconds_session_total": 12.277416996,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.0039105,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.002152499,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 12.283534910999999,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 1248,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 1216,
+                "subsequent_runtime_prediction_seconds_session_total": 11.562296408,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.392299875
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491712,
+                "mlx_peak_bytes": 25441519764,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/4-native-frozen/0.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 29.5550625,
+                "hybrid_setup": 12.551191084,
+                "image_encode": 2.92e-07,
+                "request_wall": 47.5353035,
+                "text_encode": 2.53425875,
+                "vae_decode": 0.608380625
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 32.78142329212278,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 2,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 2528,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.008008703999999998,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.33280279400000007,
+                "hidden": 4096,
+                "load_seconds": 12.368245334,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.962798375,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.00026821000000001177,
+                "model_load_seconds": 6.002800831000002,
+                "model_prediction_seconds_session_total": 24.416691456999995,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.0039105,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.004490120999999999,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 24.429190281999997,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 2496,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 2464,
+                "subsequent_runtime_prediction_seconds_session_total": 23.707951779000005,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.392299875
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491748,
+                "mlx_peak_bytes": 34946616028,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/4-native-frozen/1.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 29.950715917,
+                "hybrid_setup": 0.000969375,
+                "image_encode": 8.4e-08,
+                "request_wall": 32.762405875,
+                "text_encode": 2.200723916,
+                "vae_decode": 0.592587833
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 32.104175084037706,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 3776,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.012341657999999997,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.33280279400000007,
+                "hidden": 4096,
+                "load_seconds": 12.368245334,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.962798375,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.00026821000000001177,
+                "model_load_seconds": 6.002800831000002,
+                "model_prediction_seconds_session_total": 36.68769221300001,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.0039105,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.007076588999999998,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 36.70711046,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 3744,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 3712,
+                "subsequent_runtime_prediction_seconds_session_total": 35.98587195700001,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.392299875
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491772,
+                "mlx_peak_bytes": 34946616064,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/4-native-frozen/2.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 30.159504458,
+                "hybrid_setup": 0.000869542,
+                "image_encode": 1.25e-07,
+                "request_wall": 32.086683458,
+                "text_encode": 1.32903275,
+                "vae_decode": 0.582187542
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 30.245816292008385,
+            "metrics": {
+              "acceleration_selection": "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 0,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_decode_mlp_complement",
+              "height": 512,
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  6144
+                ],
+                "block_count": 32,
+                "bucket": 1024,
+                "calls_session_total": 5024,
+                "checkpoint_sha256_verified": true,
+                "compute_units": "cpuAndNeuralEngine",
+                "feature_binding_seconds_session_total": 0.016110973999999997,
+                "first_runtime_prediction_calls_session_total": 32,
+                "first_runtime_prediction_seconds_session_total": 0.33280279400000007,
+                "hidden": 4096,
+                "load_seconds": 12.368245334,
+                "lora_identity_verified": false,
+                "manifest_validation_seconds": 5.962798375,
+                "minimum_profitable_rows": 1024,
+                "mlp_output_kind": "",
+                "mlp_width": 12288,
+                "model_interface_setup_seconds": 0.00026821000000001177,
+                "model_load_seconds": 6.002800831000002,
+                "model_prediction_seconds_session_total": 48.624933944000006,
+                "observed_ane_residency": "unknown",
+                "output_backing_setup_seconds": 0.0039105,
+                "output_channels": 4096,
+                "output_copy_bytes_session_total": 0,
+                "output_handling_seconds_session_total": 0.009136728,
+                "output_scale": 1,
+                "prediction_seconds_session_total": 48.650181646,
+                "prefill_actual_tokens": 0,
+                "prefill_compute_tokens": 0,
+                "prefill_fixed_shape": false,
+                "prefill_padding_tokens": 0,
+                "prefill_plan_reason": "",
+                "prefill_selected_bucket": 0,
+                "provenance": "local checkpoint path, size and SHA-256 verified",
+                "qualified_flexible_backing": false,
+                "quality_max_abs_session": 0,
+                "quality_max_relative_abs_session": 0,
+                "quality_max_relative_l2_session": 0,
+                "quality_min_cosine_session": 1,
+                "quality_validation_calls_session_total": 0,
+                "quality_validation_enabled": false,
+                "quality_validation_passed": true,
+                "runtime_calls_session_total": 4992,
+                "runtime_failed": false,
+                "runtime_failure_block": -1,
+                "runtime_failures_session_total": 0,
+                "runtime_weight": null,
+                "session_released_after_encoding": false,
+                "subsequent_runtime_prediction_calls_session_total": 4960,
+                "subsequent_runtime_prediction_seconds_session_total": 47.92894314299999,
+                "warmup_calls_session_total": 32,
+                "weight_variant": "int8_pc",
+                "zero_input_warmup_seconds": 0.392299875
+              },
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 19746491820,
+                "mlx_peak_bytes": 25441519884,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/4-native-frozen/3.png",
+              "plan": {
+                "algorithm_approximations": [
+                  "qwen21_decode_mlp_w8a8_per_tensor"
+                ],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal+coreml",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu_ane_experimental",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_decode_mlp_complement",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 56371445760,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "planned_w8a8_ffn_layer_coverage": 1,
+                "precision": "bf16_gpu+w8a8_mlp_fp16_io",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": true,
+                "requested_execution": "gpu_ane",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "bf16_gpu+w8a8_mlp_fp16_io",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 29.640655375,
+                "hybrid_setup": 8.7041e-05,
+                "image_encode": 2.09e-07,
+                "request_wall": 30.24547025,
+                "text_encode": 6.075e-05,
+                "vae_decode": 0.586262291
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 36159527352,
+        "compression_bytes": 5710970880,
+        "decompression_bytes": 5695209472,
+        "swap_in_bytes": 262144,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "386ca766468976c839306033f59f4084662ba97a93e9d514f2747768aa26d5aa",
+      "memory_report_sha256": "5e24e6c4ad8b49c296edb2e050a5530ffdc6265e712ff0dc658530246b8dbcc1",
+      "pngs": [
+        {
+          "file_sha256": "9c09682c3a9318aaaa9d7a224518e05d60da46b0c54af0bf7ef1238bc46bbf25",
+          "rgb_sha256": "dce40a2c691f175939781971dcfc582ab92198e4f86d6d5466abe3c1bd01934a"
+        },
+        {
+          "file_sha256": "f9e0b34735bc793ed4181b6161a5957a9f84ef14fedf37a1f2e21b7d0a28beff",
+          "rgb_sha256": "f503a6afb03136bf8f69199a1347f5f7712c449b59cbde364d10659c3f5de632"
+        },
+        {
+          "file_sha256": "0f3520de1f255112609d5f48b4f58b568b001b2b70f9088dbf8e2635758447d8",
+          "rgb_sha256": "288b0c97ebf006562237e335bce1519722937ba9e6b34bd4e4e3c17f259168ee"
+        },
+        {
+          "file_sha256": "0f3520de1f255112609d5f48b4f58b568b001b2b70f9088dbf8e2635758447d8",
+          "rgb_sha256": "288b0c97ebf006562237e335bce1519722937ba9e6b34bd4e4e3c17f259168ee"
+        }
+      ]
+    },
+    {
+      "route": "native-gpu",
+      "index": 5,
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 5.7416968047618866e-05,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 45.88135387515649,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 1,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264878,
+                "mlx_peak_bytes": 20601289466,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/5-native-gpu/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.006177916,
+                "hybrid_setup": 0,
+                "image_encode": 1.67e-07,
+                "request_wall": 45.841402959,
+                "text_encode": 0.938051375,
+                "vae_decode": 0.605726833
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 43.341005166992545,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 2,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264938,
+                "mlx_peak_bytes": 30106389194,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/5-native-gpu/1.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.04022725,
+                "hybrid_setup": 0,
+                "image_encode": 8.3e-08,
+                "request_wall": 43.323164333,
+                "text_encode": 0.682540958,
+                "vae_decode": 0.585700333
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 43.293961458839476,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 17534247392,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906264986,
+                "mlx_peak_bytes": 30106389254,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/5-native-gpu/2.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.026856917,
+                "hybrid_setup": 0,
+                "image_encode": 8.3e-08,
+                "request_wall": 43.276277125,
+                "text_encode": 0.64719675,
+                "vae_decode": 0.5876275
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 42.67051399988122,
+            "metrics": {
+              "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache",
+              "actual_denoise_steps": 40,
+              "checkpoint": "qwen_image_2.1_bf16.safetensors",
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": {
+                "decline_reason": "",
+                "enabled": false,
+                "loads_session_total": 3,
+                "logical_capacity_upper_bytes": 21474836480,
+                "retained_bytes": 0,
+                "scope": "admitted existing encoder source arrays; no extra weight copy, precision change or disk cache; generation stamps are not payload signatures",
+                "source_bytes": 0,
+                "weights_retained": false,
+                "weights_reused": false
+              },
+              "gpu_graph": "qwen21_compiled_prefix_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 14906265082,
+                "mlx_peak_bytes": 20601289670,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "qwen-image-2.1",
+              "operation": "image.generate",
+              "output": "outputs/qwen21-mflux-cache4096-v1-20261012/5-native-gpu/3.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_vl_deepstack_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3-VL language/vision/DeepStack checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "qwen21_compiled_prefix_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 45634027520,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "qwen-image-2.1",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "qwen21_gpu_full_ffn_blocks": [],
+                "qwen21_gpu_w8a16": false,
+                "qwen21_reference_size": 1024,
+                "qwen21_w8a8": false,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 40
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_qwen21_experimental",
+                "weight_validation": "native Comfy BF16 components; component parity recorded; edit quality pending"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "schema_version": 1,
+              "seed": 29,
+              "steps": 40,
+              "text_tokens": 24,
+              "timings_seconds": {
+                "denoise": 42.052486334,
+                "hybrid_setup": 0,
+                "image_encode": 8.4e-08,
+                "request_wall": 42.670215709,
+                "text_encode": 0.001326958,
+                "vae_decode": 0.600340375
+              },
+              "valid_text_tokens": 24,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 29841659288,
+        "compression_bytes": 0,
+        "decompression_bytes": 3670016,
+        "swap_in_bytes": 0,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "0017733e5db09f3a6111af1f55526b2e8890171ffa4b0a7246d047564069816c",
+      "memory_report_sha256": "a6a7bef4e58a5bc2cdccb2f2c21b6a2fd457aed61ff7f0c9fe28c646648c2ed3",
+      "pngs": [
+        {
+          "file_sha256": "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+          "rgb_sha256": "9c80cd156b04bd0a1601b7858a6fc11d762387233c40777653c5d1dad2f2cd3e"
+        },
+        {
+          "file_sha256": "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+          "rgb_sha256": "fea0920de94a0dd42ee576f1eee89985dca16ca562be6cf16a5e3c4b7f8c8466"
+        },
+        {
+          "file_sha256": "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1",
+          "rgb_sha256": "2213086ee6d19cfe7a05cb4bfaad0656c832210f761dfcb3487ce05d2d48ca02"
+        },
+        {
+          "file_sha256": "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1",
+          "rgb_sha256": "2213086ee6d19cfe7a05cb4bfaad0656c832210f761dfcb3487ce05d2d48ca02"
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "route": "mflux-bf16",
+      "cold_seconds": [
+        48.66541562508792,
+        48.27593516581692
+      ],
+      "constructor_seconds": [
+        1.0617080421652645,
+        1.029759082943201
+      ],
+      "fresh_warm_seconds": [
+        45.51476345793344,
+        45.39238837501034,
+        45.59044116688892,
+        45.48096033418551
+      ],
+      "fresh_warm_median": 45.497861896059476,
+      "repeat_seconds": [
+        45.24463416589424,
+        45.22867066599429
+      ]
+    },
+    {
+      "route": "native-frozen",
+      "cold_seconds": [
+        45.86404437501915,
+        47.5804590000771
+      ],
+      "constructor_seconds": [
+        5.466700531542301e-05,
+        0.0014596250839531422
+      ],
+      "fresh_warm_seconds": [
+        32.70925091695972,
+        31.909828291041777,
+        32.78142329212278,
+        32.104175084037706
+      ],
+      "fresh_warm_median": 32.40671300049871,
+      "repeat_seconds": [
+        30.95066270790994,
+        30.245816292008385
+      ]
+    },
+    {
+      "route": "native-gpu",
+      "cold_seconds": [
+        44.774244165979326,
+        45.88135387515649
+      ],
+      "constructor_seconds": [
+        5.074986256659031e-05,
+        5.7416968047618866e-05
+      ],
+      "fresh_warm_seconds": [
+        43.326782708987594,
+        43.33514695800841,
+        43.341005166992545,
+        43.293961458839476
+      ],
+      "fresh_warm_median": 43.330964833498,
+      "repeat_seconds": [
+        42.63826300017536,
+        42.67051399988122
+      ]
+    }
+  ],
+  "quality": [
+    {
+      "route": "native-frozen",
+      "process_index": 1,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 12.03187835505725,
+          "psnr_db": 26.524134959542998,
+          "max_abs_u8": 210,
+          "rgb_correlation": 0.9846399254171142,
+          "rgb_ssim_gaussian11_valid": 0.9357521526090034,
+          "ssim_per_channel": [
+            0.936789222925099,
+            0.9332350926702948,
+            0.9372321422315618
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 12.033378908136207,
+          "psnr_db": 26.523051768259048,
+          "max_abs_u8": 210,
+          "rgb_correlation": 0.9846002996213875,
+          "rgb_ssim_gaussian11_valid": 0.93555653417884,
+          "ssim_per_channel": [
+            0.9366528578452009,
+            0.9330689618014558,
+            0.9369477828898453
+          ]
+        },
+        "raw_rgb_mae_255": 6.170922597249349,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 252,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 59116,
+          "candidate_nonopaque_pixels": 56123,
+          "mae_255": 0.06967926025390625
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 1,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 9.81563594136989,
+          "psnr_db": 28.29243476504629,
+          "max_abs_u8": 177,
+          "rgb_correlation": 0.9890758017679098,
+          "rgb_ssim_gaussian11_valid": 0.9486556585440173,
+          "ssim_per_channel": [
+            0.9494250217033855,
+            0.9473546202516927,
+            0.9491873336769605
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 9.81803501438972,
+          "psnr_db": 28.29031207656541,
+          "max_abs_u8": 177,
+          "rgb_correlation": 0.9890215318527737,
+          "rgb_ssim_gaussian11_valid": 0.948401917632987,
+          "ssim_per_channel": [
+            0.9492364707284928,
+            0.9471087083092246,
+            0.9488605738612326
+          ]
+        },
+        "raw_rgb_mae_255": 5.031510670979817,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 253,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 91530,
+          "candidate_nonopaque_pixels": 85796,
+          "mae_255": 0.0532989501953125
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 1,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.666584125019179,
+          "psnr_db": 30.43876549813355,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936410508604874,
+          "rgb_ssim_gaussian11_valid": 0.9584311119776207,
+          "ssim_per_channel": [
+            0.9595224362610112,
+            0.9572577422309991,
+            0.9585131574408386
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.672932538331936,
+          "psnr_db": 30.43157601208,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936138032212355,
+          "rgb_ssim_gaussian11_valid": 0.9581838061222556,
+          "ssim_per_channel": [
+            0.9593322957454712,
+            0.9570314222866144,
+            0.9581877003346787
+          ]
+        },
+        "raw_rgb_mae_255": 4.609016418457031,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 253,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 75285,
+          "mae_255": 0.0545501708984375
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 1,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.666584125019179,
+          "psnr_db": 30.43876549813355,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936410508604874,
+          "rgb_ssim_gaussian11_valid": 0.9584311119776207,
+          "ssim_per_channel": [
+            0.9595224362610112,
+            0.9572577422309991,
+            0.9585131574408386
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.672932538331936,
+          "psnr_db": 30.43157601208,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936138032212355,
+          "rgb_ssim_gaussian11_valid": 0.9581838061222556,
+          "ssim_per_channel": [
+            0.9593322957454712,
+            0.9570314222866144,
+            0.9581877003346787
+          ]
+        },
+        "raw_rgb_mae_255": 4.609016418457031,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 253,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 75285,
+          "mae_255": 0.0545501708984375
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 2,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 55.99439410125084,
+          "psnr_db": 13.1679126159693,
+          "max_abs_u8": 216,
+          "rgb_correlation": 0.720406248444024,
+          "rgb_ssim_gaussian11_valid": 0.7306630647948927,
+          "ssim_per_channel": [
+            0.7465547197395674,
+            0.734242088208641,
+            0.711192386436474
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 55.810818489150236,
+          "psnr_db": 13.196435775183414,
+          "max_abs_u8": 216,
+          "rgb_correlation": 0.7215111000967208,
+          "rgb_ssim_gaussian11_valid": 0.731394147245485,
+          "ssim_per_channel": [
+            0.747215415449668,
+            0.7349921502491963,
+            0.7119748760375745
+          ]
+        },
+        "raw_rgb_mae_255": 37.03551355997721,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 59116,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.22598648071289062
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 2,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 48.271257583318985,
+          "psnr_db": 14.457031340868971,
+          "max_abs_u8": 224,
+          "rgb_correlation": 0.7824061180703805,
+          "rgb_ssim_gaussian11_valid": 0.7968877432213587,
+          "ssim_per_channel": [
+            0.8102664341951757,
+            0.8024925189171973,
+            0.7779042765517195
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 47.98968761982843,
+          "psnr_db": 14.507845149070604,
+          "max_abs_u8": 224,
+          "rgb_correlation": 0.7838317085923329,
+          "rgb_ssim_gaussian11_valid": 0.7978910265223625,
+          "ssim_per_channel": [
+            0.811212298885892,
+            0.8034453790513162,
+            0.7790154016298656
+          ]
+        },
+        "raw_rgb_mae_255": 34.95917510986328,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 91530,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.3492774963378906
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 2,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.486257995164294,
+          "psnr_db": 17.37788215114713,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8632364206460599,
+          "rgb_ssim_gaussian11_valid": 0.7993994316271122,
+          "ssim_per_channel": [
+            0.7968638293924156,
+            0.8050608147012807,
+            0.7962736507876383
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.487308545080666,
+          "psnr_db": 17.377617558170684,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8631641365036908,
+          "rgb_ssim_gaussian11_valid": 0.7992825499121516,
+          "ssim_per_channel": [
+            0.7967323045630325,
+            0.8050236160715724,
+            0.7960917291018396
+          ]
+        },
+        "raw_rgb_mae_255": 22.614137013753254,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.3041343688964844
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 2,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.486257995164294,
+          "psnr_db": 17.37788215114713,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8632364206460599,
+          "rgb_ssim_gaussian11_valid": 0.7993994316271122,
+          "ssim_per_channel": [
+            0.7968638293924156,
+            0.8050608147012807,
+            0.7962736507876383
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.487308545080666,
+          "psnr_db": 17.377617558170684,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8631641365036908,
+          "rgb_ssim_gaussian11_valid": 0.7992825499121516,
+          "ssim_per_channel": [
+            0.7967323045630325,
+            0.8050236160715724,
+            0.7960917291018396
+          ]
+        },
+        "raw_rgb_mae_255": 22.614137013753254,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.3041343688964844
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 3,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 55.99439410125084,
+          "psnr_db": 13.1679126159693,
+          "max_abs_u8": 216,
+          "rgb_correlation": 0.720406248444024,
+          "rgb_ssim_gaussian11_valid": 0.7306630647948927,
+          "ssim_per_channel": [
+            0.7465547197395674,
+            0.734242088208641,
+            0.711192386436474
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 55.810818489150236,
+          "psnr_db": 13.196435775183414,
+          "max_abs_u8": 216,
+          "rgb_correlation": 0.7215111000967208,
+          "rgb_ssim_gaussian11_valid": 0.731394147245485,
+          "ssim_per_channel": [
+            0.747215415449668,
+            0.7349921502491963,
+            0.7119748760375745
+          ]
+        },
+        "raw_rgb_mae_255": 37.03551355997721,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 59116,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.22598648071289062
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 3,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 48.271257583318985,
+          "psnr_db": 14.457031340868971,
+          "max_abs_u8": 224,
+          "rgb_correlation": 0.7824061180703805,
+          "rgb_ssim_gaussian11_valid": 0.7968877432213587,
+          "ssim_per_channel": [
+            0.8102664341951757,
+            0.8024925189171973,
+            0.7779042765517195
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 47.98968761982843,
+          "psnr_db": 14.507845149070604,
+          "max_abs_u8": 224,
+          "rgb_correlation": 0.7838317085923329,
+          "rgb_ssim_gaussian11_valid": 0.7978910265223625,
+          "ssim_per_channel": [
+            0.811212298885892,
+            0.8034453790513162,
+            0.7790154016298656
+          ]
+        },
+        "raw_rgb_mae_255": 34.95917510986328,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 91530,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.3492774963378906
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 3,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.486257995164294,
+          "psnr_db": 17.37788215114713,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8632364206460599,
+          "rgb_ssim_gaussian11_valid": 0.7993994316271122,
+          "ssim_per_channel": [
+            0.7968638293924156,
+            0.8050608147012807,
+            0.7962736507876383
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.487308545080666,
+          "psnr_db": 17.377617558170684,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8631641365036908,
+          "rgb_ssim_gaussian11_valid": 0.7992825499121516,
+          "ssim_per_channel": [
+            0.7967323045630325,
+            0.8050236160715724,
+            0.7960917291018396
+          ]
+        },
+        "raw_rgb_mae_255": 22.614137013753254,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.3041343688964844
+        }
+      }
+    },
+    {
+      "route": "mflux-bf16",
+      "process_index": 3,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.486257995164294,
+          "psnr_db": 17.37788215114713,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8632364206460599,
+          "rgb_ssim_gaussian11_valid": 0.7993994316271122,
+          "ssim_per_channel": [
+            0.7968638293924156,
+            0.8050608147012807,
+            0.7962736507876383
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 34.487308545080666,
+          "psnr_db": 17.377617558170684,
+          "max_abs_u8": 239,
+          "rgb_correlation": 0.8631641365036908,
+          "rgb_ssim_gaussian11_valid": 0.7992825499121516,
+          "ssim_per_channel": [
+            0.7967323045630325,
+            0.8050236160715724,
+            0.7960917291018396
+          ]
+        },
+        "raw_rgb_mae_255": 22.614137013753254,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 255,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 0,
+          "mae_255": 0.3041343688964844
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 4,
+      "request_index": 0,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 12.03187835505725,
+          "psnr_db": 26.524134959542998,
+          "max_abs_u8": 210,
+          "rgb_correlation": 0.9846399254171142,
+          "rgb_ssim_gaussian11_valid": 0.9357521526090034,
+          "ssim_per_channel": [
+            0.936789222925099,
+            0.9332350926702948,
+            0.9372321422315618
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 12.033378908136207,
+          "psnr_db": 26.523051768259048,
+          "max_abs_u8": 210,
+          "rgb_correlation": 0.9846002996213875,
+          "rgb_ssim_gaussian11_valid": 0.93555653417884,
+          "ssim_per_channel": [
+            0.9366528578452009,
+            0.9330689618014558,
+            0.9369477828898453
+          ]
+        },
+        "raw_rgb_mae_255": 6.170922597249349,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 252,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 59116,
+          "candidate_nonopaque_pixels": 56123,
+          "mae_255": 0.06967926025390625
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 4,
+      "request_index": 1,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 9.81563594136989,
+          "psnr_db": 28.29243476504629,
+          "max_abs_u8": 177,
+          "rgb_correlation": 0.9890758017679098,
+          "rgb_ssim_gaussian11_valid": 0.9486556585440173,
+          "ssim_per_channel": [
+            0.9494250217033855,
+            0.9473546202516927,
+            0.9491873336769605
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 9.81803501438972,
+          "psnr_db": 28.29031207656541,
+          "max_abs_u8": 177,
+          "rgb_correlation": 0.9890215318527737,
+          "rgb_ssim_gaussian11_valid": 0.948401917632987,
+          "ssim_per_channel": [
+            0.9492364707284928,
+            0.9471087083092246,
+            0.9488605738612326
+          ]
+        },
+        "raw_rgb_mae_255": 5.031510670979817,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 253,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 91530,
+          "candidate_nonopaque_pixels": 85796,
+          "mae_255": 0.0532989501953125
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 4,
+      "request_index": 2,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.666584125019179,
+          "psnr_db": 30.43876549813355,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936410508604874,
+          "rgb_ssim_gaussian11_valid": 0.9584311119776207,
+          "ssim_per_channel": [
+            0.9595224362610112,
+            0.9572577422309991,
+            0.9585131574408386
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.672932538331936,
+          "psnr_db": 30.43157601208,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936138032212355,
+          "rgb_ssim_gaussian11_valid": 0.9581838061222556,
+          "ssim_per_channel": [
+            0.9593322957454712,
+            0.9570314222866144,
+            0.9581877003346787
+          ]
+        },
+        "raw_rgb_mae_255": 4.609016418457031,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 253,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 75285,
+          "mae_255": 0.0545501708984375
+        }
+      }
+    },
+    {
+      "route": "native-frozen",
+      "process_index": 4,
+      "request_index": 3,
+      "comparison": {
+        "raw_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.666584125019179,
+          "psnr_db": 30.43876549813355,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936410508604874,
+          "rgb_ssim_gaussian11_valid": 0.9584311119776207,
+          "ssim_per_channel": [
+            0.9595224362610112,
+            0.9572577422309991,
+            0.9585131574408386
+          ]
+        },
+        "white_composited_rgb_metrics": {
+          "pixel_exact": false,
+          "rmse_u8": 7.672932538331936,
+          "psnr_db": 30.43157601208,
+          "max_abs_u8": 184,
+          "rgb_correlation": 0.9936138032212355,
+          "rgb_ssim_gaussian11_valid": 0.9581838061222556,
+          "ssim_per_channel": [
+            0.9593322957454712,
+            0.9570314222866144,
+            0.9581877003346787
+          ]
+        },
+        "raw_rgb_mae_255": 4.609016418457031,
+        "rgba_pixel_exact": false,
+        "alpha": {
+          "reference_min": 253,
+          "reference_max": 255,
+          "candidate_min": 253,
+          "candidate_max": 255,
+          "reference_nonopaque_pixels": 79300,
+          "candidate_nonopaque_pixels": 75285,
+          "mae_255": 0.0545501708984375
+        }
+      }
+    }
+  ],
+  "reference_latency_ranking_valid": true,
+  "invalid_reference_reason": null,
+  "quality_scope": "native PNG retains generated alpha; reference RGB has implicit opaque alpha; raw RGB, alpha and white-composited RGB separately reported; same-size outputs, no resize; cross-engine seed does not prove identical noise or full output-feature equivalence"
+}

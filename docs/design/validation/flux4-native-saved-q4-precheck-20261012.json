@@ -1,0 +1,225 @@
+{
+  "schema": "tc-flux4-native-saved-q4-precheck-v1",
+  "date": "2026-10-12",
+  "status": "complete_precheck_only",
+  "runtime_verified": true,
+  "performance_verified": false,
+  "qualification_passed": false,
+  "latency_comparison_valid": false,
+  "evidence": "outputs/flux4-native-saved-q4-precheck-v1-20261012/summary.json",
+  "evidence_sha256": "020313bfcfbed27a2f46d5a75ab73bf7dd333acc7eaf6d2116d0cf0307711799",
+  "library_sha256": "241b70155a6d0b032bcf0d8b4222525c668a534b55d85db2a27728bd2f5cdff7",
+  "layout_receipt_sha256": "1bb9381550ad31d36d91cd8814656eb436787e67477f5380d1676a1d2dd8174a",
+  "source_repo": "mflux-community/flux2-klein-4b-mflux-q4",
+  "source_revision": "794cd159538149ad9830848508c31f0ea7088e58",
+  "source_components": {
+    "vae": [
+      {
+        "file": "0.safetensors",
+        "stored_tensors": 266,
+        "quantized_matrices": 8,
+        "full_tensor_bitpattern_equivalent": true,
+        "bytes": 165108152,
+        "sha256": "e9bb070d45d90b083ec865fb5ac6ab3263dc12a973a2127cc96c2a039a648a6f"
+      }
+    ],
+    "transformer": [
+      {
+        "file": "0.safetensors",
+        "stored_tensors": 375,
+        "quantized_matrices": 106,
+        "full_payload_equal": true,
+        "payload_sha256": "7aa90278722d61e7777e6d071552c165ee59362f114258d8cf1f85041da0825a",
+        "bytes": 2145324008,
+        "sha256": "f51ec62d85e977bc9c92dd25aae9d7a44f83faafe4c2bfe0833c3b23239fc0a3"
+      },
+      {
+        "file": "1.safetensors",
+        "stored_tensors": 12,
+        "quantized_matrices": 3,
+        "full_payload_equal": true,
+        "payload_sha256": "af6da052bb965ccf5022f9dbb4a149fef225722c68cb7730e0d07131e4ddf17d",
+        "bytes": 34727824,
+        "sha256": "32a835acd0731507acd2f0d3236717e99e5cc0e69ea51e7ec177dcf2337a5ef2"
+      }
+    ],
+    "text_encoder": [
+      {
+        "file": "0.safetensors",
+        "stored_tensors": 850,
+        "quantized_matrices": 238,
+        "full_payload_equal": true,
+        "payload_sha256": "bc961d811e8ea8e8378c7d21c5e0f80e9461218b9077a053d0c47f557468999f",
+        "bytes": 2135440432,
+        "sha256": "e31288c39592951f8be1d9ff12212eb263faee0fada09948c5e4b7202531f455"
+      },
+      {
+        "file": "1.safetensors",
+        "stored_tensors": 55,
+        "quantized_matrices": 15,
+        "full_payload_equal": true,
+        "payload_sha256": "f20f2f1561b88018ab992819ddc8c9bce71aa227a4c89fbad45dedb8014a49ac",
+        "bytes": 127582496,
+        "sha256": "b95b90b8d9f6d59422531f4093af7cb96b54de1edba14dcf70b6f2c50f8b3a4b"
+      }
+    ]
+  },
+  "config_sources": {
+    "vae": {
+      "repo": "black-forest-labs/FLUX.2-klein-4B",
+      "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "remote_sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948",
+      "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948"
+    },
+    "transformer": {
+      "repo": "black-forest-labs/FLUX.2-klein-4B",
+      "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "remote_sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de",
+      "sha256": "09733c74a3da6d17dd0a0472a091a8950c7c6935889c32c16cc800ede05029de"
+    },
+    "text_encoder": {
+      "repo": "black-forest-labs/FLUX.2-klein-4B",
+      "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "remote_sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40",
+      "sha256": "214b4c29a0d975e9fddf9994a5673f22cb2c4c5750352f9227c2c3251ebeab40"
+    }
+  },
+  "task": {
+    "model": "flux2-klein-4b",
+    "width": 512,
+    "height": 512,
+    "steps": 4,
+    "seed": 42,
+    "loras": [],
+    "execution": "gpu",
+    "dynamic_text": false
+  },
+  "representation": "same upstream Q4/g64 encoder incl embedding, DiT and8 VAE attention linears; BF16 VAE convolutions/norms; native key and bit-exact conv-layout view",
+  "constructor_seconds": 0.12776783294975758,
+  "runs": [
+    {
+      "index": 0,
+      "request_wall_including_export": 3.95870945812203,
+      "timings_seconds": {
+        "denoise": 3.295226833,
+        "hybrid_setup": 0.0001025,
+        "image_encode": 2.08e-7,
+        "request_wall": 3.938544042,
+        "text_encode": 0.353357,
+        "vae_decode": 0.265778917
+      },
+      "actual_denoise_steps": 4,
+      "text_tokens": 512,
+      "prompt_cache_hit": false,
+      "actual_transformer_blocks": 100,
+      "actual_compiled_single_blocks": 0
+    },
+    {
+      "index": 1,
+      "request_wall_including_export": 3.726093666162342,
+      "timings_seconds": {
+        "denoise": 3.174830708,
+        "hybrid_setup": 0.000062542,
+        "image_encode": 2.08e-7,
+        "request_wall": 3.725840375,
+        "text_encode": 0.277699042,
+        "vae_decode": 0.261390584
+      },
+      "actual_denoise_steps": 4,
+      "text_tokens": 512,
+      "prompt_cache_hit": false,
+      "actual_transformer_blocks": 100,
+      "actual_compiled_single_blocks": 0
+    },
+    {
+      "index": 2,
+      "request_wall_including_export": 3.7208449579775333,
+      "timings_seconds": {
+        "denoise": 3.172246375,
+        "hybrid_setup": 0.000046667,
+        "image_encode": 2.92e-7,
+        "request_wall": 3.720596792,
+        "text_encode": 0.272555666,
+        "vae_decode": 0.264245417
+      },
+      "actual_denoise_steps": 4,
+      "text_tokens": 512,
+      "prompt_cache_hit": false,
+      "actual_transformer_blocks": 100,
+      "actual_compiled_single_blocks": 0
+    },
+    {
+      "index": 3,
+      "request_wall_including_export": 3.43994295806624,
+      "timings_seconds": {
+        "denoise": 3.163849041,
+        "hybrid_setup": 0.000008458,
+        "image_encode": 8.3e-8,
+        "request_wall": 3.439712584,
+        "text_encode": 0.000008833,
+        "vae_decode": 0.26430975
+      },
+      "actual_denoise_steps": 4,
+      "text_tokens": 512,
+      "prompt_cache_hit": true,
+      "actual_transformer_blocks": 100,
+      "actual_compiled_single_blocks": 0
+    }
+  ],
+  "one_process_two_fresh_median_seconds": 3.7234693120699376,
+  "png_sha256": [
+    "f9e577c22f7f8fd0015c39a72a841dffb86ffa8224f1e657a7a4af05424bc930",
+    "37654c86aefd8498b458231d73777ddee4392248b01a3b4b161ff8c99ea4b379",
+    "e60a7b105ba89cd3eaf76cd211f2fbc408b5dae798e730292f46cb496dca6e45",
+    "e60a7b105ba89cd3eaf76cd211f2fbc408b5dae798e730292f46cb496dca6e45"
+  ],
+  "memory": {
+    "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+    "evidence_write_policy": "bounded-async-record-fsync-v1",
+    "correlation_id": "002b90fbfaf540a7b029d004a554277a",
+    "interval_ms": 100,
+    "max_gap_ms": 500,
+    "evidence": "run-memory.jsonl",
+    "evidence_sha256": "82eee99db50c48485d04f35aaa4fcff3ab6b2be5aacc5981c03c54736556db74",
+    "report": "run-memory-report.json",
+    "report_sha256": "f5411db34811f96ba2116498f12917ed299e0816dc247be56111c4edee37e40d",
+    "tool_sha256": {
+      "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+      "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+    },
+    "verified": {
+      "schema": "turbocider-process-tree-verification-v1",
+      "status": "complete",
+      "complete": true,
+      "correlation_id": "002b90fbfaf540a7b029d004a554277a",
+      "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+      "evidence_writer_policy": "bounded-async-record-fsync-v1",
+      "evidence_queue_capacity": 64,
+      "root_identity": {
+        "pid": 80111,
+        "start_seconds": 1791798715,
+        "start_microseconds": 214898
+      },
+      "record_count": 156,
+      "sample_count": 152,
+      "final_evidence_digest": "d2a1c1340fd075542e2ff601fc4bcb31dd5a6c9211c025da091ef34afc661088",
+      "max_gap_ns": 110022333,
+      "allowed_max_gap_ns": 500000000,
+      "tree_peak_rss_bytes": 3841622016,
+      "tree_peak_phys_footprint_bytes": 4208315944,
+      "swap_in_bytes": 0,
+      "swap_out_bytes": 0,
+      "compression_bytes": 0,
+      "decompression_bytes": 81920,
+      "reasons": [],
+      "command_exit_code": 0
+    }
+  },
+  "visual_check": "fresh soft-light512 PNG inspected: complete fox in snowy forest, not noise",
+  "limitations": [
+    "One native process only; no paired current mflux/mlx-serve/Unsloth cohort or GPU/ANE result.",
+    "Current native gpu_graph metadata reflects the automatic compile request flag; actual event counters show0 compiled blocks for packed source. Do not label this timing compiled or denseBF16.",
+    "Initial source generation hashes cached; no per-inference weight SHA scans.",
+    "Earlier native-view v1 Python load API error and v2 cross-shard affine-plane verifier failure retained, not promoted."
+  ]
+}

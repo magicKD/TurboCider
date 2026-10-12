@@ -498,11 +498,13 @@ std::string memory_sha256_hex(std::string_view value) {
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 std::string memory_sha256_fd(int fd, uint64_t bytes,
-                             const std::atomic<bool> *cancelled) {
+                             const std::atomic<bool> *cancelled,
+                             const std::atomic<bool> *stopped) {
     require(fd >= 0 && bytes <= static_cast<uint64_t>(
                 std::numeric_limits<off_t>::max()), "invalid SHA-256 file range");
     const auto check_cancelled = [&] {
-        if (cancelled && cancelled->load(std::memory_order_relaxed))
+        if ((cancelled && cancelled->load(std::memory_order_relaxed)) ||
+            (stopped && stopped->load(std::memory_order_relaxed)))
             throw Cancelled();
     };
     check_cancelled();

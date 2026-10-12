@@ -1,0 +1,630 @@
+{
+  "schema": "tc-best-measured-local-configs-v1",
+  "date": "2026-10-11",
+  "goal_complete": false,
+  "qualification_passed": false,
+  "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls; compare compatible successful frameworks only, no mandatory unsupported adaptation;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
+  "consolidated_report": "docs/benchmark/PERFORMANCE_REPORT.md",
+  "additional_experiments_scheduled": false,
+  "matched_comparison_configurations": [
+    {
+      "model": "z-image-turbo",
+      "evidence": "docs/design/validation/z-unsloth-mflux-current-20261012.json",
+      "library": "build/flux4-g64-v1-private-20261012/libturbocider.dylib",
+      "source_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json",
+      "compiled_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_compiled/manifest-0718a2ff4c18e5c283b91f45ec21d867cd6532e899e6b48520e8396efea20e72.json",
+      "native_gpu_seconds": 7.356122708530165,
+      "native_frozen_seconds": 5.955416937009431,
+      "mflux_bf16_seconds": 7.9708980625728145,
+      "unsloth_gpu_text_seconds": 18.735299708438106,
+      "unsloth_default_cpu_text_seconds": 22.599735978990793,
+      "reference_selector": "fastest measured placement: unsloth-gpu-text, not slower default CPU text",
+      "request_scope": "512x512,8steps,seed42,dynamic_text=true,base-only; frozen prefix5120/GPU complement5120,256calls/request",
+      "selection_note": "latest complete same-window comparisons, not cross-cohort fastest; older nominal5.780s winner below stays paired to its own GPU/reference controls",
+      "reproduction_command": ".deps/mflux-0.22-env/bin/python3 -B tools/validation/z_unsloth_framework_screen.py --reference ../references/unsloth --binary .deps/stable-diffusion-cpp/master-813-bfbef5b-u1d02858/sd-master-813-bfbef5b-u1d02858-bin-Darwin-macOS-arm64/sd-server --library build/flux4-g64-v1-private-20261012/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --reference-model outputs/benchmark-model-views/z-bf16-mflux-v1-20261011 --python .deps/mflux-0.22-env/bin/python3 --output outputs/new-z-unsloth-cohort"
+    }
+  ],
+  "comparison_policy": {
+    "framework_admission": "compatible and successful complete generation only",
+    "adapt_unsupported_frameworks": false,
+    "unsupported_results": "audit only; no latency denominator or mandatory conversion",
+    "ranking_scope": "same task and own cohort; full output; precision and lifecycle differences explicit",
+    "preserve_reference_wins": true,
+    "presentation": "verified advantages first; no universal dominance claim"
+  },
+  "configurations": [
+    {
+      "model": "qwen-image-2.1",
+      "representation": "original BF16 encoder/DiT/VAE; approximate source-bound Core ML W8A8 FFN prefix",
+      "model_root": "models/Comfy-Org-Qwen-Image-2.1",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "source_manifest": "results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json",
+      "compiled_manifest": "outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json",
+      "request": {
+        "model": "qwen-image-2.1",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 40,
+        "seed": 29,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "allow_approximation": true,
+        "qwen21_w8a8": true,
+        "ane_manifest": "outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json"
+      },
+      "encoder_policy": "original GPU request-local; no new retention or prefill override",
+      "ane_prefix_channels": 6144,
+      "gpu_complement_channels": 6144,
+      "first_step": "GPU",
+      "subsequent_steps": "GPU attention/caption + parallel frozen image-only FFN prefix",
+      "actual_runtime_calls_per_request": 1248,
+      "initial_warmup_calls": 32,
+      "fresh_warm_median_seconds": 31.058807333465666,
+      "gpu_control_seconds": 43.2387454584823,
+      "reduction_percent": 28.169036811467553,
+      "evidence": "docs/design/validation/qwen21-valid-framework-current-20261011.json",
+      "reference_comparison_valid": true,
+      "reference_reason": "Same original BF16 source fully mapped; stock mflux48.511753s, allocator/component lifetime and numerical arithmetic differ; reference memory pressure retained",
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model qwen-image-2.1 --source results/qwen21/ane-mlp-w8a8-w6144-r1024-all32/manifest.json --cache outputs/new-qwen-frozen-cache",
+      "in_current_scope": true
+    },
+    {
+      "model": "z-image-turbo",
+      "representation": "original BF16 encoder/DiT/VAE; approximate source-bound frozen W8A8 image-only FFN prefix",
+      "model_root": "models/Comfy-Org-z_image_turbo",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "source_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json",
+      "compiled_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_compiled/manifest-0718a2ff4c18e5c283b91f45ec21d867cd6532e899e6b48520e8396efea20e72.json",
+      "environment": {
+        "TURBOCIDER_Z_IMAGE_TRANSFORMER": "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+      },
+      "request": {
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "allow_approximation": true,
+        "ane_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_compiled/manifest-0718a2ff4c18e5c283b91f45ec21d867cd6532e899e6b48520e8396efea20e72.json",
+        "dynamic_text": true
+      },
+      "encoder_policy": "GPU Qwen3; original BF16 text encoder",
+      "ane_prefix_channels": 5120,
+      "gpu_complement_channels": 5120,
+      "rows": 1024,
+      "actual_runtime_calls_per_request": 256,
+      "initial_warmup_calls": 0,
+      "fresh_warm_median_seconds": 5.7801232290803455,
+      "gpu_control_seconds": 7.3633106664638035,
+      "reduction_percent": 21.501027310909006,
+      "cold_seconds": [
+        21.58669812500011,
+        11.60827754100319
+      ],
+      "evidence": "docs/design/validation/z-valid-framework-current-20261011.json",
+      "reference_comparison_valid": true,
+      "selection_note": "Fastest tested seven-route fresh warm cohort; higher cold setup cost, not one-shot/global optimum or broad quality qualification",
+      "restore_command": ".venv/bin/python3 -B tools/coreml/compile_z_image_manifest.py --library build/benchmark-async-v1-private/libturbocider.dylib --model z-image-turbo --source models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json --cache outputs/new-z-frozen-cache",
+      "in_current_scope": true
+    },
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-compiled",
+      "representation": "original BF16 encoder/DiT/VAE; pure GPU",
+      "model_root": "models/FLUX.2-klein-9B",
+      "library": "build/flux9-compiled-v1-private/libturbocider.dylib",
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": false,
+        "compile_gpu": true
+      },
+      "fresh_warm_median_seconds": 7.374041416565888,
+      "reference_fresh_warm_median_seconds": 7.343155624927022,
+      "reference_comparison_valid": true,
+      "evidence": "docs/design/validation/flux9-compiled-fused-current-20261011.json",
+      "selection_note": "Fastest nominal native candidate median from its own complete cohort; compiled+deferred+fused. Fused versus deferred-only is within noise; reference still slightly faster. Opt-in, no automatic default or9B ANE qualification.",
+      "source_policy": "first source generation SHA then persistent benchmark metadata reuse; no per-inference model hash",
+      "native_faster_than_reference": false,
+      "best_tested_reference": {
+        "engine": "mflux0.19.2",
+        "model_root": "models/FLUX.2-klein-9B",
+        "precision": "BF16",
+        "free_cache_limit_bytes": 0,
+        "fresh_warm_median_seconds": 7.351530771004036,
+        "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_bf16_framework_screen.py --model models/FLUX.2-klein-9B --library build/flux9-compiled-v1-private/libturbocider.dylib --mflux ../references/mflux --python .deps/qwen21-oracle-env/bin/python3 --extra .deps/mflux-reference-extra --async-evidence --reference-cache-mib 0 --output outputs/new-flux-cache0-benchmark",
+        "library_comparison_note": "Current fused cohort reference7.343156s; previous cache0 cohort7.351531s retained separately, not pooled"
+      },
+      "environment": {
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "actual_compiled_single_blocks_per_request": 96,
+      "in_current_scope": false
+    }
+  ],
+  "updated": "2026-10-12",
+  "pending": [
+    "FLUX4B source/format admission and complete GPU/bestGPU-ANE/mflux/current mlx-serve comparisons; originalBF16 reuse rejected, upstreamQ4 restoration pending",
+    "Qwen/Z further current precision/shape/share screening and applicable current framework comparisons",
+    "LTX successful same-task external complete-media comparison and best native loading/residency configurations",
+    "cross-family durable actually-runnable current winners; no public cross-hardware timing denominators"
+  ],
+  "media_configurations": [
+    {
+      "model": "ltx-2.5-distilled",
+      "representation": "original local INT8 ConvRot DiT/Gemma and BF16 VAE base; GPU Sol+text256 attention approximation",
+      "selected_route": "gpu-text256-batch",
+      "model_root": "models/LTX-2.5",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "cli": "build/benchmark-async-v1-private/turbocider",
+      "request": {
+        "model": "ltx-2.5-distilled",
+        "operation": "video.generate",
+        "width": 704,
+        "height": 448,
+        "frames": 97,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "audio": true,
+        "execution": "gpu",
+        "ltx_backend": "c_metal",
+        "ltx_fast_av": true,
+        "residency": "component_staged",
+        "allow_approximation": true,
+        "ltx_sol_stage1": false,
+        "ltx_sol_stage2": true,
+        "ltx_sol_tau": 1,
+        "ltx_sol_dense_edge_blocks": 1,
+        "ltx_sol_dense_edge_steps": 0,
+        "ltx_stage2_text_rows": 256
+      },
+      "warm_median_seconds": 61.868681729,
+      "gpu_quality_control_seconds": 63.847972125,
+      "reduction_percent": 3.100005106074455,
+      "native_timing_boundary": "native request_wall; persistent batch, immediate conditioning cache hit",
+      "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
+      "selection_note": "Fastest tested persistent configuration; only3.1% saving with substantial full-video drift; opt-in, quality mode remains recommendation, not automatic production default",
+      "media_quality": {
+        "full_frames": 97,
+        "rgb_mean_correlation": 0.8157424355803057,
+        "mae_255": 25.0304630776829,
+        "motion_max_relative_error": 0.07965527256600152
+      },
+      "in_current_scope": true
+    },
+    {
+      "model": "ltx-2.5-distilled",
+      "representation": "same original local base; GPU quality clean-exec decoder",
+      "selected_route": "gpu-quality-exec",
+      "model_root": "models/LTX-2.5",
+      "library": "build/benchmark-async-v1-private/libturbocider.dylib",
+      "cli": "build/benchmark-async-v1-private/turbocider",
+      "request": {
+        "model": "ltx-2.5-distilled",
+        "operation": "video.generate",
+        "width": 704,
+        "height": 448,
+        "frames": 97,
+        "fps": 24,
+        "steps": 11,
+        "seed": 42,
+        "audio": true,
+        "execution": "gpu",
+        "ltx_backend": "c_metal",
+        "ltx_fast_av": true,
+        "residency": "component_staged",
+        "allow_approximation": false
+      },
+      "warm_median_seconds": 62.6387229585,
+      "native_timing_boundary": "request_wall_estimate from clean finalizer; new process conditioning cache hit, not persistent API wall",
+      "physical_peak_bytes": [
+        37603813440,
+        37604370304
+      ],
+      "evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
+      "selection_note": "Fastest tested clean-exec route; full97-frame decoded RGB exact to quality batch; audio format verified, waveform equivalence not asserted; no cross-boundary speedup claim",
+      "in_current_scope": true
+    }
+  ],
+  "performance_configurations": [
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-predecoded",
+      "representation": "source DiT+encoder Q4/g32,153 DiT projections decoded once to BF16 operands; encoder staysQ4, BF16 embedding/VAE; additional rounding not strictBF16 parity",
+      "model_root": "outputs/flux9-matched-full-q4-g32-pack-v2-20261012/native",
+      "library": "build/flux9-predecode-v2-private/libturbocider.dylib",
+      "environment": {
+        "TURBOCIDER_FLUX9_PREDECODE_AFFINE": "1",
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": true
+      },
+      "minimum_physical_memory_bytes": 51539607552,
+      "minimum_explicit_request_budget_bytes": 30064771072,
+      "fresh_warm_median_seconds": 7.210638853954151,
+      "packed_q4_control_seconds": 8.001289020990953,
+      "bf16_compiled_control_seconds": 7.750545479007997,
+      "same_q4_reference_seconds": 8.02787162491586,
+      "reference_bf16_seconds": 7.342802146100439,
+      "actual_initial_decoded_projections": 153,
+      "actual_compiled_single_blocks_per_request": 96,
+      "physical_peak_bytes": [
+        24400991776,
+        24448063872
+      ],
+      "evidence": "docs/design/validation/flux9-predecode-current-20261012.json",
+      "current_replication": {
+        "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
+        "fresh_warm_median_seconds": 7.253945666481741,
+        "packed_q4_control_seconds": 8.01523687550798,
+        "bf16_compiled_control_seconds": 7.661435957881622,
+        "same_q4_reference_seconds": 7.875916603952646,
+        "reference_bf16_seconds": 7.318346583517268,
+        "physical_peak_bytes": [
+          24360441424,
+          24432433872
+        ],
+        "scope": "own0.22 seven-route cohort only, same retained recipe;9.498% saving versus packed, only0.88% nominal versus original BF16 with different math; old7.211s not pooled"
+      },
+      "selection_note": "Fastest tested native approximate candidate in this complete cohort, opt-in not automatic/default:9.882% saving versus own packedQ4, peak24.40-24.45GB versus11.95-11.97GB; only1.8% nominal versus original referenceBF16 with different weight math; full quality/transition diagnostics retained.",
+      "in_current_scope": false
+    }
+  ],
+  "experimental_configurations": [
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-hybrid",
+      "current_replication": {
+        "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
+        "library": "build/flux9-predecode-v2-private/libturbocider.dylib",
+        "fresh_warm_median_seconds": 7.433897687471472,
+        "compiled_gpu_control_seconds": 7.661435957881622,
+        "reference_bf16_seconds": 7.318346583517268,
+        "cold_seconds": [
+          21.86401145812124,
+          21.687461416004226
+        ],
+        "scope": "2.970% aggregate fresh saving but soft/light-variable, repeat slower and cold21.7s; reference BF16 wins, no automatic/default change; old0.031%/repeat11.5% not reused"
+      },
+      "representation": "original BF16 source; CoreML INT8 per-channel weights/FP16 I/O prefix, not activation8 or proven integer MAC",
+      "model_root": "models/FLUX.2-klein-9B",
+      "library": "build/flux9-hybrid-v1-private/libturbocider.dylib",
+      "compiled_manifest": "outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json",
+      "source_manifest": "outputs/flux9-ane-prefix4096-r1536-export-v1-20261011/manifest.json",
+      "environment": {
+        "TURBOCIDER_FLUX9_EXPERIMENTAL_HYBRID": "1",
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": false,
+        "warmup_iterations": 0,
+        "ane_manifest": "outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json"
+      },
+      "ane_channels": 4096,
+      "gpu_complement_channels": 8192,
+      "rows": 1536,
+      "actual_runtime_calls_per_request": 96,
+      "fresh_warm_median_seconds": 7.8413751245243475,
+      "compiled_gpu_control_seconds": 7.843807916389778,
+      "reference_fresh_warm_median_seconds": 7.355287811951712,
+      "evidence": "docs/design/validation/flux9-hybrid-current-20261012.json",
+      "selection_note": "Retain runnable experimental candidate, not a new best/default: fresh difference0.031% versus own compiled control is noise, tuned reference remains faster, cold15.73-16.03s; repeat-cache benefit is separate. Existing pure GPU opt-in retained; no physical ANE/overlap or broad quality qualification.",
+      "in_current_scope": false
+    }
+  ],
+  "memory_configurations": [
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-q4",
+      "representation": "same153-linears DiT affine Q4/g32; original BF16 encoder/VAE, not full-component Q4 or GGUF",
+      "model_root": "outputs/flux9-matched-dit-q4-g32-pack-v1-20261012/native",
+      "library": "build/flux9-hybrid-v1-private/libturbocider.dylib",
+      "conversion": "outputs/flux9-matched-dit-q4-g32-pack-v1-20261012/conversion.json",
+      "environment": {
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": false
+      },
+      "fresh_warm_median_seconds": 7.986974145518616,
+      "bf16_compiled_control_seconds": 7.9217483749380335,
+      "same_q4_reference_seconds": 8.030595708056353,
+      "physical_peak_bytes": [
+        18164528520,
+        18163725680
+      ],
+      "evidence": "docs/design/validation/flux9-matched-dit-q4-current-20261012.json",
+      "selection_note": "Lower observed memory candidate, not fastest/default or hard RAM qualification: peak18.16GB versus ownBF16 30.53-30.65GB; Q4 fresh0.823% slower; same-plane reference only0.5% nominal difference; approximate output drift retained.",
+      "in_current_scope": false
+    },
+    {
+      "model": "flux2-klein-9b",
+      "selected_route": "native-q4",
+      "representation": "DiT153+encoder252 affine Q4/g32 linears; original BF16 embedding/norms/VAE, not all tensors4bit",
+      "model_root": "outputs/flux9-matched-full-q4-g32-pack-v2-20261012/native",
+      "library": "build/flux9-hybrid-v1-private/libturbocider.dylib",
+      "conversion": "outputs/flux9-matched-full-q4-g32-pack-v2-20261012/conversion.json",
+      "environment": {
+        "TURBOCIDER_QWEN3_EVAL_INTERVAL": "0",
+        "TURBOCIDER_QWEN3_FUSED_SDPA": "1"
+      },
+      "request": {
+        "model": "flux2-klein-9b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu",
+        "residency": "resident",
+        "dynamic_text": false,
+        "allow_approximation": true,
+        "compile_gpu": false
+      },
+      "fresh_warm_median_seconds": 8.005275249946862,
+      "bf16_compiled_control_seconds": 7.741838708054274,
+      "same_q4_reference_seconds": 8.042573208338581,
+      "physical_peak_bytes": [
+        11989492760,
+        11989673008
+      ],
+      "evidence": "docs/design/validation/flux9-matched-full-q4-current-20261012.json",
+      "selection_note": "Lowest observed native9B peak among these tested recipes, not fastest/default or hard RAM qualification:11.99GB versus ownBF16 30.33-30.65GB, about60% lower; Q4 fresh3.403% slower, numerical drift retained; no validated ANE route for this quantized source.",
+      "in_current_scope": false
+    }
+  ],
+  "reference_configurations": [
+    {
+      "model": "qwen-image-2.1",
+      "engine": "mflux",
+      "package_version_field": "0.22.0",
+      "commit": "31c9640399572ea394d07092763be9a36007a754",
+      "precision": "original BF16 encoder/DiT/VAE, complete lossless reference layout",
+      "model_root": "outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011",
+      "selected_route": "mflux-bf16",
+      "free_cache_limit_bytes": 1073741824,
+      "fresh_warm_median_seconds": 41.952435375074856,
+      "native_gpu_control_seconds": 43.308976791915484,
+      "native_frozen_control_seconds": 31.809596374980174,
+      "physical_peak_bytes": [
+        34514132104,
+        34925796416
+      ],
+      "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json",
+      "selection_note": "Current0.22 BF16 versus partialFP16 differs only0.114%, not a causal/global speed winner. Reference beats own-cohort nativeGPU by3.234%, nativefrozen remains1.319x faster. Own controls only; older stock/cache0/1024/4096 retained separately, not pooled. Other current precision/cache/shape candidates pending.",
+      "packages": {
+        "mlx": "0.32.3",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "numpy": "2.5.4",
+        "Pillow": "12.3.0",
+        "safetensors": "0.8.0"
+      },
+      "other_compute_candidates": [
+        {
+          "route": "mflux-fp16",
+          "compute_precision": "float16",
+          "fresh_warm_median_seconds": 42.00039812445175,
+          "evidence": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json"
+        }
+      ],
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/qwen21_mflux_framework_screen.py --model models/Comfy-Org-Qwen-Image-2.1 --reference-model outputs/benchmark-model-views/qwen21-bf16-mflux-v2-complete-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --frozen-manifest outputs/benchmark-best-configs/qwen21-frozen-w6144-r1024-cache-20261011/manifest-99f1b3499b89b96f5d04a23cb91c3f3496083e1d66b09c6dd2e4500d0d6ca509.json --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu --output outputs/new-qwen-current-reference",
+      "other_cache_candidates": [
+        {
+          "free_cache_limit_bytes": 0,
+          "package_version_field": "0.19.2",
+          "fresh_warm_median_seconds": 45.96821891650325,
+          "evidence": "docs/design/validation/qwen21-cache0-framework-current-20261011.json"
+        },
+        {
+          "free_cache_limit_bytes": 4294967296,
+          "package_version_field": "0.19.2",
+          "fresh_warm_median_seconds": 45.497861896059476,
+          "evidence": "docs/design/validation/qwen21-cache4096-framework-current-20261012.json"
+        },
+        {
+          "free_cache_limit_bytes": 1073741824,
+          "package_version_field": "0.19.2",
+          "fresh_warm_median_seconds": 45.45051572902594,
+          "evidence": "docs/design/validation/qwen21-cache1024-framework-current-20261012.json"
+        }
+      ],
+      "in_current_scope": true
+    },
+    {
+      "model": "z-image-turbo",
+      "engine": "mflux",
+      "package_version_field": "0.22.0",
+      "commit": "31c9640399572ea394d07092763be9a36007a754",
+      "precision": "original BF16 source, current stock BF16 residual/DiT; optional partial FP16 not selected",
+      "model_root": "outputs/benchmark-model-views/z-bf16-mflux-v1-20261011",
+      "selected_route": "mflux-bf16",
+      "free_cache_limit_bytes": 1073741824,
+      "fresh_warm_median_seconds": 7.976479062461294,
+      "native_gpu_control_seconds": 7.354224395938218,
+      "native_frozen_control_seconds": 5.959064104012214,
+      "physical_peak_bytes": [
+        22506422784,
+        22521987608
+      ],
+      "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json",
+      "selection_note": "Fastest of current0.22 BF16/partialfloat16 candidates; FP16 is4.746% slower. Native latency wins but reference has lower observed peak22.51GB versus native31.81-32.16GB. Own-cohort controls only; old native5.780/old reference9.520 not pooled. Not all-shape/precision/cache or global optimum.",
+      "packages": {
+        "mlx": "0.32.3",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "numpy": "2.5.4",
+        "Pillow": "12.3.0",
+        "safetensors": "0.8.0"
+      },
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/z_mflux_framework_screen.py --reference-model outputs/benchmark-model-views/z-bf16-mflux-v1-20261011 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --reference-cache-mib 1024 --order native-gpu,native-frozen,mflux-bf16,mflux-fp16,mflux-fp16,mflux-bf16,native-frozen,native-gpu --output outputs/new-z-current-reference",
+      "other_compute_candidates": [
+        {
+          "route": "mflux-fp16",
+          "compute_precision": "float16",
+          "fresh_warm_median_seconds": 8.355057770502754,
+          "evidence": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json"
+        }
+      ],
+      "in_current_scope": true
+    },
+    {
+      "model": "flux2-klein-9b",
+      "engine": "mflux",
+      "package_version_field": "0.22.0",
+      "commit": "31c9640399572ea394d07092763be9a36007a754",
+      "precision": "original BF16 encoder/DiT/VAE; partialFP16 and matchedlinearQ4 separate candidates",
+      "model_root": "models/FLUX.2-klein-9B",
+      "selected_route": "mflux-bf16",
+      "free_cache_limit_bytes": 0,
+      "fresh_warm_median_seconds": 7.318346583517268,
+      "native_bf16_control_seconds": 7.661435957881622,
+      "native_hybrid_control_seconds": 7.433897687471472,
+      "native_predecoded_control_seconds": 7.253945666481741,
+      "physical_peak_bytes": [
+        32129899872,
+        32119790848
+      ],
+      "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json",
+      "selection_note": "Fastest of current0.22 originalBF16/partialFP16/matchedQ4 reference candidates; beats native BF16 and hybrid. Native sourceQ4 predecode nominally0.88% faster with different weight math, not strict parity/global first. All ratios use own seven-route cohort, not old native7.211s.",
+      "packages": {
+        "mlx": "0.32.3",
+        "torch": "2.14.1",
+        "transformers": "5.19.0",
+        "numpy": "2.5.4",
+        "Pillow": "12.3.0",
+        "safetensors": "0.8.0"
+      },
+      "reproduction_command": ".venv/bin/python3 -B tools/validation/flux9_current_framework_screen.py --model models/FLUX.2-klein-9B --pack outputs/flux9-matched-full-q4-g32-pack-v2-20261012 --library build/flux9-predecode-v2-private/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --python .deps/mflux-0.22-env/bin/python3 --extra .deps/mflux-0.22-env/lib/python3.13/site-packages --ane-manifest outputs/flux9-ane-prefix4096-r1536-compiled-v1-20261011/manifest-75dd56c7090d32e0dc36978b24f1853b950d28086357df9bb90c82ee9d612a4c.json --output outputs/new-flux-current-frameworks",
+      "other_compute_candidates": [
+        {
+          "route": "mflux-fp16",
+          "compute_precision": "float16",
+          "fresh_warm_median_seconds": 7.649527395493351,
+          "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"
+        },
+        {
+          "route": "mflux-q4",
+          "stored_recipe": "encoder+DiT eligible linears Q4/g32, denseBF16 embedding/VAE",
+          "fresh_warm_median_seconds": 7.875916603952646,
+          "physical_peak_bytes": [
+            12445344912,
+            12442854616
+          ],
+          "evidence": "docs/design/validation/flux9-mflux022-current-20261012.json"
+        }
+      ],
+      "in_current_scope": false
+    }
+  ],
+  "private_configurations": [
+    {
+      "model": "z-image-turbo",
+      "representation": "original BF16 source; approximate Private Hadamard W8A8 channel split",
+      "selected_route": "native-private",
+      "model_root": "models/Comfy-Org-z_image_turbo",
+      "library": "build/flux9-compiled-v1-private/libturbocider.dylib",
+      "source_manifest": "outputs/runtime-ane/private-channel-z-c1152-k1024-n512-v2-20261009/manifest.json",
+      "request": {
+        "model": "z-image-turbo",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "seed": 42,
+        "audio": false,
+        "residency": "resident",
+        "dynamic_text": true,
+        "execution": "gpu_ane",
+        "allow_approximation": true,
+        "hybrid_mlp_mode": "runtime",
+        "ane_manifest": "outputs/runtime-ane/private-channel-z-c1152-k1024-n512-v2-20261009/manifest.json"
+      },
+      "environment": {
+        "TURBOCIDER_ANE_BACKEND": "private",
+        "TURBOCIDER_ALLOW_PRIVATE_ANE": "1",
+        "TURBOCIDER_PRIVATE_ANE_GPU_IO": "1",
+        "TURBOCIDER_PRIVATE_ANE_DATA_PATH": "w8a8",
+        "TURBOCIDER_RUNTIME_ANE_FIXED_ASYNC": "1",
+        "TURBOCIDER_RUNTIME_ANE_CHUNKS": "1",
+        "TURBOCIDER_PRIVATE_ANE_CHANNELS": "4096",
+        "TURBOCIDER_RUNTIME_ANE_FP32_CHANNEL_JOIN": "1",
+        "TURBOCIDER_PRIVATE_ANE_SCALE_CACHE": "1",
+        "TURBOCIDER_PRIVATE_ANE_STAGE_SPECIALIZE": "1",
+        "TURBOCIDER_PRIVATE_ANE_LAUNCH_FENCE": "1",
+        "TURBOCIDER_PRIVATE_ANE_PREFETCH": "0",
+        "TURBOCIDER_PRIVATE_ANE_A8_LOOKAHEAD": "0",
+        "TURBOCIDER_Z_RUNTIME_MATCH_ROWS": "1"
+      },
+      "fresh_warm_median_seconds": 6.147740729036741,
+      "gpu_control_seconds": 7.345378021011129,
+      "frozen_control_seconds": 5.793671062448993,
+      "evidence": "docs/design/validation/z-private-partition-grid-current-20261011.json",
+      "selection_note": "Private-only finite14-candidate winner; frozen remains faster in own cohort. Not overall winner or automatic default.",
+      "in_current_scope": true
+    }
+  ],
+  "active_model_families": [
+    "flux2-klein-4b",
+    "z-image-turbo",
+    "qwen-image-2.1",
+    "ltx-2.5-distilled"
+  ],
+  "deferred_model_families": [
+    "flux2-klein-9b"
+  ]
+}

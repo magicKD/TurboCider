@@ -58,7 +58,10 @@ class EncoderPrefillSessionTests(unittest.TestCase):
                 self.assertEqual(status, 0, take(failure))
 
                 def run(name, prompt, enabled, hit, loads, reused=False, processor_reused=True):
-                    os.environ["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = str(int(enabled))
+                    if enabled is None:
+                        os.environ.pop("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU", None)
+                    else:
+                        os.environ["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"] = str(int(enabled))
                     request = dict(model="qwen-image-2.1", operation="image.generate", prompt=prompt,
                                    width=512, height=512, steps=4, seed=29, audio=False,
                                    execution="gpu", residency="resident", allow_approximation=True,
@@ -76,7 +79,7 @@ class EncoderPrefillSessionTests(unittest.TestCase):
                     self.assertTrue(weights["weights_retained"])
                     self.assertIs(weights["weights_reused"], reused)
                     self.assertEqual(weights["loads_session_total"], loads)
-                    if enabled:
+                    if enabled is not False:
                         p = row["qwen_encoder_prefill"]
                         self.assertEqual(p["processor_sha256"], source_hash)
                         self.assertIs(p["tokenizer_reused"], processor_reused)
@@ -126,6 +129,40 @@ class EncoderPrefillSessionTests(unittest.TestCase):
                 take(result)
                 self.assertEqual(status, 0, take(failure))
                 run("after-unload", prompt_b, True, False, 1, processor_reused=False)
+                # The source-qualified default is the SAME effective profile,
+                # not an extra experiment/cache identity. Explicit disable and
+                # the master legacy switch must really release retained state.
+                default_flags = ("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS", *settings)
+                saved = {key: os.environ.get(key) for key in default_flags}
+                try:
+                    for key in default_flags:
+                        os.environ.pop(key, None)
+                    run("unflagged-cache", prompt_b, None, True, 1)
+                    run("unflagged-fresh", prompt_a, None, False, 1, reused=True)
+                    os.environ["TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS"] = "0"
+                    legacy = dict(model="qwen-image-2.1", operation="image.generate", prompt=prompt_a,
+                                  width=512, height=512, steps=4, seed=29, audio=False, execution="gpu",
+                                  residency="resident", allow_approximation=True, output=str(model / "legacy.png"))
+                    result, failure = C.c_void_p(), C.c_void_p()
+                    status = lib.tc_engine_prepare(engine, json.dumps(legacy).encode(), 0,
+                                                   None, None, C.byref(result), C.byref(failure))
+                    payload = take(result)
+                    self.assertEqual(status, 0, take(failure))
+                    row = json.loads(payload)
+                    self.assertFalse(row["encoder_weight_residency"]["enabled"])
+                    self.assertFalse(row["encoder_weight_residency"]["weights_retained"])
+                    self.assertNotIn("qwen_encoder_prefill", row)
+                    self.assertFalse(row["prompt_cache_hit"])
+                    evidence.append(dict(name="master-off-real-legacy", weights=row["encoder_weight_residency"],
+                                         prompt_cache_hit=row["prompt_cache_hit"]))
+                    os.environ.pop("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS")
+                    run("unflagged-restored", prompt_a, None, False, 3, processor_reused=True)
+                finally:
+                    for key, value in saved.items():
+                        if value is None:
+                            os.environ.pop(key, None)
+                        else:
+                            os.environ[key] = value
             print(json.dumps(dict(schema="tc-qwen21-encoder-prefill-session-v1",
                                   library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
                                   requests=evidence, qualification_passed=False,

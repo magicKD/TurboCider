@@ -42,8 +42,9 @@ class PackedBankTests(unittest.TestCase):
             q5k=struct.pack("<ee",.125,.0625)+bytes((i*13+3)%256 for i in range(12))+bytes((i*19)%256 for i in range(32))+bytes((i*17)%256 for i in range(128))
             q6k=bytes((i*17)%256 for i in range(128))+bytes((i*19)%256 for i in range(64))+bytes((i*23+1)%256 for i in range(16))+struct.pack("<e",.015625)
             mixed=folder/"mixed-k.gguf";mixed.write_bytes(fixture([
-                ("q4k.weight",12,[512,37],q4k*74),("q5k.weight",13,[512,37],q5k*74),
-                ("q6k.weight",14,[512,37],q6k*74)]))
+                ("q4k.weight",12,[512,73],q4k*146),("q5k.weight",13,[512,73],q5k*146),
+                ("q6k.weight",14,[512,73],q6k*146),
+                ("rawbf16.weight",30,[512,73],struct.pack("<H",0x3eab)*(512*73))]))
             nonfinite_k=folder/"nonfinite-k.gguf";nonfinite_k.write_bytes(fixture([
                 ("q4k.weight",12,[512,37],q4k*74),("bad.weight",14,[512,37],(q6k[:-2]+struct.pack("<e",float("inf")))*74)]))
             mlx=Path(sysconfig.get_paths()["purelib"])/"mlx"

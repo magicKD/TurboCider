@@ -1,0 +1,3334 @@
+{
+  "schema": "tc-flux9-bf16-framework-validation-v1",
+  "status": "complete_diagnostic",
+  "date": "2026-10-11",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "hardware": "M4 Max 64 GiB/macOS26.6.2",
+  "task": {
+    "model": "flux2-klein-9b",
+    "size": 512,
+    "steps": 4,
+    "seed": 42,
+    "dynamic_text": false,
+    "loras": []
+  },
+  "model_sha256": {
+    "models/FLUX.2-klein-9B/configuration.json": "2bdeaa1d19b71d185c88e12f91168380e72108e8f3bda429656b5a4128184eb6",
+    "models/FLUX.2-klein-9B/model_index.json": "51a76cb1cf3ed37423a1128c79c22faee8e6fbe7f5aaeb737f0a258930dbaac0",
+    "models/FLUX.2-klein-9B/scheduler/scheduler_config.json": "067afb012cef64553a763447d1efd93daeffcc0123ca7e25b09f8de20b90762e",
+    "models/FLUX.2-klein-9B/text_encoder/config.json": "57866e90a1d6328a7ed53eca732bce106f86c76ab99d7629e01f0a319fa57998",
+    "models/FLUX.2-klein-9B/text_encoder/generation_config.json": "4347b1aeed2b2b78bc059920a0b7f5fec71482e1344952b76d7665d638d71f13",
+    "models/FLUX.2-klein-9B/text_encoder/model-00001-of-00004.safetensors": "c0dc64934ae0f730ddc80d99af44968d01a89e8454df07d762096ea1356446bc",
+    "models/FLUX.2-klein-9B/text_encoder/model-00002-of-00004.safetensors": "d58533b468c31caa0222540a8aefddea1d74dc6e1fee928da8556d3d85729d6e",
+    "models/FLUX.2-klein-9B/text_encoder/model-00003-of-00004.safetensors": "74927fec432e050365bf757bb30348f560a44394efac89f492680b7c910b64fd",
+    "models/FLUX.2-klein-9B/text_encoder/model-00004-of-00004.safetensors": "cb73f466fade5716702bda38d4e3b321c9358c39889e46fb9d613fb038bfcb2f",
+    "models/FLUX.2-klein-9B/text_encoder/model.safetensors.index.json": "e7e4bdc58d3302c97357f27979b270987dd620cf0cd9b1c130e3a51c9d64df95",
+    "models/FLUX.2-klein-9B/tokenizer/added_tokens.json": "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680",
+    "models/FLUX.2-klein-9B/tokenizer/chat_template.jinja": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+    "models/FLUX.2-klein-9B/tokenizer/merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+    "models/FLUX.2-klein-9B/tokenizer/special_tokens_map.json": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+    "models/FLUX.2-klein-9B/tokenizer/tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "models/FLUX.2-klein-9B/tokenizer/tokenizer_config.json": "443bfa629eb16387a12edbf92a76f6a6f10b2af3b53d87ba1550adfcf45f7fa0",
+    "models/FLUX.2-klein-9B/tokenizer/vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+    "models/FLUX.2-klein-9B/transformer/config.json": "e82d0d325aff03c3b3b33a1634c47a5f88867478f53071b9c9a39c99010c5d46",
+    "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model-00001-of-00002.safetensors": "cb942a7072865a1d06e47a3361f9ba8746e68ad207c8499083bcb735869f5102",
+    "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model-00002-of-00002.safetensors": "ca568a31d19c03ddbcfd8b2d4ec7dbd16dcefbaa50b7aef1b8ceefd6e6eb0970",
+    "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model.safetensors.index.json": "96fe598b12bdfa266f54c2a6027dedc6e87016cce7e19cb2821a8b7deaf9deb9",
+    "models/FLUX.2-klein-9B/vae/config.json": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948",
+    "models/FLUX.2-klein-9B/vae/diffusion_pytorch_model.safetensors": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+  },
+  "source_sha256": {
+    "libturbocider.dylib": "59a919d8843adc7d5b6e2f99247267386037b847515b825eb83e34d696ada4aa",
+    "flux9_bf16_framework_screen.py": "68d8942fe400dcb3840a4dea7f9e0504b9d446b41edcf541d8a9d69bfb51fe6c",
+    "mflux_weight_coverage.py": "5ac4952b859c92b9c91a716c212674d5b4db10741ea634de40aea8c34c3e5a92"
+  },
+  "native_inputs_matched": 514,
+  "mflux_commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
+  "mflux_source_files": 796,
+  "mflux_source_snapshot": "4a1b01c2327ab1080db017d420b4517d8abd3568fda1299822313112cfdad074",
+  "evidence": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/summary.json",
+  "evidence_sha256": "14811088c833dacfd971b6904716d65fa863321f6cea713c5834e2e2d0e71228",
+  "order": [
+    "native",
+    "native-compiled",
+    "mflux",
+    "mflux",
+    "native-compiled",
+    "native"
+  ],
+  "trials": [
+    {
+      "index": 0,
+      "engine": "native",
+      "report": {
+        "engine": "native",
+        "constructor_seconds": 0.1322804589290172,
+        "instrumentation": "native branch-event observer; no added GPU fences",
+        "configured_encoder_eval_interval": 0,
+        "configured_encoder_fused_attention": true,
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "request_wall_including_export": 8.391951832920313,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "load_transformer": 2,
+              "denoise": 8,
+              "transformer_block": 128,
+              "load_vae": 1,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870598,
+                "mlx_peak_bytes": 20317486418,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/0-native/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 7.542265083,
+                "hybrid_setup": 4.4833e-05,
+                "image_encode": 8.3e-08,
+                "request_wall": 8.371515291,
+                "text_encode": 0.5093675,
+                "vae_decode": 0.295698875
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "request_wall_including_export": 7.7667287909425795,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870598,
+                "mlx_peak_bytes": 30240891462,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/0-native/1.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.597863875,
+                "hybrid_setup": 3.4417e-05,
+                "image_encode": 8.4e-08,
+                "request_wall": 7.766481792,
+                "text_encode": 0.866779,
+                "vae_decode": 0.288260416
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.433350041974336,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870598,
+                "mlx_peak_bytes": 30262421062,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/0-native/2.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.628744208,
+                "hybrid_setup": 3.4709e-05,
+                "image_encode": 2.08e-07,
+                "request_wall": 7.43310775,
+                "text_encode": 0.493687792,
+                "vae_decode": 0.298403167
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 6.979424959048629,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "text_cache_hit": 1,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870598,
+                "mlx_peak_bytes": 20319037528,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/0-native/3.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.645444584,
+                "hybrid_setup": 7.417e-06,
+                "image_encode": 8.3e-08,
+                "request_wall": 6.979190292,
+                "text_encode": 8.666e-06,
+                "vae_decode": 0.32139625
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 30089680616,
+        "compression_bytes": 0,
+        "decompression_bytes": 196608,
+        "swap_in_bytes": 196608,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "a14b88d99b46bf3341ac26e695850477e147411e9373bf42e04dc4679467d893",
+      "memory_report_sha256": "299de57851fdab577c5a0ef90b28998e7b6ccb5f1ef426de71c18b2ad7b26cd3",
+      "pngs": [
+        {
+          "file_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+          "rgb_sha256": "061ed5f4451977a509537ff7736860cef42e70a8a380b59bc4fb8ed62de79b59"
+        },
+        {
+          "file_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+          "rgb_sha256": "edae79d61a6a0c1a6c00fb825d99619703322c0770f3c5b6a109a0af069df9f6"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "engine": "native-compiled",
+      "report": {
+        "engine": "native-compiled",
+        "constructor_seconds": 0.14038558304309845,
+        "instrumentation": "native branch-event observer; no added GPU fences",
+        "configured_encoder_eval_interval": 0,
+        "configured_encoder_fused_attention": true,
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "request_wall_including_export": 7.695445334073156,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "load_transformer": 2,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "load_vae": 1,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854230,
+                "mlx_peak_bytes": 20317470050,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/1-native-compiled/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.847312625,
+                "hybrid_setup": 4.5375e-05,
+                "image_encode": 4.1e-08,
+                "request_wall": 7.674190916,
+                "text_encode": 0.506300417,
+                "vae_decode": 0.2958225
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "request_wall_including_export": 7.556173500139266,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854230,
+                "mlx_peak_bytes": 30240875094,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/1-native-compiled/1.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.365938959,
+                "hybrid_setup": 7.5667e-05,
+                "image_encode": 1.67e-07,
+                "request_wall": 7.555904959,
+                "text_encode": 0.898372458,
+                "vae_decode": 0.278693667
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.1725717089138925,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854230,
+                "mlx_peak_bytes": 30262404694,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/1-native-compiled/2.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.366361792,
+                "hybrid_setup": 4.1375e-05,
+                "image_encode": 1.67e-07,
+                "request_wall": 7.172329209,
+                "text_encode": 0.5150925,
+                "vae_decode": 0.277843167
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 6.8286910420283675,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "text_cache_hit": 1,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854230,
+                "mlx_peak_bytes": 20319021160,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/1-native-compiled/3.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.518348834,
+                "hybrid_setup": 7.75e-06,
+                "image_encode": 0,
+                "request_wall": 6.82846225,
+                "text_encode": 9.166e-06,
+                "vae_decode": 0.297304208
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 30651603024,
+        "compression_bytes": 0,
+        "decompression_bytes": 16384,
+        "swap_in_bytes": 65536,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "4c6ed5f1f495bcafed0bf5808505f3a399790cf631eadfe5b04106f1e5ee1861",
+      "memory_report_sha256": "565f4a9bd980267d13a6df7584cde97f5f24ccf5201e3cdba2e5484925239793",
+      "pngs": [
+        {
+          "file_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+          "rgb_sha256": "061ed5f4451977a509537ff7736860cef42e70a8a380b59bc4fb8ed62de79b59"
+        },
+        {
+          "file_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+          "rgb_sha256": "edae79d61a6a0c1a6c00fb825d99619703322c0770f3c5b6a109a0af069df9f6"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "engine": "mflux",
+      "report": {
+        "engine": "mflux",
+        "constructor_seconds": 0.38914650003425777,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "reference_cache_limit_bytes": 0,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "instrumentation": "host-step-counter-only; no extra GPU sync or encoder wrapper",
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "request_wall_including_export": 7.895718541927636,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32600021486
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "request_wall_including_export": 7.298503083875403,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837047328
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.353703917004168,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837047364
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.409936249954626,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837047400
+          }
+        ],
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        }
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 32246521328,
+        "compression_bytes": 241631232,
+        "decompression_bytes": 241680384,
+        "swap_in_bytes": 196608,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "2fab5ed4a06b414211a15859d74c72d3e8042f81916cf6f5530c667daf8deca5",
+      "memory_report_sha256": "3cb5212616ee1ee1b176a5304290f669baa073abbccb4597fc3cafb1618f118f",
+      "pngs": [
+        {
+          "file_sha256": "f3c04c6864516df482e2886f925d0497e90e500b545d8acbddc6c5a96a3c3c25",
+          "rgb_sha256": "d094c3bcc4022e2a8db2aa349140bb97217fc30f27cbbdab0df1b57b4d2d9afa"
+        },
+        {
+          "file_sha256": "1467ecbcb9d813ad0ae09b3404ce6291010b6a128558d3155426fe4117e27dcb",
+          "rgb_sha256": "9a639a1b830c14b744b1b0bc5d1168a5d8ac9ce4aceff3e48300baaadc2a51c8"
+        },
+        {
+          "file_sha256": "3de216132aaa02d17e13c1a9f252c0fb654d64330b999e87e374fc882eb0cc64",
+          "rgb_sha256": "61d518567b9e0895b5734f8dcf615086731179beca09adede141b9dfe6ba0686"
+        },
+        {
+          "file_sha256": "65ff158e9d951b26211bcc507a81450824b053c91f3924cab7fb8f84ffc17c0d",
+          "rgb_sha256": "61d518567b9e0895b5734f8dcf615086731179beca09adede141b9dfe6ba0686"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "engine": "mflux",
+      "report": {
+        "engine": "mflux",
+        "constructor_seconds": 0.38396362494677305,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "reference_cache_limit_bytes": 0,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "instrumentation": "host-step-counter-only; no extra GPU sync or encoder wrapper",
+        "packages": {
+          "mlx": "0.32.0",
+          "torch": "2.14.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "request_wall_including_export": 8.141281915828586,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32600021486
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "request_wall_including_export": 7.367817874997854,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837047328
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.332607332849875,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837047364
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.324106625048444,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "text_rows": 512,
+            "actual_quantization": null,
+            "loras": [],
+            "mlx_peak_bytes": 32837047400
+          }
+        ],
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 250,
+            "covered_targets": 250,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 233,
+            "covered_targets": 233,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        }
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 32219422168,
+        "compression_bytes": 316407808,
+        "decompression_bytes": 286736384,
+        "swap_in_bytes": 131072,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "75414d492bd7e809ab499a69d6f91f2cf218d468639b7c1651ae7e74d9047bb4",
+      "memory_report_sha256": "1db6c09629fa9a634fde7c1f4cfc89a254cfc7d0e7e40a4cd898207a79e4ecde",
+      "pngs": [
+        {
+          "file_sha256": "510b6652bd843d7d3fcfec291d83290d9481d7dd330370ae24ae1fddf936fe19",
+          "rgb_sha256": "d094c3bcc4022e2a8db2aa349140bb97217fc30f27cbbdab0df1b57b4d2d9afa"
+        },
+        {
+          "file_sha256": "ae0f57179635eb55d8b64861509eb94cec5f867deafff7ad35c3c90b300b8fcf",
+          "rgb_sha256": "9a639a1b830c14b744b1b0bc5d1168a5d8ac9ce4aceff3e48300baaadc2a51c8"
+        },
+        {
+          "file_sha256": "1b8e9ed844d6a0bb4584e1c42de669d6775fb1e2e3cdced18886ce8b4901fd4a",
+          "rgb_sha256": "61d518567b9e0895b5734f8dcf615086731179beca09adede141b9dfe6ba0686"
+        },
+        {
+          "file_sha256": "cd1977b76dab5de5e7b1265397fa9336f03d460f64ded604434ebeb3c0b73f5a",
+          "rgb_sha256": "61d518567b9e0895b5734f8dcf615086731179beca09adede141b9dfe6ba0686"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "engine": "native-compiled",
+      "report": {
+        "engine": "native-compiled",
+        "constructor_seconds": 0.1447482919320464,
+        "instrumentation": "native branch-event observer; no added GPU fences",
+        "configured_encoder_eval_interval": 0,
+        "configured_encoder_fused_attention": true,
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "request_wall_including_export": 7.919486374827102,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "load_transformer": 2,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "load_vae": 1,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870614,
+                "mlx_peak_bytes": 20317486434,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/4-native-compiled/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.44429525,
+                "hybrid_setup": 0.000405708,
+                "image_encode": 1.67e-07,
+                "request_wall": 7.891751667,
+                "text_encode": 1.112394458,
+                "vae_decode": 0.307467459
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "request_wall_including_export": 7.550080583197996,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870614,
+                "mlx_peak_bytes": 30240891478,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/4-native-compiled/1.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.36549475,
+                "hybrid_setup": 3.5959e-05,
+                "image_encode": 4.2e-08,
+                "request_wall": 7.549828709,
+                "text_encode": 0.896998875,
+                "vae_decode": 0.274687125
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.198002249933779,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870614,
+                "mlx_peak_bytes": 30262421078,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/4-native-compiled/2.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.384458209,
+                "hybrid_setup": 4.4958e-05,
+                "image_encode": 1.25e-07,
+                "request_wall": 7.197747375,
+                "text_encode": 0.511365833,
+                "vae_decode": 0.289038209
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 6.823729750001803,
+            "actual_compiled_single_blocks": 96,
+            "native_event_counts": {
+              "text_cache_hit": 1,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "compiled_single_gpu_block": 96,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "compiled_single_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270870614,
+                "mlx_peak_bytes": 20319037544,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/4-native-compiled/3.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "compiled_single_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.488949208,
+                "hybrid_setup": 8.166e-06,
+                "image_encode": 4.2e-08,
+                "request_wall": 6.823504,
+                "text_encode": 8.917e-06,
+                "vae_decode": 0.321267542
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 30651226192,
+        "compression_bytes": 0,
+        "decompression_bytes": 327680,
+        "swap_in_bytes": 131072,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "18d7f1f13168b9da0731f4d7ecaa6d94807971005d24640effd16eb01708154f",
+      "memory_report_sha256": "c83deff374ac5ea234a2ca970521c1d61107f75ace38032dbfb9156e7060dea2",
+      "pngs": [
+        {
+          "file_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+          "rgb_sha256": "061ed5f4451977a509537ff7736860cef42e70a8a380b59bc4fb8ed62de79b59"
+        },
+        {
+          "file_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+          "rgb_sha256": "edae79d61a6a0c1a6c00fb825d99619703322c0770f3c5b6a109a0af069df9f6"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "engine": "native",
+      "report": {
+        "engine": "native",
+        "constructor_seconds": 0.1448353340383619,
+        "instrumentation": "native branch-event observer; no added GPU fences",
+        "configured_encoder_eval_interval": 0,
+        "configured_encoder_fused_attention": true,
+        "runs": [
+          {
+            "index": 0,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "request_wall_including_export": 8.39649650012143,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "load_transformer": 2,
+              "denoise": 8,
+              "transformer_block": 128,
+              "load_vae": 1,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854214,
+                "mlx_peak_bytes": 20317470034,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/5-native/0.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 7.54851475,
+                "hybrid_setup": 5.2834e-05,
+                "image_encode": 8.4e-08,
+                "request_wall": 8.375031625,
+                "text_encode": 0.515311542,
+                "vae_decode": 0.286671791
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 1,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "request_wall_including_export": 7.823614082997665,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854214,
+                "mlx_peak_bytes": 30240875078,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/5-native/1.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.624553833,
+                "hybrid_setup": 3.5083e-05,
+                "image_encode": 8.4e-08,
+                "request_wall": 7.823370166,
+                "text_encode": 0.89617175,
+                "vae_decode": 0.289517125
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 2,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 7.457633374957368,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "load_text_encoder": 4,
+              "text_encode": 28,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854214,
+                "mlx_peak_bytes": 30262404678,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/5-native/2.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": false,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.647396875,
+                "hybrid_setup": 3.4417e-05,
+                "image_encode": 4.1e-08,
+                "request_wall": 7.457388042,
+                "text_encode": 0.505277459,
+                "vae_decode": 0.292007041
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          },
+          {
+            "index": 3,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "request_wall_including_export": 6.973521374864504,
+            "actual_compiled_single_blocks": 0,
+            "native_event_counts": {
+              "text_cache_hit": 1,
+              "route_gpu": 1,
+              "denoise": 8,
+              "transformer_block": 128,
+              "vae_decode": 5,
+              "export": 2
+            },
+            "metrics": {
+              "acceleration_selection": "gpu: explicitly selected",
+              "actual_denoise_steps": 4,
+              "checkpoint": null,
+              "encoder_execution": "gpu",
+              "encoder_gpu_graph": "qwen3_gpu_only",
+              "encoder_hybrid": {},
+              "encoder_runtime_backend": "mlx_cpp_metal",
+              "encoder_runtime_precision": "bf16",
+              "encoder_runtime_reuse": null,
+              "encoder_weight_residency": null,
+              "gpu_graph": "eager_blocks",
+              "height": 512,
+              "hybrid": {},
+              "lora_strategy": "none",
+              "memory": {
+                "mlx_active_bytes": 18270854214,
+                "mlx_peak_bytes": 20319021144,
+                "scope": "MLX allocator; excludes Core ML/OS/file cache"
+              },
+              "model": "flux2-klein-9b",
+              "operation": "image.generate",
+              "output": "outputs/flux9-compiled-v4-fused-encoder-palindrome-20261011/5-native/3.png",
+              "plan": {
+                "algorithm_approximations": [],
+                "audio": false,
+                "audio_capability": "not_applicable",
+                "backend": "mlx_cpp_metal",
+                "decoded_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "encoder_backend": "mlx_cpp_metal",
+                "encoder_execution": "gpu",
+                "encoder_gpu_graph": "qwen3_gpu_only",
+                "encoder_precision": "bf16",
+                "encoder_weight_validation": "native Qwen3 checkpoint loaded directly",
+                "executable": true,
+                "execution": "gpu",
+                "executor_operations": null,
+                "gpu_graph": "eager_blocks",
+                "hybrid_mlp_mode": "auto",
+                "limitation": "capabilities depend on model artifacts and configured hardware",
+                "lora_count": 0,
+                "lora_fusion": "none",
+                "lora_strategy": "none",
+                "ltx_backend": "auto",
+                "ltx_fast_av": true,
+                "ltx_sol_dense_edge_blocks": 1,
+                "ltx_sol_dense_edge_steps": 1,
+                "ltx_sol_stage1": false,
+                "ltx_sol_stage2": false,
+                "ltx_sol_tau": 0.5,
+                "ltx_sparse_anchor_stride": 0,
+                "ltx_sparse_keep_blocks": 0,
+                "ltx_sparse_mode": 0,
+                "ltx_sparse_radius": 1,
+                "ltx_sparse_tokens_per_frame": 0,
+                "ltx_stage2_text_rows": 0,
+                "ltx_video_attention_batch": false,
+                "memory_budget_bytes": null,
+                "memory_budget_scope": "unset",
+                "memory_estimate_bytes": 33285996544,
+                "memory_estimate_kind": "conservative_heuristic_not_hard_limit",
+                "model": "flux2-klein-9b",
+                "operation": "image.generate",
+                "precision": "bf16",
+                "profile_identity": "",
+                "prompt_enhance": false,
+                "prompt_enhance_edit_experimental": false,
+                "prompt_enhancer_path": "",
+                "quantized_cache": null,
+                "requested_execution": "gpu",
+                "requested_shape": [
+                  512,
+                  512,
+                  1
+                ],
+                "residency": "resident",
+                "schema_version": 1,
+                "selection_pending": false,
+                "stages": [
+                  {
+                    "dependencies": [],
+                    "id": "text_encode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "text_encode"
+                    ],
+                    "id": "denoise",
+                    "iterations": 4
+                  },
+                  {
+                    "dependencies": [
+                      "denoise"
+                    ],
+                    "id": "vae_decode",
+                    "iterations": 1
+                  },
+                  {
+                    "dependencies": [
+                      "vae_decode"
+                    ],
+                    "id": "export",
+                    "iterations": 1
+                  }
+                ],
+                "streaming_offload": false,
+                "validation": "native_candidate",
+                "weight_validation": "see parity evidence"
+              },
+              "prompt_cache_hit": true,
+              "qkv": null,
+              "reference_tokens": 0,
+              "runtime_backend": null,
+              "runtime_precision": null,
+              "schema_version": 1,
+              "seed": 42,
+              "steps": 4,
+              "text_tokens": 512,
+              "timings_seconds": {
+                "denoise": 6.636286041,
+                "hybrid_setup": 9.459e-06,
+                "image_encode": 0,
+                "request_wall": 6.973265667,
+                "text_encode": 1.2e-05,
+                "vae_decode": 0.324243291
+              },
+              "valid_text_tokens": 28,
+              "validation": "candidate; consult recorded parity suite",
+              "warmup": false,
+              "width": 512
+            }
+          }
+        ]
+      },
+      "memory": {
+        "complete": true,
+        "tree_peak_phys_footprint_bytes": 30490351600,
+        "compression_bytes": 0,
+        "decompression_bytes": 2359296,
+        "swap_in_bytes": 196608,
+        "swap_out_bytes": 0
+      },
+      "memory_evidence_sha256": "39eb1c56359cd49fd144620e683cb6b8280409ee278d5b22f0034336078ae16e",
+      "memory_report_sha256": "3ffef0eb6fc86a1a52d21ffbc4f973f0edddbbca85332c427ae958b3ef6552f3",
+      "pngs": [
+        {
+          "file_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+          "rgb_sha256": "061ed5f4451977a509537ff7736860cef42e70a8a380b59bc4fb8ed62de79b59"
+        },
+        {
+          "file_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+          "rgb_sha256": "edae79d61a6a0c1a6c00fb825d99619703322c0770f3c5b6a109a0af069df9f6"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        },
+        {
+          "file_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+          "rgb_sha256": "a2530fc33751597c29b3632f165eb637f71fd9096f7045a9951a4383ce563011"
+        }
+      ]
+    }
+  ],
+  "timing_scope": "first process request; two fresh warm prompts; one immediate repeated-prompt request; complete PNG export wall",
+  "source_policy": "first source generation SHA then durable benchmark metadata reuse; unchanged canonical/stat guard at arm boundaries; no per-inference model hash or OS cache purge",
+  "scope": "same BF16 files and native/reference templates; fresh prompt latency, not equal allocator/residency policy or strict numerical equivalence",
+  "reference_cache_mib": 0,
+  "native_encoder_eval_interval": 0,
+  "native_encoder_fused_attention": true,
+  "reference_required_weight_coverage_verified": true,
+  "medians": {
+    "mflux": {
+      "fresh_warm_seconds": 7.343155624927022,
+      "samples": [
+        7.298503083875403,
+        7.353703917004168,
+        7.367817874997854,
+        7.332607332849875
+      ],
+      "repeated_prompt_seconds": [
+        7.409936249954626,
+        7.324106625048444
+      ],
+      "cold_seconds": [
+        7.895718541927636,
+        8.141281915828586
+      ],
+      "constructor_seconds": [
+        0.38914650003425777,
+        0.38396362494677305
+      ]
+    },
+    "native": {
+      "fresh_warm_seconds": 7.612181082949974,
+      "samples": [
+        7.7667287909425795,
+        7.433350041974336,
+        7.823614082997665,
+        7.457633374957368
+      ],
+      "repeated_prompt_seconds": [
+        6.979424959048629,
+        6.973521374864504
+      ],
+      "cold_seconds": [
+        8.391951832920313,
+        8.39649650012143
+      ],
+      "constructor_seconds": [
+        0.1322804589290172,
+        0.1448353340383619
+      ]
+    },
+    "native-compiled": {
+      "fresh_warm_seconds": 7.374041416565888,
+      "samples": [
+        7.556173500139266,
+        7.1725717089138925,
+        7.550080583197996,
+        7.198002249933779
+      ],
+      "repeated_prompt_seconds": [
+        6.8286910420283675,
+        6.823729750001803
+      ],
+      "cold_seconds": [
+        7.695445334073156,
+        7.919486374827102
+      ],
+      "constructor_seconds": [
+        0.14038558304309845,
+        0.1447482919320464
+      ]
+    }
+  },
+  "fresh_warm_speedup": 0.9646585577653264,
+  "fresh_warm_reduction_percent": -3.6636219054069885,
+  "compiled_gpu_comparison": {
+    "native_eager_over_compiled": 1.032294321787928,
+    "reference_over_compiled": 0.9958115516452781,
+    "compiled_reduction_vs_eager_percent": 3.128402540468711,
+    "scope": "same BF16 source/four-step whole requests;96 actual host-submitted compiled single-block branches per request, no added fences; not physical GPU occupancy trace"
+  },
+  "rgb_comparisons": [
+    {
+      "native": "0-native",
+      "reference": "1-native-compiled",
+      "index": 0,
+      "native_png_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+      "reference_png_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "0-native",
+      "reference": "1-native-compiled",
+      "index": 1,
+      "native_png_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+      "reference_png_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "0-native",
+      "reference": "1-native-compiled",
+      "index": 2,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "0-native",
+      "reference": "1-native-compiled",
+      "index": 3,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "5-native",
+      "reference": "4-native-compiled",
+      "index": 0,
+      "native_png_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+      "reference_png_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "5-native",
+      "reference": "4-native-compiled",
+      "index": 1,
+      "native_png_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+      "reference_png_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "5-native",
+      "reference": "4-native-compiled",
+      "index": 2,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "5-native",
+      "reference": "4-native-compiled",
+      "index": 3,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "pixel_exact": true,
+      "rmse_u8": 0.0,
+      "psnr_db": null,
+      "max_abs_u8": 0,
+      "rgb_correlation": 1.0,
+      "rgb_ssim_gaussian11_valid": 1.0,
+      "ssim_per_channel": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "mae_u8": 0.0
+    },
+    {
+      "native": "0-native",
+      "reference": "2-mflux",
+      "index": 0,
+      "native_png_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+      "reference_png_sha256": "f3c04c6864516df482e2886f925d0497e90e500b545d8acbddc6c5a96a3c3c25",
+      "pixel_exact": false,
+      "rmse_u8": 3.6514243425560395,
+      "psnr_db": 36.8815574787358,
+      "max_abs_u8": 148,
+      "rgb_correlation": 0.9986544127692827,
+      "rgb_ssim_gaussian11_valid": 0.9908459692496769,
+      "ssim_per_channel": [
+        0.9906756838424453,
+        0.990890831518755,
+        0.9909713923878521
+      ],
+      "mae_u8": 1.4878476460774739
+    },
+    {
+      "native": "0-native",
+      "reference": "2-mflux",
+      "index": 1,
+      "native_png_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+      "reference_png_sha256": "1467ecbcb9d813ad0ae09b3404ce6291010b6a128558d3155426fe4117e27dcb",
+      "pixel_exact": false,
+      "rmse_u8": 2.8471114305066028,
+      "psnr_db": 39.042714309947215,
+      "max_abs_u8": 112,
+      "rgb_correlation": 0.9990120718501279,
+      "rgb_ssim_gaussian11_valid": 0.992577318511506,
+      "ssim_per_channel": [
+        0.9926776390067991,
+        0.9926647038095965,
+        0.9923896127181074
+      ],
+      "mae_u8": 1.1911697387695312
+    },
+    {
+      "native": "0-native",
+      "reference": "2-mflux",
+      "index": 2,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "3de216132aaa02d17e13c1a9f252c0fb654d64330b999e87e374fc882eb0cc64",
+      "pixel_exact": false,
+      "rmse_u8": 3.599841806680086,
+      "psnr_db": 37.00513528219691,
+      "max_abs_u8": 191,
+      "rgb_correlation": 0.9985184047905359,
+      "rgb_ssim_gaussian11_valid": 0.9902020830856165,
+      "ssim_per_channel": [
+        0.9908918793939003,
+        0.9906123548542173,
+        0.9891020150087206
+      ],
+      "mae_u8": 1.2859077453613281
+    },
+    {
+      "native": "0-native",
+      "reference": "2-mflux",
+      "index": 3,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "65ff158e9d951b26211bcc507a81450824b053c91f3924cab7fb8f84ffc17c0d",
+      "pixel_exact": false,
+      "rmse_u8": 3.599841806680086,
+      "psnr_db": 37.00513528219691,
+      "max_abs_u8": 191,
+      "rgb_correlation": 0.9985184047905359,
+      "rgb_ssim_gaussian11_valid": 0.9902020830856165,
+      "ssim_per_channel": [
+        0.9908918793939003,
+        0.9906123548542173,
+        0.9891020150087206
+      ],
+      "mae_u8": 1.2859077453613281
+    },
+    {
+      "native": "5-native",
+      "reference": "3-mflux",
+      "index": 0,
+      "native_png_sha256": "c530b3314f85a7c859e1070cd756c97afaebdef7668761cfc6da787f67570cc0",
+      "reference_png_sha256": "510b6652bd843d7d3fcfec291d83290d9481d7dd330370ae24ae1fddf936fe19",
+      "pixel_exact": false,
+      "rmse_u8": 3.6514243425560395,
+      "psnr_db": 36.8815574787358,
+      "max_abs_u8": 148,
+      "rgb_correlation": 0.9986544127692827,
+      "rgb_ssim_gaussian11_valid": 0.9908459692496769,
+      "ssim_per_channel": [
+        0.9906756838424453,
+        0.990890831518755,
+        0.9909713923878521
+      ],
+      "mae_u8": 1.4878476460774739
+    },
+    {
+      "native": "5-native",
+      "reference": "3-mflux",
+      "index": 1,
+      "native_png_sha256": "f4274713df2ba198cea168e75c64ee384d170389727fd32749ef310d7627a160",
+      "reference_png_sha256": "ae0f57179635eb55d8b64861509eb94cec5f867deafff7ad35c3c90b300b8fcf",
+      "pixel_exact": false,
+      "rmse_u8": 2.8471114305066028,
+      "psnr_db": 39.042714309947215,
+      "max_abs_u8": 112,
+      "rgb_correlation": 0.9990120718501279,
+      "rgb_ssim_gaussian11_valid": 0.992577318511506,
+      "ssim_per_channel": [
+        0.9926776390067991,
+        0.9926647038095965,
+        0.9923896127181074
+      ],
+      "mae_u8": 1.1911697387695312
+    },
+    {
+      "native": "5-native",
+      "reference": "3-mflux",
+      "index": 2,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "1b8e9ed844d6a0bb4584e1c42de669d6775fb1e2e3cdced18886ce8b4901fd4a",
+      "pixel_exact": false,
+      "rmse_u8": 3.599841806680086,
+      "psnr_db": 37.00513528219691,
+      "max_abs_u8": 191,
+      "rgb_correlation": 0.9985184047905359,
+      "rgb_ssim_gaussian11_valid": 0.9902020830856165,
+      "ssim_per_channel": [
+        0.9908918793939003,
+        0.9906123548542173,
+        0.9891020150087206
+      ],
+      "mae_u8": 1.2859077453613281
+    },
+    {
+      "native": "5-native",
+      "reference": "3-mflux",
+      "index": 3,
+      "native_png_sha256": "9ea6efe3a1dae51af7fbff3abe1996e694fbb3fbe2e8d3c1aa9a79c18b718f28",
+      "reference_png_sha256": "cd1977b76dab5de5e7b1265397fa9336f03d460f64ded604434ebeb3c0b73f5a",
+      "pixel_exact": false,
+      "rmse_u8": 3.599841806680086,
+      "psnr_db": 37.00513528219691,
+      "max_abs_u8": 191,
+      "rgb_correlation": 0.9985184047905359,
+      "rgb_ssim_gaussian11_valid": 0.9902020830856165,
+      "ssim_per_channel": [
+        0.9908918793939003,
+        0.9906123548542173,
+        0.9891020150087206
+      ],
+      "mae_u8": 1.2859077453613281
+    }
+  ],
+  "rgb_comparison_scope": "native opaque alpha verified; compare original RGB without resize; same seed not proof of identical noise; not broad perceptual qualification",
+  "mlxserve": {
+    "evidence": "outputs/mlxserve-flux9-bf16-probe-v1-20261011/summary.json",
+    "evidence_sha256": "f428a8851503f92ccc1b5513f3cdd0193977f7a0fdb14374eb3f7091f912d5fd",
+    "result": {
+      "schema": "tc-mlxserve-local-compatibility-v1",
+      "status": "startup_rejected",
+      "version": "[mem] MLX buffer-pool cap 4096 MB (was 62259 MB)\nmlx-serve 26.10.1\nmlx 0.32.3\nmlx-c 56b2d39fc831\nnax off (requires M5-class GPU)\nggml 0.23.0 (5266f24da)\nllama.cpp b10809\ngguf 3\nds4 unknown\n",
+      "binary_sha256": "46d017b5f6e49890e654dbefd2b750eda44b627a20f4ec7a01015a4d0d8ea1e0",
+      "model_layout": "original local FLUX9B BF16 diffusers shards",
+      "qualification_passed": false,
+      "latency_comparison_valid": false,
+      "requests": [],
+      "scope": "owned server over loopback; original unmodified model; no precision/layout conversion",
+      "startup_seconds": 0.2611425839131698,
+      "exit_code": 1,
+      "server_terminal": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "35d407d047ba1c057df518b34685338b49aa2f4e53566143137914f2f8562fc1"
+    },
+    "rejection": "original HF text-encoder keys do not match expected mflux-converted keys; affine planes also required by pinned loader",
+    "release_commit": "02bee553f48cd3bc7d82aba0f8073820bd924738",
+    "release_flux_source_sha256": "9be28a5600617291696dd55b51d0404b101ae4db3814d8848b9fab69bbc03005"
+  },
+  "retained_failures": [
+    {
+      "evidence": "outputs/flux9-bf16-framework-v1-precheck-20261011.log",
+      "reason": "empty Python __init__.py rejected by model-only source guard"
+    },
+    {
+      "evidence": "outputs/flux9-bf16-framework-v2-precheck-20261011/summary.json",
+      "reason": "all images completed but unknown Python child made independent memory evidence inconclusive; no performance promotion"
+    }
+  ],
+  "retained_stage_observer": {
+    "evidence": "outputs/flux9-bf16-framework-v3-abba-20261011/summary.json",
+    "purpose": "auxiliary phase observer with eval boundaries and pre-call token checks; not the primary stock whole-request denominator"
+  }
+}

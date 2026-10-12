@@ -20,6 +20,7 @@
 #include "runtime_ffn_graphs.hpp"
 #include "runtime_gpu_layer_config.hpp"
 #include "bf16_streaming.hpp"
+#include "source_registration.hpp"
 #include "../../media/image.hpp"
 #include "../../runtime/residency.hpp"
 #include "../../runtime/streaming/source_lease.hpp"
@@ -188,10 +189,11 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
         if(experimental_adapter || !adapter) {
             streaming::SourceFileIdentity source;source.logical_id="qwen21-adapter";source.path=r.loras[0].path;
             // Full hash on the first capture; subsequent requests may consume
-            // ONLY native process proofs for the same dev/ino/size/mtime/ctime.
-            // Caller digests/metadata are never imported as proof. The same
+            // Native process proofs or authenticated initial-registration
+            // receipts for the same path/dev/ino/size/mtime/ctime. Caller
+            // digests/metadata are never imported as proof. The same
             // held descriptors feed the first actual low-rank source binding.
-            adapter_lease=streaming::SourceLease::capture_verified({source},&cancelled);
+            adapter_lease=capture_model_source(source,cancelled);
             require(adapter_lease->file("qwen21-adapter").canonical_target_path==path,
                     "Qwen21 adapter alias changed during identity capture");
             identity+=":"+adapter_lease->file("qwen21-adapter").content_digest;
@@ -366,9 +368,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (!qkv_requested || staged) { runtime_qkv_.reset(); qkv_manifest_.clear(); }
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
     require(binary_option_or_unset(encoder_weights_flag),"Qwen encoder weight retention requires 0 or 1");
-    const bool retain_encoder_weights=option_enabled(encoder_weights_flag);
     const bool gguf_transformer=transformer_source_.extension()==".gguf";
     const bool gguf_encoder=encoder_source_.extension()==".gguf";
+    const bool fast_encoder_default=gguf_fast_defaults_enabled() && gguf_fast_encoder_request(r,gguf_encoder,gguf_transformer);
+    const bool retain_encoder_weights=option_or_default(encoder_weights_flag,fast_encoder_default);
     const char *shared_down_flag=std::getenv("TURBOCIDER_QWEN21_GGUF_SHARED_DOWN");
     require(binary_option_or_unset(shared_down_flag),"Qwen GGUF shared down requires0 or1");
     const bool shared_down=option_enabled(shared_down_flag);
@@ -384,8 +387,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             !r.prompt_enhance && !r.qwen21_gpu_w8a16 && !r.qwen21_w8a8,
             "Qwen21 mixed GGUF requires approximate GPU/fixed Private FP16 channel base generation; encoder hybrid/edit/LoRA qualification pending");
     require(!native_dit || (!gguf_transformer && !gguf_encoder && !retain_encoder_weights),"native DiT requires original BF16 sources without retained MLX encoder weights");
-    const bool compile_encoder_gpu=compiled_encoder_gpu(r);
-    const bool encoder_prefill=option_enabled(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"));
+    const bool compile_encoder_gpu=compiled_encoder_gpu(r,fast_encoder_default);
+    const bool encoder_prefill=option_or_default(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"),fast_encoder_default);
     require(!(metal_encoder_requested || encoder_runtime_requested || !encoder_capture_path.empty()) ||
         (r.encoder_ane_manifest.empty() && !encoder_prefill && !compile_encoder_gpu && !retain_encoder_weights),
         "native/diagnostic encoder routes conflict with shared runtime, fused prefill or weight retention");

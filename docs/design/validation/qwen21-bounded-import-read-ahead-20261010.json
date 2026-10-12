@@ -1,0 +1,2316 @@
+{
+  "schema": "tc-qwen21-bounded-read-ahead-validation-v1",
+  "date": "2026-10-10",
+  "goal_status": "active",
+  "qualification_passed": false,
+  "platform": {
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 68719476736,
+    "macos": "26.6.2"
+  },
+  "runtime_build_id": "tc-runtime-build-v1-8b8c16c1c899c8155b1522f85fa4822bc696f580895721cd0d4a600390c3bdaf",
+  "matched_source_count": 513,
+  "source_sha256": {
+    "qwen21-gguf-encoder-import-probe": "3e1a49554a254ef67c551245d18d48403063bbd74bbef10338a481d3d9cf1cf1",
+    "libturbocider.dylib": "3731509930775f1a18c3ab041dfdfffce3c924165b37ac089186fbec1ebd3731",
+    "Qwen3-VL-8B-Instruct-Q4_K_M.gguf": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89"
+  },
+  "implementation": {
+    "environment": "TURBOCIDER_QWEN21_GGUF_READ_AHEAD",
+    "default": false,
+    "worker_count": 1,
+    "queued_job_limit": 1,
+    "buffer_slots": 2,
+    "per_slot_mib": [
+      1,
+      4,
+      8
+    ],
+    "decoder_workers_max": 8,
+    "source_sha_scan_change": false,
+    "precision_change": false,
+    "all_model_raw_or_dense_cache": false,
+    "hash_import_gate_preserved": true,
+    "publication_after_read_worker_drain": true,
+    "physical_overlap_proved": false
+  },
+  "component_import": {
+    "status": "complete_diagnostic",
+    "order": [
+      [
+        1,
+        false
+      ],
+      [
+        1,
+        true
+      ],
+      [
+        4,
+        false
+      ],
+      [
+        4,
+        true
+      ],
+      [
+        8,
+        false
+      ],
+      [
+        8,
+        true
+      ],
+      [
+        8,
+        true
+      ],
+      [
+        8,
+        false
+      ],
+      [
+        4,
+        true
+      ],
+      [
+        4,
+        false
+      ],
+      [
+        1,
+        true
+      ],
+      [
+        1,
+        false
+      ]
+    ],
+    "medians": {
+      "1-serial": {
+        "bank_load_seconds": 0.6493710835,
+        "bank_read_seconds": 0.2180909565,
+        "bank_decode_seconds": 0.40911192100000005,
+        "total_observed_seconds": 0.6660867500000001
+      },
+      "1-ahead": {
+        "bank_load_seconds": 0.490464146,
+        "bank_read_seconds": 0.2214086715,
+        "bank_decode_seconds": 0.44788570650000004,
+        "total_observed_seconds": 0.5051395835
+      },
+      "4-serial": {
+        "bank_load_seconds": 0.5414078330000001,
+        "bank_read_seconds": 0.1923786555,
+        "bank_decode_seconds": 0.3269579675,
+        "total_observed_seconds": 0.556079271
+      },
+      "4-ahead": {
+        "bank_load_seconds": 0.412744625,
+        "bank_read_seconds": 0.1949872215,
+        "bank_decode_seconds": 0.34669739,
+        "total_observed_seconds": 0.427638667
+      },
+      "8-serial": {
+        "bank_load_seconds": 0.5216881664999999,
+        "bank_read_seconds": 0.1865103835,
+        "bank_decode_seconds": 0.31276981449999997,
+        "total_observed_seconds": 0.5363559585
+      },
+      "8-ahead": {
+        "bank_load_seconds": 0.42561906250000003,
+        "bank_read_seconds": 0.19471251150000002,
+        "bank_decode_seconds": 0.3292563285,
+        "total_observed_seconds": 0.440621646
+      }
+    },
+    "evidence": "outputs/qwen21-read-ahead-v1-import-screen-20261010/summary.json",
+    "trials": [
+      {
+        "buffer_mib": 1,
+        "read_ahead": false,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "5b0d3c0e08bfe49f83616ca36d8edc5ea61b7cac5d65b76c5c70e4ce611c659b",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 1048576,
+          "read_buffer_slots": 1,
+          "read_ahead_enabled": false,
+          "read_ahead_drained": false,
+          "read_ahead_jobs": 0,
+          "read_ahead_bytes": 0,
+          "read_wait_seconds": 0,
+          "managed_peak_bytes": 5222459392,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000269708,
+          "bank_load_seconds": 0.650885917,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.218288658,
+          "bank_decode_seconds": 0.410299344,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.011023542,
+          "total_observed_seconds": 0.66964225,
+          "mlx_logical_peak_bytes": 5222459392
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4726280008,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "0f743298975665094c105deb6260a5e4558a3d37ea6988269f0b17ffb96a2229"
+        }
+      },
+      {
+        "buffer_mib": 1,
+        "read_ahead": true,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "595924b596236f4fbd33b1f281f886b9294b3ed9dffd9c7496d0ffd3b0fe30ea",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 2097152,
+          "read_buffer_slots": 2,
+          "read_ahead_enabled": true,
+          "read_ahead_drained": true,
+          "read_ahead_jobs": 4528,
+          "read_ahead_bytes": 4510089216,
+          "read_wait_seconds": 0.015401062,
+          "managed_peak_bytes": 5223507968,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000153917,
+          "bank_load_seconds": 0.490805917,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.221382683,
+          "bank_decode_seconds": 0.448256359,
+          "embedding_setup_seconds": 4.2e-8,
+          "token_gather_seconds": 0.009023583,
+          "total_observed_seconds": 0.50554525,
+          "mlx_logical_peak_bytes": 5223507968
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 5213409456,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "480e4578ea0a3b1f3ea6025df5e070a2f0f4284307780e3181d73091573a7bda"
+        }
+      },
+      {
+        "buffer_mib": 4,
+        "read_ahead": false,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "0624c17101d081d7a2fd30b93273415b27a7d35f5029eebad565c8da8480b879",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 4194304,
+          "read_buffer_slots": 1,
+          "read_ahead_enabled": false,
+          "read_ahead_drained": false,
+          "read_ahead_jobs": 0,
+          "read_ahead_bytes": 0,
+          "read_wait_seconds": 0,
+          "managed_peak_bytes": 5225605120,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000163917,
+          "bank_load_seconds": 0.542410708,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.191922353,
+          "bank_decode_seconds": 0.328307885,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.00897075,
+          "total_observed_seconds": 0.556869834,
+          "mlx_logical_peak_bytes": 5225605120
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4715548488,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "87f978fd14c60fab5715be4459780f4e69a4da4f2584d0c32d42cd8b5da2b00e"
+        }
+      },
+      {
+        "buffer_mib": 4,
+        "read_ahead": true,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "d837c38c8a6f9a35af0e75158a0a2fbd55754b8f89d367ae90205466a70e9911",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 8388608,
+          "read_buffer_slots": 2,
+          "read_ahead_enabled": true,
+          "read_ahead_drained": true,
+          "read_ahead_jobs": 1110,
+          "read_ahead_bytes": 4320755712,
+          "read_wait_seconds": 0.033711148,
+          "managed_peak_bytes": 5229799424,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000156125,
+          "bank_load_seconds": 0.4133475,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.194862646,
+          "bank_decode_seconds": 0.347289195,
+          "embedding_setup_seconds": 4.2e-8,
+          "token_gather_seconds": 0.009121083,
+          "total_observed_seconds": 0.4279755,
+          "mlx_logical_peak_bytes": 5229799424
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4929736664,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "bffa624e261e7a02a5741d0c9a2655821028933d37ffc45620dbde6b7b7466b1"
+        }
+      },
+      {
+        "buffer_mib": 8,
+        "read_ahead": false,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "c5b97f068219d8679919f674421a12cc05eef408edd0b5a9c08446f30b8306d4",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 8388608,
+          "read_buffer_slots": 1,
+          "read_ahead_enabled": false,
+          "read_ahead_drained": false,
+          "read_ahead_jobs": 0,
+          "read_ahead_bytes": 0,
+          "read_wait_seconds": 0,
+          "managed_peak_bytes": 5229799424,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000181334,
+          "bank_load_seconds": 0.520943958,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.186674314,
+          "bank_decode_seconds": 0.31195518,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.009081458,
+          "total_observed_seconds": 0.535650084,
+          "mlx_logical_peak_bytes": 5229799424
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4915564504,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "8782a5662b7b293fcd44014c2b7f269d40c2f39ed0635ccd8d6b37f135fbcfa5"
+        }
+      },
+      {
+        "buffer_mib": 8,
+        "read_ahead": true,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "6816fe5e6935b43ba90604322a31d307219af75a6c980fa7242478e4f77981db",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 16777216,
+          "read_buffer_slots": 2,
+          "read_ahead_enabled": true,
+          "read_ahead_drained": true,
+          "read_ahead_jobs": 636,
+          "read_ahead_bytes": 4320755712,
+          "read_wait_seconds": 0.064432875,
+          "managed_peak_bytes": 5238188032,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000160583,
+          "bank_load_seconds": 0.42455525,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.194516498,
+          "bank_decode_seconds": 0.328054455,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.009108459,
+          "total_observed_seconds": 0.439923125,
+          "mlx_logical_peak_bytes": 5238188032
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4810018704,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "181f5b68d76e29469fe998abcffd5e32343a93400e91f8f305fcc1598d208afe"
+        }
+      },
+      {
+        "buffer_mib": 8,
+        "read_ahead": true,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "6816fe5e6935b43ba90604322a31d307219af75a6c980fa7242478e4f77981db",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 16777216,
+          "read_buffer_slots": 2,
+          "read_ahead_enabled": true,
+          "read_ahead_drained": true,
+          "read_ahead_jobs": 636,
+          "read_ahead_bytes": 4320755712,
+          "read_wait_seconds": 0.064300344,
+          "managed_peak_bytes": 5238188032,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000151375,
+          "bank_load_seconds": 0.426682875,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.194908525,
+          "bank_decode_seconds": 0.330458202,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.009065084,
+          "total_observed_seconds": 0.441320167,
+          "mlx_logical_peak_bytes": 5238188032
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4780642192,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "5eb5e0d5141906a87f89e238dd876c09ec77926a1ff0b59689493f2b491cdf8a"
+        }
+      },
+      {
+        "buffer_mib": 8,
+        "read_ahead": false,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "c5b97f068219d8679919f674421a12cc05eef408edd0b5a9c08446f30b8306d4",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 8388608,
+          "read_buffer_slots": 1,
+          "read_ahead_enabled": false,
+          "read_ahead_drained": false,
+          "read_ahead_jobs": 0,
+          "read_ahead_bytes": 0,
+          "read_wait_seconds": 0,
+          "managed_peak_bytes": 5229799424,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000160958,
+          "bank_load_seconds": 0.522432375,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.186346453,
+          "bank_decode_seconds": 0.313584449,
+          "embedding_setup_seconds": 4.1e-8,
+          "token_gather_seconds": 0.00908075,
+          "total_observed_seconds": 0.537061833,
+          "mlx_logical_peak_bytes": 5229799424
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4901654488,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "6bf81df92938318a5e0e450705030e4acae83d4c172c6d95912759a6b959e187"
+        }
+      },
+      {
+        "buffer_mib": 4,
+        "read_ahead": true,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "d837c38c8a6f9a35af0e75158a0a2fbd55754b8f89d367ae90205466a70e9911",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 8388608,
+          "read_buffer_slots": 2,
+          "read_ahead_enabled": true,
+          "read_ahead_drained": true,
+          "read_ahead_jobs": 1110,
+          "read_ahead_bytes": 4320755712,
+          "read_wait_seconds": 0.033946089,
+          "managed_peak_bytes": 5229799424,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000191959,
+          "bank_load_seconds": 0.41214175,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.195111797,
+          "bank_decode_seconds": 0.346105585,
+          "embedding_setup_seconds": 4.1e-8,
+          "token_gather_seconds": 0.009389,
+          "total_observed_seconds": 0.427301834,
+          "mlx_logical_peak_bytes": 5229799424
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4933390320,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "7be6100a3c3218997977d37defab0237448998bf4fd2f62c03286936a57c5ceb"
+        }
+      },
+      {
+        "buffer_mib": 4,
+        "read_ahead": false,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "0624c17101d081d7a2fd30b93273415b27a7d35f5029eebad565c8da8480b879",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 4194304,
+          "read_buffer_slots": 1,
+          "read_ahead_enabled": false,
+          "read_ahead_drained": false,
+          "read_ahead_jobs": 0,
+          "read_ahead_bytes": 0,
+          "read_wait_seconds": 0,
+          "managed_peak_bytes": 5225605120,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000150333,
+          "bank_load_seconds": 0.540404958,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.192834958,
+          "bank_decode_seconds": 0.32560805,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.008978625,
+          "total_observed_seconds": 0.555288708,
+          "mlx_logical_peak_bytes": 5225605120
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4731916104,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "5bdf65914d0db86a622fda3a9438afa09c08f55e869b5f2c6e7a5910aec95185"
+        }
+      },
+      {
+        "buffer_mib": 1,
+        "read_ahead": true,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "595924b596236f4fbd33b1f281f886b9294b3ed9dffd9c7496d0ffd3b0fe30ea",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 2097152,
+          "read_buffer_slots": 2,
+          "read_ahead_enabled": true,
+          "read_ahead_drained": true,
+          "read_ahead_jobs": 4528,
+          "read_ahead_bytes": 4510089216,
+          "read_wait_seconds": 0.015080163,
+          "managed_peak_bytes": 5223507968,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000153458,
+          "bank_load_seconds": 0.490122375,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.22143466,
+          "bank_decode_seconds": 0.447515054,
+          "embedding_setup_seconds": 0,
+          "token_gather_seconds": 0.009035375,
+          "total_observed_seconds": 0.504733917,
+          "mlx_logical_peak_bytes": 5223507968
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 5218963632,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "07367656906e8524399efc64740076fe8557afbb5dcaee09518d9ef94ad54341"
+        }
+      },
+      {
+        "buffer_mib": 1,
+        "read_ahead": false,
+        "native": {
+          "schema": "tc-qwen21-encoder-import-screen-v1",
+          "qualification_passed": false,
+          "scope": "complete native full-SHA and mixed-K encoder import plus 13 original token rows; no encoder-layer/DiT timing",
+          "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+          "plan_digest": "5b0d3c0e08bfe49f83616ca36d8edc5ea61b7cac5d65b76c5c70e4ce611c659b",
+          "workers": 8,
+          "embedding_mode": "packed",
+          "verification_bytes": 0,
+          "source_read_bytes": 4511322112,
+          "registration_cache_hits": 1,
+          "packed_capacity_bytes": 5221410816,
+          "read_buffer_capacity_bytes": 1048576,
+          "read_buffer_slots": 1,
+          "read_ahead_enabled": false,
+          "read_ahead_drained": false,
+          "read_ahead_jobs": 0,
+          "read_ahead_bytes": 0,
+          "read_wait_seconds": 0,
+          "managed_peak_bytes": 5222459392,
+          "final_weight_logical_bytes": 5221410816,
+          "native_verification_seconds": 0.000152792,
+          "bank_load_seconds": 0.64785625,
+          "verification_overlap": false,
+          "source_verified_before_publication": true,
+          "verified_import_seconds": 0,
+          "bank_read_seconds": 0.217893255,
+          "bank_decode_seconds": 0.407924498,
+          "embedding_setup_seconds": 4.1e-8,
+          "token_gather_seconds": 0.009079291,
+          "total_observed_seconds": 0.66253125,
+          "mlx_logical_peak_bytes": 5222459392
+        },
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 4750135136,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "0cc516e3dcea6a03b93e3f89611c06174e0aed648e5439a42274a32ed758dc84"
+        }
+      }
+    ]
+  },
+  "independent_screens": [
+    {
+      "steps": 4,
+      "read_buffer_mib": 1,
+      "read_ahead": false,
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "mode": "gpu",
+          "timings": [
+            {
+              "denoise": 4.758286416,
+              "hybrid_setup": 0,
+              "image_encode": 2.5e-7,
+              "request_wall": 7.066910083,
+              "text_encode": 1.102180792,
+              "vae_decode": 0.575266917
+            },
+            {
+              "denoise": 4.415185584,
+              "hybrid_setup": 0,
+              "image_encode": 2.08e-7,
+              "request_wall": 5.100890666,
+              "text_encode": 0.092863041,
+              "vae_decode": 0.577025625
+            },
+            {
+              "denoise": 4.417079292,
+              "hybrid_setup": 0,
+              "image_encode": 2.08e-7,
+              "request_wall": 5.112052417,
+              "text_encode": 0.095651791,
+              "vae_decode": 0.583490417
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 5.1064715414999995,
+            "text_encode": 0.094257416,
+            "denoise": 4.416132438
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000356667,
+              "import_wall_seconds": 0.589206
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000152417,
+              "import_wall_seconds": 0.653331
+            }
+          ],
+          "png_sha256": [
+            "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+            "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+            "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 14433279608,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "419aed577e634d0ae36d5ebc69e51f9aed17ae1b061682820aa5eb8ecfa06163"
+          }
+        },
+        {
+          "mode": "a5120",
+          "timings": [
+            {
+              "denoise": 3.806008417,
+              "hybrid_setup": 0.000092042,
+              "image_encode": 2.5e-7,
+              "request_wall": 6.486461417,
+              "text_encode": 1.194412916,
+              "vae_decode": 0.566290333
+            },
+            {
+              "denoise": 3.689803,
+              "hybrid_setup": 0.000098416,
+              "image_encode": 2.08e-7,
+              "request_wall": 4.384153542,
+              "text_encode": 0.092881917,
+              "vae_decode": 0.585769084
+            },
+            {
+              "denoise": 3.674041125,
+              "hybrid_setup": 0.000095458,
+              "image_encode": 2.5e-7,
+              "request_wall": 4.347506959,
+              "text_encode": 0.092223833,
+              "vae_decode": 0.566649708
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 4.3658302505,
+            "text_encode": 0.092552875,
+            "denoise": 3.6819220625
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.00014025,
+              "import_wall_seconds": 0.584821
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000151959,
+              "import_wall_seconds": 0.876238
+            }
+          ],
+          "png_sha256": [
+            "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+            "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+            "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15678381640,
+            "compression_bytes": 0,
+            "decompression_bytes": 131072,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "f2a2193a7773e26fae54d88a38fdb11f26673205cb1369c5d3aad4c80c9ba77d"
+          }
+        }
+      ]
+    },
+    {
+      "steps": 4,
+      "read_buffer_mib": 4,
+      "read_ahead": false,
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "mode": "gpu",
+          "timings": [
+            {
+              "denoise": 4.417259125,
+              "hybrid_setup": 0,
+              "image_encode": 2.09e-7,
+              "request_wall": 6.414528417,
+              "text_encode": 0.876259542,
+              "vae_decode": 0.5837355
+            },
+            {
+              "denoise": 4.415379917,
+              "hybrid_setup": 0,
+              "image_encode": 2.08e-7,
+              "request_wall": 5.092460083,
+              "text_encode": 0.089954791,
+              "vae_decode": 0.571821125
+            },
+            {
+              "denoise": 4.445038625,
+              "hybrid_setup": 0,
+              "image_encode": 1.67e-7,
+              "request_wall": 5.117873166,
+              "text_encode": 0.091109041,
+              "vae_decode": 0.566437416
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 5.1051666245,
+            "text_encode": 0.090531916,
+            "denoise": 4.430209271
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 4194304,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.0001365,
+              "import_wall_seconds": 0.494949
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 4194304,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000144333,
+              "import_wall_seconds": 0.549905
+            }
+          ],
+          "png_sha256": [
+            "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+            "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+            "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15514230512,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "7be3d88e3dbd298658c1e165cdf141838fc185c9582406fa3b6df754cdf194f0"
+          }
+        },
+        {
+          "mode": "a5120",
+          "timings": [
+            {
+              "denoise": 3.700308,
+              "hybrid_setup": 0.000072333,
+              "image_encode": 1.66e-7,
+              "request_wall": 6.062852708,
+              "text_encode": 1.049467792,
+              "vae_decode": 0.572483292
+            },
+            {
+              "denoise": 3.672408375,
+              "hybrid_setup": 0.000095875,
+              "image_encode": 1.67e-7,
+              "request_wall": 4.347748584,
+              "text_encode": 0.091952916,
+              "vae_decode": 0.56869175
+            },
+            {
+              "denoise": 3.663876875,
+              "hybrid_setup": 0.000097959,
+              "image_encode": 2.08e-7,
+              "request_wall": 4.358125125,
+              "text_encode": 0.092370125,
+              "vae_decode": 0.587119334
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 4.352936854499999,
+            "text_encode": 0.0921615205,
+            "denoise": 3.6681426249999998
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 4194304,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000138042,
+              "import_wall_seconds": 0.490174
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 4194304,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000153917,
+              "import_wall_seconds": 0.727383
+            }
+          ],
+          "png_sha256": [
+            "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+            "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+            "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15361285728,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "34cd3687db30d4f628a8cd09b472fa9fdb843ab5d02a9b272188b3e038b3cba6"
+          }
+        }
+      ]
+    },
+    {
+      "steps": 4,
+      "read_buffer_mib": 4,
+      "read_ahead": true,
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "mode": "gpu",
+          "timings": [
+            {
+              "denoise": 4.417168625,
+              "hybrid_setup": 0,
+              "image_encode": 1.25e-7,
+              "request_wall": 6.160726042,
+              "text_encode": 0.755058625,
+              "vae_decode": 0.574072458
+            },
+            {
+              "denoise": 4.420731333,
+              "hybrid_setup": 0,
+              "image_encode": 2.09e-7,
+              "request_wall": 5.107550459,
+              "text_encode": 0.08936025,
+              "vae_decode": 0.58156575
+            },
+            {
+              "denoise": 4.421226084,
+              "hybrid_setup": 0,
+              "image_encode": 1.66e-7,
+              "request_wall": 5.097721166,
+              "text_encode": 0.091007542,
+              "vae_decode": 0.569180833
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 5.1026358125,
+            "text_encode": 0.090183896,
+            "denoise": 4.4209787085
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4197580800,
+              "read_wait_seconds": 0.0377461,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000141917,
+              "import_wall_seconds": 0.373578
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4320755712,
+              "read_wait_seconds": 0.034138,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000149125,
+              "import_wall_seconds": 0.427484
+            }
+          ],
+          "png_sha256": [
+            "34422e4eb5c23997b29b285dd21082cf81b42d0935b4076f38c066681ccd9993",
+            "99f86fc6bc4fc610f5cd827c419af983d929618e0ea3ec0fbd6fd0b32a2f1f18",
+            "48f45b91d97354b2125ec492017d5c36e7992030ee8c54787ad53d5bf6e825f8"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15152946808,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "46cfab32a067b614349e7e39ad7310c31f183cf57a152e40c8cd9a350f047ca5"
+          }
+        },
+        {
+          "mode": "a5120",
+          "timings": [
+            {
+              "denoise": 3.703887958,
+              "hybrid_setup": 0.000075667,
+              "image_encode": 1.25e-7,
+              "request_wall": 5.646201125,
+              "text_encode": 0.75030025,
+              "vae_decode": 0.565465417
+            },
+            {
+              "denoise": 3.671308042,
+              "hybrid_setup": 0.000086667,
+              "image_encode": 2.09e-7,
+              "request_wall": 4.353195166,
+              "text_encode": 0.094927291,
+              "vae_decode": 0.572159916
+            },
+            {
+              "denoise": 3.670407208,
+              "hybrid_setup": 0.00008925,
+              "image_encode": 2.08e-7,
+              "request_wall": 4.365318916,
+              "text_encode": 0.094020583,
+              "vae_decode": 0.582145084
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 4.359257040999999,
+            "text_encode": 0.09447393700000001,
+            "denoise": 3.670857625
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4197580800,
+              "read_wait_seconds": 0.0375709,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000144541,
+              "import_wall_seconds": 0.370047
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4320755712,
+              "read_wait_seconds": 0.0339796,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000170208,
+              "import_wall_seconds": 0.428635
+            }
+          ],
+          "png_sha256": [
+            "6c0586bfdc866ac02b877a48db2de8aa1c8986bc4414f9cfcc25921f5b8ac761",
+            "3bb0f4bd6a837bf9cca497506bc5578c36aaf039dbeca348fcb442c26a57e374",
+            "58f15ac62db136fe14f0df7b9233e7574ca2a1dfdb9e0c7d00e82f864751063a"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15415254696,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "e7d8d946eace0d8c35291b2a401b5776e523921de8ac666ba17a4e4ac796a333"
+          }
+        }
+      ]
+    },
+    {
+      "steps": 40,
+      "read_buffer_mib": 1,
+      "read_ahead": false,
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "mode": "gpu",
+          "timings": [
+            {
+              "denoise": 43.722305417,
+              "hybrid_setup": 0,
+              "image_encode": 1.25e-7,
+              "request_wall": 45.910254708,
+              "text_encode": 0.976724667,
+              "vae_decode": 0.582570666
+            },
+            {
+              "denoise": 43.742385333,
+              "hybrid_setup": 0,
+              "image_encode": 1.25e-7,
+              "request_wall": 44.422529,
+              "text_encode": 0.089799458,
+              "vae_decode": 0.574554792
+            },
+            {
+              "denoise": 43.739461958,
+              "hybrid_setup": 0,
+              "image_encode": 1.66e-7,
+              "request_wall": 44.42822425,
+              "text_encode": 0.091188292,
+              "vae_decode": 0.583260166
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 44.425376625,
+            "text_encode": 0.090493875,
+            "denoise": 43.740923645500004
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000161542,
+              "import_wall_seconds": 0.58928
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.0001455,
+              "import_wall_seconds": 0.652898
+            }
+          ],
+          "png_sha256": [
+            "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+            "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+            "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15243779632,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "e30a2d9cbb117346fb1fe6b61d39a663acb21a2577ced1063fb1d669b3e5b014"
+          }
+        },
+        {
+          "mode": "a5120",
+          "timings": [
+            {
+              "denoise": 36.181228875,
+              "hybrid_setup": 0.000082375,
+              "image_encode": 4.2e-8,
+              "request_wall": 38.82606375,
+              "text_encode": 1.200819459,
+              "vae_decode": 0.586960042
+            },
+            {
+              "denoise": 36.148772167,
+              "hybrid_setup": 0.000101167,
+              "image_encode": 8.3e-8,
+              "request_wall": 36.839299416,
+              "text_encode": 0.090570416,
+              "vae_decode": 0.586950541
+            },
+            {
+              "denoise": 36.157009917,
+              "hybrid_setup": 0.000103334,
+              "image_encode": 1.25e-7,
+              "request_wall": 36.855862041,
+              "text_encode": 0.093506208,
+              "vae_decode": 0.59228975
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 36.847580728500006,
+            "text_encode": 0.092038312,
+            "denoise": 36.152891042
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000137625,
+              "import_wall_seconds": 0.593254
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 1048576,
+              "read_buffer_slots": 1,
+              "read_ahead_enabled": false,
+              "read_ahead_drained": false,
+              "read_ahead_jobs": 0,
+              "read_ahead_bytes": 0,
+              "read_wait_seconds": 0,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000161542,
+              "import_wall_seconds": 0.874967
+            }
+          ],
+          "png_sha256": [
+            "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+            "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+            "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15426674440,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "90a80cdfe60af30c93b00428938f7427433f7dcdf6cf2bd7d4d6d868beef211b"
+          }
+        }
+      ]
+    },
+    {
+      "steps": 40,
+      "read_buffer_mib": 4,
+      "read_ahead": true,
+      "status": "complete_diagnostic",
+      "trials": [
+        {
+          "mode": "gpu",
+          "timings": [
+            {
+              "denoise": 43.740668583,
+              "hybrid_setup": 0,
+              "image_encode": 8.3e-8,
+              "request_wall": 45.517029792,
+              "text_encode": 0.771868417,
+              "vae_decode": 0.591067333
+            },
+            {
+              "denoise": 43.738616959,
+              "hybrid_setup": 0,
+              "image_encode": 1.66e-7,
+              "request_wall": 44.434824167,
+              "text_encode": 0.090545791,
+              "vae_decode": 0.592301292
+            },
+            {
+              "denoise": 43.74720275,
+              "hybrid_setup": 0,
+              "image_encode": 1.67e-7,
+              "request_wall": 44.465479417,
+              "text_encode": 0.094590417,
+              "vae_decode": 0.60826225
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 44.450151792,
+            "text_encode": 0.092568104,
+            "denoise": 43.7429098545
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4197580800,
+              "read_wait_seconds": 0.0397868,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000144,
+              "import_wall_seconds": 0.374289
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4320755712,
+              "read_wait_seconds": 0.0364173,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000163208,
+              "import_wall_seconds": 0.432495
+            }
+          ],
+          "png_sha256": [
+            "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+            "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+            "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 14909546128,
+            "compression_bytes": 0,
+            "decompression_bytes": 0,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "86a4044e3d4e90d3fe7d64fcd75744da3128edd63e29abb91336b244635e48df"
+          }
+        },
+        {
+          "mode": "a5120",
+          "timings": [
+            {
+              "denoise": 36.186886458,
+              "hybrid_setup": 0.000118458,
+              "image_encode": 1.25e-7,
+              "request_wall": 38.183983541,
+              "text_encode": 0.777683417,
+              "vae_decode": 0.591380875
+            },
+            {
+              "denoise": 36.135034084,
+              "hybrid_setup": 0.000104292,
+              "image_encode": 8.3e-8,
+              "request_wall": 36.830816791,
+              "text_encode": 0.092537,
+              "vae_decode": 0.590258708
+            },
+            {
+              "denoise": 36.169221958,
+              "hybrid_setup": 0.000121125,
+              "image_encode": 1.25e-7,
+              "request_wall": 36.855836292,
+              "text_encode": 0.090298084,
+              "vae_decode": 0.583921792
+            }
+          ],
+          "warm_medians": {
+            "request_wall": 36.8433265415,
+            "text_encode": 0.09141754199999999,
+            "denoise": 36.152128020999996
+          },
+          "verified_imports": [
+            {
+              "component": "dit",
+              "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4197580800,
+              "read_wait_seconds": 0.0399529,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000138167,
+              "import_wall_seconds": 0.375627
+            },
+            {
+              "component": "encoder",
+              "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+              "verification_bytes": 0,
+              "verification_cache_hits": 1,
+              "registration_enabled": true,
+              "registration_cache_hits": 1,
+              "registration_records_written": 0,
+              "read_buffer_capacity_bytes": 8388608,
+              "read_buffer_slots": 2,
+              "read_ahead_enabled": true,
+              "read_ahead_drained": true,
+              "read_ahead_jobs": 1110,
+              "read_ahead_bytes": 4320755712,
+              "read_wait_seconds": 0.036201,
+              "first_registration_seconds": 0,
+              "cpu_verify_import_schedule": true,
+              "verified_before_publication": true,
+              "physical_overlap_proved": false,
+              "verification_seconds": 0.000158125,
+              "import_wall_seconds": 0.439652
+            }
+          ],
+          "png_sha256": [
+            "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+            "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+            "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+          ],
+          "memory": {
+            "complete": true,
+            "status": "complete",
+            "tree_peak_phys_footprint_bytes": 15512215136,
+            "compression_bytes": 0,
+            "decompression_bytes": 16384,
+            "swap_in_bytes": 0,
+            "swap_out_bytes": 0,
+            "final_evidence_digest": "923fed179606f5cca2ec10146d1435ce957c9481d634bafec49255ebabc6cc91"
+          }
+        }
+      ]
+    }
+  ],
+  "matched_memory": {
+    "status": "complete_diagnostic",
+    "steps": 40,
+    "read_buffer_mib": 4,
+    "read_ahead": true,
+    "stream_to_mixed_physical_peak_ratio": 0.9587145778581609,
+    "memory_within_ten_percent": true,
+    "evidence": "outputs/qwen21-read-ahead-v1-matched-40step-20261010/summary.json",
+    "trials": [
+      {
+        "mode": "bf16-stream",
+        "timings": [
+          {
+            "denoise": 43.466570916,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 45.442938083,
+            "text_encode": 1.390848583,
+            "vae_decode": 0.571389625
+          },
+          {
+            "denoise": 43.455298791,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 45.676917292,
+            "text_encode": 1.647648583,
+            "vae_decode": 0.561840459
+          },
+          {
+            "denoise": 43.451215958,
+            "hybrid_setup": 0,
+            "image_encode": 0,
+            "request_wall": 45.388308208,
+            "text_encode": 1.361789584,
+            "vae_decode": 0.563611875
+          }
+        ],
+        "warm_medians": {
+          "request_wall": 45.53261275,
+          "text_encode": 1.5047190835,
+          "denoise": 43.4532573745,
+          "vae_decode": 0.562726167
+        },
+        "source_registrations": [
+          {
+            "component": "qwen3vl_8b_bf16.safetensors",
+            "enabled": true,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_cache_hits": 1,
+            "registration_records_written": 0,
+            "first_registration_seconds": 0,
+            "verification_seconds": 0.000537708
+          },
+          {
+            "component": "qwen_image_2.1_bf16.safetensors",
+            "enabled": true,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_cache_hits": 1,
+            "registration_records_written": 0,
+            "first_registration_seconds": 0,
+            "verification_seconds": 0.000224417
+          },
+          {
+            "component": "qwen3vl_8b_bf16.safetensors",
+            "enabled": true,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_cache_hits": 0,
+            "registration_records_written": 0,
+            "first_registration_seconds": 0,
+            "verification_seconds": 0.000316875
+          },
+          {
+            "component": "qwen_image_2.1_bf16.safetensors",
+            "enabled": true,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_cache_hits": 0,
+            "registration_records_written": 0,
+            "first_registration_seconds": 0,
+            "verification_seconds": 0.000262292
+          },
+          {
+            "component": "qwen3vl_8b_bf16.safetensors",
+            "enabled": true,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_cache_hits": 0,
+            "registration_records_written": 0,
+            "first_registration_seconds": 0,
+            "verification_seconds": 0.000305708
+          },
+          {
+            "component": "qwen_image_2.1_bf16.safetensors",
+            "enabled": true,
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_cache_hits": 0,
+            "registration_records_written": 0,
+            "first_registration_seconds": 0,
+            "verification_seconds": 0.00230133
+          }
+        ],
+        "verified_imports": [],
+        "actual_phases": [
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 41.37247571200001,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.162715625,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 41.38406120800002,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.150712625,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 41.377132085,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.152875917,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          }
+        ],
+        "png_sha256": [
+          "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+          "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+          "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1"
+        ],
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 14752016560,
+          "compression_bytes": 6455296,
+          "decompression_bytes": 81920,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "939e3707269a1c618c566ca5eea9a8df7c600414421f231cf769aa8d3d7d27e3"
+        }
+      },
+      {
+        "mode": "gguf-gpu",
+        "timings": [
+          {
+            "denoise": 43.755755542,
+            "hybrid_setup": 0,
+            "image_encode": 8.4e-8,
+            "request_wall": 46.015203708,
+            "text_encode": 1.206573334,
+            "vae_decode": 0.636472
+          },
+          {
+            "denoise": 43.742703708,
+            "hybrid_setup": 0,
+            "image_encode": 1.25e-7,
+            "request_wall": 44.442143875,
+            "text_encode": 0.090457625,
+            "vae_decode": 0.595922709
+          },
+          {
+            "denoise": 43.737861125,
+            "hybrid_setup": 0,
+            "image_encode": 1.25e-7,
+            "request_wall": 44.441925125,
+            "text_encode": 0.090908,
+            "vae_decode": 0.599116625
+          }
+        ],
+        "warm_medians": {
+          "request_wall": 44.4420345,
+          "text_encode": 0.0906828125,
+          "denoise": 43.7402824165,
+          "vae_decode": 0.597519667
+        },
+        "source_registrations": [],
+        "verified_imports": [
+          {
+            "component": "dit",
+            "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_enabled": true,
+            "registration_cache_hits": 1,
+            "registration_records_written": 0,
+            "read_buffer_capacity_bytes": 8388608,
+            "read_buffer_slots": 2,
+            "read_ahead_enabled": true,
+            "read_ahead_drained": true,
+            "read_ahead_jobs": 1110,
+            "read_ahead_bytes": 4197580800,
+            "read_wait_seconds": 0.0391803,
+            "first_registration_seconds": 0,
+            "cpu_verify_import_schedule": true,
+            "verified_before_publication": true,
+            "physical_overlap_proved": false,
+            "verification_seconds": 0.000431709,
+            "import_wall_seconds": 0.375847
+          },
+          {
+            "component": "encoder",
+            "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_enabled": true,
+            "registration_cache_hits": 1,
+            "registration_records_written": 0,
+            "read_buffer_capacity_bytes": 8388608,
+            "read_buffer_slots": 2,
+            "read_ahead_enabled": true,
+            "read_ahead_drained": true,
+            "read_ahead_jobs": 1110,
+            "read_ahead_bytes": 4320755712,
+            "read_wait_seconds": 0.380695,
+            "first_registration_seconds": 0,
+            "cpu_verify_import_schedule": true,
+            "verified_before_publication": true,
+            "physical_overlap_proved": false,
+            "verification_seconds": 0.000203542,
+            "import_wall_seconds": 0.865578
+          }
+        ],
+        "actual_phases": [
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 42.61079228999999,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.142727041,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 42.597342249,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.142937084,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 42.597899915,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.137596583,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          }
+        ],
+        "png_sha256": [
+          "d072e5d314c3ee0883253f68643a0792c7e424d7c05e3358e56eb55f7a7bc400",
+          "66371edb0a9945ffb795e5a4a824fef8a5c34576846058ef6f7946da68b1955d",
+          "13d4527bb257342ba245b5ae1ace876c1ce7506a70df1819472eaf3690c8fe7f"
+        ],
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 14614879888,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "4ff04cb7ff3a2e52982d977d17cc8295717b8ecbf048ae46bce0a7e1aa060a04"
+        }
+      },
+      {
+        "mode": "gguf-ane",
+        "timings": [
+          {
+            "denoise": 36.274013917,
+            "hybrid_setup": 0.000094833,
+            "image_encode": 1.25e-7,
+            "request_wall": 38.484148791,
+            "text_encode": 0.980560125,
+            "vae_decode": 0.594753417
+          },
+          {
+            "denoise": 36.195254125,
+            "hybrid_setup": 0.000102291,
+            "image_encode": 1.25e-7,
+            "request_wall": 36.885025791,
+            "text_encode": 0.089811834,
+            "vae_decode": 0.586789708
+          },
+          {
+            "denoise": 36.179889875,
+            "hybrid_setup": 0.000104333,
+            "image_encode": 1.25e-7,
+            "request_wall": 36.873292292,
+            "text_encode": 0.090823167,
+            "vae_decode": 0.588870416
+          }
+        ],
+        "warm_medians": {
+          "request_wall": 36.8791590415,
+          "text_encode": 0.0903175005,
+          "denoise": 36.187572,
+          "vae_decode": 0.587830062
+        },
+        "source_registrations": [],
+        "verified_imports": [
+          {
+            "component": "dit",
+            "source_sha256": "631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe",
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_enabled": true,
+            "registration_cache_hits": 1,
+            "registration_records_written": 0,
+            "read_buffer_capacity_bytes": 8388608,
+            "read_buffer_slots": 2,
+            "read_ahead_enabled": true,
+            "read_ahead_drained": true,
+            "read_ahead_jobs": 1110,
+            "read_ahead_bytes": 4197580800,
+            "read_wait_seconds": 0.0403531,
+            "first_registration_seconds": 0,
+            "cpu_verify_import_schedule": true,
+            "verified_before_publication": true,
+            "physical_overlap_proved": false,
+            "verification_seconds": 0.000661416,
+            "import_wall_seconds": 0.377861
+          },
+          {
+            "component": "encoder",
+            "source_sha256": "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+            "verification_bytes": 0,
+            "verification_cache_hits": 1,
+            "registration_enabled": true,
+            "registration_cache_hits": 1,
+            "registration_records_written": 0,
+            "read_buffer_capacity_bytes": 8388608,
+            "read_buffer_slots": 2,
+            "read_ahead_enabled": true,
+            "read_ahead_drained": true,
+            "read_ahead_jobs": 1110,
+            "read_ahead_bytes": 4320755712,
+            "read_wait_seconds": 0.198981,
+            "first_registration_seconds": 0,
+            "cpu_verify_import_schedule": true,
+            "verified_before_publication": true,
+            "physical_overlap_proved": false,
+            "verification_seconds": 0.000306541,
+            "import_wall_seconds": 0.644181
+          }
+        ],
+        "actual_phases": [
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 1248,
+              "runtime_calls_this_request": 1248,
+              "step_seconds": 35.279750334,
+              "steps_this_request": 39
+            },
+            "policy": "all",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 32,
+              "runtime_calls_this_request": 32,
+              "step_seconds": 0.991342292,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 1248,
+              "runtime_calls_this_request": 1248,
+              "step_seconds": 35.23500796099999,
+              "steps_this_request": 39
+            },
+            "policy": "all",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 32,
+              "runtime_calls_this_request": 32,
+              "step_seconds": 0.95715275,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 1248,
+              "runtime_calls_this_request": 1248,
+              "step_seconds": 35.227148664,
+              "steps_this_request": 39
+            },
+            "policy": "all",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 32,
+              "runtime_calls_this_request": 32,
+              "step_seconds": 0.949674542,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          }
+        ],
+        "png_sha256": [
+          "025139d91966750c0487989db040b59e4b317c49424be4dab0851c807cf9e190",
+          "16a6c0dc8e652096ab7fa19823294ec992b874e47eca8b55e9620ddac4ec8127",
+          "4a9051119f0472ac0715874a54e9890570320e8f2a0a8ad21979711746563800"
+        ],
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 15387287208,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "b9748c4000358f13d202b6c562a3d1b1e7e29a945dd0db8d36a69abc525f6b4c"
+        }
+      },
+      {
+        "mode": "bf16-resident",
+        "timings": [
+          {
+            "denoise": 42.042804208,
+            "hybrid_setup": 0,
+            "image_encode": 1.25e-7,
+            "request_wall": 45.477146334,
+            "text_encode": 2.275633333,
+            "vae_decode": 0.743450792
+          },
+          {
+            "denoise": 42.039366959,
+            "hybrid_setup": 0,
+            "image_encode": 8.3e-8,
+            "request_wall": 43.596982125,
+            "text_encode": 0.851294292,
+            "vae_decode": 0.68721125
+          },
+          {
+            "denoise": 42.079551625,
+            "hybrid_setup": 0,
+            "image_encode": 2.5e-7,
+            "request_wall": 43.095047375,
+            "text_encode": 0.316950791,
+            "vae_decode": 0.681932458
+          }
+        ],
+        "warm_medians": {
+          "request_wall": 43.346014749999995,
+          "text_encode": 0.5841225415,
+          "denoise": 42.059459292,
+          "vae_decode": 0.6845718540000001
+        },
+        "source_registrations": [],
+        "verified_imports": [],
+        "actual_phases": [
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 40.89959396000001,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.141008541,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 40.91207925,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.124974583,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          },
+          {
+            "decode": {
+              "actual_rows": 1024,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 40.91524100000001,
+              "steps_this_request": 39
+            },
+            "policy": "gpu",
+            "prefill": {
+              "actual_rows": 1048,
+              "completed_channel_blocks_this_request": 0,
+              "runtime_calls_this_request": 0,
+              "step_seconds": 1.161966167,
+              "steps_this_request": 1
+            },
+            "scope": "completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"
+          }
+        ],
+        "png_sha256": [
+          "49f262625ecb770b87525cf5bb0b2d00ce7349de65ce0d2e2ec7c462fe2d31a4",
+          "90804f2ebf5b2641597ec0e67b14e21385f4aacc6250e3f17aee6d36ac0c197e",
+          "871235d84679b517d34675cede93746c3d24627933fea174a9ca943d8142c2b1"
+        ],
+        "memory": {
+          "complete": true,
+          "status": "complete",
+          "tree_peak_phys_footprint_bytes": 36965244424,
+          "compression_bytes": 13797785600,
+          "decompression_bytes": 13528891392,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "final_evidence_digest": "3ac7257589b9ac6863a4cc5ee63b5f29ddbd28b2399ed12fb3bcf5742b74064c"
+        }
+      }
+    ]
+  },
+  "exact_output": {
+    "four_step_full_tensor_pairs": 48,
+    "four_step_full_png_pairs": 12,
+    "forty_step_full_png_pairs": 6,
+    "matched_bf16_stream_resident_full_png_pairs": 3,
+    "method": "cmp complete files byte-for-byte",
+    "all_equal": true
+  },
+  "regressions": {
+    "worker_cpu_fixture": true,
+    "worker_asan_ubsan": true,
+    "worker_tsan": true,
+    "bank_metal_fixture": true,
+    "bank_asan_ubsan": true,
+    "bank_tsan": true,
+    "prefill_and_bf16_metal_methods": 2,
+    "host_receipt_methods": 16,
+    "logs": [
+      "outputs/qwen21-read-ahead-v1-worker-host-20261010.log",
+      "outputs/qwen21-read-ahead-v1-worker-asan-20261010.log",
+      "outputs/qwen21-read-ahead-v1-worker-tsan-20261010.log",
+      "outputs/qwen21-read-ahead-v1-bank-metal-20261010.log",
+      "outputs/qwen21-read-ahead-v1-bank-asan-20261010.log",
+      "outputs/qwen21-read-ahead-v1-bank-tsan-20261010.log",
+      "outputs/qwen21-read-ahead-v1-prefill-bf16-metal-20261010.log",
+      "outputs/qwen21-read-ahead-v1-current-host-20261010.log",
+      "outputs/qwen21-read-ahead-v1-build-inputs-20261010.log"
+    ]
+  },
+  "remaining": [
+    "No unconditional cold encoder speed guarantee; high-I/O GPU cold1.2066s versus historical unmatched reference1.18s",
+    "File-cache-state-matched original GPU reference qualification not complete",
+    "No GPU/SSD physical-overlap certificate",
+    "No new broad editing/LoRA/scenes or public/hard-RAM qualification"
+  ]
+}

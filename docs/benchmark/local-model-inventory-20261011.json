@@ -1,0 +1,1029 @@
+{
+  "schema": "tc-base-model-header-inventory-v1",
+  "date": "2026-10-11",
+  "rows": [
+    {
+      "model": "Qwen Image 2.1 BF16",
+      "kind": "base",
+      "components": {
+        "vae": [
+          {
+            "path": "models/Comfy-Org-Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors",
+            "bytes": 675509688,
+            "format": "safetensors",
+            "tensor_count": 238,
+            "dtypes": {
+              "BF16": 238
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-Qwen-Image-2.1/processor/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/Comfy-Org-Qwen-Image-2.1/diffusion_models/qwen_image_2.1_bf16.safetensors",
+            "bytes": 14230280616,
+            "format": "safetensors",
+            "tensor_count": 265,
+            "dtypes": {
+              "BF16": 265
+            },
+            "content_verified": false
+          }
+        ],
+        "encoder": [
+          {
+            "path": "models/Comfy-Org-Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors",
+            "bytes": 17534334616,
+            "format": "safetensors",
+            "tensor_count": 750,
+            "dtypes": {
+              "BF16": 750
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 32440124920
+    },
+    {
+      "model": "Qwen Image 2.1 original Q4_K_M",
+      "kind": "base",
+      "components": {
+        "vae": [
+          {
+            "path": "models/Comfy-Org-Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors",
+            "bytes": 675509688,
+            "format": "safetensors",
+            "tensor_count": 238,
+            "dtypes": {
+              "BF16": 238
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-Qwen-Image-2.1/processor/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/unsloth-qwen21-q4-k-m/diffusion_models/qwen-image-2.1-Q4_K_M.gguf",
+            "bytes": 4199565024,
+            "format": "gguf-v3",
+            "content_verified": false
+          }
+        ],
+        "encoder": [
+          {
+            "path": "models/unsloth-qwen21-q4-k-m/text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+            "bytes": 5027785568,
+            "format": "gguf-v3",
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 9902860280
+    },
+    {
+      "model": "Z-Image Turbo BF16",
+      "kind": "base",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+            "bytes": 8044982048,
+            "format": "safetensors",
+            "tensor_count": 398,
+            "dtypes": {
+              "BF16": 398
+            },
+            "content_verified": false
+          }
+        ],
+        "vae": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors",
+            "bytes": 335304388,
+            "format": "safetensors",
+            "tensor_count": 244,
+            "dtypes": {
+              "F32": 244
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+            "bytes": 12309866400,
+            "format": "safetensors",
+            "tensor_count": 453,
+            "dtypes": {
+              "BF16": 453
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 20690152836
+    },
+    {
+      "model": "Z-Image Turbo NVFP4",
+      "kind": "base-format-variant",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+            "bytes": 8044982048,
+            "format": "safetensors",
+            "tensor_count": 398,
+            "dtypes": {
+              "BF16": 398
+            },
+            "content_verified": false
+          }
+        ],
+        "vae": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors",
+            "bytes": 335304388,
+            "format": "safetensors",
+            "tensor_count": 244,
+            "dtypes": {
+              "F32": 244
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_nvfp4.safetensors",
+            "bytes": 4509509600,
+            "format": "safetensors",
+            "tensor_count": 993,
+            "dtypes": {
+              "F32": 360,
+              "BF16": 273,
+              "F8_E4M3": 180,
+              "U8": 180
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 12889796036
+    },
+    {
+      "model": "Z-Image Turbo INT8 ConvRot",
+      "kind": "base-format-variant",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+            "bytes": 8044982048,
+            "format": "safetensors",
+            "tensor_count": 398,
+            "dtypes": {
+              "BF16": 398
+            },
+            "content_verified": false
+          }
+        ],
+        "vae": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors",
+            "bytes": 335304388,
+            "format": "safetensors",
+            "tensor_count": 244,
+            "dtypes": {
+              "F32": 244
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors",
+            "bytes": 6201001296,
+            "format": "safetensors",
+            "tensor_count": 857,
+            "dtypes": {
+              "F32": 453,
+              "I8": 202,
+              "U8": 202
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 14581287732
+    },
+    {
+      "model": "Z-Image Turbo GGUF Q4_0",
+      "kind": "base-format-variant",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+            "bytes": 8044982048,
+            "format": "safetensors",
+            "tensor_count": 398,
+            "dtypes": {
+              "BF16": 398
+            },
+            "content_verified": false
+          }
+        ],
+        "vae": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors",
+            "bytes": 335304388,
+            "format": "safetensors",
+            "tensor_count": 244,
+            "dtypes": {
+              "F32": 244
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/z-image-runtime-gguf-q4-main/z_image_turbo-Q4_0.gguf",
+            "bytes": 4509425472,
+            "format": "gguf-v3",
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 12889711908
+    },
+    {
+      "model": "Z-Image Turbo GGUF Q8_0",
+      "kind": "base-format-variant",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors",
+            "bytes": 8044982048,
+            "format": "safetensors",
+            "tensor_count": 398,
+            "dtypes": {
+              "BF16": 398
+            },
+            "content_verified": false
+          }
+        ],
+        "vae": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors",
+            "bytes": 335304388,
+            "format": "safetensors",
+            "tensor_count": 244,
+            "dtypes": {
+              "F32": 244
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer.json",
+            "bytes": 11422654
+          }
+        ],
+        "dit": [
+          {
+            "path": "models/z-image-runtime-gguf-q8/z_image_turbo-Q8_0.gguf",
+            "bytes": 7224707136,
+            "format": "gguf-v3",
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 15604993572
+    },
+    {
+      "model": "FLUX.2 Klein 9B BF16",
+      "kind": "base",
+      "components": {
+        "dit": [
+          {
+            "path": "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+            "bytes": 9801069272,
+            "format": "safetensors",
+            "tensor_count": 155,
+            "dtypes": {
+              "BF16": 155
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FLUX.2-klein-9B/transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+            "bytes": 8356121608,
+            "format": "safetensors",
+            "tensor_count": 78,
+            "dtypes": {
+              "BF16": 78
+            },
+            "content_verified": false
+          }
+        ],
+        "encoder": [
+          {
+            "path": "models/FLUX.2-klein-9B/text_encoder/model-00004-of-00004.safetensors",
+            "bytes": 1580230264,
+            "format": "safetensors",
+            "tensor_count": 10,
+            "dtypes": {
+              "BF16": 10
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FLUX.2-klein-9B/text_encoder/model-00001-of-00004.safetensors",
+            "bytes": 4902257696,
+            "format": "safetensors",
+            "tensor_count": 107,
+            "dtypes": {
+              "BF16": 107
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FLUX.2-klein-9B/text_encoder/model-00003-of-00004.safetensors",
+            "bytes": 4983068496,
+            "format": "safetensors",
+            "tensor_count": 140,
+            "dtypes": {
+              "BF16": 140
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FLUX.2-klein-9B/text_encoder/model-00002-of-00004.safetensors",
+            "bytes": 4915960368,
+            "format": "safetensors",
+            "tensor_count": 142,
+            "dtypes": {
+              "BF16": 142
+            },
+            "content_verified": false
+          }
+        ],
+        "vae": [
+          {
+            "path": "models/FLUX.2-klein-9B/vae/diffusion_pytorch_model.safetensors",
+            "bytes": 168120878,
+            "format": "safetensors",
+            "tensor_count": 251,
+            "dtypes": {
+              "I64": 1,
+              "BF16": 250
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/FLUX.2-klein-9B/tokenizer/tokenizer.json",
+            "bytes": 11422654
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 34706828582
+    },
+    {
+      "model": "LTX 2.5 distilled INT8 ConvRot",
+      "kind": "standalone-distilled-base",
+      "components": {
+        "dit": [
+          {
+            "path": "models/LTX-2.5/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+            "bytes": 21504034224,
+            "format": "safetensors",
+            "tensor_count": 7229,
+            "dtypes": {
+              "F32": 1730,
+              "BF16": 2619,
+              "I8": 1440,
+              "U8": 1440
+            },
+            "content_verified": false
+          }
+        ],
+        "encoder": [
+          {
+            "path": "models/LTX-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+            "bytes": 15372971786,
+            "format": "safetensors",
+            "tensor_count": 1342,
+            "dtypes": {
+              "F32": 328,
+              "BF16": 353,
+              "I8": 328,
+              "U8": 333
+            },
+            "content_verified": false
+          }
+        ],
+        "connector": [
+          {
+            "path": "models/LTX-2.5/connector.safetensors",
+            "bytes": 6344495770,
+            "format": "safetensors",
+            "tensor_count": 262,
+            "dtypes": {
+              "BF16": 262
+            },
+            "content_verified": false
+          }
+        ],
+        "upsampler": [
+          {
+            "path": "models/LTX-2.5/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+            "bytes": 995778752,
+            "format": "safetensors",
+            "tensor_count": 72,
+            "dtypes": {
+              "BF16": 72
+            },
+            "content_verified": false
+          }
+        ],
+        "video_vae": [
+          {
+            "path": "models/LTX-2.5/vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+            "bytes": 1452269922,
+            "format": "safetensors",
+            "tensor_count": 170,
+            "dtypes": {
+              "BF16": 170
+            },
+            "content_verified": false
+          }
+        ],
+        "audio_vae": [
+          {
+            "path": "models/LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors",
+            "bytes": 364866540,
+            "format": "safetensors",
+            "tensor_count": 1329,
+            "dtypes": {
+              "BF16": 1329
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/LTX-2.5/gemma4-12b-ltx-v1/tokenizer.json",
+            "bytes": 32169626
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 46034416994
+    },
+    {
+      "model": "MiniMax H3 original BF16 source",
+      "kind": "source-components",
+      "components": {
+        "dit": [
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00010-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00007-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00002-of-00013.safetensors",
+            "bytes": 5164578856,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00008-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00011-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00009-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00006-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00003-of-00013.safetensors",
+            "bytes": 5164578872,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00005-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00012-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00001-of-00013.safetensors",
+            "bytes": 5227812968,
+            "format": "safetensors",
+            "tensor_count": 54,
+            "dtypes": {
+              "F32": 9,
+              "BF16": 45
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00004-of-00013.safetensors",
+            "bytes": 5164578896,
+            "format": "safetensors",
+            "tensor_count": 40,
+            "dtypes": {
+              "BF16": 40
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/transformer/model-00013-of-00013.safetensors",
+            "bytes": 4242305176,
+            "format": "safetensors",
+            "tensor_count": 41,
+            "dtypes": {
+              "F32": 4,
+              "BF16": 37
+            },
+            "content_verified": false
+          }
+        ],
+        "video_vae": [],
+        "audio_vae": [
+          {
+            "path": "models/MiniMax-H3-ModelScope/FL2VA/audio_vae/model.safetensors",
+            "bytes": 605429308,
+            "format": "safetensors",
+            "tensor_count": 1087,
+            "dtypes": {
+              "F32": 1087
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [
+        "video_vae"
+      ],
+      "header_errors": [],
+      "note": "Source components alone do not prove an executable native model root.",
+      "assets_present": false,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 66885915244
+    },
+    {
+      "model": "FastH3 standalone four-step INT6",
+      "kind": "standalone-distilled-base",
+      "components": {
+        "dit": [],
+        "encoder": [
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00013-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00001-of-00014.safetensors",
+            "bytes": 4932328944,
+            "format": "safetensors",
+            "tensor_count": 43,
+            "dtypes": {
+              "BF16": 43
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00004-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00012-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00005-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00006-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00003-of-00014.safetensors",
+            "bytes": 4875990552,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00009-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00011-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00014-of-00014.safetensors",
+            "bytes": 3270697008,
+            "format": "safetensors",
+            "tensor_count": 355,
+            "dtypes": {
+              "BF16": 355
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00008-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00007-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00002-of-00014.safetensors",
+            "bytes": 4875990528,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/text_encoder/model-00010-of-00014.safetensors",
+            "bytes": 4875990584,
+            "format": "safetensors",
+            "tensor_count": 55,
+            "dtypes": {
+              "BF16": 55
+            },
+            "content_verified": false
+          }
+        ],
+        "video_vae": [
+          {
+            "path": "models/FastH3-ModelScope/vae/diffusion_pytorch_model-00003-of-00003.safetensors",
+            "bytes": 398539336,
+            "format": "safetensors",
+            "tensor_count": 28,
+            "dtypes": {
+              "F32": 28
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/vae/diffusion_pytorch_model-00002-of-00003.safetensors",
+            "bytes": 4955986528,
+            "format": "safetensors",
+            "tensor_count": 372,
+            "dtypes": {
+              "F32": 372
+            },
+            "content_verified": false
+          },
+          {
+            "path": "models/FastH3-ModelScope/vae/diffusion_pytorch_model-00001-of-00003.safetensors",
+            "bytes": 5061033024,
+            "format": "safetensors",
+            "tensor_count": 303,
+            "dtypes": {
+              "F32": 303
+            },
+            "content_verified": false
+          }
+        ],
+        "audio_vae": [
+          {
+            "path": "models/FastH3-ModelScope/audio_vae/diffusion_pytorch_model.safetensors",
+            "bytes": 605429340,
+            "format": "safetensors",
+            "tensor_count": 1087,
+            "dtypes": {
+              "F32": 1087
+            },
+            "content_verified": false
+          }
+        ],
+        "tokenizer": [
+          {
+            "path": "models/FastH3-ModelScope/tokenizer/tokenizer.json",
+            "bytes": 7032403
+          }
+        ]
+      },
+      "missing_components": [
+        "dit"
+      ],
+      "header_errors": [],
+      "note": "",
+      "assets_present": false,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 77735901100
+    },
+    {
+      "model": "Qwen3 4B original GGUF Q4_K_M",
+      "kind": "encoder-component",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf",
+            "bytes": 2497280256,
+            "format": "gguf-v3",
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 2497280256
+    },
+    {
+      "model": "Qwen3 4B original GGUF Q8_0",
+      "kind": "encoder-component",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/Qwen3-4B-GGUF/Qwen3-4B-Q8_0.gguf",
+            "bytes": 4280404704,
+            "format": "gguf-v3",
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 4280404704
+    },
+    {
+      "model": "Qwen3 4B TurboCider affine Q4",
+      "kind": "encoder-component",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/qwen3-4b-tc-q4/text_encoder/model.safetensors",
+            "bytes": 3049229147,
+            "format": "safetensors",
+            "tensor_count": 902,
+            "dtypes": {
+              "BF16": 650,
+              "U32": 252
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 3049229147
+    },
+    {
+      "model": "Qwen3 4B TurboCider affine Q8",
+      "kind": "encoder-component",
+      "components": {
+        "encoder": [
+          {
+            "path": "models/qwen3-4b-tc-q8/text_encoder/model.safetensors",
+            "bytes": 4865887491,
+            "format": "safetensors",
+            "tensor_count": 902,
+            "dtypes": {
+              "BF16": 650,
+              "U32": 252
+            },
+            "content_verified": false
+          }
+        ]
+      },
+      "missing_components": [],
+      "header_errors": [],
+      "note": "",
+      "assets_present": true,
+      "runtime_support_verified": false,
+      "logical_weight_bytes": 4865887491
+    }
+  ],
+  "scope": "header/stat availability, not payload integrity, runtime admission or inference qualification; shared logical bytes are not disk/RAM usage",
+  "exclusions": [
+    "PE-T2I/PE-I2I/Viggle adapter or student overlays",
+    "VDN stage-DMD Turbo adapter",
+    "Core ML graphs, app-bindings, pe-library and alias-only model roots",
+    "Comfy distill_patch_lora"
+  ]
+}

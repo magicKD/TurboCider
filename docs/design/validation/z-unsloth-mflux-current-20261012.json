@@ -1,0 +1,2580 @@
+{
+  "schema": "tc-z-unsloth-five-route-validation-v1",
+  "date": "2026-10-12",
+  "status": "complete_diagnostic",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "reference_latency_ranking_valid": true,
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "steps": 8,
+  "requests_per_process": 4,
+  "order": [
+    "native-gpu",
+    "native-frozen",
+    "mflux-bf16",
+    "unsloth-gpu-text",
+    "unsloth-cpu-text",
+    "unsloth-cpu-text",
+    "unsloth-gpu-text",
+    "mflux-bf16",
+    "native-frozen",
+    "native-gpu"
+  ],
+  "routes": [
+    {
+      "route": "native-gpu",
+      "fresh_warm_seconds": [
+        7.362504499964416,
+        7.336875957902521,
+        7.468406292144209,
+        7.3497409170959145
+      ],
+      "fresh_warm_median": 7.356122708530165,
+      "cold_seconds": [
+        8.694700833177194,
+        7.816145832883194
+      ],
+      "repeat_seconds": [
+        6.979781917063519,
+        6.987982416991144
+      ],
+      "constructor_seconds": [
+        0.1419585410039872,
+        0.16042979108169675
+      ],
+      "physical_peaks": [
+        31015829536,
+        31497731336
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "native-frozen",
+      "fresh_warm_seconds": [
+        6.043014958035201,
+        5.816851499956101,
+        6.070026750210673,
+        5.867818915983662
+      ],
+      "fresh_warm_median": 5.955416937009431,
+      "cold_seconds": [
+        17.42921054107137,
+        14.205936833051965
+      ],
+      "repeat_seconds": [
+        5.329243125161156,
+        5.332679166924208
+      ],
+      "constructor_seconds": [
+        0.14392633293755352,
+        0.16080562490969896
+      ],
+      "physical_peaks": [
+        31889063824,
+        31748308760
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "mflux-bf16",
+      "fresh_warm_seconds": [
+        7.963052874896675,
+        7.966709458036348,
+        7.994771790923551,
+        7.975086667109281
+      ],
+      "fresh_warm_median": 7.9708980625728145,
+      "cold_seconds": [
+        9.012036207830533,
+        8.328598499996588
+      ],
+      "repeat_seconds": [
+        7.99451645812951,
+        7.972855791915208
+      ],
+      "constructor_seconds": [
+        1.4477338339202106,
+        1.2851443330291659
+      ],
+      "physical_peaks": [
+        22524821992,
+        22481437160
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "unsloth-gpu-text",
+      "fresh_warm_seconds": [
+        18.737732999958098,
+        18.732866416918114,
+        18.729148000013083,
+        18.746913583017886
+      ],
+      "fresh_warm_median": 18.735299708438106,
+      "cold_seconds": [
+        25.65371587499976,
+        25.145972416037694
+      ],
+      "repeat_seconds": [
+        18.71406391588971,
+        18.754391707945615
+      ],
+      "constructor_seconds": [
+        0.3218082080129534,
+        0.3285997910425067
+      ],
+      "physical_peaks": [
+        23918954592,
+        23862839368
+      ],
+      "compression_bytes": [
+        2456649728,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "unsloth-cpu-text",
+      "fresh_warm_seconds": [
+        22.601335749961436,
+        22.59813620802015,
+        22.591934874886647,
+        22.612325666006655
+      ],
+      "fresh_warm_median": 22.599735978990793,
+      "cold_seconds": [
+        29.347142999991775,
+        28.98192583397031
+      ],
+      "repeat_seconds": [
+        22.591357208089903,
+        22.60179170803167
+      ],
+      "constructor_seconds": [
+        0.31628254195675254,
+        0.3223013752140105
+      ],
+      "physical_peaks": [
+        22690514080,
+        22615065808
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    }
+  ],
+  "library_sha256": "241b70155a6d0b032bcf0d8b4222525c668a534b55d85db2a27728bd2f5cdff7",
+  "native_inputs_matched": 514,
+  "model_sha256": {
+    "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+    "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+    "models/Comfy-Org-z_image_turbo/tokenizer/merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+    "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "models/Comfy-Org-z_image_turbo/tokenizer/tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+    "models/Comfy-Org-z_image_turbo/tokenizer/vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  },
+  "source_snapshot_sha256": "1fc24fab38b7bd8e36281e74325ad48935b6d14bc90cf078b909f65d9a5514ec",
+  "unsloth_commit": "8002a80aaf3474039a7cf53a6a3ac6b3051d487f",
+  "unsloth_backend_build": "Compiled by the Unsloth team.\nstable-diffusion.cpp prebuilt (Unsloth mirror)\ntag: master-813-bfbef5b-u1d02858\nlabel: Darwin-macOS-arm64\nsource_repo: unslothai/stable-diffusion.cpp\nsource_commit: 1d028587593a6924f1dc236c4d9a39a0a725b8cb\nbuilt_at: 2026-09-21T23:19:34Z\nbinaries: sd-cli sd-server\n",
+  "mflux_commit": "31c9640399572ea394d07092763be9a36007a754",
+  "timing_scope": "complete512 PNG wall: native C API/export, mflux image/save, sd-server HTTP/PNG reply/export; constructor/readiness/cold/repeat separate",
+  "representation_scope": "same original BF16 encoder/DiT/VAE; native frozen W8A8 is approximate; independent runtimes/noise engines/templates are not pixel-identical; defaultCPU text and opt-in Metal text both retained",
+  "source_policy": "initial source-generation SHA then durable metadata reuse; no model hashes in individual inference; original assets/reference source unchanged",
+  "evidence": "outputs/z-unsloth-mflux-five-route-v2-20261012/summary.json",
+  "evidence_sha256": "faebd8f0f6972c9f81844329ddf816fe34e02d38c1f70f28d767396c265c3708",
+  "output_checks": [
+    {
+      "route": "native-gpu",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-gpu",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-gpu",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-gpu",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "mflux-bf16",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "mflux-bf16",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "mflux-bf16",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "mflux-bf16",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-gpu-text",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-gpu-text",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-gpu-text",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-gpu-text",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-cpu-text",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-cpu-text",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-cpu-text",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "unsloth-cpu-text",
+      "index": 3,
+      "rgba_equal": true
+    }
+  ],
+  "native_mixed_quality": [
+    {
+      "prompt_index": 0,
+      "direction": 0,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.9938858969024104,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383839,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.9938858969024104,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383839,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "raw_rgb_mae_255": 4.205548604329427,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 1,
+      "direction": 0,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300512,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676776,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300512,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676776,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "raw_rgb_mae_255": 3.0361124674479165,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 2,
+      "direction": 0,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "raw_rgb_mae_255": 3.648381551106771,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 3,
+      "direction": 0,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "raw_rgb_mae_255": 3.648381551106771,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 0,
+      "direction": 1,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.9938858969024104,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383839,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.9938858969024104,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383839,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "raw_rgb_mae_255": 4.205548604329427,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 1,
+      "direction": 1,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300512,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676776,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300512,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676776,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "raw_rgb_mae_255": 3.0361124674479165,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 2,
+      "direction": 1,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "raw_rgb_mae_255": 3.648381551106771,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    },
+    {
+      "prompt_index": 3,
+      "direction": 1,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851219,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "raw_rgb_mae_255": 3.648381551106771,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0
+      }
+    }
+  ],
+  "comparisons": {
+    "best_measured_unsloth_route": "unsloth-gpu-text",
+    "unsloth_over_native_gpu": 2.5468987469054367,
+    "unsloth_over_native_frozen": 3.1459257859863987,
+    "mixed_reduction_vs_unsloth_percent": 68.21285471976091,
+    "mflux_over_native_frozen": 1.338428215334236
+  },
+  "trials": [
+    {
+      "index": 0,
+      "route": "native-gpu",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "40152396fb4e4549a1fd69e5c778892b",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "73be45d28ecf4c565369739c57d52319bd1d6d7227bdf79b72369105bb804066",
+        "report": "run-memory-report.json",
+        "report_sha256": "203786485b7f1b26657538edf364a9e0508deddeca702aa74c9f7036bdef9323",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "40152396fb4e4549a1fd69e5c778892b",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 81856,
+            "start_seconds": 1791802340,
+            "start_microseconds": 735233
+          },
+          "record_count": 311,
+          "sample_count": 307,
+          "final_evidence_digest": "c41f26f3cf161a35f55478a421c30ce721789b808360c08de126a3e381ff03e7",
+          "max_gap_ns": 110018500,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20260012032,
+          "tree_peak_phys_footprint_bytes": 31015829536,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 32768,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "b7b255f1e38ded7b5edb6dfb3f70c962e95f953d7c43733149dc024c608ef201",
+        "430621dd978a298834c283664b286b379756b80389990c0765572a08d0420ed9",
+        "7231e8972627377fdb1b1465bd9fab3f5463ead0cebdf573b76a68cb2ce2ae62",
+        "7231e8972627377fdb1b1465bd9fab3f5463ead0cebdf573b76a68cb2ce2ae62"
+      ],
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 0.1419585410039872,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 8.694700833177194,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 7.80693075,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 8.681327667,
+                "text_encode": 0.3615665,
+                "vae_decode": 0.271097
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 7.362504499964416,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.755047209,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.362228458,
+                "text_encode": 0.323211125,
+                "vae_decode": 0.261196541
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 7.336875957902521,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.755626458,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.336622209,
+                "text_encode": 0.294265208,
+                "vae_decode": 0.261065791
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 6.979781917063519,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.752305333,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.979529541,
+                "text_encode": 8.75e-7,
+                "vae_decode": 0.209586666
+              },
+              "hybrid": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "route": "native-frozen",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "0890b2d884df492385d128a38affdeef",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "2a18c67082c997bf0cff68e687b4766d8aec7fb6c12ba1b134ab3acbb9b9c9b9",
+        "report": "run-memory-report.json",
+        "report_sha256": "36a6fae1b91dca3e6008859aad3a8d160dc9c402671387b0ae58cad74efff507",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "0890b2d884df492385d128a38affdeef",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 81880,
+            "start_seconds": 1791802371,
+            "start_microseconds": 546625
+          },
+          "record_count": 354,
+          "sample_count": 350,
+          "final_evidence_digest": "2e3cc1424402deca1cf630681e658ee892d7a53f2598ab800f746c2b1f622967",
+          "max_gap_ns": 109719458,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 21011333120,
+          "tree_peak_phys_footprint_bytes": 31889063824,
+          "swap_in_bytes": 65536,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 32768,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "f575998214628829f5da9a4a2e632b2c3cf6c0d07406ce310a0c1bc547771f12",
+        "0f31f46d471cd19e46ebecf0ac01e370c71726e4dfdf711b54e2af1dfcef841a",
+        "50971b2ca9763f59fdbcb93435c834ed0f45e50a9ada4f27dccca399ffd26e7b",
+        "50971b2ca9763f59fdbcb93435c834ed0f45e50a9ada4f27dccca399ffd26e7b"
+      ],
+      "report": {
+        "engine": "native-frozen",
+        "constructor_seconds": 0.14392633293755352,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 17.42921054107137,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.62647275,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 17.415362416,
+                "text_encode": 0.281692042,
+                "vae_decode": 0.265519542
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 256,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 6.043014958035201,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.169280458,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.042674167,
+                "text_encode": 0.586655958,
+                "vae_decode": 0.266033292
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 512,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 5.816851499956101,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.199655042,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.816526125,
+                "text_encode": 0.3361965,
+                "vae_decode": 0.259502125
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 768,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 5.329243125161156,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.100811417,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.328936375,
+                "text_encode": 7.5e-7,
+                "vae_decode": 0.2095605
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 1024,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "index": 2,
+      "route": "mflux-bf16",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "c4e1a0beecf34caf8c974da353b1eacc",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "5a9fc96b33b806f798c7b77fabaee79d44e596068aa2839651c612532d3d533c",
+        "report": "run-memory-report.json",
+        "report_sha256": "51dbc7d2e3542ac52943061d8418f0e0b6a5e1499475ba00f3ecad3929e549f0",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "c4e1a0beecf34caf8c974da353b1eacc",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 81901,
+            "start_seconds": 1791802406,
+            "start_microseconds": 602795
+          },
+          "record_count": 363,
+          "sample_count": 357,
+          "final_evidence_digest": "9588884c32baca313af35f0c382a0885dff7ba0301bb2c2f00b8aa1d50fa0a73",
+          "max_gap_ns": 109742000,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20739850240,
+          "tree_peak_phys_footprint_bytes": 22524821992,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "cb50bfc03106c5684d10410e87683b26c0bfe766625ee558e9dbf874d2e69e48",
+        "0a9c70f100c94bededf3fab8ba053ceb727820b6597831106dd6018b59a4c65a",
+        "32a093b4949df0ca8dbbd92ceb65dba42a2b6336bea5774b26de093b6b14a9cd",
+        "5c0faae84f05180c6b8a8cdb170659bd40d4fbb5073406998644ac9e185c26d8"
+      ],
+      "report": {
+        "engine": "mflux-bf16",
+        "constructor_seconds": 1.4477338339202106,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "compute_precision_name": null,
+        "float32_stream": false,
+        "transformer_floating_parameter_dtypes": {
+          "mlx.core.bfloat16": 521
+        },
+        "reference_cache_limit_bytes": 1073741824,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "text_embedding_dtype": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 244,
+            "covered_targets": 244,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 521,
+            "covered_targets": 521,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "instrumentation": "host step counter only; unchanged stock compile, tokenizer and synchronization",
+        "packages": {
+          "mlx": "0.32.3",
+          "torch": "2.14.1",
+          "transformers": "5.19.0",
+          "numpy": "2.5.4",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 9.012036207830533,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20746600944
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 7.963052874896675,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20845722298
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 7.966709458036348,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20845722298
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 7.99451645812951,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20845722298
+          }
+        ]
+      }
+    },
+    {
+      "index": 3,
+      "route": "unsloth-gpu-text",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "70e189d4f6344c2c94e4847d5e694d2e",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "badd94f48638e590ad05568a4a7ec97155a60dee174131f3f7f114d51b797e43",
+        "report": "run-memory-report.json",
+        "report_sha256": "5188b40a00378c7a49301ff8eeb3b82168feaf35fcfca4f878d41a25afc734f9",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "70e189d4f6344c2c94e4847d5e694d2e",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 81917,
+            "start_seconds": 1791802442,
+            "start_microseconds": 376559
+          },
+          "record_count": 839,
+          "sample_count": 827,
+          "final_evidence_digest": "24ded08eb30e763c9917272a61ab82e7185a90074149931bda828ea3d66e34d9",
+          "max_gap_ns": 111277667,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 21309702144,
+          "tree_peak_phys_footprint_bytes": 23918954592,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 2456649728,
+          "decompression_bytes": 2456305664,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "a6830dc6418c3e9b4ccd40e56f703be646b80d68b0899cda76e758671918b7db",
+        "36f8ffe6eebfc7cb2c3520a92ba930229cb88a91b183d7d42517b80e39c1b83c",
+        "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c",
+        "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c"
+      ],
+      "report": {
+        "status": "complete_precheck_only",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 25.65371587499976,
+            "http_request_seconds": 25.65308333421126,
+            "prompt_is_repeat": false,
+            "png_sha256": "a6830dc6418c3e9b4ccd40e56f703be646b80d68b0899cda76e758671918b7db",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, natural winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 1.99,
+            "sampling_seconds": 21.71,
+            "generation_seconds": 25.63
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 18.737732999958098,
+            "http_request_seconds": 18.736930582905188,
+            "prompt_is_repeat": false,
+            "png_sha256": "36f8ffe6eebfc7cb2c3520a92ba930229cb88a91b183d7d42517b80e39c1b83c",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, soft winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 0.09,
+            "sampling_seconds": 16.9,
+            "generation_seconds": 18.71
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 18.732866416918114,
+            "http_request_seconds": 18.73222245881334,
+            "prompt_is_repeat": false,
+            "png_sha256": "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 0.09,
+            "sampling_seconds": 16.89,
+            "generation_seconds": 18.71
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 18.71406391588971,
+            "http_request_seconds": 18.713301749899983,
+            "prompt_is_repeat": true,
+            "png_sha256": "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 0.09,
+            "sampling_seconds": 16.88,
+            "generation_seconds": 18.69
+          }
+        ],
+        "latency_comparison_valid": false,
+        "performance_verified": false,
+        "ready_seconds": 0.3218082080129534,
+        "runtime_verified": true,
+        "server_terminal": true
+      }
+    },
+    {
+      "index": 4,
+      "route": "unsloth-cpu-text",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "1f9926d508a84b20ba90a0914c2845f3",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "63a6d6aca2932ecad36335d2bce7aabecd1788b6bc63b788a58c7173f5474e89",
+        "report": "run-memory-report.json",
+        "report_sha256": "f8b1fc3e0edb4dd91039788f64110449a720b5e1ad3c23b033701598e0ea7d3e",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "1f9926d508a84b20ba90a0914c2845f3",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 81972,
+            "start_seconds": 1791802525,
+            "start_microseconds": 233533
+          },
+          "record_count": 990,
+          "sample_count": 980,
+          "final_evidence_digest": "9dec6100682e5e57e8bd3d4bc2a92836d3cf4fbde029edbc3173c3d5c064af7c",
+          "max_gap_ns": 110017375,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 22537306112,
+          "tree_peak_phys_footprint_bytes": 22690514080,
+          "swap_in_bytes": 65536,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 16384,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "2ce344265106bab4d7d25211fe691780a78204e7482ff2b0cda59db350fadc20",
+        "a458a665c9ef1ed098068f920b134d99bd90c9322e04d1f6140d789e5d1169d7",
+        "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343",
+        "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343"
+      ],
+      "report": {
+        "status": "complete_precheck_only",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 29.347142999991775,
+            "http_request_seconds": 29.34651070809923,
+            "prompt_is_repeat": false,
+            "png_sha256": "2ce344265106bab4d7d25211fe691780a78204e7482ff2b0cda59db350fadc20",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, natural winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 5.8,
+            "sampling_seconds": 21.59,
+            "generation_seconds": 29.32
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 22.601335749961436,
+            "http_request_seconds": 22.600630209082738,
+            "prompt_is_repeat": false,
+            "png_sha256": "a458a665c9ef1ed098068f920b134d99bd90c9322e04d1f6140d789e5d1169d7",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, soft winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 3.96,
+            "sampling_seconds": 16.91,
+            "generation_seconds": 22.57
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 22.59813620802015,
+            "http_request_seconds": 22.597491290885955,
+            "prompt_is_repeat": false,
+            "png_sha256": "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 3.96,
+            "sampling_seconds": 16.91,
+            "generation_seconds": 22.57
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 22.591357208089903,
+            "http_request_seconds": 22.590651750098914,
+            "prompt_is_repeat": true,
+            "png_sha256": "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 3.96,
+            "sampling_seconds": 16.9,
+            "generation_seconds": 22.56
+          }
+        ],
+        "latency_comparison_valid": false,
+        "performance_verified": false,
+        "ready_seconds": 0.31628254195675254,
+        "runtime_verified": true,
+        "server_terminal": true
+      }
+    },
+    {
+      "index": 5,
+      "route": "unsloth-cpu-text",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "c3031bb334514b5b9f313b7df1703c8b",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "a79abeb8207ae8b442d51accd5a127fb85249765f18fb765965031b0c230bbcf",
+        "report": "run-memory-report.json",
+        "report_sha256": "900817042c0a5657d59a7ca7d2db008ab2eb6146150fa16a27581f47b4995f04",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "c3031bb334514b5b9f313b7df1703c8b",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 82019,
+            "start_seconds": 1791802623,
+            "start_microseconds": 374982
+          },
+          "record_count": 990,
+          "sample_count": 976,
+          "final_evidence_digest": "9d83715a90c978a8079bbf9a1ce0dc6a2c409f774542896991b59ff5fc537e6e",
+          "max_gap_ns": 109757958,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 22461857792,
+          "tree_peak_phys_footprint_bytes": 22615065808,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "2ce344265106bab4d7d25211fe691780a78204e7482ff2b0cda59db350fadc20",
+        "a458a665c9ef1ed098068f920b134d99bd90c9322e04d1f6140d789e5d1169d7",
+        "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343",
+        "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343"
+      ],
+      "report": {
+        "status": "complete_precheck_only",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 28.98192583397031,
+            "http_request_seconds": 28.98126804200001,
+            "prompt_is_repeat": false,
+            "png_sha256": "2ce344265106bab4d7d25211fe691780a78204e7482ff2b0cda59db350fadc20",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, natural winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 5.84,
+            "sampling_seconds": 21.19,
+            "generation_seconds": 28.95
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 22.591934874886647,
+            "http_request_seconds": 22.591290917014703,
+            "prompt_is_repeat": false,
+            "png_sha256": "a458a665c9ef1ed098068f920b134d99bd90c9322e04d1f6140d789e5d1169d7",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, soft winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 3.96,
+            "sampling_seconds": 16.9,
+            "generation_seconds": 22.56
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 22.612325666006655,
+            "http_request_seconds": 22.61163824982941,
+            "prompt_is_repeat": false,
+            "png_sha256": "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 3.96,
+            "sampling_seconds": 16.92,
+            "generation_seconds": 22.58
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 22.60179170803167,
+            "http_request_seconds": 22.60114379087463,
+            "prompt_is_repeat": true,
+            "png_sha256": "5b686604771c911afd69e979510a190c6beda424280b5708dd7e057f89abf343",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 3.96,
+            "sampling_seconds": 16.91,
+            "generation_seconds": 22.57
+          }
+        ],
+        "latency_comparison_valid": false,
+        "performance_verified": false,
+        "ready_seconds": 0.3223013752140105,
+        "runtime_verified": true,
+        "server_terminal": true
+      }
+    },
+    {
+      "index": 6,
+      "route": "unsloth-gpu-text",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "7df67e06cf2547bcb57bdcb639a65ae1",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "5357484397354ec466591a653b96a3576e6945f470dc0051476e66c790fd7c39",
+        "report": "run-memory-report.json",
+        "report_sha256": "ed982d617785216ab0af2c5d53adaa199de2956b7889f7dc7ec5853b90673ea8",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "7df67e06cf2547bcb57bdcb639a65ae1",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 82075,
+            "start_seconds": 1791802721,
+            "start_microseconds": 89930
+          },
+          "record_count": 834,
+          "sample_count": 822,
+          "final_evidence_digest": "b395faebae47e4a5ae093f2ff0ad0e405113c56d0e708adf66dec9f79aefc44f",
+          "max_gap_ns": 110012042,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 23709892608,
+          "tree_peak_phys_footprint_bytes": 23862839368,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "a6830dc6418c3e9b4ccd40e56f703be646b80d68b0899cda76e758671918b7db",
+        "36f8ffe6eebfc7cb2c3520a92ba930229cb88a91b183d7d42517b80e39c1b83c",
+        "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c",
+        "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c"
+      ],
+      "report": {
+        "status": "complete_precheck_only",
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 25.145972416037694,
+            "http_request_seconds": 25.145276499912143,
+            "prompt_is_repeat": false,
+            "png_sha256": "a6830dc6418c3e9b4ccd40e56f703be646b80d68b0899cda76e758671918b7db",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, natural winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, natural winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 1.98,
+            "sampling_seconds": 21.2,
+            "generation_seconds": 25.12
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 18.729148000013083,
+            "http_request_seconds": 18.72852037497796,
+            "prompt_is_repeat": false,
+            "png_sha256": "36f8ffe6eebfc7cb2c3520a92ba930229cb88a91b183d7d42517b80e39c1b83c",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, soft winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, soft winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 0.1,
+            "sampling_seconds": 16.89,
+            "generation_seconds": 18.7
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 18.746913583017886,
+            "http_request_seconds": 18.746209915960208,
+            "prompt_is_repeat": false,
+            "png_sha256": "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 0.1,
+            "sampling_seconds": 16.91,
+            "generation_seconds": 18.72
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 18.754391707945615,
+            "http_request_seconds": 18.75378695805557,
+            "prompt_is_repeat": true,
+            "png_sha256": "9309412e6990c099e7824f4863ffda0f2467023b6ce60f213bafa58914e6e12c",
+            "info": {
+              "all_negative_prompts": [
+                ""
+              ],
+              "all_prompts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur."
+              ],
+              "all_seeds": [
+                42
+              ],
+              "cfg_scale": 1,
+              "height": 512,
+              "infotexts": [
+                "A red fox sitting in a snowy forest, warm winter light, detailed fur.\nSteps: 8, CFG scale: 1.000000, Guidance: 3.500000, Eta: inf, Seed: 42, Size: 512x512, Model: , RNG: cuda, Sampler: euler, TE: qwen_3_4b.safetensors, Unet: z_image_turbo_bf16.safetensors, VAE: ae.safetensors, Version: stable-diffusion.cpp, SDCPP: {\"auto_resize_ref_image\":true,\"clip_skip\":-1,\"control_strength\":0.8999999761581421,\"generator\":{\"commit\":\"unknown\",\"name\":\"stable-diffusion.cpp\",\"version\":\"unknown\"},\"height\":512,\"increase_ref_index\":false,\"ip_adapter_strength\":1.0,\"mode\":\"img_gen\",\"models\":{\"diffusion_model\":\"z_image_turbo_bf16.safetensors\",\"llm\":\"qwen_3_4b.safetensors\",\"vae\":\"ae.safetensors\"},\"prompt\":{\"negative\":\"\",\"positive\":\"A red fox sitting in a snowy forest, warm winter light, detailed fur.\"},\"rng\":\"cuda\",\"sampling\":{\"custom_sigmas\":[],\"eta\":null,\"extra_sample_args\":\"\",\"flow_shift\":null,\"guidance\":{\"distilled_guidance\":3.5,\"img_cfg\":null,\"slg\":{\"end\":0.20000000298023224,\"layers\":[7,8,9],\"scale\":0.0,\"start\":0.009999999776482582},\"txt_cfg\":1.0},\"method\":\"euler\",\"shifted_timestep\":0,\"steps\":8},\"schema\":\"sdcpp.image.params/v1\",\"seed\":42,\"strength\":0.75,\"width\":512}"
+              ],
+              "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+              "sampler_name": "euler",
+              "sd_model_name": "z_image_turbo_bf16.safetensors",
+              "sd_vae_name": "ae.safetensors",
+              "seed": 42,
+              "steps": 8,
+              "version": "stable-diffusion.cpp",
+              "width": 512
+            },
+            "condition_seconds": 0.09,
+            "sampling_seconds": 16.92,
+            "generation_seconds": 18.73
+          }
+        ],
+        "latency_comparison_valid": false,
+        "performance_verified": false,
+        "ready_seconds": 0.3285997910425067,
+        "runtime_verified": true,
+        "server_terminal": true
+      }
+    },
+    {
+      "index": 7,
+      "route": "mflux-bf16",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "ddf18f4a435049c6966693b8c80d4004",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "0e17cbfccbe725538da86226cbad28b9fbc3aacbe5b61b716119c8caa58f7b19",
+        "report": "run-memory-report.json",
+        "report_sha256": "e0b4aa4eec0234fe0f3edeb44d71a0d5856f9f1059691ba2cdf9cc83054c7f8d",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "ddf18f4a435049c6966693b8c80d4004",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 82136,
+            "start_seconds": 1791802803,
+            "start_microseconds": 436474
+          },
+          "record_count": 355,
+          "sample_count": 349,
+          "final_evidence_digest": "3365a4e842550444b9b81ed0c74d54212e3acf391639b50d12356dc5eb5943cc",
+          "max_gap_ns": 110015209,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20740243456,
+          "tree_peak_phys_footprint_bytes": 22481437160,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "2e181d8aaded4d5dc7ebd928e520007df56fba058452c0578f20393397744b95",
+        "05106fb9aa9cf8eae21596b666e8f0f15ffd662fd6797db044c7eccdafe8b30c",
+        "00f13d4e8e1ec0c7e371a4b95927eee723408f178e99d5b26102f85781286123",
+        "ccf00b52b695858b3288e003bfc85dd6006e7bfe013d18863936a84b42e31caf"
+      ],
+      "report": {
+        "engine": "mflux-bf16",
+        "constructor_seconds": 1.2851443330291659,
+        "precision": "mlx.core.bfloat16",
+        "quantization": null,
+        "compute_precision_name": null,
+        "float32_stream": false,
+        "transformer_floating_parameter_dtypes": {
+          "mlx.core.bfloat16": 521
+        },
+        "reference_cache_limit_bytes": 1073741824,
+        "previous_reference_cache_limit_bytes": 65283502899,
+        "text_embedding_dtype": "mlx.core.bfloat16",
+        "required_weight_coverage": {
+          "vae": {
+            "required_targets": 244,
+            "covered_targets": 244,
+            "missing": []
+          },
+          "transformer": {
+            "required_targets": 521,
+            "covered_targets": 521,
+            "missing": []
+          },
+          "text_encoder": {
+            "required_targets": 398,
+            "covered_targets": 398,
+            "missing": []
+          }
+        },
+        "instrumentation": "host step counter only; unchanged stock compile, tokenizer and synchronization",
+        "packages": {
+          "mlx": "0.32.3",
+          "torch": "2.14.1",
+          "transformers": "5.19.0",
+          "numpy": "2.5.4",
+          "Pillow": "12.3.0",
+          "safetensors": "0.8.0"
+        },
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 8.328598499996588,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20746600944
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 7.994771790923551,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20845705914
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 7.975086667109281,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20845705914
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 7.972855791915208,
+            "actual_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "actual_quantization": null,
+            "loras": [],
+            "generation_parameters": {},
+            "prompt_cache_hit": false,
+            "mlx_peak_bytes": 20845705914
+          }
+        ]
+      }
+    },
+    {
+      "index": 8,
+      "route": "native-frozen",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "d905d5a886024c0e859cbbd16aa686df",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "4ebb2ae0fca372644a74fd4836e76cea09aa14fc10b7bfd892854100eb03c83e",
+        "report": "run-memory-report.json",
+        "report_sha256": "b192ece6ae5f49c828d43e44a358ef2a5072d90fba3e82ac7cd3de61ca9af3e2",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "d905d5a886024c0e859cbbd16aa686df",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 82153,
+            "start_seconds": 1791802838,
+            "start_microseconds": 462527
+          },
+          "record_count": 323,
+          "sample_count": 319,
+          "final_evidence_digest": "9fab97dd8894616c60a76e4efc346997d37e5ac93899105ec06954536c2f297b",
+          "max_gap_ns": 110016375,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20886880256,
+          "tree_peak_phys_footprint_bytes": 31748308760,
+          "swap_in_bytes": 65536,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 147456,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "f575998214628829f5da9a4a2e632b2c3cf6c0d07406ce310a0c1bc547771f12",
+        "0f31f46d471cd19e46ebecf0ac01e370c71726e4dfdf711b54e2af1dfcef841a",
+        "50971b2ca9763f59fdbcb93435c834ed0f45e50a9ada4f27dccca399ffd26e7b",
+        "50971b2ca9763f59fdbcb93435c834ed0f45e50a9ada4f27dccca399ffd26e7b"
+      ],
+      "report": {
+        "engine": "native-frozen",
+        "constructor_seconds": 0.16080562490969896,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 14.205936833051965,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.212733917,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 14.189558542,
+                "text_encode": 0.291488292,
+                "vae_decode": 0.274731083
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 256,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 6.070026750210673,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.176621583,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.069646584,
+                "text_encode": 0.590319125,
+                "vae_decode": 0.267341292
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 512,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 5.867818915983662,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.224410292,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.867459667,
+                "text_encode": 0.355587584,
+                "vae_decode": 0.265772458
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 768,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 5.332679166924208,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.0999345,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.332339167,
+                "text_encode": 6.67e-7,
+                "vae_decode": 0.212712291
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 1024,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "index": 9,
+      "route": "native-gpu",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "f1bd215791c94ef283f4c4c63dd373d0",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "e2e7ac965f93f2eba78af3816f622017707be36ce35e0cc1ced2b939167cdf38",
+        "report": "run-memory-report.json",
+        "report_sha256": "f2da34bd897024dd3288b4b618038591198dbda8cf7a9d6e7fdc8d9e139130ee",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "f1bd215791c94ef283f4c4c63dd373d0",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 82167,
+            "start_seconds": 1791802870,
+            "start_microseconds": 466203
+          },
+          "record_count": 304,
+          "sample_count": 300,
+          "final_evidence_digest": "cde4582e2b75809e8a466c8cf2aa5dfce5d77d2723df4ec2405d518a39012b1f",
+          "max_gap_ns": 110024459,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20156252160,
+          "tree_peak_phys_footprint_bytes": 31497731336,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "b7b255f1e38ded7b5edb6dfb3f70c962e95f953d7c43733149dc024c608ef201",
+        "430621dd978a298834c283664b286b379756b80389990c0765572a08d0420ed9",
+        "7231e8972627377fdb1b1465bd9fab3f5463ead0cebdf573b76a68cb2ce2ae62",
+        "7231e8972627377fdb1b1465bd9fab3f5463ead0cebdf573b76a68cb2ce2ae62"
+      ],
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 0.16042979108169675,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 7.816145832883194,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.771110917,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.8004085,
+                "text_encode": 0.286680417,
+                "vae_decode": 0.264809875
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 7.468406292144209,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.768297208,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.468112875,
+                "text_encode": 0.4052355,
+                "vae_decode": 0.269227166
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 7.3497409170959145,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.757436333,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.349479,
+                "text_encode": 0.302527292,
+                "vae_decode": 0.263016625
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 6.987982416991144,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.752166167,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.98770575,
+                "text_encode": 9.17e-7,
+                "vae_decode": 0.215369125
+              },
+              "hybrid": null
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

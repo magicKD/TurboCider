@@ -1,11 +1,13 @@
 import copy
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/validation"))
-from qwen21_gguf_hybrid_screen import validate_receipts
+from qwen21_gguf_hybrid_screen import (OPTIMIZATION_FLAGS, configure_import_profile,
+                                     validate_receipts, validate_verified_imports)
 
 
 def receipts(channels=4096, steps=40):
@@ -38,6 +40,105 @@ def receipts(channels=4096, steps=40):
 
 
 class MixedKHybridScreenTests(unittest.TestCase):
+    def test_unflagged_profile_cannot_accidentally_test_explicit_overrides(self):
+        args = SimpleNamespace(fast_defaults=True, decode_workers=8, read_buffer_mib=4,
+                               read_ahead=True, encoder_prefill=True, verified_import_overlap=True)
+        env = dict.fromkeys(OPTIMIZATION_FLAGS, "unexpected inherited setting")
+        env["TURBOCIDER_ANE_BACKEND"] = "private"
+        configure_import_profile(env, args)
+        self.assertEqual(env, {"TURBOCIDER_ANE_BACKEND": "private"})
+        args.fast_defaults = False
+        configure_import_profile(env, args)
+        self.assertEqual(env["TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS"], "0")
+        self.assertEqual(env["TURBOCIDER_QWEN21_GGUF_DECODE_WORKERS"], "8")
+        self.assertEqual(env["TURBOCIDER_QWEN21_GGUF_READ_BUFFER_MIB"], "4")
+        self.assertEqual(env["TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"], "1")
+        self.assertNotIn("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU", env)
+
+    def test_actual_default_decode_workers_required(self):
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        records = [dict(component=k, source_sha256="a" * 64, verification_bytes=1057,
+                        verification_cache_hits=0, cpu_verify_import_schedule=True, verified_before_publication=True,
+                        physical_overlap_proved=False, verification_seconds=.1, import_wall_seconds=.2,
+                        decode_workers=8) for k in expected]
+        validate_verified_imports(records, expected, decode_workers=8)
+        for value in (1, True, 8.0, None):
+            broken = copy.deepcopy(records)
+            broken[0]["decode_workers"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_verified_imports(broken, expected, decode_workers=8)
+
+    def test_actual_two_slot_source_read_ahead_work_and_drain(self):
+        expected={k:("a"*64,1057) for k in ("encoder","dit")}
+        records=[dict(component=k,source_sha256="a"*64,verification_bytes=0,verification_cache_hits=1,
+            registration_enabled=True,registration_cache_hits=1,registration_records_written=0,
+            first_registration_seconds=0,cpu_verify_import_schedule=True,verified_before_publication=True,
+            physical_overlap_proved=False,verification_seconds=.001,import_wall_seconds=.5,
+            read_buffer_capacity_bytes=16<<20,read_buffer_slots=2,read_ahead_enabled=True,
+            read_ahead_drained=True,read_ahead_jobs=5,read_ahead_bytes=1000,read_wait_seconds=.05) for k in expected]
+        validate_verified_imports(records,expected,"reuse",8,True)
+        for key,value in (("read_buffer_slots",True),("read_buffer_capacity_bytes",8<<20),
+            ("read_ahead_drained",False),("read_ahead_enabled",False),("read_ahead_jobs",0),
+            ("read_ahead_bytes",1058),("read_wait_seconds",float("nan"))):
+            bad=copy.deepcopy(records);bad[0][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                validate_verified_imports(bad,expected,"reuse",8,True)
+
+    def test_actual_bounded_import_buffer_receipt(self):
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        records = [dict(component=k, source_sha256="a" * 64, verification_bytes=0,
+            verification_cache_hits=1, registration_enabled=True, registration_cache_hits=1,
+            registration_records_written=0, first_registration_seconds=0,
+            cpu_verify_import_schedule=True, verified_before_publication=True, physical_overlap_proved=False,
+            verification_seconds=.001, import_wall_seconds=.5, read_buffer_capacity_bytes=8 << 20) for k in expected]
+        validate_verified_imports(records, expected, "reuse", 8)
+        for value in (1 << 20, True, 8.0 * (1 << 20)):
+            broken = copy.deepcopy(records); broken[0]["read_buffer_capacity_bytes"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_verified_imports(broken, expected, "reuse", 8)
+        broken = copy.deepcopy(records); del broken[0]["read_buffer_capacity_bytes"]
+        with self.assertRaises(ValueError):
+            validate_verified_imports(broken, expected, "reuse", 8)
+
+    def test_first_registration_and_independent_process_receipt_reuse(self):
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        for phase in ("first", "reuse"):
+            reused = phase == "reuse"
+            records = [dict(component=k, source_sha256="a" * 64, verification_bytes=0 if reused else 1057,
+                            verification_cache_hits=int(reused), registration_enabled=True,
+                            registration_cache_hits=int(reused), registration_records_written=int(not reused),
+                            first_registration_seconds=0 if reused else .1,
+                            cpu_verify_import_schedule=True, verified_before_publication=True,
+                            physical_overlap_proved=False, verification_seconds=.001 if reused else .1,
+                            import_wall_seconds=.2) for k in expected]
+            validate_verified_imports(records, expected, phase)
+            for key, value in (("registration_enabled", False), ("registration_cache_hits", int(not reused)),
+                               ("registration_records_written", int(reused)), ("registration_cache_hits", True),
+                               ("first_registration_seconds", .1 if reused else 0),
+                               ("verification_bytes", 1057 if reused else 0),
+                               ("first_registration_seconds", float("nan"))):
+                invalid = copy.deepcopy(records);invalid[0][key] = value
+                with self.subTest(phase=phase, key=key), self.assertRaises(ValueError):
+                    validate_verified_imports(invalid, expected, phase)
+        with self.assertRaises(ValueError):
+            validate_verified_imports([], expected, "untrusted")
+
+    def test_original_whole_file_verified_before_candidate_publication(self):
+        records = [dict(component=k, source_sha256="a" * 64, verification_bytes=1057,
+                        verification_cache_hits=0, cpu_verify_import_schedule=True, verified_before_publication=True,
+                        physical_overlap_proved=False, verification_seconds=.1, import_wall_seconds=.2)
+                   for k in ("encoder", "dit")]
+        expected = {k: ("a" * 64, 1057) for k in ("encoder", "dit")}
+        validate_verified_imports(records, expected)
+        for key, value in (("verification_bytes", 0), ("verification_cache_hits", 1),
+                           ("verified_before_publication", False), ("physical_overlap_proved", True),
+                           ("cpu_verify_import_schedule", 1), ("verification_seconds", float("nan"))):
+            invalid = copy.deepcopy(records);invalid[0][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                validate_verified_imports(invalid, expected)
+        with self.assertRaises(ValueError):
+            validate_verified_imports(records[:1], expected)
+
     def test_encoder_prefill_actual_fusions_and_processor_reuse(self):
         rows = receipts()
         for index, row in enumerate(rows):

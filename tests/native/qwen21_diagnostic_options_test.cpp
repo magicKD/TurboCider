@@ -112,6 +112,65 @@ void test_cache_options() {
 int main() {
     using namespace tc::qwen21;
     test_cache_options();
+    assert(gguf_read_buffer_mib(nullptr)==1 && gguf_read_buffer_mib("1")==1 &&
+        gguf_read_buffer_mib("4")==4 && gguf_read_buffer_mib("8")==8);
+    for(const char *value:{"","0","2","16","08"," 8","8 ","8.0","eight"})
+        assert(gguf_read_buffer_mib(value)==0);
+    unsetenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS");
+    assert(gguf_fast_defaults_enabled());
+    setenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS","0",1);assert(!gguf_fast_defaults_enabled());
+    setenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS","1",1);assert(gguf_fast_defaults_enabled());
+    unsetenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS");
+    assert(option_or_default(nullptr,true) && !option_or_default(nullptr,false));
+    assert(!option_or_default("0",true) && option_or_default("1",false));
+    auto rejected=[](auto action) {
+        bool threw=false;
+        try { action(); } catch(const std::exception &) { threw=true; }
+        assert(threw);
+    };
+    for(const char *bad:{"","true","01"," 1","2"}) {
+        setenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS",bad,1);
+        rejected([] { (void)gguf_fast_defaults_enabled(); });
+        rejected([&] { (void)option_or_default(bad,true); });
+    }
+    unsetenv("TURBOCIDER_QWEN21_GGUF_FAST_DEFAULTS");
+    tc::Request base;base.model="qwen-image-2.1";base.operation="image.generate";base.execution="gpu";
+    base.width=base.height=512;base.residency="resident";base.allow_approximation=true;
+    assert(gguf_fast_encoder_request(base,true,true));
+    assert(!gguf_fast_encoder_request(base,false,true) && !gguf_fast_encoder_request(base,true,false));
+    for(int mode=0;mode<16;++mode) {
+        auto invalid=base;
+        if(mode==0)invalid.model="other";
+        if(mode==1)invalid.width=1024;
+        if(mode==2)invalid.operation="image.edit";
+        if(mode==3)invalid.inputs.resize(1);
+        if(mode==4)invalid.loras.push_back({"adapter",1.f,"transformer"});
+        if(mode==5)invalid.residency="component_staged";
+        if(mode==6)invalid.allow_approximation=false;
+        if(mode==7)invalid.prompt_enhance=true;
+        if(mode==8)invalid.memory_budget_bytes=1;
+        if(mode==9)invalid.qwen21_w8a8=true;
+        if(mode==10)invalid.execution="cpu";
+        if(mode==11)invalid.encoder_ane_manifest="encoder.json";
+        if(mode==12)invalid.qwen21_gpu_w8a16=true;
+        if(mode==13)invalid.memory_constrained.enabled=true;
+        if(mode==14)invalid.streaming.enabled=true;
+        if(mode==15)invalid.height=1024;
+        assert(!gguf_fast_encoder_request(invalid,true,true));
+    }
+    auto mixed=base;mixed.execution="gpu_ane";mixed.hybrid_mlp_mode="runtime";
+    assert(gguf_fast_encoder_request(mixed,true,true));
+    mixed.hybrid_mlp_mode="auto";assert(!gguf_fast_encoder_request(mixed,true,true));
+    unsetenv("TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU");
+    unsetenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");
+    assert(!compiled_encoder_gpu(base) && compiled_encoder_gpu(base,true));
+    setenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU","0",1);
+    assert(!compiled_encoder_gpu(base,true));
+    setenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU","1",1);
+    assert(compiled_encoder_gpu(base));
+    auto invalid=base;invalid.width=1024;
+    rejected([&] { (void)compiled_encoder_gpu(invalid); });
+    unsetenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");
     assert(!option_enabled(nullptr));
     assert(!option_enabled("0"));
     assert(!option_enabled(""));
