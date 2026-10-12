@@ -187,6 +187,8 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_flux4_saved_precheck.py
 	@"$(PYTHON)" -B tests/native/test_flux4_native_saved_view.py
 	@"$(PYTHON)" -B tests/native/test_flux4_native_saved_precheck.py
+	@"$(PYTHON)" -B tests/native/test_unsloth_image_reference_screen.py
+	@"$(PYTHON)" -B tests/native/test_z_unsloth_framework_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_base_formats_screen.py
 	@"$(PYTHON)" -B tests/native/test_z_base_formats_evidence.py
 	@"$(PYTHON)" -B tests/native/test_ltx_base_benchmark_screen.py

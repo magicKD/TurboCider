@@ -4,6 +4,26 @@
   "goal_complete": false,
   "qualification_passed": false,
   "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls; compare compatible successful frameworks only, no mandatory unsupported adaptation;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
+  "consolidated_report": "docs/benchmark/PERFORMANCE_REPORT.md",
+  "additional_experiments_scheduled": false,
+  "matched_comparison_configurations": [
+    {
+      "model": "z-image-turbo",
+      "evidence": "docs/design/validation/z-unsloth-mflux-current-20261012.json",
+      "library": "build/flux4-g64-v1-private-20261012/libturbocider.dylib",
+      "source_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_all/manifest.json",
+      "compiled_manifest": "models/coreml/z_image_w8a8_imageonly_hidden_c4_a5120_b1024_diverse8_compiled/manifest-0718a2ff4c18e5c283b91f45ec21d867cd6532e899e6b48520e8396efea20e72.json",
+      "native_gpu_seconds": 7.356122708530165,
+      "native_frozen_seconds": 5.955416937009431,
+      "mflux_bf16_seconds": 7.9708980625728145,
+      "unsloth_gpu_text_seconds": 18.735299708438106,
+      "unsloth_default_cpu_text_seconds": 22.599735978990793,
+      "reference_selector": "fastest measured placement: unsloth-gpu-text, not slower default CPU text",
+      "request_scope": "512x512,8steps,seed42,dynamic_text=true,base-only; frozen prefix5120/GPU complement5120,256calls/request",
+      "selection_note": "latest complete same-window comparisons, not cross-cohort fastest; older nominal5.780s winner below stays paired to its own GPU/reference controls",
+      "reproduction_command": ".deps/mflux-0.22-env/bin/python3 -B tools/validation/z_unsloth_framework_screen.py --reference ../references/unsloth --binary .deps/stable-diffusion-cpp/master-813-bfbef5b-u1d02858/sd-master-813-bfbef5b-u1d02858-bin-Darwin-macOS-arm64/sd-server --library build/flux4-g64-v1-private-20261012/libturbocider.dylib --mflux .deps/mflux-v0.22.0-20261012 --reference-model outputs/benchmark-model-views/z-bf16-mflux-v1-20261011 --python .deps/mflux-0.22-env/bin/python3 --output outputs/new-z-unsloth-cohort"
+    }
+  ],
   "comparison_policy": {
     "framework_admission": "compatible and successful complete generation only",
     "adapt_unsupported_frameworks": false,

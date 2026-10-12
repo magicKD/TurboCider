@@ -34,5 +34,6 @@ source实际compiled-single events为0；本页只称packed eager，不称
 [Native完整预检](../design/validation/flux4-native-saved-q4-precheck-20261012.json)、
 [参考兼容预检](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)、
 [Unsloth覆盖边界](OPEN_SOURCE_COMPARISONS.md#unsloth支持与本机覆盖不是一回事)。
-下一项是同任务/同recipe的完整正反序原生最佳GPU、GPU/ANE与兼容
-参考cohort；Unsloth的FLUX/Z优先补实际兼容路线，拒绝者只留审计。
+本页明确尚无当前配对排名，不再将其列作自动扩展任务。按用户最新
+收敛要求，现有实测统一进入[性能报告](PERFORMANCE_REPORT.md)，
+历史与预检分开，未测倍率不填写。

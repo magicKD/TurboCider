@@ -3,6 +3,7 @@
 更新2026-10-12。当前仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5，
 base-only。主榜只比较兼容且完整生成成功的路线；不兼容者略过，不
 强制转换或修改外部框架。不是所有框架/版本/硬件的全局排行榜。
+收敛后的主报告见[性能评测](PERFORMANCE_REPORT.md)；本页只补框架身份与口径。
 
 ## 能作本机速度分母的结果
 
@@ -10,13 +11,14 @@ base-only。主榜只比较兼容且完整生成成功的路线；不兼容者�
 | --- | --- | ---: | ---: | --- |
 | Unsloth权重+pinned sd-server/Metal | Qwen2.1原Q4_K_M encoder+DiT/BF16VAE，512²/40步 | 125.365 | Private36.870 | **mixed3.40×，省70.6%**；只代表该固定路径，不代表Unsloth所有执行后端 |
 | mflux0.22，fixed release commit | Qwen2.1 BF16源512²/40步 | 41.952 | frozen31.810 | mixed1.319×，省24.2%；nativeGPU43.309略输；W8A8不是严格BF16 |
-| mflux0.22，同release | Z-Image Turbo512²/8步 | 7.976 | frozen5.959 | mixed1.339×；referencepeak22.51GB比native约32GB低 |
+| Unsloth native sd-server/Metal，最快已测GPU-text | Z-Image Turbo原BF16源512²/8步 | 18.735 | frozen5.955 | **mixed3.146×，省68.2%**；默认CPU-text22.600s更慢，未用作宣传分母 |
+| mflux0.22，同release | Z-Image Turbo原BF16源512²/8步，同一新cohort | 7.971 | frozen5.955 | mixed1.338×；referencepeak22.48–22.52GB比native约32GB低 |
 
 每行只用自己的cohort和完整生成，不跨组拼最快分子/最慢分母。
 Qwen/Z mflux组为完整正反序、原尺寸PNG、独立进程树内存和
 实际参数/calls证据；固定GGUF组为同前置负载、各路两个fresh，
 原generate_image span与native request/export边界的差别单列。
-[Qwen](QWEN_BF16_FRAMEWORKS.md)、[Z](Z_IMAGE_FRAMEWORKS.md)、
+[Qwen](QWEN_BF16_FRAMEWORKS.md)、[Z最新Unsloth/mflux](Z_UNSLOTH_FRAMEWORKS.md)、
 [固定GGUF路径](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成)。
 Model checkpoint/数学/组件生命周期、cold、repeat缓存边界另列。
 
@@ -36,14 +38,14 @@ mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../d
 | 家族 | 已有Unsloth同机性能对照 | 当前处理 |
 | --- | --- | --- |
 | Qwen2.1 GGUF | 有：原Unsloth权重+固定sd-server Metal完整40步，125.365s | 对本组mixed36.870s为3.40×，限该后端/版本/任务，不代表全部Desktop路径 |
-| Z-Image Turbo | 暂无成功完整的Unsloth Desktop/sd-server配对cohort | 已测mflux不改名为Unsloth；优先核验本地GGUF的兼容Unsloth执行路径，再补完整对照 |
+| Z-Image Turbo | 有：当前五路线10进程/40PNG/10memory完整正反序；Unsloth原native Metal BF16源GPU-text18.735s、defaultCPU-text22.600s | 用最快已测GPU-text对本组frozen5.955s为3.146×；不是整个Desktop UI开销或全参数最优 |
 | FLUX4B | 暂无成功完整的Unsloth Desktop/sd-server配对cohort | mflux/mlx-serve单次兼容预检不能替代；在同checkpoint/recipe成立时再测，拒绝者略过 |
 
 公开身份来源：`https://unsloth.ai/`、
 `https://huggingface.co/unsloth/FLUX.2-klein-4B-GGUF`、
 `https://huggingface.co/unsloth/Z-Image-Turbo-GGUF`。这里只核验能力与模型
 存在，不把网页中的速度宣传当本机分母。当前catalog的Unsloth完整
-对照只有Qwen原GGUF组；未覆盖FLUX/Z，不宣称已在这两家族胜过它。
+对照已覆盖Qwen原GGUF与Z原BF16组；FLUX4B尚无当前Unsloth配对，不推算其胜率。
 
 ## 上游公开评测能说明什么
 
@@ -77,5 +79,5 @@ prompt/cache、完整输出边界与硬件；不同seed engine也不保证相同
 所有公开数字不进入[raw sample catalog](results-20261011.json)的本机
 成功latency数组。保留框架自身负结果、完整source/实际执行/输出和
 memory pressure，同任务有更快参考时也如实列出。重点展示已测
-Qwen/Z优势，不写“四模型全部远超”；FLUX4B完整同机对照仍待补，
-LTX无兼容成功参考则只报内部配置，不以强制适配作为完成条件。
+Qwen/Z优势，不写“四模型全部远超”；未配对的FLUX4B与无成功参考的
+LTX只报已测边界。按用户收敛要求，本轮不再扩大实验网格或强制适配。

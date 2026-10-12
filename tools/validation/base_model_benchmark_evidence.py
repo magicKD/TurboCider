@@ -60,9 +60,11 @@ def verified_advantages(campaigns):
     specifications = (
         ("qwen-image-2.1-original-Q4_K_M", "mixed", "original-unsloth-gpu",
          "original GGUF Q4_K_M source; approximate Private W8A8 FFN; pinned sd-server Metal only; native request/export versus original generate_image span"),
+        ("z-image-turbo-unsloth-mflux-bf16-cohort", "native-frozen", "unsloth-gpu-text",
+         "same BF16 source; approximate frozen W8A8 FFN; fastest measured Unsloth placement, not slower default CPU text or all Desktop backends"),
         ("qwen-image-2.1-mflux022-bf16-fp16-cohort", "native-frozen", "mflux-bf16",
          "same BF16 source; approximate frozen W8A8 FFN, not strict BF16 parity"),
-        ("z-image-turbo-mflux022-bf16-fp16-cohort", "native-frozen", "mflux-bf16",
+        ("z-image-turbo-unsloth-mflux-bf16-cohort", "native-frozen", "mflux-bf16",
          "same BF16 source; approximate frozen W8A8 FFN; reference uses less memory"),
     )
     result = []
@@ -80,6 +82,26 @@ def source(path, statuses):
     if data.get("status") not in statuses:
         raise ValueError("incomplete evidence: " + path)
     return data, dict(path=path, sha256=hashlib.sha256(raw).hexdigest(), status=data["status"])
+
+
+def z_unsloth_campaign(path):
+    from z_unsloth_framework_screen import ORDER, validate_trial
+    data,binding=source(path,("complete_diagnostic",))
+    if data["order"]!=list(ORDER) or data["steps"]!=8 or data["requests_per_process"]!=4 or len(data["trials"])!=10:
+        raise ValueError("complete source-matched five-route Z cohort required")
+    for trial in data["trials"]:validate_trial(trial)
+    routes=[]
+    for row in data["routes"]:
+        trials=[trial for trial in data["trials"] if trial["route"]==row["route"]]
+        samples=[r["request_wall_including_export"] for trial in trials for r in trial["report"]["runs"][1:3]]
+        if samples!=row["fresh_warm_seconds"] or len(samples)!=4 or statistics.median(samples)!=row["fresh_warm_median"]:
+            raise ValueError("same-window actual four fresh samples required")
+        routes.append(measured(row["route"],row["cold_seconds"],samples,repeated_prompt_seconds=row["repeat_seconds"],
+            constructor_seconds=row["constructor_seconds"],physical_peaks=row["physical_peaks"],
+            compression_bytes=row["compression_bytes"],swap_out_bytes=row["swap_out_bytes"]))
+    return dict(evidence=binding,model="z-image-turbo-unsloth-mflux-bf16-cohort",geometry=[512,512],steps=8,date=data["date"],
+        routes=routes,reference_comparison_valid=True,timing_scope=data["timing_scope"],
+        note="same originalBF16 encoder/DiT/VAE; ten serial processes,40PNG/10complete memory,4fresh/route; nativeGPU7.356123/frozen5.955417/mflux7.970898/UnslothMetal GPUtext18.735300/defaultCPUtext22.599736s; use fasterGPUtext denominator: GPU2.547x,mixed3.146x,not3.795x against slowerdefault; frozen approximate with higher cold/RAM; reference templates/RNG/lifecycles differ; UI overhead not timed")
 
 
 def runtime_campaign(path, model, size, steps, note):
@@ -510,6 +532,7 @@ def export():
     campaigns.append(dict(evidence=binding,model="flux2-klein-9b-affine-predecoded-gpu-cohort",
         geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=decoded["timing_scope"],
         note="same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"))
+    campaigns.append(z_unsloth_campaign("docs/design/validation/z-unsloth-mflux-current-20261012.json"))
     active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
     for row in campaigns:
         row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")
@@ -519,14 +542,16 @@ def export():
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
                 goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
                 comparison_policy=COMPARISON_POLICY, verified_advantages=verified_advantages(campaigns),
+                primary_report="docs/benchmark/PERFORMANCE_REPORT.md",
+                latest_user_scope="consolidate completed experiments into a concise performance report; no further model/shape/grid experiments scheduled; historical and unpaired results labelled separately",
                 active_model_families=["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"],
                 deferred_model_families=["flux2-klein-9b"], active_campaign_count=len(active),
                 deferred_campaign_count=len(campaigns)-len(active), historical_report="docs/benchmark/HISTORICAL_RESULTS.md",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
-                missing_current_comparisons=["Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
-                    "Z compatible Unsloth Metal paired cohort and additional native shape/checkpoint/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed", "FLUX4B Q4/g64 native four-PNG plus mflux/current mlx-serve runtime prechecks succeeded; complete best GPU/GPU-ANE and compatible reference cohorts incl Unsloth pending; old4B not current proof,9B deferred",
-                    "LTX further native screening; compare external frameworks only if compatible complete media succeeds; unsupported reference packs excluded, no mandatory conversion", "cross-family parameter screening and durable actually-loadable best configurations"],
+                missing_current_comparisons=["Boundary only, not a new experiment queue: finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
+                    "FLUX4B current Q4/g64 GPU/ANE and external paired ranking absent; native/mflux/mlx-serve runtime prechecks and historicalBF16 mixed separately labelled,9B deferred",
+                    "LTX has no compatible successful same-task external denominator; existing full-media internal configurations reported, unsupported packs excluded without mandatory conversion"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
                     "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
                     "additional converted precision/model packs are not equal-source original-format benchmark denominators"])

@@ -35,6 +35,24 @@
       "timing_scope": "each target preceded by actual BF16 streaming 40 steps x3; two fresh warm prompts; not identical OS page state"
     },
     {
+      "model": "z-image-turbo-unsloth-mflux-bf16-cohort",
+      "evidence": {
+        "path": "docs/design/validation/z-unsloth-mflux-current-20261012.json",
+        "sha256": "723b467fa19e97dcc578e8757eb7c3b5a4c989828579a35115cb3c27841e4eb2",
+        "status": "complete_diagnostic"
+      },
+      "native_route": "native-frozen",
+      "reference_route": "unsloth-gpu-text",
+      "native_seconds": 5.955416937009431,
+      "reference_seconds": 18.735299708438106,
+      "speedup": 3.1459257859863987,
+      "reduction_percent": 68.21285471976091,
+      "native_warm_sample_count": 4,
+      "reference_warm_sample_count": 4,
+      "precision_note": "same BF16 source; approximate frozen W8A8 FFN; fastest measured Unsloth placement, not slower default CPU text or all Desktop backends",
+      "timing_scope": "complete512 PNG wall: native C API/export, mflux image/save, sd-server HTTP/PNG reply/export; constructor/readiness/cold/repeat separate"
+    },
+    {
       "model": "qwen-image-2.1-mflux022-bf16-fp16-cohort",
       "evidence": {
         "path": "docs/design/validation/qwen21-mflux022-bf16-fp16-current-20261012.json",
@@ -53,24 +71,26 @@
       "timing_scope": "constructor separately; full PNG request wall; cold/two fresh/repeat, no added phase eval or model instrumentation"
     },
     {
-      "model": "z-image-turbo-mflux022-bf16-fp16-cohort",
+      "model": "z-image-turbo-unsloth-mflux-bf16-cohort",
       "evidence": {
-        "path": "docs/design/validation/z-mflux022-bf16-fp16-current-20261012.json",
-        "sha256": "adba0db5066ffbfdec7b48148f7bf60dc268247b6cb3f5f699e8fdc9f5471a89",
+        "path": "docs/design/validation/z-unsloth-mflux-current-20261012.json",
+        "sha256": "723b467fa19e97dcc578e8757eb7c3b5a4c989828579a35115cb3c27841e4eb2",
         "status": "complete_diagnostic"
       },
       "native_route": "native-frozen",
       "reference_route": "mflux-bf16",
-      "native_seconds": 5.959064104012214,
-      "reference_seconds": 7.976479062461294,
-      "speedup": 1.3385456043493076,
-      "reduction_percent": 25.292048567436076,
+      "native_seconds": 5.955416937009431,
+      "reference_seconds": 7.9708980625728145,
+      "speedup": 1.338428215334236,
+      "reduction_percent": 25.285496185518074,
       "native_warm_sample_count": 4,
       "reference_warm_sample_count": 4,
       "precision_note": "same BF16 source; approximate frozen W8A8 FFN; reference uses less memory",
-      "timing_scope": "constructor separately; native/API and stock mflux full PNG wall; cold/two fresh/repeat; no extra phase fences"
+      "timing_scope": "complete512 PNG wall: native C API/export, mflux image/save, sd-server HTTP/PNG reply/export; constructor/readiness/cold/repeat separate"
     }
   ],
+  "primary_report": "docs/benchmark/PERFORMANCE_REPORT.md",
+  "latest_user_scope": "consolidate completed experiments into a concise performance report; no further model/shape/grid experiments scheduled; historical and unpaired results labelled separately",
   "active_model_families": [
     "flux2-klein-4b",
     "z-image-turbo",
@@ -80,7 +100,7 @@
   "deferred_model_families": [
     "flux2-klein-9b"
   ],
-  "active_campaign_count": 41,
+  "active_campaign_count": 42,
   "deferred_campaign_count": 12,
   "historical_report": "docs/benchmark/HISTORICAL_RESULTS.md",
   "expansion_status": "docs/benchmark/EXPANSION_STATUS.md",
@@ -5295,14 +5315,207 @@
       "timing_scope": "complete PNG wall; separate constructor/cold, two fresh prompts, immediate repeated-prompt cache hit separately",
       "note": "same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification",
       "in_current_scope": false
+    },
+    {
+      "evidence": {
+        "path": "docs/design/validation/z-unsloth-mflux-current-20261012.json",
+        "sha256": "723b467fa19e97dcc578e8757eb7c3b5a4c989828579a35115cb3c27841e4eb2",
+        "status": "complete_diagnostic"
+      },
+      "model": "z-image-turbo-unsloth-mflux-bf16-cohort",
+      "geometry": [
+        512,
+        512
+      ],
+      "steps": 8,
+      "date": "2026-10-12",
+      "routes": [
+        {
+          "route": "native-gpu",
+          "cold_seconds": [
+            8.694700833177194,
+            7.816145832883194
+          ],
+          "warm_seconds": [
+            7.362504499964416,
+            7.336875957902521,
+            7.468406292144209,
+            7.3497409170959145
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.356122708530165,
+          "repeated_prompt_seconds": [
+            6.979781917063519,
+            6.987982416991144
+          ],
+          "constructor_seconds": [
+            0.1419585410039872,
+            0.16042979108169675
+          ],
+          "physical_peaks": [
+            31015829536,
+            31497731336
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "native-frozen",
+          "cold_seconds": [
+            17.42921054107137,
+            14.205936833051965
+          ],
+          "warm_seconds": [
+            6.043014958035201,
+            5.816851499956101,
+            6.070026750210673,
+            5.867818915983662
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 5.955416937009431,
+          "repeated_prompt_seconds": [
+            5.329243125161156,
+            5.332679166924208
+          ],
+          "constructor_seconds": [
+            0.14392633293755352,
+            0.16080562490969896
+          ],
+          "physical_peaks": [
+            31889063824,
+            31748308760
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "mflux-bf16",
+          "cold_seconds": [
+            9.012036207830533,
+            8.328598499996588
+          ],
+          "warm_seconds": [
+            7.963052874896675,
+            7.966709458036348,
+            7.994771790923551,
+            7.975086667109281
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 7.9708980625728145,
+          "repeated_prompt_seconds": [
+            7.99451645812951,
+            7.972855791915208
+          ],
+          "constructor_seconds": [
+            1.4477338339202106,
+            1.2851443330291659
+          ],
+          "physical_peaks": [
+            22524821992,
+            22481437160
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "unsloth-gpu-text",
+          "cold_seconds": [
+            25.65371587499976,
+            25.145972416037694
+          ],
+          "warm_seconds": [
+            18.737732999958098,
+            18.732866416918114,
+            18.729148000013083,
+            18.746913583017886
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 18.735299708438106,
+          "repeated_prompt_seconds": [
+            18.71406391588971,
+            18.754391707945615
+          ],
+          "constructor_seconds": [
+            0.3218082080129534,
+            0.3285997910425067
+          ],
+          "physical_peaks": [
+            23918954592,
+            23862839368
+          ],
+          "compression_bytes": [
+            2456649728,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        },
+        {
+          "route": "unsloth-cpu-text",
+          "cold_seconds": [
+            29.347142999991775,
+            28.98192583397031
+          ],
+          "warm_seconds": [
+            22.601335749961436,
+            22.59813620802015,
+            22.591934874886647,
+            22.612325666006655
+          ],
+          "warm_sample_count": 4,
+          "warm_median_seconds": 22.599735978990793,
+          "repeated_prompt_seconds": [
+            22.591357208089903,
+            22.60179170803167
+          ],
+          "constructor_seconds": [
+            0.31628254195675254,
+            0.3223013752140105
+          ],
+          "physical_peaks": [
+            22690514080,
+            22615065808
+          ],
+          "compression_bytes": [
+            0,
+            0
+          ],
+          "swap_out_bytes": [
+            0,
+            0
+          ]
+        }
+      ],
+      "reference_comparison_valid": true,
+      "timing_scope": "complete512 PNG wall: native C API/export, mflux image/save, sd-server HTTP/PNG reply/export; constructor/readiness/cold/repeat separate",
+      "note": "same originalBF16 encoder/DiT/VAE; ten serial processes,40PNG/10complete memory,4fresh/route; nativeGPU7.356123/frozen5.955417/mflux7.970898/UnslothMetal GPUtext18.735300/defaultCPUtext22.599736s; use fasterGPUtext denominator: GPU2.547x,mixed3.146x,not3.795x against slowerdefault; frozen approximate with higher cold/RAM; reference templates/RNG/lifecycles differ; UI overhead not timed",
+      "in_current_scope": true
     }
   ],
   "missing_current_comparisons": [
-    "Qwen further native share/shape and current upstream quantized candidates; reference0/1024/4096MiB and current0.22 BF16/partialFP16 cohorts completed",
-    "Z compatible Unsloth Metal paired cohort and additional native shape/checkpoint/current upstream quantized candidates; fourteen Private share/join and current0.22 BF16/float16 cohorts completed",
-    "FLUX4B Q4/g64 native four-PNG plus mflux/current mlx-serve runtime prechecks succeeded; complete best GPU/GPU-ANE and compatible reference cohorts incl Unsloth pending; old4B not current proof,9B deferred",
-    "LTX further native screening; compare external frameworks only if compatible complete media succeeds; unsupported reference packs excluded, no mandatory conversion",
-    "cross-family parameter screening and durable actually-loadable best configurations"
+    "Boundary only, not a new experiment queue: finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
+    "FLUX4B current Q4/g64 GPU/ANE and external paired ranking absent; native/mflux/mlx-serve runtime prechecks and historicalBF16 mixed separately labelled,9B deferred",
+    "LTX has no compatible successful same-task external denominator; existing full-media internal configurations reported, unsupported packs excluded without mandatory conversion"
   ],
   "unmeasured_or_inapplicable": [
     "current FastH3 INT6 DiT and original H3 video VAE assets absent",

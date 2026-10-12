@@ -1,4 +1,11 @@
-# 扩展 benchmark：完整目标仍在推进
+# 历史扩展记录与当前证据边界
+
+2026-10-12最新要求已改为收敛现有实测、整理突出性能的报告。
+当前已启动的Z/Unsloth五路线随后完成：GPU7.356/frozen5.955/
+mflux7.971/UnslothGPU-text18.735/defaultCPU-text22.600s，10进程/
+40PNG/10memory完整；只用更快的GPU-text作分母，mixed3.146×。
+入口为[收敛性能报告](PERFORMANCE_REPORT.md)。下方网格扩展和待补
+条目保留为历史/证据边界，不是继续自动扩大实验的执行队列。
 
 当前优先范围已按2026-10-12用户要求改为FLUX4B/Z-Image Turbo/
 Qwen2.1/LTX。9B只保留历史附录，不再安排新9B benchmark；下方

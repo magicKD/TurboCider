@@ -1,5 +1,26 @@
 # 本轮目标逐项核验
 
+## 最新交付：按用户要求收敛报告
+
+2026-10-12用户要求“之前已经评测，尽可能收敛，整理突出框架性能的
+报告”。本轮不再扩大网格；完成已启动Z/Unsloth同机正反序后，将
+已有证据收敛至[性能报告](PERFORMANCE_REPORT.md)。新Z五路线10进程、
+40PNG、10份完整memory、20对正反序RGBA exact、8个GPU/mixed图像
+比较全部验收；Gpu/frozen/MF/UnslothGPU-text/defaultCPU-text为7.356/
+5.955/7.971/18.735/22.600s，选最快已测18.735s作分母，mixed3.146×。
+下方“未完成/继续推进”是此前扩大实验要求的历史审计；收敛报告没有
+把它们改写成通过，也不把它们重新排成新增实验任务。
+
+报告逐项保留：四家族/base-only；已测GPU/最佳混合与成功框架；
+QwenGGUF3.40×、Z/Unsloth3.15×与Qwen/Z对MF1.32–1.34×的同组
+分母；pureGPU负结果、cold/内存/近似误差；4B历史与未配对当前
+预检、LTX更快GPU/近似漂移；完整样本/版本身份/配置复现。没有
+宣称所有模型全面远超、当前4B配对完成或生产/硬RAM/画质资格。
+`make test-base-benchmark`本次197项全部通过，模型实验终态后执行；
+未运行全量`make test`。所有benchmark本地链接、完整样本中位数、
+新Z媒体/内存SHA链与54组catalog/source exporter一致性均复核。
+新增实验不再排队；本页保留未测边界，不用删负结果来突出优势。
+
 2026-10-12用户最新范围：当前只考虑FLUX4B、Z-Image Turbo、Qwen
 Image2.1、LTX2.5，9B暂缓；下方9B实验仅为完整历史，不进入当前
 主榜或替代4B。53组catalog保留41组active/12组deferred，原数据不删。

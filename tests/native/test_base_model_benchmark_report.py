@@ -55,8 +55,8 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertIs(COMPARISON_POLICY["adapt_unsupported_frameworks"], False)
         self.assertIs(COMPARISON_POLICY["preserve_reference_wins"], True)
         self.assertEqual(self.report["verified_advantages"], verified_advantages(self.report["campaigns"]))
-        self.assertEqual(len(self.report["verified_advantages"]), 3)
-        for row, expected in zip(self.report["verified_advantages"], (3.40, 1.319, 1.339)):
+        self.assertEqual(len(self.report["verified_advantages"]), 4)
+        for row, expected in zip(self.report["verified_advantages"], (3.40, 3.146, 1.319, 1.338)):
             self.assertAlmostEqual(row["speedup"], expected, delta=.005)
             self.assertIn("approximate", row["precision_note"])
         configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
@@ -85,6 +85,22 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         row = matched_comparison(campaign, "native-gpu", "mflux-bf16", "strict BF16 controls")
         self.assertLess(row["speedup"], 1)
         self.assertLess(row["reduction_percent"], 0)
+
+    def test_consolidated_report_uses_fastest_measured_unsloth_and_keeps_boundaries(self):
+        report=(ROOT / self.report["primary_report"]).read_text()
+        self.assertIn("3.40×",report)
+        self.assertIn("3.15×",report)
+        self.assertIn("18.735s",report)
+        self.assertIn("22.600s",report)
+        self.assertIn("不再扩大参数网格",report)
+        self.assertIn("未形成当前配对排名",report)
+        self.assertIn("Qwen纯GPU43.309s略输mflux41.952s",report)
+        campaign=next(row for row in self.report["campaigns"] if row["model"]=="z-image-turbo-unsloth-mflux-bf16-cohort")
+        values={row["route"]:row["warm_median_seconds"] for row in campaign["routes"]}
+        self.assertLess(values["unsloth-gpu-text"],values["unsloth-cpu-text"])
+        self.assertAlmostEqual(values["unsloth-gpu-text"]/values["native-frozen"],3.1459257859863987)
+        configs=json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        self.assertFalse(configs["additional_experiments_scheduled"])
 
     def test_bound_raw_evidence_when_locally_available(self):
         for campaign in self.report["campaigns"]:
