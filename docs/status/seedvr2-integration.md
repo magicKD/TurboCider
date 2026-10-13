@@ -421,6 +421,23 @@ independently decodes to all 25 frames, 24 FPS and 1.041667 s. The complete
 video ABBA observer is running separately; no GPU/ANE experiment overlaps its
 timed requests.
 
+### Complete 1024-output video paired speed gate
+
+The immutable 512->1024 / t25 / 24-FPS native/Comfy/Comfy/native cohort
+completed with six full warm requests per route. Native warm median is
+84.079419 s; MPS-compatible Comfy SDPA/GPU-only is 298.961029 s, ratio 3.5557x.
+All outputs independently retain 1024-square geometry, every one of the 25
+frames, 24 FPS and 1.041667 s duration. Required import/resize/encode/sampling/
+decode/export stages execute on every warm request, with only model loaders
+cached by Comfy. Both task-owned servers exited and all bound identities remain
+unchanged. Record: `seedvr2-video1024-t25-paired-sdpa-v1-20261013`.
+
+The SDPA/GPU-only workload-specific speed gates now pass for images and real
+videos at both 512 and 1024 outputs. The non-CUDA compatibility guard is still
+disclosed for video. This does not complete default-Comfy controls, independent
+shared-noise full-media quality, or GPU/ANE execution/quality qualification.
+The public path remains GPU-only and the overall goal is not marked complete.
+
 ### Complete 512-output video paired speed gate
 
 The native/Comfy/Comfy/native 256->512 video cohort completed. Each route has

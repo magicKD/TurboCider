@@ -141,8 +141,14 @@ The complete 256->512, 25-frame / 24-FPS video ABBA cohort also passes its
 speed gate: **20.44 s native vs 71.33 s MPS-compatible Comfy SDPA/GPU-only**,
 about **3.49x**, six warm requests per route. All frames/FPS/dimensions are
 verified, with the CUDA-event compatibility patch explicitly disclosed.
-The 1024 video, default-Comfy controls and full quality/ANE qualification
-remain separate requirements.
+Default-Comfy controls and full quality/ANE qualification remain separate
+requirements.
+
+The complete 512->1024 / t25 / 24-FPS video ABBA cohort now also passes:
+**84.08 s native vs 298.96 s MPS-compatible Comfy SDPA/GPU-only**, about
+**3.56x**, six warm requests per route. Every frame, FPS and output dimension
+is verified. All four stated SDPA/GPU-only speed workloads pass, but full
+quality/default-reference controls and GPU/ANE qualification remain pending.
 
 The pinned stock ComfyUI video's VAE currently reaches a CUDA-event-only cache
 offload path on MPS and fails. An independently owned benchmark copy disables
