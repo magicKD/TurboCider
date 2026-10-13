@@ -150,8 +150,19 @@ requirements.
 
 The new-profile SDPA/GPU-only image cohorts also pass: **0.828 vs 3.978 s**
 for 256->512 and **3.504 vs 15.636 s** for 512->1024, six complete warm requests
-per route. Default controls remain recorded alongside these results. Stable
-video paired checks and GPU+ANE qualification are still pending.
+per route. Default controls remain recorded alongside these results.
+The stable 256->512 / full t25 video SDPA/GPU-only ABBA cohort also passes:
+**20.60 vs 71.34 s**, about **3.46x**, with every frame/FPS verified and the
+non-CUDA cache-transfer compatibility guard disclosed. Stable 1024-video,
+default-video controls and GPU+ANE qualification remain pending.
+
+An isolated original-FP16 GPU/CPU+NE FFN experiment now passes the unchanged
+512/1024 image tensor gates against stable GPU controls, using all 32 video
+FFN prefixes. It is still not enabled in the App: the 1024 row-chunk denoise
+screen regresses (about 2.06 vs 1.84 s), and a correctness-fixed whole-suffix
+schedule is also slower in its single-block screen. Real-video hybrid quality,
+complete-request speed/memory and runtime execution evidence remain pending.
+Preferred Core ML placement is not proof of physical ANE occupancy.
 
 On the verified M4 Max / 64 GiB host, the native CLI generated a complete
 512→1024 image and a complete 512→1024, 25-frame / 24-FPS LTX-derived video.

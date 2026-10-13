@@ -50,7 +50,8 @@ are implemented and now registered as `seedvr2-3b` with `image.upscale` and
 `video.upscale` through the public CLI/C ABI/Swift SDK. The App includes source
 image/video import and operation-dependent PNG/MP4 output handling. The model
 library has a matching ModelScope/Hugging Face recipe and file inspection rule.
-The GPU+ANE path is not implemented.
+The public route remains GPU-only. An isolated GPU/CPU+NE FFN experiment is
+implemented, but is not publicly enabled or qualified as an App speed win.
 
 Verified component evidence (raw records under ignored `outputs/`):
 
@@ -730,7 +731,87 @@ running with the owned non-CUDA cache-transfer compatibility copy. No Core ML
 export, GPU/NE probe or native rebuild overlaps the timed requests. The
 experimental exporter has a separately tested `original-fp16` operand option,
 preserving source bits and distinguishing old BF16-rounded artifacts; five
-CPU cases pass, but no new bank has been exported or enabled yet.
+CPU cases pass. The isolated experiments after this cohort are recorded below.
+
+The complete stable 256->512 / t25 / 24-FPS SDPA/GPU-only video ABBA cohort
+now passes: native warm median 20.598051 s versus compatible Comfy 71.337080 s,
+ratio 3.46329x, six complete warm requests per route. All MP4s retain every
+frame, 512-square dimensions and 24 FPS. Required stages execute on every
+request; only reference model loaders are cached. Both owned servers exited,
+and source/checkpoint/library/build/patch identities stayed immutable. Record:
+`seedvr2-stable-video512-t25-paired-sdpa-v1-20261014`. The three-line non-CUDA
+cache-transfer compatibility guard remains disclosed; this is not an
+unpatched stock MPS video claim. Stable 1024-video and default-video controls
+still require complete paired observations.
+
+After the timed cohort ended, an isolated detached stable-profile worktree
+prepares the new hybrid without changing stable source or compiled identity.
+It aligns GPU-suffix SwiGLU nonlinear precision with the stable full FFN,
+binds original/legacy coefficient recipes to loaded DiT dtype and rejects
+incompatible operands before Core ML construction. The original-FP16 512-row /
+2048-channel bank's block-0 synthetic 4096-row FFN screen executes eight
+CPU+NE predictions per call: GPU warm 31.869/31.882/31.889 ms, hybrid
+27.541/27.431/27.520 ms, relative-L2 0.00311428 / cosine 0.999995. Record:
+`seedvr2-original-fp16-hybrid-block0-4096-v1-20261014`. This is one-block
+evidence, not whole-model/App speed or physical ANE occupancy. The Core ML
+plan prefers Neural Engine for three convolutions, SiLU and multiply; that
+branch excludes GPU. The full 32-bank export subsequently completed. Whole-
+model quality, real-media speed/memory and App hybrid integration remain
+pending. No public GPU+ANE capability has been enabled.
+
+### Original-FP16 all-block hybrid image gates and scheduling audit
+
+The original-FP16 static 512-row / 2048-channel prefix bank now contains all
+32 blocks. Manifest SHA-256:
+`109dde47f82b7acb3a6d8cbba16b9d42e9f15fddae539d64141a4ec0ac8a8f76`.
+Coefficients are the checkpoint's original FP16 values, not the earlier
+BF16-rounded bank. The isolated GPU suffix uses the stable profile's FP32
+SiLU/product arithmetic before the FP16 down projection. Public native
+source/library/build identities are unchanged by these experiments.
+
+Complete shared-input/noise component restoration executes all 32 video FFN
+prefixes while text FFNs remain GPU. The original gates (cosine >=0.999 and
+relative-L2 <=0.05) pass for both real-image sizes against the stable GPU:
+
+| Hybrid image output | Latent relative-L2 / cosine | Pixel relative-L2 / cosine | Core ML predictions per restoration |
+| --- | ---: | ---: | ---: |
+| 512-square | 0.02942364 / 0.99956703 | 0.00831129 / 0.99996546 | 64 |
+| 1024-square | 0.02554959 / 0.99967360 | 0.00540864 / 0.99998537 | 256 |
+
+The VAE condition is identical to the matching GPU control. The 512 witness
+also passes against the original checkpoint's independent FP32 reference:
+latent relative-L2 0.03177506 / cosine 0.99949505; pixels 0.00856942 /
+0.99996329. A subsequent explicit 1024 independent FP32 comparison also
+passes every saved tensor: latent relative-L2 0.02727620 / cosine 0.99962797;
+pixels 0.00545219 / 0.99998514. This checks the saved tensors directly rather
+than inferring reference parity from the GPU comparison. Records:
+`seedvr2-original-fp16-hybrid-all32-512-parity-v1-20261014.json`,
+`seedvr2-original-fp16-hybrid-all32-512-original-reference-v1-20261014.json`,
+`seedvr2-original-fp16-hybrid-all32-1024-matched-parity-v1-20261014.json`, and
+`seedvr2-original-fp16-hybrid-all32-1024-original-reference-v1-20261014.json`.
+
+These quality passes are not full-request speed proof. In the separately
+observed 1024 component screens, row-chunk hybrid warm denoise is about
+2.06 s versus the matched GPU control's about 1.84 s: a regression. The
+1024 hybrid makes 1024 Core ML predictions over four restorations, with zero
+Core ML fallback output-copy bytes. Neither that fact nor the preferred
+compute plan establishes physical ANE occupancy or an end-to-end speed win.
+
+A whole-GPU-suffix schedule exposed a mutable-output lifetime bug. A logical
+`mx::copy` did not freeze Core ML's shared backing: synthetic block-0
+FFN relative-L2 0.461709 / cosine 0.888908 fails. Its apparent roughly 23.6-ms
+timing is invalid performance evidence. A subsequent physical Metal snapshot
+and auxiliary-stream fence restores the block-0 gate (relative-L2 0.00311428,
+cosine 0.999995), but warm median is about 33.60 ms versus GPU 31.88 ms.
+It additionally copies 83,886,080 snapshot bytes over four calls. Records:
+`seedvr2-original-fp16-hybrid-wholesuffix-block0-4096-v1-20261014` (failed) and
+`seedvr2-original-fp16-hybrid-wholesuffix-block0-4096-v2-20261014` (correct,
+slower). Keep row chunks as the experimental default and preserve both runs.
+
+Next: investigate independently owned output backings and fewer scheduling
+fences, measure profitable shape/block partitions, and gate real 512/1024
+videos as well as images. No public GPU+ANE capability or App route has been
+enabled on the strength of these component-only observations.
 
 ## Reproduce component checks
 
