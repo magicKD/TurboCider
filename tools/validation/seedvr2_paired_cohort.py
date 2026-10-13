@@ -38,6 +38,9 @@ def main():
         parser.error("a fresh cohort directory is required")
     for name in ("model", "source", "library", "comfy", "comfy_python", "comfy_extra", "output"):
         setattr(args, name, getattr(args, name).absolute())
+    # The observer needs aiohttp/YAML/Pillow, independently of the model's
+    # server environment. Do not require those packages in the native venv.
+    subprocess.run([str(args.comfy_python), "-c", "import aiohttp, yaml; from PIL import Image"], check=True)
     args.output.mkdir(parents=True)
     source_sha, library_sha = sha256(args.source), sha256(args.library)
     record = dict(schema="seedvr2-framework-paired-cohort-v1", status="running",
@@ -55,7 +58,8 @@ def main():
             if sha256(args.source) != source_sha or sha256(args.library) != library_sha:
                 raise ValueError("source or native library changed during the paired cohort")
             destination = args.output / f"{index}-{route}"
-            command = [sys.executable, str(Path(__file__).with_name("seedvr2_framework_screen.py")),
+            observer_python = str(args.comfy_python) if route.startswith("comfy-") else sys.executable
+            command = [observer_python, str(Path(__file__).with_name("seedvr2_framework_screen.py")),
                 "--route", route, "--model", str(args.model), "--source", str(args.source),
                 "--kind", args.kind, "--width", str(args.size), "--height", str(args.size),
                 "--frames", str(args.frames), "--fps", str(args.fps), "--seed", str(args.seed),

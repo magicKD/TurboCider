@@ -360,6 +360,67 @@ with immutable source, model, binary/build and Comfy-version/patch identities.
 It records a workload-specific median speed gate, not an overall completion
 claim. Full image/video paired runs and GPU+ANE qualification remain next.
 
+### Balanced image speed cohorts and hybrid component progress
+
+The initial paired runner stopped before any Comfy server launch because its
+native Python environment lacks aiohttp. That failed record is preserved at
+`seedvr2-image512-paired-sdpa-v1-20261013`; it is not paired speed evidence.
+The runner now preflights the observer dependencies and uses the explicit
+Comfy dependency interpreter for Comfy observation, leaving native inference
+and all workflow/timing settings unchanged.
+
+Both fresh ABBA cohorts completed, each with two independent processes per
+route, one cold and three genuinely executed warm requests per process:
+
+| Full image workload | Native warm median (6 requests) | Stock Comfy MPS SDPA/GPU-only warm median (6 requests) | Ratio |
+| --- | ---: | ---: | ---: |
+| Real Z-Image-derived 256->512 | 0.819821 s | 3.974071 s | 4.8475x |
+| Real Z-Image 512->1024 | 3.368968 s | 15.631517 s | 4.6399x |
+
+Raw records: `seedvr2-image512-paired-sdpa-v2-20261013` and
+`seedvr2-image1024-paired-sdpa-v2-20261013`. Source/model/library/build and
+Comfy version/local-code identities remain unchanged; Comfy cached only model
+loaders on warm runs, not encode/sampling/decode/export. Both owned servers
+exited. The workload-specific speed gates pass. Overall qualification remains
+false: default-Comfy controls, full video paired results, broad shared-noise
+quality and GPU+ANE are separate outstanding requirements. Do not generalize
+these ratios to arbitrary resolutions/frame counts/hardware.
+
+The identity-bound hybrid manifest reader now verifies the original checkpoint
+identity, SwiGLU/operand/compute-unit recipe, row/channel/block coverage, safe
+relative paths, exact compiled file sets, every size/SHA and canonical tree
+digests. This code remains experimental and is not in the public session.
+All 32 static 512-row / 2048-channel prefixes were exported successfully into
+the ignored artifact bank. No original/user Comfy installation was changed.
+
+Block-0 synthetic FFN at 4096 rows executes eight CPU+NE predictions per call.
+Three warm GPU observations are 0.031137/0.031140/0.031129 s; hybrid observations
+are 0.026782/0.026117/0.026389 s. Relative-L2 is 0.00424344, cosine 0.999991.
+Record: `seedvr2-hybrid-ffn-block0-4096-v1-20261013`. This is a one-block
+microbenchmark, not whole-model speed or proof of physical ANE occupancy.
+The available developer tools do not contain xctrace; compute-plan preference
+and successful CPU+NE prediction must not be labeled hardware occupancy.
+
+Complete component restoration at 512 executes all 32 video FFN prefixes,
+64 Core ML calls and zero output-copy bytes, with GPU text FFNs. Output is
+finite; the VAE condition exactly matches the fixed-input/noise GPU control.
+Decoded cosine is 0.999906551, pixel relative-L2 0.0136724. Velocity relative-L2
+is 0.0342650. Latent relative-L2 0.0458219 passes its 0.05 limit, but latent
+cosine 0.998949745 fails the existing 0.999 gate. Preserve that failure; do
+not enable/advertise the public hybrid route as qualified yet. Records:
+`seedvr2-hybrid-restore-512-v1-20261013`,
+`seedvr2-gpu-restore-512-hybrid-control-v1-20261013`, and
+`seedvr2-hybrid-restore-512-parity-v1-20261013.json`. The hybrid's 0.489-s
+component denoise observation includes neither full-request import/export nor
+balanced warm runs. All original precision/quality gates remain intact.
+
+A meaningful 256-square / 25-frame / 24-FPS source for 512-output video cohorts
+was derived with Lanczos scaling and explicit H.264 CRF18 from the earlier
+LTX-derived 512 source. `seedvr2-ltx-source-256-t25-cohort-v1-20261013.mp4`
+independently decodes to all 25 frames, 24 FPS and 1.041667 s. The complete
+video ABBA observer is running separately; no GPU/ANE experiment overlaps its
+timed requests.
+
 The earlier fixture generator enlarged before source downsampling; its saved
 input tensors remain immutable valid parity fixtures. The generator now
 downsamples the original directly and saves the actual source PNG/provenance.

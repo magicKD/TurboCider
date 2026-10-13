@@ -130,6 +130,13 @@ per route with at least three warm requests each and unchanged source/build/
 reference identities; its speed gate does not imply the overall quality/ANE
 goal is complete.
 
+The fresh balanced image ABBA cohorts now pass their workload-specific speed
+gate against pinned stock ComfyUI MPS SDPA/GPU-only: 256->512 is **0.820 vs
+3.974 s**, and 512->1024 is **3.369 vs 15.632 s**, six warm requests per route
+per workload. These are complete import/encode/sample/decode/export timings.
+They do not imply completed video, default-Comfy, shared-noise quality or
+GPU+ANE qualification. The public route remains GPU-only.
+
 The pinned stock ComfyUI video's VAE currently reaches a CUDA-event-only cache
 offload path on MPS and fails. An independently owned benchmark copy disables
 only that CUDA transfer policy on non-CUDA devices, preserving arithmetic and
