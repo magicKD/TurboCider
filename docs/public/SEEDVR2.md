@@ -105,10 +105,10 @@ whole-process footprint is not demonstrably lower.
 For a pre-change control, set
 `TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE=concat` and
 `TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE=conv`; their new defaults are `compact`
-and `matmul`. Actual recipes are included in result telemetry. A reusable
-The history selector controls the MLX halo route; bounded-stencil operators
-always retain their causal tails directly.
-VAE-only ABBA observer is `tools/validation/seedvr2_vae_cohort.py`; run it with
+and `matmul`. Actual recipes are included in result telemetry. The history
+selector controls the MLX halo route; bounded-stencil operators always retain
+their causal tails directly. A reusable VAE-only ABBA observer is
+`tools/validation/seedvr2_vae_cohort.py`; run it with
 a validation Python environment containing NumPy and safetensors.
 Its 1024/t9 default-route cohort records **25.50 -> 25.20 s** warm medians and
 **14.33 -> 14.20 GB** active peaks, six warm observations per route, with
@@ -182,8 +182,9 @@ image/video generation checks again. Its PNGs are byte-identical to the
 preceding version; the 1024/t25 video observes 83.32 s and 21.59 GB active MLX
 peak (previously 21.73 GB). This is an App observation, not a new paired Comfy
 measurement; image active peaks remain unchanged. Selective 16-layer CPU+NE
-experiments pass one 512 shared-noise tensor gate against GPU, but are not
-enabled in the public App and do not yet qualify 1024/real-video ANE execution.
+experiments pass shared-noise image-component gates at 512 and 1024 against
+GPU, but are not enabled in the public App. Physical ANE occupancy, complete
+media-request performance and real-video qualification remain pending.
 
 The pinned stock ComfyUI video's VAE currently reaches a CUDA-event-only cache
 offload path on MPS and fails. An independently owned benchmark copy disables

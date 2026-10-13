@@ -553,9 +553,24 @@ stands. Records: `seedvr2-hybrid-even16-restore-512-v1-20261013`,
 `seedvr2-gpu-restore-512-hybrid-control-v2-20261013`, and
 `seedvr2-hybrid-even16-restore-512-parity-v2-20261013.json`.
 The observed warm denoise is about 0.466 s versus 0.481 s, but those component
-screens are not balanced full-media cohorts. Physical ANE occupancy, 1024 and
+screens are not balanced full-media cohorts. Physical ANE occupancy and
 real-video quality/speed are still pending. The public route remains GPU-only;
 experimental hybrid source is not part of this tested VAE stage's commit.
+
+The matching 1024 single-image component check also passes the unchanged
+0.999-cosine / 0.05-relative-L2 gates: latent cosine 0.999316683 / relative-L2
+0.0369639, pixels cosine 0.999966378 / relative-L2 0.0082030, identical VAE
+condition. Each hybrid restoration makes 128 Core ML calls (512 across four
+repeats), with zero output-copy bytes. Warm component denoise medians are
+1.69639 s hybrid and 1.73573 s GPU. These are separate route screens, not ABBA
+full-media speed proof or physical ANE occupancy evidence. All-32 coverage
+remains unqualified; only even-16 coverage passes these two image fixtures.
+Records: `seedvr2-hybrid-even16-restore-1024-v1-20261013`,
+`seedvr2-gpu-restore-1024-hybrid-control-v1-20261013`, and
+`seedvr2-hybrid-even16-restore-1024-parity-v1-20261013.json`. Real-video
+shared-noise quality, matched complete-request speed/memory and App hybrid
+integration remain required before public GPU+ANE enablement. The pre-existing
+independent BF16 DiT qualification failure also remains unresolved.
 
 ## Reproduce component checks
 
