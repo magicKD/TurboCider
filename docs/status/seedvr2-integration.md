@@ -713,6 +713,25 @@ warm requests per route with immutable identities and terminal owned servers.
 Record: `seedvr2-stable-image1024-paired-default-v1-20261014`. New-profile
 SDPA/GPU-only and complete video paired gates remain separate pending checks.
 
+Both new-profile complete image SDPA/GPU-only ABBA cohorts subsequently pass,
+six warm requests per route and workload. At 256->512, native median is
+0.827852 s versus 3.977832 s (4.80500x); at 512->1024, 3.503769 s versus
+15.636062 s (4.46264x). Required media/encode/sampler/decode/export nodes execute
+every time; only Comfy model loaders are cached. Source, checkpoints, native
+library/build and pinned stock Comfy identities remain unchanged; all owned
+image reference servers exited. Records:
+`seedvr2-stable-image512-paired-sdpa-v1-20261014` and
+`seedvr2-stable-image1024-paired-sdpa-v1-20261014`. Default controls above are
+also retained rather than assuming SDPA is always faster. These four image
+cohorts satisfy image workload-specific speed gates, not video or ANE gates.
+
+The stable 256->512 / all 25-frame / 24-FPS video SDPA/GPU-only cohort is now
+running with the owned non-CUDA cache-transfer compatibility copy. No Core ML
+export, GPU/NE probe or native rebuild overlaps the timed requests. The
+experimental exporter has a separately tested `original-fp16` operand option,
+preserving source bits and distinguishing old BF16-rounded artifacts; five
+CPU cases pass, but no new bank has been exported or enabled yet.
+
 ## Reproduce component checks
 
 ```sh

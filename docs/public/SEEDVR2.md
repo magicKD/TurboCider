@@ -145,7 +145,13 @@ Fresh stable-profile image ABBA cohorts pass against the explicitly recorded
 Comfy default-attention/ordinary-residency observer (FP16 VAE): **0.827 vs
 3.985 s** at 256->512 and **3.506 vs 15.535 s** at 512->1024, six full warm
 requests per route. These are about **4.82x / 4.43x** for those workloads;
-new-profile video and SDPA/GPU-only paired checks remain separate requirements.
+new-profile video paired checks and GPU+ANE qualification remain separate
+requirements.
+
+The new-profile SDPA/GPU-only image cohorts also pass: **0.828 vs 3.978 s**
+for 256->512 and **3.504 vs 15.636 s** for 512->1024, six complete warm requests
+per route. Default controls remain recorded alongside these results. Stable
+video paired checks and GPU+ANE qualification are still pending.
 
 On the verified M4 Max / 64 GiB host, the native CLI generated a complete
 512→1024 image and a complete 512→1024, 25-frame / 24-FPS LTX-derived video.
