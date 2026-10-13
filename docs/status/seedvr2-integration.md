@@ -864,8 +864,99 @@ output-copy counters are both zero. Record:
 `seedvr2-original-fp16-buffered-ffn-4096-v2-20261014`.
 Unlike the failed logical-copy schedule, these timings have passing numerical
 witnesses. They remain a one-block screen, not balanced full-request/App
-speed proof or physical ANE occupancy. The complete four-workload screen is
-running separately in a fresh v2 directory, without simultaneous GPU jobs.
+speed proof or physical ANE occupancy. The fresh v2 orchestration completes
+512/1088/4096-row micro gates and a matched 512-image GPU control, then stops
+because its caller uses exporter-style `0-31` rather than the restoration
+probe's explicit CSV block-list ABI. No hybrid image request executes in that
+failed attempt. The argument adapter is corrected with a CPU regression case;
+eight deferred-screen CPU checks pass. The failed v2 record is retained, and
+the complete four-workload screen runs in a fresh v3 directory, with hardware
+jobs still serialized.
+
+### Independent-backing all-block full-media component qualification
+
+The corrected v3 screen completes all three micro geometries and all four
+real-media restorations. Every saved condition, velocity, latent and pixel
+tensor passes the unchanged cosine >=0.999 / relative-L2 <=0.05 gates against
+both the matching GPU and the original checkpoint's independent FP32
+reference. The source/noise fixtures, reference tensors, original weights,
+stable library and compiled bank remain unchanged. Record:
+`seedvr2-original-fp16-buffered-schedule-screen-v3-20261014`.
+
+| CPU+NE-prefix component witness vs original FP32 | Latent relative-L2 / cosine | Pixel relative-L2 / cosine |
+| --- | ---: | ---: |
+| Image 512 | 0.03177506 / 0.99949505 | 0.00856942 / 0.99996329 |
+| Image 1024 | 0.02727620 / 0.99962797 | 0.00545219 / 0.99998514 |
+| Real video 512, all 25 frames | 0.01328465 / 0.99991176 | 0.00433528 / 0.99999062 |
+| Real video 1024, all 25 frames | 0.01513084 / 0.99988552 | 0.00367425 / 0.99999327 |
+
+Both image screens have one cold and three warm component restorations per
+route. Warm denoise medians are GPU/prefix 0.492346/0.434514 s at 512 and
+1.838220/1.727250 s at 1024. These separate-route component observations are
+not balanced complete-request/App speed gates.
+
+The complete 512/t25 prefix restoration executes 448 Core ML predictions;
+1024/t25 executes 1792. Each uses every one of the 32 video FFN prefixes;
+text FFNs remain GPU. Snapshot-copy and Core ML fallback output-copy bytes
+are zero. Independent slots retain 36,700,160 and 146,800,640 MLX bytes,
+respectively; this is a deliberate ownership/scheduling buffer cost, not a
+claim of zero additional memory. Active peaks in these single observations
+are 10,883,055,558 / 21,422,175,806 bytes, versus matching GPU controls'
+10,785,535,350 / 21,275,343,574 bytes. Core ML allocations are outside that
+MLX-active scope; no physical-memory reduction is demonstrated by this pool.
+
+Single component restoration observations are GPU/prefix 20.7536/20.1695 s
+at 512 and 84.6629/83.0873 s at 1024. Their denoise portions are
+3.22196/2.89352 and 14.2925/12.7929 s. They exclude media import/export and
+model loading and are not repeated video warm medians, balanced speed proof,
+or physical ANE occupancy evidence. Complete-request speed/memory, runtime
+execution evidence and real App regression still precede public promotion.
+
+The laboratory also adds an explicit CPU-only prefix control (not a hidden
+environment override), and an optional offline DiT staging experiment.
+Staging releases DiT parameters during both VAE phases and reloads the same
+original checkpoint before sampling, without changing codec context/math.
+Source size/mtime checks guard each reload. Clear/synchronize/reload cost is
+included in `staging_seconds` and the reported total `restore_seconds`;
+never count only the three compute timers as the staged pipeline's cost.
+This is an experiment, not an enabled public residency policy. Raw GPU-only
+image/video memory screens are running separately after the hybrid screen
+ends; numerical equality, whole-process peaks and App integration remain
+to be verified before any staged-memory claim.
+
+### DiT staging component screens: exact output and active-peak tradeoff
+
+All three initial GPU-only staged screens complete. Each saved condition,
+velocity, latent and decoded-pixel tensor is bitwise identical to its matching
+resident GPU witness; even the entire restoration file SHA-256 matches.
+The two real-video witnesses include every one of the 25 frames. Original
+DiT/VAE hashes are rechecked afterward. Record:
+`seedvr2-staged-dit-component-exact-v1-20261014.json`.
+
+| Workload screen | Resident active peak (bytes) | Staged active peak (bytes) | Staged weight-management seconds |
+| --- | ---: | ---: | ---: |
+| Image 1024 | about 16.49 GB | 9,686,993,754 | about 0.506 warm |
+| Video 512, t25 | 10,785,535,350 | 9,112,797,702 | 0.541682 |
+| Video 1024, t25 | 21,275,343,574 | 14,486,178,654 | 0.533852 |
+
+These are MLX-active allocation peaks only, not physical-process/system or
+enforced-budget measurements. In the 1024/t25 single component observations,
+total restoration including all staged management is 84.9039 s versus the
+resident's 84.6629 s; this is not a paired speed claim or proof of no tradeoff.
+The image's three warm staged totals are 3.79461/3.80532/3.79087 s, with about
+half a second of explicit management each. At request end only the VAE's
+501,296,454 parameter bytes remain resident, rather than 7,285,499,974 bytes
+for VAE plus DiT. This does not mean all other allocations are zero.
+
+`seedvr2_staged_cohort.py` in the isolated lab now serializes resident/staged/
+staged/resident full component restorations, cold plus three warm repeats per
+process. It binds source/noise/probe/bank/model identities, requires identical
+restoration files, checks actual residency/Core ML exclusion, and refuses
+timings that omit reload/synchronization cost. Five CPU guard tests pass.
+Balanced 1024 image and complete 1024/t25 video cohorts are running in that
+order. Public `component_staged` residency is still rejected: plan/SDK/App
+integration, physical-memory sampling, broader frame/geometry coverage and
+App regression are required before promoting this offline-only policy.
 
 ## Reproduce component checks
 

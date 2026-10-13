@@ -4,8 +4,9 @@ SeedVR2 3B is available through the native App, CLI and existing C / Swift
 SDK request interfaces. This integration is still being qualified. Pure GPU
 image/video inference works; GPU+ANE is not yet available in the public route.
 The quality and speed results below are workload/profile-specific. The stable
-FP16/FP32 profile passes App image/video regression; its full-request speed
-cohorts are being re-run. GPU+ANE qualification remains pending.
+FP16/FP32 profile passes App image/video regression and the matched full-request
+SDPA/GPU-only image/video speed cohorts at 512 and 1024 outputs. Default-video
+controls and GPU+ANE App qualification remain pending.
 
 ## Prepare weights
 
@@ -161,12 +162,15 @@ guard is disclosed. Default-video controls and GPU+ANE qualification remain
 pending.
 
 An isolated original-FP16 GPU/CPU+NE FFN experiment now passes the unchanged
-512/1024 image tensor gates against stable GPU controls, using all 32 video
-FFN prefixes. It is still not enabled in the App: the 1024 row-chunk denoise
-screen regresses (about 2.06 vs 1.84 s), and a correctness-fixed whole-suffix
-schedule is also slower in its single-block screen. Real-video hybrid quality,
-complete-request speed/memory and runtime execution evidence remain pending.
-Preferred Core ML placement is not proof of physical ANE occupancy.
+512/1024 image and complete 25-frame video tensor gates against both stable
+GPU and independent original-parameter FP32 controls, using all 32 video FFN
+prefixes. A new independent-output-backing schedule avoids the prior mutable
+output/copy problem and the row-chunk image regression: 1024 warm component
+denoise is about **1.727 vs 1.838 s**. It is not enabled in the App yet:
+component screens do not establish balanced complete-request speed, physical
+ANE occupancy or whole-process memory benefit. The backing pool adds active
+memory; failed/slow earlier schedules remain documented. Complete-request
+speed/memory, execution evidence and App regression still precede promotion.
 
 On the verified M4 Max / 64 GiB host, the native CLI generated a complete
 512→1024 image and a complete 512→1024, 25-frame / 24-FPS LTX-derived video.
