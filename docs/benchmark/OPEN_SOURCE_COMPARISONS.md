@@ -1,6 +1,6 @@
 # 开源项目评测：同机实测与公开背景分开
 
-更新2026-10-12。当前仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5，
+整理2026-10-13，已测上游版本身份仍以各自实测日为准。当前仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5，
 base-only。主榜只比较兼容且完整生成成功的路线；不兼容者略过，不
 强制转换或修改外部框架。不是所有框架/版本/硬件的全局排行榜。
 收敛后的主报告见[性能评测](PERFORMANCE_REPORT.md)；本页只补框架身份与口径。
@@ -13,6 +13,14 @@ base-only。主榜只比较兼容且完整生成成功的路线；不兼容者�
 | mflux0.22，fixed release commit | Qwen2.1 BF16源512²/40步 | 41.952 | frozen31.810 | mixed1.319×，省24.2%；nativeGPU43.309略输；W8A8不是严格BF16 |
 | Unsloth native sd-server/Metal，最快已测GPU-text | Z-Image Turbo原BF16源512²/8步 | 18.735 | frozen5.955 | **mixed3.146×，省68.2%**；默认CPU-text22.600s更慢，未用作宣传分母 |
 | mflux0.22，同release | Z-Image Turbo原BF16源512²/8步，同一新cohort | 7.971 | frozen5.955 | mixed1.338×；referencepeak22.48–22.52GB比native约32GB低 |
+| ComfyUI v0.39.0 /PyTorch2.12.1 MPS | Z-Image Turbo原BF16源512²/8步，独立四路线cohort | 默认8.535；SDPA/GPU-only8.840 | frozen5.840；GPU7.392 | **对更快默认配置mixed1.462×，省31.6%**；8进程/32PNG/8memory，不代表全部Mac presets |
+
+最新用户要求Comfy重点对照、TC直接取已有最优，不重复原生实验；
+[四模型重点表](COMFYUI_MODEL_COMPARISON.md)另列**跨窗口已有最佳记录**：
+Z8.535/5.780s为1.477×；Qwen最快Comfy GPU驻留48.350/旧mixed31.059s为
+1.557×；LTX完整AV单warm112.230/旧quality63.848s为1.758×，对opt-in
+近似61.869s为1.814×（MAE25.03/255）。Qwen12PNG/3memory与LTX2MP4/
+完整memory已验收，TC没有再次重测；不把这些回用数字升级为上表的paired cohort。
 
 每行只用自己的cohort和完整生成，不跨组拼最快分子/最慢分母。
 Qwen/Z mflux组为完整正反序、原尺寸PNG、独立进程树内存和
@@ -21,12 +29,27 @@ Qwen/Z mflux组为完整正反序、原尺寸PNG、独立进程树内存和
 [Qwen](QWEN_BF16_FRAMEWORKS.md)、[Z最新Unsloth/mflux](Z_UNSLOTH_FRAMEWORKS.md)、
 [固定GGUF路径](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成)。
 Model checkpoint/数学/组件生命周期、cold、repeat缓存边界另列。
+[ComfyUI Mac完整对照](COMFYUI_MAC.md)另列当前v0.39正式版/精确依赖overlay、
+MPS attention与encoder放置；不动本机原v0.32安装，强制核验实际sampler执行，
+不把DAG整图cache命中计入速度。Comfy峰值更低、mixed cold更高也保留。
 
 FLUX4B Q4/g64已经通过mflux0.22完整PNG单cold预检（3.998s），当前
 mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../design/validation/flux4-mflux-saved-q4-precheck-20261012.json)
-仍不是与本机GPU/最佳mixed完整配对计时，暂不入速度榜。LTX只报告已完成的
-内部配置，GPU quality63.848s；已有原组合memory preflight拒绝直接
-排除，不拿失败时间当分母，也不要求为外部框架制作转换模型。
+仍不是与本机GPU/最佳mixed完整配对计时，暂不入速度榜。LTX原组合
+mlx-serve memory preflight拒绝仍排除；新Comfy现已成功完整AV出图，
+单warm观察与回用native中位数的边界单列，不拿失败时间当分母，不转换外部模型。
+
+4B后来只补这两个兼容参考热态：mflux3.810622s、mlx-serve4.304634s，
+各cold/两fresh/repeat新seed、8PNG/2完整memory，TC不重跑；与已有
+Q4两fresh预检3.723469s对照，但不升格paired排名，不混历史BF161.628s。
+[参考完整事件与输出链](../design/validation/flux4-reference-warm-current-20261012.json)。
+
+2026-10-13补当前Q4来源的single40预解码候选，内部GPU3.483532s、
+W8/F16混合2.574438s，16PNG/4complete memory，内部1.353×。
+原packed与外部未重跑；来源11个原系数SHA相同，但TC表示/数学和窗口
+不同。对保留mflux3.810622s／mlx-serve4.304634s记录的差距为1.480×／
+1.672×，仅作既有最佳记录对照，不升级为本页首表的paired框架倍率。
+[新来源、完整调用/媒体/误差与配置](FLUX4_CURRENT_STATUS.md)。Comfy4B原格式N/A不变。
 
 ## Unsloth支持与本机覆盖不是一回事
 
@@ -39,7 +62,7 @@ mlx-serve26.10.1同一整包也实际生成512² PNG；[两项兼容证据](../d
 | --- | --- | --- |
 | Qwen2.1 GGUF | 有：原Unsloth权重+固定sd-server Metal完整40步，125.365s | 对本组mixed36.870s为3.40×，限该后端/版本/任务，不代表全部Desktop路径 |
 | Z-Image Turbo | 有：当前五路线10进程/40PNG/10memory完整正反序；Unsloth原native Metal BF16源GPU-text18.735s、defaultCPU-text22.600s | 用最快已测GPU-text对本组frozen5.955s为3.146×；不是整个Desktop UI开销或全参数最优 |
-| FLUX4B | 暂无成功完整的Unsloth Desktop/sd-server配对cohort | mflux/mlx-serve单次兼容预检不能替代；在同checkpoint/recipe成立时再测，拒绝者略过 |
+| FLUX4B | 暂无成功完整的Unsloth Desktop/sd-server配对cohort | mflux/mlx-serve完整参考热态不等于Unsloth成绩；当前本地saved-MLX不是其GGUF源，不强制转换/下载补分母 |
 
 公开身份来源：`https://unsloth.ai/`、
 `https://huggingface.co/unsloth/FLUX.2-klein-4B-GGUF`、
@@ -79,5 +102,6 @@ prompt/cache、完整输出边界与硬件；不同seed engine也不保证相同
 所有公开数字不进入[raw sample catalog](results-20261011.json)的本机
 成功latency数组。保留框架自身负结果、完整source/实际执行/输出和
 memory pressure，同任务有更快参考时也如实列出。重点展示已测
-Qwen/Z优势，不写“四模型全部远超”；未配对的FLUX4B与无成功参考的
-LTX只报已测边界。按用户收敛要求，本轮不再扩大实验网格或强制适配。
+Qwen/Z优势，不写“四模型全部远超”；FLUX4B派生对参考为跨窗口记录
+对照，LTX已有成功Comfy完整AV单warm但非paired median。按用户收敛
+要求，不扩大已有实验网格或强制适配外部格式。

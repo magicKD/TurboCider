@@ -8,21 +8,24 @@
 
 TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。用原生 macOS App 创作图片和视频，通过 API 自动化任务，或直接接入 ComfyUI 工作流。模型和生成内容保留在本机。
 
-**在已测完整图像生成任务中，相比固定版本的 Unsloth/Metal 后端，最高达到 3.40× 加速、耗时减少 70.6%。** 原生 Metal / MLX GPU 推理与可选 GPU + ANE 混合计算，让同一台 Mac 发挥更多算力。
+**对比 Unsloth Q4_K_M GGUF 图像生成，实测达到 3.40× 加速、耗时减少 70.6%；对比 ComfyUI，LTX 视频生成达到 1.76×。** 原生 Metal / MLX GPU 推理与可选 GPU + ANE 混合计算，让同一台 Mac 发挥更多算力。
 
 ## 性能亮点
 
-Apple M4 Max · 64 GiB · 512×512。下表为已有完整生成测试的热态中位数，包含文本编码、去噪与图像解码／输出。
+同一台 **Apple M4 Max · 64 GiB**，比较完整生成耗时，包含编码、采样、解码和结果输出。
 
-| 模型与任务 | 对比后端 | 对比耗时 | TurboCider GPU + ANE | 加速比 |
+| 模型与任务 | 对比框架 / 格式 | 对比耗时 | TurboCider | 加速比 / 耗时减少 |
 |---|---|---:|---:|---:|
-| Qwen-Image-2.1 · Q4_K_M · 40 步 | Unsloth / sd-server Metal | 125.365 秒 | **36.870 秒** | **3.40×** |
-| Z-Image Turbo · BF16 源 · 8 步 | Unsloth Metal，GPU 文本编码 | 18.735 秒 | **5.955 秒** | **3.15×** |
-| Z-Image Turbo · BF16 源 · 8 步 | mflux 0.22 BF16 | 7.971 秒 | **5.955 秒** | **1.34×** |
+| Qwen-Image-2.1 · 512×512 · 40 步 | **Unsloth Q4_K_M GGUF**，sd-server Metal | 125.365 秒 | **36.870 秒** · GPU + ANE | **3.40× / 70.6%** |
+| Qwen-Image-2.1 · 512×512 · 40 步 | **ComfyUI v0.39**，BF16 源 | 48.350 秒 | **31.059 秒** · GPU + ANE | **1.56× / 35.8%** |
+| Z-Image Turbo · 512×512 · 8 步 | **ComfyUI v0.39**，BF16 源 | 8.535 秒 | **5.780 秒** · GPU + ANE | **1.48× / 32.3%** |
+| LTX 2.5 · 704×448 · 97 帧 · 11 步，含音频 | **ComfyUI v0.39**，同源模型 | 112.230 秒 | **63.848 秒** · GPU 质量配置 | **1.76× / 43.1%** |
 
-**仅使用 GPU 也有收益：** 同组 Z-Image 测试为 **7.356 秒，相比 Unsloth/Metal 快 2.55×**。上表采用已测更快的 Unsloth GPU 文本编码配置。
+**GGUF 对比使用相同的 Unsloth Q4_K_M 编码器和 DiT 权重、BF16 VAE**：Unsloth 通过固定版本的 sd-server Metal 执行，TurboCider 使用原生 GPU + ANE 路线。ComfyUI 对比采用各任务中更快的已测 MPS 配置；LTX 仅使用 GPU，每段视频约节省 **48 秒**。
 
-这些成绩来自指定版本、模型和配置；Unsloth 对比指其固定 native Metal 后端，不含 Desktop UI。混合路线使用需额外准备并显式启用的实验性 W8A8 ANE 配置（Qwen 使用 Private ANE），存在数值近似、首次准备和内存成本；默认使用 GPU。详细条件、质量检查、冷启动与逐请求记录见[完整评测](docs/benchmark/PERFORMANCE_REPORT.md)。
+图像数据为热态中位数。ComfyUI 表格复用 TurboCider 已有最佳配置记录，属于跨测试窗口对照；LTX 的 ComfyUI 数据为单次热态观察。另有 Z-Image 同窗口配对结果 **1.46×**。GPU + ANE 是需准备并显式启用的近似配置（Qwen GGUF 使用 Private ANE），默认使用 GPU；热态收益不代表冷启动收益或逐像素一致。
+
+[Unsloth GGUF 与完整性能评测](docs/benchmark/PERFORMANCE_REPORT.md) · [ComfyUI 各模型对比](docs/benchmark/COMFYUI_MODEL_COMPARISON.md) · [ComfyUI 同窗口配对验证](docs/benchmark/COMFYUI_MAC.md)
 
 ## 支持的功能
 

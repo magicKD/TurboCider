@@ -1,11 +1,93 @@
 {
   "schema": "tc-best-measured-local-configs-v1",
   "date": "2026-10-11",
-  "goal_complete": false,
+  "updated": "2026-10-13",
+  "goal_complete": true,
   "qualification_passed": false,
   "selection_scope": "Current focus only FLUX4B/Z-Image Turbo/Qwen2.1/LTX, base-only; source-bound winners keep own cohort controls; compare compatible successful frameworks only, no mandatory unsupported adaptation;9B configs retained as deferred historical records, never4B speed proxies or automatic routing",
   "consolidated_report": "docs/benchmark/PERFORMANCE_REPORT.md",
   "additional_experiments_scheduled": false,
+  "current_flux4_available_configuration": {
+    "model": "flux2-klein-4b",
+    "representation": "original mflux-community savedQ4/g64, complete DiT/encoder affine payload, quantized embedding and8VAEattention linears; VAE convolution/norm BF16",
+    "model_root": "outputs/flux4-native-saved-q4-view-v3-20261012",
+    "library": "build/flux4-g64-v1-private-20261012/libturbocider.dylib",
+    "native_evidence": "docs/design/validation/flux4-native-saved-q4-precheck-20261012.json",
+    "source_repo": "mflux-community/flux2-klein-4b-mflux-q4",
+    "source_revision": "794cd159538149ad9830848508c31f0ea7088e58",
+    "request": {
+      "model": "flux2-klein-4b",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 4,
+      "seed": 42,
+      "audio": false,
+      "execution": "gpu",
+      "residency": "resident",
+      "dynamic_text": false,
+      "allow_approximation": true
+    },
+    "two_fresh_precheck_seconds": 3.7234693120699376,
+    "gpu_ane_current_q4_result": null,
+    "gpu_ane_derived_q4_evidence": "docs/design/validation/flux4-derived-hybrid-current-20261013.json",
+    "gpu_ane_derived_q4_seconds": 2.574438374955207,
+    "derived_result_scope": "source-bound newQ4/BF16 view, not directpackedUInt32 hybrid; originalpacked GPU precheck retained without retest; see measured configuration below",
+    "reference_warm_evidence": "docs/design/validation/flux4-reference-warm-current-20261012.json",
+    "mflux_two_fresh_seconds": 3.810621645883657,
+    "mlxserve_two_fresh_seconds": 4.304634395986795,
+    "scope": "available current saved pack actually runs; preserve existing native twofresh precheck without retest or promotion; references warmed independently; no current source-bound Q4 hybrid timing, no new paired ranking, historical BF16 mixed1.628s stays separate"
+  },
+  "comfy_best_record_comparison": {
+    "report": "docs/benchmark/COMFYUI_MODEL_COMPARISON.md",
+    "policy": "user requested existing native best reuse; native not retested; keep original source/task/build/cache/precision and samples; never a new same-window paired cohort",
+    "z_image": {
+      "reference_evidence": "docs/design/validation/z-comfy039-current-20261012.json",
+      "native_evidence": "docs/design/validation/z-valid-framework-current-20261011.json",
+      "native_seconds": 5.7801232290803455,
+      "comfy_seconds": 8.535402354435064,
+      "speedup": 1.4766817273882067
+    },
+    "qwen21": {
+      "reference_evidence": "docs/design/validation/qwen21-comfy039-reference-current-20261012.json",
+      "native_evidence": "docs/design/validation/qwen21-valid-framework-current-20261011.json",
+      "native_seconds": 31.058807333465666,
+      "comfy_seconds": 48.34967849997338,
+      "speedup": 1.5567139452865246,
+      "reference_selector": "GPU/subquadratic, not slower default or SDPA/GPU;2fresh/preset"
+    },
+    "ltx25": {
+      "reference_evidence": "docs/design/validation/ltx25-comfy039-reference-current-20261012.json",
+      "native_evidence": "docs/design/validation/ltx-full-configs-current-20261011.json",
+      "native_quality_seconds": 63.847972125,
+      "native_fastest_opt_in_seconds": 61.868681729,
+      "comfy_single_warm_seconds": 112.22977362503298,
+      "quality_speedup": 1.7577656719513701,
+      "fastest_speedup": 1.8139997570439097,
+      "scope": "same local ConvRot/Gemma4/conv-only video+audioVAE/upscaler/97frame AV task; one Comfy warm observation not median; fastest native Sol+text256 has MAE25.03/255"
+    },
+    "flux4": {
+      "admission_evidence": "docs/design/validation/comfy-flux4-local-format-admission-20261012.json",
+      "comfy_complete_generation_verified": false,
+      "native_evidence": "docs/design/validation/flux4-derived-hybrid-current-20261013.json",
+      "native_best_seconds": 2.574438374955207,
+      "native_precision": "single40-Q4/g64-derived BF16; hybridW8weights/FP16IO+math, not activationW8A8 or originalBF16",
+      "scope": "no successful whole saved-MLX Q4/g64 stock generation; index not stock UNET choice, single shard not complete model; no conversion/download or invented denominator"
+    }
+  },
+  "comfy_current_comparison": {
+    "model": "z-image-turbo",
+    "evidence": "docs/design/validation/z-comfy039-current-20261012.json",
+    "comfy_commit": "b0b743566f65daafc423b4fea8a2fbda94b3384a",
+    "pytorch_version": "2.12.1",
+    "native_gpu_seconds": 7.391720333485864,
+    "native_frozen_seconds": 5.839859979460016,
+    "comfy_default_seconds": 8.535402354435064,
+    "comfy_sdpa_gpu_seconds": 8.840068853925914,
+    "reference_selector": "fastest of two measured presets: comfy-default, not slower SDPA/GPU-only",
+    "speedup": 1.4615765419814555,
+    "scope": "same original BF16 sources,512x512/8steps,Euler/simple/shift3/cfg1,8processes/32PNG/8memory;4fresh per route seed42,repeat prompt seed43 forces actual sampler; frozen W8A8 approximate/higher cold+RAM; not global Mac preset/Torch optimum"
+  },
   "matched_comparison_configurations": [
     {
       "model": "z-image-turbo",
@@ -33,6 +115,47 @@
     "presentation": "verified advantages first; no universal dominance claim"
   },
   "configurations": [
+    {
+      "model": "flux2-klein-4b",
+      "representation": "current savedQ4/g64 source with40single-block projections offline decoded toBF16; other267DiT tensors and originalQ4encoder/quantizedVAE/tokenizer unchanged; hybridW8weights/FP16IO+math",
+      "model_root": "outputs/flux4-single40-bf16-derived-v1-20261013",
+      "library": "build/flux4-g64-v1-private-20261012/libturbocider.dylib",
+      "source_manifest": "outputs/flux4-single40-ane-a6144-b1536-v1-20261013/manifest.json",
+      "compiled_manifest": "outputs/flux4-single40-ane-compiled-v1-20261013/manifest-a8e0968abd170872593bb0351460153a1203cd29c55dc3c21458271d54bf4416.json",
+      "source_derivation": "outputs/flux4-single40-bf16-derived-v1-20261013/derived-receipt.json",
+      "selected_route": "hybrid",
+      "request": {
+        "model": "flux2-klein-4b",
+        "operation": "image.generate",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "seed": 42,
+        "audio": false,
+        "execution": "gpu_ane",
+        "residency": "resident",
+        "dynamic_text": false,
+        "compile_gpu": false,
+        "allow_approximation": true,
+        "warmup_iterations": 0,
+        "ane_manifest": "outputs/flux4-single40-ane-compiled-v1-20261013/manifest-a8e0968abd170872593bb0351460153a1203cd29c55dc3c21458271d54bf4416.json"
+      },
+      "ane_prefix_channels": 6144,
+      "gpu_complement_channels": 3072,
+      "rows": 1536,
+      "actual_runtime_calls_per_request": 80,
+      "initial_warmup_calls": 0,
+      "fresh_warm_median_seconds": 2.574438374955207,
+      "gpu_control_seconds": 3.4835319375852123,
+      "gpu_control_compile_gpu": true,
+      "actual_gpu_control_compiled_single_blocks": 80,
+      "reduction_percent": 26.09689185913392,
+      "cold_seconds": [9.080859124893323, 5.362255125073716],
+      "evidence": "docs/design/validation/flux4-derived-hybrid-current-20261013.json",
+      "reference_comparison_valid": false,
+      "selection_note": "newderived candidate only,not originalpacked/external retest;fourfresh perroute/16PNG/4complete memory;compiledGPU3.483532 vs hybrid2.574438;SSIMmin.980592/MAEmax2.573,finite prompts only;higher cold/RAM;W8/F16 notactivationW8A8/physicalANE trace;external Comfy wholeindex stillN/A",
+      "in_current_scope": true
+    },
     {
       "model": "qwen-image-2.1",
       "representation": "original BF16 encoder/DiT/VAE; approximate source-bound Core ML W8A8 FFN prefix",
@@ -158,10 +281,11 @@
     }
   ],
   "updated": "2026-10-12",
-  "pending": [
-    "FLUX4B source/format admission and complete GPU/bestGPU-ANE/mflux/current mlx-serve comparisons; originalBF16 reuse rejected, upstreamQ4 restoration pending",
-    "Qwen/Z further current precision/shape/share screening and applicable current framework comparisons",
-    "LTX successful same-task external complete-media comparison and best native loading/residency configurations",
+  "pending": [],
+  "boundaries": [
+    "Boundary: FLUX4B original BF16 local pack absent; currentQ4 single40-derived GPU/W8F16 hybrid now fully measured, originalpacked/runtime/reference windows kept distinct; stock Comfy whole saved-index not admitted; no directUInt32 hybrid or newpaired external ranking claimed",
+    "Boundary: Qwen/Z finite tested precision/shape/share presets do not establish a global optimum; current Comfy comparisons use preserved native bests at user request",
+    "Boundary: LTX Comfy successful full97frame AV now measured; one warm observation versus preserved native batch bests, not exhaustive presets or a new paired median",
     "cross-family durable actually-runnable current winners; no public cross-hardware timing denominators"
   ],
   "media_configurations": [

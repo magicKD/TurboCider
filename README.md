@@ -8,21 +8,24 @@
 
 TurboCider is a local multimodal inference engine for Apple silicon. Create images and videos in a native macOS App, automate jobs through the API, or connect it to ComfyUI workflows. Models and generated media stay on your Mac.
 
-**Up to 3.40× faster complete image generation, with 70.6% less time than the measured Unsloth/Metal backend.** Native Metal / MLX GPU inference and optional GPU + ANE execution put more of the same Mac to work.
+**3.40× speedup over the measured Unsloth Q4_K_M GGUF image-generation route, using 70.6% less time; 1.76× for LTX video generation versus ComfyUI.** Native Metal / MLX GPU inference and optional GPU + ANE execution put more of the same Mac to work.
 
 ## Performance highlights
 
-Apple M4 Max · 64 GiB · 512×512. Recorded warm medians below cover complete generation, including text encoding, denoising and image decoding/output.
+On the same **Apple M4 Max · 64 GiB**, comparing complete generation time, including encoding, sampling, decoding and output.
 
-| Model and workload | Reference backend | Reference time | TurboCider GPU + ANE | Speedup |
+| Model and workload | Reference framework / format | Reference time | TurboCider | Speedup / time saved |
 |---|---|---:|---:|---:|
-| Qwen-Image-2.1 · Q4_K_M · 40 steps | Unsloth / sd-server Metal | 125.365 s | **36.870 s** | **3.40×** |
-| Z-Image Turbo · BF16 source · 8 steps | Unsloth Metal, GPU text encoder | 18.735 s | **5.955 s** | **3.15×** |
-| Z-Image Turbo · BF16 source · 8 steps | mflux 0.22 BF16 | 7.971 s | **5.955 s** | **1.34×** |
+| Qwen-Image-2.1 · 512×512 · 40 steps | **Unsloth Q4_K_M GGUF**, sd-server Metal | 125.365 s | **36.870 s** · GPU + ANE | **3.40× / 70.6%** |
+| Qwen-Image-2.1 · 512×512 · 40 steps | **ComfyUI v0.39**, BF16 source | 48.350 s | **31.059 s** · GPU + ANE | **1.56× / 35.8%** |
+| Z-Image Turbo · 512×512 · 8 steps | **ComfyUI v0.39**, BF16 source | 8.535 s | **5.780 s** · GPU + ANE | **1.48× / 32.3%** |
+| LTX 2.5 · 704×448 · 97 frames · 11 steps, with audio | **ComfyUI v0.39**, same model sources | 112.230 s | **63.848 s** · GPU quality configuration | **1.76× / 43.1%** |
 
-**GPU alone also delivers:** the same Z-Image cohort took **7.356 s, or 2.55× faster than Unsloth/Metal**. The comparison uses the faster measured Unsloth GPU text encoder configuration.
+**The GGUF comparison uses the same Unsloth Q4_K_M encoder and DiT weights with a BF16 VAE**: Unsloth runs through a pinned sd-server Metal backend, while TurboCider uses native GPU + ANE execution. ComfyUI comparisons use the faster measured MPS configuration for each task. LTX uses GPU alone, saving approximately **48 seconds per video**.
 
-Results apply to the recorded versions, models and configurations; Unsloth refers to its pinned native Metal backend, excluding Desktop UI. Hybrid results require prepared, explicitly enabled experimental W8A8 ANE configurations (Private ANE for Qwen), with numerical approximation, startup and memory costs. GPU is the default. See the [full report](docs/benchmark/PERFORMANCE_REPORT.md) for conditions, quality checks, cold starts and individual samples.
+Image results are warm medians. The ComfyUI table reuses TurboCider's best recorded configurations across measurement windows; LTX's ComfyUI result is a single warm observation. A separate paired Z-Image experiment measured **1.46×**. GPU + ANE configurations require preparation and explicit opt-in and use numerical approximation (Private ANE for Qwen GGUF). GPU is the default; warm gains do not imply cold-start gains or pixel equality.
+
+[Unsloth GGUF and full performance report](docs/benchmark/PERFORMANCE_REPORT.md) · [ComfyUI model comparisons](docs/benchmark/COMFYUI_MODEL_COMPARISON.md) · [Paired ComfyUI validation](docs/benchmark/COMFYUI_MAC.md)
 
 ## Features
 

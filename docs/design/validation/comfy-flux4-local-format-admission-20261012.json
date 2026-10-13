@@ -1,0 +1,34 @@
+{
+  "schema": "tc-comfy-local-format-admission-v1",
+  "date": "2026-10-12",
+  "model": "flux2-klein-4b",
+  "comfy_commit": "b0b743566f65daafc423b4fea8a2fbda94b3384a",
+  "source": "models/FLUX.2-klein-4B-mflux-Q4",
+  "source_index": "model.safetensors.index.json",
+  "index_sha256": "dbdecbf3a957b37d15bd943b956dbb25aa648a01df363e7dd5ebbe5ce941358d",
+  "required_shards": [
+    "0.safetensors",
+    "1.safetensors"
+  ],
+  "required_parameters": 387,
+  "dtype_counts": {
+    "BF16": 278,
+    "U32": 109
+  },
+  "saved_metadata": {
+    "quantization_level": "4",
+    "mflux_version": "0.19.0"
+  },
+  "stock_unet_choices": [
+    "0.safetensors",
+    "1.safetensors"
+  ],
+  "index_admitted": false,
+  "compatible_complete_generation_verified": false,
+  "latency_comparison_valid": false,
+  "scope": "metadata-only, no model execution/native retest or conversion; stock UNETLoader does not admit whole saved index; selectable single shards are not the complete387-parameter Q4 model; not a claim that ComfyUI lacks FLUX4B or that every custom plugin/alternative loader is unsupported",
+  "stock_source_sha256": {
+    "folder_paths.py": "b748be5d1e068ad673f6c4de069fb6b7b723405c40ae3c3c44465d416f7df2db",
+    "nodes.py": "fe624b0c1b6a3cd124a2214e5700b61337589144c2f0668900a04f8ccc031e38"
+  }
+}

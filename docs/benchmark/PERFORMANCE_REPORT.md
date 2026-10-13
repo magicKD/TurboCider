@@ -1,19 +1,27 @@
 # TurboCider 图像与视频性能评测
 
-2026-10-12 · Apple M4 Max /64GiB · macOS26.6.2 · base-only，无额外LoRA。
+2026-10-13整理 · Apple M4 Max /64GiB · macOS26.6.2 · base-only，无额外LoRA。
 范围仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5；FLUX9B不参与排名。
-本报告收敛已有完整实验与刚结束的Unsloth对照，不再扩大参数网格。
+本报告收敛已有完整实验与刚结束的Unsloth/ComfyUI对照，不再扩大参数网格。
+
+**最新Comfy重点对照**按用户要求复用TC已测最优，不再重跑原生：
+Z **1.48×**、Qwen2.1 **1.56×**、LTX质量GPU **1.76×**／最快近似 **1.81×**。
+完整请求分别省**2.755s**、**17.291s**、LTX质量**48.382s**／近似**50.361s**。
+这是已有最优记录的跨窗口比较，LTX Comfy只有单warm观察；下方原同窗口
+倍率不改写。完整四模型表与来源/精度/缓存边界见[Comfy模型对照](COMFYUI_MODEL_COMPARISON.md)。
 
 ## 核心结论
 
 **在已测完整任务中，TurboCider GPU/ANE相对固定Unsloth/Metal路径达到
-3.40×（Qwen GGUF）和3.15×（Z-Image）；相对mflux0.22约快1.32–1.34×。**
+3.40×（Qwen GGUF）和3.15×（Z-Image）；相对mflux0.22约快1.32–1.34×，
+新增Z-Image对ComfyUI v0.39同机完整生成为1.46×。**
 这是指定硬件、模型、任务和配置的实测优势，不是全部框架/设备的全局最优。
 
 | 模型与完整任务 | TurboCider GPU | TurboCider GPU/ANE | 兼容开源参考 | 混合路线优势 |
 | --- | ---: | ---: | ---: | --- |
 | [Qwen2.1 GGUF Q4_K_M，512²/40步](HISTORICAL_RESULTS.md#3-qwen-gguf-与原-unslothencoder-到完整生成) | 44.428s | **36.870s** | 固定Unsloth/sd-server Metal 125.365s | **3.40×，耗时减少70.6%** |
 | [Z-Image Turbo BF16源，512²/8步](Z_UNSLOTH_FRAMEWORKS.md) | 7.356s | **5.955s** | Unsloth Metal GPU-text 18.735s；mflux0.22 7.971s | **对Unsloth3.15×，减少68.2%；对mflux1.34×** |
+| [Z-Image Turbo BF16源，独立ComfyUI组，512²/8步](COMFYUI_MAC.md) | 7.392s | **5.840s** | ComfyUI v0.39默认MPS 8.535s；SDPA/GPU-only 8.840s | **对更快默认路线1.46×，减少31.6%** |
 | [Qwen2.1 BF16源，512²/40步](QWEN_BF16_FRAMEWORKS.md) | 43.309s | **31.810s** | mflux0.22 BF16 41.952s | **1.32×，耗时减少24.2%** |
 
 各行使用自己同组的实际样本，不跨实验挑最快native/最慢reference拼倍率。
@@ -40,16 +48,43 @@ Unsloth开启原`max`速度选项；默认CPU-text和可运行的GPU-text都实�
 这些是pinned Unsloth native后端计时，不包含Desktop UI；噪声生成、
 tokenizer/模板、内部算术与组件生命周期可能不同，不作跨engine逐像素parity。
 
+### ComfyUI Mac：当前正式版，不把缓存跳过算加速
+
+新组使用2026-10-12核验的ComfyUI v0.39.0，同一原BF16三组件源、
+8进程/32PNG/8完整memory，每路四fresh，正反序。保留本机PyTorch2.12.1，
+五个版本pin精确匹配的依赖装到隔离overlay，不升级用户Desktop或改原源码。
+
+默认是PyTorch MPS /sub-quadratic attention，encoder在CPU；另测显式
+SDPA/GPU-only/BF16路线。GPU encoder更快，但该组合的sampler更慢，故
+**采用8.535s而不是8.840s作分母**；不是所有Mac配置/插件/Torch版本最优。
+两边重复prompt都改seed43，核验Comfy每次8个真实sampler steps和VAE/
+SaveImage执行，fresh必须重编码；没有把相同prompt+seed整图cache命中当推理。
+混合cold11.689–17.664s、peak30.91–32.00GB，Comfy默认cold10.679–11.839s、
+peak27.18–27.78GB，所有swap-out0。16对正反序同路线RGBA exact；完整图已检查。
+
+随后新增Qwen三Comfy预设12PNG/3memory，最快GPU/sub-quadratic48.350s，
+复用已有TC31.059s为1.557×；LTX同源两完整97帧AV MP4，warm112.230s，
+复用quality63.848s为1.758×／opt-in61.869s为1.814×。它们是用户指定
+“TC取已有最优”的跨窗口对照，不混进上述Z新paired cohort。
+FLUX4B当前saved-MLX Q4/g64 whole index不在stock UNET choices，不能
+用单shard当完整模型，暂无有效Comfy分母。实现与复现见[Mac专页](COMFYUI_MAC.md)
+和[四模型重点表](COMFYUI_MODEL_COMPARISON.md)。
+
 ## FLUX4B与LTX：保留已测结果，不制造外部分母
 
 | 模型与任务 | 已测性能 | 当前可用于报告的结论 |
 | --- | --- | --- |
-| [FLUX4B Q4/g64，512²/4步](FLUX4_CURRENT_STATUS.md) | Native单进程cold3.959s、两fresh中位3.723s、repeat3.440s，4PNG及完整内存 | 已验证原生可运行；mflux/mlx-serve也可出图，但未形成当前配对排名，不声明领先倍率 |
-| [LTX2.5 distilled，704×448×97/11步，含音频MP4](LTX_VIDEO.md) | GPU quality63.848s；INT8 quality71.333s | 当前推荐GPU；混合没有收益，没有兼容成功的同任务外部对照则不填分母 |
+| [FLUX4B当前Q4来源，512²/4步](FLUX4_CURRENT_STATUS.md) | 原packed GPU3.723s；新single40预解码GPU**3.484s**、W8/F16 GPU/ANE**2.574s**；保留参考mflux3.811s、mlx-serve4.305s | 新派生视图内部完整配对混合**1.353×、省26.1%**；外部未重跑、不混为新配对排名；Comfy当前格式仍N/A |
+| [LTX2.5 distilled，704×448×97/11步，含音频MP4](LTX_VIDEO.md) | GPU quality63.848s；INT8 quality71.333s | 当前推荐GPU；混合没有收益；新Comfy单warm112.230s成功，回用最佳记录另列，不称paired median |
 
 FLUX4B不是从未测过：历史文档记录GPU/ANE warm1.628s，见
 [2026-09-08状态](../status/current-status-2026-09-08.md#当前推荐配置)。它是
 旧BF16窗口，不拿来替代当前Q4/g64两fresh结果，也不与今天的框架预检拼倍率。
+2026-10-13只新增一个当前Q4来源的预解码候选：40个single投影转BF16，
+其它267个DiT tensor、encoder/VAE/tokenizer不变，16PNG/4完整memory。
+ANE图是INT8权重/FP16 IO与计算，**不是W8A8激活量化**；混合MAE最高
+2.573/255、SSIM最低0.98059，peak8.06–8.25GB，cold5.362–9.081s。
+原packed与参考均未重跑，跨窗口与表示的差距不升格为新paired框架优势。
 LTX最快已测近似GPU Sol+text256为61.869s，只比自身quality省3.1%，
 97帧MAE约25/255；配置保存为opt-in，不冒充无损或默认推荐。
 
@@ -69,4 +104,4 @@ LTX最快已测近似GPU Sol+text256为61.869s，只比自身quality省3.1%，
 [逐请求样本catalog](results-20261011.json) · [已测最优配置](best-local-configs-20261011.json) ·
 [Z完整机器证据](../design/validation/z-unsloth-mflux-current-20261012.json) ·
 [框架身份与公开评测](OPEN_SOURCE_COMPARISONS.md)。
-保留54组历史/当前记录，其中42组在当前四家族范围、12组9B为历史deferred。
+保留59组历史/当前记录，其中47组在当前四家族范围、12组9B为历史deferred。

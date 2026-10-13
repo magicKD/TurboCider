@@ -1,6 +1,61 @@
 # 本轮目标逐项核验
 
-## 最新交付：按用户要求收敛报告
+当前按原目标与最新约束的逐项核验见[要求审计](REQUIREMENTS_AUDIT.md)。
+2026-10-13已新增当前4BQ4来源绑定的single40预解码GPU/混合完整实验，
+不再将此前“没有混合时延”当作当前事实。下方10-12及更早的缺口、
+计数和测试成绩保留为历史阶段，不升级原预检或物理/生产资格。
+
+## 2026-10-13：补此前未测的4B派生候选
+
+原packed GPU与参考均未重跑。新视图40single投影转BF16，267个其它
+DiT tensor保留，encoder/VAE/tokenizer只读链接；307保存tensor逐位验证。
+20图来源绑定，514native source inputs核对；GPU/hybrid正反序4进程、
+16完整PNG、4完整memory、各四fresh中位3.483532/2.574438s，内部
+1.353×/省26.1%，每请求实际80compiled blocks或80runtime calls，无fallback。
+32项原尺寸/原通道PNG比较与原媒体/内存SHA链通过；GPU与原packed本组输出
+exact，混合MAE最高2.573/255、SSIM最低0.98059。W8/F16不是W8A8激活，
+direct UInt32 hybrid仍未实现，但当前来源派生候选已实际测量、配置已保存。
+Comfy4B当前本地格式N/A不变；没有据新派生结果制造新的paired外部排名。
+catalog现59组/47active/12历史9B。最终逐要求与跨报告核验已完成：
+59原evidence SHA、189route样本/中位数、四家族5个保存配置产物、
+214本地链接和重导出逐字段相等均通过。make test-base-benchmark
+241项通过，另有1组历史fixture跳过，未运行全量make test。
+原benchmark目标按用户明确的
+四家族/兼容/复用范围完成；生产/全局/物理ANE资格不升级，原实验
+diagnostic记录不改。详细逐要求证据见[要求审计](REQUIREMENTS_AUDIT.md)。
+
+## 2026-10-12及此前交付记录
+
+本次交付核验又发现当前4B兼容mflux/mlx-serve只存单cold预检，因此仅补
+两个参考热态、不重跑TC：同原Q4/g64整包、2进程/8PNG/2complete memory，
+mflux两fresh3.810622s、mlx-serve两fresh4.304634s。每PNG真实4步callback/
+SSE和媒体SHA完整。旧collector把实际`Generating`误筛成`denoise`，
+后置validator失败但媒体/执行/内存都已complete/exit0；独立auditor仅按
+source-confirmed阶段名提取，不改原failed summary、不放宽门槛、不重推理。
+TC3.723469s旧两fresh仍为预检；当前Q4混合没有实测，不填旧BF16分母。
+完整catalog58组/46active/12历史9B，当前可执行Q4配置另存
+`current_flux4_available_configuration`，不把未测混合或paired资格改成通过。
+Comfy重点表同时补纯GPU/混合两列，LTX混合更慢仍保留。Z5.344s是重复
+conditioning-cache-hit窗口，不能冒充fresh；控制组5.748s对5.780s的0.55%
+变化不当新优化收益。最优配置选择与原始样本/生命周期口径保持明确。
+新增定向回归225项通过，1组fixture跳过；全量`make test`未运行。
+
+最新追加2026-10-12：用户将重点指定为ComfyUI四模型对已有TC最优，
+已经测过的TC不充分重测。Z既有Comfy8.535s复用旧TC最优5.780s，
+Qwen三Comfy预设12PNG/3完整memory最快48.350s，复用旧TC31.059s，
+LTX两97帧完整AV MP4/完整memory，cold142.925s、单warm112.230s，
+复用quality63.848s/opt-in近似61.869s；比值为1.477×、1.557×、
+1.758×/1.814×，**不是新同窗口配对**，LTX不是warm中位数。
+[四模型重点报告](COMFYUI_MODEL_COMPARISON.md)与57组catalog、已有最优
+配置和portable媒体/事件/内存链同步。原paired五项优势不变，跨窗口
+记录单列`best_known_comfy_comparisons`；更多统计/插件/参数不隐含通过。
+FLUX4B whole MLX index不在stock UNET choices；387完整参数跨两shard，
+单片不可作完整性能分母。没有宣称ComfyUI不支持FLUX4B或所有loader
+都失败，也不为此下载/转换模型。TC排队在用户变更后未继续；此前
+621ms内存gap和LTX SaveVideo collector参数错误留存，不降门槛，
+不将partial输出/采样时间升格。下方197项/54组等是当时历史审计。
+新增定向回归共219项通过，1组fixture跳过；完整模型进程终态后执行。
+未运行全量`make test`，未新增TC/9B性能实验；原release/更多形状资格不升级。
 
 2026-10-12用户要求“之前已经评测，尽可能收敛，整理突出框架性能的
 报告”。本轮不再扩大网格；完成已启动Z/Unsloth同机正反序后，将

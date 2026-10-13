@@ -73,6 +73,11 @@ def verified_advantages(campaigns):
         if len(rows) != 1:
             raise ValueError("one source-bound headline cohort required")
         result.append(matched_comparison(rows[0], native, reference, note))
+    comfy = [row for row in campaigns if row["model"] == "z-image-turbo-comfy039-bf16-cohort"]
+    if len(comfy) != 1:
+        raise ValueError("one source-bound current ComfyUI cohort required")
+    result.append(matched_comparison(comfy[0], "native-frozen", comfy[0]["best_measured_comfy_route"],
+        "same BF16 source; approximate frozen W8A8 FFN; fastest of two measured ComfyUI v0.39 MPS presets, not an exhaustive backend optimum"))
     return result
 
 
@@ -102,6 +107,170 @@ def z_unsloth_campaign(path):
     return dict(evidence=binding,model="z-image-turbo-unsloth-mflux-bf16-cohort",geometry=[512,512],steps=8,date=data["date"],
         routes=routes,reference_comparison_valid=True,timing_scope=data["timing_scope"],
         note="same originalBF16 encoder/DiT/VAE; ten serial processes,40PNG/10complete memory,4fresh/route; nativeGPU7.356123/frozen5.955417/mflux7.970898/UnslothMetal GPUtext18.735300/defaultCPUtext22.599736s; use fasterGPUtext denominator: GPU2.547x,mixed3.146x,not3.795x against slowerdefault; frozen approximate with higher cold/RAM; reference templates/RNG/lifecycles differ; UI overhead not timed")
+
+
+def z_comfy_campaign(path):
+    from z_comfy_framework_screen import ORDER, ROUTES, validate_trial
+    data, binding = source(path, ("complete_diagnostic",))
+    if (data["order"] != list(ORDER) or data["steps"] != 8 or data["requests_per_process"] != 4 or
+            len(data["trials"]) != 8 or data["reference_latency_ranking_valid"] is not True or
+            data["comfy_commit"] != "b0b743566f65daafc423b4fea8a2fbda94b3384a" or data["comfy_local_changes"]):
+        raise ValueError("complete current four-route ComfyUI/native cohort required")
+    required_packages = {"comfyui-frontend-package": "1.53.10", "comfyui-workflow-templates": "0.11.76",
+        "comfyui-embedded-docs": "0.5.13", "comfy-kitchen": "0.2.37", "comfy-aimdo": "0.5.5"}
+    for index, trial in enumerate(data["trials"]):
+        if (trial["index"], trial["route"]) != (index, ORDER[index]):
+            raise ValueError("actual ComfyUI cohort order differs")
+        validate_trial(trial)
+        if trial["route"].startswith("comfy-"):
+            actual = trial["report"]["system_stats"]["system"]
+            installed = {p["name"]: p["installed"] for p in actual["comfy_package_versions"] if p["installed"] == p["required"]}
+            if actual["comfyui_version"] != "0.39.0" or actual["pytorch_version"] != "2.12.1" or installed != required_packages:
+                raise ValueError("actual current ComfyUI version and exact pinned packages required")
+    routes = []
+    for row in data["routes"]:
+        trials = [t for t in data["trials"] if t["route"] == row["route"]]
+        samples = [r["request_wall_including_export"] for t in trials for r in t["report"]["runs"][1:3]]
+        if len(trials) != 2 or len(samples) != 4 or samples != row["fresh_warm_seconds"] or statistics.median(samples) != row["fresh_warm_median"]:
+            raise ValueError("actual same-window four fresh samples required")
+        routes.append(measured(row["route"], row["cold_seconds"], samples, repeated_prompt_seconds=row["repeat_seconds"],
+            constructor_seconds=row["constructor_seconds"], physical_peaks=row["physical_peaks"],
+            compression_bytes=row["compression_bytes"], swap_out_bytes=row["swap_out_bytes"]))
+    if {r["route"] for r in routes} != set(ROUTES):
+        raise ValueError("all declared routes required")
+    values = {r["route"]: r["warm_median_seconds"] for r in routes}
+    best = min(ROUTES[2:], key=values.get)
+    if data["comparisons"]["best_measured_comfy_route"] != best:
+        raise ValueError("fastest measured valid ComfyUI preset must be the denominator")
+    return dict(evidence=binding, model="z-image-turbo-comfy039-bf16-cohort", geometry=[512, 512], steps=8,
+        date=data["date"], routes=routes, reference_comparison_valid=True, best_measured_comfy_route=best,
+        timing_scope=data["timing_scope"],
+        note="same original BF16 encoder/DiT/VAE; ComfyUI v0.39 pinned current release, existing PyTorch2.12.1/MPS with exact five pinned package overlay; eight serial processes/32PNG/8complete memory;4fresh/route; default and SDPA+GPU-only both retained; frozen W8A8 approximate/higher cold+RAM; HTTP submit/history/download/export vs native C API/export, no frontend UI; repeat prompt seed43 forces actual8steps/VAE, no cached sampler latency; independent RNG/token/compute lifecycles; not all Mac presets/Torch versions or global optimum")
+
+
+def qwen_comfy_reference_campaign(path):
+    from qwen21_comfy_framework_screen import ROUTES, validate_trial
+    data, binding = source(path, ("complete_diagnostic",))
+    if (data["reference_only"] is not True or data["same_window_native_pair"] is not False or
+            data["order"] != list(ROUTES[2:]) or len(data["trials"]) != 3 or data["steps"] != 40):
+        raise ValueError("complete reference-only Qwen presets required")
+    for t in data["trials"]:
+        validate_trial(t)
+    routes = []
+    for row in data["routes"]:
+        trial = next(t for t in data["trials"] if t["route"] == row["route"])
+        samples = [r["request_wall_including_export"] for r in trial["report"]["runs"][1:3]]
+        if samples != row["fresh_warm_seconds"] or statistics.median(samples) != row["fresh_warm_median"]:
+            raise ValueError("own actual two fresh reference samples required")
+        routes.append(measured(row["route"], row["cold_seconds"], samples, constructor_seconds=row["constructor_seconds"],
+            repeated_prompt_seconds=row["repeat_seconds"], physical_peaks=row["physical_peaks"], swap_out_bytes=row["swap_out_bytes"]))
+    return dict(evidence=binding, model="qwen-image-2.1-comfy039-reference-only", date=data["date"], geometry=[512, 512], steps=40,
+        routes=routes, reference_comparison_valid=True, native_comparison_valid=False, baseline_reused=True,
+        timing_scope=data["timing_scope"], note="Comfy-only3presets/12PNG/3memory,twofresh each; fastest GPU/subquadratic48.349678s; original TC best31.058807s reused separately at user request, not a new paired cohort; exact shared3BF16 source hashes,40Euler/terminal.02/cfg1,lossless auto prefix cache; MPS partialoffload/swap and failed621msgap diagnostic retained")
+
+
+def ltx_comfy_reference_campaign(path):
+    data, binding = source(path, ("complete_diagnostic",))
+    if (data["reference_only"] is not True or data["same_window_native_pair"] is not False or data["warm_sample_count"] != 1 or
+            data["memory"]["verified"]["complete"] is not True or len(data["output_checks"]) != 2 or
+            any(c["video_frames"] != 97 or c["audio_finite"] is not True or c["complete_decode"] is not True for c in data["output_checks"])):
+        raise ValueError("one cold/warm complete97frame AV reference and independent memory required")
+    return dict(evidence=binding, model="ltx-2.5-comfy039-reference-only", date=data["date"], geometry=[704, 448, 97], steps=11, audio=True,
+        routes=[measured("comfy-sdpa", [data["cold_seconds"]], [data["warm_seconds"]], warm_scope=data["warm_scope"],
+            physical_peaks=[data["memory"]["verified"]["tree_peak_phys_footprint_bytes"]])],
+        reference_comparison_valid=True, native_comparison_valid=False, baseline_reused=True, timing_scope=data["scope"],
+        note="same local distilledConvRot/Gemma4/conv-only video+audioVAE/upscaler;stock SDPA/BF16VAE,8+3Eulerancestral,704x448x97/24fps/audio/noLoRA/noPE;2full H264/AAC MP4/complete finite audio;onewarm112.229774s is observation not median; existing TC quality63.847972/optinapprox61.868682s reused separately, not new paired native; old SaveVideo API collector error excluded")
+
+
+def flux4_warm_reference_campaign(path):
+    from flux4_reference_warm_screen import ROUTES, validate_trial
+    data, binding = source(path, ("complete_reference_only",))
+    if (data["reference_only"] is not True or data["native_retested"] is not False or data["same_window_native_pair"] is not False or
+            len(data["trials"]) != 2 or [t["route"] for t in data["trials"]] != list(ROUTES)):
+        raise ValueError("complete compatible two-reference4B cohort required")
+    routes = []
+    for t, row in zip(data["trials"], data["routes"]):
+        validate_trial(t)
+        samples = [r["request_wall_including_export"] for r in t["report"]["runs"][1:3]]
+        if row["route"] != t["route"] or samples != row["fresh_warm_seconds"] or statistics.median(samples) != row["fresh_warm_median"]:
+            raise ValueError("actual twofresh reference medians required")
+        routes.append(measured(t["route"], row["cold_seconds"], samples, repeated_prompt_seconds=row["repeat_seconds"],
+            constructor_seconds=[row["constructor_seconds"]], physical_peaks=[row["physical_peak_bytes"]]))
+    return dict(evidence=binding, model="flux2-klein-4b-compatible-warm-references", geometry=[512,512], steps=4,
+        date=data["date"], routes=routes, reference_comparison_valid=True, native_comparison_valid=False,
+        timing_scope=data["timing_scope"], note="original unchanged savedQ4/g64 pack; mflux0.22 cache0/full387/905/266 source coverage,mlx-serve26.10.1 actual4SSE Generating steps/fullPNG;8PNG/2complete memory; native existing twofresh precheck remains precheck,not paired/global/ANE claim; collector stage filter audit-only recovery preserves originalfailed summary and actualsuccessful media/memory,no threshold relaxation")
+
+
+def flux4_derived_hybrid_campaign(path):
+    from flux4_derived_hybrid_evidence import validate_screen
+    data, binding = source(path, ("complete_diagnostic",))
+    validate_screen(data)
+    derivation = data["source_derivation"]
+    if (data["source_inputs_verified"] != 514 or derivation["recipe"] != "single40-q4-g64-to-bf16-v1" or
+            derivation["all_saved_tensor_bitpatterns_verified"] is not True or
+            len(data["image_comparisons"]) != 32 or data["reference_comparison_valid"] is not False):
+        raise ValueError("complete source-bound single40-derived candidate audit required")
+    routes = [measured(row["route"], row["cold_seconds"], row["fresh_warm_seconds"],
+                      repeated_prompt_seconds=row["repeat_seconds"], physical_peaks=row["physical_peaks"])
+              for row in data["routes"]]
+    return dict(evidence=binding, model="flux2-klein-4b-single40-derived-hybrid-cohort", geometry=[512, 512],
+        steps=4, date=data["date"], routes=routes, native_comparison_valid=True, reference_comparison_valid=False,
+        timing_scope=data["scope"], source_recipe=derivation["recipe"],
+        note="current savedQ4/g64 source;40single projections once decoded toBF16,other267DiT tensors/encoder/VAE/tokenizer unchanged;16PNG/4complete memory/4fresh perroute;GPU3.483532 with80actualcompiled blocks,hybrid2.574438 with80actualsourcebound runtimecalls/request;W8weights/FP16IO+math notactivationW8A8;1.353x versus same-derivedGPU,26.097% less wall;GPU pixels equal oldpacked on tested prompts only,hybrid MAEmax2.573/255 SSIMmin.980592;higher cold5.362-9.081s/peak8.06-8.25GB;no external retest/newpaired framework denominator/globalquality or physicalANE trace")
+
+
+def best_known_flux4_comparisons():
+    """Preserved external records vs new derived best; never a paired headline."""
+    native, native_binding = source("docs/design/validation/flux4-derived-hybrid-current-20261013.json", ("complete_diagnostic",))
+    reference, reference_binding = source("docs/design/validation/flux4-reference-warm-current-20261012.json", ("complete_reference_only",))
+    for path, digest in native["source_derivation"]["upstream_source_sha256"].items():
+        if reference["model_sha256"].get(path) != digest:
+            raise ValueError("derived4B/reference records must share original stored coefficients")
+    row = next(row for row in native["routes"] if row["route"] == "hybrid")
+    elapsed = statistics.median(row["fresh_warm_seconds"])
+    if elapsed != row["fresh_warm_median"]:
+        raise ValueError("derived best must use actual fresh samples")
+    result = []
+    for row in reference["routes"]:
+        baseline = statistics.median(row["fresh_warm_seconds"])
+        if baseline != row["fresh_warm_median"]:
+            raise ValueError("preserved reference must use actual fresh samples")
+        result.append(dict(model="flux2-klein-4b", native_route="hybrid", reference_route=row["route"],
+            native_seconds=elapsed, reference_seconds=baseline, speedup=baseline / elapsed,
+            reduction_percent=100 * (1 - elapsed / baseline), native_evidence=native_binding,
+            reference_evidence=reference_binding, native_warm_sample_count=4, reference_warm_sample_count=2,
+            same_window_pair=False, original_coefficient_identity_verified=True,
+            scope="preserved original savedQ4/g64 references vs new single40-BF16-derived W8/F16 hybrid; different windows/math, not newpaired/global/bitexact qualification; no original/external retest"))
+    return result
+
+
+def best_known_comfy_comparisons():
+    """User-requested best-record reuse, explicitly outside paired headlines."""
+    qwen, qbind = source("docs/design/validation/qwen21-comfy039-reference-current-20261012.json", ("complete_diagnostic",))
+    ltx, lbind = source("docs/design/validation/ltx25-comfy039-reference-current-20261012.json", ("complete_diagnostic",))
+    z, zbind = source("docs/design/validation/z-comfy039-current-20261012.json", ("complete_diagnostic",))
+    configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+    zcfg = next(c for c in configs["configurations"] if c["model"] == "z-image-turbo")
+    zevidence, zbase = source(zcfg["evidence"], ("complete_diagnostic",))
+    zr = next(r for r in zevidence["routes"] if r["route"] == "native-frozen")
+    if statistics.median(zr["fresh_warm_seconds"]) != zcfg["fresh_warm_median_seconds"]:
+        raise ValueError("existing Z best must use original actual samples")
+    for k, digest in z["model_sha256"].items():
+        if zevidence["model_sha256"].get(k) != digest:
+            raise ValueError("reused Z best must use the same BF16 source components")
+    zref = min((r for r in z["routes"] if r["route"].startswith("comfy-")), key=lambda r:r["fresh_warm_median"])
+    qref = min(qwen["routes"], key=lambda r:r["fresh_warm_median"])
+    specifications = (
+        ("z-image-turbo", zcfg["fresh_warm_median_seconds"], zref["fresh_warm_median"], zbind, zbase, "frozen W8A8 approximation;4fresh per side in separate original windows"),
+        ("qwen-image-2.1", qwen["existing_native_baseline"]["native_frozen_seconds"], qref["fresh_warm_median"], qbind,
+         dict(path=qwen["existing_native_baseline"]["evidence"], sha256=qwen["existing_native_baseline"]["evidence_sha256"]), "frozen W8A8 approximation;TC4fresh versus Comfy2fresh per preset, different windows"),
+        ("ltx-2.5-quality", ltx["existing_native_baseline"]["quality_seconds"], ltx["warm_seconds"], lbind,
+         dict(path=ltx["existing_native_baseline"]["evidence"], sha256=ltx["existing_native_baseline"]["evidence_sha256"]), "GPU quality;native old batch median versus one Comfy warm AV observation"),
+        ("ltx-2.5-fastest-opt-in", ltx["existing_native_baseline"]["fastest_opt_in_seconds"], ltx["warm_seconds"], lbind,
+         dict(path=ltx["existing_native_baseline"]["evidence"], sha256=ltx["existing_native_baseline"]["evidence_sha256"]), "GPU Sol+text256 substantial approximation,MAE25.03/255;native old batch median versus one Comfy warm observation"))
+    return [dict(model=model, native_seconds=native, reference_seconds=ref, speedup=ref/native,
+        reduction_percent=100*(1-native/ref), reference_evidence=reference, native_evidence=baseline,
+        same_window_pair=False, user_requested_baseline_reuse=True, scope=note) for model,native,ref,reference,baseline,note in specifications]
 
 
 def runtime_campaign(path, model, size, steps, note):
@@ -533,15 +702,22 @@ def export():
         geometry=[512,512],steps=4,date="2026-10-12",routes=routes,timing_scope=decoded["timing_scope"],
         note="same Q4/g32 stored source,153 DiT projections decoded once to BF16 with additional rounding,96 actual compiled single blocks/request; encoder remainsQ4/BF16 embedding/VAE;40PNG/10memory complete; predecoded7.210639 versus packed8.001289s saves9.882%, peak24.40-24.45GB versus packed11.95-11.97GB; approximate high-memory opt-in, not strictBF16/global win or ANE qualification"))
     campaigns.append(z_unsloth_campaign("docs/design/validation/z-unsloth-mflux-current-20261012.json"))
+    campaigns.append(z_comfy_campaign("docs/design/validation/z-comfy039-current-20261012.json"))
+    campaigns.append(qwen_comfy_reference_campaign("docs/design/validation/qwen21-comfy039-reference-current-20261012.json"))
+    campaigns.append(ltx_comfy_reference_campaign("docs/design/validation/ltx25-comfy039-reference-current-20261012.json"))
+    campaigns.append(flux4_warm_reference_campaign("docs/design/validation/flux4-reference-warm-current-20261012.json"))
+    campaigns.append(flux4_derived_hybrid_campaign("docs/design/validation/flux4-derived-hybrid-current-20261013.json"))
     active = [row for row in campaigns if not row["model"].startswith("flux2-klein-9b")]
     for row in campaigns:
         row["in_current_scope"] = not row["model"].startswith("flux2-klein-9b")
-    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-12", status="partial_expanded_evidence_catalog",
+    return dict(schema="tc-local-base-benchmark-samples-v1", date="2026-10-13", status="complete_scoped_base_benchmark_catalog",
                 hardware="Apple M4 Max 64 GiB; dated cohorts retain original build/OS settings",
-                qualification_passed=False, goal_complete=False,
+                qualification_passed=False, goal_complete=True,
                 completion_audit="docs/benchmark/COMPLETION_AUDIT.md",
-                goal_completion_scope="user current focus FLUX4B/Z-Image Turbo/Qwen2.1/LTX; base-only best GPU-ANE and compatible successful framework comparisons remain active; unsupported frameworks excluded without mandatory adaptation; FLUX9B deferred historical evidence only; not release qualification",
+                goal_completion_scope="original benchmark objective completed under user explicit FLUX4B/Z-Image Turbo/Qwen2.1/LTX/base-only/compatible-only/best-record-reuse scope;GPU and mixed measured,source-bound winners saved,fullmedia/framework times and precision/cold/memory disclosed;FLUX4 Q4-derived hybrid measured without retiming oldroutes;FLUX9B deferred historical;not release/global/physicalANE qualification",
                 comparison_policy=COMPARISON_POLICY, verified_advantages=verified_advantages(campaigns),
+                best_known_comfy_comparisons=best_known_comfy_comparisons(),
+                best_known_flux4_comparisons=best_known_flux4_comparisons(),
                 primary_report="docs/benchmark/PERFORMANCE_REPORT.md",
                 latest_user_scope="consolidate completed experiments into a concise performance report; no further model/shape/grid experiments scheduled; historical and unpaired results labelled separately",
                 active_model_families=["flux2-klein-4b", "z-image-turbo", "qwen-image-2.1", "ltx-2.5-distilled"],
@@ -549,11 +725,12 @@ def export():
                 deferred_campaign_count=len(campaigns)-len(active), historical_report="docs/benchmark/HISTORICAL_RESULTS.md",
                 expansion_status="docs/benchmark/EXPANSION_STATUS.md",
                 campaigns=campaigns,
-                missing_current_comparisons=["Boundary only, not a new experiment queue: finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
-                    "FLUX4B current Q4/g64 GPU/ANE and external paired ranking absent; native/mflux/mlx-serve runtime prechecks and historicalBF16 mixed separately labelled,9B deferred",
-                    "LTX has no compatible successful same-task external denominator; existing full-media internal configurations reported, unsupported packs excluded without mandatory conversion"],
+                missing_current_comparisons=[],
+                comparison_boundaries=["finite tested Qwen/Z shares/shapes/precisions do not prove a global optimum",
+                    "FLUX4B current source-derived Q4/BF16 GPU and W8/F16 hybrid now measured in one16PNG/4memory cohort; originalpacked/predecode/framework windows remain distinct, no directUInt32 hybrid or newpaired external ranking claimed;9B deferred",
+                    "LTX now has successful same-source Comfy97frame AV cold+onewarm; one external warm observation versus existing native batch medians, not new same-window/exhaustive-preset ranking; mlx-serve original memory preflight rejection remains audit-only"],
                 unmeasured_or_inapplicable=["current FastH3 INT6 DiT and original H3 video VAE assets absent",
-                    "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "mlx-serve original FLUX layout rejected and original LTX stock memory preflight rejected",
+                    "FLUX9B automatic/general-shape hybrid and physical ANE overlap unqualified; exact experimental512/4 prefix measured", "NVFP4 runtime GPU-only", "historical9B mlx-serve originallayout rejected, current4B originalpack successful and separate; original LTX stock memory preflight rejected",
                     "additional converted precision/model packs are not equal-source original-format benchmark denominators"])
 
 

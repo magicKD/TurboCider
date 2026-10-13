@@ -1,0 +1,2751 @@
+{
+  "schema": "tc-z-comfy-four-route-validation-v1",
+  "date": "2026-10-12",
+  "status": "complete_diagnostic",
+  "hardware": "M4 Max64GiB/macOS26.6.2",
+  "qualification_passed": false,
+  "goal_complete": false,
+  "reference_latency_ranking_valid": true,
+  "steps": 8,
+  "requests_per_process": 4,
+  "order": [
+    "native-gpu",
+    "native-frozen",
+    "comfy-default",
+    "comfy-sdpa-gpu",
+    "comfy-sdpa-gpu",
+    "comfy-default",
+    "native-frozen",
+    "native-gpu"
+  ],
+  "routes": [
+    {
+      "route": "native-gpu",
+      "fresh_warm_seconds": [
+        7.443760457914323,
+        7.355715958867222,
+        7.398183583049104,
+        7.385257083922625
+      ],
+      "fresh_warm_median": 7.391720333485864,
+      "cold_seconds": [
+        7.586535000009462,
+        7.968973166076466
+      ],
+      "repeat_seconds": [
+        6.9823398338630795,
+        6.985731750028208
+      ],
+      "constructor_seconds": [
+        0.1428600838407874,
+        0.158140541985631
+      ],
+      "fresh_stage_medians": {
+        "denoise": 6.7599922915,
+        "hybrid_setup": 0.0,
+        "image_encode": 0.0,
+        "request_wall": 7.3914417705,
+        "text_encode": 0.331903521,
+        "vae_decode": 0.26729560399999996
+      },
+      "physical_peaks": [
+        31974063752,
+        31178849256
+      ],
+      "compression_bytes": [
+        0,
+        4538368
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "native-frozen",
+      "fresh_warm_seconds": [
+        5.881645708112046,
+        5.732562499819323,
+        5.86088079190813,
+        5.818839167011902
+      ],
+      "fresh_warm_median": 5.839859979460016,
+      "cold_seconds": [
+        17.664404792012647,
+        11.688832000130787
+      ],
+      "repeat_seconds": [
+        5.33119733305648,
+        5.333168624900281
+      ],
+      "constructor_seconds": [
+        0.14874324994161725,
+        0.15375154092907906
+      ],
+      "fresh_stage_medians": {
+        "denoise": 5.2070256045,
+        "hybrid_setup": 0.0,
+        "image_encode": 0.0,
+        "request_wall": 5.8395147705,
+        "text_encode": 0.3265142915,
+        "vae_decode": 0.265932167
+      },
+      "physical_peaks": [
+        30906826640,
+        32003620776
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "comfy-default",
+      "fresh_warm_seconds": [
+        8.501454999903217,
+        8.56934970896691,
+        8.477601374965161,
+        8.572818875079975
+      ],
+      "fresh_warm_median": 8.535402354435064,
+      "cold_seconds": [
+        11.838525208178908,
+        10.678685541963205
+      ],
+      "repeat_seconds": [
+        8.109265209175646,
+        8.120422458043322
+      ],
+      "constructor_seconds": [
+        3.82788645895198,
+        3.044753790833056
+      ],
+      "fresh_stage_medians": {
+        "encoder_seconds": 0.34788243751972914,
+        "sampler_seconds": 7.886846707900986,
+        "vae_seconds": 0.22889035451225936,
+        "save_seconds": 0.00956631253939122
+      },
+      "physical_peaks": [
+        27180531720,
+        27783266048
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    },
+    {
+      "route": "comfy-sdpa-gpu",
+      "fresh_warm_seconds": [
+        8.79004649980925,
+        8.893065874930471,
+        8.784862459171563,
+        8.890091208042577
+      ],
+      "fresh_warm_median": 8.840068853925914,
+      "cold_seconds": [
+        11.320981292054057,
+        11.36004429217428
+      ],
+      "repeat_seconds": [
+        8.69507549982518,
+        8.698846792103723
+      ],
+      "constructor_seconds": [
+        3.0320291249081492,
+        3.039987000171095
+      ],
+      "fresh_stage_medians": {
+        "encoder_seconds": 0.07625279144849628,
+        "sampler_seconds": 8.442529499996454,
+        "vae_seconds": 0.1656396664911881,
+        "save_seconds": 0.10379479150287807
+      },
+      "physical_peaks": [
+        27876205304,
+        27634933680
+      ],
+      "compression_bytes": [
+        0,
+        0
+      ],
+      "swap_out_bytes": [
+        0,
+        0
+      ]
+    }
+  ],
+  "trials": [
+    {
+      "index": 0,
+      "route": "native-gpu",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "dffc887ece4d468aa55ce2bcd367d1a9",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "493a3ad54f94f2d02670c73b7ab057bc126b8746c9cb02aa2c1548a8939fdae5",
+        "report": "run-memory-report.json",
+        "report_sha256": "d8ae4377c5fb5e66c6a0b48bd534841c7a6bb9c4c43498846f91ed2e94623064",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "dffc887ece4d468aa55ce2bcd367d1a9",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87153,
+            "start_seconds": 1791807535,
+            "start_microseconds": 588373
+          },
+          "record_count": 302,
+          "sample_count": 298,
+          "final_evidence_digest": "48c83e49774497c43f3161dba37b6eac5216b22b43e6ee29a37c27360cf7ff67",
+          "max_gap_ns": 110024625,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20632240128,
+          "tree_peak_phys_footprint_bytes": 31974063752,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "b7b255f1e38ded7b5edb6dfb3f70c962e95f953d7c43733149dc024c608ef201",
+        "430621dd978a298834c283664b286b379756b80389990c0765572a08d0420ed9",
+        "7231e8972627377fdb1b1465bd9fab3f5463ead0cebdf573b76a68cb2ce2ae62",
+        "26cf0404cd9cfb16fa8661803f7c3d8960bef44d269af0089f4de7b7074951c6"
+      ],
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 0.1428600838407874,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 7.586535000009462,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.774223875,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.571491209,
+                "text_encode": 0.28377075,
+                "vae_decode": 0.268348125
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 7.443760457914323,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.763394583,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.443485834,
+                "text_encode": 0.385599958,
+                "vae_decode": 0.270650291
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 7.355715958867222,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.756208917,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.355456167,
+                "text_encode": 0.311252042,
+                "vae_decode": 0.262183834
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 6.9823398338630795,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 43,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.7539145,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.982092833,
+                "text_encode": 7.5e-07,
+                "vae_decode": 0.210342625
+              },
+              "hybrid": null
+            }
+          }
+        ]
+      },
+      "stage_seconds": [
+        {
+          "denoise": 6.774223875,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 7.571491209,
+          "text_encode": 0.28377075,
+          "vae_decode": 0.268348125
+        },
+        {
+          "denoise": 6.763394583,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 7.443485834,
+          "text_encode": 0.385599958,
+          "vae_decode": 0.270650291
+        },
+        {
+          "denoise": 6.756208917,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 7.355456167,
+          "text_encode": 0.311252042,
+          "vae_decode": 0.262183834
+        },
+        {
+          "denoise": 6.7539145,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 6.982092833,
+          "text_encode": 7.5e-07,
+          "vae_decode": 0.210342625
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "route": "native-frozen",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "e6c3290ec3d34ab2a1853204de7ea602",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "f41d8fb86d6fe704446b5566a641e8004266102538a0b85b022a1239fe05802e",
+        "report": "run-memory-report.json",
+        "report_sha256": "e5d2ba4428edff4eb81d8ccbecdb951cae9de56fc178fc251949b032cdf71474",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "e6c3290ec3d34ab2a1853204de7ea602",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87178,
+            "start_seconds": 1791807566,
+            "start_microseconds": 112638
+          },
+          "record_count": 354,
+          "sample_count": 350,
+          "final_evidence_digest": "c9bc0360d548d7147f55e73e1fb644595ac4f3cd4774636f156daac80d1ec41d",
+          "max_gap_ns": 110018791,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20782579712,
+          "tree_peak_phys_footprint_bytes": 30906826640,
+          "swap_in_bytes": 163840,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 950272,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "f575998214628829f5da9a4a2e632b2c3cf6c0d07406ce310a0c1bc547771f12",
+        "0f31f46d471cd19e46ebecf0ac01e370c71726e4dfdf711b54e2af1dfcef841a",
+        "50971b2ca9763f59fdbcb93435c834ed0f45e50a9ada4f27dccca399ffd26e7b",
+        "ff2ac17644649eb6bdd902902e9e568037f73121baa07632e069effdaf3bc462"
+      ],
+      "report": {
+        "engine": "native-frozen",
+        "constructor_seconds": 0.14874324994161725,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 17.664404792012647,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.211455875,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 17.649592208,
+                "text_encode": 0.288237917,
+                "vae_decode": 0.264726458
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 256,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 5.881645708112046,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.241517959,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.88128575,
+                "text_encode": 0.343960375,
+                "vae_decode": 0.262223208
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 512,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 5.732562499819323,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.156514459,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.73220475,
+                "text_encode": 0.291560041,
+                "vae_decode": 0.26283525
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 768,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 5.33119733305648,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 43,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.098431667,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.330882083,
+                "text_encode": 7.5e-07,
+                "vae_decode": 0.213533291
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 1024,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          }
+        ]
+      },
+      "stage_seconds": [
+        {
+          "denoise": 5.211455875,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 17.649592208,
+          "text_encode": 0.288237917,
+          "vae_decode": 0.264726458
+        },
+        {
+          "denoise": 5.241517959,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 5.88128575,
+          "text_encode": 0.343960375,
+          "vae_decode": 0.262223208
+        },
+        {
+          "denoise": 5.156514459,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 5.73220475,
+          "text_encode": 0.291560041,
+          "vae_decode": 0.26283525
+        },
+        {
+          "denoise": 5.098431667,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 5.330882083,
+          "text_encode": 7.5e-07,
+          "vae_decode": 0.213533291
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "route": "comfy-default",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "4e34340a16b74589bc3751a04001595f",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "019152b461da13da70b7e5ad29bbd0ce4725d4aa547181a793131fea71f0596b",
+        "report": "run-memory-report.json",
+        "report_sha256": "0f9b72e1ba7bf78ae1f75870dd1623c9fbfd2465965e7fb51b7e6db5398465b5",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "4e34340a16b74589bc3751a04001595f",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87198,
+            "start_seconds": 1791807601,
+            "start_microseconds": 760405
+          },
+          "record_count": 456,
+          "sample_count": 414,
+          "final_evidence_digest": "e2958870797d9bc6833e6bd2b79e32581d3d818eff02cb621c8e89c40270af12",
+          "max_gap_ns": 110012125,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 32568967168,
+          "tree_peak_phys_footprint_bytes": 27180531720,
+          "swap_in_bytes": 163840,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 81920,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "2c735b09b652df1eddea5a843689b71e5959a90ec1834b5d44416871442bd3af",
+        "164d3a51580f20f4faf9457559a640bfa5cf2051bb0fb93fd0372a84b25f6d21",
+        "f1b397180162eef7ca25255abaec02416802e6170171ffd0df68a703130c4ca9",
+        "eeecf769773d0826fec771671f00470720b77d450d72476fce106af24083d67a"
+      ],
+      "report": {
+        "status": "complete",
+        "runs": [
+          {
+            "index": 0,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "prompt_id": "a7cef5b1-0f56-4a59-9d05-b262c7cf90a4",
+            "request_wall_including_export": 11.838525208178908,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "3",
+              "6",
+              "2",
+              "4",
+              "5",
+              "1",
+              "7",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [],
+            "history_status": "success"
+          },
+          {
+            "index": 1,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "prompt_id": "4b63d954-3f67-4382-965e-fe4c443309c0",
+            "request_wall_including_export": 8.501454999903217,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 2,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "f4ac3583-93a1-479a-ba5a-54745696da26",
+            "request_wall_including_export": 8.56934970896691,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 3,
+            "seed": 43,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "f4903aa6-89b7-4c6c-ae94-8efb94a2a25d",
+            "request_wall_including_export": 8.109265209175646,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          }
+        ],
+        "cache_policy": "stock RAM pressure; repeat prompt uses seed43 to force sampling",
+        "packages": {
+          "torch": "2.12.1",
+          "transformers": "5.14.1",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "aiohttp": "3.14.3"
+        },
+        "ready_seconds": 3.82788645895198,
+        "system_stats": {
+          "system": {
+            "os": "darwin",
+            "ram_total": 68719476736,
+            "ram_free": 49281138688,
+            "comfyui_version": "0.39.0",
+            "required_frontend_version": "1.53.10",
+            "installed_templates_version": "0.11.76",
+            "required_templates_version": "0.11.76",
+            "comfy_package_versions": [
+              {
+                "name": "comfyui-frontend-package",
+                "installed": "1.53.10",
+                "required": "1.53.10"
+              },
+              {
+                "name": "comfyui-workflow-templates",
+                "installed": "0.11.76",
+                "required": "0.11.76"
+              },
+              {
+                "name": "comfyui-embedded-docs",
+                "installed": "0.5.13",
+                "required": "0.5.13"
+              },
+              {
+                "name": "comfy-kitchen",
+                "installed": "0.2.37",
+                "required": "0.2.37"
+              },
+              {
+                "name": "comfy-aimdo",
+                "installed": "0.5.5",
+                "required": "0.5.5"
+              }
+            ],
+            "python_version": "3.13.12 (main, Feb 12 2026, 01:06:02) [Clang 21.1.4 ]",
+            "pytorch_version": "2.12.1",
+            "embedded_python": false,
+            "deploy_environment": "local-git"
+          },
+          "devices": [
+            {
+              "name": "mps",
+              "type": "mps",
+              "index": null,
+              "vram_total": 68719476736,
+              "vram_free": 49281138688,
+              "torch_vram_total": 68719476736,
+              "torch_vram_free": 49281138688
+            }
+          ]
+        },
+        "server_terminal": true
+      },
+      "stage_seconds": [
+        {
+          "encoder_seconds": 0.3565406668931246,
+          "sampler_seconds": 8.585779207991436,
+          "vae_seconds": 0.3059822921641171,
+          "save_seconds": 0.010342082940042019
+        },
+        {
+          "encoder_seconds": 0.39031708310358226,
+          "sampler_seconds": 7.869362208992243,
+          "vae_seconds": 0.22945716581307352,
+          "save_seconds": 0.009449792094528675
+        },
+        {
+          "encoder_seconds": 0.3350348330568522,
+          "sampler_seconds": 7.89836079091765,
+          "vae_seconds": 0.2288328749127686,
+          "save_seconds": 0.009448250057175756
+        },
+        {
+          "encoder_seconds": 0,
+          "sampler_seconds": 7.868636624887586,
+          "vae_seconds": 0.22863208409398794,
+          "save_seconds": 0.009371583117172122
+        }
+      ],
+      "launch_sha256": "f14b0357bd9fb175c40b08b0592140f1f2ad1450054c49fca13a992a9a9db011",
+      "request_evidence_sha256": [
+        {
+          "events": "36135fa728104ae7826d1fcf04785678e9f6958183b54be5a4ea827c92e3c97e",
+          "history": "55d1e9389c99c3f9060cdfd8ead58422ba15c69ccab4436dfea646935eb7d151",
+          "request": "53faafaab889ed92a15bc0eee011fb5fcaf981d771b5632e1540e4d851f992d5"
+        },
+        {
+          "events": "8b15ad08f1c0b6bdf1bb5dd0fae129efd987aedfa3394a3ace3b5b6fe45ad5b4",
+          "history": "6ee035e82b6c09a9abdee066f2876ca406914b4651c15b5ac358fc057d7dc321",
+          "request": "2b3ff1499ee0d2aed381d76cf6f190cad892f8c9249baf16bc3ebf94bc09cce3"
+        },
+        {
+          "events": "2eca3d56f0674719047f5e54d332c4f2ee739186b568a55e7fd3cece40e97cb4",
+          "history": "c54c9c65a6ddab929e66ddc47e5b9ee2e79c0dbeef8fc0529744493424281633",
+          "request": "8e438d55918f1ef267d50df20d6ce0c33f18a2bd36927064e07194ff512446a0"
+        },
+        {
+          "events": "d4060e4eb088402925cd821371abcbf2be7f00b636904693412fb7e063b88e1f",
+          "history": "d2965bf25a45cb20103eeda7afe55f24302401cc300e57c74397859f46a8bb25",
+          "request": "434a30392393d801530440231a7876570bee5aa5c249f53695c708aa839bac88"
+        }
+      ],
+      "server_log_sha256": {
+        "server.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "server.stderr.txt": "20562a5c8e9f4c3320c2af9225332e73b8325dfde0318e4d3ea6e574ba824a5e"
+      }
+    },
+    {
+      "index": 3,
+      "route": "comfy-sdpa-gpu",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "8be2bf218b7148b5943ef52e4a8e5db1",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "bceaa76680a55c972a7b78f66bef689d0b3c859b0fe2f485835aa361b4663d5e",
+        "report": "run-memory-report.json",
+        "report_sha256": "82a25bd5597715943cbc49b0940a9018b3c4a59b95671eea399b98880b495489",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "8be2bf218b7148b5943ef52e4a8e5db1",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87260,
+            "start_seconds": 1791807643,
+            "start_microseconds": 820198
+          },
+          "record_count": 454,
+          "sample_count": 412,
+          "final_evidence_digest": "be51476de877007b77fe8d71fe8bc09164f4508722b0610c3396badc958780e3",
+          "max_gap_ns": 110020125,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 23548051456,
+          "tree_peak_phys_footprint_bytes": 27876205304,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 589824,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "c6b5bf17f2d37452c635a010d53ca2560fe6dc859f1dc92c249db082a5fc6cd7",
+        "cb90a6876131b63b843a554c90fd6de5d7b9cd3836454ee6e30b03c4136c7f4c",
+        "3bdbea7767584f0dedfd4e8788f9790a8d13bf9641c216ce48510b2c7bb3b0a9",
+        "51ba5af665fa638b61fd7265c53a118c17ff2ca02e3c499320de0254891387eb"
+      ],
+      "report": {
+        "status": "complete",
+        "runs": [
+          {
+            "index": 0,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "prompt_id": "b187f3b1-5188-4223-9a20-660a4dffeb57",
+            "request_wall_including_export": 11.320981292054057,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "3",
+              "6",
+              "2",
+              "4",
+              "5",
+              "1",
+              "7",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [],
+            "history_status": "success"
+          },
+          {
+            "index": 1,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "prompt_id": "f8be2824-5c22-41f0-a7ca-089e30fd03a3",
+            "request_wall_including_export": 8.79004649980925,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 2,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "e2d630f8-5341-4b1e-a99f-5987d92c0ead",
+            "request_wall_including_export": 8.893065874930471,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 3,
+            "seed": 43,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "495ee615-18c0-426e-b7ed-33883797d096",
+            "request_wall_including_export": 8.69507549982518,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          }
+        ],
+        "cache_policy": "stock RAM pressure; repeat prompt uses seed43 to force sampling",
+        "packages": {
+          "torch": "2.12.1",
+          "transformers": "5.14.1",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "aiohttp": "3.14.3"
+        },
+        "ready_seconds": 3.0320291249081492,
+        "system_stats": {
+          "system": {
+            "os": "darwin",
+            "ram_total": 68719476736,
+            "ram_free": 46971617280,
+            "comfyui_version": "0.39.0",
+            "required_frontend_version": "1.53.10",
+            "installed_templates_version": "0.11.76",
+            "required_templates_version": "0.11.76",
+            "comfy_package_versions": [
+              {
+                "name": "comfyui-frontend-package",
+                "installed": "1.53.10",
+                "required": "1.53.10"
+              },
+              {
+                "name": "comfyui-workflow-templates",
+                "installed": "0.11.76",
+                "required": "0.11.76"
+              },
+              {
+                "name": "comfyui-embedded-docs",
+                "installed": "0.5.13",
+                "required": "0.5.13"
+              },
+              {
+                "name": "comfy-kitchen",
+                "installed": "0.2.37",
+                "required": "0.2.37"
+              },
+              {
+                "name": "comfy-aimdo",
+                "installed": "0.5.5",
+                "required": "0.5.5"
+              }
+            ],
+            "python_version": "3.13.12 (main, Feb 12 2026, 01:06:02) [Clang 21.1.4 ]",
+            "pytorch_version": "2.12.1",
+            "embedded_python": false,
+            "deploy_environment": "local-git"
+          },
+          "devices": [
+            {
+              "name": "mps",
+              "type": "mps",
+              "index": null,
+              "vram_total": 68719476736,
+              "vram_free": 46971617280,
+              "torch_vram_total": 68719476736,
+              "torch_vram_free": 46971617280
+            }
+          ]
+        },
+        "server_terminal": true
+      },
+      "stage_seconds": [
+        {
+          "encoder_seconds": 0.09735433291643858,
+          "sampler_seconds": 8.724757709074765,
+          "vae_seconds": 0.6011119578033686,
+          "save_seconds": 0.09318062500096858
+        },
+        {
+          "encoder_seconds": 0.07292562490329146,
+          "sampler_seconds": 8.443431749939919,
+          "vae_seconds": 0.16574824997223914,
+          "save_seconds": 0.10502558317966759
+        },
+        {
+          "encoder_seconds": 0.07854279200546443,
+          "sampler_seconds": 8.458706042030826,
+          "vae_seconds": 0.16408941592089832,
+          "save_seconds": 0.10367925022728741
+        },
+        {
+          "encoder_seconds": 0,
+          "sampler_seconds": 8.418782540829852,
+          "vae_seconds": 0.15710037504322827,
+          "save_seconds": 0.11365408403798938
+        }
+      ],
+      "launch_sha256": "c53452e7677e8299903e48186ec9d9f365ea85566d4c850641e9ff9341d6f7ce",
+      "request_evidence_sha256": [
+        {
+          "events": "c5d9aee91d92dd1eefa27e87d2b6fbf9ba1312011632ee68485dcd833a03c526",
+          "history": "b556a8cc79777b538e4078b12220893243a83881f1227ba3d9e537f181d99172",
+          "request": "53faafaab889ed92a15bc0eee011fb5fcaf981d771b5632e1540e4d851f992d5"
+        },
+        {
+          "events": "41d4eab88413260b29c0a1feba7d0659094a901ba0b2534c7c11b200eb3b4c11",
+          "history": "ace1511265df152c262f093de959b1220cb93912e34eeb0387dd4e79c6de8281",
+          "request": "2b3ff1499ee0d2aed381d76cf6f190cad892f8c9249baf16bc3ebf94bc09cce3"
+        },
+        {
+          "events": "3163b6ab3985fc3087b035e0a1dc21e15e3e31daff8dd8c1d60625387eff5a14",
+          "history": "1f25e19cf4984b14c4ed69b160ab3fdf2f6d708a0f4bdce3a00d0669c6f2eda8",
+          "request": "8e438d55918f1ef267d50df20d6ce0c33f18a2bd36927064e07194ff512446a0"
+        },
+        {
+          "events": "54a04d31826f0ec13b8bbc4f5ce8d45f5479c3db23c282a5cb839c79d1056274",
+          "history": "aacc4a968b0afe8d54486d8cc6c487dc6c19a90955e6715474265a9bae03c9e7",
+          "request": "434a30392393d801530440231a7876570bee5aa5c249f53695c708aa839bac88"
+        }
+      ],
+      "server_log_sha256": {
+        "server.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "server.stderr.txt": "058324097a27bf78cfe4df19ca11599b3db72c1582c34712901b4307da3d1f69"
+      }
+    },
+    {
+      "index": 4,
+      "route": "comfy-sdpa-gpu",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "864cbfa55d4c405db7808cbe2ce4d302",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "c3c8c1d2905d30dcad908b317684a6adf059c3ba0464b9b6ef30b8e83bde3cfe",
+        "report": "run-memory-report.json",
+        "report_sha256": "da8e68ede1d2f1be8290561d2b4499480265c5c79fc5b6a2cf2a37c2916fd403",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "864cbfa55d4c405db7808cbe2ce4d302",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87320,
+            "start_seconds": 1791807685,
+            "start_microseconds": 714646
+          },
+          "record_count": 452,
+          "sample_count": 412,
+          "final_evidence_digest": "3f02d1f59e1f27b93b4864fc0099922a694f10b6e1509ecfe047cb7fef398ea1",
+          "max_gap_ns": 109340583,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 23213441024,
+          "tree_peak_phys_footprint_bytes": 27634933680,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 655360,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "c6b5bf17f2d37452c635a010d53ca2560fe6dc859f1dc92c249db082a5fc6cd7",
+        "cb90a6876131b63b843a554c90fd6de5d7b9cd3836454ee6e30b03c4136c7f4c",
+        "3bdbea7767584f0dedfd4e8788f9790a8d13bf9641c216ce48510b2c7bb3b0a9",
+        "51ba5af665fa638b61fd7265c53a118c17ff2ca02e3c499320de0254891387eb"
+      ],
+      "report": {
+        "status": "complete",
+        "runs": [
+          {
+            "index": 0,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "prompt_id": "56ab0400-1689-443a-ba39-19214fdc740b",
+            "request_wall_including_export": 11.36004429217428,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "3",
+              "6",
+              "2",
+              "4",
+              "5",
+              "1",
+              "7",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [],
+            "history_status": "success"
+          },
+          {
+            "index": 1,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "prompt_id": "08e0ec05-9884-47e9-b437-3ca91b1f19c2",
+            "request_wall_including_export": 8.784862459171563,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 2,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "056c9cee-bd16-476b-a0d6-21c07c13e594",
+            "request_wall_including_export": 8.890091208042577,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 3,
+            "seed": 43,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "59928277-6ed0-4d86-a2ee-faa7cb0d9e37",
+            "request_wall_including_export": 8.698846792103723,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          }
+        ],
+        "cache_policy": "stock RAM pressure; repeat prompt uses seed43 to force sampling",
+        "packages": {
+          "torch": "2.12.1",
+          "transformers": "5.14.1",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "aiohttp": "3.14.3"
+        },
+        "ready_seconds": 3.039987000171095,
+        "system_stats": {
+          "system": {
+            "os": "darwin",
+            "ram_total": 68719476736,
+            "ram_free": 46858387456,
+            "comfyui_version": "0.39.0",
+            "required_frontend_version": "1.53.10",
+            "installed_templates_version": "0.11.76",
+            "required_templates_version": "0.11.76",
+            "comfy_package_versions": [
+              {
+                "name": "comfyui-frontend-package",
+                "installed": "1.53.10",
+                "required": "1.53.10"
+              },
+              {
+                "name": "comfyui-workflow-templates",
+                "installed": "0.11.76",
+                "required": "0.11.76"
+              },
+              {
+                "name": "comfyui-embedded-docs",
+                "installed": "0.5.13",
+                "required": "0.5.13"
+              },
+              {
+                "name": "comfy-kitchen",
+                "installed": "0.2.37",
+                "required": "0.2.37"
+              },
+              {
+                "name": "comfy-aimdo",
+                "installed": "0.5.5",
+                "required": "0.5.5"
+              }
+            ],
+            "python_version": "3.13.12 (main, Feb 12 2026, 01:06:02) [Clang 21.1.4 ]",
+            "pytorch_version": "2.12.1",
+            "embedded_python": false,
+            "deploy_environment": "local-git"
+          },
+          "devices": [
+            {
+              "name": "mps",
+              "type": "mps",
+              "index": null,
+              "vram_total": 68719476736,
+              "vram_free": 46858387456,
+              "torch_vram_total": 68719476736,
+              "torch_vram_free": 46858387456
+            }
+          ]
+        },
+        "server_terminal": true
+      },
+      "stage_seconds": [
+        {
+          "encoder_seconds": 0.09819054207764566,
+          "sampler_seconds": 9.096275916090235,
+          "vae_seconds": 0.259764791931957,
+          "save_seconds": 0.09413704206235707
+        },
+        {
+          "encoder_seconds": 0.07396279089152813,
+          "sampler_seconds": 8.438831334002316,
+          "vae_seconds": 0.16553108301013708,
+          "save_seconds": 0.10371887497603893
+        },
+        {
+          "encoder_seconds": 0.07989612501114607,
+          "sampler_seconds": 8.441627250052989,
+          "vae_seconds": 0.17774291709065437,
+          "save_seconds": 0.10387070802971721
+        },
+        {
+          "encoder_seconds": 0,
+          "sampler_seconds": 8.43049854086712,
+          "vae_seconds": 0.15843025012873113,
+          "save_seconds": 0.10733570880256593
+        }
+      ],
+      "launch_sha256": "0b1aadbe87bb9080834d01f33871fb4ade76ef7d828fb08e8ad4ab8fc7d5bced",
+      "request_evidence_sha256": [
+        {
+          "events": "602d6573c0010ea14818cabc35ba16d0e473f1776a0e99532a758826f4c11c3d",
+          "history": "72ed7d5cf17c965a20695f769480160aff9d31c4273d2a6d156e0d69b2b28700",
+          "request": "53faafaab889ed92a15bc0eee011fb5fcaf981d771b5632e1540e4d851f992d5"
+        },
+        {
+          "events": "caccb010feb1644b1a55c6fd85e20a494aa6a251d6f9f343450d0124a19112ce",
+          "history": "43a93fdac7f3e3d63c2750c03e3600ccb793628ffe69e0d8d11f5bf73bd01966",
+          "request": "2b3ff1499ee0d2aed381d76cf6f190cad892f8c9249baf16bc3ebf94bc09cce3"
+        },
+        {
+          "events": "c02e553b28d4028b5929f4ce1fc48899e0afbe7eac8311efcff597eae59b14f9",
+          "history": "b346af923dfe6069ed977b8f455fcab731d30ac49480f0572c6e07b7aed13910",
+          "request": "8e438d55918f1ef267d50df20d6ce0c33f18a2bd36927064e07194ff512446a0"
+        },
+        {
+          "events": "c70f3abb8ad57af285da4196ee60f4cb627a2f3e38a25754f7f2b998d1d0e968",
+          "history": "f06c16ab1c8baac75b2bec17fa3eeb2f73d924b69c3cd0c2876f626c6564a16b",
+          "request": "434a30392393d801530440231a7876570bee5aa5c249f53695c708aa839bac88"
+        }
+      ],
+      "server_log_sha256": {
+        "server.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "server.stderr.txt": "0a0acbc2c5ff1dc286a11cae30ea895fc9a02be370eec544a979cbaca65bfa89"
+      }
+    },
+    {
+      "index": 5,
+      "route": "comfy-default",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "d7ceff36bdca469a98d304c573aae3e4",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "7c5ffd64a56486cb353417827acb202e2ebe87be89c4ef5282525fd69a88255e",
+        "report": "run-memory-report.json",
+        "report_sha256": "ea4a748af2ce0502ac29adb3de60ba4c0af3c2cbeb33ff7ac69db259ceced28c",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "d7ceff36bdca469a98d304c573aae3e4",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87378,
+            "start_seconds": 1791807727,
+            "start_microseconds": 532852
+          },
+          "record_count": 436,
+          "sample_count": 394,
+          "final_evidence_digest": "6f34b7319c6dea70bfac770a4f03a2dcec098b7bd930ed3e0ed2331133461994",
+          "max_gap_ns": 109941292,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 32436436992,
+          "tree_peak_phys_footprint_bytes": 27783266048,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 491520,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "2c735b09b652df1eddea5a843689b71e5959a90ec1834b5d44416871442bd3af",
+        "164d3a51580f20f4faf9457559a640bfa5cf2051bb0fb93fd0372a84b25f6d21",
+        "f1b397180162eef7ca25255abaec02416802e6170171ffd0df68a703130c4ca9",
+        "eeecf769773d0826fec771671f00470720b77d450d72476fce106af24083d67a"
+      ],
+      "report": {
+        "status": "complete",
+        "runs": [
+          {
+            "index": 0,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, natural winter light, detailed fur.",
+            "prompt_id": "609ba8bd-4014-4282-a977-983a1df09cbe",
+            "request_wall_including_export": 10.678685541963205,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "3",
+              "6",
+              "2",
+              "4",
+              "5",
+              "1",
+              "7",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [],
+            "history_status": "success"
+          },
+          {
+            "index": 1,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, soft winter light, detailed fur.",
+            "prompt_id": "0ef0278d-3ad5-4e77-837f-da05b0f632ed",
+            "request_wall_including_export": 8.477601374965161,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 2,
+            "seed": 42,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "df79b8c2-9617-4a3e-a3a0-e68d27402f00",
+            "request_wall_including_export": 8.572818875079975,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "4",
+              "5",
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          },
+          {
+            "index": 3,
+            "seed": 43,
+            "prompt": "A red fox sitting in a snowy forest, warm winter light, detailed fur.",
+            "prompt_id": "e706459d-6017-4687-8092-300fa2636dbe",
+            "request_wall_including_export": 8.120422458043322,
+            "actual_steps": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "executed_nodes": [
+              "8",
+              "9",
+              "10"
+            ],
+            "cached_nodes": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7"
+            ],
+            "history_status": "success"
+          }
+        ],
+        "cache_policy": "stock RAM pressure; repeat prompt uses seed43 to force sampling",
+        "packages": {
+          "torch": "2.12.1",
+          "transformers": "5.14.1",
+          "numpy": "2.5.1",
+          "Pillow": "12.3.0",
+          "aiohttp": "3.14.3"
+        },
+        "ready_seconds": 3.044753790833056,
+        "system_stats": {
+          "system": {
+            "os": "darwin",
+            "ram_total": 68719476736,
+            "ram_free": 46815543296,
+            "comfyui_version": "0.39.0",
+            "required_frontend_version": "1.53.10",
+            "installed_templates_version": "0.11.76",
+            "required_templates_version": "0.11.76",
+            "comfy_package_versions": [
+              {
+                "name": "comfyui-frontend-package",
+                "installed": "1.53.10",
+                "required": "1.53.10"
+              },
+              {
+                "name": "comfyui-workflow-templates",
+                "installed": "0.11.76",
+                "required": "0.11.76"
+              },
+              {
+                "name": "comfyui-embedded-docs",
+                "installed": "0.5.13",
+                "required": "0.5.13"
+              },
+              {
+                "name": "comfy-kitchen",
+                "installed": "0.2.37",
+                "required": "0.2.37"
+              },
+              {
+                "name": "comfy-aimdo",
+                "installed": "0.5.5",
+                "required": "0.5.5"
+              }
+            ],
+            "python_version": "3.13.12 (main, Feb 12 2026, 01:06:02) [Clang 21.1.4 ]",
+            "pytorch_version": "2.12.1",
+            "embedded_python": false,
+            "deploy_environment": "local-git"
+          },
+          "devices": [
+            {
+              "name": "mps",
+              "type": "mps",
+              "index": null,
+              "vram_total": 68719476736,
+              "vram_free": 46815543296,
+              "torch_vram_total": 68719476736,
+              "torch_vram_free": 46815543296
+            }
+          ]
+        },
+        "server_terminal": true
+      },
+      "stage_seconds": [
+        {
+          "encoder_seconds": 0.35519862500950694,
+          "sampler_seconds": 8.579119500005618,
+          "vae_seconds": 0.30799091700464487,
+          "save_seconds": 0.010593082988634706
+        },
+        {
+          "encoder_seconds": 0.36073004198260605,
+          "sampler_seconds": 7.875332624884322,
+          "vae_seconds": 0.22894783411175013,
+          "save_seconds": 0.009682832984253764
+        },
+        {
+          "encoder_seconds": 0.33497037505730987,
+          "sampler_seconds": 7.902586666867137,
+          "vae_seconds": 0.2288089580833912,
+          "save_seconds": 0.00971983396448195
+        },
+        {
+          "encoder_seconds": 0,
+          "sampler_seconds": 7.879079499980435,
+          "vae_seconds": 0.22898183413781226,
+          "save_seconds": 0.009701000060886145
+        }
+      ],
+      "launch_sha256": "54070523a3ef883de915fcefc8ad635a7508213a92de6ed73e2f04a58c536c0d",
+      "request_evidence_sha256": [
+        {
+          "events": "31e4f60f79e97e46a883eb7f7c14983ea4c2c2a926ec323a9d5cc97a58d14043",
+          "history": "6d075b849252ad1af343be66af6a65de6fcc67362305677028fffca3a3c9b2a7",
+          "request": "53faafaab889ed92a15bc0eee011fb5fcaf981d771b5632e1540e4d851f992d5"
+        },
+        {
+          "events": "3bcb49f515736e25389064aa6a0c51f09187b9ec5b1998b1ff498952ae911b92",
+          "history": "09cd7c95a8872092a4a8e7adeec046a3cba2ca12e93b71fadbc40cf36436b0bd",
+          "request": "2b3ff1499ee0d2aed381d76cf6f190cad892f8c9249baf16bc3ebf94bc09cce3"
+        },
+        {
+          "events": "897bf8a63d509bad9c44b5da1c83e948adbb016e2e9afb8cd56f53095a630af2",
+          "history": "421c5def94822d3971ddc690920575050c6301c05d46770231ed20ad9be1ca58",
+          "request": "8e438d55918f1ef267d50df20d6ce0c33f18a2bd36927064e07194ff512446a0"
+        },
+        {
+          "events": "e4eea6b95634fa6855e9f0bc6faebdc5a67d2b70c17719c9325ba4ab3db10a88",
+          "history": "748c8f1df288fa470c730ff8b182c9e67eedbfa300626198b0688b2cf87461dc",
+          "request": "434a30392393d801530440231a7876570bee5aa5c249f53695c708aa839bac88"
+        }
+      ],
+      "server_log_sha256": {
+        "server.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "server.stderr.txt": "26c3196ec3cc7f0bdd9146f5ad0fe6a914d20468ad7af2ad304ad41ee0b9ecaf"
+      }
+    },
+    {
+      "index": 6,
+      "route": "native-frozen",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "3e1b28460ba946a991488f76a74b8c8f",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "081a6fee9856d2d5ba76d1fe5f3d7bf6e82e3b022e84bbf2c819cd2de105a7f8",
+        "report": "run-memory-report.json",
+        "report_sha256": "3a0740636e4643e298890e0d3b47ea4d6c3a13a48ba60f781e279420c39322ce",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "3e1b28460ba946a991488f76a74b8c8f",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87434,
+            "start_seconds": 1791807767,
+            "start_microseconds": 607553
+          },
+          "record_count": 296,
+          "sample_count": 292,
+          "final_evidence_digest": "7d3e80b218bdd610b7f4c07e34803e3c8cace33bae2cf6d207c4d65ce9b7d19f",
+          "max_gap_ns": 110011708,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 21041676288,
+          "tree_peak_phys_footprint_bytes": 32003620776,
+          "swap_in_bytes": 0,
+          "swap_out_bytes": 0,
+          "compression_bytes": 0,
+          "decompression_bytes": 0,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "f575998214628829f5da9a4a2e632b2c3cf6c0d07406ce310a0c1bc547771f12",
+        "0f31f46d471cd19e46ebecf0ac01e370c71726e4dfdf711b54e2af1dfcef841a",
+        "50971b2ca9763f59fdbcb93435c834ed0f45e50a9ada4f27dccca399ffd26e7b",
+        "ff2ac17644649eb6bdd902902e9e568037f73121baa07632e069effdaf3bc462"
+      ],
+      "report": {
+        "engine": "native-frozen",
+        "constructor_seconds": 0.15375154092907906,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 11.688832000130787,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.218989916,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 11.672494375,
+                "text_encode": 0.293404208,
+                "vae_decode": 0.265820083
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 256,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 5.86088079190813,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.197046209,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.860530333,
+                "text_encode": 0.362763042,
+                "vae_decode": 0.269029084
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 512,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 5.818839167011902,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.217005,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.818499208,
+                "text_encode": 0.309068208,
+                "vae_decode": 0.270599333
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 768,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 5.333168624900281,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 43,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal+coreml",
+              "runtime_precision": "gpu_bf16+coreml_w8a8+image_only_ane_gpu_bf16_caption",
+              "timings_seconds": {
+                "denoise": 5.099936584,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 5.332838,
+                "text_encode": 9.17e-07,
+                "vae_decode": 0.213487625
+              },
+              "hybrid": {
+                "ane_mlp_range": [
+                  0,
+                  5120
+                ],
+                "bucket": 1024,
+                "hidden": 3840,
+                "mlp_width": 10240,
+                "block_count": 32,
+                "compute_units": "cpuAndNeuralEngine",
+                "weight_variant": "int8_pc",
+                "checkpoint_sha256_verified": true,
+                "runtime_calls_session_total": 1024,
+                "runtime_failures_session_total": 0,
+                "runtime_failed": false,
+                "warmup_calls_session_total": 0
+              }
+            }
+          }
+        ]
+      },
+      "stage_seconds": [
+        {
+          "denoise": 5.218989916,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 11.672494375,
+          "text_encode": 0.293404208,
+          "vae_decode": 0.265820083
+        },
+        {
+          "denoise": 5.197046209,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 5.860530333,
+          "text_encode": 0.362763042,
+          "vae_decode": 0.269029084
+        },
+        {
+          "denoise": 5.217005,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 5.818499208,
+          "text_encode": 0.309068208,
+          "vae_decode": 0.270599333
+        },
+        {
+          "denoise": 5.099936584,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 5.332838,
+          "text_encode": 9.17e-07,
+          "vae_decode": 0.213487625
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "route": "native-gpu",
+      "memory": {
+        "scope": "process tree; load+cold+warm+exit; excludes external services/driver attribution",
+        "evidence_write_policy": "bounded-async-record-fsync-v1",
+        "correlation_id": "4c54f2d770454da9b58dc266a5bce853",
+        "interval_ms": 100,
+        "max_gap_ms": 500,
+        "evidence": "run-memory.jsonl",
+        "evidence_sha256": "133df4be720f873b7aac5b4ff6f4ceb936ac033dc1ba45de44940b64241220bd",
+        "report": "run-memory-report.json",
+        "report_sha256": "377c45178b0de2c9ff8195839c3a4952dc5df5d464c239f9a14c6975e6e20cda",
+        "tool_sha256": {
+          "tools/native/process_tree_sampler.py": "f22f44c3b6a2a1727f56882868b4c683f3d2aa2dca05ab4259dfa13f3a5b8dfa",
+          "tools/native/verify_process_tree_samples.py": "6987d232087b820f510170eb5db519e153b274baf2239a26fdc4cca32c30a85c"
+        },
+        "verified": {
+          "schema": "turbocider-process-tree-verification-v1",
+          "status": "complete",
+          "complete": true,
+          "correlation_id": "4c54f2d770454da9b58dc266a5bce853",
+          "sampler_revision": "tc-process-tree-sampler-darwin-v2",
+          "evidence_writer_policy": "bounded-async-record-fsync-v1",
+          "evidence_queue_capacity": 64,
+          "root_identity": {
+            "pid": 87447,
+            "start_seconds": 1791807797,
+            "start_microseconds": 425936
+          },
+          "record_count": 305,
+          "sample_count": 301,
+          "final_evidence_digest": "cf5d56f5cfecfa85091e095e561c5ef579447bc62164835ff704e3880204cf7a",
+          "max_gap_ns": 110018875,
+          "allowed_max_gap_ns": 500000000,
+          "tree_peak_rss_bytes": 20263272448,
+          "tree_peak_phys_footprint_bytes": 31178849256,
+          "swap_in_bytes": 65536,
+          "swap_out_bytes": 0,
+          "compression_bytes": 4538368,
+          "decompression_bytes": 360448,
+          "reasons": [],
+          "command_exit_code": 0
+        }
+      },
+      "png_sha256": [
+        "b7b255f1e38ded7b5edb6dfb3f70c962e95f953d7c43733149dc024c608ef201",
+        "430621dd978a298834c283664b286b379756b80389990c0765572a08d0420ed9",
+        "7231e8972627377fdb1b1465bd9fab3f5463ead0cebdf573b76a68cb2ce2ae62",
+        "26cf0404cd9cfb16fa8661803f7c3d8960bef44d269af0089f4de7b7074951c6"
+      ],
+      "report": {
+        "engine": "native-gpu",
+        "constructor_seconds": 0.158140541985631,
+        "runs": [
+          {
+            "index": 0,
+            "request_wall_including_export": 7.968973166076466,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.769638084,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.953553125,
+                "text_encode": 0.283680042,
+                "vae_decode": 0.266861416
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 1,
+            "request_wall_including_export": 7.398183583049104,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.75659,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.397890125,
+                "text_encode": 0.352555,
+                "vae_decode": 0.263940917
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 2,
+            "request_wall_including_export": 7.385257083922625,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 42,
+              "text_tokens": 24,
+              "prompt_cache_hit": false,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.770907958,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 7.384993416,
+                "text_encode": 0.288612709,
+                "vae_decode": 0.299426458
+              },
+              "hybrid": null
+            }
+          },
+          {
+            "index": 3,
+            "request_wall_including_export": 6.985731750028208,
+            "metrics": {
+              "model": "z-image-turbo",
+              "operation": "image.generate",
+              "width": 512,
+              "height": 512,
+              "steps": 8,
+              "seed": 43,
+              "text_tokens": 24,
+              "prompt_cache_hit": true,
+              "lora_strategy": "none",
+              "encoder_execution": "gpu",
+              "runtime_backend": "mlx_cpp_metal",
+              "runtime_precision": "bf16",
+              "timings_seconds": {
+                "denoise": 6.754322375,
+                "hybrid_setup": 0,
+                "image_encode": 0,
+                "request_wall": 6.985472334,
+                "text_encode": 7.08e-07,
+                "vae_decode": 0.212485916
+              },
+              "hybrid": null
+            }
+          }
+        ]
+      },
+      "stage_seconds": [
+        {
+          "denoise": 6.769638084,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 7.953553125,
+          "text_encode": 0.283680042,
+          "vae_decode": 0.266861416
+        },
+        {
+          "denoise": 6.75659,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 7.397890125,
+          "text_encode": 0.352555,
+          "vae_decode": 0.263940917
+        },
+        {
+          "denoise": 6.770907958,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 7.384993416,
+          "text_encode": 0.288612709,
+          "vae_decode": 0.299426458
+        },
+        {
+          "denoise": 6.754322375,
+          "hybrid_setup": 0,
+          "image_encode": 0,
+          "request_wall": 6.985472334,
+          "text_encode": 7.08e-07,
+          "vae_decode": 0.212485916
+        }
+      ]
+    }
+  ],
+  "output_checks": [
+    {
+      "route": "native-gpu",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-gpu",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-gpu",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-gpu",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "native-frozen",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-default",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-default",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-default",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-default",
+      "index": 3,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-sdpa-gpu",
+      "index": 0,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-sdpa-gpu",
+      "index": 1,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-sdpa-gpu",
+      "index": 2,
+      "rgba_equal": true
+    },
+    {
+      "route": "comfy-sdpa-gpu",
+      "index": 3,
+      "rgba_equal": true
+    }
+  ],
+  "native_mixed_quality": [
+    {
+      "direction": 0,
+      "prompt_index": 0,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.99388589690241,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383836,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.99388589690241,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383836,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "raw_rgb_mae_255": 4.205548604329427,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 0,
+      "prompt_index": 1,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300509,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676778,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300509,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676778,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "raw_rgb_mae_255": 3.0361124674479165,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 0,
+      "prompt_index": 2,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851216,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851216,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "raw_rgb_mae_255": 3.648381551106771,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 0,
+      "prompt_index": 3,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 11.104613523575471,
+        "psnr_db": 27.22073464274844,
+        "max_abs_u8": 233,
+        "rgb_correlation": 0.9842599379918081,
+        "rgb_ssim_gaussian11_valid": 0.9376215799110628,
+        "ssim_per_channel": [
+          0.9384293642992904,
+          0.9388373405084719,
+          0.9355980349254236
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 11.104613523575471,
+        "psnr_db": 27.22073464274844,
+        "max_abs_u8": 233,
+        "rgb_correlation": 0.9842599379918081,
+        "rgb_ssim_gaussian11_valid": 0.9376215799110628,
+        "ssim_per_channel": [
+          0.9384293642992904,
+          0.9388373405084719,
+          0.9355980349254236
+        ]
+      },
+      "raw_rgb_mae_255": 5.019816080729167,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 1,
+      "prompt_index": 0,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.99388589690241,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383836,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 7.639590619155437,
+        "psnr_db": 30.46940187330496,
+        "max_abs_u8": 189,
+        "rgb_correlation": 0.99388589690241,
+        "rgb_ssim_gaussian11_valid": 0.9645899944383836,
+        "ssim_per_channel": [
+          0.966604756742451,
+          0.9656319512971173,
+          0.9615332752756044
+        ]
+      },
+      "raw_rgb_mae_255": 4.205548604329427,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 1,
+      "prompt_index": 1,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300509,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676778,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 6.520607778854979,
+        "psnr_db": 31.845042053853362,
+        "max_abs_u8": 190,
+        "rgb_correlation": 0.9951436065300509,
+        "rgb_ssim_gaussian11_valid": 0.9718124484676778,
+        "ssim_per_channel": [
+          0.9731584261996669,
+          0.9726280451355866,
+          0.9696508740677809
+        ]
+      },
+      "raw_rgb_mae_255": 3.0361124674479165,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 1,
+      "prompt_index": 2,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851216,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 8.798625439882509,
+        "psnr_db": 29.242507007725294,
+        "max_abs_u8": 209,
+        "rgb_correlation": 0.990934763464561,
+        "rgb_ssim_gaussian11_valid": 0.9587472897851216,
+        "ssim_per_channel": [
+          0.9593292051485427,
+          0.9596528443939292,
+          0.9572598198128817
+        ]
+      },
+      "raw_rgb_mae_255": 3.648381551106771,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    },
+    {
+      "direction": 1,
+      "prompt_index": 3,
+      "raw_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 11.104613523575471,
+        "psnr_db": 27.22073464274844,
+        "max_abs_u8": 233,
+        "rgb_correlation": 0.9842599379918081,
+        "rgb_ssim_gaussian11_valid": 0.9376215799110628,
+        "ssim_per_channel": [
+          0.9384293642992904,
+          0.9388373405084719,
+          0.9355980349254236
+        ]
+      },
+      "white_composited_rgb_metrics": {
+        "pixel_exact": false,
+        "rmse_u8": 11.104613523575471,
+        "psnr_db": 27.22073464274844,
+        "max_abs_u8": 233,
+        "rgb_correlation": 0.9842599379918081,
+        "rgb_ssim_gaussian11_valid": 0.9376215799110628,
+        "ssim_per_channel": [
+          0.9384293642992904,
+          0.9388373405084719,
+          0.9355980349254236
+        ]
+      },
+      "raw_rgb_mae_255": 5.019816080729167,
+      "rgba_pixel_exact": false,
+      "alpha": {
+        "reference_min": 255,
+        "reference_max": 255,
+        "candidate_min": 255,
+        "candidate_max": 255,
+        "reference_nonopaque_pixels": 0,
+        "candidate_nonopaque_pixels": 0,
+        "mae_255": 0.0
+      }
+    }
+  ],
+  "library_sha256": "241b70155a6d0b032bcf0d8b4222525c668a534b55d85db2a27728bd2f5cdff7",
+  "native_inputs_matched": 514,
+  "comfy_commit": "b0b743566f65daafc423b4fea8a2fbda94b3384a",
+  "comfy_local_changes": [],
+  "model_sha256": {
+    "models/Comfy-Org-z_image_turbo/split_files/diffusion_models/z_image_turbo_bf16.safetensors": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+    "models/Comfy-Org-z_image_turbo/split_files/text_encoders/qwen_3_4b.safetensors": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+    "models/Comfy-Org-z_image_turbo/split_files/vae/ae.safetensors": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+  },
+  "source_snapshot_sha256": "64534fec6e835cdd02e0ddf46ce5a993680959e3e886656bd19817a34708471a",
+  "evidence": "outputs/z-comfy039-four-route-v1-20261012/summary.json",
+  "evidence_sha256": "0f69fcc8d2deb62dfcb4dca74403f289e98b4f58bdf4946dd81bd5069dd4bf27",
+  "timing_scope": "full512 PNG: native C API/export or owned ComfyUI HTTP submit/WebSocket success/history/PNG download/export; readiness/cold/repeat separate",
+  "representation_scope": "same original BF16 encoder/DiT/VAE; Euler/simple shift3/cfg1; ComfyUI stock vs explicit SDPA+gpu-only/BF16; frozen W8A8 approximate; independent RNG/tokenization/compute/cache lifecycles",
+  "source_policy": "initial source-generation SHA reused by metadata; reference/user service/models unchanged; all custom/API nodes disabled; repeat prompt seed43 forces real sampler/VAE",
+  "stage_scope": "Comfy host WebSocket node-boundary envelopes, not GPU-exclusive time or extra fences; native original stage spans",
+  "comparisons": {
+    "best_measured_comfy_route": "comfy-default",
+    "comfy_over_native_gpu": 1.1547247419207824,
+    "comfy_over_native_frozen": 1.4615765419814555,
+    "mixed_reduction_vs_comfy_percent": 31.580730035232875
+  }
+}

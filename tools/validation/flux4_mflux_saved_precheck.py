@@ -30,6 +30,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("model", "mflux", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--request-count", type=int, choices=(1, 4), default=1,
+                        help="four requests collect cold/two fresh/repeat reference-only timing")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("fresh precheck output required")
@@ -79,22 +81,30 @@ def main():
 
     counter = Counter()
     model.callbacks.register(counter)
-    result = dict(status="running", scope="one cold complete4B/Q4/512/4 PNG only, not fresh median or ranking",
+    result = dict(status="running", scope="one cold complete4B/Q4/512/4 PNG only, not fresh median or ranking" if args.request_count == 1 else
+        "four complete reference-only PNGs: cold/two fresh/repeated prompt new seed; native best reused, no new paired ranking",
         model="flux2-klein-4b", constructor_seconds=constructor, required_weight_coverage=coverage,
         packages={name: importlib.metadata.version(name) for name in ("mflux", "mlx", "torch", "transformers")},
-        runtime_verified=False, performance_verified=False)
+        runtime_verified=False, performance_verified=False, runs=[])
     write_json(args.output / "report.json", result)
     try:
-        counter.steps = []
-        started = time.perf_counter()
-        image = model.generate_image(seed=42, prompt=PROMPTS[0], num_inference_steps=4, height=512, width=512, guidance=1.)
-        image.save(str(args.output / "0.png"))
-        wall = time.perf_counter() - started
-        if counter.steps != [0, 1, 2, 3] or image.quantization != 4 or image.lora_paths:
-            raise ValueError("actual complete four-step base request differs")
-        result.update(status="complete_precheck_only", runtime_verified=True,
-            request_wall_including_export=wall, actual_steps=counter.steps, actual_quantization=image.quantization,
-            loras=image.lora_paths, png_sha256=sha256_file(args.output / "0.png"), mlx_peak_bytes=mx.get_peak_memory())
+        for index, prompt in enumerate(PROMPTS[:args.request_count]):
+            counter.steps = []
+            seed = 43 if index == 3 else 42
+            started = time.perf_counter()
+            image = model.generate_image(seed=seed, prompt=prompt, num_inference_steps=4, height=512, width=512, guidance=1.)
+            image.save(str(args.output / f"{index}.png"))
+            wall = time.perf_counter() - started
+            if counter.steps != [0, 1, 2, 3] or image.quantization != 4 or image.lora_paths:
+                raise ValueError("actual complete four-step base request differs")
+            row = dict(index=index, prompt=prompt, seed=seed, request_wall_including_export=wall,
+                actual_steps=counter.steps, actual_quantization=image.quantization, loras=image.lora_paths,
+                png_sha256=sha256_file(args.output / f"{index}.png"), mlx_peak_bytes=mx.get_peak_memory())
+            result["runs"].append(row)
+            write_json(args.output / "report.json", result)
+        result.update(status="complete_precheck_only" if args.request_count == 1 else "complete_reference_only", runtime_verified=True)
+        if args.request_count == 1:
+            result.update({k:v for k,v in result["runs"][0].items() if k not in ("index", "prompt", "seed")})
     except BaseException as error:
         result.update(status="failed", error=str(error))
         raise

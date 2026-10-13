@@ -1,5 +1,26 @@
 # 历史扩展记录与当前证据边界
 
+2026-10-13当前补充：FLUX4同一Q4来源的single40预解码GPU3.483532s、
+W8/F16 GPU/ANE2.574438s完整正反序验收，16PNG/4complete memory，
+80实际compiled blocks或80runtime calls/request。已保存最优opt-in配置，
+不重跑原packed或外部，不将派生视图标成原BF16/直接packed/W8A8激活。
+catalog59组/47active/12历史9B；source/媒体/内存/误差见
+[当前FLUX4结果](FLUX4_CURRENT_STATUS.md)。Comfy当前whole-index N/A保留。
+最终逐要求/交叉报告收尾审计已完成，见[要求审计](REQUIREMENTS_AUDIT.md)。
+当前benchmark目标按用户明确的四家族/兼容/复用范围完成，原实验与
+生产/物理ANE/global质量资格不升级。
+
+## 2026-10-12及此前阶段（不是当前执行队列）
+
+最新Comfy重点对照已补Qwen和LTX，只重用TC已有最优：Z1.477×、
+Qwen1.557×、LTX quality1.758×／opt-in近似1.814×。见
+[当前四模型对照](COMFYUI_MODEL_COMPARISON.md)。57组里45组active、12组9B
+historical；Comfy新参考单独成campaign，不把跨窗口TC回用改成paired。
+原Z完整配对保留；Qwen12PNG/3memory、LTX两完整97帧AV/完整memory
+已terminal成功，FLUX4B当前MLX whole-index入口未形成完整stock生成，
+不以单shard或新下载/转换权重补分母。用户要求已经测过的不充分
+重测，后续不重新安排TC网格；下方旧pending/计数仅为历史边界。
+
 2026-10-12最新要求已改为收敛现有实测、整理突出性能的报告。
 当前已启动的Z/Unsloth五路线随后完成：GPU7.356/frozen5.955/
 mflux7.971/UnslothGPU-text18.735/defaultCPU-text22.600s，10进程/
