@@ -153,8 +153,12 @@ for 256->512 and **3.504 vs 15.636 s** for 512->1024, six complete warm requests
 per route. Default controls remain recorded alongside these results.
 The stable 256->512 / full t25 video SDPA/GPU-only ABBA cohort also passes:
 **20.60 vs 71.34 s**, about **3.46x**, with every frame/FPS verified and the
-non-CUDA cache-transfer compatibility guard disclosed. Stable 1024-video,
-default-video controls and GPU+ANE qualification remain pending.
+non-CUDA cache-transfer compatibility guard disclosed. The stable full
+512->1024 / t25 / 24-FPS video SDPA/GPU-only ABBA cohort also passes:
+**84.879 vs 298.901 s**, about **3.52x**, six complete warm requests per route.
+All 25 frames, dimensions and FPS are verified; the same MPS cache-transfer
+guard is disclosed. Default-video controls and GPU+ANE qualification remain
+pending.
 
 An isolated original-FP16 GPU/CPU+NE FFN experiment now passes the unchanged
 512/1024 image tensor gates against stable GPU controls, using all 32 video

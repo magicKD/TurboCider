@@ -742,7 +742,8 @@ and source/checkpoint/library/build/patch identities stayed immutable. Record:
 `seedvr2-stable-video512-t25-paired-sdpa-v1-20261014`. The three-line non-CUDA
 cache-transfer compatibility guard remains disclosed; this is not an
 unpatched stock MPS video claim. Stable 1024-video and default-video controls
-still require complete paired observations.
+still require complete paired observations. The stable 1024-video cohort
+subsequently completes as recorded below.
 
 After the timed cohort ended, an isolated detached stable-profile worktree
 prepares the new hybrid without changing stable source or compiled identity.
@@ -812,6 +813,59 @@ Next: investigate independently owned output backings and fewer scheduling
 fences, measure profitable shape/block partitions, and gate real 512/1024
 videos as well as images. No public GPU+ANE capability or App route has been
 enabled on the strength of these component-only observations.
+
+### Stable 1024-video speed gate and independent-buffer ABI diagnosis
+
+The stable-profile complete 512->1024 / all 25-frame / 24-FPS SDPA/GPU-only
+ABBA cohort passes: native warm median **84.878555 s**, MPS-compatible Comfy
+**298.901318 s**, ratio **3.52152x**, six genuinely executed warm requests per
+route across two processes each. Both owned reference servers exit; all
+outputs retain every frame, 1024-square geometry, 24 FPS and 1.041667 s.
+Every processing stage runs on each request. Cached reference nodes, where
+present, are model loaders only; the first warm request in the second
+reference cohort re-executes both loaders rather than reusing them. This is
+not an encoded-latent cache shortcut. Original input/checkpoint/library/build
+and compatible-reference identities remain unchanged. Library SHA remains
+`de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7`.
+Record: `seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014`.
+An earlier v1 invocation stops on a mistyped library path before hardware
+execution; its empty output directory is preserved and is not speed evidence.
+
+The stable-profile SDPA/GPU-only image and complete-video speed gates now
+pass at both output sizes. Default-video controls, complete hybrid execution/
+quality/speed/memory and App promotion remain separate requirements. Do not
+replace those checks with these pure-GPU speed results.
+
+After that cohort ends, the deferred independent-output-backing laboratory
+build succeeds but its first 512-row probe rejects the feature ABI before
+predicting. Record: `seedvr2-original-fp16-buffered-schedule-screen-v1-20261014`.
+The failed run yields no qualified speed or numerical result. A CPU-only,
+no-prediction description inspection shows that both features have exactly
+one enumerated shape `[1,2560,1,512]`, with singleton ranges in every dimension.
+The initial check incorrectly expected Core ML's `Unspecified` enum. Apple's
+SDK defines that enum as unconstrained, not fixed; it is unsuitable for a
+bounded caller-owned output backing.
+
+The laboratory now accepts only a single exact enumerated shape or exact
+singleton ranges, and rejects unspecified, multiple/different enumerated
+shapes and non-singleton ranges. CPU constraint tests and strict compilation
+pass. The failure record is retained. This is a safety-preserving metadata
+interpretation correction, not relaxation to flexible output backings. Fresh
+hardware probes, full image/video quality and whole-request memory/speed
+remain required before any public GPU+ANE enablement.
+
+A fresh 4096-row block-0 screen with the corrected independent backing pool
+passes all four global and per-row-chunk gates (relative-L2 <=0.01, cosine
+>=0.99999). Inputs change between every repeat (seeds 42...45), so stale
+previous-call outputs cannot masquerade as correct cached results. Warm
+medians are GPU **31.9203 ms** and GPU/CPU+NE **23.6038 ms**. Eight independent
+output slots occupy 20,971,520 MLX bytes; snapshot-copy and Core ML fallback
+output-copy counters are both zero. Record:
+`seedvr2-original-fp16-buffered-ffn-4096-v2-20261014`.
+Unlike the failed logical-copy schedule, these timings have passing numerical
+witnesses. They remain a one-block screen, not balanced full-request/App
+speed proof or physical ANE occupancy. The complete four-workload screen is
+running separately in a fresh v2 directory, without simultaneous GPU jobs.
 
 ## Reproduce component checks
 
