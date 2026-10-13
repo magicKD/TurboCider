@@ -958,6 +958,96 @@ order. Public `component_staged` residency is still rejected: plan/SDK/App
 integration, physical-memory sampling, broader frame/geometry coverage and
 App regression are required before promoting this offline-only policy.
 
+### Balanced staged-DiT image/video component cohorts
+
+Both four-process resident/staged/staged/resident cohorts complete with six
+warm samples per route. Source/noise/probe/bank/original-model identities
+remain unchanged, every request restores its input anew, and all four saved
+final restoration files have identical SHA-256s within each workload. Each
+intermediate repeat is finite; final-file equality is not presented as a
+separately saved tensor comparison for every repeat.
+
+| Component ABBA workload | Resident / staged warm median | Resident / staged active peak (bytes) |
+| --- | ---: | ---: |
+| Image 512->1024 | 3.397610 / 3.786635 s | 16,472,933,578 / 9,686,993,754 |
+| Real video 512->1024, all t25 | 84.499350 / 84.971450 s | 21,275,343,574 / 14,486,178,654 |
+
+The image memory reduction costs about 11.45% component time; the full-video
+component reduction costs about 0.56%. All clear/synchronize/reload work is
+included. The active-peak gates pass; those scopes exclude allocator cache
+and non-MLX allocations, and are not whole-request/App physical-peak or hard
+budget qualification. The faster resident route remains the default.
+Records: `seedvr2-staged-dit-image1024-abba-v1-20261014` and
+`seedvr2-staged-dit-video1024-t25-abba-v1-20261014`.
+
+The optional public `component_staged` candidate source is now prepared for
+planning/CLI/Swift/App, with explicit per-request policy selection, source
+stamp/stable-profile reload checks, cost/resident-component telemetry, and
+safe resident/staged/resident transitions. Swift schema-2 conversion retains
+the SeedVR2 policy while continuing to omit private residency from unrelated
+public streaming intents. The conservative memory estimate is deliberately
+unchanged until broader geometry/physical-memory qualification; no lower hard
+budget is promised. Dedicated tests cover both request schemas and an actual
+App policy-switch PNG witness. Strict C++ syntax, Swift parsing and Swift SDK
+typechecking pass; an early bare SDK invocation lacked target/include flags
+and is not counted as a pass. An isolated native candidate build is running
+after the benchmark finishes. No stable App/library has been overwritten,
+and real App/default/staged physical sampling still precedes code commit.
+
+### Tested optional staged residency in isolated native/Swift/App build
+
+The isolated candidate library and graphical App build complete. Dedicated
+SeedVR2 public contract (6), downloader (3), geometry (1) tests pass. SDK
+streaming transaction regressions pass, including explicit SeedVR2 schema-2
+residency preservation and exclusion of private residency from public
+streaming intents. An extra test initially links with a lower deployment
+target than the pinned MLX/native library and emits a linker warning; it runs
+successfully on this host, not proof of support for older macOS versions.
+Unrelated pre-existing repository failures are not relabeled as fixed.
+
+Candidate library SHA:
+`45caa42aba570667c45ba9b6f8eb4c1bcaaf20386e2746dd5929651a1c9c71d6`.
+The earlier stable library remains intact at SHA
+`de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7`.
+Its established speed cohorts remain attributable to that binary; do not
+silently relabel them as candidate-binary paired speed records.
+
+Both actual StudioState/NativeJobStore chains terminate successfully: each
+executes real 512/1024 images and full 25-frame/24-FPS videos, then an explicit
+resident/staged/resident image sequence within the same workflow. All seven
+requests per policy pass precision/plan/residency/component/timing checks,
+strict PNG transactions, retained history and final unload. All policy-switch
+PNGs match exactly. Original-model SHA checks pass for every request. Records:
+`seedvr2-app-staging-candidate-resident-e2e-v1-20261014/generation-report.json`
+and `seedvr2-app-staging-candidate-staged-e2e-v1-20261014/generation-report.json`.
+
+| Actual App request observation | Resident / staged seconds | Resident / staged active MLX peak (bytes) | Resident / staged sampled footprint (bytes) |
+| --- | ---: | ---: | ---: |
+| Image 512, first load/JIT | 1.841292 / 1.925124 | 9,622,623,114 / 7,784,157,906 | 13,066,426,344 / 11,011,201,216 |
+| Image 1024 | 3.639583 / 3.880221 | 16,491,014,650 / 9,703,770,954 | 19,904,714,800 / 13,307,020,704 |
+| Video 512, all t25 | 20.798663 / 21.098368 | 10,867,192,086 / 9,191,435,598 | 14,796,822,648 / 13,091,543,208 |
+| Video 1024, all t25 | 84.798178 / 85.661877 | 21,596,667,278 / 14,800,751,438 | 24,732,817,576 / 18,470,209,024 |
+
+The staged 1024 video has 2959 memory observations, no observer failures,
+sampled Metal peak 18,221,400,064 bytes. The scopes overlap and must not be
+added; sampled peaks remain lower bounds and these App observations are not
+balanced physical-memory or universal speed guarantees. Actual staged output
+retains only 501,296,454 VAE parameter bytes; its DiT reuse flag is false.
+
+Independent host verification confirms PNG file hashes match across policies,
+and every decoded frame of both MP4s matches bitwise while retaining all 25
+frames, correct dimensions and 24 FPS. MP4 container file hashes differ; do
+not call their complete files identical. Record:
+`seedvr2-staged-app-media-verification-v1-20261014.json`.
+
+The graphical candidate opens a separate on-screen window using the test
+state directory, without overwriting the current App's state. System Events
+accessibility and window-image capture are denied by macOS permissions;
+therefore no manual control-click or screenshot/visual UI pass is claimed.
+The tested window is closed after inspection, and the existing App is left
+alone. Actual App generation and typed draft/selector integration are tested
+above; the visual-click limitation is retained, not bypassed.
+
 ## Reproduce component checks
 
 ```sh

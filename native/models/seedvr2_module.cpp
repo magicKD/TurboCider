@@ -25,9 +25,9 @@ ModelModule seedvr2_module() {
             require(!r.audio, "SeedVR2 currently exports silent video; audio preservation is not yet supported");
             require(r.execution == "gpu" || r.execution == "auto", "SeedVR2 GPU+ANE has not yet been integrated");
             require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty(), "SeedVR2 does not accept unqualified ANE manifests");
-            require(r.residency == "resident" && !r.streaming_offload && !r.streaming.active() &&
+            require((r.residency == "resident" || r.residency == "component_staged") && !r.streaming_offload && !r.streaming.active() &&
                     !r.streaming_selector && !r.memory_constrained.enabled && !r.quantized_execution.active(),
-                    "SeedVR2 currently requires resident, non-streaming execution");
+                    "SeedVR2 requires resident or component_staged, non-streaming execution");
             require(!r.compile_gpu, "SeedVR2 explicit GPU graph compilation is not yet integrated");
             require(r.loras.empty() && r.quantized_cache.empty() && !r.vsa,
                     "SeedVR2 does not support LoRA, quantized caches or VSA overrides");
@@ -44,7 +44,8 @@ ModelModule seedvr2_module() {
             d.default_audio = false; d.default_residency = "resident";
             d.backend = "mlx_cpp_metal"; d.runtime_dependency = "native";
             d.candidate_limitations = {
-                "stable FP16/FP32 profile passes original-parameter FP32 component quality; full-request speed and hybrid qualification are pending",
+                "stable FP16/FP32 profile passes original-parameter FP32 quality and matched GPU speed cohorts; public hybrid qualification remains pending",
+                "optional component_staged releases DiT during VAE phases and reloads it for sampling; retains VAE and includes reload costs in timings",
                 "original FP16 checkpoint coefficients and projections; FP32 residuals/normalization/time/velocity and FP16 causal VAE",
                 "raw restoration without optional color transfer; source image alpha is reapplied",
                 "silent CFR videos, complete declared frame count and matching integer source FPS",

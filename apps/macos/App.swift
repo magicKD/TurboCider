@@ -643,6 +643,15 @@ struct StudioView: View {
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
+                    } else if studio.draft.modelID == "seedvr2-3b" {
+                        Picker("模型驻留", selection: $studio.draft.residency) {
+                            Text("常驻（速度优先）").tag("resident")
+                            Text("分阶段（降低活跃内存）").tag("component_staged")
+                        }.disabled(store.busy || submitting).accessibilityIdentifier("seedvr2Residency")
+                        if studio.draft.residency == "component_staged" {
+                            Text("VAE 阶段释放 DiT，采样时重新加载；会增加加载耗时。峰值以实际任务报告为准，并非应用或系统的内存硬上限。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     } else if !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
                     }

@@ -3,8 +3,12 @@ import Foundation
 
 @main struct SeedVR2AppTests {
     @MainActor static func main() async throws {
-        guard CommandLine.arguments.count == 3 || CommandLine.arguments.count == 5 else {
-            throw NativeFailure(message: "seedvr2-app-tests SOURCE_VIDEO OUTPUT_DIRECTORY [MODEL_ROOT SOURCE_IMAGE]")
+        guard [3, 5, 6].contains(CommandLine.arguments.count) else {
+            throw NativeFailure(message: "seedvr2-app-tests SOURCE_VIDEO OUTPUT_DIRECTORY [MODEL_ROOT SOURCE_IMAGE [resident|component_staged]]")
+        }
+        let residency = CommandLine.arguments.count == 6 ? CommandLine.arguments[5] : "resident"
+        guard ["resident", "component_staged"].contains(residency) else {
+            throw NativeFailure(message: "unsupported SeedVR2 test residency")
         }
         let root = URL(fileURLWithPath: CommandLine.arguments[2])
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -30,6 +34,13 @@ import Foundation
         try check(image.inputs?.first?.role == "source" && image.inputs?.first?.kind == "image", "image source role/kind mismatch")
         let imageV2 = NativeRequestV2(legacy: image)
         try check(imageV2.outputs[0].kind == "image", "schema-2 image output kind mismatch")
+        for policy in ["resident", "component_staged"] {
+            studio.draft.residency = policy
+            let intent = try studio.draft.request(output: root.appendingPathComponent("residency-\(policy).png"))
+            try check(intent.residency == policy, "draft lost the chosen SeedVR2 residency")
+            try check(NativeRequestV2(legacy: intent).execution.residency == policy, "schema-2 lost the chosen residency")
+        }
+        studio.draft.residency = "resident"
         studio.changeOperation("video.upscale")
         try check(studio.creationKind == "video" && studio.supportsVideoInputs, "video workspace/import is unavailable")
         await studio.addFiles([URL(fileURLWithPath: CommandLine.arguments[1])])
@@ -65,7 +76,7 @@ import Foundation
         let object = try JSONDecoder().decode(StudioAsset.self, from: JSONEncoder().encode(legacy))
         try check(object.mediaKind == "image", "legacy image assets no longer decode")
         print("PASS SeedVR2 App image/video request kinds, embedded conditioning, video staging/FPS/frames, mismatch rejection and legacy asset persistence")
-        if CommandLine.arguments.count == 5 {
+        if CommandLine.arguments.count >= 5 {
             let modelURL = URL(fileURLWithPath: CommandLine.arguments[3])
             let realImage = URL(fileURLWithPath: CommandLine.arguments[4])
             let jobs = NativeJobStore(directory: root.appendingPathComponent("jobs"))
@@ -77,6 +88,7 @@ import Foundation
                 try check(studio.message == nil, "real-media import failed: \(studio.message ?? "")")
                 studio.draft.prompt = "Ignored old draft prompt"
                 studio.draft.acceleration = StudioAcceleration()
+                studio.draft.residency = residency
                 studio.draft.seedText = "42"
                 for size in [512, 1024] {
                     studio.draft.width = size; studio.draft.height = size
@@ -107,6 +119,21 @@ import Foundation
                     try check(metrics["runtime_precision"] as? String == precision &&
                               plan?["precision"] as? String == precision,
                               "App plan and executed precision disagree")
+                    let staged = residency == "component_staged"
+                    let timings = metrics["timings_seconds"] as? [String: Any]
+                    try check(plan?["residency"] as? String == residency &&
+                              metrics["weight_residency_recipe"] as? String == (staged ? "stage_dit" : "resident") &&
+                              metrics["dit_reloaded_for_sampling"] as? Bool == staged,
+                              "App planned/executed weight residency mismatch")
+                    try check(metrics["resident_components"] as? [String] == (staged ? ["vae"] : ["vae", "dit"]),
+                              "App reported the wrong resident components")
+                    let management = (timings?["weight_management"] as? NSNumber)?.doubleValue ?? -1
+                    try check(staged ? management > 0 : management == 0, "App omitted or misreported staging cost")
+                    if staged {
+                        try check(metrics["dit_weights_reused"] as? Bool == false &&
+                                  (metrics["resident_parameter_bytes"] as? NSNumber)?.uint64Value == 501_296_454,
+                                  "staged request retained DiT parameters or claimed their reuse")
+                    }
                     if isVideo {
                         let inspected = try await StudioAssetImporter(directory: root.appendingPathComponent("verified-media")).importVideoFile(output)
                         try check(inspected.width == size && inspected.height == size && inspected.frames == 25 && inspected.fps == 24,
@@ -122,6 +149,30 @@ import Foundation
                               "real App job history did not persist")
                     print("PASS real SeedVR2 App \(operation) \(size): \(json)")
                 }
+            }
+            // Exercise transitions within the same real job-store/session
+            // workflow. A resident request must reload the released bank;
+            // a staged request must not inherit an old resident policy.
+            studio.changeOperation("image.upscale")
+            await studio.addFiles([realImage])
+            studio.draft.width = 512; studio.draft.height = 512
+            var referencePNG: Data?
+            for (index, policy) in ["resident", "component_staged", "resident"].enumerated() {
+                studio.draft.residency = policy
+                let output = root.appendingPathComponent("policy-switch-\(index).png")
+                let request = try studio.draft.request(output: output)
+                let job = try await jobs.generate(modelURL: modelURL, request: request)
+                guard let json = job.resultJSON, let bytes = json.data(using: .utf8),
+                      let metrics = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
+                    throw NativeFailure(message: "policy-switch result missing")
+                }
+                try check(job.state == "succeeded" &&
+                          metrics["weight_residency_recipe"] as? String == (policy == "resident" ? "resident" : "stage_dit"),
+                          "policy switch did not execute the requested residency")
+                let image = try Data(contentsOf: output)
+                if let referencePNG { try check(referencePNG == image, "residency switch changed PNG bytes") }
+                else { referencePNG = image }
+                results.append(metrics)
             }
             try JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys])
                 .write(to: root.appendingPathComponent("generation-report.json"), options: .atomic)

@@ -71,6 +71,24 @@ class SeedVR2Contracts(unittest.TestCase):
             v2["outputs"][0]["kind"] = "image" if video else "video"
             self.assertNotEqual(plan(v2)[0], 0)
 
+    def test_staged_residency_preserves_operation_and_precision(self):
+        for video in (False, True):
+            for residency in ("resident", "component_staged"):
+                code, value, error = plan({**request(video), "residency": residency})
+                self.assertEqual(code, 0, error)
+                self.assertEqual(value["residency"], residency)
+                self.assertEqual(value["precision"],
+                    "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_vae+fp32_euler")
+                self.assertEqual(value["memory_estimate_kind"], "conservative_heuristic_not_hard_limit")
+                r = request(video)
+                v2 = dict(schema_version=2, model=r["model"], operation=r["operation"], inputs=r["inputs"],
+                    outputs=[dict(kind="video" if video else "image", path=r["output"], width=r["width"], height=r["height"],
+                                  frames=r["frames"], fps=r["fps"], audio=False)],
+                    sampling=dict(seed=42, steps=1), execution=dict(policy="gpu", residency=residency))
+                code, value, error = plan(v2)
+                self.assertEqual(code, 0, error)
+                self.assertEqual(value["residency"], residency)
+
     def test_schema_one_default_is_image_upscale(self):
         r = request()
         del r["operation"]
@@ -84,7 +102,7 @@ class SeedVR2Contracts(unittest.TestCase):
             dict(inputs=[dict(kind="image", role="reference", path="source.png")]),
             dict(inputs=[dict(kind="video", role="source", path="source.mp4")]),
             dict(steps=2), dict(frames=2), dict(width=513), dict(audio=True), dict(compile_gpu=True),
-            dict(residency="component_staged"), dict(ane_manifest="unqualified.json"),
+            dict(residency="streamed"), dict(ane_manifest="unqualified.json"),
             dict(execution="gpu_ane", ane_manifest="unqualified.json", allow_approximation=True),
             dict(loras=[dict(path="adapter.safetensors", strength=1, role="transformer")]),
             dict(vsa=True), dict(quantized_cache="cache"), dict(warmup_iterations=1),

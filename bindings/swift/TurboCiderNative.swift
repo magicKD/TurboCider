@@ -95,6 +95,7 @@ public struct NativeSamplingV2: Codable, Sendable {
 }
 public struct NativeExecutionV2: Codable, Sendable {
     public var policy: String
+    public var residency: String? = nil
     public var profile: String?
     public var ane_manifest: String?
     public var encoder_ane_manifest: String?
@@ -146,7 +147,11 @@ public struct NativeRequestV2: Codable, Sendable {
                                   audio: request.audio ?? false)]
         sampling = NativeSamplingV2(seed: request.seed, steps: request.steps)
         execution = NativeExecutionV2(
-            policy: request.execution, profile: request.profile,
+            policy: request.execution,
+            // Preserve SeedVR2's explicit, non-streaming residency choice.
+            // Public streaming intents must continue omitting private knobs.
+            residency: request.model == "seedvr2-3b" && targetBytes == nil ? request.residency : nil,
+            profile: request.profile,
             ane_manifest: request.ane_manifest, encoder_ane_manifest: nil,
             allow_approximation: request.allow_approximation,
             quantized_cache: request.quantized_cache, warmup_iterations: nil,

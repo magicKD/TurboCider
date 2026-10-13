@@ -517,8 +517,8 @@ struct StudioDraft: Codable, Sendable {
         }
         guard frames >= 1 && frames <= 362 else { throw NativeFailure(message: "帧数超出支持范围。") }
         if modelID == "seedvr2-3b" {
-            guard steps == 1, residency == "resident", !audio else {
-                throw NativeFailure(message: "SeedVR2 固定使用单步、常驻 GPU 超分；当前不保留音轨。")
+            guard steps == 1, ["resident", "component_staged"].contains(residency), !audio else {
+                throw NativeFailure(message: "SeedVR2 固定使用单步 GPU 超分，可选常驻或分阶段驻留；当前不保留音轨。")
             }
             guard activeAssets.count == 1 else { throw NativeFailure(message: "请选择一份参与超分的源图片或源视频。") }
             if operation == "image.upscale" {

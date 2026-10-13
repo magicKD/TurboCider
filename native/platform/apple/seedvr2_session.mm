@@ -44,6 +44,14 @@ class SeedVR2Session final : public ModelSession {
     SourceStamp dit_source_, vae_source_;
     seedvr2::Pipeline pipeline_;
     bool loaded_ = false;
+    void configure_residency(const Request &r) {
+        const bool staged = r.residency == "component_staged";
+        if (pipeline_.stages_dit() == staged) return;
+        // The same public session may alternate policies. Never retain a
+        // partially staged bank under a resident request (or vice versa).
+        unload();
+        pipeline_.set_stage_dit(staged);
+    }
   public:
     explicit SeedVR2Session(const std::filesystem::path &root)
         : root_(std::filesystem::absolute(root)),
@@ -67,10 +75,13 @@ class SeedVR2Session final : public ModelSession {
         require(!warmup, "SeedVR2 preparation warmup is not yet supported");
         const auto plan = make_plan(r);
         const auto started = Clock::now();
+        configure_residency(r);
         load(event, cancelled);
         return native_run_result(@{@"schema_version": @1, @"prepared": @YES, @"warmup": @NO,
             @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
             @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
+            @"weight_residency_recipe": @(pipeline_.weight_residency_recipe()),
+            @"resident_parameter_bytes": @(pipeline_.bytes()),
             @"seconds": @(elapsed(started)), @"mlx_active_bytes": @(mx::get_active_memory()),
             @"mlx_peak_bytes": @(mx::get_peak_memory())}, r, plan);
     }
@@ -86,13 +97,14 @@ class SeedVR2Session final : public ModelSession {
         require(std::filesystem::weakly_canonical(output) != std::filesystem::weakly_canonical(source),
                 "SeedVR2 will not overwrite the source media");
         checkpoint(cancelled);
-        const bool reused = loaded_;
+        const bool reused = loaded_ && pipeline_.stages_dit() == (r.residency == "component_staged");
         mx::synchronize();
         mx::reset_peak_memory();
         const auto allocator_cache_bytes = seedvr2::allocator_cache_limit();
         seedvr2::AllocatorCacheScope allocator(allocator_cache_bytes);
         const auto started = Clock::now();
         SeedVR2MemorySampler memory;
+        configure_residency(r);
         load(event, cancelled);
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
@@ -165,6 +177,12 @@ class SeedVR2Session final : public ModelSession {
                 @"dit_velocity_dtype": @"fp32", @"dit_attention_dtype": @"fp16",
                 @"dit_rope_angle_dtype": @"original_fp16_angles_then_fp32_trig",
                 @"persistent_model": @YES, @"model_reused": @(reused), @"prompt_cache_hit": @NO,
+                @"vae_weights_reused": @(reused),
+                @"dit_weights_reused": @(reused && !pipeline_.stages_dit()),
+                @"dit_reloaded_for_sampling": @(pipeline_.stages_dit()),
+                @"weight_residency_recipe": @(pipeline_.weight_residency_recipe()),
+                @"resident_parameter_bytes": @(pipeline_.bytes()),
+                @"resident_components": pipeline_.dit().bytes() ? @[@"vae", @"dit"] : @[@"vae"],
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
@@ -188,6 +206,7 @@ class SeedVR2Session final : public ModelSession {
                 @"timings_seconds": @{@"request_wall": @(elapsed(started)), @"load": @(load_seconds),
                     @"media_import": @(import_seconds), @"vae_encode": @(result.encode_seconds),
                     @"denoise": @(result.denoise_seconds), @"vae_decode": @(result.decode_seconds),
+                    @"weight_management": @(result.staging_seconds), @"restoration_total": @(result.restore_seconds),
                     @"export": @(export_seconds)},
                 @"mlx_active_bytes": @(mx::get_active_memory()), @"mlx_peak_bytes": @(mx::get_peak_memory())
             }, r, plan);

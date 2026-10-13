@@ -705,7 +705,12 @@ final class NativeJobStore: ObservableObject {
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
             sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-            sessionState = usesImageWorker ? "图片完成 · 工作进程已释放" : usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
+            if usesImageWorker { sessionState = "图片完成 · 工作进程已释放" }
+            else if usesLTXWorker { sessionState = "视频完成 · 独立进程已释放" }
+            else if request.residency == "component_staged" {
+                sessionState = request.model == "seedvr2-3b"
+                    ? "会话就绪 · DiT 已释放，VAE 可复用" : "会话就绪 · 图像权重已释放"
+            } else { sessionState = "会话可复用" }
             try persist()
             return jobs[i]
         } catch {

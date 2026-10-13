@@ -15,11 +15,18 @@ void Pipeline::load(const std::filesystem::path &root, const Event &event, std::
     if (loaded_) return;
     checkpoint(cancelled);
     try {
+        dit_path_ = std::filesystem::absolute(root / "diffusion_models/seedvr2_3b_fp16.safetensors");
+        dit_dtype_ = dit_dtype;
+        if (stage_dit_) {
+            dit_source_bytes_ = std::filesystem::file_size(dit_path_);
+            dit_source_modified_ = std::filesystem::last_write_time(dit_path_);
+        }
         if (event) event("seedvr2_load", 0, 2);
         vae_.load(root / "vae/seedvr2_ema_vae_fp16.safetensors");
         checkpoint(cancelled);
         if (event) event("seedvr2_load", 1, 2);
-        dit_.load(root / "diffusion_models/seedvr2_3b_fp16.safetensors",dit_dtype);
+        dit_.load(dit_path_,dit_dtype);
+        stable_profile_ = dit_.stable_fp16_profile();
         checkpoint(cancelled);
         if (event) event("seedvr2_load", 2, 2);
         loaded_ = true;
@@ -40,21 +47,54 @@ Restoration Pipeline::restore(const Tensor &pixels, const Tensor &noise, const E
         mx::repeat(time_slice(pixels, original_frames - 1, original_frames), frames - original_frames, 2)}, 2);
     require(noise.shape() == mx::Shape{1, 16, (frames - 1) / 4 + 1, pixels.shape(3) / 8, pixels.shape(4) / 8} &&
             noise.dtype() == mx::float32, "SeedVR2 requires matching FP32 sampling noise");
+    const auto restore_started = Clock::now();
+    double staging_seconds = 0;
+    auto release_dit = [&] {
+        const auto started = Clock::now();
+        mx::synchronize();
+        dit_.clear();
+        mx::clear_cache();
+        staging_seconds += seconds(started,Clock::now());
+    };
+    if (stage_dit_ && dit_.bytes()) release_dit();
     const auto started = Clock::now();
     auto condition = vae_.encode(input, event, cancelled);
     const auto encoded = Clock::now();
+    if (stage_dit_) {
+        checkpoint(cancelled);
+        const auto reloading = Clock::now();
+        auto source_unchanged = [&] {
+            require(std::filesystem::is_regular_file(dit_path_) &&
+                    std::filesystem::file_size(dit_path_) == dit_source_bytes_ &&
+                    std::filesystem::last_write_time(dit_path_) == dit_source_modified_,
+                    "SeedVR2 DiT checkpoint changed during staged loading");
+        };
+        source_unchanged();
+        if (event) event("seedvr2_dit_stage_load",0,1);
+        dit_.load(dit_path_,dit_dtype_);
+        require(!stable_profile_ || dit_.stable_fp16_profile(),
+                "SeedVR2 DiT staged reload changed the qualified stable precision profile");
+        source_unchanged();
+        checkpoint(cancelled);
+        if (event) event("seedvr2_dit_stage_load",1,1);
+        staging_seconds += seconds(reloading,Clock::now());
+    }
+    const auto denoise_started = Clock::now();
     auto velocity = dit_.forward(noise, condition, 1000.f, event, cancelled, dump, ffn);
     // Flow/Euler schedule [1,0], CFG=1, condition-noise scale=0. Model inputs
-    // use BF16 but sampling retains FP32 noise, just like the stock sampler.
+    // follow the selected projection recipe; Euler retains FP32 noise.
     auto latent = noise - mx::astype(velocity, mx::float32);
     mx::eval(latent);
     const auto denoised = Clock::now();
+    if (stage_dit_) release_dit();
+    const auto decode_started = Clock::now();
     auto restored = vae_.decode(latent, event, cancelled);
     restored = time_slice(restored, 0, original_frames);
     mx::eval(restored);
     const auto decoded = Clock::now();
     checkpoint(cancelled);
     return {restored, condition, velocity, latent, seconds(started, encoded),
-            seconds(encoded, denoised), seconds(denoised, decoded)};
+            seconds(denoise_started, denoised), seconds(decode_started, decoded),
+            staging_seconds,seconds(restore_started,decoded)};
 }
 } // namespace tc::seedvr2
