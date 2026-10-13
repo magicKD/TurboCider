@@ -159,6 +159,8 @@ class SeedVR2Session final : public ModelSession {
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
                 @"vae_norm_recipe": @(pipeline_.vae_norm_recipe().c_str()),
+                @"vae_history_recipe": @(pipeline_.vae_history_recipe().c_str()),
+                @"vae_pointwise_recipe": @(pipeline_.vae_pointwise_recipe().c_str()),
                 @"vae_conv_tile_rows_limit": @(pipeline_.vae_conv_tile_rows()),
                 @"vae_attention_recipe": @"full_spatial_keys_fp32_query512",
                 @"vae_history_policy": video ? @"causal_temporal_history" : @"no_unused_single_frame_history",

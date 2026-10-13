@@ -1,5 +1,6 @@
 #include "../../native/models/seedvr2/metal/conv_tiled.hpp"
 #include "../../native/models/seedvr2/metal/group_norm.hpp"
+#include "../../native/models/seedvr2/metal/causal_history.hpp"
 #include "../../native/models/seedvr2/memory.hpp"
 #include <mlx/random.h>
 #include <cmath>
@@ -103,10 +104,63 @@ int main(int argc, char **argv) {
                     {{"input",input},{"weight",weight},{"bias",bias},{"reference",reference},{"actual",actual}});
             }
         }
+        report << "],\"history_cases\":[";
+        for (int mode = 0; mode < 8; ++mode) {
+            const bool stored = mode % 2, noncontiguous = mode >= 4;
+            const int time = (mode / 2) % 2 ? 3 : 1;
+            auto input = mx::random::normal({1,time,7,9,16}, mx::float16, mx::random::key(1242+mode));
+            auto head = stored ? mx::random::normal({1,2,7,9,16}, mx::float16, mx::random::key(1342+mode))
+                : mx::slice(input, {0,0,0,0,0}, {1,1,7,9,16});
+            if (noncontiguous) {
+                input = mx::transpose(input, {0,1,3,2,4});
+                head = mx::transpose(head, {0,1,3,2,4});
+            }
+            for (int count : {1,2}) {
+                auto joined = mx::concatenate({stored ? head : mx::repeat(head,2,1), input},1);
+                auto first = mx::Shape(joined.ndim(), 0), last = joined.shape();
+                first[1] = joined.shape(1)-count;
+                auto reference = mx::copy(mx::contiguous(mx::slice(joined,first,last)));
+                auto actual = tc::seedvr2::causal_history(input,head,count,stored);
+                mx::eval({reference,actual});
+                const bool virtual_initial = !stored && time == 1 && count == 2;
+                const bool ok = mx::array_equal(reference,actual).item<bool>() &&
+                    (!virtual_initial || actual.strides()[1] == 0);
+                passed &= ok;
+                if (mode || count != 1) report << ',';
+                report << "{\"mode\":" << mode << ",\"count\":" << count
+                       << ",\"zero_stride_expected\":" << (virtual_initial ? "true" : "false")
+                       << ",\"passed\":" << (ok ? "true" : "false") << '}';
+            }
+        }
+        report << "],\"pointwise_cases\":[";
+        for (int mode = 0; mode < 4; ++mode) {
+            const int c = mode % 2 ? 512 : 128, out = c/2;
+            auto input = mx::random::normal({1,mode % 2 + 1,19,23,c}, mx::float16, mx::random::key(1442+mode));
+            if (mode >= 2) input = mx::transpose(input,{0,1,3,2,4});
+            auto weight = mx::astype(mx::random::normal({out,c}, mx::float32, mx::random::key(1542+mode)) /
+                std::sqrt(float(c)), mx::float16);
+            auto bias = mx::random::normal({out}, mx::float16, mx::random::key(1642+mode));
+            auto flat = mx::reshape(input, {input.shape(0)*input.shape(1),input.shape(2),input.shape(3),c});
+            auto reference = mx::reshape(mx::astype(mx::conv2d(mx::astype(flat,mx::float32),
+                mx::reshape(mx::astype(weight,mx::float32),{out,1,1,c})),mx::float16),
+                {input.shape(0),input.shape(1),input.shape(2),input.shape(3),out}) + bias;
+            auto actual = mx::reshape(mx::matmul(mx::reshape(input,{-1,c}),mx::transpose(weight)),
+                reference.shape()) + bias;
+            mx::eval({reference,actual});
+            auto x = mx::astype(reference,mx::float32), y = mx::astype(actual,mx::float32);
+            const double nx = mx::sum(x*x).item<float>(), ny = mx::sum(y*y).item<float>();
+            const double l2 = std::sqrt(mx::sum((x-y)*(x-y)).item<float>() / nx);
+            const double cosine = mx::sum(x*y).item<float>() / std::sqrt(nx*ny);
+            const bool ok = mx::all(mx::isfinite(y)).item<bool>() && l2 <= .003 && cosine >= .99999;
+            passed &= ok;
+            if (mode) report << ',';
+            report << "{\"mode\":" << mode << ",\"relative_l2\":" << l2
+                   << ",\"cosine\":" << cosine << ",\"passed\":" << (ok ? "true" : "false") << '}';
+        }
         report << "],\"passed\":" << (passed ? "true" : "false") << "}\n";
         report.close();
         tc::require(passed, "SeedVR2 convolution/norm numerical parity failed");
-        std::cout << "PASS causal/replicated/batched/strided/rectangular/incomplete-tile/FP32-filter convolutions and norm cases\n";
+        std::cout << "PASS convolution, norm, owned causal history and pointwise projection cases\n";
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

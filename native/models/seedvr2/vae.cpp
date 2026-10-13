@@ -4,6 +4,7 @@
 #include "vae.hpp"
 #include "metal/conv_tiled.hpp"
 #include "metal/group_norm.hpp"
+#include "metal/causal_history.hpp"
 #include <charconv>
 #include <cstring>
 #include <cmath>
@@ -28,12 +29,21 @@ void fence(const Tensor &x, std::atomic<bool> &cancelled) {
 void VAE::load(const std::filesystem::path &path) {
     conv_recipe_ = "singleton2d";
     norm_recipe_ = "metal";
+    history_recipe_ = "compact";
+    pointwise_recipe_ = "matmul";
     conv_tile_rows_ = 16384;
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE")) conv_recipe_ = value;
-    require(conv_recipe_ == "conv3d" || conv_recipe_ == "taps2d" || conv_recipe_ == "singleton2d" || conv_recipe_ == "tiled3d",
-            "SeedVR2 VAE conv recipe must be conv3d, taps2d, singleton2d or tiled3d");
+    require(conv_recipe_ == "conv3d" || conv_recipe_ == "taps2d" || conv_recipe_ == "singleton2d" ||
+            conv_recipe_ == "tiled3d" || conv_recipe_ == "mixed3d",
+            "SeedVR2 VAE conv recipe must be conv3d, taps2d, singleton2d, tiled3d or mixed3d");
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE")) norm_recipe_ = value;
     require(norm_recipe_ == "mlx" || norm_recipe_ == "metal", "SeedVR2 VAE norm recipe must be mlx or metal");
+    if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE")) history_recipe_ = value;
+    require(history_recipe_ == "concat" || history_recipe_ == "compact",
+            "SeedVR2 VAE history recipe must be concat or compact");
+    if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE")) pointwise_recipe_ = value;
+    require(pointwise_recipe_ == "conv" || pointwise_recipe_ == "matmul",
+            "SeedVR2 VAE pointwise recipe must be conv or matmul");
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS")) {
         const char *end = value + std::strlen(value);
         const auto parsed = std::from_chars(value, end, conv_tile_rows_);
@@ -53,25 +63,30 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
     const int kernel_t = weight.shape(1);
     const int stride_t = downsample && kernel_t > 1 ? 2 : 1;
     const int stride_s = downsample ? 2 : 1;
-    if (conv_recipe_ == "tiled3d") {
+    if (pointwise_recipe_ == "matmul" && !downsample &&
+            kernel_t == 1 && weight.shape(2) == 1 && weight.shape(3) == 1) {
+        // A 1x1x1 shortcut is a channel projection, with no stencil or causal
+        // history. Keep FP16 operands/FP32 GEMM accumulation instead of
+        // materializing full-resolution FP32 conv2d inputs and workspaces.
+        auto shape = input.shape();
+        shape.back() = weight.shape(0);
+        auto projected = mx::matmul(mx::reshape(input, {-1, weight.shape(4)}),
+            mx::transpose(mx::reshape(weight, {weight.shape(0), weight.shape(4)})));
+        return mx::reshape(projected, shape) + weights_.at(key + ".bias");
+    }
+    // Restrict bounded direct stencils to the final decoder's largest
+    // 256-channel temporal convolution; smaller operators retain the faster
+    // MLX route. No spatial crop, independent tile norm or halo approximation.
+    const bool bounded_stencil = conv_recipe_ == "tiled3d" || (conv_recipe_ == "mixed3d" &&
+        !initial && kernel_t > 1 && int64_t(input.shape(2))*input.shape(3) >= 1024*1024 && input.shape(4) >= 256);
+    if (bounded_stencil) {
         const int halo = kernel_t - 1;
         const auto found = cache ? cache->find(key) : Caches::iterator{};
         const bool stored = halo && cache && !initial && found != cache->end();
         const auto head = stored ? found->second : (halo ? part(input, 1, 0, 1) : input);
         const int head_count = stored ? head.shape(1) : halo;
         if (cache && kernel_t > stride_t) {
-            const int count = kernel_t - stride_t;
-            Tensor history(0);
-            if (input.shape(1) >= count) {
-                history = mx::copy(mx::contiguous(part(input, 1, input.shape(1) - count, input.shape(1))));
-            } else {
-                const int missing = count - input.shape(1);
-                auto previous = stored ? part(head, 1, head.shape(1) - missing, head.shape(1))
-                                       : mx::repeat(part(input, 1, 0, 1), missing, 1);
-                // Concatenation itself owns this bounded history, without
-                // first creating the full halo+input convolution operand.
-                history = mx::contiguous(mx::concatenate({previous, input}, 1));
-            }
+            auto history = causal_history(input, head, kernel_t - stride_t, stored);
             mx::eval(history);
             cache->insert_or_assign(key, history);
         }
@@ -88,28 +103,36 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
                                  downsample ? 0 : weight.shape(2) / 2, downsample, conv_tile_rows_) +
                weights_.at(key + ".bias");
     }
-    auto x = input;
     const int halo = kernel_t - 1;
-    if (halo) {
-        auto found = cache ? cache->find(key) : Caches::iterator{};
-        auto head = cache && !initial && found != cache->end()
-            ? found->second : mx::repeat(part(input, 1, 0, 1), halo, 1);
-        x = mx::concatenate({head, input}, 1);
-    }
+    const auto found = cache ? cache->find(key) : Caches::iterator{};
+    const bool stored = halo && cache && !initial && found != cache->end();
+    auto head = stored ? found->second : (halo ? part(input, 1, 0, 1) : input);
+    const bool fold_first = conv_recipe_ != "conv3d" && initial && input.shape(1) == 1 && kernel_t > 1;
+    auto x = input;
+    // Folded singleton convolutions do not consume a physical temporal halo.
+    // The reference recipe retains its original concatenation for diagnostics.
+    if (halo && (!fold_first || history_recipe_ == "concat"))
+        x = mx::concatenate({stored ? head : mx::repeat(head, halo, 1), input}, 1);
     if (cache && kernel_t > stride_t) {
         const int count = kernel_t - stride_t;
+        // The legacy tail copy incidentally materialized x before replacing
+        // the old history. Preserve that lifetime boundary for normal
+        // convolutions: otherwise a lazy x pins both old and new histories
+        // through the convolution workspace. Folded singletons need no halo.
+        if (history_recipe_ == "compact" && !fold_first) mx::eval(x);
         // Force an owned contiguous copy: a view would pin the full activation
         // until the next slice, defeating bounded temporal residency.
-        auto history = mx::copy(mx::contiguous(part(x, 1, x.shape(1) - count, x.shape(1))));
+        auto history = history_recipe_ == "compact" ? causal_history(input, head, count, stored)
+            : mx::copy(mx::contiguous(part(x, 1, x.shape(1) - count, x.shape(1))));
         mx::eval(history);
         cache->insert_or_assign(key, history);
     }
+    head = Tensor(0);
     if (downsample) {
         x = mx::pad(x, std::vector<std::pair<int, int>>{{0, 0}, {0, 0}, {0, 1}, {0, 1}, {0, 0}});
     }
     const int spatial_pad = downsample ? 0 : weight.shape(2) / 2;
-    const int outputs_t = (x.shape(1) - kernel_t) / stride_t + 1;
-    const bool fold_first = conv_recipe_ != "conv3d" && initial && input.shape(1) == 1 && kernel_t > 1;
+    const int outputs_t = (input.shape(1) + halo - kernel_t) / stride_t + 1;
     Tensor y(0);
     if (fold_first) {
         // All temporal operands are the replicated first frame. Folding the
@@ -123,7 +146,8 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
         y = mx::conv2d(mx::astype(frame, mx::float32), filter, {stride_s, stride_s}, {spatial_pad, spatial_pad});
         y = mx::astype(y, input.dtype());
         y = mx::expand_dims(y, 1);
-    } else if (conv_recipe_ == "taps2d" || (conv_recipe_ == "singleton2d" && kernel_t == 1)) {
+    } else if (conv_recipe_ == "taps2d" ||
+               ((conv_recipe_ == "singleton2d" || conv_recipe_ == "mixed3d") && kernel_t == 1)) {
         Tensor accumulated(0);
         for (int tap = 0; tap < kernel_t; ++tap) {
             std::vector<int32_t> indices(outputs_t);

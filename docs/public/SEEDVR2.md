@@ -2,8 +2,9 @@
 
 SeedVR2 3B is available through the native App, CLI and existing C / Swift
 SDK request interfaces. This integration is still being qualified. Pure GPU
-image/video inference works; GPU+ANE is not yet available. Do not interpret the
-image speed precheck as a completed paired image/video benchmark.
+image/video inference works; GPU+ANE is not yet available in the public route.
+The speed results below are workload-specific; full quality/ANE qualification
+remains pending.
 
 ## Prepare weights
 
@@ -64,8 +65,10 @@ manifests, LoRA, graph-compilation and streaming options fail explicitly.
 
 The default VAE uses safe singleton-frame 2D convolutions, fused Metal
 per-frame GroupNorm, FP16 activations, bounded full spatial attention, and
-causal histories for videos. Single images
-do not retain unused histories. The native allocator keeps up to 4 GiB of
+owned compact causal histories for videos. Replicated initial histories share
+one owned frame, and 1x1x1 shortcuts use flattened FP16 matrix projections with
+FP32 accumulation. Single images do not retain unused histories. The native
+allocator keeps up to 4 GiB of
 temporary buffers during a request and clears unused buffers on exit; loaded
 model weights remain resident. Reported `mlx_peak_bytes` is the current
 request's active MLX peak, not the whole process's or Mac's memory usage.
@@ -88,6 +91,30 @@ attention, but currently trades speed for lower active memory, so is not the
 default. Its `TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS` limit accepts 128-aligned
 integers from 128 to 65536 (default 16384).
 
+`mixed3d` is an optional middle ground for 1024-or-larger videos: only the
+largest noninitial temporal convolution uses the bounded stencil. Smaller
+operators and initial singleton convolutions stay on the faster route. The
+1024/t9 codec screen observes about 13.31 GB active peak and 26.5 s, versus
+about 31.4 s for full `tiled3d`. This is a component observation, not a complete
+media-request speed gate; the default remains `singleton2d`.
+The optional mode also passes the App's complete image/video checks. Its
+1024/t25 video observes **20.70 GB active / 86.55 s**, versus the default's
+**21.59 GB / 83.32 s**. This trades speed for active-memory reduction; sampled
+whole-process footprint is not demonstrably lower.
+
+For a pre-change control, set
+`TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE=concat` and
+`TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE=conv`; their new defaults are `compact`
+and `matmul`. Actual recipes are included in result telemetry. A reusable
+The history selector controls the MLX halo route; bounded-stencil operators
+always retain their causal tails directly.
+VAE-only ABBA observer is `tools/validation/seedvr2_vae_cohort.py`; run it with
+a validation Python environment containing NumPy and safetensors.
+Its 1024/t9 default-route cohort records **25.50 -> 25.20 s** warm medians and
+**14.33 -> 14.20 GB** active peaks, six warm observations per route, with
+bitwise-identical latents and decoded tensors. This is a roughly 1.2% codec
+speed improvement, not an equally sized whole-model speed guarantee.
+
 ## Validation boundary
 
 On the verified M4 Max / 64 GiB host, the native CLI generated a complete
@@ -108,9 +135,9 @@ build/native/turbocider-seedvr2-app-tests SOURCE_512_T25_FPS24.mp4 \
 
 The first image-only full-request precheck records two warm observations per
 route: original ComfyUI v0.39 MPS/SDPA **15.639 s**, native GPU **5.913 s**,
-about **2.65×**. This is not an ABBA paired cohort; both reports intentionally
-retain `qualification_passed=false`. Final image/video speed and GPU+ANE
-qualification are still pending.
+about **2.65×**. This was not an ABBA paired cohort; both reports intentionally
+retain `qualification_passed=false`. Later workload-specific speed cohorts are
+reported below; full quality and GPU+ANE qualification remain pending.
 
 After VAE optimization, the updated native 512->1024 image precheck is
 **3.913 s** warm median, with **17.8 GB** active MLX peak versus the earlier
@@ -134,7 +161,7 @@ The fresh balanced image ABBA cohorts now pass their workload-specific speed
 gate against pinned stock ComfyUI MPS SDPA/GPU-only: 256->512 is **0.820 vs
 3.974 s**, and 512->1024 is **3.369 vs 15.632 s**, six warm requests per route
 per workload. These are complete import/encode/sample/decode/export timings.
-They do not imply completed video, default-Comfy, shared-noise quality or
+They do not imply completed default-Comfy, shared-noise quality or
 GPU+ANE qualification. The public route remains GPU-only.
 
 The complete 256->512, 25-frame / 24-FPS video ABBA cohort also passes its
@@ -149,6 +176,14 @@ The complete 512->1024 / t25 / 24-FPS video ABBA cohort now also passes:
 **3.56x**, six warm requests per route. Every frame, FPS and output dimension
 is verified. All four stated SDPA/GPU-only speed workloads pass, but full
 quality/default-reference controls and GPU/ANE qualification remain pending.
+
+The subsequent compact-history/pointwise version passes the real App's four
+image/video generation checks again. Its PNGs are byte-identical to the
+preceding version; the 1024/t25 video observes 83.32 s and 21.59 GB active MLX
+peak (previously 21.73 GB). This is an App observation, not a new paired Comfy
+measurement; image active peaks remain unchanged. Selective 16-layer CPU+NE
+experiments pass one 512 shared-noise tensor gate against GPU, but are not
+enabled in the public App and do not yet qualify 1024/real-video ANE execution.
 
 The pinned stock ComfyUI video's VAE currently reaches a CUDA-event-only cache
 offload path on MPS and fails. An independently owned benchmark copy disables

@@ -453,15 +453,109 @@ Record: `seedvr2-video512-t25-paired-sdpa-v1-20261013`.
 
 This workload-specific speed gate passes. Its compatibility patch remains the
 three-line non-CUDA cache-transfer guard described above; it is not a stock
-unpatched MPS video result. Shared-noise quality/default-Comfy controls and
-512->1024 video qualification remain incomplete. The full 1024/t25 paired
-cohort is now running with the same immutable native library and isolated
-reference. Do not run any other GPU/ANE workload during its timed requests.
+unpatched MPS video result. Shared-noise quality/default-Comfy controls remain
+incomplete. The full 1024/t25 paired speed cohort subsequently completed with
+the same immutable native library and isolated reference; see the complete
+1024-output video section above. Never overlap GPU/ANE benchmarks during timed
+requests.
 
 The earlier fixture generator enlarged before source downsampling; its saved
 input tensors remain immutable valid parity fixtures. The generator now
 downsamples the original directly and saves the actual source PNG/provenance.
 Use fresh v2 fixtures for final real-media acceptance and benchmarks.
+
+### Compact VAE histories, pointwise projections and selective hybrid progress
+
+The new speed-priority defaults keep the singleton2D/Metal-normalization
+recipe, but retain causal tails directly instead of copying them out of a
+full halo concatenation. The initial replicated two-frame tail exposes a
+zero-stride view of one owned frame. Normal convolutions explicitly preserve
+the old materialization/lifetime boundary before replacing history; delaying
+it initially increased rather than reduced memory. That failed screen remains
+in `seedvr2-vae-compact-pointwise-1024-t9-v1-20261013` and is not the final
+default. Shortcuts with a 1x1x1 filter flatten positions into one FP16/FP32-
+accumulating GEMM, avoiding full-resolution FP32 conv2D operands.
+
+`seedvr2-conv-history-pointwise-unit-v2-20261013.json` passes ten causal
+convolution, ten norm, sixteen exact-history and four pointwise cases. Tests
+cover noncontiguous inputs, distinct/replicated tails, strides and FP32 folded
+coefficients. The 1024/t9 final-default VAE latent and decoded pixels are
+bitwise identical to the pre-change control. Independent 128/t9 Comfy codec
+parity also passes; this does not repair the pre-existing BF16 DiT quality
+failure or constitute independent real-video full-model qualification.
+
+The optional `mixed3d` recipe bounds only noninitial temporal convolutions
+with at least 1024x1024 positions and 256 input channels. It does not change
+spatial context, normalization, attention or causal phase. Its 1024/t9 codec
+screen observes 13,309,152,090 active bytes and about 26.5 s, versus the earlier
+full-tiled route's roughly 31.4 s at a similar peak. Decoder relative-L2 to
+the pre-change control is 0.00012580, cosine 0.999999992; latent is identical.
+These are component screens, not balanced whole-request speed proofs. Keep
+this explicit memory/speed tradeoff optional, not the default.
+
+Actual result telemetry declares `vae_history_recipe` and
+`vae_pointwise_recipe`. The old control uses `concat`/`conv`; the new default
+uses `compact`/`matmul`. Environment settings are bound by the full-request
+observer as well. `seedvr2_vae_cohort.py` adds immutable-input/probe/VAE ABBA
+codec observations with one cold and three warm repeats per process, actual
+recipe checks and host-side tensor gates. The native base Python lacks
+safetensors; use the existing validation interpreter. Its CPU gate tests pass
+there (seven cases, including refusal to finalize live/incomplete cohorts);
+the dependency-free environment explicitly skips them.
+
+The final-default ABBA codec cohort completes with six warm observations per
+route: pre-change median 25.495785 s, new median 25.203935 s (1.01158x), active
+peaks 14,332,562,250 and 14,198,344,530 bytes, a 134,217,720-byte reduction.
+Every candidate latent and decoded tensor is bitwise equal to the original
+control. Input, probe and original VAE SHA-256s remain unchanged. Record:
+`seedvr2-vae-compact-pointwise-abba-1024-t9-v1-20261013`. All four GPU cohorts
+completed before the base interpreter failed its host-side safetensors import;
+`host-finalization-failure.json` preserves that failure. The explicit
+`--finalize-only` path revalidated all completed raw identities/order/settings/
+samples and computed parity in the existing validation interpreter. No GPU
+measurement was rerun, replaced or counted from an incomplete cohort. The
+observer now preflights the reader before future GPU runs.
+
+The App's real StudioState/NativeJobStore chain passes again at both sizes for
+images and complete 25-frame/24-FPS LTX-derived video, including source/FPS
+binding, strict image transactions, result recipes, persistent job history and
+unload. Both PNG SHA-256s match the previous App outputs exactly. Record:
+`seedvr2-app-compact-pointwise-real-e2e-v1-20261013/generation-report.json`.
+The 1024 video observes 83.3219 s and 21,593,207,870 active MLX bytes, versus
+the previous 21,727,425,594-byte observation. Sampled process footprint is
+24,613,001,384 bytes, sampled Metal 25,013,895,168 bytes, 2862 observations,
+zero failures. Sampling is a lower bound and overlaps; do not add those
+figures or infer a system-wide/hard peak budget. Image peaks are unchanged;
+this is not a universal memory-reduction claim or a new paired Comfy gate.
+
+The optional mixed3D App chain also passes all four real-media generation,
+frame/FPS/history/unload checks, and telemetry confirms `mixed3d` for each
+request. Its 1024/t25 video observes 86.5521 s / 20,704,016,710 active bytes,
+versus the default's 83.3219 s / 21,593,207,870 bytes: roughly 0.89 GB less
+active allocation for roughly 3.9% more time in these App observations. Its
+sampled footprint is 24,720,038,200 bytes, not lower than the default sample;
+do not promise reduced whole-process physical peak from the active-memory
+change. Sampled Metal peak is 24,468,635,648 bytes. Complete decoded H.264 RGB
+comparisons (all 25 frames) give cosine 0.999897811 / relative-L2 0.0142962,
+maximum 8-bit channel difference 106; outputs are not bitwise equal. First,
+middle and last contact-sheet frames were inspected. This compressed-media
+before/after witness is not independent shared-noise model parity. Record:
+`seedvr2-app-mixed3d-real-e2e-v1-20261013/generation-report.json`. The mode
+remains optional; the faster singleton2D route stays default.
+
+Selecting even-numbered video FFNs (16/32) in the experimental CPU+NE prefix
+probe now passes the existing 512 fixed-input/noise tensor gate against a
+matching pure-GPU probe: latent cosine 0.999185125 / relative-L2 0.0403741,
+pixels cosine 0.999927184 / relative-L2 0.0120730. VAE condition is identical.
+Each restoration executes 32 Core ML predictions, with no output-copy bytes;
+four repeats execute 128 predictions in total. The all-32 failure above still
+stands. Records: `seedvr2-hybrid-even16-restore-512-v1-20261013`,
+`seedvr2-gpu-restore-512-hybrid-control-v2-20261013`, and
+`seedvr2-hybrid-even16-restore-512-parity-v2-20261013.json`.
+The observed warm denoise is about 0.466 s versus 0.481 s, but those component
+screens are not balanced full-media cohorts. Physical ANE occupancy, 1024 and
+real-video quality/speed are still pending. The public route remains GPU-only;
+experimental hybrid source is not part of this tested VAE stage's commit.
 
 ## Reproduce component checks
 

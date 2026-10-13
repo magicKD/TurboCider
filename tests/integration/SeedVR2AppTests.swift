@@ -93,6 +93,9 @@ import Foundation
                               metrics["height"] as? Int == size && metrics["execution"] as? String == "gpu" &&
                               metrics["checkpoint_sha256_verified"] as? Bool == true,
                               "App result identity/geometry mismatch")
+                    try check(metrics["vae_history_recipe"] as? String == "compact" &&
+                              metrics["vae_pointwise_recipe"] as? String == "matmul",
+                              "App did not execute the qualified VAE history/pointwise defaults")
                     if isVideo {
                         let inspected = try await StudioAssetImporter(directory: root.appendingPathComponent("verified-media")).importVideoFile(output)
                         try check(inspected.width == size && inspected.height == size && inspected.frames == 25 && inspected.fps == 24,

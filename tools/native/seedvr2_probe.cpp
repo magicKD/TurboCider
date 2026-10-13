@@ -77,6 +77,8 @@ int main(int argc, char **argv) {
                    << ",\"attention_recipe\":\"full_spatial_keys_fp32_query512\""
                    << ",\"conv_tile_rows_limit\":" << vae.conv_tile_rows()
                    << ",\"norm_recipe\":\"" << vae.norm_recipe() << "\""
+                   << ",\"history_recipe\":\"" << vae.history_recipe() << "\""
+                   << ",\"pointwise_recipe\":\"" << vae.pointwise_recipe() << "\""
                    << ",\"conv_recipe\":\"" << vae.conv_recipe() << "\",\"iterations\":[";
             for (int iteration = 0; iteration < repeats; ++iteration) {
                 // No retained decoded output or cached latent from an earlier
