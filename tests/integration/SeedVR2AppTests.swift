@@ -96,6 +96,17 @@ import Foundation
                     try check(metrics["vae_history_recipe"] as? String == "compact" &&
                               metrics["vae_pointwise_recipe"] as? String == "matmul",
                               "App did not execute the qualified VAE history/pointwise defaults")
+                    try check(metrics["numerical_recipe"] as? String == "seedvr2-stable-fp16-fp32-v1" &&
+                              metrics["dit_projection_dtype"] as? String == "fp16" &&
+                              metrics["dit_residual_dtype"] as? String == "fp32" &&
+                              metrics["dit_velocity_dtype"] as? String == "fp32" &&
+                              metrics["dit_attention_dtype"] as? String == "fp16",
+                              "App did not execute the qualified stable mixed-precision profile")
+                    let precision = "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_vae+fp32_euler"
+                    let plan = metrics["plan"] as? [String: Any]
+                    try check(metrics["runtime_precision"] as? String == precision &&
+                              plan?["precision"] as? String == precision,
+                              "App plan and executed precision disagree")
                     if isVideo {
                         let inspected = try await StudioAssetImporter(directory: root.appendingPathComponent("verified-media")).importVideoFile(output)
                         try check(inspected.width == size && inspected.height == size && inspected.frames == 25 && inspected.fps == 24,

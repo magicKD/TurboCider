@@ -1,6 +1,7 @@
 #include "bridge.hpp"
 #include "../../core/quantized_execution_profiles.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
+#include "../../models/seedvr2/precision.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
@@ -536,7 +537,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
         @"precision" : r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
-                      r.model == "seedvr2-3b" ? @"original_fp16_weights+bf16_dit+fp16_vae+fp32_euler" :
+                      r.model == "seedvr2-3b" ? @(seedvr2::kStablePrecision) :
                       r.hybrid_mlp_mode == "runtime" ?
                           (r.model == "z-image-turbo-gguf" ? @"gguf_native_gpu+runtime_fp16_ffn"
                                                           : @"bf16_gpu+runtime_fp16_ffn_bf16_io") :

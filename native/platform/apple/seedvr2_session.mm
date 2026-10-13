@@ -4,6 +4,7 @@
 #include "../../models/seedvr2/pipeline.hpp"
 #include "../../models/seedvr2/media.hpp"
 #include "../../models/seedvr2/memory.hpp"
+#include "../../models/seedvr2/precision.hpp"
 #include "../../media/image.hpp"
 #include "../../media/video.hpp"
 #include "../../media/video_input.hpp"
@@ -51,10 +52,14 @@ class SeedVR2Session final : public ModelSession {
     void unload() override { pipeline_.clear(); loaded_ = false; mx::clear_cache(); }
     LoadResult load(const Event &event, std::atomic<bool> &cancelled) override {
         checkpoint(cancelled);
-        dit_source_.check(); vae_source_.check();
-        pipeline_.load(root_, event, cancelled);
-        dit_source_.check(); vae_source_.check();
-        loaded_ = true;
+        try {
+            dit_source_.check(); vae_source_.check();
+            pipeline_.load(root_, event, cancelled);
+            require(pipeline_.dit().stable_fp16_profile(),
+                    "SeedVR2 public inference requires the stable FP16-projection/FP32-state profile; use offline probes for other DiT recipes");
+            dit_source_.check(); vae_source_.check();
+            loaded_ = true;
+        } catch (...) { unload(); throw; }
         return {pipeline_.bytes(), mx::get_active_memory()};
     }
     RunResult prepare(const Request &r, bool warmup, const Event &event, std::atomic<bool> &cancelled) override {
@@ -153,7 +158,12 @@ class SeedVR2Session final : public ModelSession {
                 @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": @"gpu",
                 @"warmup": @NO, @"prepared": @NO,
                 @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
-                @"runtime_precision": @"original_fp16_weights+bf16_dit+fp16_vae+fp32_euler",
+                @"runtime_precision": @(seedvr2::kStablePrecision),
+                @"numerical_recipe": @(seedvr2::kStableRecipe),
+                @"dit_projection_dtype": @"fp16", @"dit_residual_dtype": @"fp32",
+                @"dit_rms_dtype": @"fp32", @"dit_time_dtype": @"fp32",
+                @"dit_velocity_dtype": @"fp32", @"dit_attention_dtype": @"fp16",
+                @"dit_rope_angle_dtype": @"original_fp16_angles_then_fp32_trig",
                 @"persistent_model": @YES, @"model_reused": @(reused), @"prompt_cache_hit": @NO,
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
                 @"color_correction": @"none", @"audio_output": @NO,

@@ -54,6 +54,8 @@ class SeedVR2Contracts(unittest.TestCase):
                     code, value, error = plan(r)
                     self.assertEqual(code, 0, error)
                     self.assertEqual(value["model"], "seedvr2-3b")
+                    self.assertEqual(value["precision"],
+                        "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_vae+fp32_euler")
                     self.assertIsNotNone(value.get("memory_estimate_bytes"))
                     self.assertEqual(value["encoder_execution"], "not_applicable")
                     self.assertEqual(value["executor_operations"], ["image.upscale", "video.upscale"])

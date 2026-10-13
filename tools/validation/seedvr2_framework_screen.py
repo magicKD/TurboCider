@@ -127,6 +127,10 @@ def record_setup(args):
                 "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE", "TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE",
                 "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE", "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE",
                 "TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS", "TURBOCIDER_SEEDVR2_ALLOCATOR_CACHE_BYTES")})
+        report["native_artifact_identity"]["dit_environment"] = {key:os.environ.get(key) for key in (
+            "TURBOCIDER_SEEDVR2_DIT_RMS_RECIPE","TURBOCIDER_SEEDVR2_DIT_TIME_RECIPE",
+            "TURBOCIDER_SEEDVR2_DIT_ATTENTION_RECIPE","TURBOCIDER_SEEDVR2_DIT_ROPE_RECIPE",
+            "TURBOCIDER_SEEDVR2_DIT_RESIDUAL_RECIPE","TURBOCIDER_SEEDVR2_DIT_LINEAR_RECIPE")}
     write_json(args.output / "report.json", report)
     return report
 
@@ -146,6 +150,8 @@ def native(args, report):
         result = row["metrics"]
         if result["actual_denoise_steps"] != 1 or result["conditioning_cache_hit"] or result["execution"] != "gpu":
             raise ValueError("native pure-GPU complete request execution was not observed")
+        if result.get("numerical_recipe") != "seedvr2-stable-fp16-fp32-v1" or result.get("dit_projection_dtype") != "fp16" or result.get("dit_residual_dtype") != "fp32":
+            raise ValueError("complete request did not execute the qualified stable precision profile")
         row["output"] = verify_output(Path(result["output"]), args)
         row["output_sha256"] = sha256(Path(result["output"]))
     write_json(args.output / "report.json", report)

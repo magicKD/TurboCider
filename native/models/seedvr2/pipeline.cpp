@@ -10,7 +10,8 @@ Tensor time_slice(const Tensor &x, int start, int stop) {
 }
 } // namespace
 
-void Pipeline::load(const std::filesystem::path &root, const Event &event, std::atomic<bool> &cancelled) {
+void Pipeline::load(const std::filesystem::path &root, const Event &event, std::atomic<bool> &cancelled,
+                    mx::Dtype dit_dtype) {
     if (loaded_) return;
     checkpoint(cancelled);
     try {
@@ -18,7 +19,7 @@ void Pipeline::load(const std::filesystem::path &root, const Event &event, std::
         vae_.load(root / "vae/seedvr2_ema_vae_fp16.safetensors");
         checkpoint(cancelled);
         if (event) event("seedvr2_load", 1, 2);
-        dit_.load(root / "diffusion_models/seedvr2_3b_fp16.safetensors");
+        dit_.load(root / "diffusion_models/seedvr2_3b_fp16.safetensors",dit_dtype);
         checkpoint(cancelled);
         if (event) event("seedvr2_load", 2, 2);
         loaded_ = true;

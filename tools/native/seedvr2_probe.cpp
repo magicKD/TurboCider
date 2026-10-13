@@ -53,7 +53,13 @@ int main(int argc, char **argv) {
             mx::save_safetensors((destination / "sampling.safetensors").string(), {{"restored", restored}});
             std::cout << "{\"load_seconds\":" << std::chrono::duration<double>(loaded - started).count()
                       << ",\"inference_seconds_with_dumps\":" << std::chrono::duration<double>(finished - loaded).count()
-                      << ",\"weight_bytes\":" << dit.bytes() << "}\n";
+                      << ",\"weight_bytes\":" << dit.bytes()
+                      << ",\"rms_recipe\":\"" << dit.rms_recipe() << "\""
+                      << ",\"time_recipe\":\"" << dit.time_recipe() << "\""
+                      << ",\"attention_recipe\":\"" << dit.attention_recipe() << "\""
+                      << ",\"rope_recipe\":\"" << dit.rope_recipe() << "\""
+                      << ",\"linear_recipe\":\"" << dit.linear_recipe() << "\""
+                      << ",\"residual_recipe\":\"" << dit.residual_recipe() << "\"}\n";
         } else if (command == "vae") {
             tc::require(argc <= 6, "vae accepts only an optional positive repeat count");
             const int repeats = argc == 6 ? std::stoi(argv[5]) : 1;
@@ -116,8 +122,13 @@ int main(int argc, char **argv) {
             report << "]}\n";
             std::cout << "VAE report written to " << destination / "report.json" << '\n';
         } else if (command == "restore") {
+            tc::require(argc <= 6,"restore accepts only an optional dit compute dtype");
+            const auto mode = argc == 6 ? std::string(argv[5]) : "bf16";
+            tc::require(mode=="bf16" || mode=="fp16" || mode=="fp32","invalid restore compute dtype");
+            const auto dtype = mode=="bf16" ? mx::bfloat16 : mode=="fp16" ? mx::float16 : mx::float32;
+            tc::seedvr2::AllocatorCacheScope allocator(tc::seedvr2::allocator_cache_limit());
             tc::seedvr2::Pipeline pipeline;
-            pipeline.load(model, event, cancelled);
+            pipeline.load(model, event, cancelled,dtype);
             auto loaded = tc::Clock::now();
             auto result = pipeline.restore(inputs.at("pixels"), inputs.at("noise"), event, cancelled, destination);
             mx::save_safetensors((destination / "sampling.safetensors").string(), {{"restored", result.latent}});
@@ -128,7 +139,13 @@ int main(int argc, char **argv) {
                    << ",\"encode_seconds\":" << result.encode_seconds
                    << ",\"denoise_seconds_with_dumps\":" << result.denoise_seconds
                    << ",\"decode_seconds\":" << result.decode_seconds
-                   << ",\"weight_bytes\":" << pipeline.bytes() << "}\n";
+                   << ",\"weight_bytes\":" << pipeline.bytes()
+                   << ",\"mlx_peak_bytes\":" << mx::get_peak_memory()
+                   << ",\"dit_compute_dtype\":\"" << mode << "\""
+                   << ",\"dit_residual_recipe\":\"" << pipeline.dit().residual_recipe() << "\""
+                   << ",\"dit_time_recipe\":\"" << pipeline.dit().time_recipe() << "\""
+                   << ",\"dit_attention_recipe\":\"" << pipeline.dit().attention_recipe() << "\""
+                   << ",\"dit_rope_recipe\":\"" << pipeline.dit().rope_recipe() << "\"}\n";
             report.close();
             std::cout << "restoration written to " << destination << '\n';
         } else {

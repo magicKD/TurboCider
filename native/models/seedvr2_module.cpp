@@ -44,8 +44,8 @@ ModelModule seedvr2_module() {
             d.default_audio = false; d.default_residency = "resident";
             d.backend = "mlx_cpp_metal"; d.runtime_dependency = "native";
             d.candidate_limitations = {
-                "paired warm ComfyUI speed and full-media quality qualification are pending",
-                "original FP16 checkpoint weights; BF16 DiT projections and FP16 causal VAE",
+                "stable FP16/FP32 profile passes original-parameter FP32 component quality; full-request speed and hybrid qualification are pending",
+                "original FP16 checkpoint coefficients and projections; FP32 residuals/normalization/time/velocity and FP16 causal VAE",
                 "raw restoration without optional color transfer; source image alpha is reapplied",
                 "silent CFR videos, complete declared frame count and matching integer source FPS",
                 "GPU+ANE and explicit GPU graph compilation remain unavailable"

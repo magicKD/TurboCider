@@ -3,8 +3,9 @@
 SeedVR2 3B is available through the native App, CLI and existing C / Swift
 SDK request interfaces. This integration is still being qualified. Pure GPU
 image/video inference works; GPU+ANE is not yet available in the public route.
-The speed results below are workload-specific; full quality/ANE qualification
-remains pending.
+The quality and speed results below are workload/profile-specific. The stable
+FP16/FP32 profile passes App image/video regression; its full-request speed
+cohorts are being re-run. GPU+ANE qualification remains pending.
 
 ## Prepare weights
 
@@ -24,10 +25,18 @@ Comfy-Org-SeedVR2/
 ```
 
 No text encoder is required: the checkpoint includes its conditioning.
-Original FP16 checkpoint weights are used without quantization. DiT projection
-math uses BF16, the causal VAE uses FP16, and the one-step Euler update uses
-FP32. All model inference is native C++/MLX on Metal; Python is only used by
+Original FP16 checkpoint coefficients and DiT projections are retained without
+BF16 coefficient rounding or weight quantization. DiT residuals, normalization,
+time embedding, nonlinear arithmetic and final velocity use FP32. Attention
+and the causal VAE use FP16; the one-step Euler update uses FP32. This stable
+profile prevents the late text/residual overflow of all-FP16 state while
+remaining close to original-parameter FP32 computation. All model inference is
+native C++/MLX on Metal; Python is only used by
 offline preparation and validation tools.
+
+Results identify `numerical_recipe=seedvr2-stable-fp16-fp32-v1` and each effective
+precision. Public sessions reject unqualified DiT recipe overrides; older BF16
+diagnostics remain offline and are not claimed equivalent or qualified.
 
 ## Run
 
@@ -116,6 +125,27 @@ bitwise-identical latents and decoded tensors. This is a roughly 1.2% codec
 speed improvement, not an equally sized whole-model speed guarantee.
 
 ## Validation boundary
+
+The stable FP16/FP32 candidate passes the unchanged cosine >=0.999 /
+relative-L2 <=0.05 gates against the same original checkpoint's independently
+configured FP32 reference: all saved embeddings, blocks, velocity, sampling,
+VAE condition and decoded pixels pass for 512/1024 real images and complete
+512/1024, 25-frame LTX-derived videos. Pixel relative-L2 is 0.00101–0.00176
+across those four witnesses. This is original-parameter accuracy, not bitwise
+equivalence to Comfy's BF16 recipe; the old BF16 equivalence failures remain
+recorded. Full-request speed ratios from the previous BF16 profile below are
+historical and must not be relabeled as new-profile speed evidence.
+
+The current App build passes all four real generations and validates executed
+precision against the plan. Its 1024/t25 video observes 84.69 s, 21.60 GB active
+MLX peak and 24.87 GB sampled process footprint, with every frame/FPS retained.
+Those are single App observations, not paired speed or hard peak guarantees.
+
+Fresh stable-profile image ABBA cohorts pass against the explicitly recorded
+Comfy default-attention/ordinary-residency observer (FP16 VAE): **0.827 vs
+3.985 s** at 256->512 and **3.506 vs 15.535 s** at 512->1024, six full warm
+requests per route. These are about **4.82x / 4.43x** for those workloads;
+new-profile video and SDPA/GPU-only paired checks remain separate requirements.
 
 On the verified M4 Max / 64 GiB host, the native CLI generated a complete
 512→1024 image and a complete 512→1024, 25-frame / 24-FPS LTX-derived video.

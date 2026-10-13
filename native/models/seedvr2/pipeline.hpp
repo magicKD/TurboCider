@@ -13,7 +13,8 @@ class Pipeline {
     DiT dit_;
     bool loaded_ = false;
   public:
-    void load(const std::filesystem::path &, const Event &, std::atomic<bool> &);
+    void load(const std::filesystem::path &, const Event &, std::atomic<bool> &,
+              mx::Dtype dit_dtype = mx::float16);
     size_t bytes() const { return vae_.bytes() + dit_.bytes(); }
     const DiT &dit() const { return dit_; }
     const std::string &vae_conv_recipe() const { return vae_.conv_recipe(); }

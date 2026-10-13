@@ -643,11 +643,75 @@ matching original FP32 noise. The preparation tool now checks actual frame
 timestamps as well as nominal FPS; it rejects truncation and VFR rather than
 publishing a reduced fixture. These component times include dumps and exclude media
 import/export, so they are not paired full-request speed proof. No public
-default or App/CLI binary has been replaced by this candidate. Its 1024/t25
+default or App/CLI binary had been replaced at the end of that component-only
+audit. The subsequent local App promotion is recorded below. Its 1024/t25
 component observation is encode 20.1335 s / denoise-with-dumps 14.9533 s /
 decode 50.0064 s, active MLX peak 21,275,343,558 bytes. This is not an App
 measurement or a before/after physical-memory proof. Full-request
 speed/memory, App regression and hybrid qualification are still required.
+
+### Fixed stable profile and real App regression, October 14
+
+The local build now defaults public SeedVR2 sessions to the quality-checked
+original FP16-coefficient/projection and FP32-state profile. It uses FP32 time
+embedding, normalization/affine, FFN nonlinear arithmetic and final velocity;
+FP16 SDPA retains all keys, queries and original windows. The legacy BF16
+diagnostics are not declared equivalent or qualified. No checkpoint content,
+sampler schedule, source frame count or spatial context was changed.
+
+Shared precision constants bind planning to actual results. Every generation
+reports `numerical_recipe=seedvr2-stable-fp16-fp32-v1`, projection/residual/RMS/
+time/attention/velocity and RoPE-angle precision. Public load rejects other
+unqualified DiT recipes, clears a failed session and never exports their
+output. An explicit `DIT_RESIDUAL_RECIPE=native` rejection exited 1 with the
+expected stable-profile error and no `rejected.png`. Record:
+`seedvr2-stable-profile-rejection-v1-20261014`. Offline probes still allow
+precision diagnostics. The no-environment default's entire 128 trace is
+bitwise identical to the previously qualified candidate:
+`seedvr2-stable-default-equivalence-128-v1-20261014.json`.
+
+Native/Swift App builds completed and source fingerprints match the compiled
+runtime manifest. Dedicated contract (5), geometry (1), downloader (3) and
+oracle policy/real-video fixture (8, validation interpreter) tests pass. This
+is not a claim that unrelated pre-existing repository failures disappeared.
+
+The real StudioState/NativeJobStore App chain passes all four generations,
+original-source SHA checks, executed/plan precision agreement, strict image
+transactions, complete MP4 frames/FPS/dimensions, retained job history and
+final unload. The 1024 image and video first/middle/last frames were visually
+inspected; neither clip is truncated or blank. Both MP4s independently decode
+to 25 frames / 24 FPS / 1.041667 s. Record:
+`seedvr2-app-stable-fp16-fp32-real-e2e-v1-20261014/generation-report.json`.
+
+| App native request | Seconds | Active MLX peak (bytes) | Sampled physical footprint peak (bytes) |
+| --- | ---: | ---: | ---: |
+| Image 512, first load/JIT | 1.445831 | 9,622,623,114 | 13,066,573,944 |
+| Image 1024, reused | 3.522688 | 16,491,014,650 | 19,904,846,064 |
+| Video 512, full t25, reused | 20.668313 | 10,867,197,374 | 14,789,433,608 |
+| Video 1024, full t25, reused | 84.686611 | 21,596,673,206 | 24,869,574,968 |
+
+The 1024 video has 2905 memory samples and zero observer failures; sampled
+Metal allocation peak is 25,017,483,264 bytes. Sampled peaks are lower bounds,
+the footprint/Metal scopes overlap and must not be added, and these App runs
+are not balanced speed or physical-memory reduction proof. The profile's
+complete-request Comfy speed cohorts are being re-run separately; old BF16
+speed ratios remain historical. Default-reference controls and the new
+profile's GPU/CPU+NE quality/speed/App integration remain outstanding.
+
+The fixed profile's first new complete ABBA speed gate passes against the
+default-attention Comfy observer for real 256->512 images: native warm median
+0.827034 s, reference 3.985151 s, ratio 4.81861x, six warm requests per route.
+Every import/resize/encode/sample/decode/export executes, and only Comfy model
+loader nodes are cached. Both owned servers exited; source/model/native build
+and reference identities remain unchanged. Record:
+`seedvr2-stable-image512-paired-default-v1-20261014`. The default observer's
+explicit FP16-VAE setting and ordinary residency are bound in its launch
+record; this is not an unlabeled GPU-only/SDPA reference or a universal speed
+claim. The 512->1024 default-image ABBA cohort also completes and passes:
+native median 3.506320 s versus 15.535424 s, ratio 4.43069x, again six full
+warm requests per route with immutable identities and terminal owned servers.
+Record: `seedvr2-stable-image1024-paired-default-v1-20261014`. New-profile
+SDPA/GPU-only and complete video paired gates remain separate pending checks.
 
 ## Reproduce component checks
 
