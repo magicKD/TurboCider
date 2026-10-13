@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -19,6 +20,26 @@ def write_report(path, data):
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(data, indent=2) + "\n")
     temporary.replace(path)
+
+
+def configure_comfy(comfy_root,extra_root,device,attention):
+    if "comfy.cli_args" in sys.modules:
+        raise ValueError("Comfy arguments were imported before reference configuration")
+    sys.path.insert(0,str(comfy_root.resolve(strict=True)))
+    sys.path.insert(0,str(extra_root.resolve(strict=True)))
+    sys.argv = [sys.argv[0],"--cpu"] if device=="cpu" else [sys.argv[0],"--gpu-only"]
+    if attention=="sdpa":
+        sys.argv.append("--use-pytorch-cross-attention")
+    import comfy.options
+    comfy.options.enable_args_parsing()
+    from comfy.cli_args import args
+    if device=="mps" and not args.gpu_only:
+        raise ValueError("requested GPU-only reference settings were not parsed")
+    if device=="cpu" and not args.cpu:
+        raise ValueError("requested CPU reference settings were not parsed")
+    if attention=="sdpa" and not args.use_pytorch_cross_attention:
+        raise ValueError("requested SDPA reference settings were not parsed")
+    return args
 
 
 def prepare(args):
@@ -50,6 +71,46 @@ def prepare(args):
         scope="component parity fixture; rolling image is not real video acceptance evidence"))
 
 
+def prepare_video(args):
+    import numpy as np
+    import torch
+    from safetensors.torch import save_file
+    if args.output.exists():
+        raise ValueError("a fresh real-video fixture directory is required")
+    ffprobe,ffmpeg = shutil.which("ffprobe"),shutil.which("ffmpeg")
+    if not ffprobe or not ffmpeg:
+        raise ValueError("ffmpeg/ffprobe required")
+    stream = json.loads(subprocess.check_output([ffprobe,"-v","error","-select_streams","v:0","-count_frames",
+        "-show_entries","stream=width,height,nb_read_frames,r_frame_rate,avg_frame_rate,duration","-of","json",str(args.video)],text=True))["streams"][0]
+    frames = int(stream["nb_read_frames"])
+    numerator,denominator = map(int,stream["r_frame_rate"].split("/"))
+    if frames<2 or frames>121 or frames%4!=1 or denominator!=1 or stream["avg_frame_rate"]!=stream["r_frame_rate"]:
+        raise ValueError("real component fixture requires complete 4n+1 CFR video frames and integer FPS")
+    timestamps = json.loads(subprocess.check_output([ffprobe,"-v","error","-select_streams","v:0","-show_frames",
+        "-show_entries","frame=best_effort_timestamp_time","-of","json",str(args.video)],text=True))["frames"]
+    values = [float(row["best_effort_timestamp_time"]) for row in timestamps]
+    if len(values)!=frames or not all(np.isfinite(value) and abs(value-values[0]-index/numerator)<=1e-5
+            for index,value in enumerate(values)):
+        raise ValueError("video frame timestamps are not complete constant-frame-rate data")
+    command = [ffmpeg,"-v","error","-i",str(args.video),"-map","0:v:0","-vf",f"scale={args.size}:{args.size}:flags=bicubic",
+        "-fps_mode","passthrough","-f","rawvideo","-pix_fmt","rgb24","pipe:1"]
+    raw = subprocess.check_output(command)
+    if len(raw)!=frames*args.size*args.size*3:
+        raise ValueError("real-video decode truncated or changed frame count")
+    pixels = np.frombuffer(raw,dtype=np.uint8).reshape(frames,args.size,args.size,3).astype(np.float32)/127.5-1.
+    tensor = torch.from_numpy(pixels).permute(3,0,1,2).unsqueeze(0).contiguous()
+    noise = torch.randn((1,16,(frames-1)//4+1,args.size//8,args.size//8),
+        generator=torch.Generator(device="cpu").manual_seed(args.seed),dtype=torch.float32)
+    args.output.mkdir(parents=True)
+    path = args.output/"input.safetensors"
+    save_file(dict(pixels=tensor,noise=noise),str(path))
+    write_report(args.output/"fixture.json",dict(schema="seedvr2-real-video-component-fixture-v1",
+        input_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),source_video=str(args.video),
+        source_sha256=hashlib.sha256(args.video.read_bytes()).hexdigest(),source_stream=stream,
+        size=args.size,frames=frames,fps=numerator,seed=args.seed,decode_command=command,
+        scope="complete real-video shared-input/noise model-component witness; import/resize/export excluded from performance scope"))
+
+
 def oracle(args):
     import torch
     from safetensors.torch import load_file, save_file
@@ -59,12 +120,13 @@ def oracle(args):
         raise ValueError("automatic MPS CPU fallback is forbidden in the oracle")
     if args.device == "mps" and not torch.backends.mps.is_available():
         raise ValueError("MPS is not available; grant Metal access rather than enabling CPU fallback")
-    sys.path.insert(0, str(args.comfy.resolve(strict=True)))
-    sys.path.insert(0, str(args.comfy_extra.resolve(strict=True)))
-    # Configure the stock model-management module before importing it.
-    sys.argv = [sys.argv[0], "--cpu"] if args.device == "cpu" else [sys.argv[0], "--gpu-only", "--use-pytorch-cross-attention"]
+    # The stock CLI ignores sys.argv until args parsing is explicitly enabled.
+    # Configure/verify it before importing model-management or attention.
+    comfy_args = configure_comfy(args.comfy,args.comfy_extra,args.device,args.attention)
+    import comfy.options
     import comfy.model_management
     import comfy.ops
+    from comfy.ldm.modules import attention as comfy_attention
     from comfy.ldm.seedvr.model import NaDiT
     from comfy.ldm.seedvr.vae import VideoAutoencoderKLWrapper
     device = torch.device(args.device)
@@ -98,6 +160,49 @@ def oracle(args):
                 synchronize()
                 save_file({k: v.detach().cpu().contiguous().clone() for k, v in tensors.items()},
                           str(args.output / f"{name}.safetensors"))
+            if getattr(args,"time_detail",False):
+                trace = {}
+                model.emb_in.proj_in.register_forward_pre_hook(lambda module,args_:trace.update(raw=args_[0].clone()))
+                for name in ("proj_in","proj_hid","proj_out"):
+                    getattr(model.emb_in,name).register_forward_hook(
+                        lambda module,args_,output,name=name:trace.update({name:output.clone()}))
+                calls = [0]
+                def activation(module,args_,output):
+                    trace["act_in" if calls[0] == 0 else "act_hid"] = output.clone()
+                    calls[0] += 1
+                model.emb_in.act.register_forward_hook(activation)
+                model.emb_in.register_forward_hook(lambda module,args_,output:save("time-detail",trace))
+            if getattr(args,"block_detail",False):
+                b = model.blocks[0]
+                n = inputs["noise"].shape
+                windows = b.attn.window_op((n[2],n[3]//2,n[4]//2),b.attn.window)
+                if len(windows) != 1:
+                    raise ValueError("block-detail requires a single first-block window")
+                detail = {}
+                def capture_pair(prefix,values):
+                    detail[prefix+"_vid"] = values[0].clone()
+                    detail[prefix+"_txt"] = values[1].clone()
+                def pair_keys(vid,txt,values):
+                    detail[vid] = values[0].clone(); detail[txt] = values[1].clone()
+                b.attn.register_forward_pre_hook(lambda module,args_:pair_keys("attn_vid_in","attn_txt_in",args_))
+                b.attn.proj_qkv.register_forward_hook(lambda module,args_,output:pair_keys("attn_vid_qkv","attn_txt_qkv",output))
+                b.attn.norm_q.register_forward_hook(lambda module,args_,output:pair_keys("attn_vid_normq","attn_txt_normq",output))
+                b.attn.norm_k.register_forward_hook(lambda module,args_,output:pair_keys("attn_vid_normk","attn_txt_normk",output))
+                def rope(module,args_,output):
+                    for key,value in zip(("attn_vid_ropeq","attn_vid_ropek","attn_txt_ropeq","attn_txt_ropek"),output):
+                        detail[key] = value.clone()
+                b.attn.rope.register_forward_hook(rope)
+                b.attn.proj_out.register_forward_pre_hook(lambda module,args_:pair_keys("attn_vid_raw","attn_txt_raw",args_))
+                b.attn.proj_out.register_forward_hook(lambda module,args_,output:pair_keys("attn_vid_out","attn_txt_out",output))
+                for branch in ("vid","txt"):
+                    getattr(b.mlp,branch).register_forward_pre_hook(
+                        lambda module,args_,branch=branch:detail.update({"mlp_"+branch+"_in":args_[0].clone()}))
+                    getattr(b.mlp,branch).register_forward_hook(
+                        lambda module,args_,output,branch=branch:detail.update({"mlp_"+branch+"_out":output.clone()}))
+                def finished(module,args_,output):
+                    capture_pair("block",output)
+                    save("block0-detail",detail)
+                b.register_forward_hook(finished)
             embeddings = {}
             model.vid_in.register_forward_hook(lambda module, args_, output: embeddings.update(video=output[0].clone()))
             model.txt_in.register_forward_hook(lambda module, args_, output: embeddings.update(text=output.clone()))
@@ -148,6 +253,13 @@ def oracle(args):
         device=args.device, dtype=args.dtype if args.stage in ("dit", "restore") else "fp16",
         torch_version=torch.__version__, comfy_commit=subprocess.check_output(
             ["git", "-C", str(args.comfy), "rev-parse", "HEAD"], text=True).strip(),
+        torch_git_version=torch.version.git_version,
+        comfy_tracked_patch_sha256=hashlib.sha256(subprocess.check_output(
+            ["git","-C",str(args.comfy),"diff","--binary","HEAD"])).hexdigest(),
+        attention_requested=args.attention,attention_implementation=comfy_attention.optimized_attention.__name__,
+        comfy_args=dict(cpu=comfy_args.cpu,gpu_only=comfy_args.gpu_only,
+            use_pytorch_cross_attention=comfy_args.use_pytorch_cross_attention),
+        args_parsing_enabled=comfy.options.args_parsing,
         input_sha256=hashlib.sha256(args.input.read_bytes()).hexdigest(),
         load_seconds=loaded-started, inference_seconds_with_dumps=finished-loaded,
         scope="component parity with intermediate dumps, not a complete ComfyUI workflow speed benchmark")
@@ -235,6 +347,11 @@ def main():
                          help="Downsample source before bicubic upscaling to --size; create a meaningful SR fixture.")
     fixture.add_argument("--seed", type=int, default=42)
     fixture.add_argument("--output", type=Path, required=True)
+    video_fixture = subparsers.add_parser("prepare-video")
+    video_fixture.add_argument("--video",type=Path,required=True)
+    video_fixture.add_argument("--size",type=int,default=512)
+    video_fixture.add_argument("--seed",type=int,default=42)
+    video_fixture.add_argument("--output",type=Path,required=True)
     reference = subparsers.add_parser("run")
     reference.add_argument("--stage", choices=("dit", "vae", "restore"), required=True)
     reference.add_argument("--comfy", type=Path, required=True)
@@ -244,6 +361,9 @@ def main():
     reference.add_argument("--output", type=Path, required=True)
     reference.add_argument("--device", choices=("mps", "cpu"), default="mps")
     reference.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
+    reference.add_argument("--time-detail",action="store_true",help="non-mutating time-embedding input/projection/activation hooks")
+    reference.add_argument("--block-detail",action="store_true",help="non-mutating first-block hooks; single-window fixtures only")
+    reference.add_argument("--attention",choices=("sdpa","default"),default="sdpa")
     comparison = subparsers.add_parser("compare")
     comparison.add_argument("--reference", type=Path, required=True)
     comparison.add_argument("--candidate", type=Path, required=True)
@@ -264,6 +384,10 @@ def main():
         prepare(args)
     elif args.command == "run":
         oracle(args)
+    elif args.command == "prepare-video":
+        if args.size<16 or args.size%16:
+            parser.error("size must be a positive multiple of sixteen")
+        prepare_video(args)
     elif args.command == "compare":
         compare(args)
     else:

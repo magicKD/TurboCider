@@ -572,6 +572,83 @@ shared-noise quality, matched complete-request speed/memory and App hybrid
 integration remain required before public GPU+ANE enablement. The pre-existing
 independent BF16 DiT qualification failure also remains unresolved.
 
+### October 14 precision/reference audit (not a public-default change)
+
+The independent component oracle previously set `sys.argv` without enabling
+Comfy's argument parser. Stock `comfy.options.args_parsing` is false by default,
+so those runs used MPS's default `attention_sub_quad`, not the intended SDPA.
+Their numerical failures remain valid default-attention observations and are
+not relabeled as passes. The full-request speed cohorts launched real Comfy
+servers through `main.py`; this standalone-oracle bug does not invalidate those
+server measurements. A fresh explicitly parsed default run is bitwise equal
+to the old 128 fixture: `seedvr2-oracle-default-equivalence-v1-20261014.json`.
+
+`configure_comfy` now enables parsing before model/attention imports, rejects
+pre-imported CLI state and verifies requested CPU/GPU-only/SDPA settings.
+Reports disclose requested and actual attention, parsed policy, Torch source
+commit and tracked Comfy patch SHA. Eight CPU regression cases pass in the
+validation interpreter: four policy cases and four real-video fixture cases
+covering full frames, truncation, VFR timestamps and incompatible temporal
+phase. The base environment passes policy tests and explicitly skips the four
+Torch/safetensors-dependent fixture tests. Diagnostics use non-mutating
+time-embedding/first-block hooks; hook nonmutation was verified against the
+existing reference outputs. First-block details use the actual adaptive
+window function, not its `(4,3,3)` partition-count parameters as extents.
+
+Operator isolation identifies two real precision mismatches: the MLX single-row
+BF16 `addmm` fallback rounds before bias (FP32 accumulate/bias then one cast
+matches all three time projections exactly), and checkpoint RoPE frequencies
+are FP16, with reference angles rounded to FP16 before FP32 trigonometry.
+Correcting the latter matches isolated Q/K rotary tensors bitwise. The Torch
+2.14 weighted RMS affine product is FP32; the older 2.12 MPS kernel/MLX 0.32
+half kernel rounds before multiplying its weight. Time/RMS/RoPE corrections,
+last-attention plain-Ada handling and output-shift grouping alone do not pass
+the BF16 full-model gate. Explicit all-FP32 GEMM accumulation with BF16 output
+boundaries does not resolve it either. Those failed diagnostics are preserved;
+do not claim the old BF16 path qualified or a relaxed gate.
+
+A separate candidate retains the checkpoint's original FP16 coefficients and
+FP16 projections, while residuals, normalization, time embedding, FFN nonlinear
+arithmetic and final velocity remain FP32. Its optional FP16 SDPA keeps every
+key/query/window and is not spatial or temporal approximation. This changes
+the low-precision recipe; it is not claimed bitwise equivalent to Comfy BF16.
+Against the same original checkpoint's explicitly configured FP32 reference,
+all 128 intermediate/time/velocity/Euler gates pass unchanged (cosine >=0.999,
+relative-L2 <=0.05). FP16-attention candidate latent relative-L2 is 0.0045180,
+cosine 0.999989795. Its 128 latent comparison to the BF16 reference is 0.109071
+relative-L2 / 0.994034610 cosine and fails; that comparison is also retained.
+The stronger original-parameter FP32 witness is not a repair of BF16 equivalence.
+
+Complete fixed-input/noise restoration with independent FP16 VAE and FP32 DiT
+reference passes every saved tensor at both real-image sizes and both complete
+512/1024-output LTX-derived 25-frame/24-FPS videos. These use actual directly
+downsampled Z-Image input and genuine video frames, not rolling-image video.
+Input/probe/model coefficients remain unmodified. The video reference uses
+the separately owned three-line non-CUDA cache-transfer guard; patch SHA is
+recorded and the pinned original checkout is untouched.
+
+| Candidate component workload | Latent relative-L2 | Decoded pixel relative-L2 | Pixel cosine |
+| --- | ---: | ---: | ---: |
+| Real image 256->512 | 0.00824473 | 0.00176499 | 0.999998457 |
+| Real image 512->1024 | 0.0120328 | 0.00151095 | 0.999998867 |
+| Real video 256->512, all 25 frames | 0.00326721 | 0.00101590 | 0.999999484 |
+| Real video 512->1024, all 25 frames | 0.00941184 | 0.00123735 | 0.999999237 |
+
+Records: `seedvr2-restore-fp16-fp32residual-512-all-parity-v1-20261014.json`,
+`seedvr2-restore-fp16-fp32residual-1024-all-parity-v1-20261014.json`, and
+`seedvr2-restore-fp16-fp32residual-video512-t25-all-parity-v1-20261014.json`, and
+`seedvr2-restore-fp16-fp32residual-video1024-t25-all-parity-v1-20261014.json`.
+Both video witnesses include every decoded frame, original dimensions and
+matching original FP32 noise. The preparation tool now checks actual frame
+timestamps as well as nominal FPS; it rejects truncation and VFR rather than
+publishing a reduced fixture. These component times include dumps and exclude media
+import/export, so they are not paired full-request speed proof. No public
+default or App/CLI binary has been replaced by this candidate. Its 1024/t25
+component observation is encode 20.1335 s / denoise-with-dumps 14.9533 s /
+decode 50.0064 s, active MLX peak 21,275,343,558 bytes. This is not an App
+measurement or a before/after physical-memory proof. Full-request
+speed/memory, App regression and hybrid qualification are still required.
+
 ## Reproduce component checks
 
 ```sh
