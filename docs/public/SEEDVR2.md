@@ -137,6 +137,13 @@ per workload. These are complete import/encode/sample/decode/export timings.
 They do not imply completed video, default-Comfy, shared-noise quality or
 GPU+ANE qualification. The public route remains GPU-only.
 
+The complete 256->512, 25-frame / 24-FPS video ABBA cohort also passes its
+speed gate: **20.44 s native vs 71.33 s MPS-compatible Comfy SDPA/GPU-only**,
+about **3.49x**, six warm requests per route. All frames/FPS/dimensions are
+verified, with the CUDA-event compatibility patch explicitly disclosed.
+The 1024 video, default-Comfy controls and full quality/ANE qualification
+remain separate requirements.
+
 The pinned stock ComfyUI video's VAE currently reaches a CUDA-event-only cache
 offload path on MPS and fails. An independently owned benchmark copy disables
 only that CUDA transfer policy on non-CUDA devices, preserving arithmetic and

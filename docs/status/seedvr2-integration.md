@@ -421,6 +421,26 @@ independently decodes to all 25 frames, 24 FPS and 1.041667 s. The complete
 video ABBA observer is running separately; no GPU/ANE experiment overlaps its
 timed requests.
 
+### Complete 512-output video paired speed gate
+
+The native/Comfy/Comfy/native 256->512 video cohort completed. Each route has
+six real warm requests across two independent processes plus separate cold
+observations. Native median is 20.437427 s, the MPS-compatible Comfy SDPA/
+GPU-only median is 71.331294 s, ratio 3.4902x. Workload: all 25 LTX-derived
+frames, 24 FPS, one Euler/simple step, original weights, no color correction.
+Every output independently decodes to 512-square, 25 frames, 24 FPS and
+1.041667 s. All required stages genuinely execute on every warm request;
+reference caches only the model loaders. Source, binary/build, model and
+reference/patch identities are unchanged; both owned Comfy servers exited.
+Record: `seedvr2-video512-t25-paired-sdpa-v1-20261013`.
+
+This workload-specific speed gate passes. Its compatibility patch remains the
+three-line non-CUDA cache-transfer guard described above; it is not a stock
+unpatched MPS video result. Shared-noise quality/default-Comfy controls and
+512->1024 video qualification remain incomplete. The full 1024/t25 paired
+cohort is now running with the same immutable native library and isolated
+reference. Do not run any other GPU/ANE workload during its timed requests.
+
 The earlier fixture generator enlarged before source downsampling; its saved
 input tensors remain immutable valid parity fixtures. The generator now
 downsamples the original directly and saves the actual source PNG/provenance.
