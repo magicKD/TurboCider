@@ -75,6 +75,8 @@ int main(int argc, char **argv) {
                    << ",\"load_peak_bytes\":" << load_peak
                    << ",\"allocator_cache_limit_bytes\":" << cache_bytes
                    << ",\"attention_recipe\":\"full_spatial_keys_fp32_query512\""
+                   << ",\"conv_tile_rows_limit\":" << vae.conv_tile_rows()
+                   << ",\"norm_recipe\":\"" << vae.norm_recipe() << "\""
                    << ",\"conv_recipe\":\"" << vae.conv_recipe() << "\",\"iterations\":[";
             for (int iteration = 0; iteration < repeats; ++iteration) {
                 // No retained decoded output or cached latent from an earlier

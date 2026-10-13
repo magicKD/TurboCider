@@ -17,6 +17,8 @@ class Pipeline {
     size_t bytes() const { return vae_.bytes() + dit_.bytes(); }
     const DiT &dit() const { return dit_; }
     const std::string &vae_conv_recipe() const { return vae_.conv_recipe(); }
+    const std::string &vae_norm_recipe() const { return vae_.norm_recipe(); }
+    int vae_conv_tile_rows() const { return vae_.conv_tile_rows(); }
     // Resized RGB BCTHW in [-1,1], padded to 4n+1 if necessary. A supplied
     // FP32 sampling-noise fixture makes backend comparisons RNG-independent.
     Restoration restore(const Tensor &pixels, const Tensor &noise,

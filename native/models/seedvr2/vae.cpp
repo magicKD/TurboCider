@@ -2,6 +2,10 @@
 // Copyright (c) 2025 Bytedance Ltd. and/or its affiliates.
 // SPDX-License-Identifier: Apache-2.0
 #include "vae.hpp"
+#include "metal/conv_tiled.hpp"
+#include "metal/group_norm.hpp"
+#include <charconv>
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
@@ -22,9 +26,21 @@ void fence(const Tensor &x, std::atomic<bool> &cancelled) {
 } // namespace
 
 void VAE::load(const std::filesystem::path &path) {
+    conv_recipe_ = "singleton2d";
+    norm_recipe_ = "metal";
+    conv_tile_rows_ = 16384;
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE")) conv_recipe_ = value;
-    require(conv_recipe_ == "conv3d" || conv_recipe_ == "taps2d" || conv_recipe_ == "singleton2d",
-            "SeedVR2 VAE conv recipe must be conv3d, taps2d or singleton2d");
+    require(conv_recipe_ == "conv3d" || conv_recipe_ == "taps2d" || conv_recipe_ == "singleton2d" || conv_recipe_ == "tiled3d",
+            "SeedVR2 VAE conv recipe must be conv3d, taps2d, singleton2d or tiled3d");
+    if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE")) norm_recipe_ = value;
+    require(norm_recipe_ == "mlx" || norm_recipe_ == "metal", "SeedVR2 VAE norm recipe must be mlx or metal");
+    if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS")) {
+        const char *end = value + std::strlen(value);
+        const auto parsed = std::from_chars(value, end, conv_tile_rows_);
+        require(parsed.ec == std::errc{} && parsed.ptr == end && conv_tile_rows_ >= 128 &&
+                conv_tile_rows_ <= 65536 && conv_tile_rows_ % 128 == 0,
+                "SeedVR2 convolution tile rows must be a 128-aligned integer in 128...65536");
+    }
     weights_.load(path, mx::float16, true);
     require(weights_.at("encoder.conv_in.weight").shape() == mx::Shape{128, 3, 3, 3, 3} &&
             weights_.at("decoder.conv_in.weight").shape() == mx::Shape{512, 3, 3, 3, 16},
@@ -37,6 +53,41 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
     const int kernel_t = weight.shape(1);
     const int stride_t = downsample && kernel_t > 1 ? 2 : 1;
     const int stride_s = downsample ? 2 : 1;
+    if (conv_recipe_ == "tiled3d") {
+        const int halo = kernel_t - 1;
+        const auto found = cache ? cache->find(key) : Caches::iterator{};
+        const bool stored = halo && cache && !initial && found != cache->end();
+        const auto head = stored ? found->second : (halo ? part(input, 1, 0, 1) : input);
+        const int head_count = stored ? head.shape(1) : halo;
+        if (cache && kernel_t > stride_t) {
+            const int count = kernel_t - stride_t;
+            Tensor history(0);
+            if (input.shape(1) >= count) {
+                history = mx::copy(mx::contiguous(part(input, 1, input.shape(1) - count, input.shape(1))));
+            } else {
+                const int missing = count - input.shape(1);
+                auto previous = stored ? part(head, 1, head.shape(1) - missing, head.shape(1))
+                                       : mx::repeat(part(input, 1, 0, 1), missing, 1);
+                // Concatenation itself owns this bounded history, without
+                // first creating the full halo+input convolution operand.
+                history = mx::contiguous(mx::concatenate({previous, input}, 1));
+            }
+            mx::eval(history);
+            cache->insert_or_assign(key, history);
+        }
+        if (initial && input.shape(1) == 1 && kernel_t > 1) {
+            // Replicated first-frame operands allow an exact FP32 temporal
+            // coefficient sum. The bounded direct GEMM avoids FP16 Winograd
+            // overflow and the much larger FP32 spatial workspaces.
+            auto folded = mx::expand_dims(mx::sum(mx::astype(weight, mx::float32), 1), 1);
+            return metal::conv_tiled(input, input, 0, false, folded, stride_t, stride_s,
+                                     downsample ? 0 : weight.shape(2) / 2, downsample, conv_tile_rows_) +
+                   weights_.at(key + ".bias");
+        }
+        return metal::conv_tiled(input, head, head_count, !stored, weight, stride_t, stride_s,
+                                 downsample ? 0 : weight.shape(2) / 2, downsample, conv_tile_rows_) +
+               weights_.at(key + ".bias");
+    }
     auto x = input;
     const int halo = kernel_t - 1;
     if (halo) {
@@ -97,6 +148,8 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
     return y + weights_.at(key + ".bias");
 }
 Tensor VAE::group_norm(const Tensor &x, const std::string &key, bool activate) const {
+    if (norm_recipe_ == "metal")
+        return metal::group_norm(x, weights_.at(key + ".weight"), weights_.at(key + ".bias"), activate);
     const int b = x.shape(0), t = x.shape(1), h = x.shape(2), w = x.shape(3), c = x.shape(4);
     require(c % 32 == 0, "invalid SeedVR2 VAE GroupNorm channels");
     auto grouped = mx::reshape(x, {b * t, h * w, 32, c / 32});

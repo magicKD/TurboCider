@@ -288,6 +288,78 @@ and 55.697 s in decode versus 12.885 s in DiT. Investigate bounded convolution
 workspaces/fused normalization first, then measure GPU/ANE module allocation
 and parallel FFN joins without sacrificing the validated GPU fallback.
 
+### Fused normalization and bounded-convolution experiments — subsequent progress
+
+The default normalization now uses a native Metal kernel: per-frame 32-group
+FP32 mean and centered variance, followed by affine/activation without
+full-frame FP32 transposes or affine tensors. Small chunk-major statistics
+preserve full-frame context. Independent operator tests cover ten convolution
+geometries and ten normalization cases, including constant/near-constant,
+large-amplitude and non-contiguous inputs. All pass cosine >=0.99999 and
+relative-L2 <=0.003. Convolution maximum relative-L2 is 0.000033214; norm
+maximum is 0.000584063. Record: `seedvr2-conv-norm-unit-v3-20261013.json`.
+
+The full VAE with fused normalization passes independent 128 t1/t9 and 1024
+t1 Comfy comparisons at cosine >=0.99999 / relative-L2 <=0.005. The 1024 t1
+decoded cosine is 0.999999886; latent relative-L2 is 0.0017565. The 1024 t9
+native before/after comparison passes with decoded cosine 0.999999952 and
+latent relative-L2 0.0012620. Same-input, 4-GiB-cache component observations:
+
+| 1024-square / 9-frame codec | Warm encode/decode sum | MLX active peak |
+| --- | ---: | ---: |
+| singleton2D + original MLX norm | about 28.030 s | 17,419,572,050 bytes |
+| singleton2D + fused Metal norm | about 25.442 s | 14,332,562,250 bytes |
+| bounded direct convolution + fused norm, two asynchronous tiles | about 31.367 s | 13,309,152,090 bytes |
+
+The bounded direct convolution is diagnostic, not the default: it preserves
+causal history and original stencil operands, with up to two 256-MiB column
+workspaces in flight. It is not spatial VAE tiling and does not truncate
+normalization/attention context. The initial synchronous version was slower;
+double-buffered submission reduced that overhead but remains slower than the
+default. For 1024 t1 with original norm, it lowers active peak from
+10,993,750,870 to 5,149,659,986 bytes but increases codec time from about 1.79
+to 2.55 s. Keep this explicit tradeoff; do not label it a universal speed win.
+
+Updated public full-request image precheck, source 512 -> output 1024:
+4.539 s initial request, 3.341/3.359/3.369 s warm, median 3.358822 s; active
+peak 16,489,268,410 bytes. Source/library/build identities are preserved in
+`seedvr2-native-image1024-metalnorm-precheck-v1-20261013`. This remains a
+single-route precheck, not paired ComfyUI qualification.
+
+Real App generation again passes all four 512/1024 image/video requests,
+strict PNG publication, source frame/FPS binding, history and final unload.
+Both MP4s independently decode to 25 frames / 24 FPS / 1.041667 s via ffprobe.
+Record: `seedvr2-app-metalnorm-real-e2e-v1-20261013/generation-report.json`.
+
+| App request | Request observation | Active MLX peak | Sampled process footprint peak |
+| --- | ---: | ---: | ---: |
+| Image 512 | 1.918 s, first model load/JIT | 9,622,477,706 bytes | 12,703,324,208 bytes |
+| Image 1024 | 3.472 s, reused model | 16,490,574,330 bytes | 19,881,154,656 bytes |
+| Video 512 t25 | 20.677 s, reused model | 10,899,936,146 bytes | 14,979,274,872 bytes |
+| Video 1024 t25 | 84.163 s, reused model | 21,727,425,594 bytes | 25,320,560,808 bytes |
+
+A request-local read-only observer samples `task_vm_info.phys_footprint` and
+`MTLDevice.currentAllocatedSize`. Nominal wait interval is 20 ms; samples also
+take time, and short-lived peaks can be missed. The two figures overlap and
+must not be added. These are observed lower bounds, not enforced budgets or
+whole-Mac peaks. The 1024 video has 2905 observations, no observer failures,
+and sampled Metal peak 25,012,125,696 bytes. Prior reports did not measure this
+process-footprint scope, so do not compare their active-only numbers to it.
+
+The new image and first/middle/last video frames were visually inspected.
+Before/after raw exported RGB comparisons have image cosine
+0.999990499/0.999991761 at 512/1024; three sampled video frame cosines are
+0.999924724/0.999884720/0.999829442. Small encoder rounding changes can
+propagate through BF16 DiT; these observations do not prove full independent
+video quality acceptance or eliminate the previously failing strict latent
+gate. Preserve that pending requirement.
+
+`tools/validation/seedvr2_paired_cohort.py` now orchestrates native/Comfy/
+Comfy/native cohorts, one cold and at least three full warm requests each,
+with immutable source, model, binary/build and Comfy-version/patch identities.
+It records a workload-specific median speed gate, not an overall completion
+claim. Full image/video paired runs and GPU+ANE qualification remain next.
+
 The earlier fixture generator enlarged before source downsampling; its saved
 input tensors remain immutable valid parity fixtures. The generator now
 downsamples the original directly and saves the actual source PNG/provenance.

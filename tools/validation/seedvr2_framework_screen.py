@@ -124,7 +124,8 @@ def record_setup(args):
         report["native_artifact_identity"] = dict(library_sha256=sha256(args.library),
             runtime_build_manifest_sha256=sha256(build_manifest),
             environment={key: os.environ.get(key) for key in (
-                "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE", "TURBOCIDER_SEEDVR2_ALLOCATOR_CACHE_BYTES")})
+                "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE", "TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE",
+                "TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS", "TURBOCIDER_SEEDVR2_ALLOCATOR_CACHE_BYTES")})
     write_json(args.output / "report.json", report)
     return report
 

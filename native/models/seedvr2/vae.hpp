@@ -6,6 +6,8 @@ namespace tc::seedvr2 {
 class VAE {
     TensorBank weights_;
     std::string conv_recipe_ = "singleton2d";
+    std::string norm_recipe_ = "metal";
+    int conv_tile_rows_ = 16384;
     using Caches = std::unordered_map<std::string, Tensor>;
     Tensor conv(const Tensor &, const std::string &, Caches *, bool initial,
                 bool downsample = false) const;
@@ -19,6 +21,8 @@ class VAE {
     void load(const std::filesystem::path &);
     size_t bytes() const { return weights_.bytes(); }
     const std::string &conv_recipe() const { return conv_recipe_; }
+    int conv_tile_rows() const { return conv_tile_rows_; }
+    const std::string &norm_recipe() const { return norm_recipe_; }
     // External BCTHW, RGB pixels in [-1,1]. Returns scaled latent means only.
     Tensor encode(const Tensor &, const Event &, std::atomic<bool> &) const;
     // Scaled BCTHW latents -> RGB BCTHW in [-1,1]. Temporal slicing carries

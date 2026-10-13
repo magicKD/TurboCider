@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include "platform.hpp"
+#include "seedvr2_memory_sampler.hpp"
 #include "../../models/seedvr2/pipeline.hpp"
 #include "../../models/seedvr2/media.hpp"
 #include "../../models/seedvr2/memory.hpp"
@@ -86,6 +87,7 @@ class SeedVR2Session final : public ModelSession {
         const auto allocator_cache_bytes = seedvr2::allocator_cache_limit();
         seedvr2::AllocatorCacheScope allocator(allocator_cache_bytes);
         const auto started = Clock::now();
+        SeedVR2MemorySampler memory;
         load(event, cancelled);
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
@@ -142,6 +144,7 @@ class SeedVR2Session final : public ModelSession {
             std::filesystem::rename(temporary, output);
             const double export_seconds = elapsed(export_started);
             if (event) event("export", 1, 1);
+            memory.stop();
             return native_run_result(@{
                 @"schema_version": @1, @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
@@ -155,11 +158,19 @@ class SeedVR2Session final : public ModelSession {
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
+                @"vae_norm_recipe": @(pipeline_.vae_norm_recipe().c_str()),
+                @"vae_conv_tile_rows_limit": @(pipeline_.vae_conv_tile_rows()),
                 @"vae_attention_recipe": @"full_spatial_keys_fp32_query512",
                 @"vae_history_policy": video ? @"causal_temporal_history" : @"no_unused_single_frame_history",
                 @"allocator_cache_limit_bytes": @(allocator_cache_bytes),
                 @"allocator_cache_retention": @"bounded_during_request_cleared_on_exit",
                 @"mlx_peak_scope": @"request_active_allocations_excludes_allocator_cache_and_non_mlx",
+                @"sampled_process_footprint_peak_bytes": memory.footprint_available() ? (id)@(memory.footprint_peak()) : (id)NSNull.null,
+                @"sampled_metal_allocation_peak_bytes": memory.metal_available() ? (id)@(memory.metal_peak()) : (id)NSNull.null,
+                @"memory_sampling_interval_ms": @20,
+                @"memory_sample_count": @(memory.samples()), @"memory_sample_failures": @(memory.failures()),
+                @"sampled_memory_scope": @"process_task_vm_info.phys_footprint_and_MTLDevice.currentAllocatedSize_overlap_do_not_add",
+                @"sampled_peaks_are_hard_bounds": @NO,
                 @"checkpoint_sha256": @(kDiTSha), @"vae_sha256": @(kVAESha),
                 @"checkpoint_sha256_verified": @YES, @"seconds": @(elapsed(started)),
                 @"timings_seconds": @{@"request_wall": @(elapsed(started)), @"load": @(load_seconds),

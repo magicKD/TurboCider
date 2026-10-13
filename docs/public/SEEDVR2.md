@@ -62,12 +62,16 @@ its directory, then add a source image or video. Video import fills the source
 frame count/FPS. GPU is the available execution route; unqualified ANE
 manifests, LoRA, graph-compilation and streaming options fail explicitly.
 
-The default VAE uses safe singleton-frame 2D convolutions, FP16 activations,
-bounded full spatial attention, and causal histories for videos. Single images
+The default VAE uses safe singleton-frame 2D convolutions, fused Metal
+per-frame GroupNorm, FP16 activations, bounded full spatial attention, and
+causal histories for videos. Single images
 do not retain unused histories. The native allocator keeps up to 4 GiB of
 temporary buffers during a request and clears unused buffers on exit; loaded
 model weights remain resident. Reported `mlx_peak_bytes` is the current
 request's active MLX peak, not the whole process's or Mac's memory usage.
+Results also report process physical-footprint and Metal-allocation sampled
+peaks at a nominal 20 ms interval. Those figures overlap and must not be added;
+sampling may miss short-lived allocations and is not a hard memory bound.
 
 For diagnostics, `TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE=conv3d` selects the
 lower-active-peak/slower 3D image route. `singleton2d` is the tested default;
@@ -75,6 +79,14 @@ lower-active-peak/slower 3D image route. `singleton2d` is the tested default;
 `TURBOCIDER_SEEDVR2_ALLOCATOR_CACHE_BYTES` to an integer byte count in
 0..17179869184 to change temporary cache retention. Smaller limits may slow
 inference; these settings are not a hard memory budget.
+
+`TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE=mlx` selects the pre-fusion reference
+normalization; `metal` is the validated default. Experimental `tiled3d`
+convolution reads causal histories virtually and bounds column workspaces to
+two tiles of at most 256 MiB each. It preserves full-frame normalization and
+attention, but currently trades speed for lower active memory, so is not the
+default. Its `TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS` limit accepts 128-aligned
+integers from 128 to 65536 (default 16384).
 
 ## Validation boundary
 
@@ -107,6 +119,16 @@ checks at **24.8 GB** active peak, versus an earlier **37.4 GB** observation.
 These before/after records are not a paired complete ComfyUI qualification.
 The BF16 DiT's strict generic latent/intermediate gate remains pending; VAE
 parity at 128/512/1024 passes independently.
+
+The subsequent fused-normalization precheck records **3.359 s** warm median
+for 512->1024 images and **16.5 GB** active MLX peak. The real App's complete
+25-frame / 24-FPS 1024 video observes **84.163 s**, **21.7 GB** active peak,
+and **25.3 GB** sampled process physical footprint. These are observations,
+not a final balanced ComfyUI image/video qualification. A separate ABBA
+observer, `tools/validation/seedvr2_paired_cohort.py`, now records two cohorts
+per route with at least three warm requests each and unchanged source/build/
+reference identities; its speed gate does not imply the overall quality/ANE
+goal is complete.
 
 The pinned stock ComfyUI video's VAE currently reaches a CUDA-event-only cache
 offload path on MPS and fails. An independently owned benchmark copy disables

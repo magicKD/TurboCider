@@ -17,3 +17,11 @@ xcrun clang++ -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter \
   -framework Metal -framework Foundation -framework Accelerate \
   -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/seedvr2-probe"
 printf '%s\n' "$OUT/seedvr2-probe"
+xcrun clang++ -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter \
+  -mmacosx-version-min="${MLX_MIN_MACOS:-15.0}" \
+  -isysroot "$SDK" -I native/core -isystem "$MLX_ROOT/include" \
+  -isystem "$MLX_ROOT/include/metal_cpp" native/core/common.cpp \
+  tools/native/seedvr2_conv_probe.cpp -L "$MLX_ROOT/lib" -lmlx \
+  -framework Metal -framework Foundation -framework Accelerate \
+  -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/seedvr2-conv-probe"
+printf '%s\n' "$OUT/seedvr2-conv-probe"
