@@ -233,6 +233,11 @@ static ExecutionPlan make_plan_impl(
         // this remains a heuristic, not an allocator-enforced limit.
         plan.memory_estimate_bytes = (12ull << 30) +
             uint64_t(r.width) * r.height * r.frames * (hybrid ? 1024 : 1408);
+    else if (r.model == "seedvr2-3b")
+        // Resident checkpoint bank, causal histories, sliced VAE activations
+        // and whole-clip DiT. A conservative heuristic, not an enforced cap.
+        plan.memory_estimate_bytes = (10ull << 30) + uint64_t(r.width) * r.height * 24576 +
+            uint64_t(r.width) * r.height * r.frames * 192;
     else if (r.model == "qwen-image-2.1") {
         // Each approximately 1024-square reference contributes 4096 latent
         // tokens. Its BF16 prefix K/V alone occupies 2 GiB across 32 layers

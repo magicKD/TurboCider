@@ -1,0 +1,30 @@
+#pragma once
+#include "model.hpp"
+
+namespace tc::seedvr2 {
+
+class VAE {
+    TensorBank weights_;
+    std::string conv_recipe_ = "singleton2d";
+    using Caches = std::unordered_map<std::string, Tensor>;
+    Tensor conv(const Tensor &, const std::string &, Caches *, bool initial,
+                bool downsample = false) const;
+    Tensor group_norm(const Tensor &, const std::string &, bool silu = true) const;
+    Tensor resnet(const Tensor &, const std::string &, Caches *, bool) const;
+    Tensor mid_block(const Tensor &, const std::string &, Caches *, bool) const;
+    Tensor upsample(const Tensor &, const std::string &, Caches *, bool, bool temporal) const;
+    Tensor encode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &) const;
+    Tensor decode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &) const;
+  public:
+    void load(const std::filesystem::path &);
+    size_t bytes() const { return weights_.bytes(); }
+    const std::string &conv_recipe() const { return conv_recipe_; }
+    // External BCTHW, RGB pixels in [-1,1]. Returns scaled latent means only.
+    Tensor encode(const Tensor &, const Event &, std::atomic<bool> &) const;
+    // Scaled BCTHW latents -> RGB BCTHW in [-1,1]. Temporal slicing carries
+    // original-precision causal histories, never independent image inference.
+    Tensor decode(const Tensor &, const Event &, std::atomic<bool> &) const;
+    void clear() { weights_.clear(); }
+};
+
+} // namespace tc::seedvr2

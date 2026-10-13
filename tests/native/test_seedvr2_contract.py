@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Public SeedVR2 contract checks. No weights or GPU work are required."""
+import ctypes as C
+import json
+import os
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native"))
+lib = C.CDLL(str(NATIVE / "libturbocider.dylib"))
+lib.tc_plan_json.argtypes = [C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
+lib.tc_string_free.argtypes = [C.c_void_p]
+lib.tc_models_json.restype = C.c_void_p
+
+
+def consume(pointer):
+    if not pointer.value:
+        return None
+    value = C.string_at(pointer).decode()
+    lib.tc_string_free(pointer)
+    return value
+
+
+def plan(request):
+    result, error = C.c_void_p(), C.c_void_p()
+    code = lib.tc_plan_json(json.dumps(request).encode(), C.byref(result), C.byref(error))
+    value, message = consume(result), consume(error)
+    return code, json.loads(value) if value else None, message
+
+
+def request(video=False):
+    return dict(schema_version=1, model="seedvr2-3b", operation="video.upscale" if video else "image.upscale",
+        inputs=[dict(kind="video" if video else "image", role="source", path="source.mp4" if video else "source.png")],
+        output="result.mp4" if video else "result.png", width=1024, height=1024,
+        frames=25 if video else 1, fps=24, steps=1, seed=42, execution="gpu", audio=False)
+
+
+class SeedVR2Contracts(unittest.TestCase):
+    def test_registry_declares_real_operations_without_unqualified_ane(self):
+        models = json.loads(consume(C.c_void_p(lib.tc_models_json())))["models"]
+        model = next(m for m in models if m["id"] == "seedvr2-3b")
+        self.assertTrue(model["executor"])
+        self.assertEqual(model["executor_operations"], ["image.upscale", "video.upscale"])
+        self.assertEqual(model["output"], "image+video")
+        self.assertEqual(model["runtime_dependency"], "native")
+        self.assertFalse(model["supports_gpu_ane"])
+
+    def test_both_output_kinds_and_sizes_are_plannable(self):
+        for video in (False, True):
+            for size in (512, 1024):
+                with self.subTest(video=video, size=size):
+                    r = {**request(video), "width": size, "height": size}
+                    code, value, error = plan(r)
+                    self.assertEqual(code, 0, error)
+                    self.assertEqual(value["model"], "seedvr2-3b")
+                    self.assertIsNotNone(value.get("memory_estimate_bytes"))
+                    self.assertEqual(value["encoder_execution"], "not_applicable")
+                    self.assertEqual(value["executor_operations"], ["image.upscale", "video.upscale"])
+
+    def test_schema_two_output_kind_tracks_the_operation(self):
+        for video in (False, True):
+            r = request(video)
+            v2 = dict(schema_version=2, model=r["model"], operation=r["operation"], inputs=r["inputs"],
+                outputs=[dict(kind="video" if video else "image", path=r["output"], width=r["width"], height=r["height"],
+                              frames=r["frames"], fps=r["fps"], audio=False)],
+                sampling=dict(seed=42, steps=1), execution=dict(policy="gpu", residency="resident"))
+            self.assertEqual(plan(v2)[0], 0, plan(v2)[2])
+            v2["outputs"][0]["kind"] = "image" if video else "video"
+            self.assertNotEqual(plan(v2)[0], 0)
+
+    def test_schema_one_default_is_image_upscale(self):
+        r = request()
+        del r["operation"]
+        code, value, error = plan(r)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(value["operation"], "image.upscale")
+
+    def test_rejects_unsupported_inputs_and_silent_option_changes(self):
+        invalid = (
+            dict(operation="image.generate"), dict(prompt="A fox"), dict(inputs=[]),
+            dict(inputs=[dict(kind="image", role="reference", path="source.png")]),
+            dict(inputs=[dict(kind="video", role="source", path="source.mp4")]),
+            dict(steps=2), dict(frames=2), dict(width=513), dict(audio=True), dict(compile_gpu=True),
+            dict(residency="component_staged"), dict(ane_manifest="unqualified.json"),
+            dict(execution="gpu_ane", ane_manifest="unqualified.json", allow_approximation=True),
+            dict(loras=[dict(path="adapter.safetensors", strength=1, role="transformer")]),
+            dict(vsa=True), dict(quantized_cache="cache"), dict(warmup_iterations=1),
+        )
+        for override in invalid:
+            with self.subTest(override=override):
+                code, _, error = plan({**request(), **override})
+                self.assertNotEqual(code, 0, error)
+        for frames in (1, 122):
+            self.assertNotEqual(plan({**request(True), "frames": frames})[0], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

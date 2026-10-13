@@ -1,0 +1,302 @@
+// Native MLX adaptation of ByteDance-Seed/SeedVR's causal s8/c16/t4 VAE.
+// Copyright (c) 2025 Bytedance Ltd. and/or its affiliates.
+// SPDX-License-Identifier: Apache-2.0
+#include "vae.hpp"
+#include <cmath>
+#include <cstdlib>
+#include <cstdio>
+
+namespace tc::seedvr2 {
+namespace {
+Tensor part(const Tensor &x, int axis, int first, int last) {
+    mx::Shape start(x.ndim(), 0), stop = x.shape();
+    start.at(axis) = first;
+    stop.at(axis) = last;
+    return mx::slice(x, start, stop);
+}
+Tensor swish(const Tensor &x) { return x * mx::sigmoid(x); }
+void fence(const Tensor &x, std::atomic<bool> &cancelled) {
+    mx::eval(x);
+    checkpoint(cancelled);
+}
+} // namespace
+
+void VAE::load(const std::filesystem::path &path) {
+    if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE")) conv_recipe_ = value;
+    require(conv_recipe_ == "conv3d" || conv_recipe_ == "taps2d" || conv_recipe_ == "singleton2d",
+            "SeedVR2 VAE conv recipe must be conv3d, taps2d or singleton2d");
+    weights_.load(path, mx::float16, true);
+    require(weights_.at("encoder.conv_in.weight").shape() == mx::Shape{128, 3, 3, 3, 3} &&
+            weights_.at("decoder.conv_in.weight").shape() == mx::Shape{512, 3, 3, 3, 16},
+            "SeedVR2 requires the original s8/c16/t4 VAE checkpoint");
+}
+Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
+                 bool initial, bool downsample) const {
+    // Channel-last throughout the VAE, including owned history tensors.
+    const auto &weight = weights_.at(key + ".weight");
+    const int kernel_t = weight.shape(1);
+    const int stride_t = downsample && kernel_t > 1 ? 2 : 1;
+    const int stride_s = downsample ? 2 : 1;
+    auto x = input;
+    const int halo = kernel_t - 1;
+    if (halo) {
+        auto found = cache ? cache->find(key) : Caches::iterator{};
+        auto head = cache && !initial && found != cache->end()
+            ? found->second : mx::repeat(part(input, 1, 0, 1), halo, 1);
+        x = mx::concatenate({head, input}, 1);
+    }
+    if (cache && kernel_t > stride_t) {
+        const int count = kernel_t - stride_t;
+        // Force an owned contiguous copy: a view would pin the full activation
+        // until the next slice, defeating bounded temporal residency.
+        auto history = mx::copy(mx::contiguous(part(x, 1, x.shape(1) - count, x.shape(1))));
+        mx::eval(history);
+        cache->insert_or_assign(key, history);
+    }
+    if (downsample) {
+        x = mx::pad(x, std::vector<std::pair<int, int>>{{0, 0}, {0, 0}, {0, 1}, {0, 1}, {0, 0}});
+    }
+    const int spatial_pad = downsample ? 0 : weight.shape(2) / 2;
+    const int outputs_t = (x.shape(1) - kernel_t) / stride_t + 1;
+    const bool fold_first = conv_recipe_ != "conv3d" && initial && input.shape(1) == 1 && kernel_t > 1;
+    Tensor y(0);
+    if (fold_first) {
+        // All temporal operands are the replicated first frame. Folding the
+        // temporal filter avoids repeating their convolution products.
+        // Keep the effective filter and convolution accumulator in FP32.
+        // The FP16 2D backend can overflow its internal transformed operands
+        // at real-media resolutions even when the final convolution is finite.
+        auto filter = mx::sum(mx::astype(weight, mx::float32), 1);
+        auto frame = mx::reshape(input, {input.shape(0), input.shape(2), input.shape(3), input.shape(4)});
+        if (downsample) frame = mx::pad(frame, std::vector<std::pair<int, int>>{{0,0},{0,1},{0,1},{0,0}});
+        y = mx::conv2d(mx::astype(frame, mx::float32), filter, {stride_s, stride_s}, {spatial_pad, spatial_pad});
+        y = mx::astype(y, input.dtype());
+        y = mx::expand_dims(y, 1);
+    } else if (conv_recipe_ == "taps2d" || (conv_recipe_ == "singleton2d" && kernel_t == 1)) {
+        Tensor accumulated(0);
+        for (int tap = 0; tap < kernel_t; ++tap) {
+            std::vector<int32_t> indices(outputs_t);
+            for (int i = 0; i < outputs_t; ++i) indices[i] = i * stride_t + tap;
+            auto frames = mx::take(x, Tensor(indices.data(), {outputs_t}, mx::int32), 1);
+            frames = mx::reshape(frames, {input.shape(0) * outputs_t, x.shape(2), x.shape(3), x.shape(4)});
+            auto filter = mx::squeeze(part(weight, 1, tap, tap + 1), 1);
+            auto partial = mx::conv2d(mx::astype(frames, mx::float32), mx::astype(filter, mx::float32),
+                                      {stride_s, stride_s}, {spatial_pad, spatial_pad});
+            // Bound each temporal tap workspace, instead of retaining three
+            // convolution workspaces in a lazy sum. FP32 joins avoid adding
+            // further FP16 rounding between the temporal contributions.
+            mx::eval(partial);
+            accumulated = tap ? accumulated + partial : partial;
+            mx::eval(accumulated);
+        }
+        y = mx::astype(accumulated, input.dtype());
+        y = mx::reshape(y, {input.shape(0), outputs_t, y.shape(1), y.shape(2), y.shape(3)});
+    } else {
+        y = mx::conv3d(x, weight, {stride_t, stride_s, stride_s}, {0, spatial_pad, spatial_pad});
+    }
+    return y + weights_.at(key + ".bias");
+}
+Tensor VAE::group_norm(const Tensor &x, const std::string &key, bool activate) const {
+    const int b = x.shape(0), t = x.shape(1), h = x.shape(2), w = x.shape(3), c = x.shape(4);
+    require(c % 32 == 0, "invalid SeedVR2 VAE GroupNorm channels");
+    auto grouped = mx::reshape(x, {b * t, h * w, 32, c / 32});
+    grouped = mx::reshape(mx::transpose(grouped, {0, 2, 1, 3}), {b * t, 32, h * w * (c / 32)});
+    // All spatial positions and channels within a group, per frame. FP32
+    // reductions and affine arithmetic precede the single FP16 output cast.
+    grouped = mx::fast::layer_norm(mx::astype(grouped, mx::float32), {}, {}, 1e-6f);
+    auto result = mx::reshape(mx::transpose(mx::reshape(grouped, {b * t, 32, h * w, c / 32}), {0, 2, 1, 3}), x.shape());
+    result = result * mx::astype(weights_.at(key + ".weight"), mx::float32) +
+             mx::astype(weights_.at(key + ".bias"), mx::float32);
+    result = mx::astype(result, x.dtype());
+    return activate ? swish(result) : result;
+}
+Tensor VAE::resnet(const Tensor &x, const std::string &key, Caches *cache, bool initial) const {
+    auto y = conv(group_norm(x, key + ".norm1"), key + ".conv1", cache, initial);
+    mx::eval(y);
+    if (std::getenv("TURBOCIDER_SEEDVR2_VAE_PROFILE"))
+        require(mx::all(mx::isfinite(y)).item<bool>(), "nonfinite SeedVR2 VAE convolution: " + key + ".conv1");
+    y = conv(group_norm(y, key + ".norm2"), key + ".conv2", cache, initial);
+    auto residual = weights_.has(key + ".conv_shortcut.weight") ? conv(x, key + ".conv_shortcut", cache, initial) : x;
+    y = y + residual;
+    mx::eval(y);
+    if (std::getenv("TURBOCIDER_SEEDVR2_VAE_PROFILE")) {
+        require(mx::all(mx::isfinite(y)).item<bool>(), "nonfinite SeedVR2 VAE residual: " + key);
+        std::fprintf(stderr, "vae_resnet %s T=%d H=%d C=%d active=%zu peak=%zu cache=%zu\n",
+                     key.c_str(), y.shape(1), y.shape(2), y.shape(4),
+                     mx::get_active_memory(), mx::get_peak_memory(), mx::get_cache_memory());
+    }
+    return y;
+}
+Tensor VAE::mid_block(const Tensor &input, const std::string &key, Caches *cache, bool initial) const {
+    auto x = resnet(input, key + ".resnets.0", cache, initial);
+    const auto p = key + ".attentions.0";
+    auto y = group_norm(x, p + ".group_norm", false);
+    const int bt = x.shape(0) * x.shape(1), hw = x.shape(2) * x.shape(3), c = x.shape(4);
+    y = mx::reshape(y, {bt, hw, c});
+    auto heads = [&](const std::string &name) { return mx::expand_dims(weights_.linear(y, p + "." + name), 1); };
+    auto q = mx::astype(heads("to_q"), mx::float32);
+    auto k = mx::astype(heads("to_k"), mx::float32);
+    auto v = mx::astype(heads("to_v"), mx::float32);
+    mx::eval({q, k, v});
+    std::vector<Tensor> attended;
+    // This VAE has a single 512-wide head, outside MLX's fused full-SDPA
+    // geometry. Bound the otherwise quadratic score matrix by query rows;
+    // every query still attends to every spatial key in its own frame.
+    // FP32 scores prevent overflow in the half-precision composite fallback.
+    for (int frame = 0; frame < bt; ++frame) {
+        auto keys = part(k, 0, frame, frame + 1);
+        auto values = part(v, 0, frame, frame + 1);
+        std::vector<Tensor> chunks;
+        for (int first = 0; first < hw; first += 512) {
+            auto queries = part(part(q, 0, frame, frame + 1), 2, first, std::min(first + 512, hw));
+            auto chunk = mx::fast::scaled_dot_product_attention(queries, keys, values, 1.f / std::sqrt(float(c)));
+            chunk = mx::astype(chunk, x.dtype());
+            mx::eval(chunk);
+            chunks.push_back(chunk);
+        }
+        attended.push_back(mx::concatenate(chunks, 2));
+    }
+    y = mx::concatenate(attended, 0);
+    y = mx::reshape(y, {bt, hw, c});
+    x = x + mx::reshape(weights_.linear(y, p + ".to_out.0"), x.shape());
+    return resnet(x, key + ".resnets.1", cache, initial);
+}
+Tensor VAE::upsample(const Tensor &input, const std::string &key, Caches *cache,
+                     bool initial, bool temporal) const {
+    const int b = input.shape(0), t = input.shape(1), h = input.shape(2), w = input.shape(3), c = input.shape(4);
+    const int tr = temporal ? 2 : 1;
+    const auto &weight = weights_.at(key + ".upscale_conv.weight");
+    auto y = mx::matmul(input, mx::transpose(mx::reshape(weight, {4 * tr * c, c}))) +
+             weights_.at(key + ".upscale_conv.bias");
+    // Expansion channels are [spatial_row, spatial_col, temporal_phase, c].
+    y = mx::reshape(y, {b, t, h, w, 2, 2, tr, c});
+    y = mx::reshape(mx::transpose(y, {0, 1, 6, 2, 4, 3, 5, 7}), {b, t * tr, h * 2, w * 2, c});
+    if (temporal && initial) {
+        // The causal first frame has one phase, not two. Keep phase zero and
+        // skip phase one only for the initial slice, never subsequent slices.
+        y = mx::concatenate({part(y, 1, 0, 1), part(y, 1, 2, y.shape(1))}, 1);
+    }
+    return conv(y, key + ".conv", cache, initial);
+}
+Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
+                         const Event &event, std::atomic<bool> &cancelled) const {
+    // The full-resolution spatial-only head is causal per frame. Running it
+    // one frame at a time bounds convolution workspaces without changing the
+    // temporal downsamplers' phase or processing frames independently.
+    if (event) event("seedvr2_vae_encode", 0, 5);
+    std::vector<Tensor> head;
+    for (int frame = 0; frame < input.shape(1); ++frame) {
+        const bool first = initial && frame == 0;
+        auto y = conv(part(input, 1, frame, frame + 1), "encoder.conv_in", cache, first);
+        for (int j = 0; j < 2; ++j) {
+            checkpoint(cancelled);
+            y = resnet(y, "encoder.down_blocks.0.resnets." + std::to_string(j), cache, first);
+        }
+        y = conv(y, "encoder.down_blocks.0.downsamplers.0.conv", cache, first, true);
+        fence(y, cancelled);
+        head.push_back(y);
+    }
+    auto x = mx::concatenate(head, 1);
+    for (int i = 1; i < 4; ++i) {
+        if (event) event("seedvr2_vae_encode", i, 5);
+        const auto p = "encoder.down_blocks." + std::to_string(i);
+        for (int j = 0; j < 2; ++j) {
+            checkpoint(cancelled);
+            x = resnet(x, p + ".resnets." + std::to_string(j), cache, initial);
+        }
+        if (i < 3) x = conv(x, p + ".downsamplers.0.conv", cache, initial, true);
+        fence(x, cancelled);
+    }
+    x = mid_block(x, "encoder.mid_block", cache, initial);
+    x = conv(group_norm(x, "encoder.conv_norm_out"), "encoder.conv_out", cache, initial);
+    x = part(x, 4, 0, 16) * Tensor(.9152f, x.dtype());
+    fence(x, cancelled);
+    if (event) event("seedvr2_vae_encode", 5, 5);
+    return x;
+}
+Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
+                         const Event &event, std::atomic<bool> &cancelled) const {
+    auto x = conv(input / Tensor(.9152f, input.dtype()), "decoder.conv_in", cache, initial);
+    x = mid_block(x, "decoder.mid_block", cache, initial);
+    fence(x, cancelled);
+    for (int i = 0; i < 2; ++i) {
+        if (event) event("seedvr2_vae_decode", i, 5);
+        const auto p = "decoder.up_blocks." + std::to_string(i);
+        for (int j = 0; j < 3; ++j) {
+            checkpoint(cancelled);
+            x = resnet(x, p + ".resnets." + std::to_string(j), cache, initial);
+        }
+        if (i == 0) x = upsample(x, p + ".upsamplers.0", cache, initial, true);
+        fence(x, cancelled);
+    }
+    // From the final temporal upsampler onward, carry causal histories through
+    // each output frame. No full-resolution five-frame activation/workspace
+    // needs to coexist with the resident 3B transformer bank.
+    std::vector<Tensor> frames;
+    for (int frame = 0; frame < x.shape(1); ++frame) {
+        const bool first = initial && frame == 0;
+        auto expanded = upsample(part(x, 1, frame, frame + 1),
+                                 "decoder.up_blocks.1.upsamplers.0", cache, first, true);
+        fence(expanded, cancelled);
+        for (int phase = 0; phase < expanded.shape(1); ++phase) {
+            const bool first_output = first && phase == 0;
+            auto y = part(expanded, 1, phase, phase + 1);
+            for (int i = 2; i < 4; ++i) {
+                if (event) event("seedvr2_vae_decode", i, 5);
+                const auto p = "decoder.up_blocks." + std::to_string(i);
+                for (int j = 0; j < 3; ++j) {
+                    checkpoint(cancelled);
+                    y = resnet(y, p + ".resnets." + std::to_string(j), cache, first_output);
+                }
+                if (i == 2) y = upsample(y, p + ".upsamplers.0", cache, first_output, false);
+                fence(y, cancelled);
+            }
+            y = conv(group_norm(y, "decoder.conv_norm_out"), "decoder.conv_out", cache, first_output);
+            fence(y, cancelled);
+            frames.push_back(y);
+        }
+    }
+    x = mx::concatenate(frames, 1);
+    fence(x, cancelled);
+    if (event) event("seedvr2_vae_decode", 5, 5);
+    return x;
+}
+Tensor VAE::encode(const Tensor &pixels, const Event &event, std::atomic<bool> &cancelled) const {
+    require(pixels.ndim() == 5 && pixels.shape(0) == 1 && pixels.shape(1) == 3 &&
+            pixels.shape(3) % 8 == 0 && pixels.shape(4) % 8 == 0 &&
+            (pixels.shape(2) == 1 || pixels.shape(2) % 4 == 1),
+            "SeedVR2 VAE encode requires batch-one RGB BCTHW, T=4n+1 and spatial multiples of eight");
+    auto input = mx::transpose(mx::astype(pixels, mx::float16), {0, 2, 3, 4, 1});
+    std::vector<Tensor> slices;
+    Caches cache;
+    // A one-frame image has no future slice that could consume a history.
+    // Avoid storing every full-resolution residual input twice in this case.
+    auto histories = input.shape(1) == 1 ? nullptr : &cache;
+    for (int start = 0; start < input.shape(1);) {
+        const int stop = std::min(input.shape(1), start + (start == 0 ? 5 : 4));
+        auto result = encode_slice(part(input, 1, start, stop), histories, start == 0, event, cancelled);
+        slices.push_back(result);
+        start = stop;
+    }
+    auto result = mx::transpose(mx::concatenate(slices, 1), {0, 4, 1, 2, 3});
+    fence(result, cancelled);
+    return result;
+}
+Tensor VAE::decode(const Tensor &latent, const Event &event, std::atomic<bool> &cancelled) const {
+    require(latent.ndim() == 5 && latent.shape(0) == 1 && latent.shape(1) == 16 && latent.shape(2) >= 1,
+            "SeedVR2 VAE decode requires batch-one 16-channel BCTHW");
+    auto input = mx::transpose(mx::astype(latent, mx::float16), {0, 2, 3, 4, 1});
+    std::vector<Tensor> slices;
+    Caches cache;
+    auto histories = input.shape(1) == 1 ? nullptr : &cache;
+    for (int start = 0; start < input.shape(1);) {
+        const int stop = std::min(input.shape(1), start + (start == 0 ? 2 : 1));
+        auto result = decode_slice(part(input, 1, start, stop), histories, start == 0, event, cancelled);
+        slices.push_back(result);
+        start = stop;
+    }
+    auto result = mx::transpose(mx::concatenate(slices, 1), {0, 4, 1, 2, 3});
+    fence(result, cancelled);
+    return result;
+}
+} // namespace tc::seedvr2

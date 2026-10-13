@@ -60,8 +60,8 @@ private enum StudioPage: String, CaseIterable, Identifiable {
 }
 private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
-    ["image.generate": "文生图", "image.transform": "单图修改", "image.edit": "参考编辑",
-     "video.generate": "文生视频", "video.image": "图生视频", "video.keyframes": "关键帧视频",
+    ["image.generate": "文生图", "image.transform": "单图修改", "image.edit": "参考编辑", "image.upscale": "图像超分",
+     "video.generate": "文生视频", "video.image": "图生视频", "video.keyframes": "关键帧视频", "video.upscale": "视频超分",
      "video.reference": "参考视频"][value] ?? value
 }
 private func stateName(_ value: String) -> String {
@@ -266,8 +266,8 @@ struct StudioView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Button(action: chooseImages) { Label("添加图片", systemImage: "plus") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("addImages")
-                Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.disabled(!studio.supportsImageInputs).accessibilityIdentifier("pasteImages")
+                Button(action: chooseImages) { Label(studio.supportsVideoInputs ? "添加源视频" : "添加图片", systemImage: "plus") }.disabled(!studio.supportsImageInputs && !studio.supportsVideoInputs).accessibilityIdentifier("addImages")
+                Button { Task { await studio.pasteImage() } } label: { Label("粘贴图片", systemImage: "doc.on.clipboard") }.disabled(!studio.supportsImageInputs || studio.supportsVideoInputs).accessibilityIdentifier("pasteImages")
                 if studio.canUndoAssets { Button { studio.undoAssetChange() } label: { Image(systemName: "arrow.uturn.backward") }.help("撤销素材修改") }
                 Spacer()
                 if studio.importing { ProgressView().controlSize(.small) }
@@ -278,8 +278,13 @@ struct StudioView: View {
                 Text("\(studio.draft.assets.count - studio.draft.activeAssets.count) 张图片已保留，未参与当前模式。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            PromptEditor(text: $studio.draft.prompt) { Task { await studio.pasteImage() } }
-                .frame(height: 72).accessibilityIdentifier("prompt")
+            if studio.draft.modelID == "seedvr2-3b" {
+                Text("SeedVR2 使用内置条件，无需提示词。指定输出尺寸进行单步超分；视频保留完整源帧数和 FPS，当前不保留音轨。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                PromptEditor(text: $studio.draft.prompt) { Task { await studio.pasteImage() } }
+                    .frame(height: 72).accessibilityIdentifier("prompt")
+            }
             if studio.draft.modelID == "qwen-image-2.1" {
                 HStack {
                     Menu("替换为 Qwen 2.1 示例提示词…") {
@@ -330,7 +335,7 @@ struct StudioView: View {
                     Text(studio.draft.randomSeed ? "每次随机 · 本次 \(studio.lastSeed.map(String.init) ?? "待确定")" : "固定种子 \(studio.draft.seedText)").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(action: generate) { Label(store.busy ? "正在运行" : (model?.isVideo == true ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
+                Button(action: generate) { Label(store.busy ? "正在运行" : (studio.creationKind == "video" ? "生成视频" : "生成图像"), systemImage: "sparkles").padding(.horizontal, 8).padding(.vertical, 4) }
                     .buttonStyle(.borderedProminent).foregroundStyle(Color(red: 0.13, green: 0.09, blue: 0.04))
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(store.busy || api.running || api.changing || submitting || studio.importing ||
@@ -345,20 +350,23 @@ struct StudioView: View {
         ScrollView(.horizontal) { HStack(alignment: .top, spacing: 10) {
             ForEach(Array(studio.draft.assets.enumerated()), id: \.element.id) { index, asset in
                 VStack(alignment: .leading, spacing: 4) {
-                    Button { if ["image.transform", "video.image"].contains(studio.draft.operation) { studio.draft.initImageID = asset.id } } label: {
-                        MediaPreview(path: asset.path, maxPixel: 160).frame(width: 78, height: 54).clipped()
+                    Button { if ["image.transform", "image.upscale", "video.image", "video.upscale"].contains(studio.draft.operation) { studio.selectSourceAsset(asset.id) } } label: {
+                        Group {
+                            if asset.mediaKind == "video" { SafeVideoPreview(path: asset.path) }
+                            else { MediaPreview(path: asset.path, maxPixel: 160) }
+                        }.frame(width: 78, height: 54).clipped()
                             .overlay(RoundedRectangle(cornerRadius: 5).stroke(studio.draft.activeAssets.contains(asset) ? ciderAccent : .clear, lineWidth: 2))
                     }.buttonStyle(.plain).accessibilityLabel("参考图 \(index + 1)，\(asset.name)，点击选为原图")
                     HStack(spacing: 4) {
-                        Text(["image.transform", "video.image"].contains(studio.draft.operation) && studio.draft.initImageID == asset.id ? "原图" : "参考 \(index + 1)").font(.caption2)
+                        Text(["image.transform", "image.upscale", "video.image", "video.upscale"].contains(studio.draft.operation) && studio.draft.initImageID == asset.id ? "源媒体" : "参考 \(index + 1)").font(.caption2)
                         Menu {
                             if studio.draft.modelID == "qwen-image-2.1" {
                                 Button("圈选 / 涂抹 / 独立蒙版…") { annotationAsset = asset }
                                     .disabled(studio.importing || store.busy || submitting)
                             }
                             Button("设为原图") {
-                                let operation = studio.draft.modelID == "ltx-2.5-distilled" ? "video.image" : "image.transform"
-                                studio.changeOperation(operation); studio.draft.initImageID = asset.id
+                                let operation = studio.draft.modelID == "seedvr2-3b" ? (asset.mediaKind == "video" ? "video.upscale" : "image.upscale") : studio.draft.modelID == "ltx-2.5-distilled" ? "video.image" : "image.transform"
+                                studio.changeOperation(operation); studio.selectSourceAsset(asset.id)
                             }
                             Button("向前移动") { studio.move(asset.id, offset: -1) }.disabled(index == 0)
                             Button("向后移动") { studio.move(asset.id, offset: 1) }.disabled(index == studio.draft.assets.count - 1)
@@ -441,7 +449,7 @@ struct StudioView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            if model?.isVideo == true {
+            if studio.creationKind == "video" {
                 Divider()
                 Text("视频参数").font(.subheadline)
                 HStack {
@@ -861,7 +869,8 @@ struct StudioView: View {
         if panel.runModal() == .OK, let url = panel.url { studio.draft.profilePath = url.path; var acceleration = studio.draft.acceleration ?? StudioAcceleration(); acceleration.policy = "profile"; studio.draft.acceleration = acceleration }
     }
     private func chooseImages() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
+        let panel = NSOpenPanel(); panel.allowedContentTypes = studio.supportsVideoInputs ? [.movie] : [.image]
+        panel.allowsMultipleSelection = studio.draft.modelID != "seedvr2-3b"
         if panel.runModal() == .OK { let urls = panel.urls; Task { await studio.addFiles(urls) } }
     }
     private func chooseLoRA() {
@@ -911,7 +920,7 @@ struct StudioView: View {
         guard !store.busy, !api.running, !api.changing, !submitting, !studio.importing else { return }
         if let conflict = studio.draft.zImageStreamingConflict() { studio.message = conflict; return }
         let snapshot = studio.draft
-        let ext = model?.isVideo == true ? "mp4" : "png"
+        let ext = snapshot.operation.hasPrefix("video.") ? "mp4" : "png"
         let output = store.directory.appendingPathComponent("outputs/\(UUID().uuidString).\(ext)")
         submitting = true; studio.message = nil
         Task {

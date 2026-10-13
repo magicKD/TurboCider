@@ -76,11 +76,13 @@ static bool ltx_gemma4_encoder(const Request &request) {
     return request.model == "ltx-2.5-distilled";
 }
 static NSString *encoder_backend_label(const Request &request, bool hybrid) {
+    if (request.model == "seedvr2-3b") return @"not_applicable";
     if (ltx_gemma4_encoder(request))
         return hybrid ? @"metal_mps+coreml" : @"metal_mps";
     return hybrid ? @"mlx_cpp_metal+coreml" : @"mlx_cpp_metal";
 }
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
+    if (request.model == "seedvr2-3b") return @"embedded_conditioning_no_text_encoder";
     if (request.model == "qwen-image-2.1")
         return hybrid ? @"qwen3_vl_language_runtime_ffn_gpu_complement" : @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
@@ -198,6 +200,7 @@ static NSString *encoder_precision_label(const RunResult &result) {
 static NSString *encoder_weight_validation_label(const Request &request,
                                                   bool hybrid,
                                                   bool executed) {
+    if (request.model == "seedvr2-3b") return @"embedded conditioning is part of the DiT checkpoint";
     if (request.model == "qwen-image-2.1")
         return @"native Qwen3-VL language/vision/DeepStack checkpoint loaded directly";
     if (ltx_gemma4_encoder(request)) {
@@ -320,6 +323,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                       r.model == "z-image-turbo" ? @"native_candidate" :
                       r.model == "llada-image-turbo" ? @"native_llada_candidate" :
                       r.model == "qwen-image-2.1" ? @"native_qwen21_experimental" :
+                      r.model == "seedvr2-3b" ? @"native_seedvr2_candidate" :
                       @"weights_pending";
     auto weight_validation = (r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv")
         ? @"runtime graph geometry, receipt and sparse weight-switch self-test checked at load; full-model quality experimental"
@@ -343,6 +347,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"native checkpoint loaded directly; see recorded parity evidence" :
         r.model == "qwen-image-2.1" ?
             @"native Comfy BF16 components; component parity recorded; edit quality pending" :
+        r.model == "seedvr2-3b" ? @"original DiT/VAE SHA-256 checked at session construction; generation stamps checked at load" :
         @"pending";
     auto lora_fusion = lora_strategy == "none" ? @"none" :
         (lora_strategy == "inference_time" ?
@@ -522,15 +527,16 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"validation" : validation,
         @"backend" : backend,
         @"execution" : hybrid ? @"gpu_ane_experimental" : @"gpu",
-        @"encoder_execution" : encoder_hybrid ? @"gpu_ane_experimental" : @"gpu",
+        @"encoder_execution" : r.model == "seedvr2-3b" ? @"not_applicable" : encoder_hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"encoder_backend" : encoder_backend_label(r, encoder_hybrid),
         @"encoder_gpu_graph" : encoder_gpu_graph_label(r, encoder_hybrid),
-        @"encoder_precision" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
+        @"encoder_precision" : r.model == "seedvr2-3b" ? @"not_applicable" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
                                                 : @"bf16",
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
         @"precision" : r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
+                      r.model == "seedvr2-3b" ? @"original_fp16_weights+bf16_dit+fp16_vae+fp32_euler" :
                       r.hybrid_mlp_mode == "runtime" ?
                           (r.model == "z-image-turbo-gguf" ? @"gguf_native_gpu+runtime_fp16_ffn"
                                                           : @"bf16_gpu+runtime_fp16_ffn_bf16_io") :
@@ -599,6 +605,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
              (r.audio ? @"latent_to_48khz_aac_candidate" : @"video_only_native") : @"not_applicable"),
         @"executor_operations" : (r.model == "minimax-h3-vdn" ||
                                       r.model.starts_with("minimax-h3-fasth3-mlx-int6")) ? @[ @"video.generate" ] :
+            r.model == "seedvr2-3b" ? @[ @"image.upscale", @"video.upscale" ] :
             r.model == "ltx-2.5-distilled" ? @[ @"video.generate", @"video.image" ] :
             (r.model == "wan2.1-1.3b-qad" ? @[ @"video.generate" ] : [NSNull null]),
         @"limitation" : recipe.executable

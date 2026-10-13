@@ -153,6 +153,9 @@ private struct InstallationProbe {
             issue("missing_root", report.path, "模型目录不可访问或已移动；请选择现有目录重新登记。"); return
         }
         switch report.modelID {
+        case "seedvr2-3b":
+            weights("diffusion_models/seedvr2_3b_fp16.safetensors")
+            weights("vae/seedvr2_ema_vae_fp16.safetensors")
         case "qwen-image-2.1":
             json("processor/tokenizer.json")
             for path in ["diffusion_models/qwen_image_2.1_bf16.safetensors", "text_encoders/qwen3vl_8b_bf16.safetensors", "vae/qwen_image_2.1_vae_bf16.safetensors"] {

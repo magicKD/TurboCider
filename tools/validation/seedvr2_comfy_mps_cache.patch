@@ -1,0 +1,11 @@
+diff --git a/comfy/ldm/seedvr/vae.py b/comfy/ldm/seedvr/vae.py
+--- a/comfy/ldm/seedvr/vae.py
++++ b/comfy/ldm/seedvr/vae.py
+@@ -414,4 +414,7 @@
+ def _offload_caches_for(frame_pixels):
+     """Whether a pass over this frame area keeps its packed caches in host memory: when there is
+     room for them, reclaiming RAM from inactive models if needed."""
++    # This cache's asynchronous transfers use CUDA streams/events, not MPS.
++    if comfy.model_management.get_torch_device().type != "cuda":
++        return False
+     return comfy.model_management.ensure_pin_budget(frame_pixels * SEEDVR2_CACHE_BYTES_PER_FRAME_PIXEL, evict_active=False)

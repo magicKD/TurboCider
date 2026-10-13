@@ -239,6 +239,7 @@ Request request_from_json(NSDictionary *d) {
         auto model_descriptor = module_for(r.model).describe();
         auto descriptor = to_dictionary(model_descriptor);
         r.operation = string_value(d, @"operation",
+                                   [descriptor[@"output"] isEqual:@"image+video"] ? model_descriptor.executor_operations.front() :
                                    [descriptor[@"output"] isEqual:@"image"] ? "image.generate"
                                                                             : "video.generate");
         r.prompt = string_value(d, @"prompt");
@@ -307,7 +308,9 @@ Request request_from_json(NSDictionary *d) {
                 "one primary output is required");
         auto output = dictionary(outputs[0], "output");
         keys(output, @[ @"kind", @"path", @"width", @"height", @"frames", @"fps", @"audio" ]);
-        require([@(string_value(output, @"kind").c_str()) isEqual:descriptor[@"output"]],
+        const auto expected_kind = model_descriptor.output == "image+video"
+            ? (r.operation.starts_with("video.") ? "video" : "image") : model_descriptor.output;
+        require(string_value(output, @"kind") == expected_kind,
                 "output kind does not match model");
         r.output = string_value(output, @"path");
         r.width = number(output, @"width", [descriptor[@"default_width"] intValue]);
