@@ -39,7 +39,10 @@ struct AccelerationView: View {
             Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
             Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
                 .toggleStyle(.checkbox).disabled(store.busy || !supportsGPUANE).accessibilityIdentifier("enableANE")
-            Text("默认只使用 GPU；勾选 ANE 后先复用已编译缓存，缺失时才编译源分区。").font(.caption).foregroundStyle(.secondary)
+            Text(studio.draft.modelID == "seedvr2-3b"
+                 ? "默认只使用 GPU。手动混合模式需选择通过校验的原始 FP16 已编译分区；不自动编译或替换分区。"
+                 : "默认只使用 GPU；勾选 ANE 后先复用已编译缓存，缺失时才编译源分区。")
+                .font(.caption).foregroundStyle(.secondary)
             if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
             if config.policy == "auto" {
                 Text(discoveryMessage).font(.caption).foregroundStyle(.secondary)
@@ -50,7 +53,10 @@ struct AccelerationView: View {
                 if supportsAutomaticGPUANE { Button("重新检测本机加速") { Task { await discover() } }.disabled(store.busy) }
             }
             if config.policy == "gpu_ane" {
-                Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
+                Text(studio.draft.modelID == "seedvr2-3b"
+                     ? "GPU 处理 attention、文本 FFN、VAE 与视频 FFN 的剩余通道；Core ML CPU+NE 处理原始 FP16 前缀，不量化权重。固定行数分批保留完整视频，实际 ANE 驻留由系统决定。"
+                     : "GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。")
+                    .font(.caption).foregroundStyle(.secondary)
                 if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty {
                     Text("带 LoRA 的 ANE 加速需要匹配同一文件与强度的分区。没有匹配缓存时会提示选择对应分区，或关闭 ANE 使用 GPU。")
                         .font(.caption).foregroundStyle(.orange)
@@ -138,7 +144,15 @@ struct AccelerationView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         panel.message = compiled ? "选择引用 .mlmodelc 的分区 manifest" : "选择引用 .mlpackage 的源分区 manifest"
         if panel.runModal() == .OK, let url = panel.url {
-            library.registerANE(url, modelID: studio.draft.modelID, studio: studio, select: true)
+            if studio.draft.modelID == "seedvr2-3b" {
+                // SeedVR2 uses its exact original-FP16 prefix-bank ABI, not
+                // the generic quantized library manifest schema. Native plan
+                // and load perform the qualified-manifest/tree checks.
+                update { $0.manifest = url.path; $0.sourceManifest = ""; $0.policy = "gpu_ane" }
+                studio.message = nil; studio.save()
+            } else {
+                library.registerANE(url, modelID: studio.draft.modelID, studio: studio, select: true)
+            }
         }
     }
     private func prepare(warmup: Bool) {

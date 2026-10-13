@@ -3,10 +3,13 @@ import Foundation
 
 @main struct SeedVR2AppTests {
     @MainActor static func main() async throws {
-        guard [3, 5, 6].contains(CommandLine.arguments.count) else {
-            throw NativeFailure(message: "seedvr2-app-tests SOURCE_VIDEO OUTPUT_DIRECTORY [MODEL_ROOT SOURCE_IMAGE [resident|component_staged]]")
+        guard [3, 5, 6, 7].contains(CommandLine.arguments.count) else {
+            throw NativeFailure(message: "seedvr2-app-tests SOURCE_VIDEO OUTPUT_DIRECTORY [MODEL_ROOT SOURCE_IMAGE [resident|component_staged [ANE_MANIFEST]]]")
         }
-        let residency = CommandLine.arguments.count == 6 ? CommandLine.arguments[5] : "resident"
+        let residency = CommandLine.arguments.count >= 6 ? CommandLine.arguments[5] : "resident"
+        let manifest = CommandLine.arguments.count == 7 ? CommandLine.arguments[6] : nil
+        let hybrid = manifest != nil
+        let execution = hybrid ? "gpu_ane" : "gpu"
         guard ["resident", "component_staged"].contains(residency) else {
             throw NativeFailure(message: "unsupported SeedVR2 test residency")
         }
@@ -87,7 +90,7 @@ import Foundation
                 await studio.addFiles([operation == "image.upscale" ? realImage : URL(fileURLWithPath: CommandLine.arguments[1])])
                 try check(studio.message == nil, "real-media import failed: \(studio.message ?? "")")
                 studio.draft.prompt = "Ignored old draft prompt"
-                studio.draft.acceleration = StudioAcceleration()
+                studio.draft.acceleration = StudioAcceleration(policy: execution, manifest: manifest ?? "")
                 studio.draft.residency = residency
                 studio.draft.seedText = "42"
                 for size in [512, 1024] {
@@ -102,19 +105,21 @@ import Foundation
                         throw NativeFailure(message: "App generation metrics missing")
                     }
                     try check(metrics["operation"] as? String == operation && metrics["width"] as? Int == size &&
-                              metrics["height"] as? Int == size && metrics["execution"] as? String == "gpu" &&
+                              metrics["height"] as? Int == size && metrics["execution"] as? String == execution &&
                               metrics["checkpoint_sha256_verified"] as? Bool == true,
                               "App result identity/geometry mismatch")
                     try check(metrics["vae_history_recipe"] as? String == "compact" &&
                               metrics["vae_pointwise_recipe"] as? String == "matmul",
                               "App did not execute the qualified VAE history/pointwise defaults")
-                    try check(metrics["numerical_recipe"] as? String == "seedvr2-stable-fp16-fp32-v1" &&
+                    try check(metrics["numerical_recipe"] as? String == (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") &&
                               metrics["dit_projection_dtype"] as? String == "fp16" &&
                               metrics["dit_residual_dtype"] as? String == "fp32" &&
                               metrics["dit_velocity_dtype"] as? String == "fp32" &&
                               metrics["dit_attention_dtype"] as? String == "fp16",
                               "App did not execute the qualified stable mixed-precision profile")
-                    let precision = "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_vae+fp32_euler"
+                    let precision = hybrid
+                        ? "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_coreml_ffn_prefix+fp32_ffn_join+fp16_vae+fp32_euler"
+                        : "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_vae+fp32_euler"
                     let plan = metrics["plan"] as? [String: Any]
                     try check(metrics["runtime_precision"] as? String == precision &&
                               plan?["precision"] as? String == precision,
@@ -125,7 +130,8 @@ import Foundation
                               metrics["weight_residency_recipe"] as? String == (staged ? "stage_dit" : "resident") &&
                               metrics["dit_reloaded_for_sampling"] as? Bool == staged,
                               "App planned/executed weight residency mismatch")
-                    try check(metrics["resident_components"] as? [String] == (staged ? ["vae"] : ["vae", "dit"]),
+                    let components = (staged ? ["vae"] : ["vae", "dit"]) + (hybrid ? ["coreml_ffn_prefix"] : [])
+                    try check(metrics["resident_components"] as? [String] == components,
                               "App reported the wrong resident components")
                     let management = (timings?["weight_management"] as? NSNumber)?.doubleValue ?? -1
                     try check(staged ? management > 0 : management == 0, "App omitted or misreported staging cost")
@@ -133,6 +139,18 @@ import Foundation
                         try check(metrics["dit_weights_reused"] as? Bool == false &&
                                   (metrics["resident_parameter_bytes"] as? NSNumber)?.uint64Value == 501_296_454,
                                   "staged request retained DiT parameters or claimed their reuse")
+                    }
+                    if hybrid {
+                        let tokens = ((request.frames - 1) / 4 + 1) * (size / 16) * (size / 16)
+                        let calls = 32 * ((tokens + 511) / 512)
+                        try check(metrics["coreml_prefix_calls"] as? Int == calls &&
+                                  metrics["coreml_prefix_video_blocks"] as? Int == 32 &&
+                                  metrics["coreml_prefix_compute_units"] as? String == "cpuAndNeuralEngine" &&
+                                  metrics["coreml_prefix_manifest_sha256"] as? String == "109dde47f82b7acb3a6d8cbba16b9d42e9f15fddae539d64141a4ec0ac8a8f76" &&
+                                  metrics["physical_ane_occupancy_measured"] as? Bool == false,
+                                  "App hybrid did not execute its declared partition or overstated occupancy")
+                    } else {
+                        try check(metrics["coreml_prefix_calls"] as? Int == 0, "pure GPU request executed a Core ML prefix")
                     }
                     if isVideo {
                         let inspected = try await StudioAssetImporter(directory: root.appendingPathComponent("verified-media")).importVideoFile(output)
@@ -167,7 +185,8 @@ import Foundation
                     throw NativeFailure(message: "policy-switch result missing")
                 }
                 try check(job.state == "succeeded" &&
-                          metrics["weight_residency_recipe"] as? String == (policy == "resident" ? "resident" : "stage_dit"),
+                          metrics["weight_residency_recipe"] as? String == (policy == "resident" ? "resident" : "stage_dit") &&
+                          metrics["execution"] as? String == execution,
                           "policy switch did not execute the requested residency")
                 let image = try Data(contentsOf: output)
                 if let referencePNG { try check(referencePNG == image, "residency switch changed PNG bytes") }

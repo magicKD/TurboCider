@@ -236,7 +236,7 @@ static ExecutionPlan make_plan_impl(
     else if (r.model == "seedvr2-3b")
         // Resident checkpoint bank, causal histories, sliced VAE activations
         // and whole-clip DiT. A conservative heuristic, not an enforced cap.
-        plan.memory_estimate_bytes = (10ull << 30) + uint64_t(r.width) * r.height * 24576 +
+        plan.memory_estimate_bytes = ((hybrid ? 12ull : 10ull) << 30) + uint64_t(r.width) * r.height * 24576 +
             uint64_t(r.width) * r.height * r.frames * 192;
     else if (r.model == "qwen-image-2.1") {
         // Each approximately 1024-square reference contributes 4096 latent

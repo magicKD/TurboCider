@@ -161,6 +161,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/seedvr2_module.cpp native/models/seedvr2/geometry.cpp
  native/models/seedvr2/model.cpp native/models/seedvr2/vae.cpp
  native/models/seedvr2/pipeline.cpp native/models/seedvr2/media.cpp
+ native/models/seedvr2/hybrid.cpp native/platform/apple/seedvr2_hybrid.mm native/platform/apple/seedvr2_prefix_buffers.mm
  native/platform/apple/seedvr2_session.mm native/media/video_input.mm
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp

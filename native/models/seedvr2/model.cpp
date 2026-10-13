@@ -413,7 +413,9 @@ Tensor DiT::ffn_partial(const Tensor &input, int index, int first, int last) con
     const auto p = "blocks." + std::to_string(index) + ".mlp." + (index < 10 ? "vid" : "all") + ".";
     auto gate = mx::matmul(input, mx::transpose(take_part(weights_.at(p + "proj_in_gate.weight"), 0, first, last)));
     auto up = mx::matmul(input, mx::transpose(take_part(weights_.at(p + "proj_in.weight"), 0, first, last)));
-    auto hidden = swish(gate) * up;
+    auto hidden = residual_recipe_ == "fp32"
+        ? mx::astype(swish(mx::astype(gate,mx::float32))*mx::astype(up,mx::float32),input.dtype())
+        : swish(gate)*up;
     return mx::matmul(hidden, mx::transpose(take_part(weights_.at(p + "proj_out.weight"), 1, first, last)));
 }
 Tensor DiT::output(const Tensor &video, const Tensor &time, const mx::Shape &shape) const {

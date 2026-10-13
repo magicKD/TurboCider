@@ -5,6 +5,7 @@
 #include "../../models/seedvr2/media.hpp"
 #include "../../models/seedvr2/memory.hpp"
 #include "../../models/seedvr2/precision.hpp"
+#include "../../models/seedvr2/hybrid.hpp"
 #include "../../media/image.hpp"
 #include "../../media/video.hpp"
 #include "../../media/video_input.hpp"
@@ -43,7 +44,53 @@ class SeedVR2Session final : public ModelSession {
     std::filesystem::path root_;
     SourceStamp dit_source_, vae_source_;
     seedvr2::Pipeline pipeline_;
+    std::unique_ptr<seedvr2::HybridFFN> hybrid_;
+    std::filesystem::path hybrid_manifest_;
+    std::vector<SourceStamp> hybrid_files_;
+    std::vector<std::pair<std::filesystem::path,std::filesystem::file_time_type>> hybrid_directories_;
     bool loaded_ = false;
+    void check_hybrid_source() const {
+        for (const auto &file : hybrid_files_) file.check();
+        for (const auto &[path, modified] : hybrid_directories_)
+            require(std::filesystem::is_directory(std::filesystem::symlink_status(path)) &&
+                    std::filesystem::last_write_time(path) == modified,
+                    "SeedVR2 compiled artifact directory changed since verification");
+    }
+    void configure_hybrid(const Request &r, const Event &event, std::atomic<bool> &cancelled) {
+        if (r.execution != "gpu_ane") {
+            hybrid_.reset(); hybrid_manifest_.clear(); hybrid_files_.clear(); hybrid_directories_.clear();
+            return;
+        }
+        const auto manifest = std::filesystem::canonical(r.ane_manifest);
+        if (hybrid_ && hybrid_manifest_ == manifest) { check_hybrid_source(); return; }
+        hybrid_.reset(); hybrid_files_.clear(); hybrid_directories_.clear(); hybrid_manifest_.clear();
+        try {
+            seedvr2::validate_public_hybrid_manifest(manifest);
+            auto config = seedvr2::read_hybrid_config(manifest);
+            require(config.source_operand_recipe == "original-fp16" && config.rows == 512 &&
+                    config.channels == 2048 && config.blocks.size() == 32,
+                    "SeedVR2 qualified hybrid partition geometry changed");
+            for (int block = 0; block < 32; ++block)
+                require(config.blocks[block] == block, "SeedVR2 qualified hybrid block coverage changed");
+            auto stamp = [&](const std::filesystem::path &path) {
+                hybrid_files_.push_back({path,std::filesystem::file_size(path),std::filesystem::last_write_time(path)});
+            };
+            stamp(manifest);
+            for (const auto &root : config.artifacts) {
+                hybrid_directories_.emplace_back(root,std::filesystem::last_write_time(root));
+                for (const auto &entry : std::filesystem::recursive_directory_iterator(root)) {
+                    if (entry.is_directory()) hybrid_directories_.emplace_back(entry.path(),entry.last_write_time());
+                    else stamp(entry.path());
+                }
+            }
+            hybrid_ = std::make_unique<seedvr2::HybridFFN>(pipeline_.dit(),std::move(config),event,cancelled);
+            check_hybrid_source();
+            hybrid_manifest_ = manifest;
+        } catch (...) {
+            hybrid_.reset(); hybrid_files_.clear(); hybrid_directories_.clear();
+            throw;
+        }
+    }
     void configure_residency(const Request &r) {
         const bool staged = r.residency == "component_staged";
         if (pipeline_.stages_dit() == staged) return;
@@ -57,7 +104,10 @@ class SeedVR2Session final : public ModelSession {
         : root_(std::filesystem::absolute(root)),
           dit_source_(verify_source(root_ / "diffusion_models/seedvr2_3b_fp16.safetensors", 6784268336, kDiTSha)),
           vae_source_(verify_source(root_ / "vae/seedvr2_ema_vae_fp16.safetensors", 501324814, kVAESha)) {}
-    void unload() override { pipeline_.clear(); loaded_ = false; mx::clear_cache(); }
+    void unload() override {
+        hybrid_.reset(); hybrid_manifest_.clear(); hybrid_files_.clear(); hybrid_directories_.clear();
+        pipeline_.clear(); loaded_ = false; mx::clear_cache();
+    }
     LoadResult load(const Event &event, std::atomic<bool> &cancelled) override {
         checkpoint(cancelled);
         try {
@@ -77,6 +127,7 @@ class SeedVR2Session final : public ModelSession {
         const auto started = Clock::now();
         configure_residency(r);
         load(event, cancelled);
+        configure_hybrid(r,event,cancelled);
         return native_run_result(@{@"schema_version": @1, @"prepared": @YES, @"warmup": @NO,
             @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
             @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
@@ -104,8 +155,12 @@ class SeedVR2Session final : public ModelSession {
         seedvr2::AllocatorCacheScope allocator(allocator_cache_bytes);
         const auto started = Clock::now();
         SeedVR2MemorySampler memory;
+        const bool hybrid_reused = hybrid_ && r.execution == "gpu_ane" &&
+            hybrid_manifest_ == std::filesystem::weakly_canonical(r.ane_manifest) &&
+            pipeline_.stages_dit() == (r.residency == "component_staged");
         configure_residency(r);
         load(event, cancelled);
+        configure_hybrid(r,event,cancelled);
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
         auto unit = video ? load_video_tensor(source, r.frames, r.fps, event, cancelled) : load_rgba_image_tensor(source);
@@ -135,7 +190,22 @@ class SeedVR2Session final : public ModelSession {
         const auto temporary = output.parent_path() /
             (output.stem().string() + ".seedvr2-" + NSUUID.UUID.UUIDString.UTF8String + output.extension().string());
         try {
-            auto result = pipeline_.restore(pixels, noise, event, cancelled, r.dump);
+            const auto calls_before = hybrid_ ? hybrid_->calls() : 0;
+            const auto blocks_before = hybrid_ ? hybrid_->hybrid_blocks() : 0;
+            const auto copies_before = hybrid_ ? hybrid_->copied_bytes() : 0;
+            const auto batches_before = hybrid_ ? hybrid_->batches() : 0;
+            const auto route = hybrid_ ? seedvr2::FFNRoute([&](int block, const Tensor &input) {
+                return hybrid_->predict(block,input);
+            }) : seedvr2::FFNRoute{};
+            auto result = pipeline_.restore(pixels, noise, event, cancelled, r.dump,route);
+            const uint64_t coreml_calls = hybrid_ ? hybrid_->calls()-calls_before : 0;
+            const uint64_t hybrid_blocks = hybrid_ ? hybrid_->hybrid_blocks()-blocks_before : 0;
+            if (hybrid_) {
+                const uint64_t tokens = uint64_t(noise_shape[2])*(r.height/16)*(r.width/16);
+                require(coreml_calls == 32*((tokens+511)/512) && hybrid_blocks == 32,
+                        "SeedVR2 hybrid did not execute its declared all-block prefix partition");
+                check_hybrid_source();
+            }
             require(result.pixels.shape() == mx::Shape{1, 3, r.frames, r.height, r.width} &&
                     mx::all(mx::isfinite(result.pixels)).item<bool>(), "SeedVR2 produced invalid restored pixels");
             auto restored = mx::transpose(mx::squeeze(mx::astype(result.pixels, mx::float32), 0), {1, 2, 3, 0});
@@ -167,11 +237,20 @@ class SeedVR2Session final : public ModelSession {
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
                 @"frames": @(r.frames), @"padded_frames": @(frames), @"fps": @(r.fps),
                 @"source_width": @(source_width), @"source_height": @(source_height),
-                @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": @"gpu",
+                @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": hybrid_ ? @"gpu_ane" : @"gpu",
                 @"warmup": @NO, @"prepared": @NO,
                 @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
-                @"runtime_precision": @(seedvr2::kStablePrecision),
-                @"numerical_recipe": @(seedvr2::kStableRecipe),
+                @"runtime_precision": @(hybrid_ ? seedvr2::kHybridPrecision : seedvr2::kStablePrecision),
+                @"numerical_recipe": @(hybrid_ ? seedvr2::kHybridRecipe : seedvr2::kStableRecipe),
+                @"coreml_prefix_compute_units": hybrid_ ? @"cpuAndNeuralEngine" : @"not_applicable",
+                @"coreml_prefix_activation_dtype": hybrid_ ? @"fp16" : @"not_applicable",
+                @"coreml_prefix_reused": @(hybrid_reused), @"coreml_prefix_calls": @(coreml_calls),
+                @"coreml_prefix_video_blocks": @(hybrid_blocks),
+                @"coreml_prefix_batches": @(hybrid_ ? hybrid_->batches()-batches_before : 0),
+                @"coreml_output_copied_bytes": @(hybrid_ ? hybrid_->copied_bytes()-copies_before : 0),
+                @"coreml_prefix_backing_bytes": @(hybrid_ ? hybrid_->prefix_backing_bytes() : 0),
+                @"coreml_prefix_manifest_sha256": hybrid_ ? @(hybrid_->config().manifest_sha256.c_str()) : (id)NSNull.null,
+                @"physical_ane_occupancy_measured": @NO,
                 @"dit_projection_dtype": @"fp16", @"dit_residual_dtype": @"fp32",
                 @"dit_rms_dtype": @"fp32", @"dit_time_dtype": @"fp32",
                 @"dit_velocity_dtype": @"fp32", @"dit_attention_dtype": @"fp16",
@@ -182,7 +261,8 @@ class SeedVR2Session final : public ModelSession {
                 @"dit_reloaded_for_sampling": @(pipeline_.stages_dit()),
                 @"weight_residency_recipe": @(pipeline_.weight_residency_recipe()),
                 @"resident_parameter_bytes": @(pipeline_.bytes()),
-                @"resident_components": pipeline_.dit().bytes() ? @[@"vae", @"dit"] : @[@"vae"],
+                @"resident_parameter_bytes_scope": @"MLX parameter bank; excludes Core ML parameters and buffers",
+                @"resident_components": hybrid_ ? (pipeline_.dit().bytes() ? @[@"vae", @"dit", @"coreml_ffn_prefix"] : @[@"vae", @"coreml_ffn_prefix"]) : (pipeline_.dit().bytes() ? @[@"vae", @"dit"] : @[@"vae"]),
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),

@@ -468,6 +468,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         [algorithm_approximations addObject:
             r.model == "qwen-image-2.1"
                 ? (r.qwen21_w8a8 ? @"qwen21_decode_mlp_w8a8_per_tensor" : @"qwen21_decode_mlp_fp16_partition")
+                : r.model == "seedvr2-3b" ? @"seedvr2_original_fp16_video_ffn_prefix_fp16_partial_down_fp32_join"
                 : @"single_block_mlp_coreml_approximation"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:[NSString stringWithFormat:
@@ -537,7 +538,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             encoder_weight_validation_label(r, encoder_hybrid, false),
         @"gpu_graph" : gpu_graph_label(r),
         @"precision" : r.hybrid_mlp_mode == "runtime_qkv" ? @"bf16_gpu+runtime_fp16_qkv_bf16_io" :
-                      r.model == "seedvr2-3b" ? @(seedvr2::kStablePrecision) :
+                      r.model == "seedvr2-3b" ? @(hybrid ? seedvr2::kHybridPrecision : seedvr2::kStablePrecision) :
                       r.hybrid_mlp_mode == "runtime" ?
                           (r.model == "z-image-turbo-gguf" ? @"gguf_native_gpu+runtime_fp16_ffn"
                                                           : @"bf16_gpu+runtime_fp16_ffn_bf16_io") :

@@ -264,6 +264,13 @@ final class NativeJobStore: ObservableObject {
         // Public streaming v1 is GPU-only. Do not perform ANE discovery or
         // mutate the request before the public validator reports a conflict.
         guard !draft.usesPublicStreaming else { return draft }
+        if draft.modelID == "seedvr2-3b", draft.usesANE {
+            guard !(draft.acceleration?.manifest.isEmpty ?? true) else {
+                throw NativeFailure(message: "请选择通过校验的 SeedVR2 原始 FP16 已编译前缀 manifest。")
+            }
+            accelerationStatus = "SeedVR2 手动原始 FP16 前缀 · 由 native 校验银行身份与分块执行"
+            return draft
+        }
         guard draft.usesANE, ["flux2-klein-4b", "z-image-turbo"].contains(draft.modelID) else { return draft }
         guard !busy, !resolvingAcceleration else { throw NativeFailure(message: "请等待当前任务完成。") }
         resolvingAcceleration = true

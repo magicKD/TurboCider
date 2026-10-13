@@ -2,11 +2,14 @@
 
 SeedVR2 3B is available through the native App, CLI and existing C / Swift
 SDK request interfaces. This integration is still being qualified. Pure GPU
-image/video inference works; GPU+ANE is not yet available in the public route.
+image/video inference works; an optional manual GPU/Core ML CPU+NE prefix
+route is available for the exact qualified original-FP16 compiled bank.
 The quality and speed results below are workload/profile-specific. The stable
 FP16/FP32 profile passes App image/video regression and the matched full-request
-SDPA/GPU-only image/video speed cohorts at 512 and 1024 outputs. Default-video
-controls and GPU+ANE App qualification remain pending.
+SDPA/GPU-only image/video speed cohorts at 512 and 1024 outputs. The manual
+hybrid passes four-media App/component checks and complete-request GPU/hybrid
+ABBA speed cohorts. Physical ANE occupancy and the new-library 1024-video
+Comfy default-attention control remain unmeasured/pending.
 
 ## Prepare weights
 
@@ -70,8 +73,39 @@ preserved. Image output is PNG.
 
 The App exposes “图像超分” and “视频超分”. Choose the SeedVR2 model, register
 its directory, then add a source image or video. Video import fills the source
-frame count/FPS. GPU is the available execution route; unqualified ANE
+frame count/FPS. GPU is the default execution route; unqualified ANE
 manifests, LoRA, graph-compilation and streaming options fail explicitly.
+
+For manual hybrid execution, enable “额外启用 ANE” and select the already
+compiled SeedVR2 prefix manifest. CLI/SDK schema 1 uses `execution="gpu_ane"`,
+`allow_approximation=true` and `ane_manifest`; schema 2 places `policy`,
+`allow_approximation` and `ane_manifest` inside `execution`. Approximation
+consent is required because prefix activation/partial-down arithmetic differs
+from the stable GPU recipe. `auto` remains GPU-only, and GPU/auto requests
+carrying a prefix manifest are rejected, not silently rerouted.
+
+The only public qualified manifest SHA-256 is
+`109dde47f82b7acb3a6d8cbba16b9d42e9f15fddae539d64141a4ec0ac8a8f76`.
+It references all 32 compiled video FFNs, fixed 512 rows, 2560 input/output
+channels, and 2048 of 6912 intermediate channels. The runtime checks every
+compiled file/tree hash before constructing Core ML models and checks source
+stamps around requests. Recompiling on another host/toolchain can produce a
+different identity; such banks require separate qualification and are not
+automatically accepted. `tools/coreml/export_seedvr2_ffn.py` is an offline
+experiment/export tool, not an automatic App bank installer. Missing-bank
+errors leave the default GPU path available.
+
+Core ML uses CPU+NE with GPU excluded; GPU simultaneously executes the other
+4864 FFN channels. Attention, text FFN and VAE stay GPU. The FP16 prefix/down
+result and GPU suffix are joined in FP32. Results explicitly identify
+`seedvr2-original-fp16-coreml-prefix-v1`, actual prefix calls, all-block coverage,
+bank identity and `physical_ane_occupancy_measured=false`. The independent
+caller-owned output pool has at most 64 slots / 256 MiB and is reused only
+after a completed separately owned join. Larger videos use bounded row groups;
+this preserves all tokens but does not qualify 121-frame real-media quality.
+Hybrid staged mode retains the Core ML bank in addition to VAE parameters;
+`resident_parameter_bytes` covers MLX parameters only, not the entire bank or
+process.
 
 The tested optional low-active-memory policy is `component_staged`. The App's
 “模型驻留” selector offers “常驻（速度优先）” (the default) and
@@ -172,7 +206,7 @@ Comfy default-attention/ordinary-residency observer (FP16 VAE): **0.827 vs
 3.985 s** at 256->512 and **3.506 vs 15.535 s** at 512->1024, six full warm
 requests per route. These are about **4.82x / 4.43x** for those workloads;
 new-profile video paired checks and GPU+ANE qualification remain separate
-requirements.
+requirements for this historical image-only cohort.
 
 The new-profile SDPA/GPU-only image cohorts also pass: **0.828 vs 3.978 s**
 for 256->512 and **3.504 vs 15.636 s** for 512->1024, six complete warm requests
@@ -183,19 +217,45 @@ non-CUDA cache-transfer compatibility guard disclosed. The stable full
 512->1024 / t25 / 24-FPS video SDPA/GPU-only ABBA cohort also passes:
 **84.879 vs 298.901 s**, about **3.52x**, six complete warm requests per route.
 All 25 frames, dimensions and FPS are verified; the same MPS cache-transfer
-guard is disclosed. Default-video controls and GPU+ANE qualification remain
-pending.
+guard is disclosed. The new staged-capable resident GPU library also passes
+the 512/t25 compatible default-attention video control: **20.586 vs 71.190 s**,
+about **3.46x**. Its 1024-video default-attention control remains pending.
 
-An isolated original-FP16 GPU/CPU+NE FFN experiment now passes the unchanged
+The original-FP16 GPU/CPU+NE prefix route passes the unchanged
 512/1024 image and complete 25-frame video tensor gates against both stable
 GPU and independent original-parameter FP32 controls, using all 32 video FFN
 prefixes. A new independent-output-backing schedule avoids the prior mutable
 output/copy problem and the row-chunk image regression: 1024 warm component
-denoise is about **1.727 vs 1.838 s**. It is not enabled in the App yet:
-component screens do not establish balanced complete-request speed, physical
-ANE occupancy or whole-process memory benefit. The backing pool adds active
-memory; failed/slow earlier schedules remain documented. Complete-request
-speed/memory, execution evidence and App regression still precede promotion.
+denoise is about **1.727 vs 1.838 s**. These component observations are not
+whole-request speed evidence. Separate public-candidate ABBA cohorts use six
+genuine warm requests per route and include import, resize, VAE, sampling and
+media export:
+
+| Workload | GPU / CPU+NE hybrid warm median | Ratio GPU/hybrid |
+| --- | ---: | ---: |
+| Image 256->512 | 0.828580 / 0.772848 s | 1.07211x |
+| Image 512->1024 | 3.500113 / 3.385148 s | 1.03396x |
+| Video 256->512, all t25 | 20.576623 / 20.282359 s | 1.01451x |
+| Video 512->1024, all t25 | 84.951658 / 83.104532 s | 1.02223x |
+
+These records bind candidate library SHA `2fdc400244fa4163465c2bdb38ad04ee8d495d4fd30062e0d4c501db58e2a4d7`.
+The subsequent metadata-only build uses a separate identity; these timings
+are not relabeled as new-binary paired results. The modest gains are
+hardware/workload-specific. A synthetic CPU-only prefix control is also
+faster than GPU-only, so the entire improvement cannot be credited to NE.
+Physical occupancy requires separate hardware evidence; local `powermetrics`
+sampling needs administrator permission and was unavailable. No whole-process
+memory improvement is claimed for hybrid resident: its backing pool adds
+active memory. Failed/slow earlier schedules remain documented.
+
+Actual App GPU, hybrid resident and hybrid staged workflows each pass seven
+requests: all four media/size cases, resident/staged/resident transitions,
+history persistence and unload. Hybrid resident/staged PNG files and all 25
+decoded frames at both sizes match bitwise; MP4 container hashes differ.
+GPU-vs-hybrid exports are not identical. On the App witnesses, image RGBA
+PSNR is about 52.42/53.81 dB and decoded-video RGB PSNR about 33.43/38.68 dB at
+512/1024. These are diagnostic export statistics (video includes codec
+effects), not substitutes for the unchanged shared-noise tensor gates.
 
 On the verified M4 Max / 64 GiB host, the native CLI generated a complete
 512→1024 image and a complete 512→1024, 25-frame / 24-FPS LTX-derived video.
@@ -213,11 +273,17 @@ build/native/turbocider-seedvr2-app-tests SOURCE_512_T25_FPS24.mp4 \
   outputs/seedvr2-app-new models/Comfy-Org-SeedVR2 SOURCE_512.png
 ```
 
+## Historical observations (older builds and numerical recipes)
+
+The following chronology is retained for reproducibility; it is not the
+current capability/acceptance summary above.
+
 The first image-only full-request precheck records two warm observations per
 route: original ComfyUI v0.39 MPS/SDPA **15.639 s**, native GPU **5.913 s**,
 about **2.65×**. This was not an ABBA paired cohort; both reports intentionally
 retain `qualification_passed=false`. Later workload-specific speed cohorts are
-reported below; full quality and GPU+ANE qualification remain pending.
+reported above; physical ANE occupancy and broader workloads remain separate
+qualification boundaries.
 
 After VAE optimization, the updated native 512->1024 image precheck is
 **3.913 s** warm median, with **17.8 GB** active MLX peak versus the earlier
@@ -242,7 +308,7 @@ gate against pinned stock ComfyUI MPS SDPA/GPU-only: 256->512 is **0.820 vs
 3.974 s**, and 512->1024 is **3.369 vs 15.632 s**, six warm requests per route
 per workload. These are complete import/encode/sample/decode/export timings.
 They do not imply completed default-Comfy, shared-noise quality or
-GPU+ANE qualification. The public route remains GPU-only.
+GPU+ANE qualification. At that stage the public route remained GPU-only.
 
 The complete 256->512, 25-frame / 24-FPS video ABBA cohort also passes its
 speed gate: **20.44 s native vs 71.33 s MPS-compatible Comfy SDPA/GPU-only**,

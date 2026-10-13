@@ -40,11 +40,38 @@ def sha256(path):
 
 
 def native_request(args, source, output, index):
+    hybrid = args.route == "native-hybrid"
+    execution = dict(policy="gpu_ane" if hybrid else "gpu", residency=getattr(args,"residency","resident"))
+    if hybrid:
+        execution.update(ane_manifest=str(args.ane_manifest), allow_approximation=True)
     return dict(schema_version=2, model="seedvr2-3b", operation=f"{args.kind}.upscale",
         inputs=[dict(kind=args.kind, role="source", path=str(source))],
         outputs=[dict(kind=args.kind, path=str(output), width=args.width, height=args.height,
                       frames=args.frames, fps=args.fps, audio=False)],
-        sampling=dict(seed=args.seed + index, steps=1), execution=dict(policy="gpu", residency="resident"))
+        sampling=dict(seed=args.seed + index, steps=1), execution=execution)
+
+
+def check_native_execution(args, result):
+    hybrid = args.route == "native-hybrid"
+    execution = "gpu_ane" if hybrid else "gpu"
+    recipe = "seedvr2-original-fp16-coreml-prefix-v1" if hybrid else "seedvr2-stable-fp16-fp32-v1"
+    if (result.get("actual_denoise_steps") != 1 or result.get("conditioning_cache_hit") or
+            result.get("execution") != execution or result.get("numerical_recipe") != recipe or
+            result.get("dit_projection_dtype") != "fp16" or result.get("dit_residual_dtype") != "fp32"):
+        raise ValueError("complete native request did not execute its declared precision/route")
+    if hybrid:
+        frames = 1 + ((args.frames - 1 + 3) // 4) * 4
+        tokens = ((frames - 1) // 4 + 1) * (args.height // 16) * (args.width // 16)
+        if (result.get("coreml_prefix_calls") != 32*((tokens+511)//512) or
+                result.get("coreml_prefix_video_blocks") != 32 or
+                result.get("coreml_prefix_compute_units") != "cpuAndNeuralEngine" or
+                result.get("coreml_prefix_manifest_sha256") != sha256(args.ane_manifest)):
+            raise ValueError("hybrid complete request lacked the declared all-block partition execution")
+    elif result.get("coreml_prefix_calls",0) != 0:
+        raise ValueError("pure-GPU complete request executed an unexpected Core ML prefix")
+    residency = getattr(args,"residency","resident")
+    if "weight_residency_recipe" in result and result["weight_residency_recipe"] != ("stage_dit" if residency == "component_staged" else "resident"):
+        raise ValueError("native request executed a different residency than requested")
 
 
 def workflow(args, filename, index):
@@ -115,7 +142,7 @@ def record_setup(args):
         timing_scope="complete per-request import/resize/encode/sampler/decode/export; constructor/readiness/cold separately",
         qualification_passed=False,
         limit="one route observer, not a paired cold/warm cohort or standalone proof of GPU speed versus ComfyUI")
-    if args.route == "native-gpu":
+    if args.route in ("native-gpu", "native-hybrid"):
         build_manifest = args.library.parent / "runtime-build/runtime-build-manifest.json"
         if not build_manifest.is_file():
             raise ValueError("native runtime build identity manifest is missing")
@@ -131,6 +158,9 @@ def record_setup(args):
             "TURBOCIDER_SEEDVR2_DIT_RMS_RECIPE","TURBOCIDER_SEEDVR2_DIT_TIME_RECIPE",
             "TURBOCIDER_SEEDVR2_DIT_ATTENTION_RECIPE","TURBOCIDER_SEEDVR2_DIT_ROPE_RECIPE",
             "TURBOCIDER_SEEDVR2_DIT_RESIDUAL_RECIPE","TURBOCIDER_SEEDVR2_DIT_LINEAR_RECIPE")}
+        report["native_artifact_identity"]["residency"] = getattr(args,"residency","resident")
+        if args.route == "native-hybrid":
+            report["native_artifact_identity"]["prefix_manifest_sha256"] = sha256(args.ane_manifest)
     write_json(args.output / "report.json", report)
     return report
 
@@ -148,10 +178,7 @@ def native(args, report):
     for row in report["runs"]:
         index = row["index"]
         result = row["metrics"]
-        if result["actual_denoise_steps"] != 1 or result["conditioning_cache_hit"] or result["execution"] != "gpu":
-            raise ValueError("native pure-GPU complete request execution was not observed")
-        if result.get("numerical_recipe") != "seedvr2-stable-fp16-fp32-v1" or result.get("dit_projection_dtype") != "fp16" or result.get("dit_residual_dtype") != "fp32":
-            raise ValueError("complete request did not execute the qualified stable precision profile")
+        check_native_execution(args,result)
         row["output"] = verify_output(Path(result["output"]), args)
         row["output_sha256"] = sha256(Path(result["output"]))
     write_json(args.output / "report.json", report)
@@ -285,7 +312,9 @@ async def comfy(args, report):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--route", choices=("native-gpu", "comfy-default", "comfy-sdpa-gpu"), required=True)
+    parser.add_argument("--route", choices=("native-gpu", "native-hybrid", "comfy-default", "comfy-sdpa-gpu"), required=True)
+    parser.add_argument("--ane-manifest", type=Path)
+    parser.add_argument("--residency", choices=("resident", "component_staged"), default="resident")
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--kind", choices=("image", "video"), required=True)
@@ -301,6 +330,14 @@ def main():
     parser.add_argument("--comfy-python", type=Path)
     parser.add_argument("--comfy-extra", type=Path)
     args = parser.parse_args()
+    if args.route == "native-hybrid":
+        if args.ane_manifest is None or not args.ane_manifest.is_file():
+            parser.error("hybrid observation requires an existing explicit prefix manifest")
+        args.ane_manifest = args.ane_manifest.absolute()
+    elif args.ane_manifest is not None:
+        parser.error("prefix manifest applies only to native-hybrid observation")
+    if args.route.startswith("comfy-") and args.residency != "resident":
+        parser.error("reference residency must remain the explicitly recorded ordinary setting")
     for name in ("model", "source", "output", "library"):
         setattr(args, name, getattr(args, name).absolute())
     for name in ("comfy", "comfy_python", "comfy_extra"):
@@ -311,7 +348,7 @@ def main():
         parser.error("count must be 1...10; output dimensions must be multiples of sixteen")
     report = record_setup(args)
     try:
-        if args.route == "native-gpu": native(args, report)
+        if args.route in ("native-gpu", "native-hybrid"): native(args, report)
         else: asyncio.run(comfy(args, report))
         report["status"] = "complete"
         if len(report["runs"]) > 1:

@@ -50,8 +50,9 @@ are implemented and now registered as `seedvr2-3b` with `image.upscale` and
 `video.upscale` through the public CLI/C ABI/Swift SDK. The App includes source
 image/video import and operation-dependent PNG/MP4 output handling. The model
 library has a matching ModelScope/Hugging Face recipe and file inspection rule.
-The public route remains GPU-only. An isolated GPU/CPU+NE FFN experiment is
-implemented, but is not publicly enabled or qualified as an App speed win.
+The initial public route was GPU-only. The later manual qualified-bank
+GPU/CPU+NE integration, complete-request gains and App release audit are
+recorded chronologically below; auto selection remains GPU-only.
 
 Verified component evidence (raw records under ignored `outputs/`):
 
@@ -1047,6 +1048,184 @@ therefore no manual control-click or screenshot/visual UI pass is claimed.
 The tested window is closed after inspection, and the existing App is left
 alone. Actual App generation and typed draft/selector integration are tested
 above; the visual-click limitation is retained, not bypassed.
+
+### New staged-capable library: complete default-reference 512-video gate
+
+The staged-capable candidate's default resident pure-GPU 256->512 / all t25 /
+24-FPS full-request ABBA cohort completes and passes. Six warm requests per
+route across two independent processes give native median **20.585554 s**
+versus compatible Comfy default-attention/ordinary-residency **71.189599 s**,
+ratio **3.45823x**. All processing stages execute each request; only model
+loader nodes are cached. Every MP4 independently retains all 25 frames,
+512-square dimensions and 24 FPS. Original source/checkpoint/candidate-library/
+runtime-build/reference identities remain immutable and both owned reference
+servers exit. Record:
+`seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014`.
+The three-line MPS cache-transfer compatibility guard and explicit FP16 VAE
+configuration remain disclosed; it is not an unpatched stock MPS video claim.
+This evidence binds the new library SHA `45caa42...`, not the older resident
+binary's ratios. New-library 1024 default-reference and hybrid full-request/
+App qualification remain separate checks.
+
+After the timed job, the main-tree hybrid backend is being aligned with the
+quality-checked original-FP16 independent-backing implementation. It remains
+outside the public runtime/source list and does not turn on `supports_gpu_ane`.
+Its typed schedule has no environment fallback to the failing old copy paths.
+A 64-slot / at-most-256-MiB pool is reused only after a completed, separately
+owned join. Row groups partition long inputs exactly instead of expanding the
+pool beyond its bound; the validated 1024/t25 geometry still uses one group.
+CPU coverage includes tails, larger videos and the signed-int limit, and
+refuses incomplete/double-written leases or flexible output shapes. Failed
+allocation/prediction latches the partition unavailable; fallback output
+handling rejects aliases into other live slots. These source/CPU checks do
+not replace fresh numerical/performance checks or grant public qualification.
+
+The main-tree single-block screens now pass global and every row-chunk gate
+for all four varying seeds. At 4096 rows, warm GPU median is 31.9137 ms,
+GPU/CPU+NE 23.6330 ms; an explicit GPU/CPU-only prefix control is 27.1534 ms
+and independently passes its gates. The CPU-only control itself improves on
+GPU-only in this screen, so do not attribute the whole hybrid gain to ANE.
+The CPU+NE configuration is additionally faster than that CPU-only control,
+but these are separate-route micro screens, not balanced device-occupancy
+proof. Records: `seedvr2-main-buffered-ffn4096-v1-20261014` and
+`seedvr2-main-buffered-cpu-only-ffn4096-v1-20261014`.
+
+The larger 126,976-row screen (the patched-latent row count of 1024/t121)
+uses 248 fixed-row predictions per call in four bounded GPU/prefix groups.
+All four seeds and all 248 row-chunk gates pass (global relative-L2 about
+0.003098, cosine 0.999995), with no snapshot or Core ML fallback output-copy
+bytes. Only 64 backing slots / 167,772,160 MLX bytes are retained, rather than
+one slot per input chunk. Warm GPU/prefix medians are 1.01416/0.789548 s.
+Record: `seedvr2-main-buffered-ffn126976-v1-20261014`.
+This is synthetic one-block numerical/performance evidence, not a restored
+121-frame real video or a whole-model/App acceptance claim. Complete-media
+main-tree regressions and public interface/qualification are next.
+
+### Qualified-bank manual hybrid candidate and actual App regressions
+
+The main-tree four-media GPU/FP32 tensor screen completes and passes at both
+image sizes and both complete t25-video sizes:
+`seedvr2-main-buffered-full-media-screen-v1-20261014`. A separate candidate
+then integrates the typed bounded prefix into the native request/session,
+CLI, Swift/App plan and executed precision. It accepts only the exact
+original-FP16 all-32 manifest digest, requires approximation consent, verifies
+the full compiled tree before model construction, and checks file/directory
+stamps before/after generation. Planning rejects orphan/incomplete banks,
+unqualified manifests and GPU/auto requests carrying a hidden prefix bank.
+Auto remains GPU-only. No CPU-only or failed legacy scheduling environment
+override is present in this candidate.
+
+Candidate library SHA:
+`2fdc400244fa4163465c2bdb38ad04ee8d495d4fd30062e0d4c501db58e2a4d7`.
+Seven public contract and five exporter tests pass. Actual App GPU, hybrid
+resident and hybrid staged runs all terminate successfully, each with seven
+real requests (four media/geometry cases plus resident/staged/resident PNG
+transitions), retained history, strict PNG publication and final unload.
+Mixed precision is explicitly separate from the GPU recipe: FP16 Core ML
+prefix activation/partial down output plus FP32 joins, with unchanged
+original coefficients and FP32 residual state. Runtime asserts all 32 video
+FFN prefixes executed, and reports actual 64/256 image and 448/1792 video
+predictions at 512/1024. Text FFN, attention and VAE stay GPU. Core ML CPU+NE
+configuration is not claimed as physical ANE occupancy.
+
+App records: `seedvr2-app-hybrid-candidate-{gpu,resident,staged}-e2e-v1-20261014`.
+Single reused-model 1024/t25 request observations are GPU 84.715817 s,
+hybrid resident 83.106090 s and hybrid staged 83.532414 s. Their active peaks
+are 21,596,667,598 / 21,743,501,998 / 14,947,552,078 bytes, sampled footprints
+24,933,898,552 / 25,055,156,728 / 18,789,992,296 bytes. These are not paired
+speed proofs or enforced physical-memory budgets. Staged hybrid retains its
+Core ML prefix bank; reported resident parameter bytes explicitly exclude
+Core ML, and `resident_components` includes that bank rather than falsely
+claiming VAE-only residency. Each mixed-policy PNG transition is identical;
+GPU-vs-hybrid outputs are not declared bitwise equivalent.
+
+A new complete-request native/hybrid ABBA observer forces import/resize/VAE
+encode/sample/decode/export on every request, validates executed recipe,
+residency and full prefix counts, and binds original model/source/library/
+build/bank identities. Four CPU guard tests reject cache shortcuts, wrong
+route/precision/counters/bank and unexpected Core ML use on GPU. Both image
+cohorts complete with six warm samples per route: at 512, GPU/hybrid medians
+0.828580/0.772848 s (1.07211x); at 1024, 3.500113/3.385148 s (1.03396x).
+Records: `seedvr2-public-hybrid-image{512,1024}-request-abba-v1-20261014`.
+These are matched whole-request wins for the stated bank/hardware/workloads,
+not extrapolated single-block gains. Video warm cohorts, physical execution
+evidence, broader exported-media quality and release/commit audit remain.
+
+The complete-request 256->512 / full t25 / 24-FPS GPU/hybrid ABBA cohort also
+passes with six warm samples per route: GPU median **20.576623 s**, hybrid
+**20.282359 s**, ratio **1.01451x**. All actual processing/export stages run,
+the bank/precision/all-block counters are checked, and library/build/model/
+input/bank identities remain unchanged. Record:
+`seedvr2-public-hybrid-video512-t25-request-abba-v1-20261014`.
+This modest full-request win is not replaced by the larger FFN-only ratios.
+The subsequent 1024/t25 complete-request cohort and release audit are
+recorded below. Hardware placement remains a separate acceptance boundary.
+
+### Completed 1024 hybrid request cohort and corrected-metadata release audit
+
+The fourth public hybrid workload completes and passes. Six warm requests
+per route give GPU **84.951658 s**, GPU/CPU+NE **83.104532 s**, ratio
+**1.02222654x** for real 512->1024 / all t25 / 24-FPS video. The full import,
+encode, one-step sample, decode and export execute on every repeat; all bank,
+source, build, executed precision and 32-block counters remain bound to the
+candidate library SHA `2fdc400...`. Both reference-route processes terminate.
+Record: `seedvr2-public-hybrid-video1024-t25-request-abba-v1-20261014`.
+All four stated GPU/hybrid complete-request cohorts now pass. These are
+CPU+NE-configuration results, not physical NE occupancy proof or evidence of
+universal acceleration.
+
+The generic plan initially labeled the all-block SeedVR2 route as a
+single-block MLP approximation. A metadata-only correction reports
+`seedvr2_original_fp16_video_ffn_prefix_fp16_partial_down_fp32_join`, without
+changing inference math/weights. The separate v2 native library SHA is
+`e47afeb57050e1cf040f8bbcab6389e0b1ea2bc795d5d704f53ddcd1e7c57ab0`.
+The measured v1 binary and build identity remain intact; its ABBA timings
+are not relabeled as v2-binary measurements. An initial Swift build found
+absolute paths inside the copied v1 module cache. That task-owned cache was
+retained under `module-cache-copied-v1`, and a fresh-cache App build passes.
+No user cache/App was removed or replaced.
+
+Fresh v2 native contracts (7), exporter tests (5), observer tests (4),
+downloader tests (3), geometry test (1), bounded coverage/lease/static-shape
+C++ test, and exported-media statistics/decoder guards (4) pass. Three
+negative compiled-bank tests reject absent files, same-size corrupted files
+and symlink entries before constructing models; they write only to fresh
+scratch directories and leave the real bank unchanged. These are dedicated
+tests, not a claim that unrelated repository suites are entirely green.
+
+All three actual v2 StudioState/NativeJobStore chains also terminate
+successfully: GPU, hybrid resident, hybrid staged, seven real requests each.
+They retain all media frames/FPS, correct recipes/residency/counters, strict
+PNG publication, resident/staged/resident transitions, history and unload.
+Every one of the 14 hybrid requests carries the corrected all-block plan
+label and lacks the erroneous single-block label. Records:
+`seedvr2-app-hybrid-candidate-{gpu,resident,staged}-e2e-v2-20261014`.
+The v2 GPU, hybrid resident and hybrid staged outputs each match their v1
+counterparts in PNG file bytes and every decoded video frame; the v2
+hybrid resident/staged pair is also exact. MP4 container identities are
+recorded separately. All four required-equality comparisons pass:
+`seedvr2-public-hybrid-app-v2-equivalence-20261014.json`.
+
+The bounded host export observer checks every PNG RGBA value and all 25
+decoded RGB video frames, without retaining an entire float64 video. The
+v1 hybrid resident/staged pair matches exactly at both sizes; GPU/hybrid
+outputs deliberately do not. Diagnostic GPU/hybrid exported PSNR is
+52.4212/53.8134 dB for image RGBA and 33.4344/38.6809 dB for video RGB at
+512/1024. Video includes codec effects; these statistics do not replace or
+weaken the shared-noise original-FP32 component gates. The 512-video middle
+frame pair and 1024 hybrid image were visually inspected; this is selected
+output inspection, not every-frame visual QA or a manual-click UI test.
+Record: `seedvr2-public-hybrid-app-export-screen-v1-20261014.json`.
+
+Local read-only `sudo -n powermetrics` sampling cannot run because an
+administrator password is required. No credential prompt/bypass or system
+configuration change was attempted. Metadata stays
+`physical_ane_occupancy_measured=false`; device configuration/planned
+assignment cannot stand in for runtime occupancy. The independent CPU-only
+micro control also improves on GPU, so all gain is not attributed to NE.
+The newer resident library's 1024 default-attention Comfy video control and
+broader hardware/long-video qualification remain pending. Default GPU and
+optional staged residency remain available without the prefix bank.
 
 ## Reproduce component checks
 

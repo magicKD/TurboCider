@@ -1,4 +1,5 @@
 #include "../runtime/session.hpp"
+#include "seedvr2/hybrid.hpp"
 
 namespace tc {
 std::unique_ptr<ModelSession> create_seedvr2(const std::filesystem::path &);
@@ -23,8 +24,14 @@ ModelModule seedvr2_module() {
                     "SeedVR2 image output is one frame; video output requires the complete source frame count in 2...121");
             require(!video || (r.fps >= 1 && r.fps <= 120), "SeedVR2 requires an integer source FPS in 1...120");
             require(!r.audio, "SeedVR2 currently exports silent video; audio preservation is not yet supported");
-            require(r.execution == "gpu" || r.execution == "auto", "SeedVR2 GPU+ANE has not yet been integrated");
-            require(r.ane_manifest.empty() && r.encoder_ane_manifest.empty(), "SeedVR2 does not accept unqualified ANE manifests");
+            require(r.encoder_ane_manifest.empty(), "SeedVR2 has no separate encoder ANE route");
+            if (r.execution == "gpu_ane") {
+                require(r.allow_approximation && !r.ane_manifest.empty(), "SeedVR2 manual GPU+ANE requires approximation consent and a qualified manifest");
+                seedvr2::validate_public_hybrid_manifest(r.ane_manifest);
+            } else {
+                require((r.execution == "gpu" || r.execution == "auto") && r.ane_manifest.empty(),
+                        "SeedVR2 GPU/auto must not silently consume a hybrid manifest");
+            }
             require((r.residency == "resident" || r.residency == "component_staged") && !r.streaming_offload && !r.streaming.active() &&
                     !r.streaming_selector && !r.memory_constrained.enabled && !r.quantized_execution.active(),
                     "SeedVR2 requires resident or component_staged, non-streaming execution");
@@ -43,13 +50,16 @@ ModelModule seedvr2_module() {
             d.steps = 1; d.frames = 1; d.width = 1024; d.height = 1024; d.fps = 24;
             d.default_audio = false; d.default_residency = "resident";
             d.backend = "mlx_cpp_metal"; d.runtime_dependency = "native";
+            d.supports_gpu_ane = true;
+            d.parallel_strategy = "GPU attention/text FFN/VAE and video-FFN suffix; Core ML CPU+NE original-FP16 prefix";
             d.candidate_limitations = {
-                "stable FP16/FP32 profile passes original-parameter FP32 quality and matched GPU speed cohorts; public hybrid qualification remains pending",
+                "stable GPU profile and exact original-FP16 Core ML prefix bank pass original-parameter FP32 image/t25-video component quality; complete-request hybrid performance is hardware/workload-specific",
                 "optional component_staged releases DiT during VAE phases and reloads it for sampling; retains VAE and includes reload costs in timings",
                 "original FP16 checkpoint coefficients and projections; FP32 residuals/normalization/time/velocity and FP16 causal VAE",
                 "raw restoration without optional color transfer; source image alpha is reapplied",
                 "silent CFR videos, complete declared frame count and matching integer source FPS",
-                "GPU+ANE and explicit GPU graph compilation remain unavailable"
+                "manual GPU+ANE accepts only the qualified all-32 original-FP16 bank; auto remains GPU-only; CPU+NE configuration is not physical occupancy evidence",
+                "explicit GPU graph compilation remains unavailable"
             };
             return d;
         }

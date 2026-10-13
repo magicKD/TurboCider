@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native"))
@@ -37,14 +38,14 @@ def request(video=False):
 
 
 class SeedVR2Contracts(unittest.TestCase):
-    def test_registry_declares_real_operations_without_unqualified_ane(self):
+    def test_registry_declares_real_operations_and_manual_hybrid_capability(self):
         models = json.loads(consume(C.c_void_p(lib.tc_models_json())))["models"]
         model = next(m for m in models if m["id"] == "seedvr2-3b")
         self.assertTrue(model["executor"])
         self.assertEqual(model["executor_operations"], ["image.upscale", "video.upscale"])
         self.assertEqual(model["output"], "image+video")
         self.assertEqual(model["runtime_dependency"], "native")
-        self.assertFalse(model["supports_gpu_ane"])
+        self.assertTrue(model["supports_gpu_ane"])
 
     def test_both_output_kinds_and_sizes_are_plannable(self):
         for video in (False, True):
@@ -95,6 +96,30 @@ class SeedVR2Contracts(unittest.TestCase):
         code, value, error = plan(r)
         self.assertEqual(code, 0, error)
         self.assertEqual(value["operation"], "image.upscale")
+
+    def test_qualified_hybrid_bank_precision_and_residency_are_explicit(self):
+        manifest = ROOT / "models/coreml/seedvr2-original-fp16-prefix2048-rows512-v1/manifest.json"
+        if not manifest.exists():
+            self.skipTest("qualified compiled bank fixture unavailable")
+        for video in (False, True):
+            for residency in ("resident", "component_staged"):
+                r = {**request(video), "execution": "gpu_ane", "ane_manifest": str(manifest),
+                     "allow_approximation": True, "residency": residency}
+                code, value, error = plan(r)
+                self.assertEqual(code, 0, error)
+                self.assertEqual(value["execution"], "gpu_ane_experimental")
+                self.assertEqual(value["precision"],
+                    "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_coreml_ffn_prefix+fp32_ffn_join+fp16_vae+fp32_euler")
+                self.assertEqual(value["residency"], residency)
+                for invalid in ({"allow_approximation": False}, {"execution": "gpu"}, {"execution": "auto"}):
+                    self.assertNotEqual(plan({**r, **invalid})[0], 0)
+                self.assertIn("seedvr2_original_fp16_video_ffn_prefix_fp16_partial_down_fp32_join",value["algorithm_approximations"])
+                self.assertNotIn("single_block_mlp_coreml_approximation",value["algorithm_approximations"])
+        with tempfile.TemporaryDirectory(prefix="seedvr2-missing-bank-") as directory:
+            orphan = Path(directory) / "manifest.json"
+            orphan.write_bytes(manifest.read_bytes())
+            self.assertNotEqual(plan({**request(), "execution": "gpu_ane", "allow_approximation": True,
+                                     "ane_manifest": str(orphan)})[0], 0)
 
     def test_rejects_unsupported_inputs_and_silent_option_changes(self):
         invalid = (
