@@ -37,7 +37,8 @@ def check(library: Path, manifest: Path) -> None:
     strings = subprocess.check_output(['strings', str(library)], text=True)
     if 'tc_seedvr2_vae_phase_profile_v1' in strings:
         raise ValueError('stable release library contains VAE phase profiling')
-    if 'tc_seedvr2_ane_causal_pack' in strings or 'causal-conv experiment returned an incomplete activation' in strings:
+    if any(marker in strings for marker in ('tc_seedvr2_ane_causal_pack',
+            'causal-conv experiment returned an incomplete activation', 'seedvr2-causal-request-pixels-v1')):
         raise ValueError('stable release library contains unqualified VAE causal convolution')
     if any(name in strings for name in ('tc_seedvr2_upscale_bias_shuffle','tc_seedvr2_ane_projection_pack','coreml_projection_probe')):
         raise ValueError('stable release library contains unqualified VAE upscale experiment')

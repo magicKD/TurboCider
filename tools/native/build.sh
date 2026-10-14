@@ -9,6 +9,11 @@ fi
 source tools/native/dependencies.sh
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
 PRIVATE_ANE="${TURBOCIDER_ENABLE_PRIVATE_ANE:-0}"
+VAE_CAUSAL_EXPERIMENT="${TURBOCIDER_BUILD_VAE_CAUSAL_EXPERIMENT:-0}"
+case "$VAE_CAUSAL_EXPERIMENT" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_VAE_CAUSAL_EXPERIMENT must be 0 or 1\n' >&2; exit 2 ;;
+esac
 case "$PRIVATE_ANE" in
  0|1) ;;
  *) printf 'TURBOCIDER_ENABLE_PRIVATE_ANE must be 0 or 1\n' >&2; exit 2 ;;
@@ -59,6 +64,9 @@ if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
 fi
 if [[ "$PRIVATE_ANE" == "1" ]]; then
  COMMON+=(-DTURBOCIDER_ENABLE_PRIVATE_ANE=1)
+fi
+if [[ "$VAE_CAUSAL_EXPERIMENT" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=1)
 fi
 BUILD_IDENTITY_DIR="$OUT/runtime-build"
 BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
@@ -174,6 +182,9 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
 if [[ "$PRIVATE_ANE" == "1" ]]; then
  SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm)
 fi
+if [[ "$VAE_CAUSAL_EXPERIMENT" == "1" ]]; then
+ SOURCES+=(tools/native/seedvr2_vae_ane_causal_conv.mm)
+fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
  # intentionally contain common names such as dit.cpp and pipeline.cpp.
@@ -242,6 +253,7 @@ fi
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_mux_tool.o" "$OUT/native_media_audio.o" "$OUT/native_media_video.o" -o "$OUT/ltx-audio-mux" -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
 if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
+ runtime_build_identity --verify
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
  exit 0
 fi

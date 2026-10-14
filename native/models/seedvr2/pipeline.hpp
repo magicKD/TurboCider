@@ -51,6 +51,9 @@ class Pipeline {
     const std::string &vae_encoder_spatial_recipe() const { return vae_.encoder_spatial_recipe(); }
     int vae_conv_tile_rows() const { return vae_.conv_tile_rows(); }
     void configure_vae(const std::optional<SeedVR2VAEConfig> &config) { vae_.configure(config); }
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    void use_experimental_causal_conv(ExperimentalCausalConv execute){vae_.use_experimental_causal_conv(std::move(execute));}
+#endif
     // Resized RGB BCTHW in [-1,1], padded to 4n+1 if necessary. A supplied
     // FP32 sampling-noise fixture makes backend comparisons RNG-independent.
     Restoration restore(const Tensor &pixels, const Tensor &noise,

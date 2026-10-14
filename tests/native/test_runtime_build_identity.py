@@ -24,7 +24,7 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / "checkout"
         for relative in ("native/model.cpp", "bindings/c/api.h", "apps/cli/main.mm",
-                         "services/turbociderd/service.mm", *identity.BUILD_SCRIPTS):
+                         "services/turbociderd/service.mm", *identity.BUILD_SCRIPTS,*identity.EXPERIMENTAL_VAE_SOURCES):
             path = self.root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(relative)
@@ -65,7 +65,7 @@ class RuntimeBuildIdentityTests(unittest.TestCase):
         self.assertEqual(original, identity.manifest(args))
 
     def test_source_build_script_and_shader_changes_invalidate(self):
-        for relative in ("native/model.cpp", "tools/native/build.sh", "dependency/lib/mlx.metallib"):
+        for relative in ("native/model.cpp", "tools/native/build.sh", "dependency/lib/mlx.metallib",*identity.EXPERIMENTAL_VAE_SOURCES):
             with self.subTest(relative=relative):
                 before = self.manifest()
                 path = self.root / relative

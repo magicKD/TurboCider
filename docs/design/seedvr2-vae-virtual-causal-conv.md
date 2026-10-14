@@ -7,7 +7,8 @@ The isolated executor replaces only subsequent-frame
 three temporal taps and3x3 spatial coefficients. The first frame remains the
 original GPU FP32 folded convolution. Global normalization, every other layer,
 temporal partitions and the following residual path remain native. This is not
-a full-VAE ANE backend or a production/App configuration.
+a full-VAE ANE backend or a public production/App setting. An isolated
+full-request/App integration is described below; ordinary builds reject it.
 
 Two prior independently owned normalized frames and the current frame remain
 separate. The GPU packs their exact half words and spatial zero-padding directly
@@ -92,9 +93,147 @@ There are four warm observations per route:
 
 The component speed gate passes by about0.49%, which is a small cadence/order-
 sensitive difference, not a claim of substantial acceleration. The stable
-403,177,740-byte active reduction is the stronger result. Full-request/App
+403,177,740-byte active reduction is the stronger result. Balanced full-request
 performance, broader media/machines, a qualified public bank and physical ANE
-occupancy are still separate gates. No default/public VAE routing is promoted.
+occupancy remain separate gates. No default/public VAE routing is promoted.
+
+## Isolated complete-request and App integration
+
+An explicit experimental native build now accepts
+`TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST` and the optional
+`TURBOCIDER_SEEDVR2_VAE_CAUSAL_COMPUTE=ne|cpu`. It requires the explicit GPU
+backbone, <=1024 canvas, singleton2d/full spatial/frame history settings. The
+original GPU plan and DiT execution are not silently changed. The exact original
+manifest SHA and every compiled-tree file SHA/size are verified before/after
+requests; symlinks, unregistered files and a changed bank fail closed. The
+executor/slots can be reused across requests and reset on selector clearing,
+unload or residency changes. This is not a public VAE configuration field.
+
+Actual video results say `gpu_vae_cpu_ne_experimental`, report the numerical
+recipe suffix, real frames/calls/backing hits, external slot bytes and boundary
+time. Images retain `gpu`, zero predictions and the native recipe; their resident
+component list still truthfully includes the loaded unused Core ML bank.
+Ordinary libraries reject both the selector and raw-capture diagnostic. Build
+identity includes the linked experimental helper sources; library-only builds
+now also verify source freshness before returning.
+
+Complete import/resize/encode/DiT/decode/export observations, same experimental
+library, source, seeds42/43, staged/cache1, source/sink streaming and existing
+upscale sharing enabled:
+
+| Whole-request observation | GPU shared-history | CPU+NE virtual halo |
+| --- | ---: | ---: |
+| Cold request seconds | 90.802605041 | 90.905491833 |
+| Subsequent warm request seconds | 90.231037458 | 90.195729042 |
+| MLX active maximum bytes | 13,014,502,498 | 12,611,324,758 |
+| Warm sampled process footprint maximum bytes | 14,350,271,712 | 14,274,250,024 |
+| Per-request actual calls / backing hits / subsequent frames | 0 /0 /0 | 6144 /6144 /24 |
+
+The403,177,740-byte active reduction survives the complete request. Whole-request
+speed is effectively flat, not an ABBA speed qualification: there is one cold
+and one warm observation per route, not a balanced multi-process cohort. The
+21,626,880-byte external surface pool and internal Core ML allocations are not
+included in MLX active. Sampled process footprint varies by request/caching and
+does not establish a403-MB physical-RAM saving or a hard device budget. At512,
+other phases dominate the request maximum; no substantial peak win is claimed.
+
+The first experimental Swift App workflow completes seven real requests:
+512/1024 images and complete25-frame/24-FPS videos, job persistence and
+resident/staged/resident switches. Videos execute1536/6144 predictions; images
+execute none and match the ordinary App pixels/PNG alpha exactly. Every exported
+video frame passes the unchanged .05/.999 gate. This is an App-state/job-store
+workflow, not GUI clicking or a distributable/public ANE feature.
+
+After adding capture diagnostics, fresh experimental/ordinary libraries pass
+another fourteen actual App requests with the **same SHA-bound Swift frontend**
+and no capture enabled. Every experimental export matches the earlier
+experimental App on all pixels; every ordinary export matches the earlier
+ordinary App. The intended GPU-versus-experimental video differences pass every
+frame's existing gate; images and alpha are exact. The1024 App active maxima
+again are13,014,502,498/12,611,324,758 bytes. These are functional regressions,
+not an additional warm-performance cohort. The ordinary library passes14 public
+contracts, actual release byte/flag/link checks, and actual rejection of each
+nonempty experiment/capture selector followed by same-engine prepare recovery
+and zero-active unload. The complete SeedVR2 CPU/contract suite passes108 tests,
+with separate build-identity and release-guard tests also passing.
+
+The full-request lifecycle driver separately rejects an altered **owned copy**
+of a compiled bank, returns typed cancellation after output frame2 (therefore
+after real subsequent-frame predictions), recovers on the same engine, turns
+the selector off for a resident GPU video, and back on for a staged experimental
+video. All three successful requests preserve25 frames/24 FPS and verify actual
+route/call counts. Source, original bank and a private existing destination are
+unchanged; private media staging drains and explicit unload reports zero MLX
+active bytes. This is cancellation after real convolution work, not during a
+synchronous prediction; the latter remains the separate component test.
+
+### Raw-versus-codec diagnosis
+
+The first complete-request export comparison had maximum8-bit errors138/101
+despite passing aggregate and per-frame gates. Those outliers were not dismissed
+as codec noise. A new compile-isolated streaming diagnostic captures each actual
+FP16 THWC frame and the exact RGB24 bytes handed to the existing encoder. It
+retains no frame owners after the sink returns, binds every file/hash/extent,
+records the actual condition/velocity/latent hashes and checks fresh output plus
+available scratch space. `--capture-raw-video` requires one explicit streaming
+video request; its timings/peaks include diagnostic IO and are NOT benchmarks.
+
+Complete1024/t25 seed42 matched requests now establish:
+
+- Condition (FP16), velocity (FP32) and restored latent (FP32), including shape
+  and byte extent, are byte-identical between routes.
+- Every raw/quantized frame is checked; the first frame remains bitwise equal.
+  Whole raw FP16 relative-L2 is .0002050380613, cosine .99999997898 and maximum
+  absolute error .0048828125, versus the stable native output.
+- Actual preencoder RGB24 maximum difference is **1**, MAE .005832914 and
+  PSNR70.471948 dB. Concatenated captured bytes exactly reproduce each request's
+  independently recorded preencoder hash. No CPU reimplementation of rounding
+  is substituted for the real native quantized bytes.
+- H264 decoded maximum difference is **138**, relative-L2 .014485507 and
+  PSNR39.501286 dB. Both captured exports match every decoded RGB frame of their
+  respective earlier noncaptured requests, despite different container hashes.
+
+Thus this fixture's large exported differences are introduced/amplified after
+the tiny preencoder difference, in the lossy encoding path; they are not a
+138-level raw VAE error. This does not establish general perceptual/temporal
+quality, diagnose a specific encoder implementation bug, or qualify other seeds,
+media or devices. The independent original-FP32 component gate remains required;
+the raw native comparison complements it rather than replacing it.
+
+Build isolated request libraries with
+`TURBOCIDER_BUILD_VAE_CAUSAL_EXPERIMENT=1` and a fresh
+`TURBOCIDER_BUILD_OUTPUT_DIR` using `tools/native/build.sh`. The framework observer
+requires explicit `--experimental-causal-manifest` to record that route and
+rejects unrecorded inherited selectors/captures. Compare captures with
+`seedvr2_causal_request_media.py --require-raw-capture` and the two full-request
+reports. Release packaging must reject this library, including the actual
+capture/shader bytes even if someone supplies a misleading policy manifest.
+
+### Next useful boundary, not yet implemented
+
+The original checkpoint header confirms
+`decoder.up_blocks.2.upsamplers.0.conv.weight` is original FP16
+`[256,256,3,3,3]`, following the spatial shuffle at final resolution. The original
+phase trace identifies its projection/shuffle/conv bundle as an8.073-s region,
+whereas projection-only offload covers only about .658 s and does not improve
+the decoder maximum. This makes **the following causal convolution**, with
+separate histories/direct halo packing, a better next candidate than retesting
+projection-only migration. It requires a new full256-output bank, numerical and
+ownership tests and per-layer accounting: the current128-output bank/hook
+cannot be relabelled or reused as if it computed that layer.
+
+In parallel with that operator choice, an affine/SiLU/conv tile graph could use
+externally computed whole-frame FP32 statistics. Preserve all original casts,
+initial-frame folding and history ownership; independent per-tile GroupNorm or
+fusing across the next unknown global-statistics pass changes the network.
+Neither candidate is a measured gain or an implemented full-VAE ANE route.
+Before extending Core ML fusion, also screen applying the existing FP32
+statistics/affine and explicit FP16 SiLU rounding **inside GPU tile packing**.
+That could avoid materializing the current full normalized activation while
+leaving convolution on the unchanged Core ML bank. It needs raw-frame plus
+per-frame-statistics history ownership, not substitution of tile statistics or
+an assumption that old normalized history can simply be discarded. This remains
+a design candidate, not an implemented or timed optimization.
 
 ## Records and next gates
 
@@ -107,6 +246,35 @@ All generated records are under ignored `outputs/`:
   pre-processing crash, not a passed cohort.
 - `seedvr2-virtual-causal-decode-real1024-t25-abba-v2-20261015/report.json`:
   corrected complete25 cohort; only terminal `complete` is acceptance evidence.
+- `seedvr2-virtual-causal-full-request-1024-t25-{gpu,ne}-v1-20261015/report.json`:
+  noncaptured cold/warm complete-request observations, not a balanced cohort.
+- `seedvr2-virtual-causal-full-request-1024-media-v1-20261015.json`:
+  preserved initial exported-media comparison, including138/101 maximum errors.
+- `seedvr2-virtual-causal-experimental-app-e2e-v1-20261015/generation-report.json`:
+  seven experimental App requests; not stable packaging qualification.
+- `seedvr2-virtual-causal-experimental-app-media-v1-20261015.json`.
+- `seedvr2-virtual-causal-raw-request-1024-t25-{gpu,ne}-v1-20261015/`:
+  complete diagnostic request/capture receipts and original raw frames.
+- `seedvr2-virtual-causal-raw-request-1024-quality-v1-20261015.json`:
+  every actual FP16/preencoder/exported frame and predecode hashes.
+- `seedvr2-virtual-causal-raw-capture-export-stability-v1-20261015.json`:
+  every decoded frame versus the respective prior noncaptured route.
+- `seedvr2-virtual-causal-full-request-lifecycle-v1-20261015/report.json`:
+  five actual public-engine cases, including typed cancellation and unload.
+- `seedvr2-virtual-causal-experimental-app-e2e-v2-20261015/generation-report.json`
+  and `seedvr2-virtual-causal-ordinary-app-regression-v2-20261015/generation-report.json`:
+  final fourteen App requests on fresh libraries, capture disabled.
+- `seedvr2-virtual-causal-experimental-app-export-stability-v2-20261015.json`
+  and `seedvr2-virtual-causal-final-app-export-gates-v1-20261015.json`.
+- `seedvr2-virtual-causal-ordinary-selector-rejection-v1-20261015/report.json`:
+  actual ordinary-library prepare rejection/recovery, no inference.
+- `seedvr2-virtual-causal-request-final-gates-v2-20261015.json`:
+  final eight-receipt index, current compiled-source snapshots, actual library
+  hashes/build IDs and the identical Swift frontend hash. Identity queries use
+  separate processes and have empty stderr. The preserved v1 index emitted
+  duplicate Objective-C class warnings by loading both libraries together;
+  no inference ran in that index process, and v2 supersedes it. All actual
+  request/App/lifecycle runs already used independent processes.
 
 Ordinary-build regression also passes a newly built native library's14 public
 contracts and release flag/byte/link checks. The unchanged, hash-bound Swift
@@ -117,10 +285,10 @@ and `seedvr2-virtual-causal-ordinary-app-export-equality-v1-20261015.json` under
 `outputs/`. This is ordinary-build regression, **not ANE App qualification**.
 
 Build isolated tools with `build_seedvr2_vae_causal_conv_probe.sh` and a fresh
-`TURBOCIDER_VAE_CAUSAL_PROBE_OUT`. Ordinary builds contain no callback/selector;
+`TURBOCIDER_VAE_CAUSAL_PROBE_OUT`. Ordinary builds contain no experimental executor;
 release packaging rejects the experiment flag and actual shader/guard marker.
 The current public App remains the earlier history-sharing package. Useful
-whole-request timing/peak and complete App/media/lifecycle qualification still
-precede any VAE ANE promotion. Broader encoder/operator scheduling, real low-
+balanced whole-request performance, broader App/media/lifecycle qualification
+and a public bank still precede any VAE ANE promotion. Broader encoder/operator scheduling, real low-
 memory hardware and bounded complete-context DiT beyond121 remain open; this
 boundary does not complete or narrow the overall optimization objective.

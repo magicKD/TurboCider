@@ -22,7 +22,12 @@ full-decoder ABBA pass, with403.2 MB lower active maximum versus the already-
 shared GPU baseline. Warm medians55.459/55.189 s are only about0.49% apart; the
 stronger result is component workspace reduction, not substantial full-request
 acceleration. The original fixed bank remains unqualified/experimental and no
-VAE ANE App default is enabled. Full-request/App/public-bank gates remain open.
+VAE ANE App default is enabled. Subsequent isolated complete requests preserve
+the403.2-MB MLX active reduction but are speed-flat (warm90.231/90.196 s);
+seven experimental App requests pass. Actual preencoder RGB differs by at most1
+on the diagnosed1024/t25 fixture, versus138 after H264; predecode hashes are exact.
+See the linked direct-frame document for scopes/receipts. Balanced full-request
+speed, broader media/hardware, physical occupancy and a public bank remain open.
 
 Machine: Apple M4 Max, 64 GiB, macOS 26.6.2. Original VAE SHA-256:
 `20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1`.

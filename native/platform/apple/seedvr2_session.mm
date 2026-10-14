@@ -14,6 +14,11 @@
 #include <mlx/random.h>
 #include <CommonCrypto/CommonDigest.h>
 #include <cstdlib>
+#include <set>
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+#include "../../../tools/native/seedvr2_vae_ane_causal_conv.hpp"
+#include <fstream>
+#endif
 
 namespace tc {
 namespace {
@@ -74,6 +79,74 @@ struct VideoPixelHash {
         return result;
     }
 };
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+// Bounded diagnostic capture of the real streaming request, before H264.
+// Never retain borrowed frame owners or enable this in a performance cohort.
+struct ExperimentalVideoCapture {
+    std::filesystem::path root;
+    NSMutableDictionary *receipt=nil;
+    NSMutableArray *frames=[NSMutableArray array];
+    int width=0,height=0,count=0;
+    ExperimentalVideoCapture(const Request &r,bool streaming) {
+        const char *selected=std::getenv("TURBOCIDER_SEEDVR2_VIDEO_RAW_CAPTURE");
+        if(!selected || !*selected)return;
+        require(streaming && r.width<=1024 && r.height<=1024,"raw capture requires a <=1024 streaming video request");
+        root=std::filesystem::absolute(selected);width=r.width;height=r.height;count=r.frames;
+        require(!std::filesystem::exists(root) && std::filesystem::is_directory(root.parent_path()),"fresh raw capture directory required");
+        const uint64_t bytes=uint64_t(width)*height*count*9;
+        require(std::filesystem::space(root.parent_path()).available>=bytes+(256ull<<20),"insufficient space for bounded raw capture");
+        require(std::filesystem::create_directory(root),"cannot create raw capture directory");
+        receipt=[@{@"schema":@"seedvr2-causal-request-pixels-v1",@"status":@"running",
+            @"width":@(width),@"height":@(height),@"frame_count":@(count),@"fps":@(r.fps),@"seed":@(r.seed),
+            @"source_sha256":@(sha256_file(r.inputs[0].path).c_str()),@"checkpoint_sha256":@(kVAESha),
+            @"fp16_layout":@"THWC",@"frames":frames,
+            @"scope":@"actual complete streaming request; one-frame FP16/RGB24 capture; diagnostic IO, not speed or memory qualification"} mutableCopy];
+        save();
+    }
+    void save() const {
+        const auto path=root/"capture.json";const auto encoded=json(receipt);
+        require([[NSData dataWithBytes:encoded.data() length:encoded.size()] writeToFile:@(path.c_str()) atomically:YES],"raw capture receipt write failed");
+    }
+    void add(int index,const Tensor &rgb,const Tensor &bytes) {
+        if(root.empty())return;
+        require(index==int(frames.count) && index<count && rgb.shape()==mx::Shape{height,width,3} &&
+            rgb.dtype()==mx::float32 && bytes.dtype()==mx::uint8 && bytes.nbytes()==size_t(height)*width*3,
+            "raw capture frame order/geometry differs");
+        auto half=mx::contiguous(mx::astype(rgb,mx::float16));mx::eval(half);
+        auto write=[&](const char *suffix,const void *data,size_t size){
+            const auto path=root/("frame-"+std::to_string(index)+suffix);
+            require(!std::filesystem::exists(path),"raw capture refuses existing frame");
+            std::ofstream output(path,std::ios::binary);output.write(static_cast<const char *>(data),size);output.close();
+            require(bool(output),"raw capture frame write failed");
+            return @{@"path":@(path.filename().c_str()),@"bytes":@(size),@"sha256":@(sha256_file(path).c_str())};
+        };
+        [frames addObject:@{@"index":@(index),@"fp16":write(".fp16",half.data<mx::float16_t>(),half.nbytes()),
+            @"rgb24":write(".rgb24",bytes.data<uint8_t>(),bytes.nbytes())}];
+        save();
+    }
+    NSDictionary *finish(const seedvr2::Restoration &result,bool causal,const std::string &bank) {
+        if(root.empty())return nil;
+        require(int(frames.count)==count,"raw capture did not observe every source frame");
+        auto digest=[&](const Tensor &value){
+            auto contiguous=mx::contiguous(value);mx::eval(contiguous);
+            VideoPixelHash hash(true);hash.enabled=true;
+            require(CC_SHA256_Init(&hash.context)==1,"raw capture tensor hash failed");
+            hash.add(contiguous.data<uint8_t>(),contiguous.nbytes());
+            const auto sha=hash.finish();
+            NSMutableArray *shape=[NSMutableArray array];for(int dimension:contiguous.shape())[shape addObject:@(dimension)];
+            return @{@"sha256":@(sha.c_str()),@"bytes":@(contiguous.nbytes()),@"shape":shape,
+                @"dtype":contiguous.dtype()==mx::float16?@"float16":@"float32"};
+        };
+        require(result.condition.dtype()==mx::float16 && result.velocity.dtype()==mx::float32 && result.latent.dtype()==mx::float32,
+            "raw capture predecode tensor dtype changed");
+        receipt[@"predecode"]=@{@"condition":digest(result.condition),@"velocity":digest(result.velocity),@"latent":digest(result.latent)};
+        receipt[@"experimental_causal_enabled"]=@(causal);receipt[@"causal_manifest_sha256"]=causal?(id)@(bank.c_str()):(id)NSNull.null;
+        receipt[@"status"]=@"complete";save();
+        const auto path=root/"capture.json";
+        return @{@"manifest":@(path.c_str()),@"sha256":@(sha256_file(path).c_str()),@"frames":@(count),@"diagnostic_only":@YES};
+    }
+};
+#endif
 class SeedVR2Session final : public ModelSession {
     std::filesystem::path root_;
     SourceStamp dit_source_, vae_source_;
@@ -83,6 +156,61 @@ class SeedVR2Session final : public ModelSession {
     std::vector<SourceStamp> hybrid_files_;
     std::vector<std::pair<std::filesystem::path,std::filesystem::file_time_type>> hybrid_directories_;
     bool loaded_ = false;
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    seedvr2::ExperimentalCausalConv causal_execute_;
+    std::shared_ptr<seedvr2::ExperimentalCausalConvStats> causal_stats_;
+    std::filesystem::path causal_manifest_;
+    std::string causal_sha_;
+    bool causal_cpu_=false;
+    void check_causal_source() const {
+        if(causal_manifest_.empty())return;
+        require(sha256_file(causal_manifest_)=="f9c751ba3f0d225ae9aaf2f926e1f63ed93ac44583de5d1ab57b79c290d26a08",
+            "experimental causal manifest identity changed");
+        auto d=read_json(causal_manifest_);auto root=causal_manifest_.parent_path()/"conv.mlmodelc";
+        require(std::filesystem::is_directory(std::filesystem::symlink_status(root)),"causal compiled root must not be a symlink");
+        NSArray *files=d[@"compiled"][@"identity"][@"files"];
+        require([files isKindOfClass:NSArray.class] && files.count>0 && files.count<100,"causal file index required");
+        std::set<std::string> actual;
+        for(const auto &entry:std::filesystem::recursive_directory_iterator(root)){
+            const auto state=entry.symlink_status();
+            require(!std::filesystem::is_symlink(state) && (std::filesystem::is_regular_file(state)||std::filesystem::is_directory(state)),"unsafe causal compiled entry");
+            if(std::filesystem::is_regular_file(state))actual.insert(entry.path().lexically_relative(root).generic_string());
+        }
+        for(NSDictionary *file in files){
+            require([file isKindOfClass:NSDictionary.class] && [file[@"path"] isKindOfClass:NSString.class] &&
+                [file[@"sha256"] isKindOfClass:NSString.class],"causal compiled file metadata required");
+            const std::string name=[file[@"path"] UTF8String],sha=[file[@"sha256"] UTF8String];
+            std::filesystem::path relative(name);require(!relative.empty() && !relative.is_absolute(),"relative causal entry required");
+            for(const auto &part:relative)require(part!=".." && part!="." && !part.empty(),"causal entry escapes root");
+            const auto path=root/relative;
+            require(actual.erase(name)==1 && std::filesystem::file_size(path)==[file[@"bytes"] unsignedLongLongValue] &&
+                sha256_file(path)==sha,"causal compiled file identity changed");
+        }
+        require(actual.empty(),"unregistered causal compiled file");
+    }
+#endif
+    void configure_experimental_causal(const Request &r,std::atomic<bool> &cancelled){
+        const char *selected=std::getenv("TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST");
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        if(!selected || !*selected){causal_execute_={};causal_stats_.reset();causal_manifest_.clear();causal_sha_.clear();return;}
+        require(r.execution=="gpu" && r.seedvr2_vae && r.seedvr2_vae->history=="frames" &&
+            r.seedvr2_vae->spatial=="full" && r.seedvr2_vae->convolution=="singleton2d" && r.width<=1024 && r.height<=1024,
+            "experimental causal full request requires explicit GPU backbone and full frame VAE settings");
+        const char *compute=std::getenv("TURBOCIDER_SEEDVR2_VAE_CAUSAL_COMPUTE");
+        const std::string device=compute?compute:"ne";require(device=="ne" || device=="cpu","invalid causal compute control");
+        const auto manifest=std::filesystem::canonical(selected);const bool cpu=device=="cpu";
+        if(!causal_execute_ || causal_manifest_!=manifest || causal_cpu_!=cpu){
+            causal_execute_={};causal_stats_.reset();causal_manifest_=manifest;causal_cpu_=cpu;
+            check_causal_source();causal_sha_=sha256_file(manifest);
+            causal_execute_=seedvr2::make_experimental_ane_causal_conv(manifest,cpu,cancelled,causal_stats_);
+        }
+        check_causal_source();pipeline_.use_experimental_causal_conv(causal_execute_);
+#else
+        require(!selected || !*selected,"VAE causal convolution requires an isolated experimental build");
+        const char *capture=std::getenv("TURBOCIDER_SEEDVR2_VIDEO_RAW_CAPTURE");
+        require(!capture || !*capture,"raw video capture requires an isolated experimental build");
+#endif
+    }
     void check_hybrid_source() const {
         for (const auto &file : hybrid_files_) file.check();
         for (const auto &[path, modified] : hybrid_directories_)
@@ -139,6 +267,9 @@ class SeedVR2Session final : public ModelSession {
           dit_source_(verify_source(root_ / "diffusion_models/seedvr2_3b_fp16.safetensors", 6784268336, kDiTSha)),
           vae_source_(verify_source(root_ / "vae/seedvr2_ema_vae_fp16.safetensors", 501324814, kVAESha)) {}
     void unload() override {
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        causal_execute_={};causal_stats_.reset();causal_manifest_.clear();causal_sha_.clear();
+#endif
         hybrid_.reset(); hybrid_manifest_.clear(); hybrid_files_.clear(); hybrid_directories_.clear();
         pipeline_.clear(); loaded_ = false; mx::clear_cache();
     }
@@ -162,6 +293,7 @@ class SeedVR2Session final : public ModelSession {
         configure_residency(r);
         load(event, cancelled);
         pipeline_.configure_vae(r.seedvr2_vae);
+        configure_experimental_causal(r,cancelled);
         configure_hybrid(r,event,cancelled);
         return native_run_result(@{@"schema_version": @1, @"prepared": @YES, @"warmup": @NO,
             @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
@@ -197,7 +329,14 @@ class SeedVR2Session final : public ModelSession {
         configure_residency(r);
         load(event, cancelled);
         pipeline_.configure_vae(r.seedvr2_vae);
+        configure_experimental_causal(r,cancelled);
         configure_hybrid(r,event,cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        const uint64_t causal_frames_before=causal_stats_?causal_stats_->frames.load():0;
+        const uint64_t causal_calls_before=causal_stats_?causal_stats_->coreml_calls.load():0;
+        const uint64_t causal_hits_before=causal_stats_?causal_stats_->backing_hits.load():0;
+        const double causal_seconds_before=causal_stats_?causal_stats_->boundary_seconds:0;
+#endif
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
         const bool stream_encode = video && r.seedvr2_vae && r.seedvr2_vae->encoder == "streaming";
@@ -254,6 +393,10 @@ class SeedVR2Session final : public ModelSession {
         try {
             const bool stream_decode = video && r.seedvr2_vae && r.seedvr2_vae->decoder == "streaming";
             VideoPixelHash pixel_hash(video);
+            NSDictionary *raw_capture=nil;
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+            ExperimentalVideoCapture capture(r,stream_decode);
+#endif
             std::unique_ptr<RGB24VideoWriter> stream_writer;
             double frame_export_seconds = 0;
             seedvr2::DecodedFrameSink sink;
@@ -268,6 +411,9 @@ class SeedVR2Session final : public ModelSession {
                     auto bytes = mx::astype(mx::round(mx::clip((rgb+1.f)*.5f,Tensor(0.f),Tensor(1.f))*255.f),mx::uint8);
                     mx::eval(bytes);
                     pixel_hash.add(bytes.data<uint8_t>(),bytes.nbytes());
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+                    capture.add(index,rgb,bytes);
+#endif
                     stream_writer->append(index,bytes.data<uint8_t>(),bytes.nbytes());
                     frame_export_seconds += elapsed(copying);
                     if (event) event("seedvr2_vae_export_frame",index+1,r.frames);
@@ -310,6 +456,25 @@ class SeedVR2Session final : public ModelSession {
                                : pipeline_.restore(pixels,noise,event,cancelled,r.dump,route));
             const uint64_t coreml_calls = hybrid_ ? hybrid_->calls()-calls_before : 0;
             const uint64_t hybrid_blocks = hybrid_ ? hybrid_->hybrid_blocks()-blocks_before : 0;
+            bool causal_enabled=false;uint64_t causal_calls=0,causal_frames=0,causal_hits=0,causal_slots=0;
+            double causal_seconds=0;std::string causal_hash,causal_compute="not_applicable";
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+            if(causal_stats_){
+                causal_enabled=true;causal_calls=causal_stats_->coreml_calls.load()-causal_calls_before;
+                causal_frames=causal_stats_->frames.load()-causal_frames_before;causal_hits=causal_stats_->backing_hits.load()-causal_hits_before;
+                causal_slots=causal_stats_->slot_bytes;causal_seconds=causal_stats_->boundary_seconds-causal_seconds_before;
+                causal_hash=causal_sha_;causal_compute=causal_cpu_?"cpuOnly":"cpuAndNeuralEngine";
+                const uint64_t tiles=uint64_t((r.height+causal_stats_->tile_rows-1)/causal_stats_->tile_rows)*
+                    ((r.width+causal_stats_->tile_cols-1)/causal_stats_->tile_cols);
+                require(causal_frames==uint64_t(frames-1) && causal_calls==uint64_t(frames-1)*tiles && causal_hits==causal_calls,
+                    "experimental causal full-request coverage differs");check_causal_source();
+            }
+#endif
+            // Both captured routes must independently bind identical predecode
+            // operands; an exported-video metric alone cannot establish that.
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+            raw_capture=capture.finish(result,causal_enabled,causal_hash);
+#endif
             if (hybrid_) {
                 const uint64_t tokens = uint64_t(noise_shape[2])*(r.height/16)*(r.width/16);
                 require(coreml_calls == 32*((tokens+511)/512) && hybrid_blocks == 32,
@@ -354,7 +519,11 @@ class SeedVR2Session final : public ModelSession {
             const bool encoder_file_rows = pipeline_.vae_encoder_spatial_recipe() == "file_rows";
             const std::string numerical_recipe = std::string(hybrid_ ? seedvr2::kHybridRecipe : seedvr2::kStableRecipe) +
                 (encoder_file_rows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
-                (file_rows ? "+vae-globalstats-file-rows-v1" : "");
+                (file_rows ? "+vae-globalstats-file-rows-v1" : "") +
+                (causal_calls ? "+experimental-vae-causal-coreml-original-fp16-v1" : "");
+            NSMutableArray *resident_components=[NSMutableArray arrayWithArray:pipeline_.dit().bytes()?@[@"vae",@"dit"]:@[@"vae"]];
+            if(hybrid_)[resident_components addObject:@"coreml_ffn_prefix"];
+            if(causal_enabled)[resident_components addObject:@"experimental_coreml_vae_causal"];
             const auto spatial = result.spatial_stats;
             const auto encoder_spatial = result.encoder_spatial_stats;
             return native_run_result(@{
@@ -362,7 +531,7 @@ class SeedVR2Session final : public ModelSession {
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
                 @"frames": @(r.frames), @"padded_frames": @(frames), @"fps": @(r.fps),
                 @"source_width": @(source_width), @"source_height": @(source_height),
-                @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": hybrid_ ? @"gpu_ane" : @"gpu",
+                @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": causal_calls?@"gpu_vae_cpu_ne_experimental":(hybrid_ ? @"gpu_ane" : @"gpu"),
                 @"warmup": @NO, @"prepared": @NO,
                 @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
                 @"runtime_precision": @(hybrid_ ? seedvr2::kHybridPrecision : seedvr2::kStablePrecision),
@@ -376,6 +545,14 @@ class SeedVR2Session final : public ModelSession {
                 @"coreml_prefix_backing_bytes": @(hybrid_ ? hybrid_->prefix_backing_bytes() : 0),
                 @"coreml_prefix_manifest_sha256": hybrid_ ? @(hybrid_->config().manifest_sha256.c_str()) : (id)NSNull.null,
                 @"physical_ane_occupancy_measured": @NO,
+                @"video_raw_capture":raw_capture?(id)raw_capture:(id)NSNull.null,
+                @"vae_causal_conv_experimental_enabled": @(causal_enabled),
+                @"vae_causal_conv_calls": @(causal_calls), @"vae_causal_conv_frames": @(causal_frames),
+                @"vae_causal_conv_backing_hits": @(causal_hits), @"vae_causal_conv_external_slot_bytes": @(causal_slots),
+                @"vae_causal_conv_compute_units": @(causal_compute.c_str()),
+                @"vae_causal_conv_manifest_sha256": causal_enabled?(id)@(causal_hash.c_str()):(id)NSNull.null,
+                @"vae_causal_conv_boundary_seconds": @(causal_seconds),
+                @"vae_causal_conv_scope": @"isolated override of one subsequent-frame VAE conv; original GPU plan/backbone unchanged; not public VAE qualification",
                 @"dit_projection_dtype": @"fp16", @"dit_residual_dtype": @"fp32",
                 @"dit_rms_dtype": @"fp32", @"dit_time_dtype": @"fp32",
                 @"dit_velocity_dtype": @"fp32", @"dit_attention_dtype": @"fp16",
@@ -387,7 +564,7 @@ class SeedVR2Session final : public ModelSession {
                 @"weight_residency_recipe": @(pipeline_.weight_residency_recipe()),
                 @"resident_parameter_bytes": @(pipeline_.bytes()),
                 @"resident_parameter_bytes_scope": @"MLX parameter bank; excludes Core ML parameters and buffers",
-                @"resident_components": hybrid_ ? (pipeline_.dit().bytes() ? @[@"vae", @"dit", @"coreml_ffn_prefix"] : @[@"vae", @"coreml_ffn_prefix"]) : (pipeline_.dit().bytes() ? @[@"vae", @"dit"] : @[@"vae"]),
+                @"resident_components": resident_components,
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
                 @"media_input_retention_recipe": video ? (stream_encode ? @"bounded_rgb_reader_and_fp16_encoder_chunks" : @"normalized_rgb_only") :
                     (owned_alpha ? @"normalized_rgb_plus_owned_alpha" : @"normalized_rgb_plus_source_rgba"),

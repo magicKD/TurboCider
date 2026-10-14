@@ -10,6 +10,8 @@ import Foundation
         let manifest = CommandLine.arguments.count == 7 ? CommandLine.arguments[6] : nil
         let hybrid = manifest != nil
         let execution = hybrid ? "gpu_ane" : "gpu"
+        let causalManifest = ProcessInfo.processInfo.environment["TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST"]
+        let causalExperiment = causalManifest?.isEmpty == false
         let vaeOptions = try ProcessInfo.processInfo.environment["TURBOCIDER_SEEDVR2_APP_VAE_OPTIONS"].map {
             try JSONDecoder().decode(NativeSeedVR2VAEConfig.self, from: Data($0.utf8))
         }
@@ -158,8 +160,9 @@ import Foundation
                               metrics["streamed_output_frames"] as? Int == (expectedDecoder == "streaming" ? 25 : 0) &&
                               metrics["vae_conv_recipe"] as? String == (vaeOptions?.convolution ?? "singleton2d"),
                               "App VAE execution differs from its selected configuration")
+                    let expectedExecution = causalExperiment && isVideo ? "gpu_vae_cpu_ne_experimental" : execution
                     try check(metrics["operation"] as? String == operation && metrics["width"] as? Int == size &&
-                              metrics["height"] as? Int == size && metrics["execution"] as? String == execution &&
+                              metrics["height"] as? Int == size && metrics["execution"] as? String == expectedExecution &&
                               metrics["checkpoint_sha256_verified"] as? Bool == true,
                               "App result identity/geometry mismatch")
                     try check(metrics["vae_history_recipe"] as? String == (vaeOptions?.history ?? "compact") &&
@@ -173,7 +176,8 @@ import Foundation
                               "App upscale-sharing execution/byte scope differs from request")
                     let expectedRecipe = (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") +
                         (encoderFileRows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
-                        (fileRows ? "+vae-globalstats-file-rows-v1" : "")
+                        (fileRows ? "+vae-globalstats-file-rows-v1" : "") +
+                        (causalExperiment && isVideo ? "+experimental-vae-causal-coreml-original-fp16-v1" : "")
                     try check(metrics["numerical_recipe"] as? String == expectedRecipe &&
                               metrics["dit_projection_dtype"] as? String == "fp16" &&
                               metrics["dit_residual_dtype"] as? String == "fp32" &&
@@ -238,7 +242,20 @@ import Foundation
                               metrics["weight_residency_recipe"] as? String == (staged ? "stage_dit" : "resident") &&
                               metrics["dit_reloaded_for_sampling"] as? Bool == staged,
                               "App planned/executed weight residency mismatch")
-                    let components = (staged ? ["vae"] : ["vae", "dit"]) + (hybrid ? ["coreml_ffn_prefix"] : [])
+                    let components = (staged ? ["vae"] : ["vae", "dit"]) + (hybrid ? ["coreml_ffn_prefix"] : []) +
+                        (causalExperiment ? ["experimental_coreml_vae_causal"] : [])
+                    if causalExperiment {
+                        let expectedCalls = isVideo ? 24 * ((size + 63) / 64) * ((size + 63) / 64) : 0
+                        try check(metrics["vae_causal_conv_experimental_enabled"] as? Bool == true &&
+                            metrics["vae_causal_conv_calls"] as? Int == expectedCalls &&
+                            metrics["vae_causal_conv_backing_hits"] as? Int == expectedCalls &&
+                            metrics["vae_causal_conv_frames"] as? Int == (isVideo ? 24 : 0) &&
+                            metrics["vae_causal_conv_manifest_sha256"] as? String == "f9c751ba3f0d225ae9aaf2f926e1f63ed93ac44583de5d1ab57b79c290d26a08" &&
+                            metrics["physical_ane_occupancy_measured"] as? Bool == false,
+                            "experimental App VAE causal execution differs from actual coverage")
+                    } else {
+                        try check(metrics["vae_causal_conv_experimental_enabled"] as? Bool != true,"ordinary App executed an experimental VAE route")
+                    }
                     try check(metrics["resident_components"] as? [String] == components,
                               "App reported the wrong resident components")
                     let management = (timings?["weight_management"] as? NSNumber)?.doubleValue ?? -1
