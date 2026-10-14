@@ -77,6 +77,24 @@ its directory, then add a source image or video. Video import fills the source
 frame count/FPS. GPU is the default execution route; unqualified ANE
 manifests, LoRA, graph-compilation and streaming options fail explicitly.
 
+To package an already tested isolated native build without replacing a running
+App, set both output directories explicitly. The targeted App build includes
+the model-library helper as well as the complete UI; it only narrows the set of
+integration-test executables built, not the App's model support:
+
+```sh
+TURBOCIDER_BUILD_OUTPUT_DIR=build/seedvr2-owned-input-native-v1 \
+  TURBOCIDER_APP_TARGETS=seedvr2 bash tools/native/build_app.sh
+TURBOCIDER_BUILD_OUTPUT_DIR=build/seedvr2-owned-input-native-v1 \
+  TURBOCIDER_PACKAGE_OUTPUT_DIR=dist/seedvr2-20261014 bash tools/native/package.sh
+open dist/seedvr2-20261014/TurboCider.app
+```
+
+Close the old App before using the new bundle with the same default state
+directory. Packaging alone does not migrate or overwrite user drafts, models
+or output media. Omit `TURBOCIDER_PACKAGE_OUTPUT_DIR` to use the usual `dist/`
+delivery location only when it is safe to replace that App and CLI.
+
 For manual hybrid execution, enable “额外启用 ANE” and select the already
 compiled SeedVR2 prefix manifest. CLI/SDK schema 1 uses `execution="gpu_ane"`,
 `allow_approximation=true` and `ane_manifest`; schema 2 places `policy`,

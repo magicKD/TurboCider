@@ -1510,6 +1510,80 @@ memory optimization, not a relabeling of the previous library's balanced
 Comfy or GPU/hybrid speed records. New-binary warm speed qualification and
 physical ANE activity/placement remain separate boundaries.
 
+### Committed ownership revision: balanced 512-video before/after observation
+
+The four-process before/after/after/before complete-request cohort terminates
+with exit 0, six genuine warm requests per revision. Library/source/build
+identities remain fixed, and full import/encode/sample/decode/export runs each
+request. At 256->512 / all t25 / 24 FPS, borrowed-normalized-input library
+median is **20.588601979 s**, committed ownership library
+**20.601652062 s**, about 0.0634% slower; strict speed gate **false**.
+The code is not described as a speed improvement and no threshold is changed.
+Observed warm active maxima fall **10,785,491,118 -> 10,761,406,998 bytes**,
+24,084,120 bytes rather than the 78,643,200 logical input bytes released.
+This aggregate workload peak is not inferred by subtracting tensor bytes.
+Record: `seedvr2-owned-input-video512-t25-revision-abba-v1-20261014`.
+
+The former library's complete 1024 Comfy default speed gate remains bound to
+SHA `596c160...`; the committed ownership library is SHA `b567c5f...` and its
+actual App/component quality/memory proofs remain separately recorded. The
+newer ownership library's own reference/hybrid speed evidence and physical
+ANE execution remain further qualification work, not completed by this
+before/after memory observation.
+
+### Final handoff: existing measurements, no new inference experiments
+
+At the user's request, stop the optimization/benchmark loop and deliver the
+tested `b567c5f...` native library with its complete App image/video integration.
+The existing 21 App requests and exported-pixel equality remain the functional
+evidence; the final delivery is not a new paired speed qualification.
+The targeted App build now includes its sibling model-library helper, and
+packaging accepts `TURBOCIDER_PACKAGE_OUTPUT_DIR` so a live older App need not
+be overwritten. The intended bundle is `dist/seedvr2-20261014/TurboCider.app`.
+The canonical old App, native build, weights and user state are preserved.
+
+Latest GPU-resident App observations (decimal GB) are:
+
+| Output | Active MLX peak | Sampled process footprint |
+| --- | ---: | ---: |
+| Image 512 | 9.623 GB | 13.066 GB |
+| Image 1024 | 16.491 GB | 19.900 GB |
+| Video 512, all t25 | 10.710 GB | 14.638 GB |
+| Video 1024, all t25 | 20.968 GB | 24.441 GB |
+
+The original MLX parameter bank is 7.2855 GB: DiT 6.7842 GB and VAE
+0.5013 GB. At the 1024 resident image/video active peaks this is roughly
+44%/35%; the remainder is activations and workspaces, not an exactly measured
+VAE-only allocator bucket. VAE decoding/convolution workspaces are the main
+video peak hotspot. The 1024/t25 GPU request spends 50.148 s decoding,
+20.209 s encoding and 14.258 s denoising: about 59%/24%/17% of the request.
+The 1024 image instead spends 1.857 s denoising and 1.615 s in combined VAE,
+about 53% and 46%. Import/export is small in these witnesses.
+
+Hybrid staged/resident observations must be compared within that route:
+14.318/21.114 GB active and 17.891/24.963 GB sampled process footprint.
+Staging releases the GPU DiT parameter bank during VAE work, but retains the
+Core ML bank outside MLX accounting. Sampled process/Metal figures overlap,
+can miss short peaks and are not hard budgets. No measured physical ANE
+occupancy, universal peak bound or new-binary Comfy speed gate is claimed.
+
+Delivery completes without further inference: targeted Swift/App/helper build,
+five CPU-only release tests, shell syntax and whitespace checks all pass.
+The prepackage executable remains SHA
+`6ef19c70fa54b2b7b02436dc5abfe22ef9cd52a436f6e714db4d0d3a9d354061`;
+the native library remains the tested `b567c5f...` identity. The fresh bundle
+and CLI pass ad-hoc signature verification and public-only release guards.
+The packaged helper resolves the already registered `seedvr2-3b` model from
+the existing default library; no settings/registration mutation is needed.
+Packaging changes dependency rpaths/signatures, so the delivered App/library
+have distinct hashes:
+`43fe6ae5791feb8da36c26be9cb74a53a473eea3ac08e34ba33f993ae7739944` /
+`d421f2a6691d8bf2962312ec87c41cdebb87088d8e694ac12db4370dddfbc92a`.
+The running canonical old App/executable/library hashes are unchanged.
+The new bundle is handed off for launch after the old App exits, avoiding
+concurrent writers to their shared default state. No new GUI-click, inference,
+Comfy benchmark or ANE-occupancy result is claimed by this packaging step.
+
 ## Reproduce component checks
 
 ```sh

@@ -31,6 +31,19 @@ class ReleaseBinaryTests(unittest.TestCase):
         source = (ROOT / 'tools/native/package.sh').read_text()
         self.assertLess(source.index('check_release_binary.py'), source.index('rm -rf "$APP"'))
 
+    def test_targeted_app_build_includes_model_library_helper(self):
+        source = (ROOT / 'tools/native/build_app.sh').read_text()
+        helper = source.index('services/model-library/main.swift -o "$OUT/turbocider-library"')
+        targeted = source.index('if [[ "${TURBOCIDER_APP_TARGETS:-all}" == "seedvr2" ]]')
+        self.assertLess(helper, targeted)
+
+    def test_package_output_override_scopes_app_and_cli_together(self):
+        source = (ROOT / 'tools/native/package.sh').read_text()
+        self.assertIn('DIST="${TURBOCIDER_PACKAGE_OUTPUT_DIR:-$ROOT/dist}"', source)
+        self.assertIn('APP="$DIST/TurboCider.app"', source)
+        self.assertIn('for folder in "$BIN" "$DIST/cli"', source)
+        self.assertNotIn('$ROOT/dist/cli', source)
+
     def test_stable_packaging_rejects_private_flags_actual_class_bytes_and_links(self):
         with tempfile.TemporaryDirectory() as folder:
             manifest = Path(folder) / 'manifest.json'
