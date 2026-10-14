@@ -62,6 +62,30 @@ import Foundation
         let legacyVAE = try JSONDecoder().decode(NativeSeedVR2VAEConfig.self,from: Data("{\"decoder\":\"streaming\"}".utf8))
         try check(legacyVAE.encoder == "buffered" && legacyVAE.spatial == "full" && legacyVAE.encoder_spatial == "full" && legacyVAE.spatial_rows == 64,
             "legacy VAE options did not retain buffered input/full spatial defaults")
+        try check(!legacyVAE.share_upscale_history,"legacy VAE unexpectedly enabled upscale sharing")
+        let sharing = NativeSeedVR2VAEConfig(history: "frames", shareUpscaleHistory: true)
+        studio.draft.seedvr2VAE = sharing
+        let sharingRequest = try studio.draft.request(output: root.appendingPathComponent("sharing.mp4"))
+        try check(sharingRequest.seedvr2_vae == sharing && NativeRequestV2(legacy: sharingRequest).execution.seedvr2_vae == sharing,
+                  "App/SDK dropped upscale history sharing")
+        try check(try JSONDecoder().decode(StudioDraft.self,from: JSONEncoder().encode(studio.draft)).seedvr2VAE == sharing,
+                  "App draft did not persist upscale history sharing")
+        let adviceSnapshot = studio.draft
+        studio.draft.seedvr2VAE = nil
+        studio.applySeedVR2MemoryAdvice()
+        guard let advised = studio.draft.seedvr2VAE else { throw NativeFailure(message: "memory advice omitted VAE options") }
+        try check(studio.draft.residency == "component_staged" && advised.encoder == "streaming" && advised.decoder == "streaming" &&
+                  advised.history == "frames" && advised.share_upscale_history && advised.allocator_cache_bytes == (UInt64(1) << 30),
+                  "memory advice did not apply supported streaming/sharing/cache settings")
+        var explicitRows = advised; explicitRows.spatial = "file_rows"; explicitRows.share_upscale_history = false
+        studio.draft.seedvr2VAE = explicitRows
+        studio.applySeedVR2MemoryAdvice()
+        try check(studio.draft.seedvr2VAE?.spatial == "file_rows" && studio.draft.seedvr2VAE?.share_upscale_history == false,
+                  "memory advice changed explicit rows or selected incompatible sharing")
+        studio.changeOperation("image.upscale");studio.applySeedVR2MemoryAdvice()
+        try check(studio.draft.seedvr2VAE?.encoder == "buffered" && studio.draft.seedvr2VAE?.decoder == "buffered" &&
+                  studio.draft.seedvr2VAE?.share_upscale_history == false,"image advice selected invalid streaming or unused sharing")
+        studio.draft = adviceSnapshot
         studio.draft.seedvr2VAE = nil
         try check(video.operation == "video.upscale" && video.frames == 25 && video.fps == 24,
                   "source frame count/FPS were not applied to the draft")
@@ -141,6 +165,12 @@ import Foundation
                     try check(metrics["vae_history_recipe"] as? String == (vaeOptions?.history ?? "compact") &&
                               metrics["vae_pointwise_recipe"] as? String == "matmul",
                               "App did not execute the qualified VAE history/pointwise defaults")
+                    let sharesUpscale = vaeOptions?.share_upscale_history ?? false
+                    let sharedFrames = sharesUpscale && isVideo ? (metrics["padded_frames"] as? Int ?? 0) : 0
+                    try check(metrics["vae_share_upscale_history"] as? Bool == sharesUpscale &&
+                              metrics["vae_shared_upscale_frames"] as? Int == sharedFrames &&
+                              (metrics["vae_shared_upscale_logical_bytes"] as? NSNumber)?.uint64Value == UInt64(sharedFrames*size*size*256*2),
+                              "App upscale-sharing execution/byte scope differs from request")
                     let expectedRecipe = (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") +
                         (encoderFileRows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
                         (fileRows ? "+vae-globalstats-file-rows-v1" : "")

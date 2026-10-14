@@ -88,6 +88,24 @@ class ReleaseBinaryTests(unittest.TestCase):
                     name if command[0]=='strings' else output(command)):
                     with self.assertRaisesRegex(ValueError,'contains unqualified VAE'):release.check(library,manifest)
 
+    def test_phase_diagnostic_flags_and_actual_bytes_are_not_distributable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/'manifest.json';library=Path(folder)/'lib.dylib'
+            def policy(flags):
+                manifest.write_text(json.dumps({'inputs':{'policy':{'test_hooks':'0','audit_counters':'0','common_flags':flags}}}))
+            for flag in ('-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE=1','-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE'):
+                policy([flag])
+                with patch.object(release.subprocess,'check_output') as inspect:
+                    with self.assertRaisesRegex(ValueError,'phase profiling disabled'):release.check(library,manifest)
+                    inspect.assert_not_called()
+            policy(['-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE=0'])
+            def output(command,**kwargs):
+                return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
+            with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
+            with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                'tc_seedvr2_vae_phase_profile_v1' if command[0]=='strings' else output(command)):
+                with self.assertRaisesRegex(ValueError,'contains VAE phase profiling'):release.check(library,manifest)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

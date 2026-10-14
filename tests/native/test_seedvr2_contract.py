@@ -104,13 +104,13 @@ class SeedVR2Contracts(unittest.TestCase):
                 r = {**request(True), "seedvr2_vae": options}
                 code, value, error = plan(r)
                 self.assertEqual(code, 0, error)
-                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","spatial":"full","encoder_spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
+                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","share_upscale_history":False,"spatial":"full","encoder_spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
                 v2 = dict(schema_version=2, model=r["model"], operation=r["operation"], inputs=r["inputs"],
                     outputs=[dict(kind="video", path=r["output"], width=r["width"], height=r["height"], frames=r["frames"], fps=24, audio=False)],
                     sampling=dict(seed=42, steps=1), execution=dict(policy="gpu", seedvr2_vae=options))
                 code, value, error = plan(v2)
                 self.assertEqual(code, 0, error)
-                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","spatial":"full","encoder_spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
+                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","share_upscale_history":False,"spatial":"full","encoder_spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
         self.assertEqual(plan({**request(True), "seedvr2_vae": {}})[1]["seedvr2_vae"]["decoder"], "buffered")
 
     def test_invalid_vae_controls_never_silently_fall_back(self):
@@ -183,6 +183,22 @@ class SeedVR2Contracts(unittest.TestCase):
                 self.assertEqual(value["seedvr2_vae"]["history"],history)
                 self.assertEqual(value["seedvr2_vae"]["convolution"],convolution)
         self.assertEqual(plan({**request(True),"seedvr2_vae":{}})[1]["seedvr2_vae"]["history"],"compact")
+
+    def test_upscale_history_sharing_is_explicit_typed_and_not_a_budget_change(self):
+        options=dict(history="frames",share_upscale_history=True)
+        for video in (False,True):
+            r={**request(video),"seedvr2_vae":options};code,value,error=plan(r);self.assertEqual(code,0,error)
+            self.assertTrue(value["seedvr2_vae"]["share_upscale_history"])
+            control=plan({**r,"seedvr2_vae":dict(history="frames")})[1]
+            self.assertEqual(value["memory_estimate_bytes"],control["memory_estimate_bytes"])
+            v2=dict(schema_version=2,model=r["model"],operation=r["operation"],inputs=r["inputs"],
+                outputs=[dict(kind="video" if video else "image",path=r["output"],width=r["width"],height=r["height"],frames=r["frames"],fps=24,audio=False)],
+                sampling=dict(seed=42,steps=1),execution=dict(policy="gpu",seedvr2_vae=options))
+            self.assertTrue(plan(v2)[1]["seedvr2_vae"]["share_upscale_history"])
+        self.assertFalse(plan({**request(True),"seedvr2_vae":{}})[1]["seedvr2_vae"]["share_upscale_history"])
+        for change in ({"share_upscale_history":1},{"share_upscale_history":"true"},{"history":"compact"},
+                       {"convolution":"mixed3d"},{"spatial":"file_rows"}):
+            with self.subTest(change=change):self.assertNotEqual(plan({**request(True),"seedvr2_vae":{**options,**change}})[0],0)
 
     def test_qualified_hybrid_bank_precision_and_residency_are_explicit(self):
         manifest = ROOT / "models/coreml/seedvr2-original-fp16-prefix2048-rows512-v1/manifest.json"

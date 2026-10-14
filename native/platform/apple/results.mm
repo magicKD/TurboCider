@@ -581,6 +581,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"history": @(r.seedvr2_vae->history.c_str()),
             @"spatial": @(r.seedvr2_vae->spatial.c_str()),
             @"encoder_spatial": @(r.seedvr2_vae->encoder_spatial.c_str()),
+            @"share_upscale_history": @(r.seedvr2_vae->share_upscale_history),
             @"spatial_rows": @(r.seedvr2_vae->spatial_rows),
             @"spatial_disk_budget_bytes": @(r.seedvr2_vae->spatial_disk_budget_bytes),
             @"tile_rows": @(r.seedvr2_vae->tile_rows),

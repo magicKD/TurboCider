@@ -25,9 +25,9 @@ int main(int argc,char **argv){
     try {
         const bool projection_experiment=argc==10;
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
-        tc::require(argc==7 || argc==8 || argc==10,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse [PROJECTION_MANIFEST ne|cpu]]");
+        tc::require(argc==7 || argc==8 || argc==9 || argc==10,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse [share|copy | PROJECTION_MANIFEST ne|cpu]]");
 #else
-        tc::require(argc==7 || argc==8,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse]; ANE projection requires an experimental build");
+        tc::require(argc==7 || argc==8 || argc==9,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse [share|copy]]; ANE projection requires an experimental build");
 #endif
         const std::filesystem::path model(argv[1]),output(argv[3]);const std::string route(argv[4]);
         tc::require(!std::filesystem::exists(output) && (route=="baseline" || route=="spatial"),"fresh output and known route required");
@@ -41,7 +41,10 @@ int main(int argc,char **argv){
         tensors.clear();flat=Tensor(0);reference=Tensor(0);mx::synchronize();mx::clear_cache();
         std::atomic<bool> cancelled{false};tc::seedvr2::AllocatorCacheScope allocator(1ull<<30);
         tc::seedvr2::VAE vae;vae.load(model/"vae/seedvr2_ema_vae_fp16.safetensors");
-        tc::SeedVR2VAEConfig config;config.history="frames";vae.configure(config);mx::eval(latent);
+        tc::SeedVR2VAEConfig config;config.history="frames";
+        if(argc==9){tc::require(std::string(argv[8])=="share" || std::string(argv[8])=="copy","known upscale history recipe required");
+            config.share_upscale_history=std::string(argv[8])=="share";tc::require(!config.share_upscale_history || route=="baseline","shared upscale history requires full decoding");}
+        vae.configure(config);mx::eval(latent);
         tc::seedvr2::SpatialTileOptions options;options.threshold_bytes=std::stoull(argv[5]);options.rows=std::stoi(argv[6]);
         if(argc>=8){tc::require(std::string(argv[7])=="fresh" || std::string(argv[7])=="reuse","known read-window recipe required");options.reuse_read_windows=std::string(argv[7])=="reuse";}
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
@@ -56,6 +59,22 @@ int main(int argc,char **argv){
         std::ofstream pixels_file(output/"decoded.fp16.bin",std::ios::binary);
         tc::require(bool(pixels_file),"cannot create bounded frame export");
         uint64_t compared=0,unequal=0;int emitted=0;double nx=0,ny=0,dot=0,es=0,max_abs=0;
+        uint64_t phase_count=0;
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        std::ofstream phases(output/"phases.jsonl");tc::require(bool(phases),"cannot create phase diagnostic trace");
+        phases<<std::setprecision(17);
+        vae.observe_phases([&](const tc::seedvr2::VAEPhaseObservation &row){
+            auto shape=[&](const mx::Shape &value){phases<<'[';for(size_t i=0;i<value.size();++i){if(i)phases<<',';phases<<value[i];}phases<<']';};
+            phases<<"{\"schema\":\""<<row.schema<<"\",\"index\":"<<phase_count++<<",\"next_output_frame\":"<<emitted
+                <<",\"key\":\""<<row.key<<"\",\"initial\":"<<(row.initial?"true":"false")<<",\"inclusive\":"<<(row.inclusive?"true":"false")
+                <<",\"input_shape\":";shape(row.input_shape);phases<<",\"output_shape\":";shape(row.output_shape);
+            phases<<",\"seconds\":"<<row.seconds<<",\"active_before\":"<<row.active_before<<",\"active_after\":"<<row.active_after
+                <<",\"peak_before\":"<<row.peak_before<<",\"peak_after\":"<<row.peak_after<<",\"cache_after\":"<<row.cache_after
+                <<",\"history_unique_before\":"<<row.history_unique_before<<",\"history_unique_after\":"<<row.history_unique_after
+                <<",\"history_logical_after\":"<<row.history_logical_after<<",\"history_unavailable_after\":"<<row.history_unavailable_after<<"}\n";
+            tc::require(bool(phases),"phase diagnostic trace write failed");
+        });
+#endif
         auto sink=[&](int index,const Tensor &pixels){
             tc::require(index==emitted && pixels.shape()==mx::Shape{1,3,1,h,w} && pixels.dtype()==mx::float16,"spatial frame index/shape changed");
             auto current=mx::contiguous(mx::transpose(pixels,{0,2,3,4,1}));mx::eval(current);
@@ -72,6 +91,9 @@ int main(int argc,char **argv){
         if(route=="baseline")vae.decode_stream(latent,frames,sink,{},cancelled);
         else vae.decode_spatial_stream(latent,frames,sink,options,stats,{},cancelled);
         const double seconds=std::chrono::duration<double>(tc::Clock::now()-start).count();const auto active=mx::get_peak_memory();
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        phases.close();tc::require(bool(phases),"phase diagnostic trace close failed");
+#endif
         const double l2=std::sqrt(es/std::max(nx,1e-20)),cosine=dot/std::max(std::sqrt(nx*ny),1e-20);
         const bool quality=emitted==frames && l2<=.05 && cosine>=.999;
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
@@ -93,12 +115,15 @@ int main(int argc,char **argv){
             <<",\"read_window_recipe\":\""<<(options.reuse_read_windows?"reuse":"fresh")<<"\",\"host_window_allocations\":"<<(stats?stats->host_allocations.load():0)
             <<",\"host_window_reuses\":"<<(stats?stats->host_reuses.load():0)
             <<",\"projection_backend\":\""<<(projection_experiment?argv[9]:"none")<<"\"";
+        out<<",\"share_upscale_history\":"<<(vae.shares_upscale_history()?"true":"false")
+            <<",\"shared_upscale_frames\":"<<vae.shared_upscale_frames()<<",\"shared_upscale_logical_bytes\":"<<vae.shared_upscale_logical_bytes();
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
         if(projection_stats)out<<",\"projection_frames\":"<<projection_stats->frames<<",\"projection_coreml_calls\":"<<projection_stats->coreml_calls
             <<",\"projection_backing_hits\":"<<projection_stats->backing_hits<<",\"projection_slot_bytes\":"<<projection_stats->slot_bytes
             <<",\"projection_boundary_seconds\":"<<projection_stats->boundary_seconds<<",\"projection_load_seconds\":"<<projection_stats->load_seconds;
 #endif
-        out<<",\"qualified\":false,\"physical_ane_occupancy_measured\":false,\"scope\":\"decoder-only saved FP16 witness, host quality scan included; not original-FP32/full-request/paired speed or low-RAM qualification\"}\n";
+        out<<",\"diagnostic_phase_count\":"<<phase_count
+            <<",\"qualified\":false,\"physical_ane_occupancy_measured\":false,\"scope\":\"decoder-only saved FP16 witness, host quality scan included; not original-FP32/full-request/paired speed or low-RAM qualification\"}\n";
         out.close();tc::require(quality,"spatial decoder quality gate failed");
         if(route=="baseline" && !projection_experiment)tc::require(unequal==0,"baseline changed saved decoder bytes");
         std::cout<<"PASS "<<route<<" frames="<<emitted<<" l2="<<l2<<" cosine="<<cosine<<" peak="<<active<<'\n';

@@ -13,6 +13,17 @@ using EncodedFrameSource = std::function<Tensor(int)>;
 // Offline observation only: never replaces an operator or changes its input.
 // Callers must finish GPU/host access before returning, not retain borrowed views.
 using UpscaleInputObserver = std::function<void(const std::string &, const Tensor &, bool, bool)>;
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+struct VAEPhaseObservation {
+    std::string schema="tc_seedvr2_vae_phase_profile_v1",key;
+    mx::Shape input_shape,output_shape;
+    bool initial=false,inclusive=false;
+    double seconds=0;
+    uint64_t active_before=0,active_after=0,peak_before=0,peak_after=0,cache_after=0;
+    uint64_t history_unique_before=0,history_unique_after=0,history_logical_after=0,history_unavailable_after=0;
+};
+using VAEPhaseObserver=std::function<void(const VAEPhaseObservation &)>;
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
 // Offline complete-VAE qualification only. The executor returns the completed
 // FP16 spatial projection with separate bias/shuffle, never temporal phases.
@@ -28,8 +39,13 @@ class VAE {
     std::string upscale_recipe_ = "native";
     std::string spatial_recipe_ = "full";
     std::string encoder_spatial_recipe_ = "full";
+    bool share_upscale_history_=false;
+    mutable uint64_t shared_upscale_frames_=0,shared_upscale_logical_bytes_=0;
     SpatialTileOptions spatial_options_;
     UpscaleInputObserver upscale_input_observer_;
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    VAEPhaseObserver phase_observer_;
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
     ExperimentalUpscaleProjection experimental_upscale_projection_;
 #endif
@@ -43,6 +59,13 @@ class VAE {
         std::shared_ptr<SpatialTileCache> spatial;
         std::atomic<bool> *cancelled = nullptr;
     };
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    struct PhaseStart {Clock::time_point time;uint64_t active=0,peak=0,history=0;};
+    PhaseStart phase_begin(const Caches *) const;
+    void phase_end(const PhaseStart &,const std::string &,const mx::Shape &,const mx::Shape &,
+                   const Caches *,bool initial,bool inclusive=false) const;
+    std::array<uint64_t,3> phase_history(const Caches *) const;
+#endif
     Tensor conv(const Tensor &, const std::string &, Caches *, bool initial,
                 bool downsample = false, bool owned_normalized_singleton = false) const;
     Tensor conv_frames(const Tensor &, const std::string &, FrameHistoryMap *, bool initial,
@@ -72,7 +95,13 @@ class VAE {
     const std::string &upscale_recipe() const { return upscale_recipe_; }
     const std::string &spatial_recipe() const { return spatial_recipe_; }
     const std::string &encoder_spatial_recipe() const { return encoder_spatial_recipe_; }
+    bool shares_upscale_history() const {return share_upscale_history_;}
+    uint64_t shared_upscale_frames() const {return shared_upscale_frames_;}
+    uint64_t shared_upscale_logical_bytes() const {return shared_upscale_logical_bytes_;}
     void observe_upscale_inputs(UpscaleInputObserver observer) { upscale_input_observer_ = std::move(observer); }
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    void observe_phases(VAEPhaseObserver observer){phase_observer_=std::move(observer);}
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
     void use_experimental_upscale_projection(ExperimentalUpscaleProjection executor) {
         require(bool(executor) && upscale_recipe_=="native","experimental projection requires the native outer recipe");
@@ -116,6 +145,10 @@ class VAE {
                              std::shared_ptr<SpatialFileStats> &, const Event &, std::atomic<bool> &) const;
     void clear() {
         weights_.clear();
+        share_upscale_history_=false;shared_upscale_frames_=0;shared_upscale_logical_bytes_=0;
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        phase_observer_={};
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
         experimental_upscale_projection_={};
 #endif

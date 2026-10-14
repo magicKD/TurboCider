@@ -106,6 +106,7 @@ struct AccelerationView: View {
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEEncoderSpatial")
             Picker("解码空间阶段", selection: Binding(get: { seedvr2Config.spatial }, set: { value in updateSeedVR2 {
                 $0.spatial = value
+                if value != "full" { $0.share_upscale_history = false }
                 if value == "file_rows" && !["singleton2d", "conv3d"].contains($0.convolution) { $0.convolution = "singleton2d" }
             } })) {
                 Text("完整帧（原有路径）").tag("full")
@@ -128,17 +129,32 @@ struct AccelerationView: View {
                 Text("逐帧导出（降低输出驻留）").tag("streaming")
             }.disabled(store.busy || studio.draft.operation != "video.upscale")
                 .accessibilityIdentifier("seedvr2VAEDecoder")
-            Picker("卷积工作区", selection: Binding(get: { seedvr2Config.convolution }, set: { value in updateSeedVR2 { $0.convolution = value } })) {
+            Picker("卷积工作区", selection: Binding(get: { seedvr2Config.convolution }, set: { value in updateSeedVR2 {
+                $0.convolution = value
+                if value != "singleton2d" { $0.share_upscale_history = false }
+            } })) {
                 Text("速度优先 · singleton2d").tag("singleton2d")
                 if seedvr2Config.spatial == "full" && seedvr2Config.encoder_spatial == "full" {
                     Text("大卷积分块 · mixed3d（较慢）").tag("mixed3d")
                     Text("全部卷积分块 · tiled3d（更慢）").tag("tiled3d")
                 }
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEConvolution")
-            Picker("因果历史缓存", selection: Binding(get: { seedvr2Config.history }, set: { value in updateSeedVR2 { $0.history = value } })) {
+            Picker("因果历史缓存", selection: Binding(get: { seedvr2Config.history }, set: { value in updateSeedVR2 {
+                $0.history = value
+                if value != "frames" { $0.share_upscale_history = false }
+            } })) {
                 Text("紧凑历史 · compact（原有默认）").tag("compact")
                 Text("独立帧引用 · frames（减少复制）").tag("frames")
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEHistory")
+            Toggle("共享空间上采样历史（减少帧副本）", isOn: Binding(get: { seedvr2Config.share_upscale_history }, set: { value in updateSeedVR2 {
+                $0.share_upscale_history = value
+                if value { $0.history = "frames" }
+            } })).disabled(store.busy || seedvr2Config.spatial != "full" || seedvr2Config.convolution != "singleton2d")
+                .accessibilityIdentifier("seedvr2VAEShareUpscaleHistory")
+            if seedvr2Config.share_upscale_history {
+                Text("仅复用已独立生成的空间上采样单帧，保留原有时间阶段和 FP16 数值。需要 frames + singleton2d + 完整解码；图像不保留无用历史。减少副本不等于整段峰值同比下降，也不是硬内存预算。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Picker("临时分配器缓存", selection: Binding(get: { seedvr2Config.allocator_cache_bytes }, set: { value in updateSeedVR2 { $0.allocator_cache_bytes = value } })) {
                 Text("4 GiB（速度优先）").tag(UInt64(4) << 30)
                 Text("1 GiB（减少缓存）").tag(UInt64(1) << 30)
@@ -147,14 +163,10 @@ struct AccelerationView: View {
             Text("逐帧导入按原有 5/4 帧分段编码；分块仅限制卷积工作区，不是整套 VAE 的空间 tiling，也不是硬内存上限。输入/输出流式仍保留完整条件/DiT latent；当前源视频上限仍为 121 帧。")
                 .font(.caption).foregroundStyle(.secondary)
             if studio.draft.frames >= 65 || ProcessInfo.processInfo.physicalMemory <= (UInt64(32) << 30) {
-                Text("较长视频或低内存设备：建议分阶段驻留 + 逐帧导出 + 较小缓存。1024 输出仍可能超过低内存机器容量，可先使用 512；本建议是启发式，不是已验证的设备预算。")
+                Text("较长视频或低内存设备：建议分阶段驻留 + 逐帧导入/导出 + 较小缓存；完整解码可尝试共享空间上采样历史。1024 输出仍可能超过低内存机器容量，可先使用 512；本建议是启发式，不是已验证的设备预算。")
                     .font(.caption).foregroundStyle(.orange)
                 Button("应用省内存建议") {
-                    studio.draft.residency = "component_staged"
-                    updateSeedVR2 {
-                        $0.decoder = studio.draft.operation == "video.upscale" ? "streaming" : "buffered"
-                        $0.allocator_cache_bytes = UInt64(1) << 30
-                    }
+                    studio.applySeedVR2MemoryAdvice()
                 }.disabled(store.busy).accessibilityIdentifier("seedvr2ApplyMemoryAdvice")
             }
         }

@@ -44,6 +44,9 @@ class Pipeline {
     const std::string &vae_history_recipe() const { return vae_.history_recipe(); }
     const std::string &vae_pointwise_recipe() const { return vae_.pointwise_recipe(); }
     const std::string &vae_upscale_recipe() const { return vae_.upscale_recipe(); }
+    bool vae_shares_upscale_history() const {return vae_.shares_upscale_history();}
+    uint64_t vae_shared_upscale_frames() const {return vae_.shared_upscale_frames();}
+    uint64_t vae_shared_upscale_logical_bytes() const {return vae_.shared_upscale_logical_bytes();}
     const std::string &vae_spatial_recipe() const { return vae_.spatial_recipe(); }
     const std::string &vae_encoder_spatial_recipe() const { return vae_.encoder_spatial_recipe(); }
     int vae_conv_tile_rows() const { return vae_.conv_tile_rows(); }

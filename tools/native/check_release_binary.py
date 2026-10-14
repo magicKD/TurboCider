@@ -20,6 +20,9 @@ def check(library: Path, manifest: Path) -> None:
     if any(flag.startswith('-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT') and
            flag != '-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=0' for flag in flags):
         raise ValueError('stable release packaging requires unqualified VAE upscale experiment disabled')
+    if any(flag.startswith('-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE') and
+           flag != '-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE=0' for flag in flags):
+        raise ValueError('stable release packaging requires VAE phase profiling disabled')
     symbols = subprocess.check_output(['nm', '-gU', str(library)], text=True)
     for line in symbols.splitlines():
         symbol = line.split()[-1] if line.split() else ''
@@ -29,6 +32,8 @@ def check(library: Path, manifest: Path) -> None:
     # classes are dynamically loaded, so nm alone cannot detect them. Do this
     # BEFORE package.sh can replace an existing App or distributable CLI.
     strings = subprocess.check_output(['strings', str(library)], text=True)
+    if 'tc_seedvr2_vae_phase_profile_v1' in strings:
+        raise ValueError('stable release library contains VAE phase profiling')
     if any(name in strings for name in ('tc_seedvr2_upscale_bias_shuffle','tc_seedvr2_ane_projection_pack','coreml_projection_probe')):
         raise ValueError('stable release library contains unqualified VAE upscale experiment')
     for name in ('_ANEClient', '_ANERequest', '_ANEIOSurfaceObject', '_ANESharedEvents', '_ANEInMemoryModel'):

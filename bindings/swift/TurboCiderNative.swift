@@ -25,6 +25,7 @@ public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
     public var decoder: String
     public var convolution: String
     public var history: String
+    public var share_upscale_history: Bool
     public var spatial: String
     public var encoder_spatial: String
     public var spatial_rows: Int
@@ -33,21 +34,24 @@ public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
     public var allocator_cache_bytes: UInt64
     public init(decoder: String = "buffered", convolution: String = "singleton2d",
                 tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30, history: String = "compact", encoder: String = "buffered",
-                spatial: String = "full", spatialRows: Int = 64, spatialDiskBudgetBytes: UInt64 = 8 << 30, encoderSpatial: String = "full") {
+                spatial: String = "full", spatialRows: Int = 64, spatialDiskBudgetBytes: UInt64 = 8 << 30, encoderSpatial: String = "full",
+                shareUpscaleHistory: Bool = false) {
         self.encoder = encoder
         self.decoder = decoder; self.convolution = convolution
         self.history = history
+        share_upscale_history = shareUpscaleHistory
         self.spatial = spatial; spatial_rows = spatialRows; spatial_disk_budget_bytes = spatialDiskBudgetBytes
         encoder_spatial = encoderSpatial
         tile_rows = tileRows; allocator_cache_bytes = allocatorCacheBytes
     }
-    private enum CodingKeys: String, CodingKey { case encoder, decoder, convolution, history, spatial, encoder_spatial, spatial_rows, spatial_disk_budget_bytes, tile_rows, allocator_cache_bytes }
+    private enum CodingKeys: String, CodingKey { case encoder, decoder, convolution, history, share_upscale_history, spatial, encoder_spatial, spatial_rows, spatial_disk_budget_bytes, tile_rows, allocator_cache_bytes }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         encoder = try c.decodeIfPresent(String.self,forKey: .encoder) ?? "buffered"
         self.decoder = try c.decodeIfPresent(String.self,forKey: .decoder) ?? "buffered"
         convolution = try c.decodeIfPresent(String.self,forKey: .convolution) ?? "singleton2d"
         history = try c.decodeIfPresent(String.self,forKey: .history) ?? "compact"
+        share_upscale_history = try c.decodeIfPresent(Bool.self,forKey: .share_upscale_history) ?? false
         spatial = try c.decodeIfPresent(String.self,forKey: .spatial) ?? "full"
         encoder_spatial = try c.decodeIfPresent(String.self,forKey: .encoder_spatial) ?? "full"
         spatial_rows = try c.decodeIfPresent(Int.self,forKey: .spatial_rows) ?? 64

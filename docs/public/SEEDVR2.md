@@ -267,6 +267,29 @@ and decoded tensors. The subsequently completed 1024/t25 complete-request ABBA
 records 85.119 -> 83.793 s (about 1.58% faster) and 939.5 MB lower active maximum;
 all eight export pairs retain every pixel. These are not hard RAM budgets.
 
+An additional opt-in `share_upscale_history=true` requires `history=frames`,
+`convolution=singleton2d` and `spatial=full`. It retains the completed independent
+spatial-upscale frame as history instead of copying it again. Omission/older
+drafts keep it **false**; images create no unused history. Both request schemas,
+the Swift SDK and App expose this field. Unsupported combinations fail explicitly.
+
+Complete1024/t25 decoder words and each audited-FP32 frame pass unchanged.
+The isolated upsampling-region peak falls512 MiB, but the maximum moves to the
+following conv: complete decoder reduction is only133.7 MB. Matched same-build
+single staged App requests observe13.148 ->13.015 GB active maximum and
+90.375/90.053 s, not a paired warm-speed or physical hard-budget qualification.
+All512/1024 image/video exports match the disabled route exactly. Result fields
+`vae_shared_upscale_frames` and `vae_shared_upscale_logical_bytes` describe
+actual padded frames/avoided logical copies, **not** physical or peak savings.
+The App's user-applied memory advice includes streaming video input/output,
+staged residency,1-GiB cache and supported sharing without changing explicit
+row/workspace choices. Conservative admission and the121-frame cap are unchanged.
+See `docs/design/seedvr2-vae-phase-and-upscale-history.md` for scopes and receipts.
+The independent signed App is
+`dist/seedvr2-upscale-history-20261015/TurboCider.app` (macOS26.2+). It does not
+replace the currently running App; quit an older instance before opening the
+new bundle against the same default state directory.
+
 `encoder` accepts `buffered` or `streaming`. Streaming input is video-only and
 rejects complete input tensor dumps. It reads one RGB24 frame at a time and
 retains the original causal initial-five/subsequent-four encoder partition;

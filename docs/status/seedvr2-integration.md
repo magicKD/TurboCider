@@ -2202,6 +2202,51 @@ optimization goal remains active: the true request peak/critical path, broader
 scheduling, useful ANE routes, real low-memory hardware and >121-frame model
 support remain unresolved.
 
+### Phase attribution and opt-in spatial-upscale history sharing (2026-10-15)
+
+A complete25 original-boundary diagnostic trace has471 verified rows, preserves
+all78,643,200 output words and reproduces the noninstrumented13,129,845,582-byte
+maximum. The peak is in spatial upsampling plus its following causal conv;
+deduplicated cached history already occupies9,060,745,216 bytes. Timings are
+bundled/synchronized diagnostics, not independent arithmetic or warm-speed
+qualification; inclusive mid-block children are not added twice.
+
+The new public strict-Boolean `seedvr2_vae.share_upscale_history` is false by
+default and requires frames/singleton2d/full decoder scheduling. It retains
+the completed independent spatial-upscale owner after checking actual backing
+extent, rather than copying another frame. Images retain no unused histories.
+The stable numerical recipe/coefficients/casts/phases are unchanged. Actual
+frame/logical-copy counters are reported;13.422 GB avoided cumulative logical
+copy bytes at1024/t25 is not a physical or peak saving.
+
+Materialization alone does not reduce the maximum. Materialization plus owner
+sharing lowers the upsample region512 MiB, but the peak moves to final residual
+norm1/conv1: the ordinary complete decoder maximum is12,996,152,418 bytes,
+only133,693,164 bytes lower overall. All25 words and per-frame original-FP32
+gates pass unchanged. Typed cancellation, sink failure, source preservation,
+same-VAE recovery, option switching and zero-allocation teardown pass.
+
+Two real seven-request App workflows pass, with exact512/1024 image/video
+exports and PNG alpha, matching the prior default too. Same-build single staged
+1024/t25 disabled/enabled requests observe90.375/90.053 s and active maxima
+13,148,195,662/13,014,502,498 bytes. No paired-speed, physical hard bound or
+16-GiB-hardware claim is made. The App exposes the option and its tested
+user-applied memory advice includes streaming video input/output, frame history,
+compatible sharing and1-GiB cache; explicit rows/workspaces are preserved.
+
+Independent signed `dist/seedvr2-upscale-history-20261015/TurboCider.app`
+(macOS26.2+) passes signature/release guards and14 packaged-library contracts.
+Its complete512/t25 packaged-library smoke executes25 shared frames and matches
+the App's decoded RGB, with complete25/24-FPS geometry. Explicit relocation
+manifest validation checks the actual library's runtime ID; the first missing-
+manifest preflight failure remains preserved. No existing running App is changed.
+
+Detailed records and the next actual-peak/virtual-halo ANE gate:
+[phase/ownership evidence](../design/seedvr2-vae-phase-and-upscale-history.md).
+The full optimization goal remains active; broader scheduling/workspaces,
+useful VAE ANE integration, real low-memory hardware/admission and bounded
+longer-context DiT are still incomplete. Current defaults/121-frame cap remain.
+
 ## Reproduce component checks
 
 ```sh

@@ -113,12 +113,13 @@ static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
     require(r.model == "seedvr2-3b", "seedvr2_vae is only supported by SeedVR2");
     dictionary(d, "seedvr2_vae");
     keys(d, @[@"encoder", @"decoder", @"convolution", @"history", @"tile_rows", @"allocator_cache_bytes",
-        @"spatial", @"encoder_spatial", @"spatial_rows", @"spatial_disk_budget_bytes"]);
+        @"spatial", @"encoder_spatial", @"spatial_rows", @"spatial_disk_budget_bytes", @"share_upscale_history"]);
     SeedVR2VAEConfig config;
     config.encoder = string_value(d, @"encoder", config.encoder);
     config.decoder = string_value(d, @"decoder", config.decoder);
     config.convolution = string_value(d, @"convolution", config.convolution);
     config.history = string_value(d, @"history", config.history);
+    config.share_upscale_history = boolean(d,@"share_upscale_history",false);
     config.spatial = string_value(d, @"spatial", config.spatial);
     config.encoder_spatial = string_value(d, @"encoder_spatial", config.encoder_spatial);
     config.spatial_rows = number(d, @"spatial_rows", config.spatial_rows);
@@ -128,6 +129,8 @@ static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
     require(config.decoder == "buffered" || config.decoder == "streaming", "SeedVR2 VAE decoder must be buffered or streaming");
     require(config.encoder == "buffered" || config.encoder == "streaming", "SeedVR2 VAE encoder must be buffered or streaming");
     require(config.history == "compact" || config.history == "frames", "SeedVR2 VAE history must be compact or frames");
+    require(!config.share_upscale_history || (config.history=="frames" && config.convolution=="singleton2d" && config.spatial=="full"),
+            "share_upscale_history requires frames, singleton2d and full decoder spatial scheduling");
     require(config.spatial == "full" || config.spatial == "file_rows", "SeedVR2 VAE spatial must be full or file_rows");
     require(config.encoder_spatial == "full" || config.encoder_spatial == "file_rows", "SeedVR2 VAE encoder_spatial must be full or file_rows");
     require(config.spatial_rows >= 8 && config.spatial_rows <= 128 && config.spatial_rows % 8 == 0,

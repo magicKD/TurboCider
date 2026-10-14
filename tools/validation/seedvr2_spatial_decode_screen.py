@@ -41,6 +41,7 @@ def main():
     parser.add_argument("--routes",nargs="+",choices=("baseline","spatial"),default=["baseline","spatial"])
     parser.add_argument("--projection-manifest",type=Path)
     parser.add_argument("--projection-control",choices=("ne","cpu"),default="ne")
+    parser.add_argument("--share-upscale-history",action="store_true")
     args=parser.parse_args()
     if args.output.exists() or args.frames<1 or (args.frames-1)%4 or not 8<=args.rows<=128 or args.rows%8:
         parser.error("fresh output, complete padded causal prefix and 8-aligned rows required")
@@ -48,6 +49,8 @@ def main():
     if args.fp32_fixture:args.fp32_fixture=args.fp32_fixture.resolve(strict=True)
     checkpoint=args.model/"vae/seedvr2_ema_vae_fp16.safetensors"
     if sha256(checkpoint)!=CHECKPOINT_SHA:parser.error("original VAE checkpoint SHA required")
+    if args.share_upscale_history and (args.routes!=["baseline"] or args.projection_manifest):
+        parser.error("shared upscale history requires the native full-route boundary")
     projection=None
     if args.projection_manifest:
         args.projection_manifest=args.projection_manifest.resolve(strict=True)
@@ -80,6 +83,7 @@ def main():
         read_window_recipe=args.read_windows,
         projection_manifest_sha256=sha256(args.projection_manifest) if projection else None,
         projection_backend=args.projection_control if projection else "none",
+        share_upscale_history=args.share_upscale_history,
         source_sha256=sha256(Path(__file__)),
         projection_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_ane_projection.mm") if projection else None,
         projection_io_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_upscale_io.hpp") if projection else None,
@@ -96,6 +100,7 @@ def main():
             destination=args.output/route
             command=[str(args.probe),str(args.model),str(fixture),str(destination),route,str(args.threshold_bytes),str(args.rows),args.read_windows]
             if projection:command.extend([str(args.projection_manifest),args.projection_control])
+            elif args.share_upscale_history:command.append("share")
             print(f"spatial screen {route} {shape}",flush=True)
             result=subprocess.run(command,capture_output=True,text=True,timeout=600)
             receipt=dict(route=route,command=command,exit_code=result.returncode,stderr=result.stderr,stdout=result.stdout)
@@ -107,6 +112,12 @@ def main():
                 raise ValueError("decoder did not execute the selected read-window recipe")
             if projection:
                 validate_projection_observation(receipt["observation"],args.projection_control,projection,args.frames,pixels.shape[3],pixels.shape[4])
+            if args.share_upscale_history:
+                value=receipt["observation"];expected=args.frames if args.frames>1 else 0
+                if (value.get("share_upscale_history") is not True or value.get("shared_upscale_frames")!=expected or
+                    value.get("shared_upscale_logical_bytes")!=expected*pixels.shape[3]*pixels.shape[4]*256*2 or
+                    value.get("bitwise_equal") is not True):
+                    raise ValueError("shared upscale history was not fully executed or changed pixel words")
             if (route=="spatial" and args.read_windows=="reuse" and receipt["observation"]["file_read_bytes"]>0 and
                 receipt["observation"].get("host_window_reuses",0)<=0):
                 raise ValueError("eligible read windows were not actually reused")

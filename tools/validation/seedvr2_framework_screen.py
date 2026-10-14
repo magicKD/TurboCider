@@ -158,6 +158,21 @@ def verify_output(path, args):
     return info
 
 
+def validate_native_build_binding(library,identity):
+    import ctypes as C
+    loaded=C.CDLL(str(library))
+    loaded.tc_runtime_build_identity.restype=C.c_void_p
+    loaded.tc_string_free.argtypes=[C.c_void_p]
+    loaded.tc_string_free.restype=None
+    pointer=loaded.tc_runtime_build_identity()
+    if not pointer:raise ValueError("native runtime build identity is unavailable")
+    try:actual=C.string_at(pointer).decode()
+    finally:loaded.tc_string_free(pointer)
+    if not isinstance(identity.get("runtime_build_id"),str) or actual!=identity["runtime_build_id"]:
+        raise ValueError("native library and declared build identity do not match")
+    return actual
+
+
 def record_setup(args):
     if args.output.exists():
         raise ValueError("a fresh observation directory is required")
@@ -178,13 +193,15 @@ def record_setup(args):
         qualification_passed=False,
         limit="one route observer, not a paired cold/warm cohort or standalone proof of GPU speed versus ComfyUI")
     if args.route in ("native-gpu", "native-hybrid"):
-        build_manifest = args.library.parent / "runtime-build/runtime-build-manifest.json"
+        build_manifest = getattr(args,"native_build_manifest",None) or args.library.parent / "runtime-build/runtime-build-manifest.json"
         if not build_manifest.is_file():
             raise ValueError("native runtime build identity manifest is missing")
         identity = json.loads(build_manifest.read_text())
+        runtime_id=validate_native_build_binding(args.library,identity)
         write_json(args.output / "native-build-manifest.json", identity)
         report["native_artifact_identity"] = dict(library_sha256=sha256(args.library),
             runtime_build_manifest_sha256=sha256(build_manifest),
+            verified_runtime_build_id=runtime_id,
             environment={key: os.environ.get(key) for key in (
                 "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE", "TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE",
                 "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE", "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE",
@@ -362,10 +379,14 @@ def main():
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--library", type=Path, default=ROOT / "build/native/libturbocider.dylib")
+    parser.add_argument("--native-build-manifest",type=Path,help="explicit matching build identity for a relocated/packaged native library")
     parser.add_argument("--comfy", type=Path)
     parser.add_argument("--comfy-python", type=Path)
     parser.add_argument("--comfy-extra", type=Path)
     args = parser.parse_args()
+    if args.native_build_manifest is not None:
+        if not args.route.startswith("native-"):parser.error("native build manifest applies only to native observations")
+        args.native_build_manifest=args.native_build_manifest.resolve(strict=True)
     if args.vae_options is not None and (not isinstance(args.vae_options,dict) or not args.route.startswith("native-")):
         parser.error("VAE controls require a JSON object and a native route")
     if args.route == "native-hybrid":

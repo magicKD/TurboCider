@@ -22,6 +22,7 @@ struct SeedVR2VAEConfig {
     std::string decoder = "buffered";
     std::string convolution = "singleton2d";
     std::string history = "compact";
+    bool share_upscale_history = false;
     std::string spatial = "full";
     std::string encoder_spatial = "full";
     int spatial_rows = 64;

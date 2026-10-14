@@ -24,4 +24,6 @@ xcrun clang++ "${SPATIAL_FLAGS[@]}" native/core/common.cpp native/models/seedvr2
   native/models/seedvr2/model.cpp native/models/seedvr2/vae.cpp tests/native/seedvr2_spatial_encode_cancel_test.cpp -o "$SPATIAL_PROBE_OUT/seedvr2-spatial-encode-cancel-test"
 xcrun clang++ "${SPATIAL_FLAGS[@]}" native/core/common.cpp native/models/seedvr2/geometry.cpp \
   native/models/seedvr2/model.cpp native/models/seedvr2/vae.cpp tests/native/seedvr2_spatial_encode_stream_test.cpp -o "$SPATIAL_PROBE_OUT/seedvr2-spatial-encode-stream-test"
+xcrun clang++ "${SPATIAL_FLAGS[@]}" native/core/common.cpp native/models/seedvr2/geometry.cpp \
+  native/models/seedvr2/model.cpp native/models/seedvr2/vae.cpp tests/native/seedvr2_upscale_history_test.cpp -o "$SPATIAL_PROBE_OUT/seedvr2-upscale-history-test"
 printf '%s\n' "$SPATIAL_PROBE_OUT"

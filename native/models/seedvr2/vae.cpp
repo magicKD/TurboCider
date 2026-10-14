@@ -30,6 +30,43 @@ void fence(const Tensor &x, std::atomic<bool> &cancelled) {
 }
 } // namespace
 
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+std::array<uint64_t,3> VAE::phase_history(const Caches *cache) const {
+    uint64_t unique=0,logical=0,unavailable=0;std::unordered_map<const void *,size_t> buffers;
+    auto inspect=[&](const Tensor &value){
+        logical+=value.nbytes();
+        if(!value.is_available()){++unavailable;return;}
+        const auto identity=value.buffer().ptr();const auto bytes=value.buffer_size();
+        auto found=buffers.find(identity);
+        if(found==buffers.end()){buffers.emplace(identity,bytes);unique+=bytes;}
+        else require(found->second==bytes,"one history buffer has inconsistent allocation extent");
+    };
+    if(cache){
+        for(const auto &[key,value]:cache->compact)inspect(value);
+        for(const auto &[key,frames]:cache->frames)for(const auto &value:frames)inspect(value);
+    }
+    return {unique,logical,unavailable};
+}
+VAE::PhaseStart VAE::phase_begin(const Caches *cache) const {
+    if(!phase_observer_)return {};
+    mx::synchronize();const auto history=phase_history(cache);
+    return {Clock::now(),mx::get_active_memory(),mx::get_peak_memory(),history[0]};
+}
+void VAE::phase_end(const PhaseStart &start,const std::string &key,const mx::Shape &input,const mx::Shape &output,
+                    const Caches *cache,bool initial,bool inclusive) const {
+    if(!phase_observer_)return;
+    // Observe only existing eval/fence boundaries. Never retain an array or
+    // force a nested convolution/norm to finish with its temporary owners live.
+    mx::synchronize();const auto stopped=Clock::now();const auto history=phase_history(cache);
+    VAEPhaseObservation row;row.key=key;row.input_shape=input;row.output_shape=output;
+    row.initial=initial;row.inclusive=inclusive;row.seconds=std::chrono::duration<double>(stopped-start.time).count();
+    row.active_before=start.active;row.active_after=mx::get_active_memory();row.peak_before=start.peak;
+    row.peak_after=mx::get_peak_memory();row.cache_after=mx::get_cache_memory();
+    row.history_unique_before=start.history;row.history_unique_after=history[0];row.history_logical_after=history[1];
+    row.history_unavailable_after=history[2];phase_observer_(row);
+}
+#endif
+
 void VAE::load(const std::filesystem::path &path) {
     configure({});
     weights_.load(path, mx::float16, true);
@@ -48,6 +85,7 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
 #endif
     spatial_recipe_ = "full";
     encoder_spatial_recipe_ = "full";
+    share_upscale_history_=false;shared_upscale_frames_=0;shared_upscale_logical_bytes_=0;
     spatial_options_ = {};
     conv_tile_rows_ = 16384;
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE")) conv_recipe_ = value;
@@ -69,7 +107,8 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
         require(std::string(value)=="native","fused VAE upsampling requires an experimental probe build");
 #endif
     }
-    require(upscale_recipe_ == "native" || upscale_recipe_ == "metal_fused","invalid VAE upsampling recipe");
+    require(upscale_recipe_ == "native" || upscale_recipe_ == "metal_fused" ||
+            upscale_recipe_ == "materialized" || upscale_recipe_ == "materialized_owned","invalid VAE upsampling recipe");
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS")) {
         const char *end = value + std::strlen(value);
         const auto parsed = std::from_chars(value, end, conv_tile_rows_);
@@ -84,6 +123,7 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
             config->spatial_disk_budget_bytes > 0 && config->spatial_disk_budget_bytes <= (8ull<<30),"invalid spatial row/scratch settings");
         spatial_recipe_ = config->spatial;
         encoder_spatial_recipe_ = config->encoder_spatial;
+        share_upscale_history_=config->share_upscale_history;
         spatial_options_.rows = config->spatial_rows;
         spatial_options_.disk_budget_bytes = config->spatial_disk_budget_bytes;
         require(config->encoder == "buffered" || config->encoder == "streaming", "invalid request-local SeedVR2 VAE encoder recipe");
@@ -95,6 +135,8 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
         conv_recipe_ = config->convolution;
         require(config->history == "compact" || config->history == "frames", "invalid request-local SeedVR2 VAE history recipe");
         history_recipe_ = config->history;
+        require(!share_upscale_history_ || (history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
+            spatial_recipe_=="full" && norm_recipe_=="metal"),"shared upscale history requires full spatial frames, singleton2d and Metal norm");
         conv_tile_rows_ = config->tile_rows;
     }
     require(history_recipe_ != "frames" || conv_recipe_ != "taps2d", "frame history does not support experimental taps2d");
@@ -377,14 +419,26 @@ Tensor VAE::spatial_conv(const Tensor &source,const std::function<Tensor(int,int
     return output;
 }
 Tensor VAE::resnet(const Tensor &x, const std::string &key, Caches *cache, bool initial) const {
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    auto phase=phase_begin(cache);
+#endif
     auto y = norm_conv(x,key+".norm1",key+".conv1",cache,initial);
     mx::eval(y);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    phase_end(phase,key+".norm1_conv1",x.shape(),y.shape(),cache,initial);
+#endif
     if (std::getenv("TURBOCIDER_SEEDVR2_VAE_PROFILE"))
         require(mx::all(mx::isfinite(y)).item<bool>(), "nonfinite SeedVR2 VAE convolution: " + key + ".conv1");
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    phase=phase_begin(cache);const auto second_input=y.shape();
+#endif
     y = norm_conv(y,key+".norm2",key+".conv2",cache,initial);
     auto residual = weights_.has(key + ".conv_shortcut.weight") ? conv(x, key + ".conv_shortcut", cache, initial) : x;
     y = y + residual;
     mx::eval(y);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    phase_end(phase,key+".norm2_conv2_residual",second_input,y.shape(),cache,initial);
+#endif
     if (std::getenv("TURBOCIDER_SEEDVR2_VAE_PROFILE")) {
         require(mx::all(mx::isfinite(y)).item<bool>(), "nonfinite SeedVR2 VAE residual: " + key);
         std::fprintf(stderr, "vae_resnet %s T=%d H=%d C=%d active=%zu peak=%zu cache=%zu\n",
@@ -394,6 +448,9 @@ Tensor VAE::resnet(const Tensor &x, const std::string &key, Caches *cache, bool 
     return y;
 }
 Tensor VAE::mid_block(const Tensor &input, const std::string &key, Caches *cache, bool initial) const {
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    const auto phase=phase_begin(cache);
+#endif
     auto x = resnet(input, key + ".resnets.0", cache, initial);
     const auto p = key + ".attentions.0";
     auto y = group_norm(x, p + ".group_norm", false);
@@ -425,7 +482,13 @@ Tensor VAE::mid_block(const Tensor &input, const std::string &key, Caches *cache
     y = mx::concatenate(attended, 0);
     y = mx::reshape(y, {bt, hw, c});
     x = x + mx::reshape(weights_.linear(y, p + ".to_out.0"), x.shape());
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+    auto result=resnet(x,key+".resnets.1",cache,initial);
+    phase_end(phase,key+".inclusive",input.shape(),result.shape(),cache,initial,true);
+    return result;
+#else
     return resnet(x, key + ".resnets.1", cache, initial);
+#endif
 }
 Tensor VAE::upsample(const Tensor &input, const std::string &key, Caches *cache,
                      bool initial, bool temporal) const {
@@ -459,6 +522,33 @@ Tensor VAE::upsample(const Tensor &input, const std::string &key, Caches *cache,
         // skip phase one only for the initial slice, never subsequent slices.
         y = mx::concatenate({part(y, 1, 0, 1), part(y, 1, 2, y.shape(1))}, 1);
     }
+    if(share_upscale_history_ && cache && cache->temporal && !temporal && t==1 &&
+        !(cache->spatial_enabled && cache->spatial && cache->spatial->eligible(y))){
+        // The full spatial-only projection/bias/shuffle owns exactly one output
+        // frame. No temporal crop or borrowed input view can enter this path.
+        // Complete it before constructing the temporal halo, then retain that
+        // known producer rather than copying it into another history buffer.
+        mx::eval(y);
+        require(y.is_available() && y.flags().row_contiguous && y.offset()==0 &&
+            y.buffer_size()<=y.nbytes()+size_t(getpagesize()),"shared spatial upscale producer has unbounded backing");
+        auto result=conv(y,key+".conv",cache,initial,false,true);
+        ++shared_upscale_frames_;shared_upscale_logical_bytes_+=y.nbytes();return result;
+    }
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+    if((upscale_recipe_=="materialized" || upscale_recipe_=="materialized_owned") && !temporal && t==1){
+        // Finish the original FP16 projection/bias/shuffle before temporal
+        // concatenation allocates its much larger halo. No fusion or casts.
+        mx::eval(y);
+        if(upscale_recipe_=="materialized_owned"){
+            // This specific producer spans the complete projection output,
+            // with no temporal crop. Contiguity alone is NOT an ownership proof.
+            // Verify the actual extent too, then let history retain its owner.
+            require(y.is_available() && y.flags().row_contiguous && y.offset()==0 &&
+                y.buffer_size()<=y.nbytes()+size_t(getpagesize()),"spatial shuffle did not produce bounded owned storage");
+            return conv(y,key+".conv",cache,initial,false,true);
+        }
+    }
+#endif
     return conv(y, key + ".conv", cache, initial);
 }
 Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
@@ -476,8 +566,14 @@ Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
             checkpoint(cancelled);
             y = resnet(y, "encoder.down_blocks.0.resnets." + std::to_string(j), cache, first);
         }
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        const auto down_phase=phase_begin(cache);const auto down_input=y.shape();
+#endif
         y = conv(y, "encoder.down_blocks.0.downsamplers.0.conv", cache, first, true);
         fence(y, cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        phase_end(down_phase,"encoder.down_blocks.0.downsamplers.0.conv",down_input,y.shape(),cache,first);
+#endif
         head.push_back(y);
     }
     // Later encoder stages carry complete multi-frame temporal partitions.
@@ -491,8 +587,14 @@ Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
             checkpoint(cancelled);
             x = resnet(x, p + ".resnets." + std::to_string(j), cache, initial);
         }
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        const auto down_phase=phase_begin(cache);const auto down_input=x.shape();
+#endif
         if (i < 3) x = conv(x, p + ".downsamplers.0.conv", cache, initial, true);
         fence(x, cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        if(i<3)phase_end(down_phase,p+".downsamplers.0.conv",down_input,x.shape(),cache,initial);
+#endif
     }
     x = mid_block(x, "encoder.mid_block", cache, initial);
     x = norm_conv(x,"encoder.conv_norm_out","encoder.conv_out",cache,initial);
@@ -514,8 +616,14 @@ Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
             checkpoint(cancelled);
             x = resnet(x, p + ".resnets." + std::to_string(j), cache, initial);
         }
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        const auto up_phase=phase_begin(cache);const auto up_input=x.shape();
+#endif
         if (i == 0) x = upsample(x, p + ".upsamplers.0", cache, initial, true);
         fence(x, cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        if(i==0)phase_end(up_phase,p+".projection_shuffle_conv",up_input,x.shape(),cache,initial);
+#endif
     }
     // From the final temporal upsampler onward, carry causal histories through
     // each output frame. No full-resolution five-frame activation/workspace
@@ -523,9 +631,15 @@ Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
     std::vector<Tensor> frames;
     for (int frame = 0; frame < x.shape(1); ++frame) {
         const bool first = initial && frame == 0;
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        const auto up_phase=phase_begin(cache);auto up_input=x.shape();up_input[1]=1;
+#endif
         auto expanded = upsample(part(x, 1, frame, frame + 1),
                                  "decoder.up_blocks.1.upsamplers.0", cache, first, true);
         fence(expanded, cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+        phase_end(up_phase,"decoder.up_blocks.1.upsamplers.0.projection_shuffle_conv",up_input,expanded.shape(),cache,first);
+#endif
         for (int phase = 0; phase < expanded.shape(1); ++phase) {
             const bool first_output = first && phase == 0;
             auto y = part(expanded, 1, phase, phase + 1);
@@ -536,11 +650,23 @@ Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
                     checkpoint(cancelled);
                     y = resnet(y, p + ".resnets." + std::to_string(j), cache, first_output);
                 }
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+                const auto spatial_phase=phase_begin(cache);const auto spatial_input=y.shape();
+#endif
                 if (i == 2) y = upsample(y, p + ".upsamplers.0", cache, first_output, false);
                 fence(y, cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+                if(i==2)phase_end(spatial_phase,p+".projection_shuffle_conv",spatial_input,y.shape(),cache,first_output);
+#endif
             }
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+            const auto final_phase=phase_begin(cache);const auto final_input=y.shape();
+#endif
             y = norm_conv(y,"decoder.conv_norm_out","decoder.conv_out",cache,first_output);
             fence(y, cancelled);
+#if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
+            phase_end(final_phase,"decoder.conv_norm_out_conv_out",final_input,y.shape(),cache,first_output);
+#endif
             if (sink) {
                 require(next_frame != nullptr, "missing streaming decoder frame counter");
                 if (*next_frame < frame_limit) {

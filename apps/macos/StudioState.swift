@@ -1036,6 +1036,21 @@ final class StudioState: ObservableObject {
             try JSONEncoder().encode(draft).write(to: file, options: .atomic); saved = true
         } catch { saved = false; message = "草稿保存失败：\(error.localizedDescription)" }
     }
+    func applySeedVR2MemoryAdvice() {
+        guard draft.modelID == "seedvr2-3b" else { return }
+        var options = draft.seedvr2VAE ?? NativeSeedVR2VAEConfig()
+        let video = draft.operation == "video.upscale"
+        draft.residency = "component_staged"
+        options.encoder = video ? "streaming" : "buffered"
+        options.decoder = video ? "streaming" : "buffered"
+        options.allocator_cache_bytes = UInt64(1) << 30
+        options.history = "frames"
+        options.share_upscale_history = video && options.convolution == "singleton2d" && options.spatial == "full"
+        // Preserve explicit row/workspace choices; this is advice applied by
+        // the user, not a lowered admission estimate or physical RAM promise.
+        draft.seedvr2VAE = options
+        save()
+    }
     func installZImage(model: URL, sharedText: URL?) throws {
         let installed = try ZImageInstallation.install(model: model, sharedText: sharedText,
             directory: LibraryStore.defaultRoot.appendingPathComponent("bindings"))
