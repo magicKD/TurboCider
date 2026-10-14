@@ -41,4 +41,28 @@ Tensor resize_bicubic(const Tensor &pixels, int height, int width) {
     y = resize_axis(y, height, 1);
     return mx::clip(y, Tensor(0.f), Tensor(1.f));
 }
+NormalizedMediaInput consume_resized_input(Tensor &unit, bool video, bool own_image_alpha) {
+    require(unit.ndim() == 4 && unit.dtype() == mx::float32 && unit.shape(0) > 0 &&
+            unit.shape(1) > 0 && unit.shape(2) > 0 && unit.shape(3) == (video ? 3 : 4) &&
+            (video || unit.shape(0) == 1), "invalid resized SeedVR2 source pixels");
+    auto channels = [&](int first, int last) {
+        return mx::slice(unit,{0,0,0,first},{unit.shape(0),unit.shape(1),unit.shape(2),last});
+    };
+    auto pixels = mx::expand_dims(mx::transpose(channels(0,3)*2.f-1.f,{3,0,1,2}),0);
+    Tensor alpha(0);
+    if (video) mx::eval(pixels);
+    else if (own_image_alpha) {
+        // Contiguity alone is not an ownership guarantee: force a copy so
+        // even a singleton/stride-compatible view cannot retain source RGB.
+        alpha = mx::copy(mx::contiguous(channels(3,4)));
+        mx::eval({pixels,alpha});
+    } else {
+        // Preserve the original image residency/evaluation path when speed
+        // is preferred. This view intentionally retains full source RGBA.
+        alpha = channels(3,4);
+        mx::eval(pixels);
+    }
+    unit = Tensor(0);
+    return {std::move(pixels),std::move(alpha),!video && own_image_alpha};
+}
 } // namespace tc::seedvr2

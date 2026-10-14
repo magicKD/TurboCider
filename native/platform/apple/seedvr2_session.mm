@@ -37,9 +37,8 @@ SourceStamp verify_source(const std::filesystem::path &path, uintmax_t bytes, co
 }
 double elapsed(Clock::time_point start) { return std::chrono::duration<double>(Clock::now() - start).count(); }
 Tensor channels(const Tensor &pixels, int first, int last) {
-    return mx::slice(pixels, {0, 0, 0, first}, {pixels.shape(0), pixels.shape(1), pixels.shape(2), last});
+    return mx::slice(pixels,{0,0,0,first},{pixels.shape(0),pixels.shape(1),pixels.shape(2),last});
 }
-
 class SeedVR2Session final : public ModelSession {
     std::filesystem::path root_;
     SourceStamp dit_source_, vae_source_;
@@ -166,9 +165,23 @@ class SeedVR2Session final : public ModelSession {
         auto unit = video ? load_video_tensor(source, r.frames, r.fps, event, cancelled) : load_rgba_image_tensor(source);
         const int source_height = unit.shape(1), source_width = unit.shape(2);
         unit = seedvr2::resize_bicubic(unit, r.height, r.width);
-        auto rgb = channels(unit, 0, 3);
-        auto pixels = mx::expand_dims(mx::transpose(rgb * 2.f - 1.f, {3, 0, 1, 2}), 0);
-        mx::eval(pixels);
+        std::optional<Tensor> resident_rgb;
+        std::optional<seedvr2::NormalizedMediaInput> media_input;
+        auto pixels = [&] {
+            if (!video && r.residency == "resident") {
+                // Keep both original source/RGB owners and defer the alpha
+                // view until export, exactly as in the speed-first baseline.
+                // Creating another source consumer before eval can change
+                // normalization graph fusion even without copying alpha.
+                resident_rgb = channels(unit,0,3);
+                auto value = mx::expand_dims(mx::transpose(*resident_rgb*2.f-1.f,{3,0,1,2}),0);
+                mx::eval(value);
+                return value;
+            }
+            media_input = seedvr2::consume_resized_input(unit,video,true);
+            return media_input->pixels;
+        }();
+        const bool owned_alpha = media_input && media_input->alpha_is_owned;
         const double import_seconds = elapsed(import_started);
         const int frames = seedvr2::padded_frames(r.frames);
         const mx::Shape noise_shape{1, 16, (frames - 1) / 4 + 1, r.height / 8, r.width / 8};
@@ -223,7 +236,7 @@ class SeedVR2Session final : public ModelSession {
                 require(info.frames == r.frames && info.width == r.width && info.height == r.height && info.fps == r.fps,
                         "SeedVR2 MP4 failed frame/FPS/dimension validation");
             } else {
-                auto alpha = channels(unit, 3, 4) * 2.f - 1.f;
+                auto alpha = (media_input ? media_input->alpha : channels(unit,3,4)) * 2.f - 1.f;
                 save_rgba_png(mx::concatenate({restored, alpha}, -1), temporary);
             }
             checkpoint(cancelled);
@@ -264,6 +277,10 @@ class SeedVR2Session final : public ModelSession {
                 @"resident_parameter_bytes_scope": @"MLX parameter bank; excludes Core ML parameters and buffers",
                 @"resident_components": hybrid_ ? (pipeline_.dit().bytes() ? @[@"vae", @"dit", @"coreml_ffn_prefix"] : @[@"vae", @"coreml_ffn_prefix"]) : (pipeline_.dit().bytes() ? @[@"vae", @"dit"] : @[@"vae"]),
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
+                @"media_input_retention_recipe": video ? @"normalized_rgb_only" :
+                    (owned_alpha ? @"normalized_rgb_plus_owned_alpha" : @"normalized_rgb_plus_source_rgba"),
+                @"media_retained_alpha_bytes": @(video ? 0 : uint64_t(r.width)*r.height*sizeof(float)),
+                @"media_retained_source_rgba_bytes": @(!video && !owned_alpha ? uint64_t(r.width)*r.height*4*sizeof(float) : 0),
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
                 @"vae_norm_recipe": @(pipeline_.vae_norm_recipe().c_str()),

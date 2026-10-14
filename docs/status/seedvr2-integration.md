@@ -1227,6 +1227,157 @@ The newer resident library's 1024 default-attention Comfy video control and
 broader hardware/long-video qualification remain pending. Default GPU and
 optional staged residency remain available without the prefix bank.
 
+### Input-buffer residency experiment and speed-first image revision
+
+After `ed502cb`, an isolated native/Swift/App candidate consumes normalized
+source pixels instead of holding a resized NHWC RGB/RGBA source and its RGB
+view through restoration. Video drops the redundant RGB source; the first
+candidate also copies image alpha into independently owned FP32 storage,
+without arithmetic changes. The model/VAE/resize/sampler recipes remain
+unchanged. Candidate-v1 library SHA:
+`6cdb3bb1f5cb5e2b15dfe3c4dedf5b976a62960fe0c0a26c2427f7d5b67c7926`.
+
+Standalone Metal tests pass bitwise RGB/alpha normalization, disjoint buffer
+ownership, source release and shape guards for images and t1/t5/t25 inputs.
+The reusable build script matches the linked MLX deployment target. An early
+ad-hoc build used 15.0 against MLX's 26.2 minimum and produced a linker warning;
+it is not proof of older-system support. Oracle-policy/fixture tests (8) and
+VAE-observer tests (7) pass using the full validation interpreter; the smaller
+venv lacks optional readers and skips those cases rather than passing them.
+Native contracts (7), native/Swift/App builds pass independently.
+
+All three candidate-v1 App chains pass seven requests each, including real
+512/1024 image/video generations, residency switches, history and unload.
+All four exported-media comparisons require equality and pass: GPU vs its
+previous build, hybrid resident vs previous build, hybrid staged vs previous
+build, and candidate hybrid resident/staged. PNG bytes and all decoded video
+frames match; MP4 container identities are reported separately. Records:
+`seedvr2-app-media-lifetime-{gpu,resident,staged}-e2e-v1-20261014` and
+`seedvr2-media-lifetime-app-exact-screen-v1-20261014.json`.
+
+The v1 hybrid 1024/t25 active peaks drop from 21,743,499,350 to
+21,428,931,206 bytes (resident), and 14,947,552,078 to 14,632,979,286 (staged).
+These are App observations, not balanced physical-memory guarantees. Sampled
+footprint does not consistently fall: staged observes 18,104,108,808 ->
+18,474,583,936 bytes. Do not call source release a demonstrated whole-process
+peak improvement. GPU's observed active reduction is larger than the logical
+released buffer due to differing allocation/workspace peaks; do not attribute
+every observed byte to the source buffer alone.
+
+A new immutable-library complete-request revision ABBA observer tests before/
+after/after/before, with six genuine warm requests per revision. The 1024 GPU
+image cohort **fails** the non-regression speed gate: 3.503239 -> 3.521613 s,
+about 0.52% slower, while active peak falls only 12,582,908 bytes. This result
+is retained and is not relabeled as a speed improvement. Record:
+`seedvr2-media-lifetime-image1024-revision-abba-v1-20261014`.
+
+Accordingly, v1 is not promoted as the default image path. The revised source
+keeps the original RGBA-backed alpha view for resident/speed-first images;
+only explicitly staged images copy alpha, while both video policies release
+redundant RGB. Telemetry reports the chosen retention recipe, logical alpha
+bytes and retained source-RGBA bytes separately. The new standalone Metal
+test additionally verifies the fast view policy. Fresh v2 native/App checks
+and image non-regression measurements precede promotion; conservative memory
+budget estimates remain unchanged.
+
+### Revised input-residency candidate: actual App equivalence
+
+The separately built v2 native library SHA is
+`24441cacb407992573809bba5274b713c2de7d1f9440486a30c9188b72ddd553`.
+Native contracts pass, including rejection of unrelated runtime FFN/QKV
+mode overrides; native and Swift/App builds pass. The new Metal test verifies
+both independently owned alpha and the original source-backed view, with
+bitwise equal normalization/alpha and explicit source-release behavior.
+
+All three actual v2 App chains complete successfully (seven requests each).
+Every initial request reports the correct media-input retention policy and
+logical alpha/source-RGBA bytes, plus the all-block hybrid approximation label
+where applicable. Resident/staged/resident PNG transitions, complete video
+frames/FPS, history persistence and unload pass. Records:
+`seedvr2-app-media-lifetime-{gpu,resident,staged}-e2e-v2-20261014`.
+All four required-equality exported-media pairs pass against the preceding
+hybrid-v2 release and between the new hybrid policies; PNG bytes and every
+decoded frame at both sizes are exact. Record:
+`seedvr2-media-lifetime-app-exact-screen-v2-20261014.json`.
+
+| Revised App 1024/t25 observation | Request seconds | Active MLX peak (bytes) | Sampled process footprint (bytes) |
+| --- | ---: | ---: | ---: |
+| GPU resident | 84.772071 | 21,282,100,094 | 24,953,821,472 |
+| GPU/CPU+NE resident | 83.248088 | 21,428,934,494 | 24,704,080,616 |
+| GPU/CPU+NE staged | 83.494277 | 14,632,979,286 | 18,475,140,944 |
+
+These are single actual App observations, not matched speed or physical-peak
+guarantees. Compared to the preceding hybrid-v2 App observations, 1024/t25
+hybrid active memory is lower by about 314.6 MB in both policies; residency
+staging additionally releases about 6.8 GB of GPU DiT parameters. Resident
+image active peaks remain unchanged apart from one scalar allocation;
+staged images retain the optional independently owned-alpha reduction.
+Logical alpha/source-RGBA sizes overlap for view-backed images and exclude
+resize graph/allocator/cache effects. They must not be added as a physical
+peak estimate. Original quality recipes/gates, default GPU selection and
+conservative memory planning remain unchanged.
+
+The revised v2 resident image ABBA still fails the exact non-regression gate:
+**3.512202 -> 3.525093 s**, about 0.37% slower, with one extra scalar and no
+image active-memory benefit. Record:
+`seedvr2-media-lifetime-image1024-revision-abba-v2-20261014`.
+The valid output/App checks above are not substituted for a speed pass.
+The next isolated v3 restores the original source/RGB owners through
+restoration and creates resident image alpha only at export, instead of
+adding an alpha consumer before normalization evaluation. A graph-fusion/
+lifetime effect is a hypothesis, not an instrumented diagnosis. Video and
+explicitly staged images still use the tested consuming helper. A fresh
+v3 cohort and actual App checks must pass before code promotion.
+
+The v3 image ABBA records **3.500405 -> 3.500845 s**, a 0.440-ms / 0.0126%
+median difference and identical active peaks. Its exact `speed_gate_passed`
+Boolean remains **false**; it is not relabeled as a passing speed gain.
+The six before/after warm values have sample standard deviations of about
+21.64/18.43 ms, much larger than this median difference. That context does
+not prove equivalence or permit deleting any measurements. Record:
+`seedvr2-media-lifetime-image1024-revision-abba-v3-20261014`.
+This revision restores the original resident-image implementation/ownership
+and is assessed as a video/staged-image memory feature, not an image-speed
+promotion. No timing threshold is loosened. Any subsequent local code commit
+must retain these latency limitations and require the actual App/output
+correctness gates separately, rather than claim that the strict speed test
+passed.
+
+### Final input-residency correctness/commit audit (v3)
+
+The final isolated native library SHA is
+`596c160aabcc7ec248c6e842e86da1b2b27a0338bab41749014dff866a35d7e4`.
+Native contracts and native/Swift/App builds pass. The new revision-runner
+CPU guards (3) reject short cohorts, mismatched image frames and existing
+output directories without reading models or overwriting artifacts.
+The engine-owned cancellation atomic was audited: cached hybrid objects
+reference stable engine storage, not a request-local stack variable.
+
+All three v3 App workflows terminate successfully, seven requests each,
+including all four complete media/size cases, three residency transitions,
+precision/retention/counter checks, history and unload. All four required
+export equality pairs pass against the preceding hybrid-v2 build and between
+v3 hybrid policies. PNG files and all decoded video frames are exact; MP4
+container identity remains separate. Records:
+`seedvr2-app-media-lifetime-{gpu,resident,staged}-e2e-v3-20261014` and
+`seedvr2-media-lifetime-app-exact-screen-v3-20261014.json`.
+
+The v3 resident image active peaks now exactly match the preceding release
+(9,622,623,434 / 16,491,014,970 bytes for GPU at 512/1024). The 1024/t25 App
+observations are GPU **84.882445 s / 21,282,100,094 active bytes**, hybrid
+resident **83.290870 s / 21,428,931,206**, and hybrid staged
+**83.721415 s / 14,632,979,286**. The latter samples process footprint
+17,788,192,712 bytes; this is a lower bound, not an enforced/paired physical
+peak. Other preceding samples vary substantially and are retained.
+
+The code is assessed for actual correctness and reduced video/staged-image
+active-buffer residency, not promoted as an image speed win. All three
+strict image revision speed Booleans remain false, including the final
+0.440-ms difference, without changed thresholds or deleted failed history.
+Existing all-four-workload GPU/CPU+NE speed evidence remains bound to its
+earlier binary; the new library still requires its own reference speed
+qualification. Stable/current user App artifacts remain unmodified.
+
 ## Reproduce component checks
 
 ```sh

@@ -131,6 +131,7 @@ class SeedVR2Contracts(unittest.TestCase):
             dict(execution="gpu_ane", ane_manifest="unqualified.json", allow_approximation=True),
             dict(loras=[dict(path="adapter.safetensors", strength=1, role="transformer")]),
             dict(vsa=True), dict(quantized_cache="cache"), dict(warmup_iterations=1),
+            dict(hybrid_mlp_mode="runtime"), dict(hybrid_mlp_mode="runtime_qkv"),
         )
         for override in invalid:
             with self.subTest(override=override):

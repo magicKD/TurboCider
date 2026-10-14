@@ -145,6 +145,24 @@ Actual results declare `weight_residency_recipe`, `resident_components`,
 `resident_parameter_bytes`, DiT/VAE reuse, and `timings_seconds.weight_management`
 plus `restoration_total`. Reload cost is included in the overall request time.
 
+After media normalization video releases the resized NHWC source before VAE
+inference and retains only normalized RGB. Staged images keep an independently
+owned alpha plane with unchanged export rounding; resident images preserve
+the original faster RGBA-backed alpha view. Telemetry identifies
+`media_input_retention_recipe`, `media_retained_alpha_bytes` and
+`media_retained_source_rgba_bytes`; alpha-view logical bytes must not be
+mistaken for the larger retained RGBA backing.
+This shortens source-buffer residency without changing the VAE, DiT, resize
+or sampling numerical recipe; it does not imply a smaller enforced memory
+budget.
+The revised App's hybrid 1024/t25 active peaks are about **21.43 GB resident /
+14.63 GB staged**, with all exported pixels/frames identical to the preceding
+build. This is about 314.6 MB less active memory per video policy, not a
+demonstrated universal physical-footprint improvement. Resident images keep
+their original implementation; a six-warm-sample before/after 1024 GPU image
+check records 3.500405/3.500845 s. Its strict non-regression Boolean is false;
+this input-lifetime feature is not presented as an image speed win.
+
 For diagnostics, `TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE=conv3d` selects the
 lower-active-peak/slower 3D image route. `singleton2d` is the tested default;
 `taps2d` remains an experimental temporal decomposition. Set

@@ -125,6 +125,11 @@ import Foundation
                               plan?["precision"] as? String == precision,
                               "App plan and executed precision disagree")
                     let staged = residency == "component_staged"
+                    let inputRecipe = isVideo ? "normalized_rgb_only" : (staged ? "normalized_rgb_plus_owned_alpha" : "normalized_rgb_plus_source_rgba")
+                    try check(metrics["media_input_retention_recipe"] as? String == inputRecipe &&
+                              (metrics["media_retained_alpha_bytes"] as? NSNumber)?.uint64Value == (isVideo ? 0 : UInt64(size*size*4)) &&
+                              (metrics["media_retained_source_rgba_bytes"] as? NSNumber)?.uint64Value == (isVideo || staged ? 0 : UInt64(size*size*16)),
+                              "App input buffer policy or alpha retention differs from the request")
                     let timings = metrics["timings_seconds"] as? [String: Any]
                     try check(plan?["residency"] as? String == residency &&
                               metrics["weight_residency_recipe"] as? String == (staged ? "stage_dit" : "resident") &&
@@ -149,6 +154,10 @@ import Foundation
                                   metrics["coreml_prefix_manifest_sha256"] as? String == "109dde47f82b7acb3a6d8cbba16b9d42e9f15fddae539d64141a4ec0ac8a8f76" &&
                                   metrics["physical_ane_occupancy_measured"] as? Bool == false,
                                   "App hybrid did not execute its declared partition or overstated occupancy")
+                        let approximations = plan?["algorithm_approximations"] as? [String] ?? []
+                        try check(approximations.contains("seedvr2_original_fp16_video_ffn_prefix_fp16_partial_down_fp32_join") &&
+                                  !approximations.contains("single_block_mlp_coreml_approximation"),
+                                  "App mislabeled its all-block SeedVR2 approximation")
                     } else {
                         try check(metrics["coreml_prefix_calls"] as? Int == 0, "pure GPU request executed a Core ML prefix")
                     }
