@@ -59,24 +59,32 @@ def check_native_execution(args, result):
     execution = "gpu_ane" if hybrid else "gpu"
     recipe = "seedvr2-original-fp16-coreml-prefix-v1" if hybrid else "seedvr2-stable-fp16-fp32-v1"
     causal=getattr(args,"experimental_causal_manifest",None)
+    upscale_causal=getattr(args,"experimental_upscale_causal_manifest",None)
     causal_calls=(1+((args.frames-1+3)//4)*4-1)*math.ceil(args.height/64)*math.ceil(args.width/64) if args.kind=="video" and causal else 0
-    if causal_calls:execution="gpu_vae_cpu_ne_experimental"
+    upscale_causal_calls=(1+((args.frames-1+3)//4)*4-1)*math.ceil(args.height/64)*math.ceil(args.width/64) if args.kind=="video" and upscale_causal else 0
+    if causal_calls or upscale_causal_calls:execution="gpu_vae_cpu_ne_experimental"
     options = getattr(args,"vae_options",None)
     if options is not None and options.get("encoder_spatial","full") == "file_rows":
         recipe += "+vae-encoder-head-globalstats-file-rows-v1"
     if options is not None and options.get("spatial","full") == "file_rows":
         recipe += "+vae-globalstats-file-rows-v1"
     if causal_calls:recipe+="+experimental-vae-causal-coreml-original-fp16-v1"
-    if causal:
-        expected_compute="cpuOnly" if getattr(args,"experimental_causal_compute","ne")=="cpu" else "cpuAndNeuralEngine"
-        if (result.get("vae_causal_conv_experimental_enabled") is not True or
-            result.get("vae_causal_conv_calls")!=causal_calls or result.get("vae_causal_conv_backing_hits")!=causal_calls or
-            result.get("vae_causal_conv_frames")!=(1+((args.frames-1+3)//4)*4-1 if args.kind=="video" else 0) or
-            result.get("vae_causal_conv_compute_units")!=expected_compute or
-            result.get("vae_causal_conv_manifest_sha256")!=sha256(causal) or result.get("physical_ane_occupancy_measured") is not False):
-            raise ValueError("experimental full-request causal execution differs")
-    elif result.get("vae_causal_conv_experimental_enabled",False):
-        raise ValueError("unexpected experimental VAE offload")
+    if upscale_causal_calls:recipe+="+experimental-vae-upscale-causal-coreml-original-fp16-v1"
+    for manifest,prefix,calls,control in ((causal,"vae_causal_conv",causal_calls,"experimental_causal_compute"),
+        (upscale_causal,"vae_upscale_causal_conv",upscale_causal_calls,"experimental_upscale_causal_compute")):
+        if manifest:
+            expected_compute="cpuOnly" if getattr(args,control,"ne")=="cpu" else "cpuAndNeuralEngine"
+            if (result.get(prefix+"_experimental_enabled") is not True or result.get(prefix+"_calls")!=calls or
+                result.get(prefix+"_backing_hits")!=calls or
+                result.get(prefix+"_frames")!=(1+((args.frames-1+3)//4)*4-1 if args.kind=="video" else 0) or
+                result.get(prefix+"_compute_units")!=expected_compute or result.get(prefix+"_manifest_sha256")!=sha256(manifest) or
+                result.get("physical_ane_occupancy_measured") is not False):
+                raise ValueError("experimental full-request causal execution differs: "+prefix)
+        elif result.get(prefix+"_experimental_enabled",False):
+            raise ValueError("unexpected experimental VAE offload: "+prefix)
+    if upscale_causal and (result.get("vae_upscale_causal_conv_layer")!="decoder.up_blocks.2.upsamplers.0.conv" or
+        result.get("vae_upscale_causal_conv_output_channels")!=256):
+        raise ValueError("upscale causal convolution did not cover its original full-output layer")
     if (result.get("actual_denoise_steps") != 1 or result.get("conditioning_cache_hit") or
             result.get("execution") != execution or result.get("numerical_recipe") != recipe or
             result.get("dit_projection_dtype") != "fp16" or result.get("dit_residual_dtype") != "fp32"):
@@ -229,6 +237,9 @@ def record_setup(args):
         if getattr(args,"experimental_causal_manifest",None):
             report["native_artifact_identity"]["experimental_causal_manifest_sha256"]=sha256(args.experimental_causal_manifest)
             report["native_artifact_identity"]["experimental_causal_compute"]=args.experimental_causal_compute
+        if getattr(args,"experimental_upscale_causal_manifest",None):
+            report["native_artifact_identity"]["experimental_upscale_causal_manifest_sha256"]=sha256(args.experimental_upscale_causal_manifest)
+            report["native_artifact_identity"]["experimental_upscale_causal_compute"]=args.experimental_upscale_causal_compute
         if args.route == "native-hybrid":
             report["native_artifact_identity"]["prefix_manifest_sha256"] = sha256(args.ane_manifest)
     write_json(args.output / "report.json", report)
@@ -418,18 +429,22 @@ def main():
     parser.add_argument("--native-build-manifest",type=Path,help="explicit matching build identity for a relocated/packaged native library")
     parser.add_argument("--experimental-causal-manifest",type=Path,help="isolated full-request VAE experiment; not a public App setting")
     parser.add_argument("--experimental-causal-compute",choices=("ne","cpu"),default="ne")
+    parser.add_argument("--experimental-upscale-causal-manifest",type=Path,help="isolated full-request spatial-upsample causal convolution; not a public setting")
+    parser.add_argument("--experimental-upscale-causal-compute",choices=("ne","cpu"),default="ne")
     parser.add_argument("--capture-raw-video",action="store_true",help="experimental build only: bounded preencoder pixels; NOT a timing/peak benchmark")
     parser.add_argument("--comfy", type=Path)
     parser.add_argument("--comfy-python", type=Path)
     parser.add_argument("--comfy-extra", type=Path)
     args = parser.parse_args()
-    if args.experimental_causal_manifest:
-        if args.route!="native-gpu":parser.error("causal experiment requires an explicit GPU backbone observer")
-        args.experimental_causal_manifest=args.experimental_causal_manifest.resolve(strict=True)
-        os.environ["TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST"]=str(args.experimental_causal_manifest)
-        os.environ["TURBOCIDER_SEEDVR2_VAE_CAUSAL_COMPUTE"]=args.experimental_causal_compute
-    elif os.environ.get("TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST"):
-        parser.error("experimental causal environment must be explicitly recorded by --experimental-causal-manifest")
+    for name,environment in (("causal","TURBOCIDER_SEEDVR2_VAE_CAUSAL"),("upscale_causal","TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL")):
+        field="experimental_"+name+"_manifest";manifest=getattr(args,field)
+        if manifest:
+            if args.route!="native-gpu":parser.error("causal experiments require an explicit GPU backbone observer")
+            manifest=manifest.resolve(strict=True);setattr(args,field,manifest)
+            os.environ[environment+"_MANIFEST"]=str(manifest)
+            os.environ[environment+"_COMPUTE"]=getattr(args,"experimental_"+name+"_compute")
+        elif os.environ.get(environment+"_MANIFEST"):
+            parser.error("experimental environment must be explicitly recorded by --"+field.replace("_","-"))
     if args.native_build_manifest is not None:
         if not args.route.startswith("native-"):parser.error("native build manifest applies only to native observations")
         args.native_build_manifest=args.native_build_manifest.resolve(strict=True)

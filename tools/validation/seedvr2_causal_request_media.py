@@ -22,8 +22,10 @@ def validate_pair(reference,candidate):
         raise ValueError("matched complete source/workload/native-library requests required")
     for left,right in zip(reference["runs"],candidate["runs"]):
         a,b=left["metrics"],right["metrics"]
+        a_experimental=a.get("vae_causal_conv_experimental_enabled") is True or a.get("vae_upscale_causal_conv_experimental_enabled") is True
+        b_experimental=b.get("vae_causal_conv_experimental_enabled") is True or b.get("vae_upscale_causal_conv_experimental_enabled") is True
         if (a.get("seed")!=b.get("seed") or a.get("execution")!="gpu" or b.get("execution")!="gpu_vae_cpu_ne_experimental" or
-            a.get("vae_causal_conv_experimental_enabled") is True or b.get("vae_causal_conv_experimental_enabled") is not True):
+            a_experimental or not b_experimental):
             raise ValueError("request seed/experimental execution differs")
 
 
@@ -34,10 +36,16 @@ def load_capture(run,workload,source_sha,experimental):
         binding.get("frames")!=workload["frames"] or binding.get("sha256")!=sha256(path)):
         raise ValueError("request-bound complete raw capture required")
     capture=json.loads(path.read_text())
+    hot=run["metrics"].get("vae_causal_conv_experimental_enabled") is True
+    upscale=run["metrics"].get("vae_upscale_causal_conv_experimental_enabled") is True
+    # Older capture schema-v1 records had only the hot-layer selector. Keep
+    # those readable, but require explicit identity for any new upscale work.
+    if (hot or upscale)!=experimental or capture.get("experimental_upscale_causal_enabled",False)!=upscale or capture.get("upscale_causal_manifest_sha256")!=(run["metrics"].get("vae_upscale_causal_conv_manifest_sha256") if upscale else None):
+        raise ValueError("raw capture per-layer route differs")
     expected=dict(schema="seedvr2-causal-request-pixels-v1",status="complete",fp16_layout="THWC",
         width=workload["width"],height=workload["height"],frame_count=workload["frames"],fps=workload["fps"],
-        seed=run["metrics"]["seed"],source_sha256=source_sha,experimental_causal_enabled=experimental,
-        causal_manifest_sha256=run["metrics"].get("vae_causal_conv_manifest_sha256") if experimental else None,
+        seed=run["metrics"]["seed"],source_sha256=source_sha,experimental_causal_enabled=hot,
+        causal_manifest_sha256=run["metrics"].get("vae_causal_conv_manifest_sha256") if hot else None,
         checkpoint_sha256="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1")
     if any(capture.get(key)!=value for key,value in expected.items()) or len(capture.get("frames",[]))!=workload["frames"]:
         raise ValueError("raw capture source/workload/route differs")

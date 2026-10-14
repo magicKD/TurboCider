@@ -48,6 +48,7 @@ class VAE {
     UpscaleInputObserver upscale_input_observer_;
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
     ExperimentalCausalConv experimental_causal_conv_;
+    ExperimentalCausalConv experimental_upscale_causal_conv_;
 #endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
     VAEPhaseObserver phase_observer_;
@@ -111,6 +112,11 @@ class VAE {
             norm_recipe_=="metal" && spatial_recipe_=="full","causal-conv experiment requires full native frame history");
         experimental_causal_conv_=std::move(execute);
     }
+    void use_experimental_upscale_causal_conv(ExperimentalCausalConv execute){
+        require(bool(execute) && history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
+            norm_recipe_=="metal" && spatial_recipe_=="full","upscale causal-conv experiment requires full native frame history");
+        experimental_upscale_causal_conv_=std::move(execute);
+    }
 #endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
     void observe_phases(VAEPhaseObserver observer){phase_observer_=std::move(observer);}
@@ -160,6 +166,7 @@ class VAE {
         weights_.clear();
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
         experimental_causal_conv_={};
+        experimental_upscale_causal_conv_={};
 #endif
         share_upscale_history_=false;shared_upscale_frames_=0;shared_upscale_logical_bytes_=0;
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE

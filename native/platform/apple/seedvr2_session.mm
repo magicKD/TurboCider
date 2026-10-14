@@ -124,7 +124,7 @@ struct ExperimentalVideoCapture {
             @"rgb24":write(".rgb24",bytes.data<uint8_t>(),bytes.nbytes())}];
         save();
     }
-    NSDictionary *finish(const seedvr2::Restoration &result,bool causal,const std::string &bank) {
+    NSDictionary *finish(const seedvr2::Restoration &result,bool causal,const std::string &bank,bool upscale,const std::string &upscale_bank) {
         if(root.empty())return nil;
         require(int(frames.count)==count,"raw capture did not observe every source frame");
         auto digest=[&](const Tensor &value){
@@ -141,6 +141,8 @@ struct ExperimentalVideoCapture {
             "raw capture predecode tensor dtype changed");
         receipt[@"predecode"]=@{@"condition":digest(result.condition),@"velocity":digest(result.velocity),@"latent":digest(result.latent)};
         receipt[@"experimental_causal_enabled"]=@(causal);receipt[@"causal_manifest_sha256"]=causal?(id)@(bank.c_str()):(id)NSNull.null;
+        receipt[@"experimental_upscale_causal_enabled"]=@(upscale);
+        receipt[@"upscale_causal_manifest_sha256"]=upscale?(id)@(upscale_bank.c_str()):(id)NSNull.null;
         receipt[@"status"]=@"complete";save();
         const auto path=root/"capture.json";
         return @{@"manifest":@(path.c_str()),@"sha256":@(sha256_file(path).c_str()),@"frames":@(count),@"diagnostic_only":@YES};
@@ -162,11 +164,16 @@ class SeedVR2Session final : public ModelSession {
     std::filesystem::path causal_manifest_;
     std::string causal_sha_;
     bool causal_cpu_=false;
-    void check_causal_source() const {
-        if(causal_manifest_.empty())return;
-        require(sha256_file(causal_manifest_)=="f9c751ba3f0d225ae9aaf2f926e1f63ed93ac44583de5d1ab57b79c290d26a08",
+    seedvr2::ExperimentalCausalConv upscale_causal_execute_;
+    std::shared_ptr<seedvr2::ExperimentalCausalConvStats> upscale_causal_stats_;
+    std::filesystem::path upscale_causal_manifest_;
+    std::string upscale_causal_sha_;
+    bool upscale_causal_cpu_=false;
+    void check_causal_bank(const std::filesystem::path &manifest,const char *expected) const {
+        if(manifest.empty())return;
+        require(sha256_file(manifest)==expected,
             "experimental causal manifest identity changed");
-        auto d=read_json(causal_manifest_);auto root=causal_manifest_.parent_path()/"conv.mlmodelc";
+        auto d=read_json(manifest);auto root=manifest.parent_path()/"conv.mlmodelc";
         require(std::filesystem::is_directory(std::filesystem::symlink_status(root)),"causal compiled root must not be a symlink");
         NSArray *files=d[@"compiled"][@"identity"][@"files"];
         require([files isKindOfClass:NSArray.class] && files.count>0 && files.count<100,"causal file index required");
@@ -187,6 +194,12 @@ class SeedVR2Session final : public ModelSession {
                 sha256_file(path)==sha,"causal compiled file identity changed");
         }
         require(actual.empty(),"unregistered causal compiled file");
+    }
+    void check_causal_source() const {
+        check_causal_bank(causal_manifest_,"f9c751ba3f0d225ae9aaf2f926e1f63ed93ac44583de5d1ab57b79c290d26a08");
+    }
+    void check_upscale_causal_source() const {
+        check_causal_bank(upscale_causal_manifest_,"877f50e7d97399b3eae2e2c90b6832b8d99bb9d547e699683d37631d2060598b");
     }
 #endif
     void configure_experimental_causal(const Request &r,std::atomic<bool> &cancelled){
@@ -209,6 +222,26 @@ class SeedVR2Session final : public ModelSession {
         require(!selected || !*selected,"VAE causal convolution requires an isolated experimental build");
         const char *capture=std::getenv("TURBOCIDER_SEEDVR2_VIDEO_RAW_CAPTURE");
         require(!capture || !*capture,"raw video capture requires an isolated experimental build");
+#endif
+    }
+    void configure_experimental_upscale_causal(const Request &r,std::atomic<bool> &cancelled){
+        const char *selected=std::getenv("TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_MANIFEST");
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        if(!selected || !*selected){upscale_causal_execute_={};upscale_causal_stats_.reset();upscale_causal_manifest_.clear();upscale_causal_sha_.clear();return;}
+        require(r.execution=="gpu" && r.seedvr2_vae && r.seedvr2_vae->history=="frames" &&
+            r.seedvr2_vae->spatial=="full" && r.seedvr2_vae->convolution=="singleton2d" && r.width<=1024 && r.height<=1024,
+            "experimental upscale causal full request requires explicit GPU backbone and full frame VAE settings");
+        const char *compute=std::getenv("TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_COMPUTE");
+        const std::string device=compute?compute:"ne";require(device=="ne" || device=="cpu","invalid upscale causal compute control");
+        const auto manifest=std::filesystem::canonical(selected);const bool cpu=device=="cpu";
+        if(!upscale_causal_execute_ || upscale_causal_manifest_!=manifest || upscale_causal_cpu_!=cpu){
+            upscale_causal_execute_={};upscale_causal_stats_.reset();upscale_causal_manifest_=manifest;upscale_causal_cpu_=cpu;
+            check_upscale_causal_source();upscale_causal_sha_=sha256_file(manifest);
+            upscale_causal_execute_=seedvr2::make_experimental_ane_upscale_causal_conv(manifest,cpu,cancelled,upscale_causal_stats_);
+        }
+        check_upscale_causal_source();pipeline_.use_experimental_upscale_causal_conv(upscale_causal_execute_);
+#else
+        require(!selected || !*selected,"VAE upscale causal convolution requires an isolated experimental build");
 #endif
     }
     void check_hybrid_source() const {
@@ -269,6 +302,7 @@ class SeedVR2Session final : public ModelSession {
     void unload() override {
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
         causal_execute_={};causal_stats_.reset();causal_manifest_.clear();causal_sha_.clear();
+        upscale_causal_execute_={};upscale_causal_stats_.reset();upscale_causal_manifest_.clear();upscale_causal_sha_.clear();
 #endif
         hybrid_.reset(); hybrid_manifest_.clear(); hybrid_files_.clear(); hybrid_directories_.clear();
         pipeline_.clear(); loaded_ = false; mx::clear_cache();
@@ -294,6 +328,7 @@ class SeedVR2Session final : public ModelSession {
         load(event, cancelled);
         pipeline_.configure_vae(r.seedvr2_vae);
         configure_experimental_causal(r,cancelled);
+        configure_experimental_upscale_causal(r,cancelled);
         configure_hybrid(r,event,cancelled);
         return native_run_result(@{@"schema_version": @1, @"prepared": @YES, @"warmup": @NO,
             @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
@@ -330,12 +365,17 @@ class SeedVR2Session final : public ModelSession {
         load(event, cancelled);
         pipeline_.configure_vae(r.seedvr2_vae);
         configure_experimental_causal(r,cancelled);
+        configure_experimental_upscale_causal(r,cancelled);
         configure_hybrid(r,event,cancelled);
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
         const uint64_t causal_frames_before=causal_stats_?causal_stats_->frames.load():0;
         const uint64_t causal_calls_before=causal_stats_?causal_stats_->coreml_calls.load():0;
         const uint64_t causal_hits_before=causal_stats_?causal_stats_->backing_hits.load():0;
         const double causal_seconds_before=causal_stats_?causal_stats_->boundary_seconds:0;
+        const uint64_t upscale_causal_frames_before=upscale_causal_stats_?upscale_causal_stats_->frames.load():0;
+        const uint64_t upscale_causal_calls_before=upscale_causal_stats_?upscale_causal_stats_->coreml_calls.load():0;
+        const uint64_t upscale_causal_hits_before=upscale_causal_stats_?upscale_causal_stats_->backing_hits.load():0;
+        const double upscale_causal_seconds_before=upscale_causal_stats_?upscale_causal_stats_->boundary_seconds:0;
 #endif
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
@@ -458,6 +498,8 @@ class SeedVR2Session final : public ModelSession {
             const uint64_t hybrid_blocks = hybrid_ ? hybrid_->hybrid_blocks()-blocks_before : 0;
             bool causal_enabled=false;uint64_t causal_calls=0,causal_frames=0,causal_hits=0,causal_slots=0;
             double causal_seconds=0;std::string causal_hash,causal_compute="not_applicable";
+            bool upscale_causal_enabled=false;uint64_t upscale_causal_calls=0,upscale_causal_frames=0,upscale_causal_hits=0,upscale_causal_slots=0;
+            double upscale_causal_seconds=0;std::string upscale_causal_hash,upscale_causal_compute="not_applicable";
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
             if(causal_stats_){
                 causal_enabled=true;causal_calls=causal_stats_->coreml_calls.load()-causal_calls_before;
@@ -469,11 +511,23 @@ class SeedVR2Session final : public ModelSession {
                 require(causal_frames==uint64_t(frames-1) && causal_calls==uint64_t(frames-1)*tiles && causal_hits==causal_calls,
                     "experimental causal full-request coverage differs");check_causal_source();
             }
+            if(upscale_causal_stats_){
+                upscale_causal_enabled=true;upscale_causal_calls=upscale_causal_stats_->coreml_calls.load()-upscale_causal_calls_before;
+                upscale_causal_frames=upscale_causal_stats_->frames.load()-upscale_causal_frames_before;
+                upscale_causal_hits=upscale_causal_stats_->backing_hits.load()-upscale_causal_hits_before;
+                upscale_causal_slots=upscale_causal_stats_->slot_bytes;
+                upscale_causal_seconds=upscale_causal_stats_->boundary_seconds-upscale_causal_seconds_before;
+                upscale_causal_hash=upscale_causal_sha_;upscale_causal_compute=upscale_causal_cpu_?"cpuOnly":"cpuAndNeuralEngine";
+                const uint64_t tiles=uint64_t((r.height+upscale_causal_stats_->tile_rows-1)/upscale_causal_stats_->tile_rows)*
+                    ((r.width+upscale_causal_stats_->tile_cols-1)/upscale_causal_stats_->tile_cols);
+                require(upscale_causal_frames==uint64_t(frames-1) && upscale_causal_calls==uint64_t(frames-1)*tiles && upscale_causal_hits==upscale_causal_calls,
+                    "experimental upscale causal full-request coverage differs");check_upscale_causal_source();
+            }
 #endif
             // Both captured routes must independently bind identical predecode
             // operands; an exported-video metric alone cannot establish that.
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
-            raw_capture=capture.finish(result,causal_enabled,causal_hash);
+            raw_capture=capture.finish(result,causal_enabled,causal_hash,upscale_causal_enabled,upscale_causal_hash);
 #endif
             if (hybrid_) {
                 const uint64_t tokens = uint64_t(noise_shape[2])*(r.height/16)*(r.width/16);
@@ -520,10 +574,12 @@ class SeedVR2Session final : public ModelSession {
             const std::string numerical_recipe = std::string(hybrid_ ? seedvr2::kHybridRecipe : seedvr2::kStableRecipe) +
                 (encoder_file_rows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
                 (file_rows ? "+vae-globalstats-file-rows-v1" : "") +
-                (causal_calls ? "+experimental-vae-causal-coreml-original-fp16-v1" : "");
+                (causal_calls ? "+experimental-vae-causal-coreml-original-fp16-v1" : "") +
+                (upscale_causal_calls ? "+experimental-vae-upscale-causal-coreml-original-fp16-v1" : "");
             NSMutableArray *resident_components=[NSMutableArray arrayWithArray:pipeline_.dit().bytes()?@[@"vae",@"dit"]:@[@"vae"]];
             if(hybrid_)[resident_components addObject:@"coreml_ffn_prefix"];
             if(causal_enabled)[resident_components addObject:@"experimental_coreml_vae_causal"];
+            if(upscale_causal_enabled)[resident_components addObject:@"experimental_coreml_vae_upscale_causal"];
             const auto spatial = result.spatial_stats;
             const auto encoder_spatial = result.encoder_spatial_stats;
             return native_run_result(@{
@@ -531,7 +587,7 @@ class SeedVR2Session final : public ModelSession {
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
                 @"frames": @(r.frames), @"padded_frames": @(frames), @"fps": @(r.fps),
                 @"source_width": @(source_width), @"source_height": @(source_height),
-                @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": causal_calls?@"gpu_vae_cpu_ne_experimental":(hybrid_ ? @"gpu_ane" : @"gpu"),
+                @"steps": @1, @"actual_denoise_steps": @1, @"seed": @(r.seed), @"execution": (causal_calls || upscale_causal_calls)?@"gpu_vae_cpu_ne_experimental":(hybrid_ ? @"gpu_ane" : @"gpu"),
                 @"warmup": @NO, @"prepared": @NO,
                 @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
                 @"runtime_precision": @(hybrid_ ? seedvr2::kHybridPrecision : seedvr2::kStablePrecision),
@@ -552,6 +608,15 @@ class SeedVR2Session final : public ModelSession {
                 @"vae_causal_conv_compute_units": @(causal_compute.c_str()),
                 @"vae_causal_conv_manifest_sha256": causal_enabled?(id)@(causal_hash.c_str()):(id)NSNull.null,
                 @"vae_causal_conv_boundary_seconds": @(causal_seconds),
+                @"vae_upscale_causal_conv_experimental_enabled":@(upscale_causal_enabled),
+                @"vae_upscale_causal_conv_layer":upscale_causal_enabled?@"decoder.up_blocks.2.upsamplers.0.conv":@"not_applicable",
+                @"vae_upscale_causal_conv_output_channels":@(upscale_causal_enabled?256:0),
+                @"vae_upscale_causal_conv_calls":@(upscale_causal_calls),@"vae_upscale_causal_conv_frames":@(upscale_causal_frames),
+                @"vae_upscale_causal_conv_backing_hits":@(upscale_causal_hits),@"vae_upscale_causal_conv_external_slot_bytes":@(upscale_causal_slots),
+                @"vae_upscale_causal_conv_compute_units":@(upscale_causal_compute.c_str()),
+                @"vae_upscale_causal_conv_manifest_sha256":upscale_causal_enabled?(id)@(upscale_causal_hash.c_str()):(id)NSNull.null,
+                @"vae_upscale_causal_conv_boundary_seconds":@(upscale_causal_seconds),
+                @"vae_upscale_causal_conv_scope":@"isolated subsequent-frame spatial-upsample causal conv; projection/shuffle/global normalization/attention remain native",
                 @"vae_causal_conv_scope": @"isolated override of one subsequent-frame VAE conv; original GPU plan/backbone unchanged; not public VAE qualification",
                 @"dit_projection_dtype": @"fp16", @"dit_residual_dtype": @"fp32",
                 @"dit_rms_dtype": @"fp32", @"dit_time_dtype": @"fp32",

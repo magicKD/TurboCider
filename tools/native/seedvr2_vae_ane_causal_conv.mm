@@ -5,11 +5,11 @@
 namespace tc::seedvr2 {
 namespace {
 using namespace tc::seedvr2_upscale_probe;
-struct Geometry{uint32_t h,w,th,tw,hi,wi,y,x,cs,rs;};
+struct Geometry{uint32_t h,w,th,tw,hi,wi,y,x,cs,rs,outputs;};
 const char *shader=R"METAL(
 #include <metal_stdlib>
 using namespace metal;
-struct P{uint h,w,th,tw,hi,wi,y,x,cs,rs;};
+struct P{uint h,w,th,tw,hi,wi,y,x,cs,rs,outputs;};
 kernel void tc_seedvr2_ane_causal_pack(device const ushort *current [[buffer(0)]],device const ushort *past0 [[buffer(1)]],
     device const ushort *past1 [[buffer(2)]],device ushort *out [[buffer(3)]],constant P &p [[buffer(4)]],
     uint tid [[thread_index_in_threadgroup]],uint3 group [[threadgroup_position_in_grid]]){
@@ -33,11 +33,11 @@ kernel void tc_seedvr2_ane_causal_consume(device const half *src [[buffer(0)]],d
     threadgroup half tile[16][17];
     uint lp=tid%16,lc=tid/16,c=group.x*16+lc,pos=group.y*16+lp;
     half value=0;
-    if(c<128 && pos<p.th*p.tw)value=half(float(src[c*p.cs+(pos/p.tw)*p.rs+pos%p.tw])+float(bias[c]));
+    if(c<p.outputs && pos<p.th*p.tw)value=half(float(src[c*p.cs+(pos/p.tw)*p.rs+pos%p.tw])+float(bias[c]));
     tile[lc][lp]=value;threadgroup_barrier(mem_flags::mem_threadgroup);
     c=group.x*16+lp;pos=group.y*16+lc;
-    if(c<128 && pos<p.th*p.tw && p.y+pos/p.tw<p.h && p.x+pos%p.tw<p.w)
-        out[((p.y+pos/p.tw)*p.w+p.x+pos%p.tw)*128+c]=tile[lp][lc];
+    if(c<p.outputs && pos<p.th*p.tw && p.y+pos/p.tw<p.h && p.x+pos%p.tw<p.w)
+        out[((p.y+pos/p.tw)*p.w+p.x+pos%p.tw)*p.outputs+c]=tile[lp][lc];
 }
 )METAL";
 struct CausalIO{
@@ -75,7 +75,7 @@ struct CausalIO{
             [encoder setComputePipelineState:consume];[encoder setBuffer:consumer->output.metal offset:0 atIndex:0];
             [encoder setBuffer:buffer(out,device) offset:0 atIndex:1];[encoder setBuffer:buffer(bias,device) offset:0 atIndex:2];
             [encoder setBytes:&p length:sizeof(p) atIndex:3];
-            [encoder dispatchThreadgroups:MTLSizeMake(8,(p.th*p.tw+15)/16,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];[encoder endEncoding];
+            [encoder dispatchThreadgroups:MTLSizeMake((p.outputs+15)/16,(p.th*p.tw+15)/16,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];[encoder endEncoding];
         }
         [pending->command commit];return pending;
     }
@@ -84,19 +84,21 @@ struct CausalRuntime{
     CausalIO io;MLModel *model=nil;std::vector<std::unique_ptr<Slot>> slots;
     std::shared_ptr<ExperimentalCausalConvStats> stats;std::atomic<bool> &cancelled;bool verify_io;
     std::atomic_flag active=ATOMIC_FLAG_INIT;
+    const int outputs;
     CausalRuntime(const std::filesystem::path &manifest,bool cpu,std::atomic<bool> &stop,
-        std::shared_ptr<ExperimentalCausalConvStats> observed,bool verify):stats(std::move(observed)),cancelled(stop),verify_io(verify){
+        std::shared_ptr<ExperimentalCausalConvStats> observed,bool verify,bool upscale):stats(std::move(observed)),cancelled(stop),verify_io(verify),outputs(upscale?256:128){
         @autoreleasepool{
             checkpoint(cancelled);auto content=[NSData dataWithContentsOfFile:@(manifest.c_str())];check(content && content.length<65536,"causal manifest unavailable/too big");
             NSError *error=nil;NSDictionary *spec=[NSJSONSerialization JSONObjectWithData:content options:0 error:&error];
+            NSString *layer=upscale?@"decoder.up_blocks.2.upsamplers.0.conv":@"decoder.up_blocks.3.resnets.0.conv1";
             check([spec isKindOfClass:NSDictionary.class] && [spec[@"schema"] isEqual:@"turbocider-seedvr2-vae-conv-probe-v1"] &&
                 [spec[@"checkpoint_sha256"] isEqual:@"20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"] &&
-                [spec[@"layer"] isEqual:@"decoder.up_blocks.3.resnets.0.conv1"] && [spec[@"original_shape"] isEqual:@[@128,@256,@3,@3,@3]] &&
+                [spec[@"layer"] isEqual:layer] && [spec[@"original_shape"] isEqual:@[@(outputs),@256,@3,@3,@3]] &&
                 [spec[@"qualified"] isEqual:@NO] && [spec[@"precision"] isEqual:@"fp16"] && [spec[@"bias_applied"] isEqual:@NO] &&
                 [spec[@"source_operand_recipe"] isEqual:@"original-fp16-temporal-channel-stack"] &&
                 [spec[@"input_layout"] isEqual:@"N(T*C)HW"] && [spec[@"output_layout"] isEqual:@"NOHW"] &&
-                [spec[@"compute_units"] isEqual:@"cpuAndNeuralEngine"] && [spec[@"output_channels"] isEqual:@128] &&
-                [spec[@"total_output_channels"] isEqual:@128],"original full-output causal bank required");
+                [spec[@"compute_units"] isEqual:@"cpuAndNeuralEngine"] && [spec[@"output_channels"] isEqual:@(outputs)] &&
+                [spec[@"total_output_channels"] isEqual:@(outputs)],"original full-output causal bank required");
             const int th=[spec[@"rows"] intValue],tw=[spec[@"cols"] intValue];
             check((th==32 || th==64 || th==128) && tw==th && [spec[@"input_rows"] intValue]==th+2 &&
                 [spec[@"input_cols"] intValue]==tw+2 && [spec[@"temporal_taps"] intValue]==3 &&
@@ -107,7 +109,8 @@ struct CausalRuntime{
             model=[MLModel modelWithContentsOfURL:[NSURL fileURLWithPath:@(path.c_str())] configuration:config error:&error];
             if(!model)throw std::runtime_error(std::string("causal Core ML load: ")+error.localizedDescription.UTF8String);
             stats->load_seconds=elapsed(start);stats->cpu_control=cpu;stats->tile_rows=th;stats->tile_cols=tw;
-            for(int i=0;i<2;++i)slots.push_back(std::make_unique<Slot>(io.device,768,128,th+2,tw+2,th,tw));
+            stats->layer=layer.UTF8String;stats->output_channels=outputs;
+            for(int i=0;i<2;++i)slots.push_back(std::make_unique<Slot>(io.device,768,outputs,th+2,tw+2,th,tw));
             auto in=model.modelDescription.inputDescriptionsByName[@"x"].multiArrayConstraint;
             auto out=model.modelDescription.outputDescriptionsByName[@"y"].multiArrayConstraint;
             check(model.modelDescription.inputDescriptionsByName.count==1 && model.modelDescription.outputDescriptionsByName.count==1 &&
@@ -130,9 +133,9 @@ struct CausalRuntime{
         if(!verify_io)return;p.y=(tile/columns)*p.th;p.x=(tile%columns)*p.tw;
         const auto *raw=static_cast<const _Float16 *>(slot.output.metal.contents);const auto *actual=result.data<uint16_t>();
         const auto *shift=bias.data<mx::float16_t>();const auto cs=slot.output.array.strides[1].unsignedLongLongValue,rs=slot.output.array.strides[2].unsignedLongLongValue;
-        for(uint32_t row=0;row<p.th && p.y+row<p.h;++row)for(uint32_t col=0;col<p.tw && p.x+col<p.w;++col)for(uint32_t c=0;c<128;++c){
+        for(uint32_t row=0;row<p.th && p.y+row<p.h;++row)for(uint32_t col=0;col<p.tw && p.x+col<p.w;++col)for(uint32_t c=0;c<p.outputs;++c){
             const _Float16 expected=_Float16(float(raw[c*cs+row*rs+col])+float(shift[c]));
-            check(std::memcmp(&expected,actual+((size_t(p.y+row)*p.w+p.x+col)*128+c),2)==0,"causal bias/assembly differs bitwise");++stats->consume_checked_words;
+            check(std::memcmp(&expected,actual+((size_t(p.y+row)*p.w+p.x+col)*p.outputs+c),2)==0,"causal bias/assembly differs bitwise");++stats->consume_checked_words;
         }
     }
     Tensor run(const Tensor &input,const FrameHistory &previous,const Tensor &weight,const Tensor &bias){
@@ -141,17 +144,17 @@ struct CausalRuntime{
         @autoreleasepool{
             checkpoint(cancelled);auto started=Clock::now();
             require(input.ndim()==5 && input.shape(0)==1 && input.shape(1)==1 && input.shape(4)==256 && input.dtype()==mx::float16 &&
-                previous.size()==2 && weight.shape()==mx::Shape{128,3,3,3,256} && weight.dtype()==mx::float16 &&
-                bias.shape()==mx::Shape{128} && bias.dtype()==mx::float16,"causal runtime operands differ");
+                previous.size()==2 && weight.shape()==mx::Shape{outputs,3,3,3,256} && weight.dtype()==mx::float16 &&
+                bias.shape()==mx::Shape{outputs} && bias.dtype()==mx::float16,"causal runtime operands differ");
             for(const auto &past:previous)require(past.shape()==input.shape() && past.dtype()==mx::float16,"causal history geometry differs");
             const int h=input.shape(2),w=input.shape(3),th=stats->tile_rows,tw=stats->tile_cols;
             require(h>0 && w>0 && h<=1024 && w<=1024,"causal runtime canvas exceeds experiment scope");
             auto prepare=[](const Tensor &value){auto out=mx::contiguous(value);mx::eval(out);
                 if(out.offset()!=0){out=mx::full(out.shape(),out,out.dtype());mx::eval(out);}return out;};
             std::array<Tensor,3> sources{prepare(previous[0]),prepare(previous[1]),prepare(input)};auto shift=prepare(bias);
-            auto z=mx::full({1,1,h,w,128},std::numeric_limits<float>::quiet_NaN(),mx::float16);mx::eval(z);mx::synchronize();checkpoint(cancelled);
+            auto z=mx::full({1,1,h,w,outputs},std::numeric_limits<float>::quiet_NaN(),mx::float16);mx::eval(z);mx::synchronize();checkpoint(cancelled);
             const int columns=(w+tw-1)/tw,tiles=((h+th-1)/th)*columns;
-            Geometry geometry{uint32_t(h),uint32_t(w),uint32_t(th),uint32_t(tw),uint32_t(th+2),uint32_t(tw+2),0,0,0,0};
+            Geometry geometry{uint32_t(h),uint32_t(w),uint32_t(th),uint32_t(tw),uint32_t(th+2),uint32_t(tw+2),0,0,0,0,uint32_t(outputs)};
             auto submit=[&](Slot *producer,int next,Slot *consumer,int last){return io.submit(sources[2],sources[0],sources[1],z,shift,geometry,columns,producer,next,consumer,last);};
             auto predict=[&](Slot &slot,int tile){checkpoint(cancelled);NSError *error=nil;
                 auto result=[model predictionFromFeatures:slot.provider options:slot.options error:&error];
@@ -177,7 +180,12 @@ struct CausalRuntime{
 }
 ExperimentalCausalConv make_experimental_ane_causal_conv(const std::filesystem::path &manifest,bool cpu,
     std::atomic<bool> &cancelled,std::shared_ptr<ExperimentalCausalConvStats> &stats,bool verify_io){
-    stats=std::make_shared<ExperimentalCausalConvStats>();auto runtime=std::make_shared<CausalRuntime>(manifest,cpu,cancelled,stats,verify_io);
+    stats=std::make_shared<ExperimentalCausalConvStats>();auto runtime=std::make_shared<CausalRuntime>(manifest,cpu,cancelled,stats,verify_io,false);
+    return [runtime](const Tensor &input,const FrameHistory &past,const Tensor &weight,const Tensor &bias){return runtime->run(input,past,weight,bias);};
+}
+ExperimentalCausalConv make_experimental_ane_upscale_causal_conv(const std::filesystem::path &manifest,bool cpu,
+    std::atomic<bool> &cancelled,std::shared_ptr<ExperimentalCausalConvStats> &stats,bool verify_io){
+    stats=std::make_shared<ExperimentalCausalConvStats>();auto runtime=std::make_shared<CausalRuntime>(manifest,cpu,cancelled,stats,verify_io,true);
     return [runtime](const Tensor &input,const FrameHistory &past,const Tensor &weight,const Tensor &bias){return runtime->run(input,past,weight,bias);};
 }
 }

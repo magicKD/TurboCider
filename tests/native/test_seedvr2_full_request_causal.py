@@ -45,9 +45,31 @@ class FullRequestCausalChecks(unittest.TestCase):
     def test_ordinary_build_rejects_the_selector_and_build_flag_is_identity_bound(self):
         source=(ROOT/"native/platform/apple/seedvr2_session.mm").read_text()
         self.assertIn("VAE causal convolution requires an isolated experimental build",source)
+        self.assertIn("VAE upscale causal convolution requires an isolated experimental build",source)
         self.assertIn("experimental-vae-causal-coreml-original-fp16-v1",source)
         build=(ROOT/"tools/native/build.sh").read_text()
         self.assertLess(build.index("COMMON+=(-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=1)"),build.index("BUILD_IDENTITY_FLAGS="))
+
+    def test_upscale_only_request_requires_all_256_outputs_and_zero_image_calls(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/"manifest.json";manifest.write_text("independent upscale bank")
+            args=argparse.Namespace(route="native-gpu",kind="video",frames=25,width=1024,height=1024,vae_options=None,
+                experimental_upscale_causal_manifest=manifest,experimental_upscale_causal_compute="ne")
+            value=dict(actual_denoise_steps=1,conditioning_cache_hit=False,execution="gpu_vae_cpu_ne_experimental",
+                numerical_recipe="seedvr2-stable-fp16-fp32-v1+experimental-vae-upscale-causal-coreml-original-fp16-v1",
+                dit_projection_dtype="fp16",dit_residual_dtype="fp32",coreml_prefix_calls=0,physical_ane_occupancy_measured=False,
+                vae_upscale_causal_conv_experimental_enabled=True,vae_upscale_causal_conv_calls=6144,
+                vae_upscale_causal_conv_frames=24,vae_upscale_causal_conv_backing_hits=6144,vae_upscale_causal_conv_output_channels=256,
+                vae_upscale_causal_conv_layer="decoder.up_blocks.2.upsamplers.0.conv",vae_upscale_causal_conv_compute_units="cpuAndNeuralEngine",
+                vae_upscale_causal_conv_manifest_sha256=sha256(manifest))
+            check_native_execution(args,value)
+            for change in ({"vae_upscale_causal_conv_calls":256},{"vae_upscale_causal_conv_output_channels":128},
+                {"vae_upscale_causal_conv_frames":25},{"execution":"gpu"},{"vae_upscale_causal_conv_backing_hits":6143}):
+                with self.subTest(change=change),self.assertRaises(ValueError):check_native_execution(args,{**value,**change})
+            args.kind="image";args.frames=1
+            value.update(execution="gpu",numerical_recipe="seedvr2-stable-fp16-fp32-v1",vae_upscale_causal_conv_calls=0,
+                vae_upscale_causal_conv_frames=0,vae_upscale_causal_conv_backing_hits=0)
+            check_native_execution(args,value)
 
 
 if __name__=="__main__":unittest.main()

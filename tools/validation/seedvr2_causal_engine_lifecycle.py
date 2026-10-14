@@ -21,15 +21,20 @@ def main():
     for name in ("library","model","source","manifest","output"):
         parser.add_argument("--"+name,type=Path,required=True)
     parser.add_argument("--ordinary-prepare-only",action="store_true",help="reject both experiment selectors in an ordinary library, then recover; no inference")
+    parser.add_argument("--upscale-manifest",type=Path,help="also test the independent upscale causal layer and all on/off combinations")
     args=parser.parse_args()
     if args.output.exists():parser.error("fresh lifecycle output required")
     if os.environ.get("TURBOCIDER_SEEDVR2_VIDEO_RAW_CAPTURE"):parser.error("raw captures must be run separately")
+    if os.environ.get("TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_MANIFEST") and not args.upscale_manifest:
+        parser.error("inherited upscale selector must be explicitly recorded")
     for name in ("library","model","source","manifest"):setattr(args,name,getattr(args,name).resolve(strict=True))
+    if args.upscale_manifest:args.upscale_manifest=args.upscale_manifest.resolve(strict=True)
     args.output=args.output.absolute();args.output.mkdir(parents=True)
     identity=args.library.parent/"runtime-build/runtime-build-manifest.json"
     runtime=validate_native_build_binding(args.library,json.loads(identity.read_text()))
     report=dict(schema="seedvr2-causal-engine-lifecycle-v1",status="running",runs=[],runtime_build_id=runtime,
         library_sha256=sha256(args.library),source_sha256=sha256(args.source),manifest_sha256=sha256(args.manifest),
+        upscale_manifest_sha256=sha256(args.upscale_manifest) if args.upscale_manifest else None,
         scope="actual full-source requests; cancellation after real subsequent-frame work, tampered owned bank, same-engine recovery/on-off/residency; not performance/public qualification")
     if args.ordinary_prepare_only:
         report["scope"]="ordinary library: reject experimental bank/raw-capture selectors, then prepare/unload on same engine; no model inference"
@@ -48,20 +53,29 @@ def main():
         sentinel=args.output/"preserve-existing.mp4";sentinel.write_bytes(b"owned sentinel must survive experimental request failure")
         sentinel_sha=sha256(sentinel)
         if args.ordinary_prepare_only:
-            cases=(("reject-selector",args.manifest,"component_staged",1),("reject-capture",None,"component_staged",1),
-                ("ordinary-prepare-recovery",None,"component_staged",0))
+            cases=[("reject-selector",args.manifest,None,"component_staged",1),("reject-capture",None,None,"component_staged",1)]
+            if args.upscale_manifest:cases.append(("reject-upscale-selector",None,args.upscale_manifest,"component_staged",1))
+            cases.append(("ordinary-prepare-recovery",None,None,"component_staged",0))
         else:
-            owned=args.output/"tampered-bank";shutil.copytree(args.manifest.parent,owned)
-            spec=json.loads(args.manifest.read_text());file=owned/"conv.mlmodelc"/spec["compiled"]["identity"]["files"][0]["path"]
+            target=args.upscale_manifest or args.manifest
+            owned=args.output/"tampered-bank";shutil.copytree(target.parent,owned)
+            spec=json.loads(target.read_text());file=owned/"conv.mlmodelc"/spec["compiled"]["identity"]["files"][0]["path"]
             with file.open("ab") as stream:stream.write(b"owned tamper fixture")
-            cases=(("tampered-bank",owned/args.manifest.name,"component_staged",1),
-                ("cancel-after-predictions",args.manifest,"component_staged",2),
-                ("experimental-recovery",args.manifest,"component_staged",0),
-                ("gpu-off-resident",None,"resident",0),("experimental-on-staged",args.manifest,"component_staged",0))
+            cases=[("tampered-upscale-bank",args.manifest,owned/target.name,"component_staged",1) if args.upscale_manifest else
+                ("tampered-bank",owned/target.name,None,"component_staged",1),
+                ("cancel-after-predictions",args.manifest,args.upscale_manifest,"component_staged",2),
+                ("experimental-recovery",args.manifest,args.upscale_manifest,"component_staged",0),
+                ("gpu-off-resident",None,None,"resident",0)]
+            if args.upscale_manifest:
+                cases.extend([("upscale-only-resident",None,args.upscale_manifest,"resident",0),("hot-only-staged",args.manifest,None,"component_staged",0)])
+            cases.append(("experimental-on-staged",args.manifest,args.upscale_manifest,"component_staged",0))
         os.environ["TURBOCIDER_SEEDVR2_VAE_CAUSAL_COMPUTE"]="ne"
-        for name,manifest,residency,expected_code in cases:
+        os.environ["TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_COMPUTE"]="ne"
+        for name,manifest,upscale_manifest,residency,expected_code in cases:
             if manifest is None:os.environ.pop("TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST",None)
             else:os.environ["TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST"]=str(manifest)
+            if upscale_manifest is None:os.environ.pop("TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_MANIFEST",None)
+            else:os.environ["TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_MANIFEST"]=str(upscale_manifest)
             capture=args.output/"capture-must-not-be-created"
             if name=="reject-capture":os.environ["TURBOCIDER_SEEDVR2_VIDEO_RAW_CAPTURE"]=str(capture)
             else:os.environ.pop("TURBOCIDER_SEEDVR2_VIDEO_RAW_CAPTURE",None)
@@ -99,15 +113,19 @@ def main():
                 if not metrics or metrics.get("prepared") is not True or metrics.get("warmup") is not False:
                     raise ValueError("ordinary preparation did not recover after selector rejection")
             else:
-                causal=manifest is not None;calls=1536 if causal else 0
-                if (not metrics or metrics.get("execution")!=("gpu_vae_cpu_ne_experimental" if causal else "gpu") or
-                    metrics.get("vae_causal_conv_experimental_enabled") is not causal or metrics.get("vae_causal_conv_calls")!=calls or
-                    metrics.get("vae_causal_conv_backing_hits")!=calls or metrics.get("vae_causal_conv_frames")!=(24 if causal else 0) or
+                causal=manifest is not None;upscale=upscale_manifest is not None
+                if (not metrics or metrics.get("execution")!=("gpu_vae_cpu_ne_experimental" if causal or upscale else "gpu") or
                     metrics.get("weight_residency_recipe")!=("stage_dit" if residency=="component_staged" else "resident")):
                     raise ValueError("same-engine route/residency recovery differs")
+                for prefix,enabled in (("vae_causal_conv",causal),("vae_upscale_causal_conv",upscale)):
+                    if (metrics.get(prefix+"_experimental_enabled",False) is not enabled or metrics.get(prefix+"_calls",0)!=(1536 if enabled else 0) or
+                        metrics.get(prefix+"_backing_hits",0)!=(1536 if enabled else 0) or metrics.get(prefix+"_frames",0)!=(24 if enabled else 0)):
+                        raise ValueError("same-engine per-layer execution recovery differs: "+prefix)
                 row["media"]=verify_output(destination,SimpleNamespace(kind="video",width=512,height=512,frames=25,fps=24))
             if sha256(sentinel)!=sentinel_sha or sha256(args.source)!=report["source_sha256"] or sha256(args.manifest)!=report["manifest_sha256"]:
                 raise ValueError("experimental failure changed protected input/destination/bank")
+            if args.upscale_manifest and sha256(args.upscale_manifest)!=report["upscale_manifest_sha256"]:
+                raise ValueError("experimental failure changed original upscale bank")
             if any(".seedvr2-" in path.name or ".mp4." in path.name for path in args.output.iterdir()):
                 raise ValueError("experimental request leaked private media staging")
             if args.ordinary_prepare_only and (capture.exists() or any(path.name.endswith(".png") or path.name=="ordinary-prepare-recovery.mp4" for path in args.output.iterdir())):

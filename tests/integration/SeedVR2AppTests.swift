@@ -12,6 +12,8 @@ import Foundation
         let execution = hybrid ? "gpu_ane" : "gpu"
         let causalManifest = ProcessInfo.processInfo.environment["TURBOCIDER_SEEDVR2_VAE_CAUSAL_MANIFEST"]
         let causalExperiment = causalManifest?.isEmpty == false
+        let upscaleCausalManifest = ProcessInfo.processInfo.environment["TURBOCIDER_SEEDVR2_VAE_UPSCALE_CAUSAL_MANIFEST"]
+        let upscaleCausalExperiment = upscaleCausalManifest?.isEmpty == false
         let vaeOptions = try ProcessInfo.processInfo.environment["TURBOCIDER_SEEDVR2_APP_VAE_OPTIONS"].map {
             try JSONDecoder().decode(NativeSeedVR2VAEConfig.self, from: Data($0.utf8))
         }
@@ -160,7 +162,7 @@ import Foundation
                               metrics["streamed_output_frames"] as? Int == (expectedDecoder == "streaming" ? 25 : 0) &&
                               metrics["vae_conv_recipe"] as? String == (vaeOptions?.convolution ?? "singleton2d"),
                               "App VAE execution differs from its selected configuration")
-                    let expectedExecution = causalExperiment && isVideo ? "gpu_vae_cpu_ne_experimental" : execution
+                    let expectedExecution = (causalExperiment || upscaleCausalExperiment) && isVideo ? "gpu_vae_cpu_ne_experimental" : execution
                     try check(metrics["operation"] as? String == operation && metrics["width"] as? Int == size &&
                               metrics["height"] as? Int == size && metrics["execution"] as? String == expectedExecution &&
                               metrics["checkpoint_sha256_verified"] as? Bool == true,
@@ -177,7 +179,8 @@ import Foundation
                     let expectedRecipe = (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") +
                         (encoderFileRows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
                         (fileRows ? "+vae-globalstats-file-rows-v1" : "") +
-                        (causalExperiment && isVideo ? "+experimental-vae-causal-coreml-original-fp16-v1" : "")
+                        (causalExperiment && isVideo ? "+experimental-vae-causal-coreml-original-fp16-v1" : "") +
+                        (upscaleCausalExperiment && isVideo ? "+experimental-vae-upscale-causal-coreml-original-fp16-v1" : "")
                     try check(metrics["numerical_recipe"] as? String == expectedRecipe &&
                               metrics["dit_projection_dtype"] as? String == "fp16" &&
                               metrics["dit_residual_dtype"] as? String == "fp32" &&
@@ -243,7 +246,8 @@ import Foundation
                               metrics["dit_reloaded_for_sampling"] as? Bool == staged,
                               "App planned/executed weight residency mismatch")
                     let components = (staged ? ["vae"] : ["vae", "dit"]) + (hybrid ? ["coreml_ffn_prefix"] : []) +
-                        (causalExperiment ? ["experimental_coreml_vae_causal"] : [])
+                        (causalExperiment ? ["experimental_coreml_vae_causal"] : []) +
+                        (upscaleCausalExperiment ? ["experimental_coreml_vae_upscale_causal"] : [])
                     if causalExperiment {
                         let expectedCalls = isVideo ? 24 * ((size + 63) / 64) * ((size + 63) / 64) : 0
                         try check(metrics["vae_causal_conv_experimental_enabled"] as? Bool == true &&
@@ -255,6 +259,20 @@ import Foundation
                             "experimental App VAE causal execution differs from actual coverage")
                     } else {
                         try check(metrics["vae_causal_conv_experimental_enabled"] as? Bool != true,"ordinary App executed an experimental VAE route")
+                    }
+                    if upscaleCausalExperiment {
+                        let expectedCalls = isVideo ? 24 * ((size + 63) / 64) * ((size + 63) / 64) : 0
+                        try check(metrics["vae_upscale_causal_conv_experimental_enabled"] as? Bool == true &&
+                            metrics["vae_upscale_causal_conv_layer"] as? String == "decoder.up_blocks.2.upsamplers.0.conv" &&
+                            metrics["vae_upscale_causal_conv_output_channels"] as? Int == 256 &&
+                            metrics["vae_upscale_causal_conv_calls"] as? Int == expectedCalls &&
+                            metrics["vae_upscale_causal_conv_backing_hits"] as? Int == expectedCalls &&
+                            metrics["vae_upscale_causal_conv_frames"] as? Int == (isVideo ? 24 : 0) &&
+                            metrics["vae_upscale_causal_conv_manifest_sha256"] as? String == "877f50e7d97399b3eae2e2c90b6832b8d99bb9d547e699683d37631d2060598b" &&
+                            metrics["physical_ane_occupancy_measured"] as? Bool == false,
+                            "experimental App upscale causal execution differs from full layer coverage")
+                    } else {
+                        try check(metrics["vae_upscale_causal_conv_experimental_enabled"] as? Bool != true,"App unexpectedly executed upscale causal offload")
                     }
                     try check(metrics["resident_components"] as? [String] == components,
                               "App reported the wrong resident components")

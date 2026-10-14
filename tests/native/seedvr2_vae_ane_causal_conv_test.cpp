@@ -15,12 +15,20 @@ void quality(const Tensor &actual,const Tensor &reference){
 }
 int main(int argc,char **argv){
     try{
-        tc::require(argc==3,"usage: causal-conv-test MODEL FULL_CONV_MANIFEST");mx::set_default_device(mx::Device::gpu);
+        tc::require(argc==3 || (argc==4 && std::string(argv[3])=="upscale"),"usage: causal-conv-test MODEL FULL_CONV_MANIFEST [upscale]");mx::set_default_device(mx::Device::gpu);
+        const bool upscale=argc==4;const int outputs=upscale?256:128;
+        const std::string layer=upscale?"decoder.up_blocks.2.upsamplers.0.conv":"decoder.up_blocks.3.resnets.0.conv1";
         {
             std::atomic<bool> cancelled{false};std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> stats;
-            auto execute=tc::seedvr2::make_experimental_ane_causal_conv(argv[2],false,cancelled,stats,true);
+            auto make=[&](bool verify){return upscale?tc::seedvr2::make_experimental_ane_upscale_causal_conv(argv[2],false,cancelled,stats,verify):
+                tc::seedvr2::make_experimental_ane_causal_conv(argv[2],false,cancelled,stats,verify);};
+            std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> invalid_stats;
+            rejects([&]{if(upscale)tc::seedvr2::make_experimental_ane_causal_conv(argv[2],false,cancelled,invalid_stats);
+                else tc::seedvr2::make_experimental_ane_upscale_causal_conv(argv[2],false,cancelled,invalid_stats);});
+            auto execute=make(true);
+            tc::require(stats->layer==layer && stats->output_channels==outputs,"causal runtime changed the selected original layer");
             tc::seedvr2::TensorBank bank;bank.load(std::filesystem::path(argv[1])/"vae/seedvr2_ema_vae_fp16.safetensors",mx::float16,true);
-            const auto &weight=bank.at("decoder.up_blocks.3.resnets.0.conv1.weight"),&bias=bank.at("decoder.up_blocks.3.resnets.0.conv1.bias");
+            const auto &weight=bank.at(layer+".weight"),&bias=bank.at(layer+".bias");
             Tensor held(0);std::vector<uint16_t> saved;int cases=0;
             for(const auto &geometry:std::vector<std::array<int,2>>{{17,19},{65,71},{64,64}}){
                 const int h=geometry[0],w=geometry[1];std::vector<Tensor> source;
@@ -54,7 +62,8 @@ int main(int argc,char **argv){
             cancelled=false;tc::require(typed && stats->coreml_calls==calls,"pre-cancelled causal operation submitted work");
             rejects([&]{execute(mx::astype(frame,mx::float32),past,weight,bias);});
             rejects([&]{execute(frame,{frame},weight,bias);});
-            rejects([&]{execute(frame,past,mx::zeros({127,3,3,3,256},mx::float16),bias);});
+            rejects([&]{execute(frame,past,mx::zeros({outputs-1,3,3,3,256},mx::float16),bias);});
+            rejects([&]{execute(frame,past,weight,mx::zeros({outputs-1},mx::float16));});
             std::atomic<bool> finished{false};std::thread canceller([&]{
                 while(!finished && stats->coreml_calls.load()==calls)std::this_thread::yield();if(!finished)cancelled=true;
             });typed=false;
@@ -68,7 +77,8 @@ int main(int argc,char **argv){
             execute={};bank.clear();held=Tensor(0);frame=Tensor(0);recovered=Tensor(0);past.clear();mx::synchronize();mx::clear_cache();
             tc::seedvr2::VAE vae;vae.load(std::filesystem::path(argv[1])/"vae/seedvr2_ema_vae_fp16.safetensors");
             tc::SeedVR2VAEConfig config;config.history="frames";config.share_upscale_history=true;vae.configure(config);
-            vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(argv[2],false,cancelled,stats));
+            if(upscale)vae.use_experimental_upscale_causal_conv(make(false));
+            else vae.use_experimental_causal_conv(make(false));
             auto latent=mx::zeros({1,16,3,16,16},mx::float16);mx::eval(latent);int emitted=0;bool failed=false;
             try{vae.decode_stream(latent,9,[&](int index,const Tensor &){tc::require(index==emitted++,"causal failure sink order changed");
                 if(index==1)throw std::runtime_error("causal-owned-sink-failure");},{},cancelled);}
@@ -80,6 +90,6 @@ int main(int argc,char **argv){
             vae.clear();latent=Tensor(0);
         }
         mx::synchronize();mx::clear_cache();tc::require(mx::get_active_memory()==0,"causal session teardown leaked MLX allocations");
-        std::cout<<"PASS causal signed ABA original-FP32, ragged halo/borders, replicated history, retained output, IO bitwise witnesses, invalid operands, pre/active cancellation, same-runtime/VAE recovery, first-GPU folding, teardown\n";
+        std::cout<<"PASS "<<layer<<" causal signed ABA original-FP32, ragged halo/borders, replicated history, retained output, IO bitwise witnesses, invalid operands/bank, pre/active cancellation, same-runtime/VAE recovery, first-GPU folding, teardown\n";
     }catch(const std::exception &error){std::cerr<<error.what()<<'\n';return 1;}
 }

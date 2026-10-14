@@ -27,7 +27,9 @@ struct Sampler {
 int main(int argc,char **argv){
     try {
         const bool projection_experiment=argc==10;
-        const bool causal_experiment=argc==11;
+        const bool causal_experiment=argc==11 || argc==13;
+        const bool upscale_causal_experiment=argc==13;
+        const bool hot_causal_experiment=causal_experiment && std::string(argv[9])!="none";
         bool valid_arguments=argc==7 || argc==8 || argc==9;
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
         valid_arguments=valid_arguments || projection_experiment;
@@ -53,11 +55,16 @@ int main(int argc,char **argv){
             config.share_upscale_history=std::string(argv[8])=="share";tc::require(!config.share_upscale_history || route=="baseline","shared upscale history requires full decoding");}
         vae.configure(config);mx::eval(latent);
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
-        std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> causal_stats;
-        if(causal_experiment){
+        std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> causal_stats,upscale_causal_stats;
+        if(hot_causal_experiment){
             tc::require(route=="baseline" && (std::string(argv[10])=="ne" || std::string(argv[10])=="cpu"),"full causal-conv compute control required");
             vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(
                 argv[9],std::string(argv[10])=="cpu",cancelled,causal_stats));
+        }
+        if(upscale_causal_experiment){
+            tc::require(route=="baseline" && (std::string(argv[12])=="ne" || std::string(argv[12])=="cpu"),"upscale causal-conv compute control required");
+            vae.use_experimental_upscale_causal_conv(tc::seedvr2::make_experimental_ane_upscale_causal_conv(
+                argv[11],std::string(argv[12])=="cpu",cancelled,upscale_causal_stats));
         }
 #endif
         tc::seedvr2::SpatialTileOptions options;options.threshold_bytes=std::stoull(argv[5]);options.rows=std::stoi(argv[6]);
@@ -94,6 +101,13 @@ int main(int argc,char **argv){
             tc::require(index==emitted && pixels.shape()==mx::Shape{1,3,1,h,w} && pixels.dtype()==mx::float16,"spatial frame index/shape changed");
             auto current=mx::contiguous(mx::transpose(pixels,{0,2,3,4,1}));mx::eval(current);
             const auto *actual=current.data<mx::float16_t>();const auto *expected=reinterpret_cast<const mx::float16_t *>(saved.data()+size_t(index)*h*w*3);
+            if(index==0 && causal_experiment){
+                tc::require(std::memcmp(actual,expected,size_t(h)*w*3*2)==0,"initial GPU frame changed");
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
+                for(const auto &observed:{causal_stats,upscale_causal_stats})
+                    tc::require(!observed || (observed->frames==0 && observed->coreml_calls==0),"initial frame unexpectedly used Core ML");
+#endif
+            }
             pixels_file.write(reinterpret_cast<const char *>(actual),size_t(h)*w*3*2);
             tc::require(bool(pixels_file),"bounded spatial frame export failed");
             for(size_t i=0;i<size_t(h)*w*3;++i){const double a=float(actual[i]),b=float(expected[i]);
@@ -111,6 +125,13 @@ int main(int argc,char **argv){
 #endif
         const double l2=std::sqrt(es/std::max(nx,1e-20)),cosine=dot/std::max(std::sqrt(nx*ny),1e-20);
         const bool quality=emitted==frames && l2<=.05 && cosine>=.999;
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
+        for(const auto &observed:{causal_stats,upscale_causal_stats})if(observed){
+            const uint64_t expected=uint64_t(frames-1)*((h+observed->tile_rows-1)/observed->tile_rows)*((w+observed->tile_cols-1)/observed->tile_cols);
+            tc::require(observed->frames==uint64_t(frames-1) && observed->coreml_calls==expected && observed->backing_hits==expected,
+                "complete per-layer causal frame/tile/backing coverage differs");
+        }
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
         if(projection_stats){
             tc::require(projection_stats->frames==uint64_t(frames) && projection_stats->coreml_calls==projection_stats->backing_hits,
@@ -137,12 +158,18 @@ int main(int argc,char **argv){
             <<",\"projection_backing_hits\":"<<projection_stats->backing_hits<<",\"projection_slot_bytes\":"<<projection_stats->slot_bytes
             <<",\"projection_boundary_seconds\":"<<projection_stats->boundary_seconds<<",\"projection_load_seconds\":"<<projection_stats->load_seconds;
 #endif
-        out<<",\"causal_conv_backend\":\""<<(causal_experiment?argv[10]:"none")<<"\"";
+        out<<",\"causal_conv_backend\":\""<<(hot_causal_experiment?argv[10]:"none")<<"\"";
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
         if(causal_stats)out<<",\"causal_conv_frames\":"<<causal_stats->frames<<",\"causal_conv_coreml_calls\":"<<causal_stats->coreml_calls
             <<",\"causal_conv_backing_hits\":"<<causal_stats->backing_hits<<",\"causal_conv_slot_bytes\":"<<causal_stats->slot_bytes
             <<",\"causal_conv_boundary_seconds\":"<<causal_stats->boundary_seconds<<",\"causal_conv_load_seconds\":"<<causal_stats->load_seconds;
+        if(upscale_causal_stats)out<<",\"upscale_causal_conv_layer\":\""<<upscale_causal_stats->layer<<"\",\"upscale_causal_conv_output_channels\":"<<upscale_causal_stats->output_channels
+            <<",\"upscale_causal_conv_backend\":\""<<argv[12]<<"\",\"upscale_causal_conv_frames\":"<<upscale_causal_stats->frames
+            <<",\"upscale_causal_conv_coreml_calls\":"<<upscale_causal_stats->coreml_calls<<",\"upscale_causal_conv_backing_hits\":"<<upscale_causal_stats->backing_hits
+            <<",\"upscale_causal_conv_slot_bytes\":"<<upscale_causal_stats->slot_bytes<<",\"upscale_causal_conv_boundary_seconds\":"<<upscale_causal_stats->boundary_seconds
+            <<",\"upscale_causal_conv_load_seconds\":"<<upscale_causal_stats->load_seconds;
 #endif
+        out<<",\"initial_gpu_frame_checked\":"<<(causal_experiment?"true":"false");
         out<<",\"diagnostic_phase_count\":"<<phase_count
             <<",\"qualified\":false,\"physical_ane_occupancy_measured\":false,\"scope\":\"decoder-only saved FP16 witness, host quality scan included; not original-FP32/full-request/paired speed or low-RAM qualification\"}\n";
         out.close();tc::require(quality,"spatial decoder quality gate failed");

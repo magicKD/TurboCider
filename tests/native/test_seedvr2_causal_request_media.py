@@ -35,6 +35,7 @@ class MatchedCausalMedia(unittest.TestCase):
                 checkpoint_sha256="20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1")
             path=folder/"capture.json";path.write_text(json.dumps(capture))
             run=dict(metrics=dict(seed=42,video_raw_capture=dict(manifest=str(path),sha256=sha256(path),frames=2,diagnostic_only=True),
+                vae_causal_conv_experimental_enabled=experimental,
                 vae_causal_conv_manifest_sha256="bank" if experimental else None,
                 video_preencode_pixel_hash_diagnostic=True,video_preencode_rgb24_sha256=rgb_hash.hexdigest()))
             captures.append(load_capture(run,workload,"source",experimental));runs.append(run)
@@ -60,6 +61,19 @@ class MatchedCausalMedia(unittest.TestCase):
             path=Path(runs[1]["metrics"]["video_raw_capture"]["manifest"])
             path.write_text("{}")
             with self.assertRaisesRegex(ValueError,"request-bound"):load_capture(runs[1],workload,"source",True)
+
+    def test_upscale_only_capture_cannot_be_mislabelled_as_the_hot_layer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            _,runs,workload=self.capture_pair(Path(folder));run=runs[1];metrics=run["metrics"]
+            metrics.update(vae_causal_conv_experimental_enabled=False,vae_causal_conv_manifest_sha256=None,
+                vae_upscale_causal_conv_experimental_enabled=True,vae_upscale_causal_conv_manifest_sha256="upscale-bank")
+            path=Path(metrics["video_raw_capture"]["manifest"]);data=json.loads(path.read_text())
+            data.update(experimental_causal_enabled=False,causal_manifest_sha256=None,
+                experimental_upscale_causal_enabled=True,upscale_causal_manifest_sha256="upscale-bank")
+            path.write_text(json.dumps(data));metrics["video_raw_capture"]["sha256"]=sha256(path)
+            load_capture(run,workload,"source",True)
+            metrics["vae_upscale_causal_conv_manifest_sha256"]="wrong-bank"
+            with self.assertRaisesRegex(ValueError,"per-layer"):load_capture(run,workload,"source",True)
 
     def pair(self):
         left=dict(status="complete",source_sha256="source",workload=dict(kind="video",frames=25),

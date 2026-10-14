@@ -82,6 +82,7 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     upscale_recipe_ = "native";
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
     experimental_causal_conv_={};
+    experimental_upscale_causal_conv_={};
 #endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
     experimental_upscale_projection_={};
@@ -276,14 +277,17 @@ Tensor VAE::conv_frames(const Tensor &input, const std::string &key, FrameHistor
     const bool stored = halo && cache && !initial && found != cache->end();
     auto previous = stored ? found->second : FrameHistory{};
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
-    if(experimental_causal_conv_ && key=="decoder.up_blocks.3.resnets.0.conv1" && !initial){
+    const bool upscale_causal=key=="decoder.up_blocks.2.upsamplers.0.conv";
+    const auto *causal=upscale_causal?&experimental_upscale_causal_conv_:&experimental_causal_conv_;
+    if(*causal && (upscale_causal || key=="decoder.up_blocks.3.resnets.0.conv1") && !initial){
         require(cache && stored && previous.size()==2 && !downsample && kernel_t==3 &&
             input.shape(0)==1 && input.shape(1)==1 && input.shape(4)==256,
             "causal-conv experiment cannot change initial folding, strides or temporal partition");
         // Keep both original history frames until every tile has consumed them.
         // There is deliberately no full three-frame concatenation in this path.
-        auto result=experimental_causal_conv_(input,previous,weight,weights_.at(key+".bias"));
-        require(result.shape()==mx::Shape{1,1,input.shape(2),input.shape(3),128} && result.dtype()==mx::float16 &&
+        const int outputs=upscale_causal?256:128;
+        auto result=(*causal)(input,previous,weight,weights_.at(key+".bias"));
+        require(result.shape()==mx::Shape{1,1,input.shape(2),input.shape(3),outputs} && result.dtype()==mx::float16 &&
             result.is_available(),"causal-conv experiment returned an incomplete activation");
         cache->insert_or_assign(key,advance_frame_history(input,previous,2,true,retain_owned_singleton));
         return result;

@@ -53,6 +53,7 @@ class Pipeline {
     void configure_vae(const std::optional<SeedVR2VAEConfig> &config) { vae_.configure(config); }
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
     void use_experimental_causal_conv(ExperimentalCausalConv execute){vae_.use_experimental_causal_conv(std::move(execute));}
+    void use_experimental_upscale_causal_conv(ExperimentalCausalConv execute){vae_.use_experimental_upscale_causal_conv(std::move(execute));}
 #endif
     // Resized RGB BCTHW in [-1,1], padded to 4n+1 if necessary. A supplied
     // FP32 sampling-noise fixture makes backend comparisons RNG-independent.

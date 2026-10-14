@@ -164,8 +164,9 @@ the selector off for a resident GPU video, and back on for a staged experimental
 video. All three successful requests preserve25 frames/24 FPS and verify actual
 route/call counts. Source, original bank and a private existing destination are
 unchanged; private media staging drains and explicit unload reports zero MLX
-active bytes. This is cancellation after real convolution work, not during a
-synchronous prediction; the latter remains the separate component test.
+active bytes. This is cancellation after real convolution work. The separate
+component test cancels at a tile boundary after a genuine prediction; neither
+test interrupts Core ML's synchronous prediction call.
 
 ### Raw-versus-codec diagnosis
 
@@ -209,7 +210,7 @@ rejects unrecorded inherited selectors/captures. Compare captures with
 reports. Release packaging must reject this library, including the actual
 capture/shader bytes even if someone supplies a misleading policy manifest.
 
-### Next useful boundary, not yet implemented
+### Spatial-upsample follow-up
 
 The original checkpoint header confirms
 `decoder.up_blocks.2.upsamplers.0.conv.weight` is original FP16
@@ -220,7 +221,11 @@ the decoder maximum. This makes **the following causal convolution**, with
 separate histories/direct halo packing, a better next candidate than retesting
 projection-only migration. It requires a new full256-output bank, numerical and
 ownership tests and per-layer accounting: the current128-output bank/hook
-cannot be relabelled or reused as if it computed that layer.
+cannot be relabelled or reused as if it computed that layer. This independent
+256-output bank/hook and complete-decoder FP32 tests are now implemented in
+the [upscale causal follow-up](seedvr2-vae-upscale-causal-conv.md). Its own
+balanced/full-request/App gates must be read separately; this does not promote
+the original128-output bank or inherit a previous full-request qualification.
 
 In parallel with that operator choice, an affine/SiLU/conv tile graph could use
 externally computed whole-frame FP32 statistics. Preserve all original casts,

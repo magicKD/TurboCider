@@ -29,6 +29,13 @@ on the diagnosed1024/t25 fixture, versus138 after H264; predecode hashes are exa
 See the linked direct-frame document for scopes/receipts. Balanced full-request
 speed, broader media/hardware, physical occupancy and a public bank remain open.
 
+The subsequent [256-output upscale causal convolution](seedvr2-vae-upscale-causal-conv.md)
+adds a second independently validated signature. Dual-versus-hot-only complete
+decoder ABBA now measures55.682/54.192 s (about2.68% lower latency), with another
+402.4 MB lower active maximum. Complete raw request and fourteen App regressions
+pass; single whole-request active maxima are13.015/12.236 GB. This still is not
+balanced full-request speed, full-VAE ANE or low-memory-hardware qualification.
+
 Machine: Apple M4 Max, 64 GiB, macOS 26.6.2. Original VAE SHA-256:
 `20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1`.
 Weights remain FP16 without BF16 rounding/quantization. Three temporal taps are
