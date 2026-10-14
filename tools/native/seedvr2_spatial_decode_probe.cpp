@@ -1,5 +1,8 @@
 #include "../../native/models/seedvr2/vae.hpp"
 #include "../../native/models/seedvr2/memory.hpp"
+#if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
+#include "seedvr2_vae_ane_projection.hpp"
+#endif
 #include <mach/mach.h>
 #include <thread>
 #include <cstring>
@@ -20,7 +23,12 @@ struct Sampler {
 }
 int main(int argc,char **argv){
     try {
-        tc::require(argc==7,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS");
+        const bool projection_experiment=argc==10;
+#if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
+        tc::require(argc==7 || argc==8 || argc==10,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse [PROJECTION_MANIFEST ne|cpu]]");
+#else
+        tc::require(argc==7 || argc==8,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse]; ANE projection requires an experimental build");
+#endif
         const std::filesystem::path model(argv[1]),output(argv[3]);const std::string route(argv[4]);
         tc::require(!std::filesystem::exists(output) && (route=="baseline" || route=="spatial"),"fresh output and known route required");
         std::filesystem::create_directories(output);mx::set_default_device(mx::Device::gpu);
@@ -35,6 +43,15 @@ int main(int argc,char **argv){
         tc::seedvr2::VAE vae;vae.load(model/"vae/seedvr2_ema_vae_fp16.safetensors");
         tc::SeedVR2VAEConfig config;config.history="frames";vae.configure(config);mx::eval(latent);
         tc::seedvr2::SpatialTileOptions options;options.threshold_bytes=std::stoull(argv[5]);options.rows=std::stoi(argv[6]);
+        if(argc>=8){tc::require(std::string(argv[7])=="fresh" || std::string(argv[7])=="reuse","known read-window recipe required");options.reuse_read_windows=std::string(argv[7])=="reuse";}
+#if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
+        std::shared_ptr<tc::seedvr2::ExperimentalProjectionStats> projection_stats;
+        if(projection_experiment){
+            tc::require(std::string(argv[9])=="ne" || std::string(argv[9])=="cpu","known projection compute control required");
+            vae.use_experimental_upscale_projection(tc::seedvr2::make_experimental_ane_projection(
+                argv[8],std::string(argv[9])=="cpu",cancelled,projection_stats));
+        }
+#endif
         std::shared_ptr<tc::seedvr2::SpatialFileStats> stats;
         std::ofstream pixels_file(output/"decoded.fp16.bin",std::ios::binary);
         tc::require(bool(pixels_file),"cannot create bounded frame export");
@@ -57,6 +74,12 @@ int main(int argc,char **argv){
         const double seconds=std::chrono::duration<double>(tc::Clock::now()-start).count();const auto active=mx::get_peak_memory();
         const double l2=std::sqrt(es/std::max(nx,1e-20)),cosine=dot/std::max(std::sqrt(nx*ny),1e-20);
         const bool quality=emitted==frames && l2<=.05 && cosine>=.999;
+#if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
+        if(projection_stats){
+            tc::require(projection_stats->frames==uint64_t(frames) && projection_stats->coreml_calls==projection_stats->backing_hits,
+                        "complete VAE projection execution/backing coverage differs");
+        }
+#endif
         tc::require(!stats || (stats->disk_live_bytes==0 && stats->host_live_bytes==0),"spatial scratch/buffer live accounting did not drain");
         std::ofstream out(output/"report.json");tc::require(bool(out),"cannot write spatial decode report");
         out<<std::setprecision(17)<<"{\"schema\":\"seedvr2-spatial-decode-screen-v1\",\"route\":\""<<route
@@ -67,9 +90,17 @@ int main(int argc,char **argv){
             <<",\"file_written_bytes\":"<<(stats?stats->written_bytes:0)<<",\"file_read_bytes\":"<<(stats?stats->read_bytes:0)
             <<",\"file_peak_bytes\":"<<(stats?stats->disk_peak_bytes:0)<<",\"host_window_peak_bytes\":"<<(stats?stats->host_peak_bytes.load():0)
             <<",\"tile_convolutions\":"<<(stats?stats->tile_convolutions:0)<<",\"global_normalizations\":"<<(stats?stats->global_normalizations:0)
-            <<",\"qualified\":false,\"scope\":\"decoder-only saved FP16 witness, host quality scan included; not original-FP32/full-request/paired speed or low-RAM qualification\"}\n";
+            <<",\"read_window_recipe\":\""<<(options.reuse_read_windows?"reuse":"fresh")<<"\",\"host_window_allocations\":"<<(stats?stats->host_allocations.load():0)
+            <<",\"host_window_reuses\":"<<(stats?stats->host_reuses.load():0)
+            <<",\"projection_backend\":\""<<(projection_experiment?argv[9]:"none")<<"\"";
+#if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
+        if(projection_stats)out<<",\"projection_frames\":"<<projection_stats->frames<<",\"projection_coreml_calls\":"<<projection_stats->coreml_calls
+            <<",\"projection_backing_hits\":"<<projection_stats->backing_hits<<",\"projection_slot_bytes\":"<<projection_stats->slot_bytes
+            <<",\"projection_boundary_seconds\":"<<projection_stats->boundary_seconds<<",\"projection_load_seconds\":"<<projection_stats->load_seconds;
+#endif
+        out<<",\"qualified\":false,\"physical_ane_occupancy_measured\":false,\"scope\":\"decoder-only saved FP16 witness, host quality scan included; not original-FP32/full-request/paired speed or low-RAM qualification\"}\n";
         out.close();tc::require(quality,"spatial decoder quality gate failed");
-        if(route=="baseline")tc::require(unequal==0,"baseline changed saved decoder bytes");
+        if(route=="baseline" && !projection_experiment)tc::require(unequal==0,"baseline changed saved decoder bytes");
         std::cout<<"PASS "<<route<<" frames="<<emitted<<" l2="<<l2<<" cosine="<<cosine<<" peak="<<active<<'\n';
     }catch(const std::exception &error){std::cerr<<error.what()<<'\n';return 1;}
 }

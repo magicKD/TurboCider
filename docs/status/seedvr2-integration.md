@@ -2158,6 +2158,50 @@ The overall goal stays active: broader scheduling/workspace reuse, actual
 low-memory hardware/admission, useful whole-VAE ANE boundaries and bounded
 longer-context DiT remain incomplete.
 
+### Full-decoder ANE projection qualification and default regression (2026-10-15)
+
+The fixed original-FP16 Core ML spatial projection now executes inside the
+complete real VAE decoder, behind the existing experimental compile guard.
+Only the256->1024 spatial projection changes; outer bias/shuffle and the
+following causal convolution retain the original phases/rounding/history.
+Complete1024/t25 CPU+NE execution records25 projection frames,1600 predictions
+and1600 exact pixel-buffer/shape/stride backing hits. All78,643,200 decoded
+values and each of25 frames pass the independent same-latent audited FP32
+reference; native/NE relative-L2 .000522323646/.000522323592. Signed projection,
+strided inputs, retained output, actual pipeline cancellation, sink failure,
+same-runtime/same-VAE recovery and zero-allocation teardown tests pass.
+
+Single decoder observations are55.045/55.363 s, with identical active maximum
+13,129,845,582 bytes. NE sampled process footprint is slightly higher, not lower.
+The earlier isolated512-MiB reduction does not reduce this decoder's maximum.
+The prototype is not a useful qualified speed/peak optimization, a public/App
+backend, a whole-VAE conversion or a measured physical ANE overlap. Its failed
+initial output-backing lock attempt remains preserved. Ordinary builds and
+stable packaging exclude its hook/selector/shader bytes.
+
+Optional bounded read-window pooling reduces allocations6720->912 (5808 actual
+reuses), preserves complete25 output hashes and original-FP32 quality, but
+single191.402/190.566-s row-decoder observations do not establish speed/peak
+improvement. Pooling stays disabled and absent from public/App configuration.
+
+Fresh ordinary native and Swift/App builds pass the release audit,13 public
+contracts and a complete seven-request actual App workflow:512/1024 images,
+complete25-frame24-FPS videos, streaming input/output, staged/resident switches
+and persistence. All exported media are byte exact to the prior qualified
+default at decoded-pixel level, including every video frame and exact PNG alpha.
+No model/weights/admission/defaults or the existing running App are replaced.
+
+Records: `outputs/seedvr2-vae-ane-full-real1024-t25-{native,ne}-v1-20261015/`,
+their separate `*-fp32-quality-v1-20261015.json` receipts,
+`outputs/seedvr2-projection-public-app-default-e2e-v1-20261015/generation-report.json`
+and `outputs/seedvr2-projection-public-app-export-equality-v1-20261015.json`.
+Detailed boundaries and remaining work are in
+[ANE feasibility](../design/seedvr2-vae-ane-feasibility.md) and
+[row/file scheduler](../design/seedvr2-vae-spatial-scheduler.md). The complete
+optimization goal remains active: the true request peak/critical path, broader
+scheduling, useful ANE routes, real low-memory hardware and >121-frame model
+support remain unresolved.
+
 ## Reproduce component checks
 
 ```sh

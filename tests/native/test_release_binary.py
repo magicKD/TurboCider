@@ -83,9 +83,10 @@ class ReleaseBinaryTests(unittest.TestCase):
             def output(command,**kwargs):
                 return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
             with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
-            with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
-                'tc_seedvr2_upscale_bias_shuffle' if command[0]=='strings' else output(command)):
-                with self.assertRaisesRegex(ValueError,'contains unqualified VAE'):release.check(library,manifest)
+            for name in ('tc_seedvr2_upscale_bias_shuffle','tc_seedvr2_ane_projection_pack','coreml_projection_probe'):
+                with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                    name if command[0]=='strings' else output(command)):
+                    with self.assertRaisesRegex(ValueError,'contains unqualified VAE'):release.check(library,manifest)
 
 
 if __name__ == '__main__':

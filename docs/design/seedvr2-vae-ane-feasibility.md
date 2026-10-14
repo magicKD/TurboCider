@@ -402,6 +402,96 @@ whole-VAE/App/latency/ownership gates pass; the overall goal remains open.
 
 ## GPU/ANE cooperation plan and acceptance
 
+### Complete-context VAE projection experiment (2026-10-15)
+
+The projection-only two-slot executor now runs **inside the real VAE decoder**,
+not just on a captured layer. Only `up_blocks.2.upsamplers.0.upscale_conv` is
+offloaded; its GPU consumer reproduces the original separate bias rounding and
+spatial phase ordering. The following causal convolution, global norms,
+attention and histories retain the original implementation. The
+executor is compiled only into isolated experimental tooling. Ordinary builds
+have no hook or selector; stable packaging rejects the experimental build flag
+and actual projection shader/recipe bytes. No public request/App option is added.
+
+Native implementation: `tools/native/seedvr2_vae_ane_projection.mm`, using the
+public IOSurface ownership helper. Each complete output frame uses a fresh owned
+MLX activation and the two reusable nonaliasing Core ML slots. Producer completion
+precedes prediction; slot reuse waits for its consumer. GPU submissions retain
+both MLX and surface owners and drain on exceptional unwinding. A nonconcurrent
+executor guard, typed cancellation before/after actual predictions and explicit
+frame/call/backing counters fail closed. Output poisoning and completed pixel
+checks detect incomplete frame assembly. The boundary includes input materialization,
+producer completion, poisoning, prediction and consumer completion; it is not
+isolated ANE arithmetic timing or exclusive whole-decoder phase attribution.
+
+The first integration attempt is preserved as failed: checking a surface-backed
+`MLMultiArray.dataPointer` locks its pixel buffer and prevents the next output
+backing reuse. The corrected executor never accesses that property. It verifies
+pixel-buffer identity and exact dtype/shape/strides, and addresses the shared
+Metal allocation through its separately validated IOSurface VM mapping. This
+still does not prove that Core ML performs no internal copies.
+
+The complete128/t9 CPU+NE and CPU-only controls pass the unchanged saved-pixel
+gate (relative-L2 .000177968/.000456990), with9 actual predictions/backing hits
+each. They are single diagnostic observations, not speed comparisons; different
+process warmup/cadence must not be interpreted as a small-image acceleration.
+The native unit test separately checks original-coefficient FP32 projection
+quality under signed ABA, strided/offset inputs, retained-output independence,
+invalid operands, pre-cancellation, cancellation after a real prediction,
+same-runtime recovery, an actual VAE sink failure, complete9-frame same-VAE
+recovery and zero MLX active allocations after all test tensors leave scope.
+
+Complete restored1024/t25 observations use the same probe binary, original
+weights/latent and history/cache settings, sequential independent processes:
+
+| Complete decoder observation | GPU native | CPU+NE spatial projection |
+| --- | ---: | ---: |
+| Seconds, including host pixel scan/export | 55.045347458 | 55.362970208 |
+| Maximum MLX active bytes | 13,129,845,582 | 13,129,845,582 |
+| Maximum sampled process footprint bytes | 14,654,178,528 | 14,705,100,096 |
+| Actual projection frames / Core ML calls / backing hits | 0 / 0 / 0 | 25 / 1600 / 1600 |
+
+All78,643,200 output values are finite and checked. The CPU+NE accumulated
+projection boundary is .657838873 s, with21,037,056 external surface bytes.
+Against the independently audited **same-latent all-FP32 VAE**, native/CPU+NE
+relative-L2 is .000522323646/.000522323592. Both also pass the unchanged gate on
+**each of25 frames**; worst frame relative-L2 is .000609564/.000609726. Native
+export retains its qualified SHA
+`6c71226c6ca815422e3a881e0757a9cdd42799f72ca20b408d89a0790018ddec`;
+the CPU+NE export SHA is
+`4a489c65df318bc8e483c71cfd221c19d604a8069b81de1919383a25712283f7`.
+CPU+NE is numerically qualified for this decoder fixture, **not byte identical**.
+
+This establishes a complete-decoder execution/quality path, not a useful
+production acceleration: single observations are effectively speed-flat,
+maximum active allocation is unchanged and sampled footprint increases.
+The earlier512-MiB **isolated-layer** reduction does not reduce this decoder's
+maximum. Do not promote this route, recommend it for low-memory machines, lower
+admission estimates or claim full-request/App/physical ANE qualification. Phase
+attribution and broader media/hardware/speed qualification remain open. Next
+work should address the actual request/decoder peak and critical path rather
+than optimizing this projection in isolation indefinitely.
+
+Records under `outputs/`:
+
+- `seedvr2-vae-ane-full-128-t9-ne-v1-20261015/report.json`: preserved failed
+  backing-reuse attempt, not a passed gate.
+- `seedvr2-vae-ane-full-128-t9-{ne,cpu}-v3-20261015/report.json`: corrected
+  complete9 controls, actual prediction/backing coverage and raw exports.
+- `seedvr2-vae-ane-full-real1024-t25-{native,ne}-v1-20261015/report.json`:
+  complete25 decoder observations, source/bank/probe identities and exports.
+- `seedvr2-vae-ane-full-real1024-t25-{native,ne}-fp32-quality-v1-20261015.json`:
+  same-input audited-FP32 complete and per-frame gates.
+
+Build into a fresh `TURBOCIDER_VAE_ANE_DECODE_OUT` using
+`bash tools/native/build_seedvr2_vae_ane_decode_probe.sh`. The spatial screen's
+`--projection-manifest`, `--projection-control ne|cpu` and `--routes baseline`
+select this explicit offline experiment. Its driver validates original bank
+metadata and the actual compiled tree before/after execution and requires all
+frames/tiles/backing hits. It is not an App setting or a full-VAE ANE conversion.
+
+### Remaining cooperation gates
+
 The full-output 64-square hot convolution now has the negative full-boundary
 result above. Prioritize other layers/boundaries and the 256->1024 projection
 before considering any production convolution route. The projection follow-up

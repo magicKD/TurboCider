@@ -388,3 +388,30 @@ full-request performance and conservative admission. Extend scheduling
 to additional operators/resolution/encoder phases and bounded full-context DiT
 for genuinely longer videos. Genuine 16-GiB operation remains unproven; reducing
 a decoder component on a 64-GiB host does not complete the entire objective.
+
+## Optional read-window reuse screen (2026-10-15)
+
+The offline scheduler can retain two page-aligned read windows, each at most
+128 MiB. Only an allocation solely owned by the pool is reused; concurrent live
+Tensor views get distinct storage. Trimming retains live consumer ownership.
+Actual idle pool capacity remains included in live/peak host accounting. The
+option is disabled by default and is not a public/App configuration field.
+
+Same-binary complete1024/t25 fresh/reuse observations (including host numerical
+scans and raw exports) are191.401648/190.565948 s. Both active peaks are
+5,647,731,538 bytes; read-window peaks are69,206,016 bytes. Fresh allocates6720
+windows; reuse allocates912 and reuses5808. Both write75 GiB/read142 GiB and
+reach6.5 GiB live scratch. These are single observations, not a paired warmed
+speed qualification; the ~0.4% difference is not evidence of acceleration.
+
+Both routes preserve their previously qualified complete25 raw output hashes:
+default `6c71226c6ca815422e3a881e0757a9cdd42799f72ca20b408d89a0790018ddec`,
+rows `3aa698eb16a62194148c7947cef49a6e9942e28f8e91304fab0dfb340abfb242`.
+The reuse export also passes the same audited original-FP32 witness, with
+default/row relative-L2 .000522324/.000522439. Lifetime, live-view isolation,
+growth, checksum, cancellation, sink failure, quota, source preservation and
+same-VAE recovery tests pass with reuse. Do not auto-enable pooling or infer a
+whole-request peak win from allocation-count reduction.
+
+Records: `outputs/seedvr2-read-window-{fresh-real1024-t25-control,reuse-real1024-t25}-v1-20261015/report.json`,
+`outputs/seedvr2-read-window-reuse-real1024-t25-fp32-quality-v1-20261015.json`.

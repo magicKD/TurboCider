@@ -372,6 +372,14 @@ Full spatial VAE tiling, reusable history/workspace pools
 and VAE Core ML/ANE convolution remain active work; see
 `docs/design/seedvr2-vae-optimization.md`.
 
+The later fixed Core ML projection experiment runs through a complete1024/t25
+decoder and passes same-input audited-FP32/per-frame quality, but single
+55.045/55.363-s GPU/CPU+NE observations have the same13.130-GB active maximum.
+It is excluded from ordinary/App builds, not an enabled VAE ANE setting or a
+low-memory recommendation. Optional read-window pooling also remains offline
+and disabled: fewer allocations did not establish a speed/peak benefit. See
+`docs/design/seedvr2-vae-ane-feasibility.md` for boundaries and preserved receipts.
+
 For streaming input, `vae_encode_wall` includes per-frame import and EOF work;
 `vae_encode` subtracts the separately reported `frame_import` portion. That
 portion is also included in `media_import`. Do not add overlapping timing

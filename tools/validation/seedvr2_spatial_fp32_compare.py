@@ -23,6 +23,7 @@ def validate_oracle(screen,oracle):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ("screen","oracle","output"):parser.add_argument("--"+name,type=Path,required=True)
+    parser.add_argument("--per-frame",action="store_true",help="add unchanged per-frame finite/cosine/relative-L2 gates")
     args=parser.parse_args()
     if args.output.exists():parser.error("fresh separate FP32 comparison receipt required")
     screen=json.loads(args.screen.read_text());oracle=json.loads(args.oracle.read_text());validate_oracle(screen,oracle)
@@ -44,7 +45,12 @@ def main():
             path=Path(row["command"][3])/"decoded.fp16.bin"
             if sha256(path)!=row["export_sha256"] or path.stat().st_size!=expected.size*2:raise ValueError("decoder export identity/extent changed")
             actual=np.memmap(path,mode="r",dtype=np.float16,shape=expected.shape)
-            values=quality(expected,actual);report["routes"].append(dict(route=row["route"],**values))
+            values=quality(expected,actual)
+            if args.per_frame:
+                values["per_frame"]=[dict(frame=index,**quality(expected[index],actual[index])) for index in range(expected.shape[0])]
+                if not all(frame["passed"] for frame in values["per_frame"]):
+                    raise ValueError("unchanged original-FP32 per-frame VAE quality gate failed")
+            report["routes"].append(dict(route=row["route"],**values))
             if not values["passed"]:raise ValueError("unchanged .999-cosine/.05-relative-L2 original-FP32 VAE quality gate failed")
         report["status"]="complete";print(json.dumps(report),flush=True)
     except BaseException as failure:report.update(status="failed",failure=str(failure));raise

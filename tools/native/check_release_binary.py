@@ -29,7 +29,7 @@ def check(library: Path, manifest: Path) -> None:
     # classes are dynamically loaded, so nm alone cannot detect them. Do this
     # BEFORE package.sh can replace an existing App or distributable CLI.
     strings = subprocess.check_output(['strings', str(library)], text=True)
-    if 'tc_seedvr2_upscale_bias_shuffle' in strings:
+    if any(name in strings for name in ('tc_seedvr2_upscale_bias_shuffle','tc_seedvr2_ane_projection_pack','coreml_projection_probe')):
         raise ValueError('stable release library contains unqualified VAE upscale experiment')
     for name in ('_ANEClient', '_ANERequest', '_ANEIOSurfaceObject', '_ANESharedEvents', '_ANEInMemoryModel'):
         if name in strings:

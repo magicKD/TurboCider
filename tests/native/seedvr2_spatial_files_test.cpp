@@ -40,6 +40,37 @@ int main(){
         }
         tc::require(!std::filesystem::exists(directory),"owned empty spatial scratch directory leaked");
         {
+            auto files=std::make_shared<tc::seedvr2::SpatialFiles>(8ull<<20,true);directory=files->directory();
+            auto frame=files->create(h,w,c);files->append_rows(frame,0,h,bits.data(),cancelled);files->seal(frame);
+            auto first=files->read_rows(frame,0,8,cancelled);mx::eval(first);const void *first_address=first.data<uint16_t>();
+            auto held=files->read_rows(frame,8,8,cancelled);mx::eval(held);const void *held_address=held.data<uint16_t>();
+            tc::require(first_address!=held_address,"pool aliased two live read windows");
+            first=Tensor(0);mx::synchronize();
+            auto recycled=files->read_rows(frame,2,6,cancelled);mx::eval(recycled);
+            tc::require(recycled.data<uint16_t>()==first_address && files->stats->host_reuses.load()==1,
+                "pool did not reuse an idle sufficient-capacity window");
+            tc::require(std::memcmp(bits.data()+8*w*c,held.data<uint16_t>(),size_t(8)*w*c*2)==0 &&
+                std::memcmp(bits.data()+2*w*c,recycled.data<uint16_t>(),size_t(6)*w*c*2)==0,
+                "reused read overwrote a live window or changed payload");
+            auto third=files->read_rows(frame,0,1,cancelled);mx::eval(third);
+            tc::require(third.data<uint16_t>()!=held_address && third.data<uint16_t>()!=first_address,
+                "extra simultaneous consumer reused a live pooled slot");
+            files->clear_read_windows();frame.reset();
+            tc::require(std::memcmp(bits.data()+8*w*c,held.data<uint16_t>(),size_t(8)*w*c*2)==0,
+                "trim/file retirement invalidated a live GPU-owned window");
+            held=Tensor(0);recycled=Tensor(0);third=Tensor(0);mx::synchronize();
+            tc::require(files->stats->host_live_bytes==0,"trimmed pool retained an allocation after consumers retired");
+            constexpr int larger_height=40;std::vector<uint16_t> larger_bits(larger_height*w*c);
+            for(size_t i=0;i<larger_bits.size();++i)larger_bits[i]=bits[i%bits.size()];
+            auto again=files->create(larger_height,w,c);files->append_rows(again,0,larger_height,larger_bits.data(),cancelled);files->seal(again);
+            {auto idle=files->read_rows(again,0,8,cancelled);mx::eval(idle);}
+            mx::synchronize();const auto allocations=files->stats->host_allocations.load();
+            {auto larger=files->read_rows(again,0,larger_height,cancelled);mx::eval(larger);}
+            mx::synchronize();tc::require(files->stats->host_allocations.load()==allocations+1,"undersized slot was not replaced");
+            auto saved_stats=files->stats;again.reset();files.reset();
+            tc::require(saved_stats->host_live_bytes==0 && !std::filesystem::exists(directory),"pool/session teardown leaked owned memory/scratch");
+        }
+        {
             auto files=std::make_shared<tc::seedvr2::SpatialFiles>(8ull<<20);directory=files->directory();
             const auto foreign=directory/"unregistered-test-marker";{std::ofstream out(foreign);out<<"preserve unrelated child";}
             files.reset();tc::require(std::filesystem::exists(foreign),"scratch cleanup removed an unregistered child");

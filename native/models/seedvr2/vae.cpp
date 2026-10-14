@@ -43,6 +43,9 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     history_recipe_ = "compact";
     pointwise_recipe_ = "matmul";
     upscale_recipe_ = "native";
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+    experimental_upscale_projection_={};
+#endif
     spatial_recipe_ = "full";
     encoder_spatial_recipe_ = "full";
     spatial_options_ = {};
@@ -370,6 +373,7 @@ Tensor VAE::spatial_conv(const Tensor &source,const std::function<Tensor(int,int
         schedule.history.insert_or_assign(key,std::move(next));
     }
     auto output=mx::concatenate(outputs,2);mx::eval(output);checkpoint(cancelled);
+    if(schedule.files)schedule.files->clear_read_windows();
     return output;
 }
 Tensor VAE::resnet(const Tensor &x, const std::string &key, Caches *cache, bool initial) const {
@@ -430,6 +434,13 @@ Tensor VAE::upsample(const Tensor &input, const std::string &key, Caches *cache,
     const auto &weight = weights_.at(key + ".upscale_conv.weight");
     if (upscale_input_observer_) upscale_input_observer_(key, input, initial, temporal);
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+    if(experimental_upscale_projection_ && key=="decoder.up_blocks.2.upsamplers.0") {
+        require(!temporal && b==1 && t==1 && c==256,"experimental projection cannot alter temporal phases");
+        auto y=experimental_upscale_projection_(input,weight,weights_.at(key+".upscale_conv.bias"));
+        require(y.shape()==mx::Shape{1,1,h*2,w*2,256} && y.dtype()==mx::float16,
+                "experimental projection returned an invalid completed activation");
+        return conv(y,key+".conv",cache,initial);
+    }
     if(upscale_recipe_ == "metal_fused") {
         // No named GEMM owner may pin its full projection through the following
         // causal convolution. Only the output/DAG owns it until the shuffle ends.

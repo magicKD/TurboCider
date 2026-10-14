@@ -13,6 +13,11 @@ using EncodedFrameSource = std::function<Tensor(int)>;
 // Offline observation only: never replaces an operator or changes its input.
 // Callers must finish GPU/host access before returning, not retain borrowed views.
 using UpscaleInputObserver = std::function<void(const std::string &, const Tensor &, bool, bool)>;
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+// Offline complete-VAE qualification only. The executor returns the completed
+// FP16 spatial projection with separate bias/shuffle, never temporal phases.
+using ExperimentalUpscaleProjection = std::function<Tensor(const Tensor &,const Tensor &,const Tensor &)>;
+#endif
 
 class VAE {
     TensorBank weights_;
@@ -25,6 +30,9 @@ class VAE {
     std::string encoder_spatial_recipe_ = "full";
     SpatialTileOptions spatial_options_;
     UpscaleInputObserver upscale_input_observer_;
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+    ExperimentalUpscaleProjection experimental_upscale_projection_;
+#endif
     int conv_tile_rows_ = 16384;
     using CompactCaches = std::unordered_map<std::string, Tensor>;
     struct Caches {
@@ -65,6 +73,13 @@ class VAE {
     const std::string &spatial_recipe() const { return spatial_recipe_; }
     const std::string &encoder_spatial_recipe() const { return encoder_spatial_recipe_; }
     void observe_upscale_inputs(UpscaleInputObserver observer) { upscale_input_observer_ = std::move(observer); }
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+    void use_experimental_upscale_projection(ExperimentalUpscaleProjection executor) {
+        require(bool(executor) && upscale_recipe_=="native","experimental projection requires the native outer recipe");
+        experimental_upscale_projection_=std::move(executor);
+        upscale_recipe_="coreml_projection_probe";
+    }
+#endif
     // External BCTHW, RGB pixels in [-1,1]. Returns scaled latent means only.
     Tensor encode(const Tensor &, const Event &, std::atomic<bool> &) const;
     // Offline exact-context encoder-head scheduling: the high-resolution
@@ -99,7 +114,12 @@ class VAE {
     // frames; stream sinks consume frames directly. Default remains unchanged.
     Tensor decode_configured(const Tensor &, int output_frames, const DecodedFrameSink &,
                              std::shared_ptr<SpatialFileStats> &, const Event &, std::atomic<bool> &) const;
-    void clear() { weights_.clear(); }
+    void clear() {
+        weights_.clear();
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+        experimental_upscale_projection_={};
+#endif
+    }
 };
 
 } // namespace tc::seedvr2

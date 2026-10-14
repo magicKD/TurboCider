@@ -4,13 +4,14 @@
 namespace mx=mlx::core;
 int main(int argc,char **argv){
     try {
-        tc::require(argc==3,"usage: spatial-cancel-test MODEL FIXTURE");mx::set_default_device(mx::Device::gpu);
+        tc::require(argc==3 || argc==4,"usage: spatial-cancel-test MODEL FIXTURE [reuse]");mx::set_default_device(mx::Device::gpu);
         auto loaded=mx::load_safetensors(argv[2]).first;auto latent=loaded.at("latent");loaded.clear();
         const int frames=1+4*(latent.shape(2)-1);tc::require(latent.shape(3)==16 && frames>=5,"128-size multiframe fixture required");
         std::atomic<bool> cancelled{false};tc::seedvr2::AllocatorCacheScope allocator(512ull<<20);
         tc::seedvr2::VAE vae;vae.load(std::filesystem::path(argv[1])/"vae/seedvr2_ema_vae_fp16.safetensors");
         tc::SeedVR2VAEConfig config;config.history="frames";vae.configure(config);
         tc::seedvr2::SpatialTileOptions options;options.threshold_bytes=4ull<<20;options.rows=16;
+        if(argc==4){tc::require(std::string(argv[3])=="reuse","known window recipe required");options.reuse_read_windows=true;}
         std::shared_ptr<tc::seedvr2::SpatialFileStats> stats;int emitted=0;bool typed=false;
         try {vae.decode_spatial_stream(latent,frames,[&](int index,const tc::Tensor &){tc::require(index==0,"cancel read ahead");++emitted;cancelled=true;},
             options,stats,{},cancelled);}catch(const tc::Cancelled &){typed=true;}
