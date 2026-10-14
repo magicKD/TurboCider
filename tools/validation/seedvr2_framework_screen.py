@@ -74,10 +74,11 @@ def check_native_execution(args, result):
     residency = getattr(args,"residency","resident")
     options = getattr(args,"vae_options",None)
     if options is not None:
-        expected = dict(decoder="buffered",convolution="singleton2d",tile_rows=16384,allocator_cache_bytes=4 << 30)
+        expected = dict(decoder="buffered",convolution="singleton2d",history="compact",tile_rows=16384,allocator_cache_bytes=4 << 30)
         expected.update(options)
         if (result.get("vae_decoder_recipe") != expected["decoder"] or
             result.get("vae_conv_recipe") != expected["convolution"] or
+            result.get("vae_history_recipe") != expected["history"] or
             result.get("vae_conv_tile_rows_limit") != expected["tile_rows"] or
             result.get("allocator_cache_limit_bytes") != expected["allocator_cache_bytes"] or
             result.get("streamed_output_frames") != (args.frames if expected["decoder"] == "streaming" else 0)):

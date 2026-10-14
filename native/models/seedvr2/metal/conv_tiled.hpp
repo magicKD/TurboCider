@@ -10,7 +10,8 @@ namespace tc::seedvr2::metal {
 // it changes only how each convolution's original operands are scheduled.
 inline Tensor conv_tiled(const Tensor &input, const Tensor &history, int halo,
                          bool repeat_history, const Tensor &weight, int stride_t,
-                         int stride_s, int padding, bool pad_tail, int row_limit) {
+                         int stride_s, int padding, bool pad_tail, int row_limit,
+                         const Tensor *history_second = nullptr) {
     require(input.ndim() == 5 && history.ndim() == 5 && weight.ndim() == 5 &&
             input.dtype() == mx::float16 && history.dtype() == input.dtype() &&
             (weight.dtype() == input.dtype() || weight.dtype() == mx::float32),
@@ -19,9 +20,13 @@ inline Tensor conv_tiled(const Tensor &input, const Tensor &history, int halo,
     const int kt = weight.shape(1), kh = weight.shape(2), kw = weight.shape(3), out_c = weight.shape(0);
     require(c > 0 && weight.shape(4) == c && history.shape(0) == b && history.shape(2) == h &&
             history.shape(3) == w && history.shape(4) == c && halo >= 0 &&
-            (!halo || history.shape(1) == (repeat_history ? 1 : halo)) &&
+            (!halo || history.shape(1) == ((repeat_history || history_second) ? 1 : halo)) &&
             stride_t > 0 && stride_s > 0 && padding >= 0 && row_limit >= 128 && row_limit <= 65536,
             "invalid SeedVR2 tiled convolution geometry");
+    if (history_second)
+        require(!repeat_history && halo >= 1 && halo <= 2 && history.shape(1) == 1 &&
+                history_second->shape() == history.shape() && history_second->dtype() == input.dtype(),
+                "invalid split-frame SeedVR2 convolution history");
     const int ot = (t + halo - kt) / stride_t + 1;
     const int oh = (h + int(pad_tail) + 2 * padding - kh) / stride_s + 1;
     const int ow = (w + int(pad_tail) + 2 * padding - kw) / stride_s + 1;
@@ -35,7 +40,7 @@ inline Tensor conv_tiled(const Tensor &input, const Tensor &history, int halo,
     const int tile = std::min(row_limit, int(workspace_bytes / (size_t(k) * weight.itemsize()))) / 128 * 128;
     require(tile >= 128, "SeedVR2 convolution stencil exceeds bounded workspace");
     static auto kernel = mx::fast::metal_kernel(
-        "tc_seedvr2_causal_im2col_fp16", {"x", "hist", "params"}, {"columns"}, R"metal(
+        "tc_seedvr2_causal_im2col_frames_fp16", {"x", "hist", "hist1", "params"}, {"columns"}, R"metal(
         uint base = thread_position_in_grid.x * 4;
         uint count = uint(params[1]) * K;
         if (C % 4 == 0) {
@@ -54,9 +59,18 @@ inline Tensor conv_tiled(const Tensor &input, const Tensor &history, int halo,
             half4 value = half4(0);
             if (ix >= 0 && ix < W && iy >= 0 && iy < H) {
                 if (time < Halo) {
-                    uint ht = Repeat ? 0 : time;
-                    uint index = (((batch * HT + ht) * H + uint(iy)) * W + uint(ix)) * C + channel;
-                    value = *((device const half4 *)(hist + index));
+                    if (Split) {
+                        uint index = ((batch * H + uint(iy)) * W + uint(ix)) * C + channel;
+                        // Small unused inputs may be emitted in Metal's
+                        // constant address space. Scalar construction works
+                        // for both constant and device pointers.
+                        value = time == 0 ? half4(hist[index],hist[index+1],hist[index+2],hist[index+3])
+                                          : half4(hist1[index],hist1[index+1],hist1[index+2],hist1[index+3]);
+                    } else {
+                        uint ht = Repeat ? 0 : time;
+                        uint index = (((batch * HT + ht) * H + uint(iy)) * W + uint(ix)) * C + channel;
+                        value = *((device const half4 *)(hist + index));
+                    }
                 } else {
                     uint it = time - Halo;
                     uint index = (((batch * T + it) * H + uint(iy)) * W + uint(ix)) * C + channel;
@@ -84,8 +98,13 @@ inline Tensor conv_tiled(const Tensor &input, const Tensor &history, int halo,
             half value = half(0);
             if (ix >= 0 && ix < W && iy >= 0 && iy < H) {
                 if (time < Halo) {
-                    uint ht = Repeat ? 0 : time;
-                    value = hist[(((batch * HT + ht) * H + uint(iy)) * W + uint(ix)) * C + channel];
+                    if (Split) {
+                        uint index = ((batch * H + uint(iy)) * W + uint(ix)) * C + channel;
+                        value = time == 0 ? hist[index] : hist1[index];
+                    } else {
+                        uint ht = Repeat ? 0 : time;
+                        value = hist[(((batch * HT + ht) * H + uint(iy)) * W + uint(ix)) * C + channel];
+                    }
                 } else {
                     uint it = time - Halo;
                     value = x[(((batch * T + it) * H + uint(iy)) * W + uint(ix)) * C + channel];
@@ -94,18 +113,22 @@ inline Tensor conv_tiled(const Tensor &input, const Tensor &history, int halo,
             columns[dst] = OutputT(value);
         }
         )metal");
-    mx::eval({input, history, weight});
+    // Metal-kernel scalar inputs become values, not device pointers. Keep the
+    // unused placeholder nonscalar so both template branches type-check.
+    const auto second = history_second ? *history_second : mx::zeros({2},input.dtype());
+    mx::eval({input, history, second, weight});
     auto matrix = mx::transpose(mx::reshape(weight, {out_c, k}));
     std::vector<Tensor> chunks;
     std::vector<Tensor> pending;
     for (int first = 0; first < int(total); first += tile) {
         const int count = std::min(tile, int(total) - first);
         const std::array<int32_t, 2> parameters{first, count};
-        auto columns = kernel({input, history, Tensor(parameters.data(), {2}, mx::int32)},
+        auto columns = kernel({input, history, second, Tensor(parameters.data(), {2}, mx::int32)},
             {{count, k}}, {weight.dtype()}, {(count * k + 3) / 4, 1, 1}, {256, 1, 1},
             {{"OutputT", weight.dtype()}, {"K", k}, {"C", c}, {"T", t}, {"HT", history.shape(1)}, {"H", h}, {"W", w},
              {"KT", kt}, {"KH", kh}, {"KW", kw}, {"OT", ot}, {"OH", oh}, {"OW", ow},
-             {"ST", stride_t}, {"SS", stride_s}, {"Pad", padding}, {"Halo", halo}, {"Repeat", repeat_history}},
+             {"ST", stride_t}, {"SS", stride_s}, {"Pad", padding}, {"Halo", halo}, {"Repeat", repeat_history},
+             {"Split",history_second != nullptr}},
             {}, false, {})[0];
         auto output = mx::astype(mx::matmul(columns, matrix), input.dtype());
         // Two outstanding tiles bound the stencil workspaces while allowing

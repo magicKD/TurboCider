@@ -577,6 +577,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"seedvr2_vae" : r.seedvr2_vae ? (id)@{
             @"decoder": @(r.seedvr2_vae->decoder.c_str()),
             @"convolution": @(r.seedvr2_vae->convolution.c_str()),
+            @"history": @(r.seedvr2_vae->history.c_str()),
             @"tile_rows": @(r.seedvr2_vae->tile_rows),
             @"allocator_cache_bytes": @(r.seedvr2_vae->allocator_cache_bytes)
         } : (id)NSNull.null,

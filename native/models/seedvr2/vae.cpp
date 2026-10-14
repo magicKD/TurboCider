@@ -46,8 +46,8 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_NORM_RECIPE")) norm_recipe_ = value;
     require(norm_recipe_ == "mlx" || norm_recipe_ == "metal", "SeedVR2 VAE norm recipe must be mlx or metal");
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE")) history_recipe_ = value;
-    require(history_recipe_ == "concat" || history_recipe_ == "compact",
-            "SeedVR2 VAE history recipe must be concat or compact");
+    require(history_recipe_ == "concat" || history_recipe_ == "compact" || history_recipe_ == "frames",
+            "SeedVR2 VAE history recipe must be concat, compact or frames");
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE")) pointwise_recipe_ = value;
     require(pointwise_recipe_ == "conv" || pointwise_recipe_ == "matmul",
             "SeedVR2 VAE pointwise recipe must be conv or matmul");
@@ -65,11 +65,15 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
         require(config->tile_rows >= 128 && config->tile_rows <= 65536 && config->tile_rows % 128 == 0,
                 "invalid request-local SeedVR2 VAE tile rows");
         conv_recipe_ = config->convolution;
+        require(config->history == "compact" || config->history == "frames", "invalid request-local SeedVR2 VAE history recipe");
+        history_recipe_ = config->history;
         conv_tile_rows_ = config->tile_rows;
     }
+    require(history_recipe_ != "frames" || conv_recipe_ != "taps2d", "frame history does not support experimental taps2d");
 }
-Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
-                 bool initial, bool downsample) const {
+Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *state,
+                 bool initial, bool downsample, bool owned_normalized_singleton) const {
+    auto cache = state ? &state->compact : nullptr;
     // Channel-last throughout the VAE, including owned history tensors.
     const auto &weight = weights_.at(key + ".weight");
     const int kernel_t = weight.shape(1);
@@ -86,6 +90,9 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
             mx::transpose(mx::reshape(weight, {weight.shape(0), weight.shape(4)})));
         return mx::reshape(projected, shape) + weights_.at(key + ".bias");
     }
+    if (history_recipe_ == "frames")
+        return conv_frames(input,key,state ? &state->frames : nullptr,initial,downsample,
+                           owned_normalized_singleton && norm_recipe_ == "metal");
     // Restrict bounded direct stencils to the final decoder's largest
     // 256-channel temporal convolution; smaller operators retain the faster
     // MLX route. No spatial crop, independent tile norm or halo approximation.
@@ -93,7 +100,7 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
         !initial && kernel_t > 1 && int64_t(input.shape(2))*input.shape(3) >= 1024*1024 && input.shape(4) >= 256);
     if (bounded_stencil) {
         const int halo = kernel_t - 1;
-        const auto found = cache ? cache->find(key) : Caches::iterator{};
+        const auto found = cache ? cache->find(key) : CompactCaches::iterator{};
         const bool stored = halo && cache && !initial && found != cache->end();
         const auto head = stored ? found->second : (halo ? part(input, 1, 0, 1) : input);
         const int head_count = stored ? head.shape(1) : halo;
@@ -116,7 +123,7 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
                weights_.at(key + ".bias");
     }
     const int halo = kernel_t - 1;
-    const auto found = cache ? cache->find(key) : Caches::iterator{};
+    const auto found = cache ? cache->find(key) : CompactCaches::iterator{};
     const bool stored = halo && cache && !initial && found != cache->end();
     auto head = stored ? found->second : (halo ? part(input, 1, 0, 1) : input);
     const bool fold_first = conv_recipe_ != "conv3d" && initial && input.shape(1) == 1 && kernel_t > 1;
@@ -183,6 +190,65 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
     }
     return y + weights_.at(key + ".bias");
 }
+Tensor VAE::conv_frames(const Tensor &input, const std::string &key, FrameHistoryMap *cache,
+                        bool initial, bool downsample, bool retain_owned_singleton) const {
+    const auto &weight = weights_.at(key+".weight");
+    const int kernel_t = weight.shape(1), halo = kernel_t-1;
+    const int stride_t = downsample && kernel_t > 1 ? 2 : 1, stride_s = downsample ? 2 : 1;
+    const auto found = cache ? cache->find(key) : FrameHistoryMap::iterator{};
+    const bool stored = halo && cache && !initial && found != cache->end();
+    auto previous = stored ? found->second : FrameHistory{};
+    auto first = halo ? part(input,1,0,1) : input;
+    const bool bounded = conv_recipe_ == "tiled3d" || (conv_recipe_ == "mixed3d" &&
+        !initial && kernel_t > 1 && int64_t(input.shape(2))*input.shape(3) >= 1024*1024 && input.shape(4) >= 256);
+    const bool fold_first = conv_recipe_ != "conv3d" && initial && input.shape(1) == 1 && halo;
+    auto x = input;
+    if (!bounded && halo && !fold_first) {
+        auto operands = stored ? previous : FrameHistory(halo,first);
+        operands.push_back(input);
+        x = mx::concatenate(operands,1);
+        // Materialize the only required concatenation before retiring old
+        // history owners. There is no intermediate two-frame history copy.
+        mx::eval(x);
+    }
+    if (cache && kernel_t > stride_t) {
+        auto next = advance_frame_history(input,previous,kernel_t-stride_t,stored,retain_owned_singleton);
+        cache->insert_or_assign(key,std::move(next));
+    }
+    const int pad = downsample ? 0 : weight.shape(2)/2;
+    if (bounded) {
+        if (fold_first) {
+            auto folded = mx::expand_dims(mx::sum(mx::astype(weight,mx::float32),1),1);
+            return metal::conv_tiled(input,input,0,false,folded,stride_t,stride_s,pad,downsample,conv_tile_rows_) +
+                   weights_.at(key+".bias");
+        }
+        const auto &head = stored ? previous.front() : first;
+        const auto *second = stored ? &previous.back() : nullptr;
+        return metal::conv_tiled(input,head,stored ? int(previous.size()) : halo,!stored,weight,
+                                 stride_t,stride_s,pad,downsample,conv_tile_rows_,second) + weights_.at(key+".bias");
+    }
+    previous.clear(); first = Tensor(0);
+    if (downsample) x = mx::pad(x,std::vector<std::pair<int,int>>{{0,0},{0,0},{0,1},{0,1},{0,0}});
+    Tensor y(0);
+    if (fold_first) {
+        auto filter = mx::sum(mx::astype(weight,mx::float32),1);
+        auto frame = mx::reshape(input,{input.shape(0),input.shape(2),input.shape(3),input.shape(4)});
+        if (downsample) frame = mx::pad(frame,std::vector<std::pair<int,int>>{{0,0},{0,1},{0,1},{0,0}});
+        y = mx::expand_dims(mx::astype(mx::conv2d(mx::astype(frame,mx::float32),filter,
+            {stride_s,stride_s},{pad,pad}),input.dtype()),1);
+    } else if (conv_recipe_ != "conv3d" && kernel_t == 1) {
+        const int t = input.shape(1);
+        std::vector<int32_t> indices(t);
+        for (int i = 0; i < t; ++i) indices[i] = i;
+        auto frames = mx::take(x,Tensor(indices.data(),{t},mx::int32),1);
+        frames = mx::reshape(frames,{input.shape(0)*t,x.shape(2),x.shape(3),x.shape(4)});
+        auto filter = mx::squeeze(weight,1);
+        y = mx::astype(mx::conv2d(mx::astype(frames,mx::float32),mx::astype(filter,mx::float32),
+            {stride_s,stride_s},{pad,pad}),input.dtype());
+        y = mx::reshape(y,{input.shape(0),t,y.shape(1),y.shape(2),y.shape(3)});
+    } else y = mx::conv3d(x,weight,{stride_t,stride_s,stride_s},{0,pad,pad});
+    return y + weights_.at(key+".bias");
+}
 Tensor VAE::group_norm(const Tensor &x, const std::string &key, bool activate) const {
     if (norm_recipe_ == "metal")
         return metal::group_norm(x, weights_.at(key + ".weight"), weights_.at(key + ".bias"), activate);
@@ -200,11 +266,11 @@ Tensor VAE::group_norm(const Tensor &x, const std::string &key, bool activate) c
     return activate ? swish(result) : result;
 }
 Tensor VAE::resnet(const Tensor &x, const std::string &key, Caches *cache, bool initial) const {
-    auto y = conv(group_norm(x, key + ".norm1"), key + ".conv1", cache, initial);
+    auto y = conv(group_norm(x, key + ".norm1"), key + ".conv1", cache, initial,false,true);
     mx::eval(y);
     if (std::getenv("TURBOCIDER_SEEDVR2_VAE_PROFILE"))
         require(mx::all(mx::isfinite(y)).item<bool>(), "nonfinite SeedVR2 VAE convolution: " + key + ".conv1");
-    y = conv(group_norm(y, key + ".norm2"), key + ".conv2", cache, initial);
+    y = conv(group_norm(y, key + ".norm2"), key + ".conv2", cache, initial,false,true);
     auto residual = weights_.has(key + ".conv_shortcut.weight") ? conv(x, key + ".conv_shortcut", cache, initial) : x;
     y = y + residual;
     mx::eval(y);
@@ -297,7 +363,7 @@ Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
         fence(x, cancelled);
     }
     x = mid_block(x, "encoder.mid_block", cache, initial);
-    x = conv(group_norm(x, "encoder.conv_norm_out"), "encoder.conv_out", cache, initial);
+    x = conv(group_norm(x, "encoder.conv_norm_out"), "encoder.conv_out", cache, initial,false,true);
     x = part(x, 4, 0, 16) * Tensor(.9152f, x.dtype());
     fence(x, cancelled);
     if (event) event("seedvr2_vae_encode", 5, 5);
@@ -341,7 +407,7 @@ Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
                 if (i == 2) y = upsample(y, p + ".upsamplers.0", cache, first_output, false);
                 fence(y, cancelled);
             }
-            y = conv(group_norm(y, "decoder.conv_norm_out"), "decoder.conv_out", cache, first_output);
+            y = conv(group_norm(y, "decoder.conv_norm_out"), "decoder.conv_out", cache, first_output,false,true);
             fence(y, cancelled);
             if (sink) {
                 require(next_frame != nullptr, "missing streaming decoder frame counter");

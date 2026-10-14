@@ -18,10 +18,10 @@ entirely to ANE or report a compute-plan preference as physical occupancy.
 | --- | --- |
 | Singleton Conv3D -> Conv2D | Existing default folds replicated initial frames in FP32 and handles temporal-kernel-one layers in 2D. Real temporal convolutions retain causal operands. |
 | End-to-end streaming decoded output | Frame sink/backpressured writer and explicit frame-based GOP pass codec and 14 v4 App requests; new memory policies match exported frames. Initial paired full-request speed/active-peak gate fails, so buffered stays default. New encoder differs from legacy encoding. |
-| Buffer reuse | Existing allocator cache and compact causal histories; new writer returns after copying one RGB frame. Fixed reusable convolution/input/output pools remain to be measured. |
+| Buffer reuse | Independent frame owners and known materialized normalization-output sharing pass exact codec/App and 1024/t9 VAE ABBA (about 1.77% faster, 939.5 MB lower active peak). Full-request gate and fixed reusable workspace pools remain open. |
 | Request/App configuration | Decoder/convolution/tile-row/cache controls and heuristic memory advice; native plan guards and real resident/cache4, staged/cache1 workflow/switching pass. Actual lower-RAM hardware, additional tile settings and long-model clips remain unqualified. |
 | Full VAE spatial tiling | Not implemented by `tiled3d`: that option only bounds each convolution's workspace. Prototype a global-statistics, halo-correct stage scheduler and measure real process peak. |
-| GPU/ANE convolution | Design below; no qualified VAE ANE execution or speed evidence yet. Existing hybrid bank is DiT FFN only. |
+| GPU/ANE convolution | Real original-parameter prepared-tile probe supports anticipated NE placement and passes synthetic quality, but CPU+NE is slower than GPU. Native/cooperative/full-frame experiments remain open; existing production hybrid bank is DiT FFN only. |
 | Full VAE on ANE | Feasibility experiment required; no support/performance claim from conversion alone. |
 | Long complete videos | Writer supports a tested 1000-frame producer, but model/import/request still cap complete source clips at 121 frames. Import/encoder/DiT bounded residency and real longer-clip validation remain required. |
 

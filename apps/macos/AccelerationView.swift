@@ -107,6 +107,10 @@ struct AccelerationView: View {
                 Text("大卷积分块 · mixed3d（较慢）").tag("mixed3d")
                 Text("全部卷积分块 · tiled3d（更慢）").tag("tiled3d")
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEConvolution")
+            Picker("因果历史缓存", selection: Binding(get: { seedvr2Config.history }, set: { value in updateSeedVR2 { $0.history = value } })) {
+                Text("紧凑历史 · compact（原有默认）").tag("compact")
+                Text("独立帧引用 · frames（减少复制）").tag("frames")
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEHistory")
             Picker("临时分配器缓存", selection: Binding(get: { seedvr2Config.allocator_cache_bytes }, set: { value in updateSeedVR2 { $0.allocator_cache_bytes = value } })) {
                 Text("4 GiB（速度优先）").tag(UInt64(4) << 30)
                 Text("1 GiB（减少缓存）").tag(UInt64(1) << 30)

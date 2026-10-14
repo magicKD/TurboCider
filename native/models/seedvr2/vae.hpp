@@ -1,5 +1,6 @@
 #pragma once
 #include "model.hpp"
+#include "frame_history.hpp"
 
 namespace tc::seedvr2 {
 // A completed FP16 BCTHW frame. The consumer must not retain it if bounded
@@ -13,9 +14,12 @@ class VAE {
     std::string history_recipe_ = "compact";
     std::string pointwise_recipe_ = "matmul";
     int conv_tile_rows_ = 16384;
-    using Caches = std::unordered_map<std::string, Tensor>;
+    using CompactCaches = std::unordered_map<std::string, Tensor>;
+    struct Caches { CompactCaches compact; FrameHistoryMap frames; };
     Tensor conv(const Tensor &, const std::string &, Caches *, bool initial,
-                bool downsample = false) const;
+                bool downsample = false, bool owned_normalized_singleton = false) const;
+    Tensor conv_frames(const Tensor &, const std::string &, FrameHistoryMap *, bool initial,
+                       bool downsample, bool owned_normalized_singleton) const;
     Tensor group_norm(const Tensor &, const std::string &, bool silu = true) const;
     Tensor resnet(const Tensor &, const std::string &, Caches *, bool) const;
     Tensor mid_block(const Tensor &, const std::string &, Caches *, bool) const;

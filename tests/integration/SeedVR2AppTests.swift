@@ -125,7 +125,7 @@ import Foundation
                               metrics["height"] as? Int == size && metrics["execution"] as? String == execution &&
                               metrics["checkpoint_sha256_verified"] as? Bool == true,
                               "App result identity/geometry mismatch")
-                    try check(metrics["vae_history_recipe"] as? String == "compact" &&
+                    try check(metrics["vae_history_recipe"] as? String == (vaeOptions?.history ?? "compact") &&
                               metrics["vae_pointwise_recipe"] as? String == "matmul",
                               "App did not execute the qualified VAE history/pointwise defaults")
                     try check(metrics["numerical_recipe"] as? String == (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") &&

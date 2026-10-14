@@ -56,7 +56,7 @@ def parity(reference, candidate):
         l2 = float(np.linalg.norm(x-y) / max(nx, 1e-20))
         cosine = float(np.dot(x,y) / max(nx*ny, 1e-20))
         result.append(dict(tensor=key, finite=finite, relative_l2=l2, cosine=cosine,
-            bitwise_equal=bool(np.array_equal(expected[key],actual[key])),
+            bitwise_equal=expected[key].dtype == actual[key].dtype and expected[key].tobytes() == actual[key].tobytes(),
             passed=finite and l2 <= .05 and cosine >= .999))
     return result
 
@@ -78,9 +78,11 @@ def run(args):
     if identities["vae"] != "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1":
         raise ValueError("original SeedVR2 VAE identity required")
     baseline = {**SETTINGS, "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE": "singleton2d",
-        "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE": "concat", "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": "conv"}
+        "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE": getattr(args,"baseline_history","concat"),
+        "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": getattr(args,"baseline_pointwise","conv")}
     candidate = {**SETTINGS, "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE": args.candidate,
-        "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE": "compact", "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": "matmul"}
+        "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE": getattr(args,"candidate_history","compact"),
+        "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": "matmul"}
     order = ["baseline","candidate","candidate","baseline"]
     report = dict(schema="seedvr2-vae-paired-cohort-v1", status="running", identities=identities,
         order=order, settings=dict(baseline=baseline,candidate=candidate), cohorts=[],
@@ -124,6 +126,8 @@ def run(args):
             report[f"{route}_warm_median_seconds"] = statistics.median(t for row in rows for t in row["warm_seconds"])
             report[f"{route}_active_peak_bytes"] = max(t for row in rows for t in row["warm_peak_bytes"])
         report["speedup"] = report["baseline_warm_median_seconds"]/report["candidate_warm_median_seconds"]
+        report["speed_gate_passed"] = report["candidate_warm_median_seconds"] <= report["baseline_warm_median_seconds"]
+        report["bitwise_equal"] = all(row["bitwise_equal"] for rows in report["parity"].values() for row in rows)
         report["active_peak_reduction_bytes"] = report["baseline_active_peak_bytes"]-report["candidate_active_peak_bytes"]
         report["status"] = "complete"
         write_json(path,report)
@@ -171,6 +175,8 @@ def finalize_existing(args):
         report[f"{route}_warm_median_seconds"] = statistics.median(t for row in rows for t in row["warm_seconds"])
         report[f"{route}_active_peak_bytes"] = max(t for row in rows for t in row["warm_peak_bytes"])
     report["speedup"] = report["baseline_warm_median_seconds"]/report["candidate_warm_median_seconds"]
+    report["speed_gate_passed"] = report["candidate_warm_median_seconds"] <= report["baseline_warm_median_seconds"]
+    report["bitwise_equal"] = all(row["bitwise_equal"] for rows in report["parity"].values() for row in rows)
     report["active_peak_reduction_bytes"] = report["baseline_active_peak_bytes"]-report["candidate_active_peak_bytes"]
     failed_record = args.output/"host-finalization-failure.json"
     if failed_record.exists():
@@ -192,6 +198,9 @@ def main():
     parser.add_argument("--input",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--candidate",choices=("singleton2d","mixed3d"),default="singleton2d")
+    parser.add_argument("--baseline-history",choices=("concat","compact","frames"),default="concat")
+    parser.add_argument("--candidate-history",choices=("concat","compact","frames"),default="compact")
+    parser.add_argument("--baseline-pointwise",choices=("conv","matmul"),default="conv")
     parser.add_argument("--repeats",type=int,default=4)
     parser.add_argument("--finalize-only",action="store_true",help="verify/recover completed GPU cohorts after a missing-reader host failure")
     args = parser.parse_args()

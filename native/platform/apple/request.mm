@@ -112,13 +112,15 @@ static void parse_quantized_execution(NSDictionary *d, QuantizedExecutionConfig 
 static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
     require(r.model == "seedvr2-3b", "seedvr2_vae is only supported by SeedVR2");
     dictionary(d, "seedvr2_vae");
-    keys(d, @[@"decoder", @"convolution", @"tile_rows", @"allocator_cache_bytes"]);
+    keys(d, @[@"decoder", @"convolution", @"history", @"tile_rows", @"allocator_cache_bytes"]);
     SeedVR2VAEConfig config;
     config.decoder = string_value(d, @"decoder", config.decoder);
     config.convolution = string_value(d, @"convolution", config.convolution);
+    config.history = string_value(d, @"history", config.history);
     config.tile_rows = number(d, @"tile_rows", config.tile_rows);
     config.allocator_cache_bytes = byte_count(d, @"allocator_cache_bytes", config.allocator_cache_bytes);
     require(config.decoder == "buffered" || config.decoder == "streaming", "SeedVR2 VAE decoder must be buffered or streaming");
+    require(config.history == "compact" || config.history == "frames", "SeedVR2 VAE history must be compact or frames");
     require(config.convolution == "singleton2d" || config.convolution == "conv3d" ||
             config.convolution == "mixed3d" || config.convolution == "tiled3d", "unsupported SeedVR2 VAE convolution recipe");
     require(config.tile_rows >= 128 && config.tile_rows <= 65536 && config.tile_rows % 128 == 0,

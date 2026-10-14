@@ -23,12 +23,23 @@ public struct NativeLoRA: Codable, Sendable, Identifiable {
 public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
     public var decoder: String
     public var convolution: String
+    public var history: String
     public var tile_rows: Int
     public var allocator_cache_bytes: UInt64
     public init(decoder: String = "buffered", convolution: String = "singleton2d",
-                tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30) {
+                tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30, history: String = "compact") {
         self.decoder = decoder; self.convolution = convolution
+        self.history = history
         tile_rows = tileRows; allocator_cache_bytes = allocatorCacheBytes
+    }
+    private enum CodingKeys: String, CodingKey { case decoder, convolution, history, tile_rows, allocator_cache_bytes }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.decoder = try c.decodeIfPresent(String.self,forKey: .decoder) ?? "buffered"
+        convolution = try c.decodeIfPresent(String.self,forKey: .convolution) ?? "singleton2d"
+        history = try c.decodeIfPresent(String.self,forKey: .history) ?? "compact"
+        tile_rows = try c.decodeIfPresent(Int.self,forKey: .tile_rows) ?? 16384
+        allocator_cache_bytes = try c.decodeIfPresent(UInt64.self,forKey: .allocator_cache_bytes) ?? (4 << 30)
     }
 }
 public struct NativeRequest: Codable, Sendable {

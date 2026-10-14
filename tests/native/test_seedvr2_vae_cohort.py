@@ -58,6 +58,15 @@ class VAEObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"shape"):
             cohort.parity(self.reference,self.candidate)
 
+    def test_signed_zero_is_not_relabelled_bitwise_equal(self):
+        positive = self.value.copy(); positive.flat[0] = np.float16(0)
+        negative = positive.copy(); negative.flat[0] = np.float16(-0.0)
+        save_file(dict(latent=positive,decoded=positive),str(self.reference))
+        save_file(dict(latent=negative,decoded=negative),str(self.candidate))
+        rows = cohort.parity(self.reference,self.candidate)
+        self.assertTrue(all(row["passed"] for row in rows))
+        self.assertTrue(all(not row["bitwise_equal"] for row in rows))
+
     def test_tensor_set_mismatch_is_rejected(self):
         save_file(dict(latent=self.value),str(self.candidate))
         with self.assertRaisesRegex(ValueError,"set"):

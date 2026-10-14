@@ -252,6 +252,15 @@ decoder remains default. Example schema 2 execution:
 }
 ```
 
+The optional `history="frames"` policy retains independent single-frame
+causal owners and shares known materialized singleton normalization outputs;
+`history="compact"` remains the default, including older App drafts. All
+temporal operands and phases are preserved. The App exposes this separately
+from allocator-cache retention. A 1024/t9 VAE-only ABBA observes about 1.77%
+faster encode+decode and 939.5 MB lower active peak, with byte-identical latents
+and decoded tensors. Complete 1024/t25 request timing is being qualified
+separately; this is not a whole-request speed claim or hard RAM budget.
+
 `decoder` accepts `buffered` or `streaming`; streaming is video-only and
 cannot also request complete raw-pixel tensor dumps. `convolution` accepts
 `singleton2d`, `conv3d`, `mixed3d` or `tiled3d`. Tile rows must be 128-aligned

@@ -1726,6 +1726,116 @@ available. The active objective is not complete: reusable causal/workspace
 buffers, full spatial tiling, VAE ANE convolution/full-VAE feasibility and
 genuinely longer-model clips still require implementation and qualification.
 
+### Active VAE frame-history reuse candidate
+
+The next candidate replaces repeatedly rebuilt two-frame histories with
+individually owned frame references. Old tails are shared unchanged; an
+untrusted new frame is physically materialized with `full`. Only a known
+independent, materialized singleton Metal GroupNorm output may be retained
+without copying. Do not infer ownership from contiguous flags. Normal MLX
+convolution builds its required halo+input directly from those frames, without
+an intermediate contiguous history. Bounded convolution reads the two history
+buffers virtually. Temporal context, stride/phase, weights and precision are
+unchanged. The established `compact` implementation stays default.
+
+Tests exposed and corrected prototype assumptions before model qualification:
+`copy`/`contiguous` may share an input backing, scalar/small Metal arguments
+have different pointer/address-space forms, and split history needs singleton
+buffer geometry rather than a contiguous halo tensor. Failed v1-v4 probe
+binaries/output history are preserved. v5 CPU tests cover exact bytes including
+signed zero/NaN payload, temporal updates, reused tail references and independent
+untrusted-view storage. GPU tests compare split/contiguous histories exactly
+for scalar/vectorized channels and both temporal strides.
+
+Real 512/1024 t25 decoder checks pass every FP16 pixel against saved correct
+reference outputs, and streamed frames match the newly buffered output too.
+One-observation active peaks:
+
+| Decoder witness | Frames buffered / streamed active peak | Previously recorded compact buffered / streamed peak |
+| --- | ---: | ---: |
+| 512 t25 | 3,679,423,306 / 3,658,451,794 bytes | 3,914,304,330 / 3,893,332,818 bytes |
+| 1024 t25 | 13,234,703,178 / 13,129,845,586 bytes | 14,153,255,758 / 14,069,369,686 bytes |
+
+Records: `seedvr2-frame-history-video{512,1024}-t25-exact-screen-v1-20261014`.
+These are component observations, not paired speed or physical-footprint
+proof. The normalized input/DiT parameters and full source/conditioning scope
+remain separate; this is not full VAE spatial tiling.
+
+Request-local `seedvr2_vae.history` now selects `compact` or `frames`.
+Both schema plans expose the effective selection; Swift/older draft decoding
+defaults missing history to compact, and the App exposes an explicit picker.
+Ten native request contracts, execution-evidence checks (5), signed-zero-aware
+VAE observer tests (8), C++ boundaries (2) and independence (7) pass. The initial
+project Python lacks safetensors and reports the VAE tests as skips; they run
+successfully in the existing validation interpreter without installing packages
+or contacting a user Comfy server.
+
+A same-probe/source/precision 1024/t9 VAE ABBA completes under
+`seedvr2-frame-history-vae1024-t9-abba-v1-20261014`. Both routes use singleton2d,
+Metal norm, FP16 activations and pointwise matmul; only history differs.
+Four processes each run one cold and three real warm encode+decode iterations.
+No encoded latent cache shortcut is used. Warm medians are **25.205170 /
+24.766025 s**, about **1.01773175x**; strict component speed gate true. Warm
+active maxima are **14,198,344,530 / 13,258,820,426 bytes**, reduction
+939,524,104 bytes. Latent and decoded tensors are finite and **byte-identical**
+in every required comparison, including signed-zero semantics. This is VAE
+encode+decode, not whole-model or hard-process-budget qualification.
+
+The isolated native/Swift/App candidate succeeds; native library SHA
+`d3d9e5c182b438974aa7333f5f7b2c546f6c1d4d6399bb3434a665dcf8566873`.
+Both actual App chains pass seven requests each: images and complete t25
+videos at 512/1024, policy switches, persistence and unload, with frames
+history, streamed video and the unchanged explicit frame-based encoder.
+Required comparison to the preceding v4 correct build keeps PNG files and
+every decoded video frame exact in both memory policies. Record:
+`seedvr2-app-frame-history-export-screen-v1-20261014.json`.
+
+| Current 1024/t25 App observation | Seconds | Active MLX peak | Sampled process footprint |
+| --- | ---: | ---: | ---: |
+| GPU resident, cache4 | 83.606837 | 19,944,111,514 bytes | 23,894,743,424 bytes |
+| GPU staged, cache1 | 91.253532 | 13,215,304,538 bytes | 14,576,944,616 bytes |
+
+These are individual observations, not paired full-request speed or a bound
+on a smaller-memory device. A same-library complete 1024/t25 request ABBA
+has started under `seedvr2-frame-history-video1024-t25-policy-abba-v1-20261014`,
+streamed output/cache4 in both modes, changing only compact/frames history.
+It has four independent processes with six real warm requests per policy;
+conclusions await a terminal report. Its long runtime does not authorize a
+restart on a quiet observation. Default history remains compact and the whole
+original objective remains open.
+
+### Original-parameter public Core ML VAE convolution feasibility probe
+
+A separate offline bank targets the hot
+`decoder.up_blocks.3.resnets.0.conv1` original O,C,T,H,W filter
+`[128,256,3,3,3]`: prefix 64 outputs, prepared 128-square spatial tile plus
+halo, original FP16 coefficients, temporal taps stacked into channels.
+Bias/residual/normalization stay outside the bank to preserve native bias
+rounding. It has a distinct **probe** schema and remains `qualified=false`;
+the App/native hybrid VAE does not consume it.
+
+Coefficient-order/prefix/shape/precision CPU tests (3) and independent
+reference/quality-screen guards (3) pass. Actual Core ML CPU-only and CPU+NE
+predictions plus GPU Conv3D match an independent original-order FP32
+reference under unchanged cosine >=.999 / relative-L2 <=.05 gates. A separate
+27-point FP64 reduction check verifies the finite FP32 reference (max absolute
+error 2.768e-6), despite NumPy/BLAS floating-point warnings retained in output.
+
+At this prepared synthetic tile, warm medians are **3.24954 ms GPU /
+16.43825 ms CPU / 13.93738 ms CPU+NE**. The Core ML plan's namespaced
+`ios18.conv` reports anticipated NeuralEngine preference/support. That is not
+measured physical occupancy. The first plan-inspector filtered only `conv`
+and missed its namespace; the v1 record remains intact and v2 corrects that
+inspection. Public E5RT cache access required scoped host permission.
+Record: `seedvr2-vae-hotconv-coreml-feasibility-v2-20261014.json`.
+
+This is not a native zero-copy/cooperative scheduler or real-media full-VAE
+quality/speed gate. Python Core ML copies and GPU readback are included;
+packing/routing/full-frame overhead is excluded. This layout is slower than
+GPU and is not promoted. Native-buffer scheduling, larger/different tiles,
+whole-convolution/stage assignments and full-VAE feasibility still require
+experiments; no VAE ANE acceleration or automatic route is claimed.
+
 ## Reproduce component checks
 
 ```sh
