@@ -10,6 +10,9 @@ using DecodedFrameSink = std::function<void(int, const Tensor &)>;
 // Each call supplies exactly one materialized, normalized FP32 BCTHW RGB
 // source frame. Indices address only real frames; padding is internal.
 using EncodedFrameSource = std::function<Tensor(int)>;
+// Offline observation only: never replaces an operator or changes its input.
+// Callers must finish GPU/host access before returning, not retain borrowed views.
+using UpscaleInputObserver = std::function<void(const std::string &, const Tensor &, bool, bool)>;
 
 class VAE {
     TensorBank weights_;
@@ -17,13 +20,18 @@ class VAE {
     std::string norm_recipe_ = "metal";
     std::string history_recipe_ = "compact";
     std::string pointwise_recipe_ = "matmul";
+    std::string upscale_recipe_ = "native";
     std::string spatial_recipe_ = "full";
+    std::string encoder_spatial_recipe_ = "full";
     SpatialTileOptions spatial_options_;
+    UpscaleInputObserver upscale_input_observer_;
     int conv_tile_rows_ = 16384;
     using CompactCaches = std::unordered_map<std::string, Tensor>;
     struct Caches {
         CompactCaches compact; FrameHistoryMap frames;
         bool temporal = true;
+        bool spatial_head_only = false;
+        bool spatial_enabled = true;
         std::shared_ptr<SpatialTileCache> spatial;
         std::atomic<bool> *cancelled = nullptr;
     };
@@ -42,6 +50,8 @@ class VAE {
     Tensor encode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &) const;
     Tensor decode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &,
                         const DecodedFrameSink & = {}, int *next_frame = nullptr, int frame_limit = 0) const;
+    Tensor encode_stream_impl(int,int,int,const EncodedFrameSource &,const SpatialTileOptions *,
+                              std::shared_ptr<SpatialFileStats> *,const Event &,std::atomic<bool> &) const;
   public:
     void load(const std::filesystem::path &);
     void configure(const std::optional<SeedVR2VAEConfig> &);
@@ -51,14 +61,28 @@ class VAE {
     const std::string &norm_recipe() const { return norm_recipe_; }
     const std::string &history_recipe() const { return history_recipe_; }
     const std::string &pointwise_recipe() const { return pointwise_recipe_; }
+    const std::string &upscale_recipe() const { return upscale_recipe_; }
     const std::string &spatial_recipe() const { return spatial_recipe_; }
+    const std::string &encoder_spatial_recipe() const { return encoder_spatial_recipe_; }
+    void observe_upscale_inputs(UpscaleInputObserver observer) { upscale_input_observer_ = std::move(observer); }
     // External BCTHW, RGB pixels in [-1,1]. Returns scaled latent means only.
     Tensor encode(const Tensor &, const Event &, std::atomic<bool> &) const;
+    // Offline exact-context encoder-head scheduling: the high-resolution
+    // singleton head uses the existing row/file scheduler; all temporal
+    // downsampling, later stages and attention retain the original path.
+    Tensor encode_spatial(const Tensor &, const SpatialTileOptions &,
+                          std::shared_ptr<SpatialFileStats> &, const Event &, std::atomic<bool> &) const;
+    Tensor encode_configured(const Tensor &,std::shared_ptr<SpatialFileStats> &,const Event &,std::atomic<bool> &) const;
     // Preserve the original initial-five/subsequent-four temporal partition
     // and global spatial context, with bounded normalized input chunks. The
     // caller must additionally verify the complete source EOF before sampling.
     Tensor encode_stream(int source_frames, int height, int width, const EncodedFrameSource &,
                          const Event &, std::atomic<bool> &) const;
+    Tensor encode_stream_spatial(int source_frames,int height,int width,const EncodedFrameSource &,
+                                 const SpatialTileOptions &,std::shared_ptr<SpatialFileStats> &,
+                                 const Event &,std::atomic<bool> &) const;
+    Tensor encode_stream_configured(int,int,int,const EncodedFrameSource &,std::shared_ptr<SpatialFileStats> &,
+                                    const Event &,std::atomic<bool> &) const;
     // Scaled BCTHW latents -> RGB BCTHW in [-1,1]. Temporal slicing carries
     // original-precision causal histories, never independent image inference.
     Tensor decode(const Tensor &, const Event &, std::atomic<bool> &) const;

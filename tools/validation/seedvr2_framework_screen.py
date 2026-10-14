@@ -58,6 +58,8 @@ def check_native_execution(args, result):
     execution = "gpu_ane" if hybrid else "gpu"
     recipe = "seedvr2-original-fp16-coreml-prefix-v1" if hybrid else "seedvr2-stable-fp16-fp32-v1"
     options = getattr(args,"vae_options",None)
+    if options is not None and options.get("encoder_spatial","full") == "file_rows":
+        recipe += "+vae-encoder-head-globalstats-file-rows-v1"
     if options is not None and options.get("spatial","full") == "file_rows":
         recipe += "+vae-globalstats-file-rows-v1"
     if (result.get("actual_denoise_steps") != 1 or result.get("conditioning_cache_hit") or
@@ -78,7 +80,7 @@ def check_native_execution(args, result):
     options = getattr(args,"vae_options",None)
     if options is not None:
         expected = dict(encoder="buffered",decoder="buffered",convolution="singleton2d",history="compact",tile_rows=16384,allocator_cache_bytes=4 << 30,
-            spatial="full",spatial_rows=64,spatial_disk_budget_bytes=8 << 30)
+            spatial="full",encoder_spatial="full",spatial_rows=64,spatial_disk_budget_bytes=8 << 30)
         expected.update(options)
         if (result.get("vae_encoder_recipe","buffered") != expected["encoder"] or
             result.get("streamed_input_frames",0) != (args.frames if expected["encoder"] == "streaming" else 0) or
@@ -97,6 +99,12 @@ def check_native_execution(args, result):
               result.get("vae_spatial_host_live_bytes_after_decode") != 0 or
               result.get("vae_spatial_cleanup_failures") != 0))):
             raise ValueError("native spatial schedule/settings/retirement differ from request")
+        if (result.get("vae_encoder_spatial_recipe","full")!=expected["encoder_spatial"] or
+            (expected["encoder_spatial"]=="file_rows" and
+             (result.get("vae_encoder_spatial_file_live_bytes_after_encode")!=0 or
+              result.get("vae_encoder_spatial_host_live_bytes_after_encode")!=0 or
+              result.get("vae_encoder_spatial_cleanup_failures")!=0))):
+            raise ValueError("native encoder spatial schedule/retirement differs from request")
     if "weight_residency_recipe" in result and result["weight_residency_recipe"] != ("stage_dit" if residency == "component_staged" else "resident"):
         raise ValueError("native request executed a different residency than requested")
 

@@ -2109,6 +2109,55 @@ Records and outstanding broader scheduling/admission/ANE/long-context gates:
 goal remains active; no VAE ANE backend, >121-frame model support or automatic
 file-row default is enabled by this work.
 
+### Encoder-head row/file scheduling and qualified manual App controls (2026-10-15)
+
+Adds independent `seedvr2_vae.encoder_spatial=full|file_rows`, full by default,
+with the shared bounded row/live-file settings and <=1024 canvas scope.
+Eligible singleton encoder head operators use complete-frame statistics and
+lossless causal row files; temporal downsampling/later multi-frame stages/all
+attention are unchanged. Source streaming retains the original5/4 partition
+and padding; six small buffered/streamed cases are byte exact. Original
+coefficients are unchanged, but row-convolution rounding is a distinct numerical
+recipe, not bitwise equality to the full encoder.
+
+Image encoder ABBA (four processes, six warm fresh encodes each) observes
+.659063/.561925 s, about14.7% lower latency, and active maxima
+5,425,578,594/2,931,575,910 bytes. Complete real1024/t25 single encoder
+observations are20.665/69.627 s, active8,001,784,646/5,854,301,002 bytes; this
+video route is slower, writing25 GiB/reading49.40625 GiB with2.25-GiB live files.
+Independent same-source all-FP32 MPS encoder audits pass image/full25 gates:
+native/row-file relative L2 .005067376/.005067904 (image) and
+.003270006/.003269107 (video), unchanged .05/.999 thresholds. The references
+audit actual dtypes/parameters; no FP16 report is relabelled or service modified.
+
+Two seven-request real App workflows pass, including complete25-frame source
+FPS, persistence/switches and actual encoder/decoder tile counters/retirement.
+The new default exports are byte exact to the old full control; combined rows
+pass every exported frame and exact PNG alpha. Single full/combined staged1024/
+t25 requests are90.043/272.910 s, active13,215,304,526/12,235,734,666 bytes.
+Adding encoder rows does not materially reduce the earlier decoder-only row
+request peak. No hard RAM/16-GiB/phase attribution or warm full-request speed
+claim follows; admission/121-frame/defaults remain unchanged.
+
+Public engine encoder-head cancellation returns status2 without DiT/export,
+64-MiB quota rejects explicitly (status1), and same-engine1024 recovery succeeds
+(status0); source/existing private destination and scratch cleanup pass.
+Independent signed package `dist/seedvr2-encoder-spatial-20261015/TurboCider.app`
+(minimum macOS26.2) passes release/signature guards,13 packaged-library contracts
+and a real1024 combined-row image smoke whose PNG matches the App workflow bytes.
+The currently running user App remains untouched.
+
+Captured-real Core ML projection/shape-shuffle tests and native fused-upscale
+experiments are documented separately. Corrected CPU+NE projection is speed-flat
+with a512-MiB prepared-layer allocation reduction, not an enabled VAE backend.
+GPU fused-upscale candidates are exact but slower/no whole-VAE peak win; they
+are isolated behind an experimental compile flag and rejected by stable
+packaging. See [ANE feasibility](../design/seedvr2-vae-ane-feasibility.md) and
+[row/file scheduler](../design/seedvr2-vae-spatial-scheduler.md) for receipts.
+The overall goal stays active: broader scheduling/workspace reuse, actual
+low-memory hardware/admission, useful whole-VAE ANE boundaries and bounded
+longer-context DiT remain incomplete.
+
 ## Reproduce component checks
 
 ```sh

@@ -152,6 +152,7 @@ int main(int argc, char **argv) {
                    << ",\"norm_recipe\":\"" << vae.norm_recipe() << "\""
                    << ",\"history_recipe\":\"" << vae.history_recipe() << "\""
                    << ",\"pointwise_recipe\":\"" << vae.pointwise_recipe() << "\""
+                   << ",\"upscale_recipe\":\"" << vae.upscale_recipe() << "\""
                    << ",\"conv_recipe\":\"" << vae.conv_recipe() << "\",\"iterations\":[";
             for (int iteration = 0; iteration < repeats; ++iteration) {
                 // No retained decoded output or cached latent from an earlier

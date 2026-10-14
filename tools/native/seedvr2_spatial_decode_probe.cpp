@@ -59,7 +59,8 @@ int main(int argc,char **argv){
         const bool quality=emitted==frames && l2<=.05 && cosine>=.999;
         tc::require(!stats || (stats->disk_live_bytes==0 && stats->host_live_bytes==0),"spatial scratch/buffer live accounting did not drain");
         std::ofstream out(output/"report.json");tc::require(bool(out),"cannot write spatial decode report");
-        out<<std::setprecision(17)<<"{\"schema\":\"seedvr2-spatial-decode-screen-v1\",\"route\":\""<<route<<"\",\"frames\":"<<emitted<<",\"height\":"<<h<<",\"width\":"<<w
+        out<<std::setprecision(17)<<"{\"schema\":\"seedvr2-spatial-decode-screen-v1\",\"route\":\""<<route
+            <<"\",\"vae_upscale_recipe\":\""<<vae.upscale_recipe()<<"\",\"frames\":"<<emitted<<",\"height\":"<<h<<",\"width\":"<<w
             <<",\"seconds_with_host_quality\":"<<seconds<<",\"mlx_active_peak_bytes\":"<<active<<",\"sampled_process_footprint_peak_bytes\":"<<sampler.peak
             <<",\"bitwise_equal\":"<<(unequal==0?"true":"false")<<",\"unequal_values\":"<<unequal<<",\"compared_values\":"<<compared
             <<",\"relative_l2\":"<<l2<<",\"cosine\":"<<cosine<<",\"max_abs\":"<<max_abs<<",\"quality_passed\":"<<(quality?"true":"false")

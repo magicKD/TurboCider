@@ -104,13 +104,13 @@ class SeedVR2Contracts(unittest.TestCase):
                 r = {**request(True), "seedvr2_vae": options}
                 code, value, error = plan(r)
                 self.assertEqual(code, 0, error)
-                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
+                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","spatial":"full","encoder_spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
                 v2 = dict(schema_version=2, model=r["model"], operation=r["operation"], inputs=r["inputs"],
                     outputs=[dict(kind="video", path=r["output"], width=r["width"], height=r["height"], frames=r["frames"], fps=24, audio=False)],
                     sampling=dict(seed=42, steps=1), execution=dict(policy="gpu", seedvr2_vae=options))
                 code, value, error = plan(v2)
                 self.assertEqual(code, 0, error)
-                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
+                self.assertEqual(value["seedvr2_vae"], {"encoder":"buffered","history":"compact","spatial":"full","encoder_spatial":"full", "spatial_rows":64,"spatial_disk_budget_bytes":8<<30,**options})
         self.assertEqual(plan({**request(True), "seedvr2_vae": {}})[1]["seedvr2_vae"]["decoder"], "buffered")
 
     def test_invalid_vae_controls_never_silently_fall_back(self):
@@ -118,7 +118,7 @@ class SeedVR2Contracts(unittest.TestCase):
                         {"convolution": "taps2d"}, {"tile_rows": 0}, {"tile_rows": 129},
                         {"tile_rows": True}, {"tile_rows": 65537}, {"allocator_cache_bytes": -1},
                         {"allocator_cache_bytes": (16 << 30) + 1}, {"ane": True}, {"history":"concat"}, {"history":True},
-                        {"spatial":"independent_tiles"},{"spatial_rows":True},{"spatial_rows":7},{"spatial_rows":129},
+                        {"spatial":"independent_tiles"},{"encoder_spatial":"independent_tiles"},{"encoder_spatial":True},{"spatial_rows":True},{"spatial_rows":7},{"spatial_rows":129},
                         {"spatial_disk_budget_bytes":0},{"spatial_disk_budget_bytes":(8<<30)+1}):
             with self.subTest(options=options):
                 self.assertNotEqual(plan({**request(True), "seedvr2_vae": options})[0], 0)
@@ -145,6 +145,21 @@ class SeedVR2Contracts(unittest.TestCase):
             self.assertNotEqual(plan({**request(True),"seedvr2_vae":dict(spatial="file_rows",convolution=convolution)})[0],0)
         self.assertNotEqual(plan({**request(True),"width":2048,"seedvr2_vae":dict(spatial="file_rows")})[0],0)
         self.assertEqual(plan({**request(True),"seedvr2_vae":{}})[1]["seedvr2_vae"]["spatial"],"full")
+
+    def test_encoder_spatial_control_is_separate_and_preserves_schema_defaults(self):
+        for video in (False,True):
+            for spatial in ("full","file_rows"):
+                options=dict(encoder_spatial="file_rows",spatial=spatial,encoder="streaming" if video else "buffered")
+                code,value,error=plan({**request(video),"seedvr2_vae":options})
+                self.assertEqual(code,0,error);self.assertEqual(value["seedvr2_vae"]["encoder_spatial"],"file_rows")
+                r=request(video);v2=dict(schema_version=2,model=r["model"],operation=r["operation"],inputs=r["inputs"],
+                    outputs=[dict(kind="video" if video else "image",path=r["output"],width=r["width"],height=r["height"],frames=r["frames"],fps=24,audio=False)],
+                    sampling=dict(seed=42,steps=1),execution=dict(policy="gpu",seedvr2_vae=options))
+                self.assertEqual(plan(v2)[0],0,plan(v2)[2])
+        for conv in ("mixed3d","tiled3d"):
+            self.assertNotEqual(plan({**request(True),"seedvr2_vae":dict(encoder_spatial="file_rows",convolution=conv)})[0],0)
+        self.assertNotEqual(plan({**request(True),"width":2048,"seedvr2_vae":dict(encoder_spatial="file_rows")})[0],0)
+        self.assertEqual(plan({**request(True),"seedvr2_vae":{}})[1]["seedvr2_vae"]["encoder_spatial"],"full")
 
     def test_streaming_encoder_is_explicit_request_local_and_default_stays_buffered(self):
         for encoder in ("buffered","streaming"):

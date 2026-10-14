@@ -351,9 +351,12 @@ class SeedVR2Session final : public ModelSession {
             memory.stop();
             const auto video_pixel_sha = pixel_hash.finish();
             const bool file_rows = pipeline_.vae_spatial_recipe() == "file_rows";
+            const bool encoder_file_rows = pipeline_.vae_encoder_spatial_recipe() == "file_rows";
             const std::string numerical_recipe = std::string(hybrid_ ? seedvr2::kHybridRecipe : seedvr2::kStableRecipe) +
+                (encoder_file_rows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
                 (file_rows ? "+vae-globalstats-file-rows-v1" : "");
             const auto spatial = result.spatial_stats;
+            const auto encoder_spatial = result.encoder_spatial_stats;
             return native_run_result(@{
                 @"schema_version": @1, @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
@@ -397,6 +400,17 @@ class SeedVR2Session final : public ModelSession {
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
                 @"vae_spatial_recipe": @(pipeline_.vae_spatial_recipe().c_str()),
+                @"vae_encoder_spatial_recipe": @(pipeline_.vae_encoder_spatial_recipe().c_str()),
+                @"vae_encoder_spatial_tile_convolutions": @(encoder_spatial ? encoder_spatial->tile_convolutions : 0),
+                @"vae_encoder_spatial_global_normalizations": @(encoder_spatial ? encoder_spatial->global_normalizations : 0),
+                @"vae_encoder_spatial_file_written_bytes": @(encoder_spatial ? encoder_spatial->written_bytes : 0),
+                @"vae_encoder_spatial_file_read_bytes": @(encoder_spatial ? encoder_spatial->read_bytes : 0),
+                @"vae_encoder_spatial_file_peak_bytes": @(encoder_spatial ? encoder_spatial->disk_peak_bytes : 0),
+                @"vae_encoder_spatial_host_window_peak_bytes": @(encoder_spatial ? encoder_spatial->host_peak_bytes.load() : 0),
+                @"vae_encoder_spatial_file_live_bytes_after_encode": @(encoder_spatial ? encoder_spatial->disk_live_bytes : 0),
+                @"vae_encoder_spatial_host_live_bytes_after_encode": @(encoder_spatial ? encoder_spatial->host_live_bytes.load() : 0),
+                @"vae_encoder_spatial_cleanup_failures": @(encoder_spatial ? encoder_spatial->cleanup_failures : 0),
+                @"vae_encoder_spatial_scope": @"eligible singleton encoder head norm/conv only; full statistics/temporal downsampling/attention preserved; disk limit is not RAM budget",
                 @"vae_spatial_rows": @(r.seedvr2_vae ? r.seedvr2_vae->spatial_rows : 64),
                 @"vae_spatial_threshold_bytes": @(256ull<<20),
                 @"vae_spatial_disk_budget_bytes": @(r.seedvr2_vae ? r.seedvr2_vae->spatial_disk_budget_bytes : (8ull<<30)),
@@ -426,6 +440,7 @@ class SeedVR2Session final : public ModelSession {
                 @"vae_norm_recipe": @(pipeline_.vae_norm_recipe().c_str()),
                 @"vae_history_recipe": @(pipeline_.vae_history_recipe().c_str()),
                 @"vae_pointwise_recipe": @(pipeline_.vae_pointwise_recipe().c_str()),
+                @"vae_upscale_recipe": @(pipeline_.vae_upscale_recipe().c_str()),
                 @"vae_conv_tile_rows_limit": @(pipeline_.vae_conv_tile_rows()),
                 @"vae_attention_recipe": @"full_spatial_keys_fp32_query512",
                 @"vae_history_policy": video ? @"causal_temporal_history" : @"no_unused_single_frame_history",

@@ -6,6 +6,9 @@
 #include "metal/group_norm.hpp"
 #include "metal/causal_history.hpp"
 #include "metal/spatial_norm.hpp"
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+#include "metal/upscale.hpp"
+#endif
 #include <charconv>
 #include <cstring>
 #include <cmath>
@@ -39,7 +42,9 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     norm_recipe_ = "metal";
     history_recipe_ = "compact";
     pointwise_recipe_ = "matmul";
+    upscale_recipe_ = "native";
     spatial_recipe_ = "full";
+    encoder_spatial_recipe_ = "full";
     spatial_options_ = {};
     conv_tile_rows_ = 16384;
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE")) conv_recipe_ = value;
@@ -54,6 +59,14 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE")) pointwise_recipe_ = value;
     require(pointwise_recipe_ == "conv" || pointwise_recipe_ == "matmul",
             "SeedVR2 VAE pointwise recipe must be conv or matmul");
+    if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_UPSCALE_RECIPE")) {
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+        upscale_recipe_ = value;
+#else
+        require(std::string(value)=="native","fused VAE upsampling requires an experimental probe build");
+#endif
+    }
+    require(upscale_recipe_ == "native" || upscale_recipe_ == "metal_fused","invalid VAE upsampling recipe");
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_VAE_CONV_TILE_ROWS")) {
         const char *end = value + std::strlen(value);
         const auto parsed = std::from_chars(value, end, conv_tile_rows_);
@@ -63,9 +76,11 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     }
     if (config) {
         require(config->spatial == "full" || config->spatial == "file_rows","invalid request-local spatial recipe");
+        require(config->encoder_spatial == "full" || config->encoder_spatial == "file_rows","invalid request-local encoder spatial recipe");
         require(config->spatial_rows >= 8 && config->spatial_rows <= 128 && config->spatial_rows % 8 == 0 &&
             config->spatial_disk_budget_bytes > 0 && config->spatial_disk_budget_bytes <= (8ull<<30),"invalid spatial row/scratch settings");
         spatial_recipe_ = config->spatial;
+        encoder_spatial_recipe_ = config->encoder_spatial;
         spatial_options_.rows = config->spatial_rows;
         spatial_options_.disk_budget_bytes = config->spatial_disk_budget_bytes;
         require(config->encoder == "buffered" || config->encoder == "streaming", "invalid request-local SeedVR2 VAE encoder recipe");
@@ -80,7 +95,7 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
         conv_tile_rows_ = config->tile_rows;
     }
     require(history_recipe_ != "frames" || conv_recipe_ != "taps2d", "frame history does not support experimental taps2d");
-    require(spatial_recipe_ == "full" || (norm_recipe_ == "metal" &&
+    require((spatial_recipe_ == "full" && encoder_spatial_recipe_ == "full") || (norm_recipe_ == "metal" &&
         (conv_recipe_ == "singleton2d" || conv_recipe_ == "conv3d")),"file_rows requires stable Metal norm and singleton2d/conv3d");
 }
 Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *state,
@@ -91,7 +106,7 @@ Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *state,
     const int kernel_t = weight.shape(1);
     const int stride_t = downsample && kernel_t > 1 ? 2 : 1;
     const int stride_s = downsample ? 2 : 1;
-    if (state && state->spatial && state->spatial->eligible(input) && kernel_t > 1 && !downsample)
+    if (state && state->spatial_enabled && state->spatial && state->spatial->eligible(input) && kernel_t > 1 && !downsample)
         return spatial_conv(input,[&](int first,int stop){return part(input,2,first,stop);},key,state,initial);
     if (pointwise_recipe_ == "matmul" && !downsample &&
             kernel_t == 1 && weight.shape(2) == 1 && weight.shape(3) == 1) {
@@ -281,10 +296,10 @@ Tensor VAE::group_norm(const Tensor &x, const std::string &key, bool activate) c
 }
 Tensor VAE::norm_conv(const Tensor &input,const std::string &norm_key,const std::string &conv_key,
                      Caches *cache,bool initial) const {
-    if (!cache || !cache->spatial || !cache->spatial->eligible(input))
+    if (!cache || !cache->spatial_enabled || !cache->spatial || !cache->spatial->eligible(input))
         return conv(group_norm(input,norm_key),conv_key,cache,initial,false,true);
     require(norm_recipe_ == "metal" && input.shape(0)==1 && input.shape(1)==1,
-            "spatial normalization currently requires singleton decoder frames and the stable Metal recipe");
+            "spatial normalization requires singleton frames and the stable Metal recipe");
     const auto statistics = metal::spatial_norm_statistics(input);
     ++cache->spatial->stats->global_normalizations;
     return spatial_conv(input,[&](int first,int stop){
@@ -413,6 +428,16 @@ Tensor VAE::upsample(const Tensor &input, const std::string &key, Caches *cache,
     const int b = input.shape(0), t = input.shape(1), h = input.shape(2), w = input.shape(3), c = input.shape(4);
     const int tr = temporal ? 2 : 1;
     const auto &weight = weights_.at(key + ".upscale_conv.weight");
+    if (upscale_input_observer_) upscale_input_observer_(key, input, initial, temporal);
+#if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
+    if(upscale_recipe_ == "metal_fused") {
+        // No named GEMM owner may pin its full projection through the following
+        // causal convolution. Only the output/DAG owns it until the shuffle ends.
+        auto y=metal::upscale_bias_shuffle(mx::matmul(input,mx::transpose(mx::reshape(weight,{4*tr*c,c}))),
+            weights_.at(key+".upscale_conv.bias"),initial,temporal);
+        return conv(y,key+".conv",cache,initial);
+    }
+#endif
     auto y = mx::matmul(input, mx::transpose(mx::reshape(weight, {4 * tr * c, c}))) +
              weights_.at(key + ".upscale_conv.bias");
     // Expansion channels are [spatial_row, spatial_col, temporal_phase, c].
@@ -431,6 +456,7 @@ Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
     // one frame at a time bounds convolution workspaces without changing the
     // temporal downsamplers' phase or processing frames independently.
     if (event) event("seedvr2_vae_encode", 0, 5);
+    if(cache && cache->spatial_head_only)cache->spatial_enabled=true;
     std::vector<Tensor> head;
     for (int frame = 0; frame < input.shape(1); ++frame) {
         const bool first = initial && frame == 0;
@@ -443,6 +469,9 @@ Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
         fence(y, cancelled);
         head.push_back(y);
     }
+    // Later encoder stages carry complete multi-frame temporal partitions.
+    // Even a low diagnostic threshold must not turn them into singleton tiles.
+    if(cache && cache->spatial_head_only)cache->spatial_enabled=false;
     auto x = mx::concatenate(head, 1);
     for (int i = 1; i < 4; ++i) {
         if (event) event("seedvr2_vae_encode", i, 5);
@@ -541,14 +570,68 @@ Tensor VAE::encode(const Tensor &pixels, const Event &event, std::atomic<bool> &
     fence(result, cancelled);
     return result;
 }
+Tensor VAE::encode_spatial(const Tensor &pixels,const SpatialTileOptions &options,
+                          std::shared_ptr<SpatialFileStats> &stats,const Event &event,std::atomic<bool> &cancelled) const {
+    require(pixels.ndim()==5 && pixels.shape(0)==1 && pixels.shape(1)==3 && pixels.shape(2)>=1 &&
+        (pixels.shape(2)==1 || pixels.shape(2)%4==1) && pixels.shape(3)%8==0 && pixels.shape(4)%8==0 &&
+        norm_recipe_=="metal" && (conv_recipe_=="singleton2d" || conv_recipe_=="conv3d"),
+        "unsupported spatial encoder shape/recipe");
+    auto input=mx::transpose(mx::astype(pixels,mx::float16),{0,2,3,4,1});Tensor result(0);
+    {
+        Caches cache;cache.temporal=input.shape(1)>1;cache.cancelled=&cancelled;cache.spatial_head_only=true;
+        cache.spatial=std::make_shared<SpatialTileCache>(options);stats=cache.spatial->stats;
+        std::vector<Tensor> slices;
+        for(int start=0;start<input.shape(1);) {
+            checkpoint(cancelled);const int stop=std::min(input.shape(1),start+(start==0?5:4));
+            slices.push_back(encode_slice(part(input,1,start,stop),&cache,start==0,event,cancelled));start=stop;
+        }
+        result=mx::transpose(mx::concatenate(slices,1),{0,4,1,2,3});fence(result,cancelled);
+    }
+    require(stats && stats->disk_live_bytes==0 && stats->host_live_bytes==0 && stats->cleanup_failures==0,
+        "spatial encoder did not retire owned scratch/windows");
+    return result;
+}
+Tensor VAE::encode_configured(const Tensor &pixels,std::shared_ptr<SpatialFileStats> &stats,const Event &event,std::atomic<bool> &cancelled) const {
+    stats.reset();
+    if(encoder_spatial_recipe_=="full")return encode(pixels,event,cancelled);
+    require(pixels.ndim()==5 && pixels.shape(3)<=1024 && pixels.shape(4)<=1024,"encoder file_rows canvas exceeds supported scope");
+    return encode_spatial(pixels,spatial_options_,stats,event,cancelled);
+}
+Tensor VAE::encode_stream_configured(int source_frames,int height,int width,const EncodedFrameSource &source,
+                                   std::shared_ptr<SpatialFileStats> &stats,const Event &event,std::atomic<bool> &cancelled) const {
+    stats.reset();
+    if(encoder_spatial_recipe_=="full")return encode_stream(source_frames,height,width,source,event,cancelled);
+    require(height<=1024 && width<=1024,"encoder file_rows canvas exceeds supported scope");
+    return encode_stream_spatial(source_frames,height,width,source,spatial_options_,stats,event,cancelled);
+}
 Tensor VAE::encode_stream(int source_frames, int height, int width, const EncodedFrameSource &source,
                          const Event &event, std::atomic<bool> &cancelled) const {
+    return encode_stream_impl(source_frames,height,width,source,nullptr,nullptr,event,cancelled);
+}
+Tensor VAE::encode_stream_spatial(int source_frames,int height,int width,const EncodedFrameSource &source,
+                                const SpatialTileOptions &options,std::shared_ptr<SpatialFileStats> &stats,
+                                const Event &event,std::atomic<bool> &cancelled) const {
+    require(norm_recipe_=="metal" && (conv_recipe_=="singleton2d" || conv_recipe_=="conv3d"),"unsupported spatial streaming encoder recipe");
+    auto result=encode_stream_impl(source_frames,height,width,source,&options,&stats,event,cancelled);
+    require(stats && stats->disk_live_bytes==0 && stats->host_live_bytes==0 && stats->cleanup_failures==0,
+        "streaming spatial encoder did not retire owned scratch/windows");
+    return result;
+}
+Tensor VAE::encode_stream_impl(int source_frames,int height,int width,const EncodedFrameSource &source,
+                             const SpatialTileOptions *options,std::shared_ptr<SpatialFileStats> *stats,
+                             const Event &event,std::atomic<bool> &cancelled) const {
     require(source_frames >= 1 && source_frames <= 121 && height > 0 && width > 0 &&
             height % 8 == 0 && width % 8 == 0 && bool(source),
             "SeedVR2 streaming encode requires a complete <=121-frame source and spatial multiples of eight");
     const int total = padded_frames(source_frames);
     Caches cache;
-    auto histories = total == 1 ? nullptr : &cache;
+    cache.temporal=total>1;
+    if(options){
+        require(stats!=nullptr,"spatial encoder statistics owner missing");
+        cache.cancelled=&cancelled;cache.spatial_head_only=true;
+        cache.spatial=std::make_shared<SpatialTileCache>(*options);*stats=cache.spatial->stats;
+    }
+    auto histories = options || total>1 ? &cache : nullptr;
     std::vector<Tensor> slices;
     Tensor last(0);
     int consumed = 0;

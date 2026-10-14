@@ -71,7 +71,8 @@ Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, co
     };
     if (stage_dit_ && dit_.bytes()) release_dit();
     const auto started = Clock::now();
-    auto condition = vae_.encode(input, event, cancelled);
+    std::shared_ptr<SpatialFileStats> encoder_spatial_stats;
+    auto condition = vae_.encode_configured(input,encoder_spatial_stats,event,cancelled);
     const auto encoded = Clock::now();
     double input_release_seconds = 0;
     uint64_t released_input_logical_bytes = 0;
@@ -114,7 +115,7 @@ Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, co
     checkpoint(cancelled);
     return {restored, condition, velocity, latent, seconds(started, encoded),
             seconds(denoise_started, denoised), seconds(decode_started, decoded),
-            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes,bool(sink),spatial_stats};
+            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes,bool(sink),spatial_stats,encoder_spatial_stats};
 }
 Restoration Pipeline::restore_source(int source_frames, int height, int width, const Tensor &noise,
                                     const EncodedFrameSource &source, const std::function<void()> &verify_complete_source,
@@ -135,7 +136,8 @@ Restoration Pipeline::restore_source(int source_frames, int height, int width, c
     };
     if (stage_dit_ && dit_.bytes()) release_dit();
     const auto started = Clock::now();
-    auto condition = vae_.encode_stream(source_frames,height,width,source,event,cancelled);
+    std::shared_ptr<SpatialFileStats> encoder_spatial_stats;
+    auto condition = vae_.encode_stream_configured(source_frames,height,width,source,encoder_spatial_stats,event,cancelled);
     // A declared frame count is not EOF proof. Reject extra/short/changed
     // source sequences before DiT work, and release import/codec owners now.
     verify_complete_source();
@@ -170,6 +172,6 @@ Restoration Pipeline::restore_source(int source_frames, int height, int width, c
     const auto decoded = Clock::now(); checkpoint(cancelled);
     return {restored,condition,velocity,latent,seconds(started,encoded),
             seconds(denoise_started,denoised),seconds(decode_started,decoded),
-            staging_seconds,seconds(restore_started,decoded),0,0,bool(sink),spatial_stats};
+            staging_seconds,seconds(restore_started,decoded),0,0,bool(sink),spatial_stats,encoder_spatial_stats};
 }
 } // namespace tc::seedvr2

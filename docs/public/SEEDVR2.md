@@ -248,6 +248,7 @@ remain default. Example schema 2 execution:
     "decoder": "streaming",
     "convolution": "singleton2d",
     "spatial": "full",
+    "encoder_spatial": "full",
     "spatial_rows": 64,
     "spatial_disk_budget_bytes": 8589934592,
     "tile_rows": 16384,
@@ -326,6 +327,38 @@ The separately packaged candidate is
 local signing/release guards, packaged-library contracts and a real 1024
 file-row image smoke whose PNG matches the tested App workflow byte for byte.
 The previously running App/package remains untouched.
+
+The encoder-head candidate independently accepts
+`encoder_spatial="full"|"file_rows"`; older drafts/defaults keep `full`.
+It shares row/live-file-budget settings with the decoder, retains complete
+global statistics/causal history and only schedules the singleton high-resolution
+head, not temporal downsamplers/later stages/attention. Streaming source import
+can be combined with it. The App has a separate manual selector and does not
+automatically recommend spilling. The same <=1024 canvas and singleton2d/conv3d
+restrictions apply. Rounded convolution outputs are numerically qualified,
+not bitwise equal to full encoding; original coefficients are unchanged.
+
+Image encoder-only ABBA observes .659063 -> .561925 s (about14.7% lower latency)
+and active maxima5.426 ->2.932 GB. This is not whole-request speed/RAM admission.
+Complete1024/t25 encoder observations trade20.665 ->69.627 s for8.002 ->5.854 GB
+active peak; video writes25 GiB/reads49.40625 GiB, peaking at2.25 GiB live files.
+Independent same-input audited FP32 encoder image/full25 gates pass, and source
+streaming/padding matches the same row-file buffered route byte for byte.
+
+Two real seven-request App workflows pass; the default exports remain byte
+exact, while combined encoder+decoder rows pass every exported frame's unchanged
+numerical gate and exact PNG alpha. Public-engine encoder cancellation, quota
+failure and same-engine recovery pass. Single staged1024/t25 full/combined
+requests observe90.043/272.910 s and13.215/12.236 GB active peaks; adding encoder
+rows does not materially reduce the earlier decoder-only row request peak.
+Remaining phases still matter. Hard budgets/16-GiB/>121-frame support are not
+claimed; the admission guard/defaults remain unchanged.
+
+New independent package:
+`dist/seedvr2-encoder-spatial-20261015/TurboCider.app` (minimum macOS26.2).
+Packaged-library contracts and a real1024 combined-row image smoke pass; its PNG
+matches the tested App workflow byte for byte. The previously running App remains
+untouched. Detailed scopes/records are in the spatial-scheduler design document.
 
 The App exposes input encoder, output decoder, convolution-workspace and cache selectors and
 heuristic staged/streaming advice for larger frame counts or low physical

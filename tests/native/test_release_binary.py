@@ -69,6 +69,24 @@ class ReleaseBinaryTests(unittest.TestCase):
                               '/System/Library/PrivateFrameworks/AppleNeuralEngine.framework' if command[0] == 'otool' else output(command)):
                 with self.assertRaisesRegex(ValueError, 'private framework'): release.check(library, manifest)
 
+    def test_stable_packaging_rejects_unqualified_vae_upscale_flags_and_bytes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/'manifest.json';library=Path(folder)/'lib.dylib'
+            def policy(flags):
+                manifest.write_text(json.dumps({'inputs':{'policy':{'test_hooks':'0','audit_counters':'0','common_flags':flags}}}))
+            for flag in ('-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=1','-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT'):
+                policy([flag])
+                with patch.object(release.subprocess,'check_output') as inspect:
+                    with self.assertRaisesRegex(ValueError,'upscale experiment disabled'):release.check(library,manifest)
+                    inspect.assert_not_called()
+            policy(['-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=0'])
+            def output(command,**kwargs):
+                return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
+            with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
+            with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                'tc_seedvr2_upscale_bias_shuffle' if command[0]=='strings' else output(command)):
+                with self.assertRaisesRegex(ValueError,'contains unqualified VAE'):release.check(library,manifest)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

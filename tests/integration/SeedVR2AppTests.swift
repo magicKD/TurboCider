@@ -60,7 +60,7 @@ import Foundation
         let restoredOptions = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
         try check(restoredOptions.seedvr2VAE == config, "App draft did not persist VAE controls")
         let legacyVAE = try JSONDecoder().decode(NativeSeedVR2VAEConfig.self,from: Data("{\"decoder\":\"streaming\"}".utf8))
-        try check(legacyVAE.encoder == "buffered" && legacyVAE.spatial == "full" && legacyVAE.spatial_rows == 64,
+        try check(legacyVAE.encoder == "buffered" && legacyVAE.spatial == "full" && legacyVAE.encoder_spatial == "full" && legacyVAE.spatial_rows == 64,
             "legacy VAE options did not retain buffered input/full spatial defaults")
         studio.draft.seedvr2VAE = nil
         try check(video.operation == "video.upscale" && video.frames == 25 && video.fps == 24,
@@ -122,11 +122,14 @@ import Foundation
                     let expectedDecoder = isVideo ? (vaeOptions?.decoder ?? "buffered") : "buffered"
                     let expectedEncoder = isVideo ? (vaeOptions?.encoder ?? "buffered") : "buffered"
                     let expectedSpatial = vaeOptions?.spatial ?? "full"
+                    let expectedEncoderSpatial = vaeOptions?.encoder_spatial ?? "full"
                     let fileRows = expectedSpatial == "file_rows"
+                    let encoderFileRows = expectedEncoderSpatial == "file_rows"
                     let streamingInput = expectedEncoder == "streaming"
                     try check(metrics["vae_decoder_recipe"] as? String == expectedDecoder &&
                               metrics["vae_encoder_recipe"] as? String == expectedEncoder &&
                               metrics["vae_spatial_recipe"] as? String == expectedSpatial &&
+                              metrics["vae_encoder_spatial_recipe"] as? String == expectedEncoderSpatial &&
                               metrics["streamed_input_frames"] as? Int == (streamingInput ? 25 : 0) &&
                               metrics["streamed_output_frames"] as? Int == (expectedDecoder == "streaming" ? 25 : 0) &&
                               metrics["vae_conv_recipe"] as? String == (vaeOptions?.convolution ?? "singleton2d"),
@@ -139,6 +142,7 @@ import Foundation
                               metrics["vae_pointwise_recipe"] as? String == "matmul",
                               "App did not execute the qualified VAE history/pointwise defaults")
                     let expectedRecipe = (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") +
+                        (encoderFileRows ? "+vae-encoder-head-globalstats-file-rows-v1" : "") +
                         (fileRows ? "+vae-globalstats-file-rows-v1" : "")
                     try check(metrics["numerical_recipe"] as? String == expectedRecipe &&
                               metrics["dit_projection_dtype"] as? String == "fp16" &&
@@ -159,6 +163,19 @@ import Foundation
                                       "1024 App spatial route never executed its eligible stages")
                             let written = (metrics["vae_spatial_file_written_bytes"] as? NSNumber)?.uint64Value ?? 0
                             try check(isVideo ? written > 0 : written == 0,"App spatial history storage differs from image/video lifetime")
+                        }
+                    }
+                    if encoderFileRows {
+                        try check(metrics["vae_encoder_spatial_file_live_bytes_after_encode"] as? Int == 0 &&
+                                  metrics["vae_encoder_spatial_host_live_bytes_after_encode"] as? Int == 0 &&
+                                  metrics["vae_encoder_spatial_cleanup_failures"] as? Int == 0,
+                                  "App encoder file/window ownership did not retire")
+                        if size == 1024 {
+                            try check((metrics["vae_encoder_spatial_tile_convolutions"] as? Int ?? 0) > 0 &&
+                                metrics["vae_encoder_spatial_global_normalizations"] as? Int == (isVideo ? 100 : 4),
+                                "App encoder head did not execute complete global statistics")
+                            let written = (metrics["vae_encoder_spatial_file_written_bytes"] as? NSNumber)?.uint64Value ?? 0
+                            try check(isVideo ? written > 0 : written == 0,"App encoder causal files differ from image/video lifetime")
                         }
                     }
                     let precision = hybrid

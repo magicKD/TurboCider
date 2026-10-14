@@ -72,6 +72,139 @@ frames / 78,643,200 RGB values are checked; it is not a full App request or a
 16-GiB qualification. The whole request's
 other phases can become the memory bottleneck once decode is reduced.
 
+## Encoder-head follow-up (2026-10-15)
+
+The separate native candidate now offers `encoder_spatial="full"|"file_rows"`,
+independent of the existing decoder `spatial` field. Omission/older drafts keep
+`full`. Row height/live-file budget are shared settings, not a whole-process RAM
+limit. The same <=1024 canvas and singleton2d/conv3d restrictions apply.
+
+Only the high-resolution singleton encoder head is scheduled. Each source
+frame's four residual norm/conv operators retain complete global statistics,
+original halos/taps and FP16 coefficient/bias cast boundaries. Before the head
+frames are assembled, spatial scheduling is disabled for later multi-frame
+stages, temporal downsamplers and all-key attention, even under a low diagnostic
+threshold. It is not independent crops or full tiling of all encoder operators.
+Eligible video histories spill losslessly; single images create no history files.
+The original initial5/subsequent4 partition and final-source padding remain intact.
+
+Single complete-encoder observations (not warmed full requests):
+
+| Encoder workload | Full / row-file seconds | Full / row-file active peak (bytes) | Full / row-file sampled process peak (bytes) |
+| --- | ---: | ---: | ---: |
+| 1024 image | .665 / .545 | 5,425,578,590 / 2,931,575,906 | 5,643,240,480 / 3,428,975,576 |
+| Complete real1024/t25 input | 20.665 / 69.627 | 8,001,784,646 / 5,854,301,002 | 8,850,081,064 / 6,646,351,144 |
+
+The actual25-frame route executes1600 row convolutions and100 complete-frame
+normalizations, writes25 GiB, reads49.40625 GiB, peaks at2.25 GiB live files and
+33 MiB owned read windows. All live counters/cleanup failures retire to zero.
+These numbers include buffered source tensors and are not a complete App budget.
+Encoder and decoder caches have separate execution lifetimes; do not add their
+individual file/process peaks as if simultaneously measured.
+
+An independent image encoder ABBA uses four processes, one cold plus six newly
+computed warm encodes each, same original weights/frame history/cache1. Warm
+medians are **.659063/.561925 s**, about14.7% lower encoder latency, with active
+maxima **5,425,578,594/2,931,575,910 bytes**. This is encoder-only improvement,
+not an automatic default or full-request speed claim. The video observation is
+slower and remains a manual storage/time tradeoff; video ABBA is still open.
+
+All source frames/latent values are compared against native encoding. Image/
+video relative L2 is .000622676/.000513736 and cosine .999999806/.999999868;
+outputs are **not bitwise equal** to the full route. Independent FP32 MPS encoder
+references use original FP16 coefficients promoted to FP32, the same normalized
+source files, original source partitions and no automatic fallback. All floating
+dispatch inputs/outputs and parameters are audited; the image/video references
+check2041/27066 floating values and emit F32 `[1,16,1,128,128]` /
+`[1,16,7,128,128]`. Their audited durations are not speed benchmarks.
+
+| Original-FP32 whole-latent gate | Native relative L2 / cosine | Row-file relative L2 / cosine |
+| --- | ---: | ---: |
+| 1024 image | .005067376 / .999987161 | .005067904 / .999987158 |
+| Complete1024/t25 | .003270006 / .999994669 | .003269107 / .999994671 |
+
+Both routes pass unchanged .05/.999 gates. The FP32 reference includes native's
+FP16 input/scaling arithmetic difference; it is not an FP16 report relabelled.
+Complete source streaming uses the same encoder scheduler. Buffered/streamed
+latent words match for source counts1/2/4/5/6/9, including padding and causal
+history; stats/files/windows drain. Cancellation after the first full head chunk
+with active histories returns the typed cancellation, quota failure is explicit,
+the source tensor remains unchanged, and the same VAE subsequently succeeds.
+An initial quota test caught the wrong C++ exception category; its terminal
+failure is preserved, and the corrected test passes rather than being relabelled.
+
+Schema1/2/native plans and Swift drafts carry the new selector. The candidate
+App has separate encoder/decoder pickers and large-IO/numerical warnings; its
+memory-advice button does not automatically select spilling. New numerical
+recipes append `+vae-encoder-head-globalstats-file-rows-v1` before any decoder
+suffix, and separate encoder counters report actual use/retirement. App and
+full-request quality/lifecycle qualification pass for the workflows below; admission and
+121-frame limits are unchanged. The previously packaged App is not replaced.
+
+### Combined App/engine/package qualification
+
+Two seven-request candidate App workflows complete, covering full/default and
+encoder+decoder file rows, staged/cache1, source/sink streaming,512/1024 real
+images/complete25-frame videos, persistent history and resident/staged/resident
+switches. Default exports are byte exact to the previous full control, including
+every25-frame video pixel. Combined outputs pass unchanged per-frame .05/.999
+gates and exact PNG alpha: at1024 image L2/cosine is .000758410/.999999712;
+H264 exported video is .014964521/.999888031, including lossy codec effects.
+512 outputs are pixel exact. These are App workflow tests, not GUI clicking or
+broad temporal/perceptual qualification.
+
+Single full/combined request observations, **not warmed ABBA**:
+
+| App workload | Full / combined seconds | Full / combined active peak (bytes) | Full / combined sampled process peak (bytes) |
+| --- | ---: | ---: | ---: |
+| 1024 image | 4.349 / 4.026 | 9,678,605,142 / 8,770,522,486 | 9,793,029,464 / 9,715,914,968 |
+| Complete1024/t25 | 90.043 / 272.910 | 13,215,304,526 / 12,235,734,666 | 14,474,429,856 / 13,309,974,960 |
+
+The earlier decoder-only row App already peaked at12,235,730,826 active bytes.
+Adding encoder rows does **not** materially reduce this staged request's overall
+peak; remaining phases/retained banks dominate, but this observation does not
+locate them by phase. Do not convert encoder component gains into a whole-Mac
+budget or16-GiB admission claim. Video is intentionally much slower and adds
+substantial cumulative storage traffic. Defaults and conservative admission stay
+unchanged; manual choices remain independent.
+
+Actual public engine tests cancel after the initial encoder head chunk
+(status2, no DiT/export event), reject64-MiB scratch quota during encoding
+(status1, explicit budget error), then recover on the same engine with1024 image
+(status0). Source and private existing destination hashes are unchanged; all
+scratch/media staging drains and unload MLX active is zero.13 contract tests,
+eight observer guards, encoder reference/ownership guards, and release guards
+pass. The normal build explicitly rejects the unqualified fused-upscale selector;
+packaging additionally rejects its compile flag or actual shader bytes.
+
+Independent locally signed package:
+`dist/seedvr2-encoder-spatial-20261015/TurboCider.app`, minimum macOS26.2. Its
+actual packaged library passes all13 contracts, and packaged CLI generates a
+real1024 encoder+decoder-row image with64/144 tiles, four/eight global norms and
+clean retirement. The PNG is byte exact to the tested App workflow (SHA256
+`89a5e66d72631c1dfa61bc20356173dff674e676dcfd41e3392e3f3dc25ab808`).
+This image smoke is not a packaged-video or GUI-click test. Original user App
+and previous packages stay intact.
+
+Encoder records under `outputs/`:
+
+- `seedvr2-spatial-encode-image1024-v1-20261015/report.json`
+- `seedvr2-spatial-encode-real-video1024-t25-v1-20261015/report.json`
+- `seedvr2-spatial-encode-image1024-abba-v1-20261015/report.json`
+- `seedvr2-spatial-encode-{image1024,real-video1024-t25}-fp32-oracle-v1-20261015/report.json`
+- `seedvr2-spatial-encode-{image1024,real-video1024-t25}-fp32-quality-v1-20261015.json`
+- `seedvr2-app-encoder-decoder-file-rows-staged-e2e-v1-20261015/generation-report.json`
+- `seedvr2-app-encoder-spatial-default-control-e2e-v1-20261015/generation-report.json`
+- `seedvr2-app-encoder-spatial-default-and-quality-v2-20261015.json`
+- `seedvr2-encoder-spatial-engine-lifecycle-v1-20261015/report.json`
+- `seedvr2-encoder-spatial-packaged-image-{request,result}-v1-20261015.json`
+
+The encode screen/cohort/reference/comparison tools expose `--help`; build
+isolated probes with `tools/native/build_seedvr2_spatial_probes.sh`. Scope guards
+reject unfinished/F16/different-source FP32 reports and incomplete head/frame/
+cleanup observations. Low-memory hardware, combined App performance, broader
+encoder stage scheduling and genuinely longer-context DiT remain open.
+
 ## Numerical evidence and precision correction
 
 The unchanged whole-pixel gate is finite values, cosine >= .999 and relative

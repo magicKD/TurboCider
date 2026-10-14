@@ -61,6 +61,17 @@ def parity(reference, candidate):
     return result
 
 
+def validate_recipes(raw,settings):
+    for field in ("conv_recipe","norm_recipe","history_recipe","pointwise_recipe"):
+        if raw[field] != settings["TURBOCIDER_SEEDVR2_VAE_"+field.upper()]:
+            raise ValueError("VAE observation did not execute its declared recipe")
+    # Older completed observers predate this selector and necessarily use
+    # native upsampling. They can never qualify a metal_fused candidate.
+    expected=settings.get("TURBOCIDER_SEEDVR2_VAE_UPSCALE_RECIPE","native")
+    if raw.get("upscale_recipe","native")!=expected:
+        raise ValueError("VAE observation did not execute its declared upscale recipe")
+
+
 def run(args):
     # Fail before any expensive GPU work if this validation interpreter lacks
     # the independent host-side tensor reader.
@@ -79,10 +90,12 @@ def run(args):
         raise ValueError("original SeedVR2 VAE identity required")
     baseline = {**SETTINGS, "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE": "singleton2d",
         "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE": getattr(args,"baseline_history","concat"),
-        "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": getattr(args,"baseline_pointwise","conv")}
+        "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": getattr(args,"baseline_pointwise","conv"),
+        "TURBOCIDER_SEEDVR2_VAE_UPSCALE_RECIPE":getattr(args,"baseline_upscale","native")}
     candidate = {**SETTINGS, "TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE": args.candidate,
         "TURBOCIDER_SEEDVR2_VAE_HISTORY_RECIPE": getattr(args,"candidate_history","compact"),
-        "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": "matmul"}
+        "TURBOCIDER_SEEDVR2_VAE_POINTWISE_RECIPE": "matmul",
+        "TURBOCIDER_SEEDVR2_VAE_UPSCALE_RECIPE":getattr(args,"candidate_upscale","native")}
     order = ["baseline","candidate","candidate","baseline"]
     report = dict(schema="seedvr2-vae-paired-cohort-v1", status="running", identities=identities,
         order=order, settings=dict(baseline=baseline,candidate=candidate), cohorts=[],
@@ -103,9 +116,7 @@ def run(args):
             with (args.output/f"stderr-{index}.txt").open("w") as stderr:
                 subprocess.run(command,env=environment,stdout=subprocess.PIPE,stderr=stderr,check=True,text=True)
             raw = json.loads((output/"report.json").read_text())
-            for field in ("conv_recipe","norm_recipe","history_recipe","pointwise_recipe"):
-                if raw[field] != settings["TURBOCIDER_SEEDVR2_VAE_"+field.upper()]:
-                    raise ValueError("VAE observation did not execute its declared recipe")
+            validate_recipes(raw,settings)
             iterations = raw["iterations"]
             if len(iterations) != args.repeats or any(row["iteration"] != n for n,row in enumerate(iterations)):
                 raise ValueError("incomplete VAE repetitions")
@@ -158,9 +169,7 @@ def finalize_existing(args):
         raw = json.loads((output/"report.json").read_text())
         if observed["index"] != index or observed["route"] != route or len(raw["iterations"]) != args.repeats:
             raise ValueError("cohort count/order changed")
-        for field in ("conv_recipe","norm_recipe","history_recipe","pointwise_recipe"):
-            if raw[field] != report["settings"][route]["TURBOCIDER_SEEDVR2_VAE_"+field.upper()]:
-                raise ValueError("completed cohort recipe changed")
+        validate_recipes(raw,report["settings"][route])
         iterations = raw["iterations"]
         if any(row["iteration"] != n for n,row in enumerate(iterations)) or observed["warm_seconds"] != [
                 row["encode_seconds"]+row["decode_seconds"] for row in iterations[1:]] or observed["warm_peak_bytes"] != [
@@ -201,6 +210,8 @@ def main():
     parser.add_argument("--baseline-history",choices=("concat","compact","frames"),default="concat")
     parser.add_argument("--candidate-history",choices=("concat","compact","frames"),default="compact")
     parser.add_argument("--baseline-pointwise",choices=("conv","matmul"),default="conv")
+    parser.add_argument("--baseline-upscale",choices=("native","metal_fused"),default="native")
+    parser.add_argument("--candidate-upscale",choices=("native","metal_fused"),default="native")
     parser.add_argument("--repeats",type=int,default=4)
     parser.add_argument("--finalize-only",action="store_true",help="verify/recover completed GPU cohorts after a missing-reader host failure")
     args = parser.parse_args()

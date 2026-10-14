@@ -72,6 +72,14 @@ class VAEObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"set"):
             cohort.parity(self.reference,self.candidate)
 
+    def test_upscale_recipe_is_observed_not_inferred_from_environment(self):
+        raw=dict(conv_recipe="singleton2d",norm_recipe="metal",history_recipe="frames",pointwise_recipe="matmul")
+        settings={"TURBOCIDER_SEEDVR2_VAE_"+k.upper():v for k,v in raw.items()}
+        cohort.validate_recipes(raw,settings)
+        settings["TURBOCIDER_SEEDVR2_VAE_UPSCALE_RECIPE"]="metal_fused"
+        with self.assertRaisesRegex(ValueError,"upscale"):cohort.validate_recipes(raw,settings)
+        cohort.validate_recipes({**raw,"upscale_recipe":"metal_fused"},settings)
+
     def test_finalizer_cannot_modify_a_running_cohort(self):
         path = self.root/"report.json"
         cohort.write_json(path,dict(status="running",error="No module named 'safetensors'"))

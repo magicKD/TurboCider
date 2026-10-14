@@ -1,6 +1,6 @@
 # SeedVR2 VAE: fixed-tile Core ML / ANE feasibility
 
-## Conclusion (2026-10-14)
+## Conclusion (2026-10-15)
 
 There is a **conditional component opportunity**, not a qualified VAE backend.
 Native reusable FP16 IOSurface IO substantially changes the earlier negative
@@ -11,13 +11,17 @@ No production VAE routing, App default, or checkpoint was changed by this screen
 The subsequent **complete spatial convolution boundary** tests below include
 GPU pack/synchronization/assembly and cooperative output channels. At the tested
 512-square hot layer they do **not** establish a speed or memory win over GPU.
+The later captured-real upsampling screen below finds a conditional lower-
+allocation projection boundary, but no meaningful speed win over its corrected
+GPU baseline. A whole-VAE ANE backend remains unqualified.
 
 Machine: Apple M4 Max, 64 GiB, macOS 26.6.2. Original VAE SHA-256:
 `20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1`.
 Weights remain FP16 without BF16 rounding/quantization. Three temporal taps are
 stacked into Conv2D input channels **in tap/channel order**, preserving spatial
 halos. Bias stays outside the graph, preserving the native separate-round/add
-recipe. Inputs are synthetic normalized activations, not captured real media.
+recipe. The initial screens use synthetic normalized activations; the later
+upsampling follow-up explicitly uses captured real complete-context operands.
 
 ## Measured component timings
 
@@ -247,11 +251,162 @@ or **1x1 projection + pixel/temporal shuffle**, is more defensible than an
 unchecked full-residual/full-VAE tile graph. Explicit FP32/FP16 rounding may
 prevent some Core ML fusions; verify the compiled numerical recipe.
 
+## Captured-real spatial upsampling follow-up (2026-10-15)
+
+An offline observation hook captures the actual inputs to
+`decoder.up_blocks.2.upsamplers.0.upscale_conv` at frames0 and24 while decoding
+the **complete25-frame** restored native latent. Both inputs are original FP16
+NDHWC `[1,1,512,512,256]`. No source/model request is truncated; selected input
+capture is not a whole-video ANE test. Frame0 ranges from -224.5 to115.25,
+substantially different from the earlier synthetic normalized inputs.
+
+The new original-weight public Core ML banks have fixed64-square inputs:
+projection-only and projection plus exact spatial shuffle. The channel order
+is `[spatial_row,spatial_col,c]`, **not** ordinary channel-first pixel shuffle.
+Bias stays outside both graphs and is added after a materialized FP16 projection
+by the GPU consumer, preserving the original separate-round/add recipe. Both
+graphs remain probe-only/`qualified=false`; full-VAE/App routing is unchanged.
+
+Complete512-square layer requests compute all64 tiles, all1024 projection
+channels, bias and the1024-square/256-channel output. CPU-only, CPU+NE serial,
+two-slot pipeline, whole GPU matmul/Conv2D and bounded GPU-tile controls execute.
+Every pack/assembly value has an independent scalar-index witness, every output
+passes unchanged finite/.05-relative-L2/.999-cosine gates against a blocked FP32
+reference, and15 independent FP64 products check that reference. Inputs alternate
+`+/-/+` with fixed original bias; output poisoning detects incomplete writes.
+Core ML backing identity/shape/strides must match every actual prediction.
+
+### Corrected complete-layer observations
+
+The final frame0 comparison uses two independent processes per route,
+forward/reverse order and six warm complete requests each. Timing includes pack,
+producer completion, Core ML prediction, consumer completion, bias/shuffle and
+assembly; loading, reference scans, preflight witnesses and poisoning are outside.
+
+| Complete captured frame0 boundary | Warm median (ms) | Active MLX peak (bytes) |
+| --- | ---: | ---: |
+| Native GPU matmul + separate bias/shuffle | 22.773 | 1,209,010,180 |
+| CPU+NE projection, serial shared tiles | 37.412 | 672,139,268 |
+| CPU+NE projection, two-slot pipeline + GPU bias/shuffle | 22.888 | 672,139,268 |
+| GPU1x1 Conv2D + native bias/shuffle | 23.803 | 1,209,010,180 |
+| GPU matmul + standalone fused bias/shuffle handoff | 24.658 | 1,209,010,180 |
+| Bounded GPU tile matmul + fused bias/shuffle | 43.386 | 682,625,028 |
+| CPU-only projection, serial | 55.666 | 672,139,268 |
+| CPU+NE projection+shuffle graph, two-slot + GPU bias | 36.047 | 672,139,268 |
+| CPU-only projection+shuffle graph, serial | 617.350 | 672,139,268 |
+
+CPU+NE projection is effectively speed-flat versus the corrected whole GPU
+route, not a qualified acceleration. It saves **512 MiB active allocation** at
+this prepared layer, before the separate **21,037,056-byte** two-slot surface pool;
+bounded GPU tiles have similar active allocation but are slower here. This
+motivates a selectable lower-workspace boundary, not a whole-VAE/RAM budget.
+Sampled process maxima for corrected GPU/NE projection are
+1,397,655,544/884,901,832 bytes. They include probe operands/reference/code and
+are not whole-VAE/device peaks. The fused standalone control's process footprint
+is affected by its extra preflight resources and is not a fair physical-memory
+comparison; its timed active peak is reported separately, with no process-memory
+win inferred. Internal Core ML copy/placement and hardware overlap are unmeasured.
+
+Adding shuffle to Core ML is slower here even though the compute plan anticipates
+NeuralEngine for conv, reshape and transpose. Anticipated placement is not actual
+occupancy or proof that more graph fusion is faster. Relative L2 for native/NE
+projection is about .00026367/.00026394; both pass. CPU-only also passes at about
+.00140731. This is one selected real layer, not compounded VAE quality.
+
+### Preserved preliminary records and baseline correction
+
+Earlier frame0/frame24 complete-layer medians observed NE pipeline23.873/23.277
+ms versus GPU24.618/25.358 ms. Those GPU controls unnecessarily retained named
+projection/biased intermediates, raising active peak to1,745,881,092 bytes.
+They are preserved, **not** used as the final speed/memory baseline. The corrected
+control matches the original expression's ownership and eliminates that extra
+512-MiB retention. Earlier apparent gains of3–8% and1-GiB active reduction must
+not be treated as final qualification. Corrected later-frame replication remains
+an independent next gate.
+
+The standalone fused GPU control checks805,306,368 FP16 output words across signed
+ABA bitwise against the original operator sequence. Its explicit GPU queue
+handoff is not the in-graph native implementation below. Both original/fused
+control records remain separate; they are not relabelled after source changes.
+
+### Native in-graph fused bias/shuffle candidate
+
+`metal/upscale.hpp` integrates a separate FP16 bias add and spatial/temporal
+shuffle into one native MLX Metal kernel. The GEMM still outputs FP16 first;
+bias is never folded into FP32 accumulation. Initial temporal phase1 is skipped
+only on the first slice, with all later phases and batches preserved. Thirty-three
+bitwise unit cases cover ragged channels, batch/time phases, strided operands
+and subnormals. The diagnostic environment
+`TURBOCIDER_SEEDVR2_VAE_UPSCALE_RECIPE=metal_fused` selects it **only in an
+experimental probe build** (`TURBOCIDER_VAE_UPSCALE_EXPERIMENT=1` when building
+codec/spatial probes). Ordinary native/App builds reject this selector rather
+than silently falling back. Default remains `native`, with explicit executed-
+recipe reporting. No App picker/default or public request field is promoted.
+
+The first native prototype retained a named GEMM tensor through the following
+causal convolution, unnecessarily increasing whole-decoder active peak by about
+0.5GB. It is not promoted. The corrected expression removes that owner before
+convolution. Its complete t25 full/file-row outputs have the same raw export
+hashes as their respective original routes; all78,643,200 decoded values are
+checked. It passes the independently audited same-latent FP32 VAE reference with
+unchanged errors .000522324/.000522439. Single decoder observations are54.920 /
+189.959 s, active peaks13,196,954,446/5,647,731,538 bytes; these are **not** balanced
+warm speed gates or full requests. The completed1024-image encode+decode ABBA
+uses four independent processes, one cold plus six freshly computed warm
+iterations each, identical frame history/pointwise/norm/cache settings. Native/
+first fused medians are **1.409834/1.463264 s**, identical active peaks
+9,683,323,726 bytes; every latent/pixel word is exact. The fusion is **slower**
+and fails the speed gate. Replacing its NCHW-style transpose thread organization
+with channel-contiguous linear access gives **1.415152/1.456195 s**, still slower
+with identical peaks and words. Neither implementation is promoted. The earlier
+complete25 quality checks apply to the transpose implementation; the linear
+revision has33 bitwise unit cases plus image ABBA; subsequent complete25 raw
+full/file-row hashes also match their original routes and pass the same audited
+FP32 reference. Those decoder-only observations are55.479/187.734 s with
+unchanged active peaks, not speed gates. Actual App/full-request and video warm qualification remain
+required. This negative gate is useful evidence, not a completed acceleration.
+
+Records (all generated under `outputs/`, not committed media/models):
+
+- `seedvr2-vae-upscale-real-inputs-t25-v1-20261014/capture.json`: complete25 decode,
+  selected actual initial/later inputs; declared latent identity is in the drivers.
+- `seedvr2-upscale-real-128-integration-v1-20261014/report.json`: small integration
+  crop, **not** a complete512 layer.
+- `seedvr2-upscale-real-full512-frame{0,24}-v1-20261014/report.json`: preliminary
+  complete-layer records with the GPU intermediate-retention caveat.
+- `seedvr2-upscale-real-full512-fused-control-frame0-v2-20261015/report.json`:
+  added fused control, before correcting GPU baseline ownership.
+- `seedvr2-upscale-real-full512-corrected-frame0-v3-20261015/report.json`:
+  use this corrected baseline for the table above.
+- `seedvr2-fused-upscale-full1024-t25-v1-20261015/report.json`: first in-graph
+  implementation, byte-correct but with extra GEMM retention.
+- `seedvr2-fused-upscale-full1024-t25-v2-20261015/report.json`: corrected lifetime,
+  explicit execution recipe, complete raw exports and component observations.
+- `seedvr2-fused-upscale-full1024-t25-fp32-quality-v2-20261015.json`: independent
+  original-FP32 whole-pixel gate; no reference rerun or precision relabelling.
+- `seedvr2-fused-upscale-image1024-abba-v1-20261015/report.json`: first fused
+  candidate is exact but slower, with no active-peak reduction.
+- `seedvr2-fused-upscale-linear-image1024-abba-v2-20261015/report.json`: linear
+  revision is also exact/slower; no default promotion or peak claim.
+- `seedvr2-fused-upscale-linear-full1024-t25-v3-20261015/report.json`: all25
+  raw outputs/full-context phases and row-file mode are byte equal to their own
+  original route; no full-request or warm-video speed qualification.
+- `seedvr2-fused-upscale-linear-full1024-t25-fp32-quality-v3-20261015.json`:
+  separate original-FP32 whole-pixel comparison; both routes pass.
+
+Export tool: `tools/coreml/export_seedvr2_vae_upscale.py`; build native tooling
+with `tools/native/build_seedvr2_vae_upscale_probe.sh` into a fresh output.
+`seedvr2_vae_upscale_screen.py --help` exposes the bounded complete-layer driver.
+Keep the Core ML and native fused choices experimental until their individual
+whole-VAE/App/latency/ownership gates pass; the overall goal remains open.
+
 ## GPU/ANE cooperation plan and acceptance
 
 The full-output 64-square hot convolution now has the negative full-boundary
 result above. Prioritize other layers/boundaries and the 256->1024 projection
-before considering any production convolution route.
+before considering any production convolution route. The projection follow-up
+above now narrows that opportunity to allocation reduction at a speed-flat
+boundary; it does not support default ANE migration or adding shuffle indiscriminately.
 Use public APIs; neither private ANE APIs nor automatic App routing are needed.
 
 1. Allocate a bounded ring of nonaliasing IOSurface input/output slots. Prepare

@@ -85,6 +85,19 @@ class NativeHybridObserverTests(unittest.TestCase):
             wrong=dict(value);wrong[key]=bad
             with self.subTest(key=key,bad=bad),self.assertRaises(ValueError):observer.check_native_execution(self.args,wrong)
 
+    def test_encoder_spatial_recipe_and_retirement_are_explicit(self):
+        self.args.vae_options=dict(encoder_spatial="file_rows")
+        value=self.metrics();value.update(numerical_recipe=value["numerical_recipe"]+"+vae-encoder-head-globalstats-file-rows-v1",
+            vae_encoder_recipe="buffered",streamed_input_frames=0,vae_decoder_recipe="buffered",streamed_output_frames=0,
+            vae_conv_recipe="singleton2d",vae_history_recipe="compact",vae_conv_tile_rows_limit=16384,allocator_cache_limit_bytes=4<<30,
+            vae_encoder_spatial_recipe="file_rows",vae_encoder_spatial_file_live_bytes_after_encode=0,
+            vae_encoder_spatial_host_live_bytes_after_encode=0,vae_encoder_spatial_cleanup_failures=0)
+        observer.check_native_execution(self.args,value)
+        for key,bad in (("vae_encoder_spatial_recipe","full"),("vae_encoder_spatial_file_live_bytes_after_encode",1),
+                        ("vae_encoder_spatial_cleanup_failures",1)):
+            wrong=dict(value);wrong[key]=bad
+            with self.assertRaises(ValueError):observer.check_native_execution(self.args,wrong)
+
     def test_spatial_recipe_and_retirement_are_not_inferred_from_peak_memory(self):
         self.args.vae_options=dict(spatial="file_rows",spatial_rows=64)
         value=self.metrics();value.update(numerical_recipe=value["numerical_recipe"]+"+vae-globalstats-file-rows-v1",
