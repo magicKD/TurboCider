@@ -28,7 +28,11 @@ def main():
     parser.add_argument("--count",type=int,default=4)
     parser.add_argument("--residency",choices=("resident","component_staged"),default="resident")
     parser.add_argument("--manifest",type=Path)
+    parser.add_argument("--before-vae-options",type=json.loads)
+    parser.add_argument("--after-vae-options",type=json.loads)
     args = parser.parse_args()
+    for config in (args.before_vae_options,args.after_vae_options):
+        if config is not None and not isinstance(config,dict): parser.error("VAE controls must be JSON objects")
     if not 4 <= args.count <= 10 or (args.kind == "image" and args.frames != 1):
         parser.error("one cold and at least three genuine warm requests per cohort required")
     for name in ("model","source","before_library","after_library"):
@@ -37,6 +41,7 @@ def main():
     args.output = args.output.absolute()
     if args.output.exists(): parser.error("fresh revision cohort directory required")
     libraries = dict(before=args.before_library,after=args.after_library)
+    vae_options = dict(before=args.before_vae_options,after=args.after_vae_options)
     paths = {"source":args.source}
     for label, library in libraries.items():
         paths[label+"_library"] = library
@@ -47,7 +52,7 @@ def main():
     route = "native-hybrid" if args.manifest else "native-gpu"
     order = ["before","after","after","before"]
     report = dict(schema="seedvr2-native-revision-request-abba-v1",status="running",order=order,
-        identities=identities,cohorts=[],route=route,
+        identities=identities,cohorts=[],route=route,vae_options=vae_options,
         workload=dict(kind=args.kind,size=args.size,frames=args.frames,fps=args.fps,residency=args.residency),
         scope="matched full-request warm timing/active MLX peak; separate output quality required; no hard physical budget")
     environment = {key:value for key,value in os.environ.items() if not key.startswith("TURBOCIDER_SEEDVR2_")}
@@ -64,6 +69,7 @@ def main():
                 "--height",str(args.size),"--frames",str(args.frames),"--fps",str(args.fps),
                 "--seed","42","--count",str(args.count),"--residency",args.residency,"--output",str(destination)]
             if args.manifest: command += ["--ane-manifest",str(args.manifest)]
+            if vae_options[label] is not None: command += ["--vae-options",json.dumps(vae_options[label],sort_keys=True)]
             write_json(args.output / f"command-{index}.json",dict(argv=command,allocator_cache_bytes=4 << 30))
             print(f"revision cohort {index+1}/4: {label}",flush=True)
             subprocess.run(command,env=environment,check=True)

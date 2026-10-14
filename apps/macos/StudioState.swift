@@ -227,6 +227,7 @@ struct StudioDraft: Codable, Sendable {
     var promptEnhanceEditExperimental = false
     var promptEnhancerPath = ""
     var residency = "resident"
+    var seedvr2VAE: NativeSeedVR2VAEConfig?
     var zImageStreamingBudgetGiB = 10
     var profilePath = ""
     var acceleration: StudioAcceleration?
@@ -239,7 +240,7 @@ struct StudioDraft: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
-        case assets, loras, initImageID, loraStrategy, modelLoRAs
+        case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -271,6 +272,7 @@ struct StudioDraft: Codable, Sendable {
         promptEnhanceEditExperimental = try c.decodeIfPresent(Bool.self, forKey: .promptEnhanceEditExperimental) ?? false
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
+        seedvr2VAE = try c.decodeIfPresent(NativeSeedVR2VAEConfig.self, forKey: .seedvr2VAE)
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
         acceleration = try c.decodeIfPresent(StudioAcceleration.self, forKey: .acceleration)
@@ -607,6 +609,12 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         request.dynamic_text = dynamicText; request.residency = residency
+        if modelID == "seedvr2-3b", var config = seedvr2VAE {
+            // The decoder sink writes video frames. Still-image export keeps
+            // the established alpha-preserving PNG path.
+            if operation == "image.upscale" { config.decoder = "buffered" }
+            request.seedvr2_vae = config
+        }
         request.prompt_enhance = modelID == "qwen-image-2.1" && promptEnhance
         request.prompt_enhance_edit_experimental = modelID == "qwen-image-2.1" &&
             operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
@@ -1378,6 +1386,7 @@ final class StudioState: ObservableObject {
         draft.audio = request.audio ?? false; draft.seedText = String(request.seed); draft.randomSeed = false
         draft.operation = request.operation ?? "image.generate"
         draft.residency = request.residency ?? "resident"; draft.profilePath = request.profile ?? ""
+        draft.seedvr2VAE = request.seedvr2_vae
         if request.model == "z-image-turbo", let budget = request.memory_budget_bytes {
             draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
         }

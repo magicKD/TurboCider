@@ -11,6 +11,8 @@
 #include "../../media/video_input.hpp"
 #include "../../runtime/residency.hpp"
 #include <mlx/random.h>
+#include <CommonCrypto/CommonDigest.h>
+#include <cstdlib>
 
 namespace tc {
 namespace {
@@ -39,6 +41,38 @@ double elapsed(Clock::time_point start) { return std::chrono::duration<double>(C
 Tensor channels(const Tensor &pixels, int first, int last) {
     return mx::slice(pixels,{0,0,0,first},{pixels.shape(0),pixels.shape(1),pixels.shape(2),last});
 }
+// Offline diagnostic only. Hash the exact bytes handed to the encoder, so
+// codec variability is distinguishable from restoration/quantization errors.
+struct VideoPixelHash {
+    bool enabled = false;
+    CC_SHA256_CTX context{};
+    explicit VideoPixelHash(bool video) {
+        if (const char *flag = std::getenv("TURBOCIDER_SEEDVR2_VIDEO_PIXEL_HASH")) {
+            require(std::string(flag) == "0" || std::string(flag) == "1", "video pixel hash flag must be 0 or 1");
+            enabled = video && std::string(flag) == "1";
+        }
+        if (enabled) require(CC_SHA256_Init(&context) == 1,"cannot initialize video pixel hash");
+    }
+    void add(const uint8_t *data, size_t bytes) {
+        if (!enabled) return;
+        while (bytes) {
+            const auto count = CC_LONG(std::min<size_t>(bytes,1u << 28));
+            require(CC_SHA256_Update(&context,data,count) == 1,"cannot update video pixel hash");
+            data += count; bytes -= count;
+        }
+    }
+    std::string finish() {
+        if (!enabled) return {};
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        require(CC_SHA256_Final(digest,&context) == 1,"cannot finish video pixel hash");
+        constexpr char hex[] = "0123456789abcdef";
+        std::string result(CC_SHA256_DIGEST_LENGTH*2,'0');
+        for (size_t i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i) {
+            result[i*2] = hex[digest[i] >> 4]; result[i*2+1] = hex[digest[i] & 15];
+        }
+        return result;
+    }
+};
 class SeedVR2Session final : public ModelSession {
     std::filesystem::path root_;
     SourceStamp dit_source_, vae_source_;
@@ -126,6 +160,7 @@ class SeedVR2Session final : public ModelSession {
         const auto started = Clock::now();
         configure_residency(r);
         load(event, cancelled);
+        pipeline_.configure_vae(r.seedvr2_vae);
         configure_hybrid(r,event,cancelled);
         return native_run_result(@{@"schema_version": @1, @"prepared": @YES, @"warmup": @NO,
             @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
@@ -150,7 +185,8 @@ class SeedVR2Session final : public ModelSession {
         const bool reused = loaded_ && pipeline_.stages_dit() == (r.residency == "component_staged");
         mx::synchronize();
         mx::reset_peak_memory();
-        const auto allocator_cache_bytes = seedvr2::allocator_cache_limit();
+        const auto allocator_cache_bytes = r.seedvr2_vae ? size_t(r.seedvr2_vae->allocator_cache_bytes)
+                                                       : seedvr2::allocator_cache_limit();
         seedvr2::AllocatorCacheScope allocator(allocator_cache_bytes);
         const auto started = Clock::now();
         SeedVR2MemorySampler memory;
@@ -159,6 +195,7 @@ class SeedVR2Session final : public ModelSession {
             pipeline_.stages_dit() == (r.residency == "component_staged");
         configure_residency(r);
         load(event, cancelled);
+        pipeline_.configure_vae(r.seedvr2_vae);
         configure_hybrid(r,event,cancelled);
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
@@ -203,6 +240,27 @@ class SeedVR2Session final : public ModelSession {
         const auto temporary = output.parent_path() /
             (output.stem().string() + ".seedvr2-" + NSUUID.UUID.UUIDString.UTF8String + output.extension().string());
         try {
+            const bool stream_decode = video && r.seedvr2_vae && r.seedvr2_vae->decoder == "streaming";
+            VideoPixelHash pixel_hash(video);
+            std::unique_ptr<RGB24VideoWriter> stream_writer;
+            double frame_export_seconds = 0;
+            seedvr2::DecodedFrameSink sink;
+            if (stream_decode) {
+                stream_writer = std::make_unique<RGB24VideoWriter>(temporary,r.frames,r.width,r.height,r.fps,&cancelled);
+                sink = [&](int index, const Tensor &frame) {
+                    checkpoint(cancelled);
+                    require(frame.shape() == mx::Shape{1,3,1,r.height,r.width} && frame.dtype() == mx::float16 &&
+                            mx::all(mx::isfinite(frame)).item<bool>(), "SeedVR2 streaming decoder produced an invalid frame");
+                    const auto copying = Clock::now();
+                    auto rgb = mx::astype(mx::reshape(mx::transpose(frame,{0,2,3,4,1}),{r.height,r.width,3}),mx::float32);
+                    auto bytes = mx::astype(mx::round(mx::clip((rgb+1.f)*.5f,Tensor(0.f),Tensor(1.f))*255.f),mx::uint8);
+                    mx::eval(bytes);
+                    pixel_hash.add(bytes.data<uint8_t>(),bytes.nbytes());
+                    stream_writer->append(index,bytes.data<uint8_t>(),bytes.nbytes());
+                    frame_export_seconds += elapsed(copying);
+                    if (event) event("seedvr2_vae_export_frame",index+1,r.frames);
+                };
+            }
             const auto calls_before = hybrid_ ? hybrid_->calls() : 0;
             const auto blocks_before = hybrid_ ? hybrid_->hybrid_blocks() : 0;
             const auto copies_before = hybrid_ ? hybrid_->copied_bytes() : 0;
@@ -211,7 +269,7 @@ class SeedVR2Session final : public ModelSession {
                 return hybrid_->predict(block,input);
             }) : seedvr2::FFNRoute{};
             auto result = media_input
-                ? pipeline_.restore_owned(std::move(pixels),noise,event,cancelled,r.dump,route)
+                ? pipeline_.restore_owned(std::move(pixels),noise,event,cancelled,r.dump,route,sink)
                 : pipeline_.restore(pixels,noise,event,cancelled,r.dump,route);
             const uint64_t coreml_calls = hybrid_ ? hybrid_->calls()-calls_before : 0;
             const uint64_t hybrid_blocks = hybrid_ ? hybrid_->hybrid_blocks()-blocks_before : 0;
@@ -221,18 +279,25 @@ class SeedVR2Session final : public ModelSession {
                         "SeedVR2 hybrid did not execute its declared all-block prefix partition");
                 check_hybrid_source();
             }
-            require(result.pixels.shape() == mx::Shape{1, 3, r.frames, r.height, r.width} &&
-                    mx::all(mx::isfinite(result.pixels)).item<bool>(), "SeedVR2 produced invalid restored pixels");
-            auto restored = mx::transpose(mx::squeeze(mx::astype(result.pixels, mx::float32), 0), {1, 2, 3, 0});
-            mx::eval(restored);
+            Tensor restored(0);
+            if (stream_decode) require(result.pixels_streamed && stream_writer->frames_written() == r.frames,
+                                       "SeedVR2 streaming decoder did not export the complete source frame count");
+            else {
+                require(!result.pixels_streamed && result.pixels.shape() == mx::Shape{1, 3, r.frames, r.height, r.width} &&
+                        mx::all(mx::isfinite(result.pixels)).item<bool>(), "SeedVR2 produced invalid restored pixels");
+                restored = mx::transpose(mx::squeeze(mx::astype(result.pixels,mx::float32),0),{1,2,3,0});
+                mx::eval(restored);
+            }
             if (!r.dump.empty()) mx::save_safetensors((std::filesystem::path(r.dump) / "restoration.safetensors").string(),
                 {{"pixels", result.pixels}, {"condition", result.condition}, {"velocity", result.velocity}, {"latent", result.latent}});
             checkpoint(cancelled);
             if (event) event("export", 0, 1);
             const auto export_started = Clock::now();
-            if (video) {
+            if (stream_decode) stream_writer->finish();
+            else if (video) {
                 auto bytes = mx::astype(mx::round(mx::clip((restored + 1.f) * .5f, Tensor(0.f), Tensor(1.f)) * 255.f), mx::uint8);
                 mx::eval(bytes);
+                pixel_hash.add(bytes.data<uint8_t>(),bytes.nbytes());
                 write_video_rgb24(temporary, bytes.data<uint8_t>(), r.frames, r.width, r.height, r.fps);
                 const auto info = probe_video(temporary);
                 require(info.frames == r.frames && info.width == r.width && info.height == r.height && info.fps == r.fps,
@@ -244,9 +309,10 @@ class SeedVR2Session final : public ModelSession {
             checkpoint(cancelled);
             std::filesystem::create_directories(output.parent_path());
             std::filesystem::rename(temporary, output);
-            const double export_seconds = elapsed(export_started);
+            const double export_seconds = elapsed(export_started) + frame_export_seconds;
             if (event) event("export", 1, 1);
             memory.stop();
+            const auto video_pixel_sha = pixel_hash.finish();
             return native_run_result(@{
                 @"schema_version": @1, @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
@@ -288,6 +354,13 @@ class SeedVR2Session final : public ModelSession {
                 @"normalized_input_release_bytes_scope": @"logical normalized RGB tensor bytes; not physical-memory or peak-reduction guarantee",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
+                @"vae_decoder_recipe": stream_decode ? @"streaming" : @"buffered",
+                @"video_encoder_recipe": video ? (stream_decode ? @"h264_source_fps_frame_gop2s_no_duration_limit_v1" : @"h264_buffered_legacy") : @"not_applicable",
+                @"decoded_output_retention_recipe": stream_decode ? @"frame_sink_no_full_rgb_tensor" : @"full_rgb_bcthw",
+                @"streamed_output_frames": @(stream_writer ? stream_writer->frames_written() : 0),
+                @"video_preencode_rgb24_sha256": pixel_hash.enabled ? (id)@(video_pixel_sha.c_str()) : (id)NSNull.null,
+                @"video_preencode_pixel_hash_diagnostic": @(pixel_hash.enabled),
+                @"vae_decoder_wall_includes_frame_export": @(stream_decode),
                 @"vae_norm_recipe": @(pipeline_.vae_norm_recipe().c_str()),
                 @"vae_history_recipe": @(pipeline_.vae_history_recipe().c_str()),
                 @"vae_pointwise_recipe": @(pipeline_.vae_pointwise_recipe().c_str()),
@@ -307,7 +380,8 @@ class SeedVR2Session final : public ModelSession {
                 @"checkpoint_sha256_verified": @YES, @"seconds": @(elapsed(started)),
                 @"timings_seconds": @{@"request_wall": @(elapsed(started)), @"load": @(load_seconds),
                     @"media_import": @(import_seconds), @"vae_encode": @(result.encode_seconds),
-                    @"denoise": @(result.denoise_seconds), @"vae_decode": @(result.decode_seconds),
+                    @"denoise": @(result.denoise_seconds), @"vae_decode": @(std::max(0.0,result.decode_seconds-frame_export_seconds)),
+                    @"vae_decode_wall": @(result.decode_seconds), @"frame_export": @(frame_export_seconds),
                     @"weight_management": @(result.staging_seconds), @"restoration_total": @(result.restore_seconds),
                     @"input_release": @(result.input_release_seconds),
                     @"export": @(export_seconds)},

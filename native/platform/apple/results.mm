@@ -574,6 +574,12 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
+        @"seedvr2_vae" : r.seedvr2_vae ? (id)@{
+            @"decoder": @(r.seedvr2_vae->decoder.c_str()),
+            @"convolution": @(r.seedvr2_vae->convolution.c_str()),
+            @"tile_rows": @(r.seedvr2_vae->tile_rows),
+            @"allocator_cache_bytes": @(r.seedvr2_vae->allocator_cache_bytes)
+        } : (id)NSNull.null,
         @"streaming_offload" : @(r.streaming_offload ||
                                   r.residency == "streaming" ||
                                   r.residency == "streamed"),

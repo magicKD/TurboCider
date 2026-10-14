@@ -24,6 +24,10 @@ ModelModule seedvr2_module() {
                     "SeedVR2 image output is one frame; video output requires the complete source frame count in 2...121");
             require(!video || (r.fps >= 1 && r.fps <= 120), "SeedVR2 requires an integer source FPS in 1...120");
             require(!r.audio, "SeedVR2 currently exports silent video; audio preservation is not yet supported");
+            if (r.seedvr2_vae && r.seedvr2_vae->decoder == "streaming") {
+                require(video, "SeedVR2 streaming VAE decoder requires video.upscale");
+                require(r.dump.empty(), "SeedVR2 streaming decoder cannot materialize a full pixel dump; select buffered for tensor dumps");
+            }
             require(r.encoder_ane_manifest.empty(), "SeedVR2 has no separate encoder ANE route");
             if (r.execution == "gpu_ane") {
                 require(r.allow_approximation && !r.ane_manifest.empty(), "SeedVR2 manual GPU+ANE requires approximation consent and a qualified manifest");

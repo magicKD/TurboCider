@@ -1,4 +1,5 @@
 #include "video.hpp"
+#include "../core/common.hpp"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
@@ -7,6 +8,7 @@
 #include <chrono>
 #include <string>
 #include <stdexcept>
+#include <thread>
 
 namespace tc {
 namespace {
@@ -166,6 +168,131 @@ void write_video_rgb24(const std::filesystem::path& output,
         throw;
     }
 }
+
+struct RGB24VideoWriter::Impl {
+    std::filesystem::path output, staging;
+    int frames, width, height, fps, next = 0;
+    const std::atomic<bool> *cancelled;
+    AVAssetWriter *writer = nil;
+    AVAssetWriterInput *video = nil;
+    AVAssetWriterInputPixelBufferAdaptor *adaptor = nil;
+    bool published = false;
+    Impl(const std::filesystem::path &path, int count, int w, int h, int rate,
+         const std::atomic<bool> *cancel)
+        : output(path), frames(count), width(w), height(h), fps(rate), cancelled(cancel) {}
+    void check_cancel() const {
+        if (cancelled && cancelled->load()) throw Cancelled();
+    }
+    void start() {
+        require_status(frames > 0 && width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+                       fps > 0 && fps <= 120, "invalid streaming video geometry");
+        check_cancel();
+        if (!output.parent_path().empty()) std::filesystem::create_directories(output.parent_path());
+        staging = output;
+        staging += "." + std::string(NSUUID.UUID.UUIDString.UTF8String) + ".mp4";
+        NSError *error = nil;
+        writer = [[AVAssetWriter alloc] initWithURL:[NSURL fileURLWithPath:@(staging.c_str())]
+                                         fileType:AVFileTypeMPEG4 error:&error];
+        require_status(writer != nil, error ? error.localizedDescription.UTF8String : "cannot create streaming video writer");
+        NSDictionary *settings = @{
+            AVVideoCodecKey: AVVideoCodecTypeH264, AVVideoWidthKey: @(width), AVVideoHeightKey: @(height),
+            AVVideoCompressionPropertiesKey: @{
+                AVVideoAverageBitRateKey: @(std::max<int64_t>(1000000,int64_t(width)*height*fps/2)),
+                // Slow offline producers must not inherit a wall-time-driven
+                // automatic keyframe cadence. Bound GOPs by source frames,
+                // disable a duration limit and declare expected source FPS.
+                AVVideoExpectedSourceFrameRateKey: @(fps),
+                AVVideoMaxKeyFrameIntervalKey: @(fps*2),
+                AVVideoMaxKeyFrameIntervalDurationKey: @0.0,
+                AVVideoAllowFrameReorderingKey: @NO,
+            },
+        };
+        video = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:settings];
+        video.mediaTimeScale = fps;
+        writer.movieTimeScale = fps;
+        video.expectsMediaDataInRealTime = NO;
+        adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:video
+            sourcePixelBufferAttributes:@{
+                (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+                (NSString *)kCVPixelBufferWidthKey: @(width), (NSString *)kCVPixelBufferHeightKey: @(height),
+                (NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{},
+            }];
+        require_status([writer canAddInput:video], "unsupported streaming video settings");
+        [writer addInput:video];
+        require_status([writer startWriting], "streaming video writer start failed");
+        [writer startSessionAtSourceTime:kCMTimeZero];
+    }
+    ~Impl() {
+        if (!published) {
+            if (writer && writer.status == AVAssetWriterStatusWriting) [writer cancelWriting];
+            if (!staging.empty()) { std::error_code ignored; std::filesystem::remove(staging,ignored); }
+        }
+    }
+    void append(int index, const uint8_t *rgb, size_t bytes) {
+        check_cancel();
+        require_status(!published && writer.status == AVAssetWriterStatusWriting && index == next && next < frames &&
+                       rgb && bytes == size_t(width)*height*3, "invalid streaming frame order, size or writer state");
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (!video.readyForMoreMediaData) {
+            check_cancel();
+            require_status(writer.status == AVAssetWriterStatusWriting, "streaming video writer stopped accepting frames");
+            require_status(std::chrono::steady_clock::now() < deadline, "streaming video writer backpressure timed out");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CVPixelBufferRef buffer = nullptr;
+        require_status(CVPixelBufferPoolCreatePixelBuffer(nullptr,adaptor.pixelBufferPool,&buffer) == kCVReturnSuccess,
+                       "cannot allocate streaming pixel buffer");
+        if (CVPixelBufferLockBaseAddress(buffer,0) != kCVReturnSuccess) {
+            CFRelease(buffer);
+            throw std::runtime_error("cannot lock streaming pixel buffer");
+        }
+        auto *destination = static_cast<uint8_t *>(CVPixelBufferGetBaseAddress(buffer));
+        const size_t stride = CVPixelBufferGetBytesPerRow(buffer);
+        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+            const auto *pixel = rgb + (size_t(y)*width+x)*3;
+            auto *out = destination + size_t(y)*stride + size_t(x)*4;
+            out[0] = pixel[2]; out[1] = pixel[1]; out[2] = pixel[0]; out[3] = 255;
+        }
+        CVPixelBufferUnlockBaseAddress(buffer,0);
+        const BOOL accepted = [adaptor appendPixelBuffer:buffer withPresentationTime:CMTimeMake(index,fps)];
+        CFRelease(buffer);
+        require_status(accepted, "streaming video writer append failed");
+        ++next;
+    }
+    void finish() {
+        check_cancel();
+        require_status(!published && next == frames && writer.status == AVAssetWriterStatusWriting,
+                       "streaming video writer requires the complete declared sequence");
+        [video markAsFinished];
+        [writer endSessionAtSourceTime:CMTimeMake(frames,fps)];
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        [writer finishWritingWithCompletionHandler:^{ dispatch_semaphore_signal(done); }];
+        // Poll a specific live completion handle so cancellation is responsive.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(180);
+        while (dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC)) != 0) {
+            check_cancel();
+            require_status(std::chrono::steady_clock::now() < deadline, "streaming video finalization timed out");
+        }
+        require_status(writer.status == AVAssetWriterStatusCompleted, "streaming video finalization failed");
+        check_cancel();
+        const auto info = probe_video(staging);
+        require_status(info.frames == frames && info.width == width && info.height == height && info.fps == fps,
+                       "streaming video geometry mismatch");
+        std::filesystem::rename(staging,output);
+        published = true;
+    }
+};
+RGB24VideoWriter::RGB24VideoWriter(const std::filesystem::path &path, int frames, int width, int height, int fps,
+                                 const std::atomic<bool> *cancelled)
+    : impl_(std::make_unique<Impl>(path,frames,width,height,fps,cancelled)) {
+    @autoreleasepool { impl_->start(); }
+}
+RGB24VideoWriter::~RGB24VideoWriter() = default;
+void RGB24VideoWriter::append(int index, const uint8_t *rgb, size_t bytes) {
+    @autoreleasepool { impl_->append(index,rgb,bytes); }
+}
+void RGB24VideoWriter::finish() { @autoreleasepool { impl_->finish(); } }
+int RGB24VideoWriter::frames_written() const { return impl_->next; }
 
 VideoMediaInfo probe_video(const std::filesystem::path& path) {
     @autoreleasepool {

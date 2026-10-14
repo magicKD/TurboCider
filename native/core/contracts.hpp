@@ -17,6 +17,12 @@ struct LoRAAsset {
     float strength = 1.0f;
     std::string role = "transformer";
 };
+struct SeedVR2VAEConfig {
+    std::string decoder = "buffered";
+    std::string convolution = "singleton2d";
+    int tile_rows = 16384;
+    uint64_t allocator_cache_bytes = 4ull << 30;
+};
 struct Request {
     std::string model = "flux2-klein-4b";
     std::string operation = "image.generate";
@@ -88,6 +94,7 @@ struct Request {
     MemoryConstrainedConfig memory_constrained;
     StreamingConfig streaming;
     QuantizedExecutionConfig quantized_execution;
+    std::optional<SeedVR2VAEConfig> seedvr2_vae;
     std::optional<StreamingConfig> streaming_requested;
     std::optional<StreamingSelector> streaming_selector;
     std::optional<StreamingSelector> streaming_selector_requested;

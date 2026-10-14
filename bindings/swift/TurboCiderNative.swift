@@ -20,6 +20,17 @@ public struct NativeLoRA: Codable, Sendable, Identifiable {
         self.path = path; self.strength = strength; self.role = role
     }
 }
+public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
+    public var decoder: String
+    public var convolution: String
+    public var tile_rows: Int
+    public var allocator_cache_bytes: UInt64
+    public init(decoder: String = "buffered", convolution: String = "singleton2d",
+                tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30) {
+        self.decoder = decoder; self.convolution = convolution
+        tile_rows = tileRows; allocator_cache_bytes = allocatorCacheBytes
+    }
+}
 public struct NativeRequest: Codable, Sendable {
     public var schema_version = 1
     public var model = "flux2-klein-4b"
@@ -44,6 +55,7 @@ public struct NativeRequest: Codable, Sendable {
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
+    public var seedvr2_vae: NativeSeedVR2VAEConfig?
     public var memory_budget_bytes: UInt64?
     public var quantized_cache: String?
     public var fps: Int?
@@ -112,6 +124,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var ltx_sol_dense_edge_steps: Int?
     public var ltx_stage2_text_rows: Int?
     public var streaming: NativeStreamingSelectorV2?
+    public var seedvr2_vae: NativeSeedVR2VAEConfig? = nil
 }
 public struct NativeParametersV2: Codable, Sendable {
     public var dynamic_text: Bool
@@ -165,6 +178,7 @@ public struct NativeRequestV2: Codable, Sendable {
             ltx_sol_dense_edge_steps: request.ltx_sol_dense_edge_steps,
             ltx_stage2_text_rows: request.ltx_stage2_text_rows,
             streaming: targetBytes.map { NativeStreamingSelectorV2(targetBytes: $0) })
+        execution.seedvr2_vae = request.seedvr2_vae
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path)

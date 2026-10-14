@@ -27,6 +27,13 @@ void fence(const Tensor &x, std::atomic<bool> &cancelled) {
 } // namespace
 
 void VAE::load(const std::filesystem::path &path) {
+    configure({});
+    weights_.load(path, mx::float16, true);
+    require(weights_.at("encoder.conv_in.weight").shape() == mx::Shape{128, 3, 3, 3, 3} &&
+            weights_.at("decoder.conv_in.weight").shape() == mx::Shape{512, 3, 3, 3, 16},
+            "SeedVR2 requires the original s8/c16/t4 VAE checkpoint");
+}
+void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     conv_recipe_ = "singleton2d";
     norm_recipe_ = "metal";
     history_recipe_ = "compact";
@@ -51,10 +58,15 @@ void VAE::load(const std::filesystem::path &path) {
                 conv_tile_rows_ <= 65536 && conv_tile_rows_ % 128 == 0,
                 "SeedVR2 convolution tile rows must be a 128-aligned integer in 128...65536");
     }
-    weights_.load(path, mx::float16, true);
-    require(weights_.at("encoder.conv_in.weight").shape() == mx::Shape{128, 3, 3, 3, 3} &&
-            weights_.at("decoder.conv_in.weight").shape() == mx::Shape{512, 3, 3, 3, 16},
-            "SeedVR2 requires the original s8/c16/t4 VAE checkpoint");
+    if (config) {
+        require(config->convolution == "singleton2d" || config->convolution == "conv3d" ||
+                config->convolution == "mixed3d" || config->convolution == "tiled3d",
+                "invalid request-local SeedVR2 VAE convolution recipe");
+        require(config->tile_rows >= 128 && config->tile_rows <= 65536 && config->tile_rows % 128 == 0,
+                "invalid request-local SeedVR2 VAE tile rows");
+        conv_recipe_ = config->convolution;
+        conv_tile_rows_ = config->tile_rows;
+    }
 }
 Tensor VAE::conv(const Tensor &input, const std::string &key, Caches *cache,
                  bool initial, bool downsample) const {
@@ -292,7 +304,8 @@ Tensor VAE::encode_slice(const Tensor &input, Caches *cache, bool initial,
     return x;
 }
 Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
-                         const Event &event, std::atomic<bool> &cancelled) const {
+                         const Event &event, std::atomic<bool> &cancelled,
+                         const DecodedFrameSink &sink, int *next_frame, int frame_limit) const {
     auto x = conv(input / Tensor(.9152f, input.dtype()), "decoder.conv_in", cache, initial);
     x = mid_block(x, "decoder.mid_block", cache, initial);
     fence(x, cancelled);
@@ -330,8 +343,19 @@ Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
             }
             y = conv(group_norm(y, "decoder.conv_norm_out"), "decoder.conv_out", cache, first_output);
             fence(y, cancelled);
-            frames.push_back(y);
+            if (sink) {
+                require(next_frame != nullptr, "missing streaming decoder frame counter");
+                if (*next_frame < frame_limit) {
+                    sink(*next_frame, mx::transpose(y, {0,4,1,2,3}));
+                    checkpoint(cancelled);
+                }
+                ++*next_frame;
+            } else frames.push_back(y);
         }
+    }
+    if (sink) {
+        if (event) event("seedvr2_vae_decode", 5, 5);
+        return Tensor(0);
     }
     x = mx::concatenate(frames, 1);
     fence(x, cancelled);
@@ -375,5 +399,24 @@ Tensor VAE::decode(const Tensor &latent, const Event &event, std::atomic<bool> &
     auto result = mx::transpose(mx::concatenate(slices, 1), {0, 4, 1, 2, 3});
     fence(result, cancelled);
     return result;
+}
+void VAE::decode_stream(const Tensor &latent, int output_frames, const DecodedFrameSink &sink,
+                        const Event &event, std::atomic<bool> &cancelled) const {
+    require(latent.ndim() == 5 && latent.shape(0) == 1 && latent.shape(1) == 16 && latent.shape(2) >= 1,
+            "SeedVR2 VAE streaming decode requires batch-one 16-channel BCTHW");
+    const int total = 1 + 4 * (latent.shape(2) - 1);
+    require(bool(sink) && output_frames > 0 && output_frames <= total && total - output_frames <= 3,
+            "invalid SeedVR2 streaming decoder sink or padded frame count");
+    auto input = mx::transpose(mx::astype(latent, mx::float16), {0,2,3,4,1});
+    Caches cache;
+    auto histories = input.shape(1) == 1 ? nullptr : &cache;
+    int next = 0;
+    for (int start = 0; start < input.shape(1);) {
+        checkpoint(cancelled);
+        const int stop = std::min(input.shape(1), start + (start == 0 ? 2 : 1));
+        decode_slice(part(input,1,start,stop),histories,start == 0,event,cancelled,sink,&next,output_frames);
+        start = stop;
+    }
+    require(next == total, "SeedVR2 streaming decoder did not produce the complete padded sequence");
 }
 } // namespace tc::seedvr2

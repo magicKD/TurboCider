@@ -60,5 +60,19 @@ class NativeHybridObserverTests(unittest.TestCase):
         value = self.metrics(); value["weight_residency_recipe"] = "stage_dit"
         observer.check_native_execution(self.args,value)
 
+    def test_request_local_vae_controls_require_matching_runtime_evidence(self):
+        self.args.vae_options = dict(decoder="streaming",convolution="mixed3d",tile_rows=4096,allocator_cache_bytes=1 << 30)
+        request = observer.native_request(self.args,Path("input.mp4"),Path("out.mp4"),0)
+        self.assertEqual(request["execution"]["seedvr2_vae"],self.args.vae_options)
+        value = self.metrics()
+        value.update(vae_decoder_recipe="streaming",vae_conv_recipe="mixed3d",vae_conv_tile_rows_limit=4096,
+                     allocator_cache_limit_bytes=1 << 30,streamed_output_frames=25)
+        observer.check_native_execution(self.args,value)
+        for key,bad in (("vae_decoder_recipe","buffered"),("vae_conv_recipe","singleton2d"),
+                        ("vae_conv_tile_rows_limit",16384),("allocator_cache_limit_bytes",4 << 30),
+                        ("streamed_output_frames",24)):
+            wrong = dict(value); wrong[key] = bad
+            with self.subTest(key=key), self.assertRaises(ValueError): observer.check_native_execution(self.args,wrong)
+
 
 if __name__ == "__main__": unittest.main()

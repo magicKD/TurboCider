@@ -41,13 +41,15 @@ Restoration Pipeline::restore(const Tensor &pixels, const Tensor &noise, const E
     return restore_impl(pixels,noise,event,cancelled,dump,ffn,nullptr);
 }
 Restoration Pipeline::restore_owned(Tensor pixels, const Tensor &noise, const Event &event,
-                                    std::atomic<bool> &cancelled, const std::filesystem::path &dump, const FFNRoute &ffn) {
+                                    std::atomic<bool> &cancelled, const std::filesystem::path &dump, const FFNRoute &ffn,
+                                    const DecodedFrameSink &sink) {
     require(pixels.dtype() == mx::float32, "SeedVR2 owned restoration requires FP32 normalized RGB");
-    return restore_impl(pixels,noise,event,cancelled,dump,ffn,&pixels);
+    require(!sink || dump.empty(), "streaming restoration cannot retain complete decoded pixel dumps");
+    return restore_impl(pixels,noise,event,cancelled,dump,ffn,&pixels,sink);
 }
 Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, const Event &event,
                                   std::atomic<bool> &cancelled, const std::filesystem::path &dump,
-                                  const FFNRoute &ffn, Tensor *input_owner) {
+                                  const FFNRoute &ffn, Tensor *input_owner, const DecodedFrameSink &sink) {
     require(loaded_, "SeedVR2 pipeline is not loaded");
     require(pixels.ndim() == 5 && pixels.shape(0) == 1 && pixels.shape(1) == 3 &&
             pixels.shape(3) % 16 == 0 && pixels.shape(4) % 16 == 0,
@@ -106,13 +108,17 @@ Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, co
     const auto denoised = Clock::now();
     if (stage_dit_) release_dit();
     const auto decode_started = Clock::now();
-    auto restored = vae_.decode(latent, event, cancelled);
-    restored = time_slice(restored, 0, original_frames);
-    mx::eval(restored);
+    Tensor restored(0);
+    if (sink) vae_.decode_stream(latent, original_frames, sink, event, cancelled);
+    else {
+        restored = vae_.decode(latent, event, cancelled);
+        restored = time_slice(restored, 0, original_frames);
+        mx::eval(restored);
+    }
     const auto decoded = Clock::now();
     checkpoint(cancelled);
     return {restored, condition, velocity, latent, seconds(started, encoded),
             seconds(denoise_started, denoised), seconds(decode_started, decoded),
-            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes};
+            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes,bool(sink)};
 }
 } // namespace tc::seedvr2

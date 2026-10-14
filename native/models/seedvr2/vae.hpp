@@ -2,6 +2,9 @@
 #include "model.hpp"
 
 namespace tc::seedvr2 {
+// A completed FP16 BCTHW frame. The consumer must not retain it if bounded
+// decoded-output residency is required. Indices exclude temporal padding.
+using DecodedFrameSink = std::function<void(int, const Tensor &)>;
 
 class VAE {
     TensorBank weights_;
@@ -18,9 +21,11 @@ class VAE {
     Tensor mid_block(const Tensor &, const std::string &, Caches *, bool) const;
     Tensor upsample(const Tensor &, const std::string &, Caches *, bool, bool temporal) const;
     Tensor encode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &) const;
-    Tensor decode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &) const;
+    Tensor decode_slice(const Tensor &, Caches *, bool, const Event &, std::atomic<bool> &,
+                        const DecodedFrameSink & = {}, int *next_frame = nullptr, int frame_limit = 0) const;
   public:
     void load(const std::filesystem::path &);
+    void configure(const std::optional<SeedVR2VAEConfig> &);
     size_t bytes() const { return weights_.bytes(); }
     const std::string &conv_recipe() const { return conv_recipe_; }
     int conv_tile_rows() const { return conv_tile_rows_; }
@@ -32,6 +37,8 @@ class VAE {
     // Scaled BCTHW latents -> RGB BCTHW in [-1,1]. Temporal slicing carries
     // original-precision causal histories, never independent image inference.
     Tensor decode(const Tensor &, const Event &, std::atomic<bool> &) const;
+    void decode_stream(const Tensor &, int output_frames, const DecodedFrameSink &,
+                       const Event &, std::atomic<bool> &) const;
     void clear() { weights_.clear(); }
 };
 

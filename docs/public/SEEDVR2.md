@@ -233,6 +233,57 @@ Its 1024/t9 default-route cohort records **25.50 -> 25.20 s** warm medians and
 bitwise-identical latents and decoded tensors. This is a roughly 1.2% codec
 speed improvement, not an equally sized whole-model speed guarantee.
 
+## Request-local VAE controls (active optimization candidate)
+
+The streaming/configuration candidate adds a `seedvr2_vae` object at the root
+of schema 1 requests or inside schema 2 `execution`. The original buffered
+decoder remains default. Example schema 2 execution:
+
+```json
+{
+  "policy": "gpu",
+  "residency": "component_staged",
+  "seedvr2_vae": {
+    "decoder": "streaming",
+    "convolution": "singleton2d",
+    "tile_rows": 16384,
+    "allocator_cache_bytes": 1073741824
+  }
+}
+```
+
+`decoder` accepts `buffered` or `streaming`; streaming is video-only and
+cannot also request complete raw-pixel tensor dumps. `convolution` accepts
+`singleton2d`, `conv3d`, `mixed3d` or `tiled3d`. Tile rows must be 128-aligned
+in 128...65536, and allocator-cache retention accepts 0...16 GiB. Explicit
+request controls select the convolution/tile/cache policy without changing
+process environment or reloading VAE weights. Omitting the object preserves
+the existing default/diagnostic environment behavior.
+
+The App exposes decoder, convolution-workspace and cache selectors and
+heuristic staged/streaming advice for larger frame counts or low physical
+memory. This is not automatic admission to a hard RAM budget. Import, the
+conditioning tensor and DiT still retain complete-clip state; the 121-frame
+model limit remains in force. The writer's 1000-frame test is not long-video
+model qualification. Full spatial VAE tiling, reusable history/workspace pools
+and VAE Core ML/ANE convolution remain active work; see
+`docs/design/seedvr2-vae-optimization.md`.
+
+The first same-library 512/t25 full-request ABBA observes buffered/streaming
+warm medians **20.715874 / 20.768963 s**, strict speed gate **false**. Aggregate
+warm active maxima also do not improve. Streaming is kept as an optional
+decoded-output residency strategy, not advertised as a complete-request
+speed/peak win. Decoder-only and App export checks cover every frame.
+
+Slow producers exposed cadence-dependent H.264 keyframe selection in the
+first writer. The corrected writer declares source FPS, uses a two-second
+**frame-count** GOP and disables the duration limit. This changes the video
+encoder recipe, not restoration math; its output must not be relabeled as
+the preceding encoder's bitwise export qualification. Raw RGB diagnostics,
+slow/fast producer checks and current-candidate App/export results are tracked
+in `docs/status/seedvr2-integration.md`. The stable App delivery above remains
+separate until the current optimization candidate is promoted.
+
 ## Validation boundary
 
 The stable FP16/FP32 candidate passes the unchanged cosine >=0.999 /

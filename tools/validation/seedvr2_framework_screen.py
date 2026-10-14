@@ -42,6 +42,8 @@ def sha256(path):
 def native_request(args, source, output, index):
     hybrid = args.route == "native-hybrid"
     execution = dict(policy="gpu_ane" if hybrid else "gpu", residency=getattr(args,"residency","resident"))
+    options = getattr(args,"vae_options",None)
+    if options is not None: execution["seedvr2_vae"] = options
     if hybrid:
         execution.update(ane_manifest=str(args.ane_manifest), allow_approximation=True)
     return dict(schema_version=2, model="seedvr2-3b", operation=f"{args.kind}.upscale",
@@ -70,6 +72,16 @@ def check_native_execution(args, result):
     elif result.get("coreml_prefix_calls",0) != 0:
         raise ValueError("pure-GPU complete request executed an unexpected Core ML prefix")
     residency = getattr(args,"residency","resident")
+    options = getattr(args,"vae_options",None)
+    if options is not None:
+        expected = dict(decoder="buffered",convolution="singleton2d",tile_rows=16384,allocator_cache_bytes=4 << 30)
+        expected.update(options)
+        if (result.get("vae_decoder_recipe") != expected["decoder"] or
+            result.get("vae_conv_recipe") != expected["convolution"] or
+            result.get("vae_conv_tile_rows_limit") != expected["tile_rows"] or
+            result.get("allocator_cache_limit_bytes") != expected["allocator_cache_bytes"] or
+            result.get("streamed_output_frames") != (args.frames if expected["decoder"] == "streaming" else 0)):
+            raise ValueError("native VAE request controls did not execute as declared")
     if "weight_residency_recipe" in result and result["weight_residency_recipe"] != ("stage_dit" if residency == "component_staged" else "resident"):
         raise ValueError("native request executed a different residency than requested")
 
@@ -315,6 +327,7 @@ def main():
     parser.add_argument("--route", choices=("native-gpu", "native-hybrid", "comfy-default", "comfy-sdpa-gpu"), required=True)
     parser.add_argument("--ane-manifest", type=Path)
     parser.add_argument("--residency", choices=("resident", "component_staged"), default="resident")
+    parser.add_argument("--vae-options",type=json.loads,help="explicit native request-local seedvr2_vae object")
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--kind", choices=("image", "video"), required=True)
@@ -330,6 +343,8 @@ def main():
     parser.add_argument("--comfy-python", type=Path)
     parser.add_argument("--comfy-extra", type=Path)
     args = parser.parse_args()
+    if args.vae_options is not None and (not isinstance(args.vae_options,dict) or not args.route.startswith("native-")):
+        parser.error("VAE controls require a JSON object and a native route")
     if args.route == "native-hybrid":
         if args.ane_manifest is None or not args.ane_manifest.is_file():
             parser.error("hybrid observation requires an existing explicit prefix manifest")

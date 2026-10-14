@@ -1584,6 +1584,148 @@ The new bundle is handed off for launch after the old App exits, avoiding
 concurrent writers to their shared default state. No new GUI-click, inference,
 Comfy benchmark or ANE-occupancy result is claimed by this packaging step.
 
+### Active VAE optimization: streaming/configuration candidate (not final qualification)
+
+The new goal retains full VAE acceleration, spatial tiling, buffer reuse,
+public Core ML/ANE convolution/full-VAE feasibility, configurable tradeoffs
+and real long-video/low-memory App support. Requirements and uncompleted work
+are tracked in `docs/design/seedvr2-vae-optimization.md`; the 121-frame model
+limit has not been lifted by the writer work.
+
+Candidate v1 library SHA:
+`ae18c7ae47bb0dcca327392f9018f4346960f40712f8b6b8828a5ef027ed55b3`.
+Adds `seedvr2_vae` request-local decoder/convolution/tile-row/allocator-cache
+controls in schema 1 and schema 2, matching Swift SDK/draft persistence and
+App selectors. Streaming output preserves the original temporal slices and
+causal histories, hands off one completed frame to a backpressured MP4 writer
+and never constructs the complete decoded RGB tensor. Full source/condition/
+DiT state still exists. Decoder wall/export telemetry avoids double-counting
+the sink. Buffered mode remains default; stream mode refuses full pixel dumps.
+
+Isolated native and Swift/App builds succeed. Nine native plan contracts,
+repository C++ boundaries (2), independence (7), revision observer (3),
+VAE execution-evidence observer (5) and media-screen guards (4) pass.
+The writer tests pass exact frame/FPS geometry at 16/24 FPS, order/size guards,
+incomplete/cancelled output cleanup, preserved existing destination and a
+1000-frame producer. This is media export, not 1000-frame SeedVR2 inference.
+
+Two real t25 latent codec screens compare every FP16 frame bitwise:
+
+| Decoder-only observation | Buffered / streaming active peak | Buffered / streaming-with-host-comparison time |
+| --- | ---: | ---: |
+| 512 t25 | 3,914,304,330 / 3,893,332,818 bytes | 12.2176 / 12.1977 s |
+| 1024 t25 | 14,153,255,758 / 14,069,369,686 bytes | 50.0647 / 49.9887 s |
+
+These single observations exclude import/DiT/export and do not establish a
+paired speed or whole-process improvement. Records:
+`seedvr2-vae-stream-decoder{512,1024}-t25-screen-v1-20261014`.
+
+The resident GPU/4-GiB-cache actual App chain passes seven requests, including
+both image/video sizes, residency switches, history and unload. Required
+comparison against the preceding correct App passes PNG file equality and
+every decoded video frame. Records:
+`seedvr2-app-stream-decoder-gpu-e2e-v1-20261014` and
+`seedvr2-app-stream-decoder-gpu-exact-screen-v1-20261014.json`.
+Its 1024/t25 observation is 84.839032 s, active peak 20,883,641,226 bytes and
+sampled process footprint 24,676,162,016 bytes. The latter is not a demonstrated
+improvement over the previous App; do not infer physical savings from RGB
+logical bytes.
+
+The same-library buffered/streaming full-request ABBA terminates successfully,
+six real warm requests per mode, but strict speed gate **false**:
+20.715874250 / 20.768963250 s (streaming about 0.256% slower).
+Warm active maxima are 10,706,881,506 / 10,736,241,178 bytes: streaming's
+aggregate peak is 29,359,672 bytes higher, despite the decoder-only observation.
+It is not promoted as a whole-request speed/peak win. All eight cold/warm
+export pairs independently preserve all t25/24-FPS frames bitwise. Records:
+`seedvr2-stream-decoder-video512-t25-policy-abba-v1-20261014` and
+`seedvr2-stream-decoder-video512-t25-policy-exports-v2-20261014.json`.
+The first export-verifier prototype incorrectly treated ffprobe metadata as
+a path; its failed v1 record is retained, and v2 reads the actual metrics path.
+
+The staged GPU + streaming + 1-GiB-cache App chain also completes seven
+requests. Its 1024/t25 observation is 95.990742 s, active peak
+14,087,719,778 bytes, sampled footprint 14,880,835,120 bytes. This is a slower,
+lower observed process-footprint configuration on the 64-GiB host, not proof
+of a hard budget or of execution on a 16-GiB machine. **Required export
+equality fails for the 1024 video** (decoded RGB RMSE 3.7598, maximum error
+114); both PNGs and 512 video are exact. This is not called qualification or
+silently relaxed. Records:
+`seedvr2-app-stream-decoder-staged-cache1-e2e-v1-20261014` and its
+`seedvr2-app-stream-decoder-staged-cache1-exact-screen-v1-20261014.json`.
+
+Diagnosis is active before recommendation/promotion: isolate cache-dependent
+raw FP16 VAE outputs against saved correct latents/pixels, and independently
+hash exact RGB24 bytes before H.264 encoding. A separate v2 native candidate
+adds opt-in `TURBOCIDER_SEEDVR2_VIDEO_PIXEL_HASH=1` telemetry for that purpose;
+the flag is disabled normally and is not speed evidence. Codec differences
+must be distinguished from actual model/quantization differences rather than
+assumed. Existing tested/shipped binaries and all failed histories are intact.
+
+The cache1 reference probe now passes: all buffered FP16 pixels match the
+previous saved correct decoder witness, and all streamed frames match those
+pixels bitwise. This independently isolates the VAE under the smaller cache.
+Record: `seedvr2-vae-stream-decoder1024-t25-cache1-reference-screen-v2-20261014`.
+Two v2 complete requests then produce identical pre-encoder RGB24 SHA
+`b84615183ea8de4315676019440b04b117902f27bbde4572e14c69318835602c`
+under resident/cache4 and staged/cache1. Their diagnostics are not timings
+or proof that every old encoder output was identical.
+
+The failed v1 staged movie has its first eleven frames as I frames; the
+resident movie has only the first. A new streaming writer explicitly sets
+source FPS, MaxKeyFrameInterval to 2*FPS and MaxKeyFrameIntervalDuration to
+0.0 (no duration limit, as documented in the Apple SDK). The buffered legacy
+writer is unchanged. Recipe:
+`h264_source_fps_frame_gop2s_no_duration_limit_v1`.
+
+A fast/slow 64-pixel producer check, including three 2.2-second delays,
+produces identical decoded RGB SHA
+`a2e46643697cc0e688bcbb46fe99076979101f6502d01bd455bda070f75cec17`.
+The slow movie has one I frame and eight P frames. The actual 1024/t25 v3
+resident/cache4 and staged/cache1 complete requests retain the same raw RGB
+SHA above, and every decoded frame has aggregate SHA
+`410bd515347d86d8a68fc42d6c0da3764c627d34545eea0ce9d788ecf00cecde`
+in both policies. Independent ffprobe confirms 25 frames, 1024 square and
+24/1 FPS; staged movie now has one I frame and 24 P frames.
+Records: `seedvr2-stream-frame-gop-{resident4,staged1}-hash-v3-20261014`.
+
+The v4 candidate additionally preserves the native typed cancellation error
+inside writer backpressure/finalization and builds successfully. Library SHA:
+`ff4b650eccf95db40275db7c7be33910044a47904f4aecb38984e35debff79d8`.
+Its actual App requalification and typed-cancellation writer checks are next;
+v1 performance evidence is not relabeled as v4 speed evidence. No shipped
+App/native binary has been replaced during this qualification.
+
+The v4 writer's typed cancellation, cleanup, geometry, 1000-frame producer
+and delayed-producer checks pass. Native plan (9), execution-evidence (5),
+revision observer (3), media guards (4), C++ boundary (2) and independence (7)
+checks pass; this is not a claim that unrelated repository-wide tests pass.
+
+Both v4 actual App chains now finish successfully, seven requests each:
+resident/4-GiB cache and staged/1-GiB cache, with streamed video output,
+buffered alpha-preserving images, residency transitions, history and unload.
+Required **new-policy** PNG and every decoded-video-frame equality passes
+at 512 and 1024. Record:
+`seedvr2-app-stream-frame-gop-export-screen-v4-20261014.json`.
+The deliberately separate previous-encoder comparison keeps both PNGs exact
+but reports different video pixels (512/1024 exported RGB PSNR 33.347/39.189
+dB). Do not label the new explicit encoder recipe as bitwise equivalent to
+the legacy encoder or erase the earlier failed cache1 comparison. Raw VAE /
+pre-encoder evidence above separates restoration from this encoding change.
+
+| v4 App observation | Resident cache4 / staged cache1 request time | Active MLX peak | Sampled process footprint |
+| --- | ---: | ---: | ---: |
+| 512 t25 | 20.770367 / 21.731974 s | 10.689 / 9.035 GB | 14.625 / 9.899 GB |
+| 1024 t25 | 84.841121 / 94.278125 s | 20.884 / 14.088 GB | 24.364 / 14.862 GB |
+
+These are individual App observations on the 64-GiB host, not a paired speed
+gate or a physical upper bound. The smaller cache is slower and reduces
+observed retained process memory; it is available explicitly, not selected
+as a speed default. Buffered/singleton2d/cache4 and the old stable App remain
+available. The active objective is not complete: reusable causal/workspace
+buffers, full spatial tiling, VAE ANE convolution/full-VAE feasibility and
+genuinely longer-model clips still require implementation and qualification.
+
 ## Reproduce component checks
 
 ```sh

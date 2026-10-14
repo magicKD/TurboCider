@@ -109,6 +109,23 @@ static void parse_quantized_execution(NSDictionary *d, QuantizedExecutionConfig 
     string(@"ane_compute", c.ane_compute);
     validate_quantized_execution(c);
 }
+static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
+    require(r.model == "seedvr2-3b", "seedvr2_vae is only supported by SeedVR2");
+    dictionary(d, "seedvr2_vae");
+    keys(d, @[@"decoder", @"convolution", @"tile_rows", @"allocator_cache_bytes"]);
+    SeedVR2VAEConfig config;
+    config.decoder = string_value(d, @"decoder", config.decoder);
+    config.convolution = string_value(d, @"convolution", config.convolution);
+    config.tile_rows = number(d, @"tile_rows", config.tile_rows);
+    config.allocator_cache_bytes = byte_count(d, @"allocator_cache_bytes", config.allocator_cache_bytes);
+    require(config.decoder == "buffered" || config.decoder == "streaming", "SeedVR2 VAE decoder must be buffered or streaming");
+    require(config.convolution == "singleton2d" || config.convolution == "conv3d" ||
+            config.convolution == "mixed3d" || config.convolution == "tiled3d", "unsupported SeedVR2 VAE convolution recipe");
+    require(config.tile_rows >= 128 && config.tile_rows <= 65536 && config.tile_rows % 128 == 0,
+            "SeedVR2 convolution tile rows must be a 128-aligned integer in 128...65536");
+    require(config.allocator_cache_bytes <= (16ull << 30), "SeedVR2 allocator cache must be in 0...17179869184 bytes");
+    r.seedvr2_vae = std::move(config);
+}
 static NSArray *ltx_option_keys() {
     return @[
         @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
@@ -227,9 +244,10 @@ Request request_from_json(NSDictionary *d) {
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
             @"hybrid_mlp_mode",
-            @"quantized_cache", @"warmup_iterations", @"memory_constrained"
+            @"quantized_cache", @"warmup_iterations", @"memory_constrained", @"seedvr2_vae"
         ]);
         r.model = string_value(d, @"model", r.model);
+        if (d[@"seedvr2_vae"]) parse_seedvr2_vae(d[@"seedvr2_vae"], r);
         r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
         r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
@@ -329,7 +347,8 @@ Request request_from_json(NSDictionary *d) {
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"hybrid_mlp_mode",
                @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks",
-               @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution" ]);
+               @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution", @"seedvr2_vae" ]);
+        if (execution[@"seedvr2_vae"]) parse_seedvr2_vae(execution[@"seedvr2_vae"], r);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");

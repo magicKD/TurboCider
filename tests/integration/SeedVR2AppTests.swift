@@ -10,6 +10,9 @@ import Foundation
         let manifest = CommandLine.arguments.count == 7 ? CommandLine.arguments[6] : nil
         let hybrid = manifest != nil
         let execution = hybrid ? "gpu_ane" : "gpu"
+        let vaeOptions = try ProcessInfo.processInfo.environment["TURBOCIDER_SEEDVR2_APP_VAE_OPTIONS"].map {
+            try JSONDecoder().decode(NativeSeedVR2VAEConfig.self, from: Data($0.utf8))
+        }
         guard ["resident", "component_staged"].contains(residency) else {
             throw NativeFailure(message: "unsupported SeedVR2 test residency")
         }
@@ -49,6 +52,14 @@ import Foundation
         await studio.addFiles([URL(fileURLWithPath: CommandLine.arguments[1])])
         try check(studio.message == nil && studio.draft.activeAssets.count == 1, "real video staging failed")
         let video = try studio.draft.request(output: root.appendingPathComponent("video.mp4"))
+        let config = NativeSeedVR2VAEConfig(decoder: "streaming", convolution: "mixed3d", tileRows: 4096, allocatorCacheBytes: 1 << 30)
+        studio.draft.seedvr2VAE = config
+        let configured = try studio.draft.request(output: root.appendingPathComponent("configured.mp4"))
+        try check(configured.seedvr2_vae == config && NativeRequestV2(legacy: configured).execution.seedvr2_vae == config,
+                  "App/SDK lost request-local VAE controls")
+        let restoredOptions = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
+        try check(restoredOptions.seedvr2VAE == config, "App draft did not persist VAE controls")
+        studio.draft.seedvr2VAE = nil
         try check(video.operation == "video.upscale" && video.frames == 25 && video.fps == 24,
                   "source frame count/FPS were not applied to the draft")
         try check(video.inputs?.first?.kind == "video" && video.inputs?.first?.role == "source", "video source role/kind mismatch")
@@ -92,6 +103,7 @@ import Foundation
                 studio.draft.prompt = "Ignored old draft prompt"
                 studio.draft.acceleration = StudioAcceleration(policy: execution, manifest: manifest ?? "")
                 studio.draft.residency = residency
+                studio.draft.seedvr2VAE = vaeOptions
                 studio.draft.seedText = "42"
                 for size in [512, 1024] {
                     studio.draft.width = size; studio.draft.height = size
@@ -104,6 +116,11 @@ import Foundation
                           let metrics = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                         throw NativeFailure(message: "App generation metrics missing")
                     }
+                    let expectedDecoder = isVideo ? (vaeOptions?.decoder ?? "buffered") : "buffered"
+                    try check(metrics["vae_decoder_recipe"] as? String == expectedDecoder &&
+                              metrics["streamed_output_frames"] as? Int == (expectedDecoder == "streaming" ? 25 : 0) &&
+                              metrics["vae_conv_recipe"] as? String == (vaeOptions?.convolution ?? "singleton2d"),
+                              "App VAE execution differs from its selected configuration")
                     try check(metrics["operation"] as? String == operation && metrics["width"] as? Int == size &&
                               metrics["height"] as? Int == size && metrics["execution"] as? String == execution &&
                               metrics["checkpoint_sha256_verified"] as? Bool == true,

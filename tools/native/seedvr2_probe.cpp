@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <sys/resource.h>
+#include <cstring>
 
 namespace mx = mlx::core;
 using tc::Tensor;
@@ -60,6 +61,72 @@ int main(int argc, char **argv) {
                       << ",\"rope_recipe\":\"" << dit.rope_recipe() << "\""
                       << ",\"linear_recipe\":\"" << dit.linear_recipe() << "\""
                       << ",\"residual_recipe\":\"" << dit.residual_recipe() << "\"}\n";
+        } else if (command == "vae-stream-screen") {
+            tc::require(argc == 5 || argc == 6, "vae-stream-screen accepts an optional unpadded output frame count");
+            auto latent = inputs.at("latent");
+            const bool has_reference = inputs.count("pixels") != 0;
+            Tensor reference = has_reference ? inputs.at("pixels") : Tensor(0);
+            inputs.clear();
+            const int padded = 1 + 4*(latent.shape(2)-1);
+            const int frames = argc == 6 ? std::stoi(argv[5]) : padded;
+            tc::require(frames > 0 && frames <= padded && padded-frames <= 3, "invalid unpadded frame count");
+            std::vector<uint16_t> saved_pixels;
+            if (has_reference) {
+                tc::require(reference.dtype() == mx::float16 && reference.ndim() == 5 && reference.shape(0) == 1 &&
+                            reference.shape(1) == 3 && reference.shape(2) >= frames,"invalid saved FP16 decoder reference");
+                auto flat = mx::contiguous(mx::transpose(reference,{0,2,3,4,1}));
+                mx::eval(flat);
+                saved_pixels.resize(size_t(frames)*reference.shape(3)*reference.shape(4)*3);
+                std::memcpy(saved_pixels.data(),flat.data<uint16_t>(),saved_pixels.size()*sizeof(uint16_t));
+                reference = Tensor(0);
+            }
+            tc::seedvr2::AllocatorCacheScope allocator(tc::seedvr2::allocator_cache_limit());
+            tc::seedvr2::VAE vae;
+            vae.load(model / "vae/seedvr2_ema_vae_fp16.safetensors");
+            mx::eval(latent);
+            mx::reset_peak_memory();
+            const auto before = tc::Clock::now();
+            auto decoded = vae.decode(latent,event,cancelled);
+            const auto buffered_end = tc::Clock::now();
+            const auto buffered_peak = mx::get_peak_memory();
+            const int height = decoded.shape(3), width = decoded.shape(4);
+            const size_t frame_values = size_t(height)*width*3;
+            auto contiguous = mx::contiguous(mx::transpose(decoded,{0,2,3,4,1}));
+            mx::eval(contiguous);
+            tc::require(contiguous.dtype() == mx::float16 && mx::all(mx::isfinite(contiguous)).item<bool>(),
+                        "buffered VAE witness is not finite FP16");
+            std::vector<uint16_t> expected(size_t(frames)*frame_values);
+            std::memcpy(expected.data(),contiguous.data<uint16_t>(),expected.size()*sizeof(uint16_t));
+            tc::require(!has_reference || (saved_pixels.size() == expected.size() &&
+                        std::memcmp(saved_pixels.data(),expected.data(),expected.size()*sizeof(uint16_t)) == 0),
+                        "buffered VAE differs from the saved decoder reference under this cache/profile");
+            decoded = Tensor(0); contiguous = Tensor(0);
+            mx::synchronize(); mx::clear_cache(); mx::reset_peak_memory();
+            int written = 0;
+            const auto streaming_start = tc::Clock::now();
+            vae.decode_stream(latent,frames,[&](int index, const Tensor &frame) {
+                tc::require(index == written && frame.shape() == mx::Shape{1,3,1,height,width} && frame.dtype() == mx::float16,
+                            "streamed frame index/shape/dtype mismatch");
+                auto flat = mx::contiguous(mx::transpose(frame,{0,2,3,4,1}));
+                mx::eval(flat);
+                tc::require(std::memcmp(expected.data()+size_t(index)*frame_values,flat.data<uint16_t>(),
+                                       frame_values*sizeof(uint16_t)) == 0, "streamed frame is not bitwise equal");
+                ++written;
+            },event,cancelled);
+            const auto streaming_end = tc::Clock::now();
+            const auto streaming_peak = mx::get_peak_memory();
+            tc::require(written == frames, "streamed output truncated source frames");
+            std::ofstream report(destination / "report.json");
+            tc::require(bool(report), "cannot write streaming VAE report");
+            report << "{\"schema\":\"seedvr2-vae-stream-screen-v1\",\"passed\":true,\"frames\":" << frames
+                   << ",\"saved_reference_checked\":" << (has_reference ? "true" : "false")
+                   << ",\"padded_frames\":" << padded << ",\"height\":" << height << ",\"width\":" << width
+                   << ",\"all_frames_bitwise_equal\":true,\"buffered_peak_bytes\":" << buffered_peak
+                   << ",\"streaming_peak_bytes\":" << streaming_peak
+                   << ",\"buffered_seconds\":" << std::chrono::duration<double>(buffered_end-before).count()
+                   << ",\"streaming_seconds_with_host_comparison\":" << std::chrono::duration<double>(streaming_end-streaming_start).count()
+                   << ",\"scope\":\"one decoder observation per route; host bitwise comparison included, not a paired speed or process-footprint gate\"}\n";
+            std::cout << "Streaming VAE screen passed: " << destination << '\n';
         } else if (command == "vae") {
             tc::require(argc <= 6, "vae accepts only an optional positive repeat count");
             const int repeats = argc == 6 ? std::stoi(argv[5]) : 1;

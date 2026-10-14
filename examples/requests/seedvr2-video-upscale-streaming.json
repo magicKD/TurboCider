@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "model": "seedvr2-3b",
+  "operation": "video.upscale",
+  "inputs": [{"kind": "video", "role": "source", "path": "source.mp4"}],
+  "outputs": [{"kind": "video", "path": "upscaled-streaming.mp4", "width": 1024, "height": 1024, "frames": 25, "fps": 24, "audio": false}],
+  "sampling": {"seed": 42, "steps": 1},
+  "execution": {
+    "policy": "gpu",
+    "residency": "component_staged",
+    "seedvr2_vae": {
+      "decoder": "streaming",
+      "convolution": "singleton2d",
+      "tile_rows": 16384,
+      "allocator_cache_bytes": 1073741824
+    }
+  }
+}

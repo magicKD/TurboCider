@@ -97,6 +97,34 @@ class SeedVR2Contracts(unittest.TestCase):
         self.assertEqual(code, 0, error)
         self.assertEqual(value["operation"], "image.upscale")
 
+    def test_request_local_vae_controls_are_visible_in_both_schema_plans(self):
+        for decoder in ("buffered", "streaming"):
+            for convolution in ("singleton2d", "conv3d", "mixed3d", "tiled3d"):
+                options = dict(decoder=decoder, convolution=convolution, tile_rows=4096, allocator_cache_bytes=1 << 30)
+                r = {**request(True), "seedvr2_vae": options}
+                code, value, error = plan(r)
+                self.assertEqual(code, 0, error)
+                self.assertEqual(value["seedvr2_vae"], options)
+                v2 = dict(schema_version=2, model=r["model"], operation=r["operation"], inputs=r["inputs"],
+                    outputs=[dict(kind="video", path=r["output"], width=r["width"], height=r["height"], frames=r["frames"], fps=24, audio=False)],
+                    sampling=dict(seed=42, steps=1), execution=dict(policy="gpu", seedvr2_vae=options))
+                code, value, error = plan(v2)
+                self.assertEqual(code, 0, error)
+                self.assertEqual(value["seedvr2_vae"], options)
+        self.assertEqual(plan({**request(True), "seedvr2_vae": {}})[1]["seedvr2_vae"]["decoder"], "buffered")
+
+    def test_invalid_vae_controls_never_silently_fall_back(self):
+        for options in (None, [], True, {"decoder": "auto"}, {"convolution": "spatial_tiling"},
+                        {"convolution": "taps2d"}, {"tile_rows": 0}, {"tile_rows": 129},
+                        {"tile_rows": True}, {"tile_rows": 65537}, {"allocator_cache_bytes": -1},
+                        {"allocator_cache_bytes": (16 << 30) + 1}, {"ane": True}):
+            with self.subTest(options=options):
+                self.assertNotEqual(plan({**request(True), "seedvr2_vae": options})[0], 0)
+        self.assertNotEqual(plan({**request(), "seedvr2_vae": {"decoder": "streaming"}})[0], 0)
+        self.assertNotEqual(plan({**request(True), "seedvr2_vae": {"decoder": "streaming"}, "dump_tensors": "dump"})[0], 0)
+        other = dict(model="flux2-klein-4b", prompt="a fox", output="result.png", execution="gpu", seedvr2_vae={})
+        self.assertNotEqual(plan(other)[0], 0)
+
     def test_qualified_hybrid_bank_precision_and_residency_are_explicit(self):
         manifest = ROOT / "models/coreml/seedvr2-original-fp16-prefix2048-rows512-v1/manifest.json"
         if not manifest.exists():

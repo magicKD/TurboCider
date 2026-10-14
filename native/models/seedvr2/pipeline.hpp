@@ -9,6 +9,7 @@ struct Restoration {
     double staging_seconds = 0, restore_seconds = 0;
     double input_release_seconds = 0;
     uint64_t released_input_logical_bytes = 0;
+    bool pixels_streamed = false;
 };
 
 class Pipeline {
@@ -22,7 +23,7 @@ class Pipeline {
     std::filesystem::file_time_type dit_source_modified_;
     Restoration restore_impl(const Tensor &, const Tensor &, const Event &,
                              std::atomic<bool> &, const std::filesystem::path &,
-                             const FFNRoute &, Tensor *input_owner);
+                             const FFNRoute &, Tensor *input_owner, const DecodedFrameSink & = {});
   public:
     // Session owner selects this policy before loading. No environment
     // override may silently change the request's declared residency.
@@ -41,6 +42,7 @@ class Pipeline {
     const std::string &vae_history_recipe() const { return vae_.history_recipe(); }
     const std::string &vae_pointwise_recipe() const { return vae_.pointwise_recipe(); }
     int vae_conv_tile_rows() const { return vae_.conv_tile_rows(); }
+    void configure_vae(const std::optional<SeedVR2VAEConfig> &config) { vae_.configure(config); }
     // Resized RGB BCTHW in [-1,1], padded to 4n+1 if necessary. A supplied
     // FP32 sampling-noise fixture makes backend comparisons RNG-independent.
     Restoration restore(const Tensor &pixels, const Tensor &noise,
@@ -51,7 +53,8 @@ class Pipeline {
     // after VAE encode has completed, before sampling/decode.
     Restoration restore_owned(Tensor pixels, const Tensor &noise,
                               const Event &, std::atomic<bool> &,
-                              const std::filesystem::path &dump = {}, const FFNRoute & = {});
+                              const std::filesystem::path &dump = {}, const FFNRoute & = {},
+                              const DecodedFrameSink & = {});
     void clear() { dit_.clear(); vae_.clear(); loaded_ = false; }
 };
 
