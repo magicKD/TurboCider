@@ -1795,14 +1795,18 @@ every decoded video frame exact in both memory policies. Record:
 | GPU resident, cache4 | 83.606837 | 19,944,111,514 bytes | 23,894,743,424 bytes |
 | GPU staged, cache1 | 91.253532 | 13,215,304,538 bytes | 14,576,944,616 bytes |
 
-These are individual observations, not paired full-request speed or a bound
-on a smaller-memory device. A same-library complete 1024/t25 request ABBA
-has started under `seedvr2-frame-history-video1024-t25-policy-abba-v1-20261014`,
+These App rows are individual observations, not a bound on a smaller-memory
+device. The same-library complete 1024/t25 request ABBA subsequently terminated
+with exit 0 under `seedvr2-frame-history-video1024-t25-policy-abba-v1-20261014`,
 streamed output/cache4 in both modes, changing only compact/frames history.
-It has four independent processes with six real warm requests per policy;
-conclusions await a terminal report. Its long runtime does not authorize a
-restart on a quiet observation. Default history remains compact and the whole
-original objective remains open.
+Four independent processes and six warm requests per policy give medians
+**85.118659 -> 83.792985 s**, **1.015821x**, passing the strict speed gate.
+Active maxima fall **20,876,885,338 -> 19,937,360,594 bytes**, a reduction of
+**939,524,744 bytes**. The export screen verifies all 16 outputs/eight pairs:
+every decoded frame is bitwise equal, full t25 geometry and 24 FPS preserved.
+Record: `seedvr2-frame-history-video1024-t25-policy-exports-v1-20261014.json`.
+This does not establish a smaller-machine physical peak. Default history remains
+compact and the whole original objective remains open; no job was restarted.
 
 ### Original-parameter public Core ML VAE convolution feasibility probe
 
@@ -1835,6 +1839,82 @@ packing/routing/full-frame overhead is excluded. This layout is slower than
 GPU and is not promoted. Native-buffer scheduling, larger/different tiles,
 whole-convolution/stage assignments and full-VAE feasibility still require
 experiments; no VAE ANE acceleration or automatic route is claimed.
+
+### Native fixed-tile IO changes the VAE ANE feasibility conclusion
+
+Subsequent public-API native IO screens on M4 Max/64 GiB/macOS 26.6.2 add real
+FP16 IOSurface-backed input/output reuse, regular/wrapped MLMultiArray controls,
+CPU-only and CPU+NE controls, signed-input ABA verification, and native MLX
+completion-timed GPU baselines. All requested output backings return expected
+identity and every prediction passes the unchanged finite/.999-cosine/.05-L2
+component gates against independently checked original-order FP32 references.
+No private ANE API, original-parameter change or production VAE backend is added.
+
+The full 128-output hot convolution at 64-square observes **0.818 ms GPU Conv3D /
+0.688 ms GPU pack+Conv2D / 0.526 ms CPU+NE with reused surfaces**. The last timing
+excludes packing into its surface: warm CPU refill alone is about 0.182 ms and
+can consume the 0.162-ms GPU margin. A 256-square/64-output CPU+NE tile is about
+26.235 ms versus 3.123 ms GPU pack+Conv2D. One real 256->1024 upsampling projection
+shows a component opportunity (0.337 ms CPU+NE), while 512->4096 does not show a
+standalone advantage. Reversing short-screen route order supports investigation,
+not production/default speed qualification or a universal tile-size rule.
+
+Records: `seedvr2-vae-native-io-tiles-v1-20261014/report.json`,
+`seedvr2-vae-native-io-tiles-v2-20261014/report.json`, and
+`seedvr2-vae-native-io-full64-v1-20261014/report.json`.
+Detailed measured scopes, memory observations, global-GroupNorm/causal barriers,
+fixed graph candidates and GPU/ANE scheduler gates are documented in
+[VAE ANE feasibility](../design/seedvr2-vae-ane-feasibility.md).
+Backing identity does not prove no internal copies; MLComputePlan anticipated
+NE preference does not prove physical occupancy. Cooperative execution, real
+full-frame/whole-VAE quality/speed, ANE memory reduction and App VAE integration
+remain unqualified. Canonical App/native binaries and defaults are untouched.
+
+### Actual GPU shared-IO / Core ML convolution boundary and negative promotion gate
+
+The independent native prototype now runs GPU temporal/halo pack into public
+IOSurface-backed FP16 arrays, serial and bounded two-slot schedules, stride-correct
+GPU assembly and disjoint GPU output-channel suffixes. It supports scalar and
+16x16 threadgroup transposes. All packed/assembled elements have independent
+bitwise witnesses; every full-frame output is NaN-poisoned before inference
+and passes the unchanged original-order FP32 numerical gate. Submitted commands
+retain their external surface/MLX owners and drain on exceptional unwinding.
+
+The initial strict page-size guard fails because CoreVideo's logical allocation
+size includes 64 metadata bytes. The failure is preserved. Rounded no-copy Metal
+bindings are now allowed only after public VM-region inspection proves the full
+readable/writable mapping; logical kernel extents remain bounded. Every Core ML
+output must honor its backing identity, shape and strides exactly.
+
+The final corrected 512-square full-convolution screen has two independent
+processes per route, forward/reverse order and nine warm full-spatial requests
+each. Medians: **32.580 ms GPU Conv3D / 44.833 ms GPU pack+Conv2D / 61.325 ms
+CPU+NE serial / 35.386 ms CPU+NE pipeline / 42.753 ms NE-prefix+GPU-Conv3D /
+42.913 ms NE-prefix+GPU-Conv2D / 92.702 ms CPU-only serial**. Original full
+128-channel weights and all 64 tiles are included; mixed routes merge the real
+GPU suffix. Pack/producer wait/predict/consumer wait/layout and suffix join are
+inside the observed boundary. This is not an end-to-end VAE/App request.
+
+Corrected child process footprint maxima are **1,208,304,984 GPU Conv3D /
+1,233,372,504 pipeline bytes**; MLX active peaks are both **480,002,072 bytes**.
+The external two-slot pool is 21,626,880 mapped bytes and is not MLX-active
+memory. An earlier v4 probe mistakenly charged GPU-only an unused 64-MiB
+assembly buffer; v5 removes it and reruns the comparison. Neither a speed nor
+memory win over GPU is established, so no production VAE/App route is enabled.
+
+Each successful 512 non-GPU process bitwise-checks 642,318,336 pack values and
+100,663,296 full-output assembly values (half-prefix: 50,331,648), then runs 768
+real predictions with exact backing hits. All full outputs pass; the independent
+27-point FP64 reference check has maximum error 3.11e-6. CPU guard/cohort tests
+pass **20/20** with the existing NumPy/safetensors validation interpreter.
+
+Final record: `seedvr2-vae-shared-tile-512-transpose-v2-20261014/report.json`.
+The earlier successful scalar/transpose 128 screens, v4 512 memory-biased screen
+and failed page-binding screen remain intact. Details and scopes are in
+[VAE ANE feasibility](../design/seedvr2-vae-ane-feasibility.md). Full VAE/context,
+real activation/video qualification, physical ANE residency, true longer clips
+and low-memory hardware remain incomplete. No App rebuild/test is claimed by
+this isolated probe commit; canonical App/runtime/defaults are unchanged.
 
 ## Reproduce component checks
 
