@@ -1916,6 +1916,87 @@ real activation/video qualification, physical ANE residency, true longer clips
 and low-memory hardware remain incomplete. No App rebuild/test is claimed by
 this isolated probe commit; canonical App/runtime/defaults are unchanged.
 
+### Bounded RGB source / causal VAE encoder integrated as an explicit option
+
+The previously uncompiled RGB reader is now integrated into the native build
+and the explicit video-only `seedvr2_vae.encoder=streaming` path. Native plan,
+C/Swift SDK, persisted App draft and input-residency control expose it in both
+schema versions. Buffered remains default, including old drafts. Full tensor
+dumps and native still-image streaming requests fail explicitly; the App adapts
+image source/sink settings to buffered. Existing image/alpha math is unchanged.
+
+`VAE::encode_stream` uses the existing `encode_slice`, first-five/subsequent-four
+partition, whole-frame normalization/attention and original causal history.
+Singleton normalized FP32 frames are cast/evaluated to owned FP16 before host
+reuse; only a bounded chunk is concatenated. Padding repeats the last real
+frame. Pipeline source EOF verification precedes sampling/DiT staged reload.
+This is not full spatial tiling, independent restoration windows or a new
+long-model frame limit; complete conditioning/DiT state and <=121 remain.
+
+Reader tests pass all eight display transforms, every decoded/normalized FP32
+value in 72 frames, exact EOF/count/FPS/transform guards, VFR and file-stamp
+change rejection, typed pre/mid-read cancellation and 1000-frame complete
+reader consumption with constant 18,432-byte caller RGB capacity. The legacy
+bulk loader still rejects 1000, and no longer-model support is claimed.
+Source counts 1/2/4/5/6/9, including padding and multiple causal chunks, encode
+to completely byte-identical FP16 latents. Records:
+`seedvr2-rgb-reader-guards-v3-20261014/report.json` and
+`seedvr2-vae-encode-source-128-v1-20261014/report.json`.
+
+Isolated full native/App candidate: `build/seedvr2-stream-input-native-v1`.
+Library SHA-256: `b2b13198a0e117dde2e7780f1de7af97cdfe13348642b6d747f65672066a0c40`.
+Build identity: `tc-runtime-build-v1-df82b76b2a9e9a7a4fbadfe6d11de5686b43bf9baca6e37bf4610ba7cb7ead58`.
+Both real App workflows finish seven requests: resident/cache4 and staged/cache1,
+512/1024 images and complete 25-frame/24-FPS movies, draft/history/configuration,
+resident/staged switches and unload. PNG RGBA and every video frame match the
+previous frame-history candidate exactly in both policies. Record:
+`seedvr2-app-stream-input-export-screen-v1-20261014.json`.
+
+| New actual App 1024/t25 observation | Request seconds | MLX active maximum (bytes) | Sampled process footprint (bytes) |
+| --- | ---: | ---: | ---: |
+| Stream source/sink, resident/cache4 | 83.549936 | 19,944,117,114 | 23,875,590,456 |
+| Stream source/sink, staged/cache1 | 90.754717 | 13,215,304,530 | 14,476,395,936 |
+
+These are single observations and sampling lower bounds, not paired 1024 speed
+or smaller-device physical budgets. Reused source RGB24 capacity is 786,432
+bytes for these 512-input movies; that excludes codec/normalized chunks/model
+state and is not a whole-process limit. Reader/resize work is timed inside
+encoder wall and also separated as frame/media import; overlapping fields must
+not be summed. There is no complete normalized RGB owner to report as released.
+
+The same-library 512/t25 staged/cache1 full-request ABBA finishes four processes
+and six warm requests per encoder mode. All else (sink/history/convolution,
+source, precision, seed sequence/cache/residency) stays identical. Medians are
+**21.254022 -> 21.251528 s**, **1.000117x**, exact speed gate true but effectively
+flat. Active maxima are **9,035,267,926 -> 9,035,230,774 bytes**, a negligible
+**37,152-byte** change, not a material request-peak win. All 16 outputs/eight
+pairs have every decoded frame bitwise equal, complete dimensions and 24 FPS.
+Records: `seedvr2-stream-input-video512-t25-staged-abba-v1-20261014/report.json`
+and `seedvr2-stream-input-video512-t25-staged-exports-v1-20261014.json`.
+
+A separate actual public-engine lifecycle screen cancels on source frame one
+(status 2), rejects an extra source frame before sampling (status 1), then runs
+a complete recovery on the same engine (status 0). Source and preexisting
+destination survive; no private staging remains; unload reports active bytes 0.
+Record: `seedvr2-stream-input-lifecycle-v1-20261014/report.json`.
+Native contract tests (11) and full-request observer controls (6) pass. The
+initial broad minimal-environment CPU guard run lacked safetensors for one
+case; the same 17 guards subsequently pass with the existing validation
+interpreter, without changing thresholds or installing into user environments.
+
+The tested build is packaged separately at
+`dist/seedvr2-stream-input-20261014/TurboCider.app`, with sibling `cli/` and
+minimum macOS 26.2. Public release-binary checks and ad-hoc deep/strict signature
+verification pass. Packaging does not replace the canonical running App/state;
+close the older instance before opening this bundle with the same default
+state directory. No model/media files or old failed records were removed.
+
+No automatic source promotion or 16-GiB success is claimed. Inspection finds
+that conservative residency admission can still reject smaller-memory hosts
+at 512 video; this remains a separate estimate/hardware qualification task.
+Full spatial VAE scheduling, workspace pools, larger-context DiT, useful VAE
+ANE graph boundaries and real lower-memory hardware remain open.
+
 ## Reproduce component checks
 
 ```sh

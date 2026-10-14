@@ -6,6 +6,9 @@ namespace tc::seedvr2 {
 // A completed FP16 BCTHW frame. The consumer must not retain it if bounded
 // decoded-output residency is required. Indices exclude temporal padding.
 using DecodedFrameSink = std::function<void(int, const Tensor &)>;
+// Each call supplies exactly one materialized, normalized FP32 BCTHW RGB
+// source frame. Indices address only real frames; padding is internal.
+using EncodedFrameSource = std::function<Tensor(int)>;
 
 class VAE {
     TensorBank weights_;
@@ -38,6 +41,11 @@ class VAE {
     const std::string &pointwise_recipe() const { return pointwise_recipe_; }
     // External BCTHW, RGB pixels in [-1,1]. Returns scaled latent means only.
     Tensor encode(const Tensor &, const Event &, std::atomic<bool> &) const;
+    // Preserve the original initial-five/subsequent-four temporal partition
+    // and global spatial context, with bounded normalized input chunks. The
+    // caller must additionally verify the complete source EOF before sampling.
+    Tensor encode_stream(int source_frames, int height, int width, const EncodedFrameSource &,
+                         const Event &, std::atomic<bool> &) const;
     // Scaled BCTHW latents -> RGB BCTHW in [-1,1]. Temporal slicing carries
     // original-precision causal histories, never independent image inference.
     Tensor decode(const Tensor &, const Event &, std::atomic<bool> &) const;

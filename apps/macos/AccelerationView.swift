@@ -97,6 +97,11 @@ struct AccelerationView: View {
     @ViewBuilder private var seedvr2VAEControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SeedVR2 VAE / 内存").font(.headline)
+            Picker("视频输入驻留", selection: Binding(get: { seedvr2Config.encoder }, set: { value in updateSeedVR2 { $0.encoder = value } })) {
+                Text("整段导入（原有路径）").tag("buffered")
+                Text("逐帧导入编码（减少 RGB 驻留）").tag("streaming")
+            }.disabled(store.busy || studio.draft.operation != "video.upscale")
+                .accessibilityIdentifier("seedvr2VAEEncoder")
             Picker("视频输出驻留", selection: Binding(get: { seedvr2Config.decoder }, set: { value in updateSeedVR2 { $0.decoder = value } })) {
                 Text("整段缓存（原有路径）").tag("buffered")
                 Text("逐帧导出（降低输出驻留）").tag("streaming")
@@ -116,7 +121,7 @@ struct AccelerationView: View {
                 Text("1 GiB（减少缓存）").tag(UInt64(1) << 30)
                 Text("不保留空闲缓存（较慢）").tag(UInt64(0))
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAECache")
-            Text("分块仅限制卷积工作区，不是整套 VAE 的空间 tiling，也不是硬内存上限。逐帧导出仍保留完整条件/DiT latent；当前源视频上限仍为 121 帧。")
+            Text("逐帧导入按原有 5/4 帧分段编码；分块仅限制卷积工作区，不是整套 VAE 的空间 tiling，也不是硬内存上限。输入/输出流式仍保留完整条件/DiT latent；当前源视频上限仍为 121 帧。")
                 .font(.caption).foregroundStyle(.secondary)
             if studio.draft.frames >= 65 || ProcessInfo.processInfo.physicalMemory <= (UInt64(32) << 30) {
                 Text("较长视频或低内存设备：建议分阶段驻留 + 逐帧导出 + 较小缓存。1024 输出仍可能超过低内存机器容量，可先使用 512；本建议是启发式，不是已验证的设备预算。")

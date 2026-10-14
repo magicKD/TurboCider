@@ -236,14 +236,15 @@ speed improvement, not an equally sized whole-model speed guarantee.
 ## Request-local VAE controls (active optimization candidate)
 
 The streaming/configuration candidate adds a `seedvr2_vae` object at the root
-of schema 1 requests or inside schema 2 `execution`. The original buffered
-decoder remains default. Example schema 2 execution:
+of schema 1 requests or inside schema 2 `execution`. Buffered input and output
+remain default. Example schema 2 execution:
 
 ```json
 {
   "policy": "gpu",
   "residency": "component_staged",
   "seedvr2_vae": {
+    "encoder": "streaming",
     "decoder": "streaming",
     "convolution": "singleton2d",
     "tile_rows": 16384,
@@ -258,8 +259,26 @@ causal owners and shares known materialized singleton normalization outputs;
 temporal operands and phases are preserved. The App exposes this separately
 from allocator-cache retention. A 1024/t9 VAE-only ABBA observes about 1.77%
 faster encode+decode and 939.5 MB lower active peak, with byte-identical latents
-and decoded tensors. Complete 1024/t25 request timing is being qualified
-separately; this is not a whole-request speed claim or hard RAM budget.
+and decoded tensors. The subsequently completed 1024/t25 complete-request ABBA
+records 85.119 -> 83.793 s (about 1.58% faster) and 939.5 MB lower active maximum;
+all eight export pairs retain every pixel. These are not hard RAM budgets.
+
+`encoder` accepts `buffered` or `streaming`. Streaming input is video-only and
+rejects complete input tensor dumps. It reads one RGB24 frame at a time and
+retains the original causal initial-five/subsequent-four encoder partition;
+4n+1 padding still repeats only the final source frame. EOF, full frame count,
+FPS/PTS and source-file stamps must verify before sampling, so an undeclared
+tail cannot be silently dropped. Omission, including older saved drafts, keeps
+buffered input. Image requests in the App adapt both source/sink controls to
+buffered. The native API rejects explicitly requested image streaming modes.
+
+Actual reader/FP32-normalization/latent and two seven-request App chains pass
+bitwise export checks. A same-library 512/t25 staged/cache1 full-request ABBA
+records 21.254 / 21.252 s, effectively equal, with a negligible 37-KB active
+maximum difference. This is a bounded-source-residency option, not a proven
+whole-request speed or maximum-memory improvement. In a 512-source movie, the
+observed caller-owned reused RGB24 buffer is 786,432 bytes; codec allocations,
+encoder chunks, causal state and model storage are not included in that number.
 
 `decoder` accepts `buffered` or `streaming`; streaming is video-only and
 cannot also request complete raw-pixel tensor dumps. `convolution` accepts
@@ -269,14 +288,28 @@ request controls select the convolution/tile/cache policy without changing
 process environment or reloading VAE weights. Omitting the object preserves
 the existing default/diagnostic environment behavior.
 
-The App exposes decoder, convolution-workspace and cache selectors and
+The App exposes input encoder, output decoder, convolution-workspace and cache selectors and
 heuristic staged/streaming advice for larger frame counts or low physical
-memory. This is not automatic admission to a hard RAM budget. Import, the
-conditioning tensor and DiT still retain complete-clip state; the 121-frame
-model limit remains in force. The writer's 1000-frame test is not long-video
-model qualification. Full spatial VAE tiling, reusable history/workspace pools
+memory. This is not automatic admission to a hard RAM budget. The streaming
+source option avoids complete imported/resized RGB, while conditioning and DiT
+still retain complete-clip state; the 121-frame model limit remains in force.
+Reader/writer 1000-frame tests are not long-video model qualification. The
+existing conservative admission estimate can still reject some 16-GiB tasks;
+the App advice is not proof that those tasks are admitted or runnable.
+Full spatial VAE tiling, reusable history/workspace pools
 and VAE Core ML/ANE convolution remain active work; see
 `docs/design/seedvr2-vae-optimization.md`.
+
+For streaming input, `vae_encode_wall` includes per-frame import and EOF work;
+`vae_encode` subtracts the separately reported `frame_import` portion. That
+portion is also included in `media_import`. Do not add overlapping timing
+fields such as `restoration_total`, `frame_import` and encoder wall together.
+
+The source-streaming App candidate is separately packaged at
+`dist/seedvr2-stream-input-20261014/TurboCider.app` (macOS 26.2+), without replacing
+the older delivery. Its two real App workflows and complete exported-media
+checks are recorded in `docs/status/seedvr2-integration.md`. Do not run old/new
+instances concurrently against the same default state directory.
 
 The first same-library 512/t25 full-request ABBA observes buffered/streaming
 warm medians **20.715874 / 20.768963 s**, strict speed gate **false**. Aggregate

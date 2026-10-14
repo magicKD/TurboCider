@@ -18,6 +18,7 @@ struct LoRAAsset {
     std::string role = "transformer";
 };
 struct SeedVR2VAEConfig {
+    std::string encoder = "buffered";
     std::string decoder = "buffered";
     std::string convolution = "singleton2d";
     std::string history = "compact";

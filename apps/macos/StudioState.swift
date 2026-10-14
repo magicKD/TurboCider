@@ -612,7 +612,7 @@ struct StudioDraft: Codable, Sendable {
         if modelID == "seedvr2-3b", var config = seedvr2VAE {
             // The decoder sink writes video frames. Still-image export keeps
             // the established alpha-preserving PNG path.
-            if operation == "image.upscale" { config.decoder = "buffered" }
+            if operation == "image.upscale" { config.decoder = "buffered"; config.encoder = "buffered" }
             request.seedvr2_vae = config
         }
         request.prompt_enhance = modelID == "qwen-image-2.1" && promptEnhance

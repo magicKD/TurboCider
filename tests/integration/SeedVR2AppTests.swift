@@ -52,13 +52,15 @@ import Foundation
         await studio.addFiles([URL(fileURLWithPath: CommandLine.arguments[1])])
         try check(studio.message == nil && studio.draft.activeAssets.count == 1, "real video staging failed")
         let video = try studio.draft.request(output: root.appendingPathComponent("video.mp4"))
-        let config = NativeSeedVR2VAEConfig(decoder: "streaming", convolution: "mixed3d", tileRows: 4096, allocatorCacheBytes: 1 << 30)
+        let config = NativeSeedVR2VAEConfig(decoder: "streaming", convolution: "mixed3d", tileRows: 4096, allocatorCacheBytes: 1 << 30, encoder: "streaming")
         studio.draft.seedvr2VAE = config
         let configured = try studio.draft.request(output: root.appendingPathComponent("configured.mp4"))
         try check(configured.seedvr2_vae == config && NativeRequestV2(legacy: configured).execution.seedvr2_vae == config,
                   "App/SDK lost request-local VAE controls")
         let restoredOptions = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
         try check(restoredOptions.seedvr2VAE == config, "App draft did not persist VAE controls")
+        let legacyVAE = try JSONDecoder().decode(NativeSeedVR2VAEConfig.self,from: Data("{\"decoder\":\"streaming\"}".utf8))
+        try check(legacyVAE.encoder == "buffered", "legacy VAE options did not retain buffered input default")
         studio.draft.seedvr2VAE = nil
         try check(video.operation == "video.upscale" && video.frames == 25 && video.fps == 24,
                   "source frame count/FPS were not applied to the draft")
@@ -117,7 +119,11 @@ import Foundation
                         throw NativeFailure(message: "App generation metrics missing")
                     }
                     let expectedDecoder = isVideo ? (vaeOptions?.decoder ?? "buffered") : "buffered"
+                    let expectedEncoder = isVideo ? (vaeOptions?.encoder ?? "buffered") : "buffered"
+                    let streamingInput = expectedEncoder == "streaming"
                     try check(metrics["vae_decoder_recipe"] as? String == expectedDecoder &&
+                              metrics["vae_encoder_recipe"] as? String == expectedEncoder &&
+                              metrics["streamed_input_frames"] as? Int == (streamingInput ? 25 : 0) &&
                               metrics["streamed_output_frames"] as? Int == (expectedDecoder == "streaming" ? 25 : 0) &&
                               metrics["vae_conv_recipe"] as? String == (vaeOptions?.convolution ?? "singleton2d"),
                               "App VAE execution differs from its selected configuration")
@@ -142,15 +148,23 @@ import Foundation
                               plan?["precision"] as? String == precision,
                               "App plan and executed precision disagree")
                     let staged = residency == "component_staged"
-                    let inputRecipe = isVideo ? "normalized_rgb_only" : (staged ? "normalized_rgb_plus_owned_alpha" : "normalized_rgb_plus_source_rgba")
+                    let inputRecipe = isVideo ? (streamingInput ? "bounded_rgb_reader_and_fp16_encoder_chunks" : "normalized_rgb_only") :
+                        (staged ? "normalized_rgb_plus_owned_alpha" : "normalized_rgb_plus_source_rgba")
                     try check(metrics["media_input_retention_recipe"] as? String == inputRecipe &&
                               (metrics["media_retained_alpha_bytes"] as? NSNumber)?.uint64Value == (isVideo ? 0 : UInt64(size*size*4)) &&
                               (metrics["media_retained_source_rgba_bytes"] as? NSNumber)?.uint64Value == (isVideo || staged ? 0 : UInt64(size*size*16)),
                               "App input buffer policy or alpha retention differs from the request")
                     let ownedInput = isVideo || staged
-                    try check(metrics["normalized_input_release_recipe"] as? String == (ownedInput ? "after_vae_encode_owned" : "borrowed") &&
-                              (metrics["normalized_input_released_logical_bytes"] as? NSNumber)?.uint64Value == (ownedInput ? UInt64(size*size*request.frames*3*4) : 0),
+                    let releaseRecipe = streamingInput ? "bounded_chunks_and_source_eof_before_sampling" : (ownedInput ? "after_vae_encode_owned" : "borrowed")
+                    try check(metrics["normalized_input_release_recipe"] as? String == releaseRecipe &&
+                              (metrics["normalized_input_released_logical_bytes"] as? NSNumber)?.uint64Value == (!streamingInput && ownedInput ? UInt64(size*size*request.frames*3*4) : 0),
                               "App did not release its declared owned normalized input")
+                    if streamingInput {
+                        try check((metrics["source_rgb24_buffer_capacity_peak_bytes"] as? NSNumber)?.uint64Value == UInt64(512*512*3) &&
+                                  metrics["vae_encoder_input_schedule"] as? String == "initial5_then4_with_last_frame_padding" &&
+                                  metrics["vae_encoder_wall_includes_frame_import"] as? Bool == true,
+                                  "App did not execute the bounded source/padding schedule")
+                    }
                     let timings = metrics["timings_seconds"] as? [String: Any]
                     try check(plan?["residency"] as? String == residency &&
                               metrics["weight_residency_recipe"] as? String == (staged ? "stage_dit" : "resident") &&

@@ -59,6 +59,7 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
                 "SeedVR2 convolution tile rows must be a 128-aligned integer in 128...65536");
     }
     if (config) {
+        require(config->encoder == "buffered" || config->encoder == "streaming", "invalid request-local SeedVR2 VAE encoder recipe");
         require(config->convolution == "singleton2d" || config->convolution == "conv3d" ||
                 config->convolution == "mixed3d" || config->convolution == "tiled3d",
                 "invalid request-local SeedVR2 VAE convolution recipe");
@@ -447,6 +448,52 @@ Tensor VAE::encode(const Tensor &pixels, const Event &event, std::atomic<bool> &
     }
     auto result = mx::transpose(mx::concatenate(slices, 1), {0, 4, 1, 2, 3});
     fence(result, cancelled);
+    return result;
+}
+Tensor VAE::encode_stream(int source_frames, int height, int width, const EncodedFrameSource &source,
+                         const Event &event, std::atomic<bool> &cancelled) const {
+    require(source_frames >= 1 && source_frames <= 121 && height > 0 && width > 0 &&
+            height % 8 == 0 && width % 8 == 0 && bool(source),
+            "SeedVR2 streaming encode requires a complete <=121-frame source and spatial multiples of eight");
+    const int total = padded_frames(source_frames);
+    Caches cache;
+    auto histories = total == 1 ? nullptr : &cache;
+    std::vector<Tensor> slices;
+    Tensor last(0);
+    int consumed = 0;
+    for (int start = 0; start < total;) {
+        checkpoint(cancelled);
+        const int stop = std::min(total,start+(start == 0 ? 5 : 4));
+        std::vector<Tensor> frames;
+        frames.reserve(stop-start);
+        for (int index = start; index < stop; ++index) {
+            checkpoint(cancelled);
+            if (index < source_frames) {
+                require(index == consumed,"streaming encode source index is not sequential");
+                auto frame = source(index);
+                checkpoint(cancelled);
+                require(frame.shape() == mx::Shape{1,3,1,height,width} && frame.dtype() == mx::float32,
+                        "streaming encoder source must return normalized FP32 RGB BCTHW singleton frames");
+                last = mx::transpose(mx::astype(frame,mx::float16),{0,2,3,4,1});
+                // A completed FP16 allocation cannot pin the caller's FP32
+                // resize/source graph through a lazy conversion. The caller
+                // can reuse its host RGB24 buffer before the next source call.
+                fence(last,cancelled);
+                ++consumed;
+            } else require(consumed == source_frames && last.ndim() == 5,"missing final source frame for padding");
+            frames.push_back(last);
+        }
+        auto input = mx::concatenate(frames,1);
+        fence(input,cancelled);
+        frames.clear();
+        auto encoded = encode_slice(input,histories,start == 0,event,cancelled);
+        slices.push_back(encoded);
+        start = stop;
+        if (start < source_frames) last = Tensor(0);
+    }
+    require(consumed == source_frames,"streaming encoder did not consume the complete declared source");
+    auto result = mx::transpose(mx::concatenate(slices,1),{0,4,1,2,3});
+    fence(result,cancelled);
     return result;
 }
 Tensor VAE::decode(const Tensor &latent, const Event &event, std::atomic<bool> &cancelled) const {

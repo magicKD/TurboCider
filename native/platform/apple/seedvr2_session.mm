@@ -9,6 +9,7 @@
 #include "../../media/image.hpp"
 #include "../../media/video.hpp"
 #include "../../media/video_input.hpp"
+#include "../../media/rgb_video_reader.hpp"
 #include "../../runtime/residency.hpp"
 #include <mlx/random.h>
 #include <CommonCrypto/CommonDigest.h>
@@ -199,12 +200,23 @@ class SeedVR2Session final : public ModelSession {
         configure_hybrid(r,event,cancelled);
         const double load_seconds = elapsed(started);
         const auto import_started = Clock::now();
-        auto unit = video ? load_video_tensor(source, r.frames, r.fps, event, cancelled) : load_rgba_image_tensor(source);
-        const int source_height = unit.shape(1), source_width = unit.shape(2);
-        unit = seedvr2::resize_bicubic(unit, r.height, r.width);
+        const bool stream_encode = video && r.seedvr2_vae && r.seedvr2_vae->encoder == "streaming";
+        std::unique_ptr<RGB24VideoReader> source_reader;
+        RGBVideoFrame source_frame;
+        int source_height = 0, source_width = 0, streamed_input_frames = 0;
+        size_t source_rgb_capacity_peak = 0;
+        double frame_import_seconds = 0;
+        Tensor unit(0);
+        if (stream_encode) source_reader = std::make_unique<RGB24VideoReader>(source,r.frames,r.fps,event,cancelled);
+        else {
+            unit = video ? load_video_tensor(source, r.frames, r.fps, event, cancelled) : load_rgba_image_tensor(source);
+            source_height = unit.shape(1); source_width = unit.shape(2);
+            unit = seedvr2::resize_bicubic(unit, r.height, r.width);
+        }
         std::optional<Tensor> resident_rgb;
         std::optional<seedvr2::NormalizedMediaInput> media_input;
         auto pixels = [&] {
+            if (stream_encode) return Tensor(0);
             if (!video && r.residency == "resident") {
                 // Keep both original source/RGB owners and defer the alpha
                 // view until export, exactly as in the speed-first baseline.
@@ -268,9 +280,34 @@ class SeedVR2Session final : public ModelSession {
             const auto route = hybrid_ ? seedvr2::FFNRoute([&](int block, const Tensor &input) {
                 return hybrid_->predict(block,input);
             }) : seedvr2::FFNRoute{};
-            auto result = media_input
-                ? pipeline_.restore_owned(std::move(pixels),noise,event,cancelled,r.dump,route,sink)
-                : pipeline_.restore(pixels,noise,event,cancelled,r.dump,route);
+            seedvr2::EncodedFrameSource frame_source = [&](int index) {
+                require(source_reader && index == streamed_input_frames,"streaming source/frame order mismatch");
+                const auto importing = Clock::now();
+                require(source_reader->next(source_frame) && source_frame.index == index,"source video ended before the complete declared frame count");
+                source_height = source_frame.height; source_width = source_frame.width;
+                source_rgb_capacity_peak = std::max(source_rgb_capacity_peak,source_frame.pixels.capacity());
+                auto frame_unit = mx::astype(Tensor(source_frame.pixels.data(),{1,source_height,source_width,3},mx::uint8),mx::float32)/255.f;
+                // Match the buffered import's FP32 conversion/evaluation
+                // boundary before resize and normalized-RGB arithmetic.
+                mx::eval(frame_unit);
+                frame_unit = seedvr2::resize_bicubic(frame_unit,r.height,r.width);
+                auto normalized = seedvr2::consume_resized_input(frame_unit,true).pixels;
+                ++streamed_input_frames;
+                frame_import_seconds += elapsed(importing);
+                return normalized;
+            };
+            auto verify_source = [&] {
+                const auto finishing = Clock::now();
+                require(source_reader && streamed_input_frames == r.frames &&
+                        source_reader->frames_read() == r.frames && !source_reader->next(source_frame),
+                        "streaming import did not verify complete source EOF");
+                source_reader.reset(); source_frame = RGBVideoFrame{};
+                frame_import_seconds += elapsed(finishing);
+            };
+            auto result = stream_encode
+                ? pipeline_.restore_source(r.frames,r.height,r.width,noise,frame_source,verify_source,event,cancelled,route,sink)
+                : (media_input ? pipeline_.restore_owned(std::move(pixels),noise,event,cancelled,r.dump,route,sink)
+                               : pipeline_.restore(pixels,noise,event,cancelled,r.dump,route));
             const uint64_t coreml_calls = hybrid_ ? hybrid_->calls()-calls_before : 0;
             const uint64_t hybrid_blocks = hybrid_ ? hybrid_->hybrid_blocks()-blocks_before : 0;
             if (hybrid_) {
@@ -345,15 +382,22 @@ class SeedVR2Session final : public ModelSession {
                 @"resident_parameter_bytes_scope": @"MLX parameter bank; excludes Core ML parameters and buffers",
                 @"resident_components": hybrid_ ? (pipeline_.dit().bytes() ? @[@"vae", @"dit", @"coreml_ffn_prefix"] : @[@"vae", @"coreml_ffn_prefix"]) : (pipeline_.dit().bytes() ? @[@"vae", @"dit"] : @[@"vae"]),
                 @"conditioning_cache_hit": @NO, @"resize_method": @"bicubic_align_corners_false_no_antialias",
-                @"media_input_retention_recipe": video ? @"normalized_rgb_only" :
+                @"media_input_retention_recipe": video ? (stream_encode ? @"bounded_rgb_reader_and_fp16_encoder_chunks" : @"normalized_rgb_only") :
                     (owned_alpha ? @"normalized_rgb_plus_owned_alpha" : @"normalized_rgb_plus_source_rgba"),
                 @"media_retained_alpha_bytes": @(video ? 0 : uint64_t(r.width)*r.height*sizeof(float)),
                 @"media_retained_source_rgba_bytes": @(!video && !owned_alpha ? uint64_t(r.width)*r.height*4*sizeof(float) : 0),
-                @"normalized_input_release_recipe": media_input ? @"after_vae_encode_owned" : @"borrowed",
+                @"normalized_input_release_recipe": stream_encode ? @"bounded_chunks_and_source_eof_before_sampling" :
+                    (media_input ? @"after_vae_encode_owned" : @"borrowed"),
                 @"normalized_input_released_logical_bytes": @(result.released_input_logical_bytes),
                 @"normalized_input_release_bytes_scope": @"logical normalized RGB tensor bytes; not physical-memory or peak-reduction guarantee",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
+                @"vae_encoder_recipe": stream_encode ? @"streaming" : @"buffered",
+                @"streamed_input_frames": @(streamed_input_frames),
+                @"source_rgb24_buffer_capacity_peak_bytes": @(source_rgb_capacity_peak),
+                @"source_rgb24_buffer_bytes_scope": @"caller-owned one-frame RGB24 capacity; excludes codec/model/normalized chunk storage",
+                @"vae_encoder_input_schedule": stream_encode ? @"initial5_then4_with_last_frame_padding" : @"complete_normalized_rgb_tensor",
+                @"vae_encoder_wall_includes_frame_import": @(stream_encode),
                 @"vae_decoder_recipe": stream_decode ? @"streaming" : @"buffered",
                 @"video_encoder_recipe": video ? (stream_decode ? @"h264_source_fps_frame_gop2s_no_duration_limit_v1" : @"h264_buffered_legacy") : @"not_applicable",
                 @"decoded_output_retention_recipe": stream_decode ? @"frame_sink_no_full_rgb_tensor" : @"full_rgb_bcthw",
@@ -379,7 +423,9 @@ class SeedVR2Session final : public ModelSession {
                 @"checkpoint_sha256": @(kDiTSha), @"vae_sha256": @(kVAESha),
                 @"checkpoint_sha256_verified": @YES, @"seconds": @(elapsed(started)),
                 @"timings_seconds": @{@"request_wall": @(elapsed(started)), @"load": @(load_seconds),
-                    @"media_import": @(import_seconds), @"vae_encode": @(result.encode_seconds),
+                    @"media_import": @(import_seconds+frame_import_seconds),
+                    @"vae_encode": @(std::max(0.0,result.encode_seconds-frame_import_seconds)),
+                    @"vae_encode_wall": @(result.encode_seconds), @"frame_import": @(frame_import_seconds),
                     @"denoise": @(result.denoise_seconds), @"vae_decode": @(std::max(0.0,result.decode_seconds-frame_export_seconds)),
                     @"vae_decode_wall": @(result.decode_seconds), @"frame_export": @(frame_export_seconds),
                     @"weight_management": @(result.staging_seconds), @"restoration_total": @(result.restore_seconds),

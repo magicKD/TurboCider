@@ -18,12 +18,13 @@ entirely to ANE or report a compute-plan preference as physical occupancy.
 | --- | --- |
 | Singleton Conv3D -> Conv2D | Existing default folds replicated initial frames in FP32 and handles temporal-kernel-one layers in 2D. Real temporal convolutions retain causal operands. |
 | End-to-end streaming decoded output | Frame sink/backpressured writer and explicit frame-based GOP pass codec and 14 v4 App requests; new memory policies match exported frames. Initial paired full-request speed/active-peak gate fails, so buffered stays default. New encoder differs from legacy encoding. |
+| Streaming source / VAE encode | Optional `encoder=streaming` imports one RGB frame and keeps the original initial-five/subsequent-four encode schedule and padding. Reader/display/FP32 normalization and encoded latents pass bitwise checks; 14 real App requests and all exported frames match. 512/t25 staged/cache1 full-request ABBA is effectively flat, with no substantial request peak win. Buffered remains default. |
 | Buffer reuse | Independent frame owners and known materialized normalization-output sharing pass exact codec/App, 1024/t9 VAE ABBA (about 1.77% faster) and completed 1024/t25 full-request ABBA (about 1.58% faster, 939.5 MB lower active peak). All eight full-request export pairs match every frame. Fixed reusable workspace pools remain open. |
 | Request/App configuration | Decoder/convolution/tile-row/cache controls and heuristic memory advice; native plan guards and real resident/cache4, staged/cache1 workflow/switching pass. Actual lower-RAM hardware, additional tile settings and long-model clips remain unqualified. |
 | Full VAE spatial tiling | Not implemented by `tiled3d`: that option only bounds each convolution's workspace. Prototype a global-statistics, halo-correct stage scheduler and measure real process peak. |
 | GPU/ANE convolution | Public shared-IO, GPU pack/consume, double buffering and disjoint output-channel cooperation pass full-spatial-convolution numerical/layout screens. Final 512 hotconv boundary is 32.58 ms GPU / 35.39 ms CPU+NE pipeline / 42.75 ms hybrid, with no memory win over GPU; not promoted. Other layers/real-activation/full-VAE qualification remain open. See [feasibility](seedvr2-vae-ane-feasibility.md); production hybrid bank is DiT FFN only. |
 | Full VAE on ANE | Feasibility experiment required; no support/performance claim from conversion alone. |
-| Long complete videos | Writer supports a tested 1000-frame producer, but model/import/request still cap complete source clips at 121 frames. Import/encoder/DiT bounded residency and real longer-clip validation remain required. |
+| Long complete videos | Reader/writer both test complete 1000-frame codec sequences. Streaming import and causal encode are integrated, but model/request still cap complete source clips at 121 frames. Complete conditioning/DiT residency and real longer-model-clip qualification remain required. |
 
 ## Streaming decoded output
 
@@ -41,7 +42,50 @@ the full source/conditioning/DiT state. Decode wall time includes sink work;
 report frame-export time separately without counting it twice. A consumer
 that retains frames defeats this bounded-output contract.
 
-## Spatial tiling without silently changing the model
+## Streaming source / encode boundary (2026-10-14)
+
+The buffered path remains unchanged. The explicit video-only
+`seedvr2_vae.encoder=streaming` path decodes into one reused RGB24 frame buffer,
+applies the same display transform and evaluated FP32 uint8 conversion, bicubic
+resize and normalization, then supplies singleton FP32 BCTHW to the VAE. A
+completed FP16 cast owns each encoder frame before the reader buffer is reused.
+The VAE concatenates the same initial five / subsequent four frames, keeps the
+same global spatial statistics and causal caches, and repeats only the last real
+frame for existing 4n+1 model padding. This is temporal input residency, not full
+spatial VAE tiling or independent temporal restoration windows.
+
+The pipeline must verify complete EOF after encoding and before any sampling or
+DiT staged reload; declaring the frame count alone is not enough. The reader
+rejects short/extra sequences, FPS/PTS mismatches, unsupported transforms,
+changing dimensions and source-file stamp changes. Its cancellation retains the
+native typed status. Reader codec/internal allocations are not claimed bounded
+by the single caller-owned RGB capacity.
+
+Evidence: eight transforms and all 72 decoded/normalized frames byte exact;
+source counts 1/2/4/5/6/9 encode to identical FP16 latents including padding;
+two seven-request App chains retain identical PNG alpha and every t25/24-FPS
+video pixel. Public engine tests cancel on source frame one (status 2), reject
+an undeclared tail before sampling (status 1), then restore successfully on the
+same engine (status 0); the existing destination/source and staging cleanup pass.
+
+Matched 512/t25 staged/cache1 full-request ABBA has six warm requests per mode:
+**21.254022 / 21.251528 s**, effectively flat, and active maxima
+**9,035,267,926 / 9,035,230,774 bytes**. The 37,152-byte difference is not a
+substantial peak-memory result. Every frame in all eight export pairs is exact.
+Keep the route selectable for bounded source RGB residency, without claiming
+whole-request acceleration, whole-VAE tiling, a hard RAM budget, 16-GiB-device
+support or >121-frame model support. The existing conservative admission guard
+can still reject a 16-GiB host even at 512 video output; it needs a separately
+justified model/workload estimate or qualification, not a lowered assertion.
+
+Records: `seedvr2-rgb-reader-guards-v3-20261014/report.json`,
+`seedvr2-vae-encode-source-128-v1-20261014/report.json`,
+`seedvr2-app-stream-input-export-screen-v1-20261014.json`,
+`seedvr2-stream-input-video512-t25-staged-abba-v1-20261014/report.json`,
+`seedvr2-stream-input-video512-t25-staged-exports-v1-20261014.json`,
+`seedvr2-stream-input-lifecycle-v1-20261014/report.json`.
+
+## Exact-context spatial tiling
 
 The VAE normalizes over the whole spatial frame and attends to all spatial
 keys. Running independent complete VAE crops changes both. Two distinct
@@ -112,9 +156,10 @@ and cache retention independently; smaller cache/workspaces are not hard RAM
 budgets. Advice considers actual imported frame count, output dimensions and
 physical memory, is explicitly heuristic, and requires user confirmation.
 
-Do not lift the 121-frame limit based on writer tests alone. A genuinely longer
-pipeline needs bounded import/resize and causal encoding, then a bounded DiT
-schedule, then streaming decode/export. Explore layer/window scheduling with
+Do not lift the 121-frame limit based on codec tests alone. Bounded import/resize
+and causal encoding plus decode/export are now optional routes, but genuinely
+longer restoration still needs a bounded complete-context DiT schedule and real
+longer-clip validation. Explore layer/window scheduling with
 global state stored outside active GPU memory for exact context. If independent
 temporal restoration windows are needed, make their changed context explicit,
 align latent phases, control noise and verify overlap/seams/temporal consistency.

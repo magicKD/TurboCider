@@ -55,6 +55,13 @@ class Pipeline {
                               const Event &, std::atomic<bool> &,
                               const std::filesystem::path &dump = {}, const FFNRoute & = {},
                               const DecodedFrameSink & = {});
+    // Source EOF must be verified after encoding, before any sampling. This
+    // bounds imported/resized RGB, not complete latent/DiT context or RAM.
+    // Complete input tensor dumps require the buffered path.
+    Restoration restore_source(int source_frames, int height, int width, const Tensor &noise,
+                               const EncodedFrameSource &, const std::function<void()> &verify_complete_source,
+                               const Event &, std::atomic<bool> &, const FFNRoute & = {},
+                               const DecodedFrameSink & = {});
     void clear() { dit_.clear(); vae_.clear(); loaded_ = false; }
 };
 

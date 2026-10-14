@@ -121,4 +121,64 @@ Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, co
             seconds(denoise_started, denoised), seconds(decode_started, decoded),
             staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes,bool(sink)};
 }
+Restoration Pipeline::restore_source(int source_frames, int height, int width, const Tensor &noise,
+                                    const EncodedFrameSource &source, const std::function<void()> &verify_complete_source,
+                                    const Event &event, std::atomic<bool> &cancelled,
+                                    const FFNRoute &ffn, const DecodedFrameSink &sink) {
+    require(loaded_ && source_frames >= 1 && source_frames <= 121 && height > 0 && width > 0 &&
+            height % 16 == 0 && width % 16 == 0 && bool(source) && bool(verify_complete_source),
+            "invalid loaded SeedVR2 streaming source restoration");
+    const int frames = padded_frames(source_frames);
+    require(noise.shape() == mx::Shape{1,16,(frames-1)/4+1,height/8,width/8} && noise.dtype() == mx::float32,
+            "SeedVR2 streaming source requires matching FP32 sampling noise");
+    const auto restore_started = Clock::now();
+    double staging_seconds = 0;
+    auto release_dit = [&] {
+        const auto started = Clock::now();
+        mx::synchronize(); dit_.clear(); mx::clear_cache();
+        staging_seconds += seconds(started,Clock::now());
+    };
+    if (stage_dit_ && dit_.bytes()) release_dit();
+    const auto started = Clock::now();
+    auto condition = vae_.encode_stream(source_frames,height,width,source,event,cancelled);
+    // A declared frame count is not EOF proof. Reject extra/short/changed
+    // source sequences before DiT work, and release import/codec owners now.
+    verify_complete_source();
+    checkpoint(cancelled);
+    const auto encoded = Clock::now();
+    if (stage_dit_) {
+        const auto reloading = Clock::now();
+        auto source_unchanged = [&] {
+            require(std::filesystem::is_regular_file(dit_path_) &&
+                    std::filesystem::file_size(dit_path_) == dit_source_bytes_ &&
+                    std::filesystem::last_write_time(dit_path_) == dit_source_modified_,
+                    "SeedVR2 DiT checkpoint changed during staged loading");
+        };
+        source_unchanged();
+        if (event) event("seedvr2_dit_stage_load",0,1);
+        dit_.load(dit_path_,dit_dtype_);
+        require(!stable_profile_ || dit_.stable_fp16_profile(),
+                "SeedVR2 DiT staged reload changed the qualified stable precision profile");
+        source_unchanged(); checkpoint(cancelled);
+        if (event) event("seedvr2_dit_stage_load",1,1);
+        staging_seconds += seconds(reloading,Clock::now());
+    }
+    const auto denoise_started = Clock::now();
+    auto velocity = dit_.forward(noise,condition,1000.f,event,cancelled,{},ffn);
+    auto latent = noise-mx::astype(velocity,mx::float32);
+    mx::eval(latent);
+    const auto denoised = Clock::now();
+    if (stage_dit_) release_dit();
+    const auto decode_started = Clock::now();
+    Tensor restored(0);
+    if (sink) vae_.decode_stream(latent,source_frames,sink,event,cancelled);
+    else {
+        restored = time_slice(vae_.decode(latent,event,cancelled),0,source_frames);
+        mx::eval(restored);
+    }
+    const auto decoded = Clock::now(); checkpoint(cancelled);
+    return {restored,condition,velocity,latent,seconds(started,encoded),
+            seconds(denoise_started,denoised),seconds(decode_started,decoded),
+            staging_seconds,seconds(restore_started,decoded),0,0,bool(sink)};
+}
 } // namespace tc::seedvr2

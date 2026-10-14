@@ -74,5 +74,16 @@ class NativeHybridObserverTests(unittest.TestCase):
             wrong = dict(value); wrong[key] = bad
             with self.subTest(key=key), self.assertRaises(ValueError): observer.check_native_execution(self.args,wrong)
 
+    def test_streaming_encoder_requires_complete_runtime_source_count(self):
+        self.args.vae_options = dict(encoder="streaming")
+        value = self.metrics()
+        value.update(vae_encoder_recipe="streaming",streamed_input_frames=25,vae_decoder_recipe="buffered",
+            vae_conv_recipe="singleton2d",vae_history_recipe="compact",vae_conv_tile_rows_limit=16384,
+            allocator_cache_limit_bytes=4 << 30,streamed_output_frames=0)
+        observer.check_native_execution(self.args,value)
+        for key,bad in (("vae_encoder_recipe","buffered"),("streamed_input_frames",24),("streamed_input_frames",26)):
+            wrong=dict(value);wrong[key]=bad
+            with self.subTest(key=key,bad=bad),self.assertRaises(ValueError):observer.check_native_execution(self.args,wrong)
+
 
 if __name__ == "__main__": unittest.main()

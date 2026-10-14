@@ -575,6 +575,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
         @"seedvr2_vae" : r.seedvr2_vae ? (id)@{
+            @"encoder": @(r.seedvr2_vae->encoder.c_str()),
             @"decoder": @(r.seedvr2_vae->decoder.c_str()),
             @"convolution": @(r.seedvr2_vae->convolution.c_str()),
             @"history": @(r.seedvr2_vae->history.c_str()),
