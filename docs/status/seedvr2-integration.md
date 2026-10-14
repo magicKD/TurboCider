@@ -2247,6 +2247,36 @@ The full optimization goal remains active; broader scheduling/workspaces,
 useful VAE ANE integration, real low-memory hardware/admission and bounded
 longer-context DiT are still incomplete. Current defaults/121-frame cap remain.
 
+### Direct-frame public Core ML causal-conv experiment (2026-10-15)
+
+The next actual-peak boundary now runs inside the complete VAE: only subsequent
+`up_blocks.3.resnets.0.conv1` uses original three-tap fixed Core ML convolution.
+GPU packs separate past/current owners and exact spatial halos into two bounded
+surface slots; no full temporal concatenation. Initial GPU FP32 folding/global
+norm/remaining layers/phases stay native. This is an isolated compile-guarded
+prototype, not a public VAE backend or full-VAE conversion. Stable packaging
+rejects both its flag and actual shader/guard bytes.
+
+Independent signed-ABA FP32,120,434,688 pack-word/11,857,664 consumer-word
+witnesses, ragged borders, real strided/offset inputs, retained outputs,
+pre/active prediction cancellation, same-runtime/VAE recovery and zero-MLX-
+allocation teardown pass. Complete real1024/t25 executes24 subsequent frames,
+6144 predictions/backing hits and checks all78,643,200 pixels. The same-latent
+audited all-FP32 VAE gate passes globally/per-frame, relative-L2 .000525150398;
+the first raw frame matches native byte for byte.
+
+Full-decoder ABBA has four processes, each one cold/two freshly recomputed warm
+clips, all pixels checked each iteration. GPU/CPU+NE warm medians are
+55.459255625/55.189463709 s, about0.49% apart, and active maxima
+12,996,152,418/12,592,974,678 bytes. The403,177,740-byte reduction is the clearer
+result; no substantial speed/full-request/App/hard-RAM/physical-ANE claim follows.
+The first full cohort's host snapshot overflow (FP32 latent sized as half words)
+and crash are preserved; corrected snapshots retain original dtype/byte extent.
+
+Full qualification/records and remaining public-bank/full-request work:
+[virtual causal boundary](../design/seedvr2-vae-virtual-causal-conv.md).
+Overall VAE/long-video/low-memory objectives remain active and unchanged.
+
 ## Reproduce component checks
 
 ```sh

@@ -1,5 +1,8 @@
 #include "../../native/models/seedvr2/vae.hpp"
 #include "../../native/models/seedvr2/memory.hpp"
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
+#include "seedvr2_vae_ane_causal_conv.hpp"
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
 #include "seedvr2_vae_ane_projection.hpp"
 #endif
@@ -24,11 +27,15 @@ struct Sampler {
 int main(int argc,char **argv){
     try {
         const bool projection_experiment=argc==10;
+        const bool causal_experiment=argc==11;
+        bool valid_arguments=argc==7 || argc==8 || argc==9;
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
-        tc::require(argc==7 || argc==8 || argc==9 || argc==10,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse [share|copy | PROJECTION_MANIFEST ne|cpu]]");
-#else
-        tc::require(argc==7 || argc==8 || argc==9,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD_BYTES TILE_ROWS [fresh|reuse [share|copy]]; ANE projection requires an experimental build");
+        valid_arguments=valid_arguments || projection_experiment;
 #endif
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
+        valid_arguments=valid_arguments || causal_experiment;
+#endif
+        tc::require(valid_arguments,"usage: spatial-decode-probe MODEL FIXTURE OUTPUT baseline|spatial THRESHOLD ROWS [fresh|reuse [share|copy]]; offloads require experimental builds");
         const std::filesystem::path model(argv[1]),output(argv[3]);const std::string route(argv[4]);
         tc::require(!std::filesystem::exists(output) && (route=="baseline" || route=="spatial"),"fresh output and known route required");
         std::filesystem::create_directories(output);mx::set_default_device(mx::Device::gpu);
@@ -42,9 +49,17 @@ int main(int argc,char **argv){
         std::atomic<bool> cancelled{false};tc::seedvr2::AllocatorCacheScope allocator(1ull<<30);
         tc::seedvr2::VAE vae;vae.load(model/"vae/seedvr2_ema_vae_fp16.safetensors");
         tc::SeedVR2VAEConfig config;config.history="frames";
-        if(argc==9){tc::require(std::string(argv[8])=="share" || std::string(argv[8])=="copy","known upscale history recipe required");
+        if(argc==9 || causal_experiment){tc::require(std::string(argv[8])=="share" || std::string(argv[8])=="copy","known upscale history recipe required");
             config.share_upscale_history=std::string(argv[8])=="share";tc::require(!config.share_upscale_history || route=="baseline","shared upscale history requires full decoding");}
         vae.configure(config);mx::eval(latent);
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
+        std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> causal_stats;
+        if(causal_experiment){
+            tc::require(route=="baseline" && (std::string(argv[10])=="ne" || std::string(argv[10])=="cpu"),"full causal-conv compute control required");
+            vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(
+                argv[9],std::string(argv[10])=="cpu",cancelled,causal_stats));
+        }
+#endif
         tc::seedvr2::SpatialTileOptions options;options.threshold_bytes=std::stoull(argv[5]);options.rows=std::stoi(argv[6]);
         if(argc>=8){tc::require(std::string(argv[7])=="fresh" || std::string(argv[7])=="reuse","known read-window recipe required");options.reuse_read_windows=std::string(argv[7])=="reuse";}
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
@@ -122,10 +137,16 @@ int main(int argc,char **argv){
             <<",\"projection_backing_hits\":"<<projection_stats->backing_hits<<",\"projection_slot_bytes\":"<<projection_stats->slot_bytes
             <<",\"projection_boundary_seconds\":"<<projection_stats->boundary_seconds<<",\"projection_load_seconds\":"<<projection_stats->load_seconds;
 #endif
+        out<<",\"causal_conv_backend\":\""<<(causal_experiment?argv[10]:"none")<<"\"";
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
+        if(causal_stats)out<<",\"causal_conv_frames\":"<<causal_stats->frames<<",\"causal_conv_coreml_calls\":"<<causal_stats->coreml_calls
+            <<",\"causal_conv_backing_hits\":"<<causal_stats->backing_hits<<",\"causal_conv_slot_bytes\":"<<causal_stats->slot_bytes
+            <<",\"causal_conv_boundary_seconds\":"<<causal_stats->boundary_seconds<<",\"causal_conv_load_seconds\":"<<causal_stats->load_seconds;
+#endif
         out<<",\"diagnostic_phase_count\":"<<phase_count
             <<",\"qualified\":false,\"physical_ane_occupancy_measured\":false,\"scope\":\"decoder-only saved FP16 witness, host quality scan included; not original-FP32/full-request/paired speed or low-RAM qualification\"}\n";
         out.close();tc::require(quality,"spatial decoder quality gate failed");
-        if(route=="baseline" && !projection_experiment)tc::require(unequal==0,"baseline changed saved decoder bytes");
+        if(route=="baseline" && !projection_experiment && !causal_experiment)tc::require(unequal==0,"baseline changed saved decoder bytes");
         std::cout<<"PASS "<<route<<" frames="<<emitted<<" l2="<<l2<<" cosine="<<cosine<<" peak="<<active<<'\n';
     }catch(const std::exception &error){std::cerr<<error.what()<<'\n';return 1;}
 }

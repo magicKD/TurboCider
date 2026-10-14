@@ -403,6 +403,13 @@ low-memory recommendation. Optional read-window pooling also remains offline
 and disabled: fewer allocations did not establish a speed/peak benefit. See
 `docs/design/seedvr2-vae-ane-feasibility.md` for boundaries and preserved receipts.
 
+An additional isolated direct-frame Core ML causal-conv experiment now avoids
+the full temporal halo at one subsequent-frame hot layer. Complete25/FP32 gates
+and decoder ABBA observe403.2 MB lower active maximum versus shared-history GPU,
+with55.459/55.189-s warm medians. The small component difference is not a
+full-request speed claim; no public VAE ANE selector/bank/default is enabled.
+See `docs/design/seedvr2-vae-virtual-causal-conv.md` for qualification boundaries.
+
 For streaming input, `vae_encode_wall` includes per-frame import and EOF work;
 `vae_encode` subtracts the separately reported `frame_import` portion. That
 portion is also included in `media_import`. Do not add overlapping timing

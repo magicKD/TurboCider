@@ -13,6 +13,9 @@ using EncodedFrameSource = std::function<Tensor(int)>;
 // Offline observation only: never replaces an operator or changes its input.
 // Callers must finish GPU/host access before returning, not retain borrowed views.
 using UpscaleInputObserver = std::function<void(const std::string &, const Tensor &, bool, bool)>;
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+using ExperimentalCausalConv=std::function<Tensor(const Tensor &,const FrameHistory &,const Tensor &,const Tensor &)>;
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
 struct VAEPhaseObservation {
     std::string schema="tc_seedvr2_vae_phase_profile_v1",key;
@@ -43,6 +46,9 @@ class VAE {
     mutable uint64_t shared_upscale_frames_=0,shared_upscale_logical_bytes_=0;
     SpatialTileOptions spatial_options_;
     UpscaleInputObserver upscale_input_observer_;
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    ExperimentalCausalConv experimental_causal_conv_;
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
     VAEPhaseObserver phase_observer_;
 #endif
@@ -99,6 +105,13 @@ class VAE {
     uint64_t shared_upscale_frames() const {return shared_upscale_frames_;}
     uint64_t shared_upscale_logical_bytes() const {return shared_upscale_logical_bytes_;}
     void observe_upscale_inputs(UpscaleInputObserver observer) { upscale_input_observer_ = std::move(observer); }
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    void use_experimental_causal_conv(ExperimentalCausalConv execute){
+        require(bool(execute) && history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
+            norm_recipe_=="metal" && spatial_recipe_=="full","causal-conv experiment requires full native frame history");
+        experimental_causal_conv_=std::move(execute);
+    }
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
     void observe_phases(VAEPhaseObserver observer){phase_observer_=std::move(observer);}
 #endif
@@ -145,6 +158,9 @@ class VAE {
                              std::shared_ptr<SpatialFileStats> &, const Event &, std::atomic<bool> &) const;
     void clear() {
         weights_.clear();
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        experimental_causal_conv_={};
+#endif
         share_upscale_history_=false;shared_upscale_frames_=0;shared_upscale_logical_bytes_=0;
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
         phase_observer_={};

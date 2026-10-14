@@ -19,6 +19,7 @@ from seedvr2_framework_screen import sha256, write_json
 from seedvr2_vae_coreml_conv_screen import quality
 from export_seedvr2_ffn import tree_identity
 from seedvr2_vae_upscale_screen import validate_manifest
+from seedvr2_vae_native_io_screen import validate_manifest as validate_conv_manifest
 
 
 def validate_projection_observation(value,backend,manifest,frames,height,width):
@@ -28,6 +29,23 @@ def validate_projection_observation(value,backend,manifest,frames,height,width):
         value.get("projection_backing_hits")!=expected or value.get("projection_slot_bytes",0)<=0 or
         value.get("qualified") is not False or value.get("physical_ane_occupancy_measured") is not False):
         raise ValueError("complete VAE projection recipe/coverage/backing identity differs")
+
+
+def validate_causal_bank(value):
+    validate_conv_manifest(value)
+    if (value.get("qualified") is not False or value.get("layer")!="decoder.up_blocks.3.resnets.0.conv1" or
+        value.get("original_shape")!=[128,256,3,3,3] or value.get("output_channels")!=128 or
+        value.get("compute_units")!="cpuAndNeuralEngine" or value["rows"] not in (32,64,128) or value["rows"]!=value["cols"]):
+        raise ValueError("complete original hot-convolution fixed bank required")
+
+
+def validate_causal_observation(value,backend,manifest,frames,height,width):
+    expected=(frames-1)*((height+manifest["rows"]-1)//manifest["rows"])*((width+manifest["cols"]-1)//manifest["cols"])
+    if (value.get("causal_conv_backend")!=backend or value.get("causal_conv_frames")!=frames-1 or
+        value.get("causal_conv_coreml_calls")!=expected or value.get("causal_conv_backing_hits")!=expected or
+        value.get("causal_conv_slot_bytes",0)<=0 or value.get("qualified") is not False or
+        value.get("physical_ane_occupancy_measured") is not False):
+        raise ValueError("complete causal frame/tile/backing coverage differs")
 
 
 def main():
@@ -42,6 +60,8 @@ def main():
     parser.add_argument("--projection-manifest",type=Path)
     parser.add_argument("--projection-control",choices=("ne","cpu"),default="ne")
     parser.add_argument("--share-upscale-history",action="store_true")
+    parser.add_argument("--causal-conv-manifest",type=Path)
+    parser.add_argument("--causal-conv-control",choices=("ne","cpu"),default="ne")
     args=parser.parse_args()
     if args.output.exists() or args.frames<1 or (args.frames-1)%4 or not 8<=args.rows<=128 or args.rows%8:
         parser.error("fresh output, complete padded causal prefix and 8-aligned rows required")
@@ -51,6 +71,13 @@ def main():
     if sha256(checkpoint)!=CHECKPOINT_SHA:parser.error("original VAE checkpoint SHA required")
     if args.share_upscale_history and (args.routes!=["baseline"] or args.projection_manifest):
         parser.error("shared upscale history requires the native full-route boundary")
+    causal=None
+    if args.causal_conv_manifest:
+        if args.routes!=["baseline"] or args.projection_manifest:parser.error("causal-conv experiment requires one complete native outer route")
+        args.causal_conv_manifest=args.causal_conv_manifest.resolve(strict=True)
+        causal=json.loads(args.causal_conv_manifest.read_text());validate_causal_bank(causal)
+        if tree_identity(args.causal_conv_manifest.parent/causal["compiled"]["path"])!=causal["compiled"]["identity"]:
+            parser.error("causal convolution compiled identity differs")
     projection=None
     if args.projection_manifest:
         args.projection_manifest=args.projection_manifest.resolve(strict=True)
@@ -84,6 +111,9 @@ def main():
         projection_manifest_sha256=sha256(args.projection_manifest) if projection else None,
         projection_backend=args.projection_control if projection else "none",
         share_upscale_history=args.share_upscale_history,
+        causal_manifest_sha256=sha256(args.causal_conv_manifest) if causal else None,
+        causal_backend=args.causal_conv_control if causal else "none",
+        causal_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_ane_causal_conv.mm") if causal else None,
         source_sha256=sha256(Path(__file__)),
         projection_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_ane_projection.mm") if projection else None,
         projection_io_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_upscale_io.hpp") if projection else None,
@@ -100,6 +130,7 @@ def main():
             destination=args.output/route
             command=[str(args.probe),str(args.model),str(fixture),str(destination),route,str(args.threshold_bytes),str(args.rows),args.read_windows]
             if projection:command.extend([str(args.projection_manifest),args.projection_control])
+            elif causal:command.extend(["share" if args.share_upscale_history else "copy",str(args.causal_conv_manifest),args.causal_conv_control])
             elif args.share_upscale_history:command.append("share")
             print(f"spatial screen {route} {shape}",flush=True)
             result=subprocess.run(command,capture_output=True,text=True,timeout=600)
@@ -112,11 +143,12 @@ def main():
                 raise ValueError("decoder did not execute the selected read-window recipe")
             if projection:
                 validate_projection_observation(receipt["observation"],args.projection_control,projection,args.frames,pixels.shape[3],pixels.shape[4])
+            if causal:validate_causal_observation(receipt["observation"],args.causal_conv_control,causal,args.frames,pixels.shape[3],pixels.shape[4])
             if args.share_upscale_history:
                 value=receipt["observation"];expected=args.frames if args.frames>1 else 0
                 if (value.get("share_upscale_history") is not True or value.get("shared_upscale_frames")!=expected or
                     value.get("shared_upscale_logical_bytes")!=expected*pixels.shape[3]*pixels.shape[4]*256*2 or
-                    value.get("bitwise_equal") is not True):
+                    (not causal and value.get("bitwise_equal") is not True)):
                     raise ValueError("shared upscale history was not fully executed or changed pixel words")
             if (route=="spatial" and args.read_windows=="reuse" and receipt["observation"]["file_read_bytes"]>0 and
                 receipt["observation"].get("host_window_reuses",0)<=0):
@@ -134,6 +166,9 @@ def main():
         if projection and (sha256(args.projection_manifest)!=report["projection_manifest_sha256"] or
             tree_identity(args.projection_manifest.parent/projection["compiled"]["path"])!=projection["compiled"]["identity"]):
             raise ValueError("projection bank changed during complete VAE execution")
+        if causal and (sha256(args.causal_conv_manifest)!=report["causal_manifest_sha256"] or
+            tree_identity(args.causal_conv_manifest.parent/causal["compiled"]["path"])!=causal["compiled"]["identity"]):
+            raise ValueError("causal bank changed during complete VAE execution")
         report["status"]="complete"
         print(json.dumps(dict(status="complete",frames=args.frames,routes=[row["observation"] for row in report["routes"]])),flush=True)
     except BaseException as failure:report.update(status="failed",failure=str(failure));raise

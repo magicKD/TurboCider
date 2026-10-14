@@ -80,6 +80,9 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
     history_recipe_ = "compact";
     pointwise_recipe_ = "matmul";
     upscale_recipe_ = "native";
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    experimental_causal_conv_={};
+#endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
     experimental_upscale_projection_={};
 #endif
@@ -272,6 +275,20 @@ Tensor VAE::conv_frames(const Tensor &input, const std::string &key, FrameHistor
     const auto found = cache ? cache->find(key) : FrameHistoryMap::iterator{};
     const bool stored = halo && cache && !initial && found != cache->end();
     auto previous = stored ? found->second : FrameHistory{};
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    if(experimental_causal_conv_ && key=="decoder.up_blocks.3.resnets.0.conv1" && !initial){
+        require(cache && stored && previous.size()==2 && !downsample && kernel_t==3 &&
+            input.shape(0)==1 && input.shape(1)==1 && input.shape(4)==256,
+            "causal-conv experiment cannot change initial folding, strides or temporal partition");
+        // Keep both original history frames until every tile has consumed them.
+        // There is deliberately no full three-frame concatenation in this path.
+        auto result=experimental_causal_conv_(input,previous,weight,weights_.at(key+".bias"));
+        require(result.shape()==mx::Shape{1,1,input.shape(2),input.shape(3),128} && result.dtype()==mx::float16 &&
+            result.is_available(),"causal-conv experiment returned an incomplete activation");
+        cache->insert_or_assign(key,advance_frame_history(input,previous,2,true,retain_owned_singleton));
+        return result;
+    }
+#endif
     auto first = halo ? part(input,1,0,1) : input;
     const bool bounded = conv_recipe_ == "tiled3d" || (conv_recipe_ == "mixed3d" &&
         !initial && kernel_t > 1 && int64_t(input.shape(2))*input.shape(3) >= 1024*1024 && input.shape(4) >= 256);

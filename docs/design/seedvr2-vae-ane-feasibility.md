@@ -15,6 +15,15 @@ The later captured-real upsampling screen below finds a conditional lower-
 allocation projection boundary, but no meaningful speed win over its corrected
 GPU baseline. A whole-VAE ANE backend remains unqualified.
 
+Subsequent [direct-frame causal convolution](seedvr2-vae-virtual-causal-conv.md)
+changes the actual VAE boundary: it packs two separate histories/current input
+without a full temporal halo. Complete1024/t25 audited-FP32/per-frame gates and
+full-decoder ABBA pass, with403.2 MB lower active maximum versus the already-
+shared GPU baseline. Warm medians55.459/55.189 s are only about0.49% apart; the
+stronger result is component workspace reduction, not substantial full-request
+acceleration. The original fixed bank remains unqualified/experimental and no
+VAE ANE App default is enabled. Full-request/App/public-bank gates remain open.
+
 Machine: Apple M4 Max, 64 GiB, macOS 26.6.2. Original VAE SHA-256:
 `20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1`.
 Weights remain FP16 without BF16 rounding/quantization. Three temporal taps are
