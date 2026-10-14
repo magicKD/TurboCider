@@ -22,6 +22,9 @@ struct SeedVR2VAEConfig {
     std::string decoder = "buffered";
     std::string convolution = "singleton2d";
     std::string history = "compact";
+    std::string spatial = "full";
+    int spatial_rows = 64;
+    uint64_t spatial_disk_budget_bytes = 8ull << 30;
     int tile_rows = 16384;
     uint64_t allocator_cache_bytes = 4ull << 30;
 };

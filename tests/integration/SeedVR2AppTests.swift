@@ -60,7 +60,8 @@ import Foundation
         let restoredOptions = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
         try check(restoredOptions.seedvr2VAE == config, "App draft did not persist VAE controls")
         let legacyVAE = try JSONDecoder().decode(NativeSeedVR2VAEConfig.self,from: Data("{\"decoder\":\"streaming\"}".utf8))
-        try check(legacyVAE.encoder == "buffered", "legacy VAE options did not retain buffered input default")
+        try check(legacyVAE.encoder == "buffered" && legacyVAE.spatial == "full" && legacyVAE.spatial_rows == 64,
+            "legacy VAE options did not retain buffered input/full spatial defaults")
         studio.draft.seedvr2VAE = nil
         try check(video.operation == "video.upscale" && video.frames == 25 && video.fps == 24,
                   "source frame count/FPS were not applied to the draft")
@@ -120,9 +121,12 @@ import Foundation
                     }
                     let expectedDecoder = isVideo ? (vaeOptions?.decoder ?? "buffered") : "buffered"
                     let expectedEncoder = isVideo ? (vaeOptions?.encoder ?? "buffered") : "buffered"
+                    let expectedSpatial = vaeOptions?.spatial ?? "full"
+                    let fileRows = expectedSpatial == "file_rows"
                     let streamingInput = expectedEncoder == "streaming"
                     try check(metrics["vae_decoder_recipe"] as? String == expectedDecoder &&
                               metrics["vae_encoder_recipe"] as? String == expectedEncoder &&
+                              metrics["vae_spatial_recipe"] as? String == expectedSpatial &&
                               metrics["streamed_input_frames"] as? Int == (streamingInput ? 25 : 0) &&
                               metrics["streamed_output_frames"] as? Int == (expectedDecoder == "streaming" ? 25 : 0) &&
                               metrics["vae_conv_recipe"] as? String == (vaeOptions?.convolution ?? "singleton2d"),
@@ -134,12 +138,29 @@ import Foundation
                     try check(metrics["vae_history_recipe"] as? String == (vaeOptions?.history ?? "compact") &&
                               metrics["vae_pointwise_recipe"] as? String == "matmul",
                               "App did not execute the qualified VAE history/pointwise defaults")
-                    try check(metrics["numerical_recipe"] as? String == (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") &&
+                    let expectedRecipe = (hybrid ? "seedvr2-original-fp16-coreml-prefix-v1" : "seedvr2-stable-fp16-fp32-v1") +
+                        (fileRows ? "+vae-globalstats-file-rows-v1" : "")
+                    try check(metrics["numerical_recipe"] as? String == expectedRecipe &&
                               metrics["dit_projection_dtype"] as? String == "fp16" &&
                               metrics["dit_residual_dtype"] as? String == "fp32" &&
                               metrics["dit_velocity_dtype"] as? String == "fp32" &&
                               metrics["dit_attention_dtype"] as? String == "fp16",
                               "App did not execute the qualified stable mixed-precision profile")
+                    if fileRows {
+                        try check(metrics["vae_spatial_rows"] as? Int == (vaeOptions?.spatial_rows ?? 64) &&
+                                  (metrics["vae_spatial_disk_budget_bytes"] as? NSNumber)?.uint64Value == (vaeOptions?.spatial_disk_budget_bytes ?? (8 << 30)) &&
+                                  metrics["vae_spatial_file_live_bytes_after_decode"] as? Int == 0 &&
+                                  metrics["vae_spatial_host_live_bytes_after_decode"] as? Int == 0 &&
+                                  metrics["vae_spatial_cleanup_failures"] as? Int == 0,
+                                  "App spatial schedule/retirement differs from request")
+                        if size == 1024 {
+                            try check((metrics["vae_spatial_tile_convolutions"] as? Int ?? 0) > 0 &&
+                                      (metrics["vae_spatial_global_normalizations"] as? Int ?? 0) > 0,
+                                      "1024 App spatial route never executed its eligible stages")
+                            let written = (metrics["vae_spatial_file_written_bytes"] as? NSNumber)?.uint64Value ?? 0
+                            try check(isVideo ? written > 0 : written == 0,"App spatial history storage differs from image/video lifetime")
+                        }
+                    }
                     let precision = hybrid
                         ? "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_coreml_ffn_prefix+fp32_ffn_join+fp16_vae+fp32_euler"
                         : "original_fp16_weights+fp16_dit_projections+fp32_dit_state+fp16_vae+fp32_euler"

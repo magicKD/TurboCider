@@ -97,6 +97,20 @@ struct AccelerationView: View {
     @ViewBuilder private var seedvr2VAEControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SeedVR2 VAE / 内存").font(.headline)
+            Picker("解码空间阶段", selection: Binding(get: { seedvr2Config.spatial }, set: { value in updateSeedVR2 {
+                $0.spatial = value
+                if value == "file_rows" && !["singleton2d", "conv3d"].contains($0.convolution) { $0.convolution = "singleton2d" }
+            } })) {
+                Text("完整帧（原有路径）").tag("full")
+                Text("全局统计行带 / 临时历史文件（较慢）").tag("file_rows")
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAESpatial")
+            if seedvr2Config.spatial == "file_rows" {
+                Picker("空间行带高度", selection: Binding(get: { seedvr2Config.spatial_rows }, set: { value in updateSeedVR2 { $0.spatial_rows = value } })) {
+                    Text("32 行").tag(32); Text("64 行").tag(64); Text("128 行").tag(128)
+                }.disabled(store.busy).accessibilityIdentifier("seedvr2VAESpatialRows")
+                Text("只调度高分辨率解码阶段，保留全帧统计/完整 attention。当前仅支持 ≤1024 画布；临时文件最多 8 GiB，视频累计 I/O 会很大。卷积拆分可能改变 FP16 末位，不是硬 RAM 预算或 16 GB 可用性保证。")
+                    .font(.caption).foregroundStyle(.orange)
+            }
             Picker("视频输入驻留", selection: Binding(get: { seedvr2Config.encoder }, set: { value in updateSeedVR2 { $0.encoder = value } })) {
                 Text("整段导入（原有路径）").tag("buffered")
                 Text("逐帧导入编码（减少 RGB 驻留）").tag("streaming")
@@ -109,8 +123,10 @@ struct AccelerationView: View {
                 .accessibilityIdentifier("seedvr2VAEDecoder")
             Picker("卷积工作区", selection: Binding(get: { seedvr2Config.convolution }, set: { value in updateSeedVR2 { $0.convolution = value } })) {
                 Text("速度优先 · singleton2d").tag("singleton2d")
-                Text("大卷积分块 · mixed3d（较慢）").tag("mixed3d")
-                Text("全部卷积分块 · tiled3d（更慢）").tag("tiled3d")
+                if seedvr2Config.spatial == "full" {
+                    Text("大卷积分块 · mixed3d（较慢）").tag("mixed3d")
+                    Text("全部卷积分块 · tiled3d（更慢）").tag("tiled3d")
+                }
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEConvolution")
             Picker("因果历史缓存", selection: Binding(get: { seedvr2Config.history }, set: { value in updateSeedVR2 { $0.history = value } })) {
                 Text("紧凑历史 · compact（原有默认）").tag("compact")

@@ -24,6 +24,11 @@ ModelModule seedvr2_module() {
                     "SeedVR2 image output is one frame; video output requires the complete source frame count in 2...121");
             require(!video || (r.fps >= 1 && r.fps <= 120), "SeedVR2 requires an integer source FPS in 1...120");
             require(!r.audio, "SeedVR2 currently exports silent video; audio preservation is not yet supported");
+            if (r.seedvr2_vae && r.seedvr2_vae->spatial == "file_rows") {
+                require(r.width <= 1024 && r.height <= 1024,"file_rows currently supports canvases up to 1024 per axis; select full for larger output");
+                require(r.seedvr2_vae->convolution == "singleton2d" || r.seedvr2_vae->convolution == "conv3d",
+                    "file_rows uses halo-correct native convs; mixed3d/tiled3d are separate workspace schedules");
+            }
             if (r.seedvr2_vae && r.seedvr2_vae->encoder == "streaming") {
                 require(video,"SeedVR2 streaming VAE encoder requires video.upscale");
                 require(r.dump.empty(),"SeedVR2 streaming encoder cannot retain a complete input tensor dump; select buffered for tensor dumps");

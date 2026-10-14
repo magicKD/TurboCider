@@ -247,6 +247,9 @@ remain default. Example schema 2 execution:
     "encoder": "streaming",
     "decoder": "streaming",
     "convolution": "singleton2d",
+    "spatial": "full",
+    "spatial_rows": 64,
+    "spatial_disk_budget_bytes": 8589934592,
     "tile_rows": 16384,
     "allocator_cache_bytes": 1073741824
   }
@@ -287,6 +290,42 @@ in 128...65536, and allocator-cache retention accepts 0...16 GiB. Explicit
 request controls select the convolution/tile/cache policy without changing
 process environment or reloading VAE weights. Omitting the object preserves
 the existing default/diagnostic environment behavior.
+
+The separately built spatial candidate adds `spatial="full"|"file_rows"`.
+`full` remains the default, including older saved drafts. `file_rows` schedules
+eligible high-resolution decoder norm/convolution stages in row bands, using
+complete-frame statistics, original causal taps/halos and all spatial attention
+keys. It is not independent complete-VAE crops, encoder spatial scheduling or
+a hard memory budget. Tile-shaped convolution changes rounding: outputs are
+numerically qualified, **not bitwise equal** to the full route.
+
+`spatial_rows` must be 8-aligned in 8...128 (default 64), independently of the
+convolution-workspace `tile_rows`. `spatial_disk_budget_bytes` is a positive
+live-scratch-file limit at most 8 GiB (default 8 GiB). Public file-row requests
+require both canvas axes <=1024 and convolution `singleton2d`/`conv3d`; incompatible
+`mixed3d`/`tiled3d` combinations fail rather than silently falling back. Images
+do not write causal-history files. Video file histories are lossless FP16, but
+cumulative SSD IO can be substantial: the complete1024/t25 decoder observation
+writes 75 GiB and reads about 142 GiB, with a 6.5-GiB live-file peak. Its
+decoder-only active peak is 13.197 -> 5.648 GB while observed time is
+56.074 -> 189.350 s, including host quality/export. These are not warmed
+full-request/App/low-memory-machine performance results. The full25 same-latent
+all-FP32 VAE pixel comparison passes independently. See
+`docs/design/seedvr2-vae-spatial-scheduler.md` for scopes, failure records and
+App/public-engine gates. Two seven-request real App workflows now pass, together
+with every exported frame's numerical gate and exact PNG alpha. Actual engine
+cancellation, quota failure and same-engine recovery also pass. In the single
+1024/t25 staged/cache1 App observation, full/file-row request latency is
+89.902/221.645 s and active peak is13.148/12.236 GB, not the much smaller
+decoder-only peak. These observations are not warmed ABBA or a16-GiB claim.
+No automatic file-row recommendation or VAE
+ANE routing follows from these observations.
+
+The separately packaged candidate is
+`dist/seedvr2-spatial-rows-20261014/TurboCider.app` (minimum macOS 26.2). It passes
+local signing/release guards, packaged-library contracts and a real 1024
+file-row image smoke whose PNG matches the tested App workflow byte for byte.
+The previously running App/package remains untouched.
 
 The App exposes input encoder, output decoder, convolution-workspace and cache selectors and
 heuristic staged/streaming advice for larger frame counts or low physical

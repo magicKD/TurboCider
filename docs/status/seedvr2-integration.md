@@ -1997,6 +1997,118 @@ at 512 video; this remains a separate estimate/hardware qualification task.
 Full spatial VAE scheduling, workspace pools, larger-context DiT, useful VAE
 ANE graph boundaries and real lower-memory hardware remain open.
 
+### Global-statistics row/file decoder prototype: lower component peaks
+
+`VAE::decode_spatial_stream` is an explicit offline entry, not selected by
+requests/App/environment defaults. Eligible high-resolution norm/conv stages
+use full-frame FP32 centered statistics and halo-correct row bands. Attention,
+causal taps, padding, coefficients and temporal phases retain their original
+scope. Large video histories use checksum-verified lossless private FP16 files
+and bounded owned GPU read windows. This is high-resolution stage scheduling,
+not independent crops or complete tiling of every VAE operator.
+
+Default decoding still matches saved native output bytes. Ten global-statistics
+normalization cases match byte for byte, and file/signed-zero/NaN/checksum/quota,
+ownership/unknown-child/cleanup guards pass. Spatial cancellation and sink
+failure drain files/windows and recover on the same VAE. Tile-shaped convs
+change reduction rounding: prototype pixels pass quality but are not byte exact.
+
+Single decoder-only/cache1 observations, including host quality scans:
+
+| Component workload | Default / prototype seconds | Default / prototype active peak (bytes) | Default / prototype sampled process footprint (bytes) |
+| --- | ---: | ---: | ---: |
+| 1024/t1 codec image | 1.329 / 1.308 | 9,670,740,818 / 3,181,661,286 | 9,774,318,576 / 4,206,871,440 |
+| 1024/t5 restored-video offline prefix | 10.847 / 35.855 | 13,121,981,262 / 5,639,867,218 | 14,464,500,768 / 6,690,424,008 |
+
+The latter emits/checks all five selected diagnostic frames, not an App source
+truncation or complete t25 qualification. Live files peak 6.5 GiB, with 15 GiB
+writes and about 23.7 GiB reads; owned read windows peak 69,206,016 bytes. File
+budget is 8 GiB with a free-space reserve, and only exact owned scratch is
+retired. The single-frame path writes no histories. Timings/physical samples
+are not balanced full-request/warm speed or hard memory/device guarantees.
+
+The first attempted original-FP32 check correctly rejects the older saved
+oracle pixels: existing restore `dtype=fp32` specifies DiT, while that oracle
+explicitly uses an FP16 VAE. Existing records remain unchanged; future legacy
+oracle reports now also expose `vae_compute_dtype`. A new VAE-only MPS oracle
+promotes original coefficients to FP32 and checks all floating dispatch values
+and parameters, with fallback forbidden and no service/source modification.
+It covers the exact same latent prefix, output F32 `[1,3,5,1024,1024]`, 5,435
+dispatches and 12,504 checked floating values. Default/prototype whole-pixel
+relative L2 is **.000489190 / .000489242**, cosine **.999999883 / .999999883**,
+passing unchanged .05/.999 gates. This is not a whole DiT/request claim.
+
+Latest record: `seedvr2-spatial-restored-video1024-t5-batched-io-v3-20261014/report.json`.
+Independent reference: `seedvr2-spatial-video1024-t5-fp32-vae-oracle-v1-20261014/report.json`.
+Detailed scope, tradeoffs, files and next gates:
+[global-statistics spatial scheduler](../design/seedvr2-vae-spatial-scheduler.md).
+At this initial prototype milestone the active objective remains open: public
+optional controls, full App/complete video qualification, broader stage/encoder scheduling, conservative admission,
+bounded longer-context DiT and actual low-memory hardware remain incomplete.
+The packaged `26f23e6` App is unchanged; no new default or release is claimed.
+
+### Explicit row/file controls: complete25 FP32 quality and real App lifecycle
+
+The subsequent candidate adds request-local `spatial=full|file_rows`, 8-aligned
+`spatial_rows` in8...128 and a positive live-file budget <=8 GiB. Schema1/2 and
+Swift drafts carry the same fields; omissions/older drafts keep `full`. The
+public file-row canvas is bounded to1024 per axis, with only
+singleton2d/conv3d accepted. The App offers an explicit selector/row height and
+IO/numerical warnings; it does not automatically recommend spilling. This
+still schedules only eligible decoder stages, not the encoder/entire VAE.
+
+Complete1024/t25 decoder observations are56.074/189.350 s and active peaks
+13,196,954,446/5,647,731,538 bytes (full/file-row), including host quality/export.
+Sampled process peaks are14,661,682,424/6,824,477,992 bytes. The file route writes
+75 GiB, reads about142 GiB, peaks at6.5 GiB live files and69,206,016-byte owned
+read windows. These single component observations are not full-request speed
+or device budgets.
+
+The original full25 FP32 oracle attempt exits137 without usable output; its
+cause is not established. A distinct complete-context attempt uses existing
+CPU output-buffer storage while retaining audited FP32 MPS arithmetic. All
+parameters/62,316 floating dispatch values are FP32; output is
+F32 `[1,3,25,1024,1024]`. Every same-latent decoded pixel passes unchanged gates:
+full/file-row relative L2 .000522324/.000522439, cosine about .999999869. Old
+FP16-VAE reports and the failed oracle are not relabelled or replaced.
+
+The separately built candidate completes two seven-request real App workflows
+(full and file-row, staged/cache1, source/sink streaming, frame history), covering
+512/1024 images/videos, complete t25/24-FPS exports, persistence, resident/staged
+switches and unload. File-row1024 executes144 image tiles/eight global norms
+and3504 video tiles/200 global norms; live file/window counters and cleanup
+failures are zero after decode. Export comparison checks every frame under
+unchanged .05-L2/.999-cosine gates plus exact PNG alpha; the512 pixels are exact.
+The1024 H264 exported-video error includes lossy encoding and is not the raw
+FP32 VAE error. GUI clicking and broad temporal/perceptual quality are not
+claimed by these integration tests.
+
+Single full-request1024/t25 observations are89.902/221.645 s, active peaks
+13,148,195,662/12,235,730,826 bytes and sampled process peaks
+14,476,445,112/13,240,293,640 bytes. They are not warmed ABBA; the remaining
+request peak is not located by phase. Do not apply the decoder-only reduction
+to the complete App, lower the admission assertion, or claim16-GiB support.
+
+Actual public-engine tests cancel at first export (status2, no read-ahead),
+reject a64-MiB scratch quota (status1, explicit budget error), and recover on
+the same engine with a1024 image (status0). Source/existing private destination
+hashes remain unchanged and scratch/media staging drain; unload MLX active is0.
+CPU guards pass12 contract,7 observer,3 original-FP32-reference and6 exported-
+media tests. Candidate file/norm tests and typed-cancel/sink/recovery tests pass.
+
+Independent locally signed package:
+`dist/seedvr2-spatial-rows-20261014/TurboCider.app`, minimum macOS 26.2. Release
+packaging/signature guards pass; 12 contracts also pass against its actual
+packaged library. The packaged CLI's real 1024 file-row image executes 144 tiles /
+eight norms with clean retirement, and its PNG is byte-identical to the tested
+App workflow output. This package does not replace the currently running user
+App; the image smoke is not a packaged-video or GUI-click qualification.
+
+Records and outstanding broader scheduling/admission/ANE/long-context gates:
+[row/file scheduler](../design/seedvr2-vae-spatial-scheduler.md). The overall
+goal remains active; no VAE ANE backend, >121-frame model support or automatic
+file-row default is enabled by this work.
+
 ## Reproduce component checks
 
 ```sh

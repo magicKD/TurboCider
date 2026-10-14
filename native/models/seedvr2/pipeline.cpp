@@ -108,18 +108,13 @@ Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, co
     const auto denoised = Clock::now();
     if (stage_dit_) release_dit();
     const auto decode_started = Clock::now();
-    Tensor restored(0);
-    if (sink) vae_.decode_stream(latent, original_frames, sink, event, cancelled);
-    else {
-        restored = vae_.decode(latent, event, cancelled);
-        restored = time_slice(restored, 0, original_frames);
-        mx::eval(restored);
-    }
+    std::shared_ptr<SpatialFileStats> spatial_stats;
+    auto restored = vae_.decode_configured(latent,original_frames,sink,spatial_stats,event,cancelled);
     const auto decoded = Clock::now();
     checkpoint(cancelled);
     return {restored, condition, velocity, latent, seconds(started, encoded),
             seconds(denoise_started, denoised), seconds(decode_started, decoded),
-            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes,bool(sink)};
+            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes,bool(sink),spatial_stats};
 }
 Restoration Pipeline::restore_source(int source_frames, int height, int width, const Tensor &noise,
                                     const EncodedFrameSource &source, const std::function<void()> &verify_complete_source,
@@ -170,15 +165,11 @@ Restoration Pipeline::restore_source(int source_frames, int height, int width, c
     const auto denoised = Clock::now();
     if (stage_dit_) release_dit();
     const auto decode_started = Clock::now();
-    Tensor restored(0);
-    if (sink) vae_.decode_stream(latent,source_frames,sink,event,cancelled);
-    else {
-        restored = time_slice(vae_.decode(latent,event,cancelled),0,source_frames);
-        mx::eval(restored);
-    }
+    std::shared_ptr<SpatialFileStats> spatial_stats;
+    auto restored = vae_.decode_configured(latent,source_frames,sink,spatial_stats,event,cancelled);
     const auto decoded = Clock::now(); checkpoint(cancelled);
     return {restored,condition,velocity,latent,seconds(started,encoded),
             seconds(denoise_started,denoised),seconds(decode_started,decoded),
-            staging_seconds,seconds(restore_started,decoded),0,0,bool(sink)};
+            staging_seconds,seconds(restore_started,decoded),0,0,bool(sink),spatial_stats};
 }
 } // namespace tc::seedvr2

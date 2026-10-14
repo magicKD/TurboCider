@@ -25,22 +25,30 @@ public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
     public var decoder: String
     public var convolution: String
     public var history: String
+    public var spatial: String
+    public var spatial_rows: Int
+    public var spatial_disk_budget_bytes: UInt64
     public var tile_rows: Int
     public var allocator_cache_bytes: UInt64
     public init(decoder: String = "buffered", convolution: String = "singleton2d",
-                tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30, history: String = "compact", encoder: String = "buffered") {
+                tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30, history: String = "compact", encoder: String = "buffered",
+                spatial: String = "full", spatialRows: Int = 64, spatialDiskBudgetBytes: UInt64 = 8 << 30) {
         self.encoder = encoder
         self.decoder = decoder; self.convolution = convolution
         self.history = history
+        self.spatial = spatial; spatial_rows = spatialRows; spatial_disk_budget_bytes = spatialDiskBudgetBytes
         tile_rows = tileRows; allocator_cache_bytes = allocatorCacheBytes
     }
-    private enum CodingKeys: String, CodingKey { case encoder, decoder, convolution, history, tile_rows, allocator_cache_bytes }
+    private enum CodingKeys: String, CodingKey { case encoder, decoder, convolution, history, spatial, spatial_rows, spatial_disk_budget_bytes, tile_rows, allocator_cache_bytes }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         encoder = try c.decodeIfPresent(String.self,forKey: .encoder) ?? "buffered"
         self.decoder = try c.decodeIfPresent(String.self,forKey: .decoder) ?? "buffered"
         convolution = try c.decodeIfPresent(String.self,forKey: .convolution) ?? "singleton2d"
         history = try c.decodeIfPresent(String.self,forKey: .history) ?? "compact"
+        spatial = try c.decodeIfPresent(String.self,forKey: .spatial) ?? "full"
+        spatial_rows = try c.decodeIfPresent(Int.self,forKey: .spatial_rows) ?? 64
+        spatial_disk_budget_bytes = try c.decodeIfPresent(UInt64.self,forKey: .spatial_disk_budget_bytes) ?? (8 << 30)
         tile_rows = try c.decodeIfPresent(Int.self,forKey: .tile_rows) ?? 16384
         allocator_cache_bytes = try c.decodeIfPresent(UInt64.self,forKey: .allocator_cache_bytes) ?? (4 << 30)
     }

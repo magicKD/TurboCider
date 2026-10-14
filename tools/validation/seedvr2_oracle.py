@@ -251,6 +251,7 @@ def oracle(args):
                       str(args.output / "vae.safetensors"))
     report = dict(schema="seedvr2-independent-component-oracle-v1", stage=args.stage,
         device=args.device, dtype=args.dtype if args.stage in ("dit", "restore") else "fp16",
+        vae_compute_dtype="fp16" if args.stage in ("vae", "restore") else None,
         torch_version=torch.__version__, comfy_commit=subprocess.check_output(
             ["git", "-C", str(args.comfy), "rev-parse", "HEAD"], text=True).strip(),
         torch_git_version=torch.version.git_version,

@@ -57,6 +57,9 @@ def check_native_execution(args, result):
     hybrid = args.route == "native-hybrid"
     execution = "gpu_ane" if hybrid else "gpu"
     recipe = "seedvr2-original-fp16-coreml-prefix-v1" if hybrid else "seedvr2-stable-fp16-fp32-v1"
+    options = getattr(args,"vae_options",None)
+    if options is not None and options.get("spatial","full") == "file_rows":
+        recipe += "+vae-globalstats-file-rows-v1"
     if (result.get("actual_denoise_steps") != 1 or result.get("conditioning_cache_hit") or
             result.get("execution") != execution or result.get("numerical_recipe") != recipe or
             result.get("dit_projection_dtype") != "fp16" or result.get("dit_residual_dtype") != "fp32"):
@@ -74,7 +77,8 @@ def check_native_execution(args, result):
     residency = getattr(args,"residency","resident")
     options = getattr(args,"vae_options",None)
     if options is not None:
-        expected = dict(encoder="buffered",decoder="buffered",convolution="singleton2d",history="compact",tile_rows=16384,allocator_cache_bytes=4 << 30)
+        expected = dict(encoder="buffered",decoder="buffered",convolution="singleton2d",history="compact",tile_rows=16384,allocator_cache_bytes=4 << 30,
+            spatial="full",spatial_rows=64,spatial_disk_budget_bytes=8 << 30)
         expected.update(options)
         if (result.get("vae_encoder_recipe","buffered") != expected["encoder"] or
             result.get("streamed_input_frames",0) != (args.frames if expected["encoder"] == "streaming" else 0) or
@@ -85,6 +89,14 @@ def check_native_execution(args, result):
             result.get("allocator_cache_limit_bytes") != expected["allocator_cache_bytes"] or
             result.get("streamed_output_frames") != (args.frames if expected["decoder"] == "streaming" else 0)):
             raise ValueError("native VAE request controls did not execute as declared")
+        if (result.get("vae_spatial_recipe","full") != expected["spatial"] or
+            (expected["spatial"] == "file_rows" and
+             (result.get("vae_spatial_rows") != expected["spatial_rows"] or
+              result.get("vae_spatial_disk_budget_bytes") != expected["spatial_disk_budget_bytes"] or
+              result.get("vae_spatial_file_live_bytes_after_decode") != 0 or
+              result.get("vae_spatial_host_live_bytes_after_decode") != 0 or
+              result.get("vae_spatial_cleanup_failures") != 0))):
+            raise ValueError("native spatial schedule/settings/retirement differ from request")
     if "weight_residency_recipe" in result and result["weight_residency_recipe"] != ("stage_dit" if residency == "component_staged" else "resident"):
         raise ValueError("native request executed a different residency than requested")
 

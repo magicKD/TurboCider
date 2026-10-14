@@ -10,6 +10,7 @@ struct Restoration {
     double input_release_seconds = 0;
     uint64_t released_input_logical_bytes = 0;
     bool pixels_streamed = false;
+    std::shared_ptr<SpatialFileStats> spatial_stats;
 };
 
 class Pipeline {
@@ -41,6 +42,7 @@ class Pipeline {
     const std::string &vae_norm_recipe() const { return vae_.norm_recipe(); }
     const std::string &vae_history_recipe() const { return vae_.history_recipe(); }
     const std::string &vae_pointwise_recipe() const { return vae_.pointwise_recipe(); }
+    const std::string &vae_spatial_recipe() const { return vae_.spatial_recipe(); }
     int vae_conv_tile_rows() const { return vae_.conv_tile_rows(); }
     void configure_vae(const std::optional<SeedVR2VAEConfig> &config) { vae_.configure(config); }
     // Resized RGB BCTHW in [-1,1], padded to 4n+1 if necessary. A supplied

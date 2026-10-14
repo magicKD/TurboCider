@@ -350,6 +350,10 @@ class SeedVR2Session final : public ModelSession {
             if (event) event("export", 1, 1);
             memory.stop();
             const auto video_pixel_sha = pixel_hash.finish();
+            const bool file_rows = pipeline_.vae_spatial_recipe() == "file_rows";
+            const std::string numerical_recipe = std::string(hybrid_ ? seedvr2::kHybridRecipe : seedvr2::kStableRecipe) +
+                (file_rows ? "+vae-globalstats-file-rows-v1" : "");
+            const auto spatial = result.spatial_stats;
             return native_run_result(@{
                 @"schema_version": @1, @"model": @(r.model.c_str()), @"operation": @(r.operation.c_str()),
                 @"output": @(output.c_str()), @"width": @(r.width), @"height": @(r.height),
@@ -359,7 +363,7 @@ class SeedVR2Session final : public ModelSession {
                 @"warmup": @NO, @"prepared": @NO,
                 @"runtime_backend": @"seedvr2-mlx", @"runtime_dependency": @"native",
                 @"runtime_precision": @(hybrid_ ? seedvr2::kHybridPrecision : seedvr2::kStablePrecision),
-                @"numerical_recipe": @(hybrid_ ? seedvr2::kHybridRecipe : seedvr2::kStableRecipe),
+                @"numerical_recipe": @(numerical_recipe.c_str()),
                 @"coreml_prefix_compute_units": hybrid_ ? @"cpuAndNeuralEngine" : @"not_applicable",
                 @"coreml_prefix_activation_dtype": hybrid_ ? @"fp16" : @"not_applicable",
                 @"coreml_prefix_reused": @(hybrid_reused), @"coreml_prefix_calls": @(coreml_calls),
@@ -392,6 +396,20 @@ class SeedVR2Session final : public ModelSession {
                 @"normalized_input_release_bytes_scope": @"logical normalized RGB tensor bytes; not physical-memory or peak-reduction guarantee",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
+                @"vae_spatial_recipe": @(pipeline_.vae_spatial_recipe().c_str()),
+                @"vae_spatial_rows": @(r.seedvr2_vae ? r.seedvr2_vae->spatial_rows : 64),
+                @"vae_spatial_threshold_bytes": @(256ull<<20),
+                @"vae_spatial_disk_budget_bytes": @(r.seedvr2_vae ? r.seedvr2_vae->spatial_disk_budget_bytes : (8ull<<30)),
+                @"vae_spatial_tile_convolutions": @(spatial ? spatial->tile_convolutions : 0),
+                @"vae_spatial_global_normalizations": @(spatial ? spatial->global_normalizations : 0),
+                @"vae_spatial_file_written_bytes": @(spatial ? spatial->written_bytes : 0),
+                @"vae_spatial_file_read_bytes": @(spatial ? spatial->read_bytes : 0),
+                @"vae_spatial_file_peak_bytes": @(spatial ? spatial->disk_peak_bytes : 0),
+                @"vae_spatial_host_window_peak_bytes": @(spatial ? spatial->host_peak_bytes.load() : 0),
+                @"vae_spatial_file_live_bytes_after_decode": @(spatial ? spatial->disk_live_bytes : 0),
+                @"vae_spatial_host_live_bytes_after_decode": @(spatial ? spatial->host_live_bytes.load() : 0),
+                @"vae_spatial_cleanup_failures": @(spatial ? spatial->cleanup_failures : 0),
+                @"vae_spatial_scope": @"eligible decoder norm/conv row bands; global statistics/full attention preserved; disk budget is not RAM budget",
                 @"vae_encoder_recipe": stream_encode ? @"streaming" : @"buffered",
                 @"streamed_input_frames": @(streamed_input_frames),
                 @"source_rgb24_buffer_capacity_peak_bytes": @(source_rgb_capacity_peak),

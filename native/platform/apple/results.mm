@@ -579,6 +579,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             @"decoder": @(r.seedvr2_vae->decoder.c_str()),
             @"convolution": @(r.seedvr2_vae->convolution.c_str()),
             @"history": @(r.seedvr2_vae->history.c_str()),
+            @"spatial": @(r.seedvr2_vae->spatial.c_str()),
+            @"spatial_rows": @(r.seedvr2_vae->spatial_rows),
+            @"spatial_disk_budget_bytes": @(r.seedvr2_vae->spatial_disk_budget_bytes),
             @"tile_rows": @(r.seedvr2_vae->tile_rows),
             @"allocator_cache_bytes": @(r.seedvr2_vae->allocator_cache_bytes)
         } : (id)NSNull.null,
