@@ -1,4 +1,5 @@
 #include "pipeline.hpp"
+#include "input_lifetime.hpp"
 
 namespace tc::seedvr2 {
 namespace {
@@ -37,6 +38,16 @@ void Pipeline::load(const std::filesystem::path &root, const Event &event, std::
 }
 Restoration Pipeline::restore(const Tensor &pixels, const Tensor &noise, const Event &event,
                               std::atomic<bool> &cancelled, const std::filesystem::path &dump, const FFNRoute &ffn) {
+    return restore_impl(pixels,noise,event,cancelled,dump,ffn,nullptr);
+}
+Restoration Pipeline::restore_owned(Tensor pixels, const Tensor &noise, const Event &event,
+                                    std::atomic<bool> &cancelled, const std::filesystem::path &dump, const FFNRoute &ffn) {
+    require(pixels.dtype() == mx::float32, "SeedVR2 owned restoration requires FP32 normalized RGB");
+    return restore_impl(pixels,noise,event,cancelled,dump,ffn,&pixels);
+}
+Restoration Pipeline::restore_impl(const Tensor &pixels, const Tensor &noise, const Event &event,
+                                  std::atomic<bool> &cancelled, const std::filesystem::path &dump,
+                                  const FFNRoute &ffn, Tensor *input_owner) {
     require(loaded_, "SeedVR2 pipeline is not loaded");
     require(pixels.ndim() == 5 && pixels.shape(0) == 1 && pixels.shape(1) == 3 &&
             pixels.shape(3) % 16 == 0 && pixels.shape(4) % 16 == 0,
@@ -60,6 +71,13 @@ Restoration Pipeline::restore(const Tensor &pixels, const Tensor &noise, const E
     const auto started = Clock::now();
     auto condition = vae_.encode(input, event, cancelled);
     const auto encoded = Clock::now();
+    double input_release_seconds = 0;
+    uint64_t released_input_logical_bytes = 0;
+    if (input_owner) {
+        const auto releasing = Clock::now();
+        released_input_logical_bytes = release_encoded_input(input,*input_owner,condition);
+        input_release_seconds = seconds(releasing,Clock::now());
+    }
     if (stage_dit_) {
         checkpoint(cancelled);
         const auto reloading = Clock::now();
@@ -95,6 +113,6 @@ Restoration Pipeline::restore(const Tensor &pixels, const Tensor &noise, const E
     checkpoint(cancelled);
     return {restored, condition, velocity, latent, seconds(started, encoded),
             seconds(denoise_started, denoised), seconds(decode_started, decoded),
-            staging_seconds,seconds(restore_started,decoded)};
+            staging_seconds,seconds(restore_started,decoded),input_release_seconds,released_input_logical_bytes};
 }
 } // namespace tc::seedvr2

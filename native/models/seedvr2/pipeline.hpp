@@ -7,6 +7,8 @@ struct Restoration {
     Tensor pixels, condition, velocity, latent;
     double encode_seconds = 0, denoise_seconds = 0, decode_seconds = 0;
     double staging_seconds = 0, restore_seconds = 0;
+    double input_release_seconds = 0;
+    uint64_t released_input_logical_bytes = 0;
 };
 
 class Pipeline {
@@ -18,6 +20,9 @@ class Pipeline {
     std::filesystem::path dit_path_;
     uintmax_t dit_source_bytes_ = 0;
     std::filesystem::file_time_type dit_source_modified_;
+    Restoration restore_impl(const Tensor &, const Tensor &, const Event &,
+                             std::atomic<bool> &, const std::filesystem::path &,
+                             const FFNRoute &, Tensor *input_owner);
   public:
     // Session owner selects this policy before loading. No environment
     // override may silently change the request's declared residency.
@@ -41,6 +46,12 @@ class Pipeline {
     Restoration restore(const Tensor &pixels, const Tensor &noise,
                         const Event &, std::atomic<bool> &, const std::filesystem::path &dump = {},
                         const FFNRoute & = {});
+    // Explicit ownership transfer for video/staged-image callers. Keeps the
+    // non-owning interface's math and drops normalized/padded RGB handles only
+    // after VAE encode has completed, before sampling/decode.
+    Restoration restore_owned(Tensor pixels, const Tensor &noise,
+                              const Event &, std::atomic<bool> &,
+                              const std::filesystem::path &dump = {}, const FFNRoute & = {});
     void clear() { dit_.clear(); vae_.clear(); loaded_ = false; }
 };
 

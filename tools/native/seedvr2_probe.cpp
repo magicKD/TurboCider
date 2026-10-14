@@ -121,16 +121,22 @@ int main(int argc, char **argv) {
             mx::save_safetensors((destination / "vae.safetensors").string(), {{"latent", latent}, {"decoded", output}});
             report << "]}\n";
             std::cout << "VAE report written to " << destination / "report.json" << '\n';
-        } else if (command == "restore") {
-            tc::require(argc <= 6,"restore accepts only an optional dit compute dtype");
-            const auto mode = argc == 6 ? std::string(argv[5]) : "bf16";
+        } else if (command == "restore" || command == "restore-owned") {
+            tc::require(argc <= 7,"restore accepts an optional dit dtype and no-dumps control");
+            const bool owned_input = command == "restore-owned";
+            const auto mode = argc >= 6 ? std::string(argv[5]) : (owned_input ? "fp16" : "bf16");
+            const bool dump_intermediates = argc != 7;
+            tc::require(dump_intermediates || std::string(argv[6]) == "no-dumps","unknown restoration dump control");
             tc::require(mode=="bf16" || mode=="fp16" || mode=="fp32","invalid restore compute dtype");
             const auto dtype = mode=="bf16" ? mx::bfloat16 : mode=="fp16" ? mx::float16 : mx::float32;
             tc::seedvr2::AllocatorCacheScope allocator(tc::seedvr2::allocator_cache_limit());
             tc::seedvr2::Pipeline pipeline;
             pipeline.load(model, event, cancelled,dtype);
             auto loaded = tc::Clock::now();
-            auto result = pipeline.restore(inputs.at("pixels"), inputs.at("noise"), event, cancelled, destination);
+            const auto dump = dump_intermediates ? destination : std::filesystem::path{};
+            auto result = owned_input
+                ? pipeline.restore_owned(std::move(inputs.at("pixels")),inputs.at("noise"),event,cancelled,dump)
+                : pipeline.restore(inputs.at("pixels"), inputs.at("noise"), event, cancelled,dump);
             mx::save_safetensors((destination / "sampling.safetensors").string(), {{"restored", result.latent}});
             mx::save_safetensors((destination / "restoration.safetensors").string(), {
                 {"pixels", result.pixels}, {"condition", result.condition}, {"velocity", result.velocity}, {"latent", result.latent}});
@@ -139,6 +145,11 @@ int main(int argc, char **argv) {
                    << ",\"encode_seconds\":" << result.encode_seconds
                    << ",\"denoise_seconds_with_dumps\":" << result.denoise_seconds
                    << ",\"decode_seconds\":" << result.decode_seconds
+                   << ",\"restore_total_seconds\":" << result.restore_seconds
+                   << ",\"intermediates_dumped\":" << (dump_intermediates ? "true" : "false")
+                   << ",\"input_release_recipe\":\"" << (owned_input ? "after_encode_owned" : "borrowed") << "\""
+                   << ",\"input_release_seconds\":" << result.input_release_seconds
+                   << ",\"released_input_logical_bytes\":" << result.released_input_logical_bytes
                    << ",\"weight_bytes\":" << pipeline.bytes()
                    << ",\"mlx_peak_bytes\":" << mx::get_peak_memory()
                    << ",\"dit_compute_dtype\":\"" << mode << "\""

@@ -8,8 +8,9 @@ The quality and speed results below are workload/profile-specific. The stable
 FP16/FP32 profile passes App image/video regression and the matched full-request
 SDPA/GPU-only image/video speed cohorts at 512 and 1024 outputs. The manual
 hybrid passes four-media App/component checks and complete-request GPU/hybrid
-ABBA speed cohorts. Physical ANE occupancy and the new-library 1024-video
-Comfy default-attention control remain unmeasured/pending.
+ABBA speed cohorts. The input-lifetime library also passes the complete
+1024/t25 compatible Comfy default-attention control. Physical ANE occupancy
+and broader/new-candidate workload qualification remain unmeasured/pending.
 
 ## Prepare weights
 
@@ -163,6 +164,18 @@ their original implementation; a six-warm-sample before/after 1024 GPU image
 check records 3.500405/3.500845 s. Its strict non-regression Boolean is false;
 this input-lifetime feature is not presented as an image speed win.
 
+Videos and staged images now also transfer normalized RGB ownership into
+restoration and release it after completed, independently owned FP16 VAE
+conditioning. Noise, alpha and restored outputs remain available; resident
+images keep the original non-owning path. Results declare
+`normalized_input_release_recipe`, `normalized_input_released_logical_bytes`
+and `timings_seconds.input_release`. Logical released bytes are not a physical
+memory guarantee. Four-media components and all real App export comparisons
+remain bitwise exact. The subsequent App 1024/t25 hybrid observations are
+about **21.11 GB resident / 14.32 GB staged** active peaks, another approximately
+314.6 MB reduction. These are App observations, not new paired speed evidence;
+the preceding Comfy speed cohort remains bound to its own library SHA.
+
 For diagnostics, `TURBOCIDER_SEEDVR2_VAE_CONV_RECIPE=conv3d` selects the
 lower-active-peak/slower 3D image route. `singleton2d` is the tested default;
 `taps2d` remains an experimental temporal decomposition. Set
@@ -237,7 +250,12 @@ non-CUDA cache-transfer compatibility guard disclosed. The stable full
 All 25 frames, dimensions and FPS are verified; the same MPS cache-transfer
 guard is disclosed. The new staged-capable resident GPU library also passes
 the 512/t25 compatible default-attention video control: **20.586 vs 71.190 s**,
-about **3.46x**. Its 1024-video default-attention control remains pending.
+about **3.46x**. The later input-lifetime library's complete 1024/t25 compatible
+default-attention ABBA passes too: **85.010773 vs 295.438371 s**, about
+**3.47531x**, six genuine warm requests per route and all frames/FPS retained.
+This binds library SHA `596c160aabcc7ec248c6e842e86da1b2b27a0338bab41749014dff866a35d7e4`,
+not subsequent experimental source or a physical ANE-placement claim. The
+same disclosed non-CUDA cache-transfer compatibility guard remains in use.
 
 The original-FP16 GPU/CPU+NE prefix route passes the unchanged
 512/1024 image and complete 25-frame video tensor gates against both stable

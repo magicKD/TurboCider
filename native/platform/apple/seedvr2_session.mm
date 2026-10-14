@@ -179,7 +179,7 @@ class SeedVR2Session final : public ModelSession {
                 return value;
             }
             media_input = seedvr2::consume_resized_input(unit,video,true);
-            return media_input->pixels;
+            return std::move(media_input->pixels);
         }();
         const bool owned_alpha = media_input && media_input->alpha_is_owned;
         const double import_seconds = elapsed(import_started);
@@ -210,7 +210,9 @@ class SeedVR2Session final : public ModelSession {
             const auto route = hybrid_ ? seedvr2::FFNRoute([&](int block, const Tensor &input) {
                 return hybrid_->predict(block,input);
             }) : seedvr2::FFNRoute{};
-            auto result = pipeline_.restore(pixels, noise, event, cancelled, r.dump,route);
+            auto result = media_input
+                ? pipeline_.restore_owned(std::move(pixels),noise,event,cancelled,r.dump,route)
+                : pipeline_.restore(pixels,noise,event,cancelled,r.dump,route);
             const uint64_t coreml_calls = hybrid_ ? hybrid_->calls()-calls_before : 0;
             const uint64_t hybrid_blocks = hybrid_ ? hybrid_->hybrid_blocks()-blocks_before : 0;
             if (hybrid_) {
@@ -281,6 +283,9 @@ class SeedVR2Session final : public ModelSession {
                     (owned_alpha ? @"normalized_rgb_plus_owned_alpha" : @"normalized_rgb_plus_source_rgba"),
                 @"media_retained_alpha_bytes": @(video ? 0 : uint64_t(r.width)*r.height*sizeof(float)),
                 @"media_retained_source_rgba_bytes": @(!video && !owned_alpha ? uint64_t(r.width)*r.height*4*sizeof(float) : 0),
+                @"normalized_input_release_recipe": media_input ? @"after_vae_encode_owned" : @"borrowed",
+                @"normalized_input_released_logical_bytes": @(result.released_input_logical_bytes),
+                @"normalized_input_release_bytes_scope": @"logical normalized RGB tensor bytes; not physical-memory or peak-reduction guarantee",
                 @"color_correction": @"none", @"audio_output": @NO,
                 @"vae_conv_recipe": @(pipeline_.vae_conv_recipe().c_str()),
                 @"vae_norm_recipe": @(pipeline_.vae_norm_recipe().c_str()),
@@ -304,6 +309,7 @@ class SeedVR2Session final : public ModelSession {
                     @"media_import": @(import_seconds), @"vae_encode": @(result.encode_seconds),
                     @"denoise": @(result.denoise_seconds), @"vae_decode": @(result.decode_seconds),
                     @"weight_management": @(result.staging_seconds), @"restoration_total": @(result.restore_seconds),
+                    @"input_release": @(result.input_release_seconds),
                     @"export": @(export_seconds)},
                 @"mlx_active_bytes": @(mx::get_active_memory()), @"mlx_peak_bytes": @(mx::get_peak_memory())
             }, r, plan);

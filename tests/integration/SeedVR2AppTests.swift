@@ -130,6 +130,10 @@ import Foundation
                               (metrics["media_retained_alpha_bytes"] as? NSNumber)?.uint64Value == (isVideo ? 0 : UInt64(size*size*4)) &&
                               (metrics["media_retained_source_rgba_bytes"] as? NSNumber)?.uint64Value == (isVideo || staged ? 0 : UInt64(size*size*16)),
                               "App input buffer policy or alpha retention differs from the request")
+                    let ownedInput = isVideo || staged
+                    try check(metrics["normalized_input_release_recipe"] as? String == (ownedInput ? "after_vae_encode_owned" : "borrowed") &&
+                              (metrics["normalized_input_released_logical_bytes"] as? NSNumber)?.uint64Value == (ownedInput ? UInt64(size*size*request.frames*3*4) : 0),
+                              "App did not release its declared owned normalized input")
                     let timings = metrics["timings_seconds"] as? [String: Any]
                     try check(plan?["residency"] as? String == residency &&
                               metrics["weight_residency_recipe"] as? String == (staged ? "stage_dit" : "resident") &&

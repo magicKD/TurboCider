@@ -2,7 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/native/dependencies.sh
-OUT="$PWD/build/seedvr2"
+OUT="${TURBOCIDER_BUILD_OUTPUT_DIR:-$PWD/build/seedvr2}"
+if [[ "$OUT" != /* ]]; then OUT="$PWD/$OUT"; fi
 mkdir -p "$OUT" "$OUT/module-cache"
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"

@@ -1378,6 +1378,138 @@ Existing all-four-workload GPU/CPU+NE speed evidence remains bound to its
 earlier binary; the new library still requires its own reference speed
 qualification. Stable/current user App artifacts remain unmodified.
 
+### Follow-up audit during the immutable latest-library default-video cohort
+
+The complete latest-library 1024/t25 default-reference ABBA runs under the
+same live process handle throughout; it is not restarted on observation
+timeouts. Its first native cohort completes at 85.076744 s warm median.
+The first compatible Comfy default-attention/ordinary-residency cohort
+completes at 295.439931 s warm median, with only UNET/VAE loaders cached.
+The second owned Comfy cohort is still running. These partial results are
+not a finalized speed gate. Record:
+`seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014`.
+All observed outputs retain 25 frames, 1024-square dimensions and 24 FPS.
+
+The local SDK's `MLComputePlan.h` explicitly calls device usage anticipated,
+not measured occupancy. The current SDK has CPU-only, CPU+GPU, all and CPU+NE
+compute-unit choices, not a public NE-only choice. `/usr/bin/xctrace` exists
+as a wrapper, but `xcrun xctrace list templates` fails because the installed
+Command Line Tools do not provide the actual utility; Xcode.app is absent.
+A narrowly filtered read-only IOKit query can read the H11ANE driver's power
+state (0 in the observed GPU/reference-only snapshot). Driver power state or
+registry service “active” status does not prove model execution/occupancy.
+No permission bypass or system configuration change is attempted. A separate
+controlled hardware experiment, if useful, must follow the terminal timed
+cohort; public `physical_ane_occupancy_measured` remains false.
+
+Existing 1024/t9 codec component observations show about 7.70 GB encoder and
+14.20 GB decoder active peaks, motivating a further ownership experiment.
+An explicit offline-only `Pipeline::restore_owned` and `restore-owned` probe
+mode are prepared: materialized FP16 conditioning must have matching shape
+and independent storage before normalized/padded FP32 source handles drop.
+Frame geometry is captured before dropping ownership; model math, alpha,
+noise, condition and non-owning/default request paths are unchanged.
+Logical released bytes are not asserted as physical/peak reduction.
+
+CPU primitive tests cover t1/t2/t5/t6/t25/t26, correct 4n+1 padding, unchanged
+conditioning and rejection of unready/wrong-shaped/wrong-dtype results.
+The sandboxed test initially fails while initializing MLX's Metal allocator,
+even with CPU operations selected. The scoped host rerun passes without
+loading models or running GPU inference. Strict C++ syntax checks pass.
+This candidate is not enabled in the public session, built into the timed
+library, committed, or credited with a measured memory/speed improvement;
+fresh GPU numerical/App verification follows the completed benchmark.
+
+### Finalized latest-library 1024-video default-reference speed gate
+
+The same observed long-running handle terminates with exit 0. All four ABBA
+cohorts complete, six genuine warm requests per route. Native GPU median is
+**85.010773396 s**, compatible Comfy default-attention/ordinary-residency
+**295.438371146 s**, ratio **3.475305062x**, speed gate **true**. All 16
+MP4 outputs independently retain 25 frames, 1024-square dimensions and 24 FPS;
+both task-owned Comfy servers report terminal exit. Only UNET/VAE loader
+nodes are cached; import, resize, VAE encode, sampling, decode and export all
+execute each request. Original model/source/native-library/runtime-build/
+reference identities remain unchanged across the complete cohort. Record:
+`seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014`.
+
+The result binds the committed input-lifetime library SHA
+`596c160aabcc7ec248c6e842e86da1b2b27a0338bab41749014dff866a35d7e4`.
+The non-CUDA cache-transfer compatibility guard remains explicitly disclosed;
+this is not an unpatched-stock MPS video result or BF16 numerical-equivalence
+claim. No new experimental binary/source is substituted into these timings.
+The owned-input experiment can now be built in a separate output directory
+and screened; previous tested artifacts and failed histories remain intact.
+
+### Four-media post-encoder input release exact screen
+
+After the live preceding full-request cohort terminates, the new probe builds
+in `build/seedvr2-owned-input-probes-v1` without overwriting tested binaries.
+Probe SHA: `f1dfc753f14538ef5d5de153c8426f7587cefab72c68f6d21fb956edd75ce5fc`.
+The host runner refuses unfinished/failed/partial or identity-mismatched
+preceding cohorts, live reference servers and wrong native child identities.
+Four CPU guard tests pass, including exact-byte signed-zero differences and
+nonfinite-output rejection. Original model/probe/input identities are checked.
+`no-dumps` suppresses per-block tensor dumps to respect the remaining disk
+space; final condition, velocity, latent and pixels are still saved and
+compared. This does not omit model computation.
+
+All four real-media component cases pass exact byte equality and finiteness
+for all four saved tensors. Record:
+`seedvr2-owned-input-full-media-screen-v1-20261014`.
+
+| Component observation | Borrowed / owned active peak (bytes) | Owned logical RGB bytes released |
+| --- | ---: | ---: |
+| Image 512 | 9,618,429,130 / 9,615,283,410 | 3,145,728 |
+| Image 1024 | 16,472,933,562 / 16,460,350,658 | 12,582,912 |
+| Real video 512, all t25 | 10,785,540,622 / 10,706,897,430 | 78,643,200 |
+| Real video 1024, all t25 | 21,275,343,558 / 20,960,770,766 | 314,572,800 |
+
+These are one full-component observation per route, excluding public media
+import/export, not balanced warm speed or physical-peak proof. Logical bytes
+are separately labeled and are not presented as freed physical memory.
+Source ownership is now transferred only for videos and explicitly staged
+images in the next public candidate. Default resident images keep their
+original evaluation/holders and the non-owning interface. Telemetry declares
+the input-release recipe, logical bytes and measured release cost. Actual
+App image/video/policy-switch and exported-media checks precede promotion.
+
+### Public post-encoder ownership candidate and actual App verification
+
+The isolated native/Swift/App builds and seven native contracts pass.
+Candidate library SHA:
+`b567c5fe367277c4777cac54235273c89da8d630df4509a0c0aacda4d02432e9`.
+The normalized/padded source handles are transferred and dropped only after
+independent matching FP16 conditioning is materialized. Videos and staged
+images use this path; resident image source/RGB evaluation and retention
+remain unchanged. No source pixel read follows the release inside sampling
+or decoding; frame geometry and diagnostic input dumps precede the move.
+Original model/numerical recipes, alpha/noise and conservative planning stay
+unchanged. Release microseconds are included in restoration/request totals.
+
+All three actual App chains terminate with success, seven requests each:
+four media/size cases and resident/staged/resident transitions, executed
+precision/counters/ownership telemetry, complete video geometry/FPS, history
+and unload. Four exported-media required-equality pairs all pass against the
+preceding v3 input-lifetime build and between the new hybrid policies. PNG
+files and every decoded video frame are exact; MP4 container hashes remain
+separate. Records: `seedvr2-app-owned-input-{gpu,resident,staged}-e2e-v1-20261014`
+and `seedvr2-owned-input-app-exact-screen-v1-20261014.json`.
+
+| App 1024/t25 observation | Seconds | Active MLX peak (bytes) | Sampled footprint (bytes) |
+| --- | ---: | ---: | ---: |
+| GPU resident | 84.806948 | 20,967,527,302 | 24,440,527,184 |
+| GPU/CPU+NE resident | 83.289200 | 21,114,354,574 | 24,962,882,184 |
+| GPU/CPU+NE staged | 83.728000 | 14,318,406,494 | 17,891,329,944 |
+
+Active peaks drop another approximately 314.6 MB in the video observations.
+Sampled process peaks vary and are lower bounds; no universal physical peak,
+hard budget or equally large speed win is inferred. Default resident-image
+active peaks exactly match the preceding version. This is tested functional
+memory optimization, not a relabeling of the previous library's balanced
+Comfy or GPU/hybrid speed records. New-binary warm speed qualification and
+physical ANE activity/placement remain separate boundaries.
+
 ## Reproduce component checks
 
 ```sh
