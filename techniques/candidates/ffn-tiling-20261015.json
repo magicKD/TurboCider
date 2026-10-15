@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "scope": "Bounded continuation after two observed numerical negatives; not a retrospectively preregistered protocol for those first runs.",
+  "source_fixture": "tc-real-ffn-fixture-v1; layer 0; complete [1024,4096,12288] FFN; original checkpoint weights and nine-point capture campaign",
+  "observed_initial_negatives": [
+    {"id": "frozen-rows-monolithic-sigmoid", "gate": "sampled FP64 relative L2 > 0.02", "discovery_point": "layer-0-step-1"},
+    {"id": "runtime-channels-k2048-n4096-sigmoid", "gate": "sampled FP64 relative L2 > 0.02", "discovery_point": "layer-0-step-1"}
+  ],
+  "protected_gates": {
+    "full_fp16_source_relative_l2_max": 0.02,
+    "sampled_independent_fp64_relative_l2_max": 0.02,
+    "original_bf16_replica_relative_l2_max": 0.03,
+    "original_bf16_replica_cosine_min": 0.999,
+    "reference_vs_fp64_relative_l2_max": 0.0001
+  },
+  "fixed_next_candidates": [
+    {"id": "frozen-rows-monolithic-exp", "route": "coreml", "silu": "exp", "runtime_weights": false, "layout": "rows", "tile_k": 0, "tile_n": 0},
+    {"id": "runtime-channels-k2048-n4096-exp", "route": "coreml", "silu": "exp", "runtime_weights": true, "layout": "channels", "tile_k": 2048, "tile_n": 4096},
+    {"id": "runtime-half-serial-exp", "route": "serial", "ane_channels": 6144, "silu": "exp", "runtime_weights": true, "layout": "channels", "tile_k": 2048, "tile_n": 4096},
+    {"id": "runtime-half-hybrid-exp", "route": "hybrid", "ane_channels": 6144, "silu": "exp", "runtime_weights": true, "layout": "channels", "tile_k": 2048, "tile_n": 4096}
+  ],
+  "diagnostic_control": "CPU_ONLY policy on the original frozen monolithic sigmoid graph; not a speed candidate",
+  "discovery_point": "layer-0-step-1",
+  "held_out_point": "layer-0-step-19",
+  "repeats": 8,
+  "warmup_trials": 4,
+  "order": "ABBA",
+  "per_process_wall_budget_seconds": 180,
+  "production_promotion": "none; component results cannot qualify a full request or new default",
+  "rules": [
+    "Never change the reference or gates to rescue a candidate.",
+    "A failed numerical arm retains its samples but receives no speedup statistic.",
+    "Stop a candidate on its first fixed numerical failure; keep the failure artifact.",
+    "Only numerically passing discovery candidates advance to a separate held-out run.",
+    "Prefer the existing fused GPU baseline if no complete consumer improvement is confirmed."
+  ]
+}

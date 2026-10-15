@@ -50,6 +50,16 @@ CPU oracle + 独立索引 witness；tail/stride/极值；非有限强失败；�
 
 ## 实现参考与实验
 
+### Packed affine的真实FFN对照
+
+[MLX固定版本源码](../sources/repos/mlx-affine-dispatch.md)与[GGML布局/摘录执行](../sources/repos/ggml-metal-layouts.md)提供dispatch、scale dtype、物理pitch与矩阵数据流的阅读链。位宽相同不是格式相同；uint32 codes也不是整数MAC资格。
+
+[原创BM32/64核](../labs/metal/affine_gemm.metal)使用float decode→FP16 tile→FP32 accumulator，并显式读取X/Q/S/B的实际strides。连续K加载与16-byte skew是可枚举假设，不是性能保证。小tail/stride控制后，测了[真实Qwen完整FFN](../review/gpu-affine-20261016.md)：BM64比本原型BM32好，但这些配置仍慢于MLX，不能以击败scalar教学核作为晋升标准。
+
+同encoded Q8内驻留展开约快4.7%，但增加288 MiB逻辑cache；与原始BF16消费者比较基本持平。必须区分格式内实现收益和原始模型收益。后者显式使用原始checkpoint/capture，包含输入cast与输出restore，不拿ready FP16岛替代原始ABI。
+
+实际wheel的binary hashes、源码snapshots、所有样本和独立step19确认均在证据中；没有bank/DRAM counter，不用推断假装实测。更多GPU kernel、compile policy、shape与真trace仍可带原控制重试。
+
 可读实现：[参考代码](../labs/metal/kernels.metal)；[实验步骤与边界](../labs/gpu.md)；[本项全部 case / controls](../labs/catalog.json)。
 
 ```sh

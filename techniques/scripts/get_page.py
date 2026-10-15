@@ -13,11 +13,15 @@ def main():
     parser.add_argument("lookup", help="stable ID or registered relative page path")
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--follow-sources", action="store_true")
+    parser.add_argument("--follow-evidence", "--include-negative-results", action="store_true",
+                        help="expand registered local evidence, including failures; never execute")
     parser.add_argument("--include-code", action="store_true")
     parser.add_argument("--max-bytes", type=int, default=24000)
+    parser.add_argument("--offset-bytes", type=int, default=0, help="continue the primary asset at its returned next_byte_offset")
     args = parser.parse_args()
     try:
-        value = get_page(load(args.root), args.lookup, args.follow_sources, args.include_code, args.max_bytes)
+        value = get_page(load(args.root), args.lookup, args.follow_sources, args.include_code,
+                         args.max_bytes, args.follow_evidence, args.offset_bytes)
     except (ValueError, KeyError, OSError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2

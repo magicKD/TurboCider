@@ -20,6 +20,13 @@ DerivedData/
 *.xcresult/
 *.xcarchive/
 
+# Raw GPU / Instruments captures can contain buffers and machine-local paths.
+# Keep portable profiling summaries and source code trackable.
+*.gputrace
+*.gputrace.zip
+*.trace
+*.trace.zip
+
 # Python bytecode and tool caches
 __pycache__/
 *.py[cod]

@@ -48,6 +48,45 @@ class KnowledgeTests(unittest.TestCase):
         self.assertNotIn("source-external", index["by_id"])
         self.assertEqual(index["by_id"]["technique-metal-example"]["sources"], ["source-local-example"])
 
+    def test_declared_source_cards_are_resolved_without_external_access(self):
+        (self.root / "references/card.md").write_text("# Upstream mechanism\nsource facts\n")
+        self.sources["sources"].append({"id": "source-card", "scope": "local", "path": "references/card.md",
+                                        "role": "upstream source", "upstream": {"repository": "owner/project"}})
+        self.catalog["entries"][0]["source_ids"] = ["source-card", "local-example"]
+        self.save()
+        index = knowledge.load(self.root)
+        self.assertEqual(index["by_id"]["technique-metal-example"]["sources"], ["source-source-card", "source-local-example"])
+        result = knowledge.get_page(index, "metal/example.md", follow_sources=True)
+        self.assertEqual(len(result["pages"]), 3)
+        self.assertEqual(result["pages"][1]["metadata"]["upstream"]["repository"], "owner/project")
+
+    def test_unknown_or_malformed_source_card_links_are_rejected(self):
+        for value in (["missing"], [{}], "local-example"):
+            self.catalog["entries"][0]["source_ids"] = value
+            self.save()
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                knowledge.load(self.root)
+
+    def test_local_evidence_has_a_distinct_kind_and_opt_in_expansion(self):
+        (self.root / "references/evidence.json").write_text('{"status":"failed"}\n')
+        self.sources["sources"].append({"id": "local-run", "kind": "evidence", "scope": "local",
+                                        "path": "references/evidence.json", "role": "negative experiment"})
+        self.catalog["entries"][0]["evidence_ids"] = ["local-run"]
+        self.save()
+        index = knowledge.load(self.root)
+        result = knowledge.query(index, filters={"kind": ["evidence"]})
+        self.assertEqual([node["id"] for node in result["results"]], ["evidence-local-run"])
+        self.assertEqual(len(knowledge.get_page(index, "metal/example.md")["pages"]), 1)
+        expanded = knowledge.get_page(index, "metal/example.md", follow_evidence=True)
+        self.assertEqual(expanded["pages"][-1]["id"], "evidence-local-run")
+        self.assertIn('"failed"', expanded["pages"][-1]["body"])
+
+    def test_unknown_evidence_reference_is_rejected(self):
+        self.catalog["entries"][0]["evidence_ids"] = ["missing-run"]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "evidence"):
+            knowledge.load(self.root)
+
     def test_keyword_filters_and_order_are_deterministic(self):
         index = knowledge.load(self.root)
         first = knowledge.query(index, "布局", {"section": ["METAL"], "kind": ["technique"]})
@@ -132,6 +171,20 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual([page["id"] for page in result["pages"]], ["technique-metal-example", "source-local-example"])
         self.assertEqual([item["path"] for item in result["code"]], ["labs/other.py"])
         self.assertEqual(result["omitted_pages"], [])
+
+    def test_paging_keeps_utf8_characters_and_discloses_next_offset(self):
+        original = "# Example\n" + "汉" * 150
+        (self.root / "metal/example.md").write_text(original, encoding="utf-8")
+        index = knowledge.load(self.root)
+        first = knowledge.get_page(index, "metal/example.md", maximum_bytes=256)["pages"][0]
+        self.assertTrue(first["truncated"])
+        second = knowledge.get_page(index, "metal/example.md", maximum_bytes=256,
+                                    offset_bytes=first["next_byte_offset"])["pages"][0]
+        self.assertEqual(first["body"] + second["body"], original)
+        self.assertIsNone(second["next_byte_offset"])
+        for offset in (True, -1, 10000, len("# Example\n".encode()) + 1):
+            with self.subTest(offset=offset), self.assertRaises(ValueError):
+                knowledge.get_page(index, "metal/example.md", offset_bytes=offset)
 
     def test_cli_outputs_json_and_invalid_lookup_fails_cleanly(self):
         for script, arguments in (("query.py", ["布局"]), ("get_page.py", ["metal/example.md"])):

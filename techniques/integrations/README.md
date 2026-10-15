@@ -19,3 +19,24 @@ python -B techniques/integrations/public_w8_product.py --coreml-overlay "$TC_COR
 它比较合成FP16输入的MPS与MFA单个驻留GEMM，含ABBA顺序、每对输入generation、完整command完成、padding初始化、逐轮NaN输出poison、尾部guard、有限值检查和每arm独立的抽样double oracle。它不是完整FFN、真实权重、模型质量或端到端性能验证；MPS也不等于产品优化后的compiled MLX基线。
 
 2026-10-15已有尝试在上游动态Metal shader编译时报`illegal string literal in 'asm'`；另一次上游测试缺少XCTest。尚无有效的数值/性能报告。本次整理仅通过Swift语法解析，未重新构建上游或运行GPU；不能据此宣称兼容性或加速。研究状态继续在[工作台](../review/research-campaign-20261015.md)保留。
+
+## Qwen真实FFN捕获与可移植fixture
+
+[capture_qwen_ffn.py](capture_qwen_ffn.py)调用现有native诊断hook：仅base、512px、20steps、seed42、cache off，强制GPU FFN；保存3层×3步的9个原始BF16张量，最多约72 MiB。校验CLI构建的native source hashes，保留二进制hash和checkpoint stat identity；不拿任意旧binary冒充当前源码。
+
+产品request仍要求显式公共runtime manifest，即使chunks=0；它必须是完整H4096/F12288的SwiGLU，而不是6144-channel子图。本轮先后发现这两项请求/geometry拒绝，未绕过验证器。正确入口是：
+
+```sh
+.venv/bin/python -B techniques/integrations/capture_qwen_ffn.py \
+  --native-dir "$TC_NATIVE_DIR" --model-root "$TC_QWEN_ROOT" \
+  --ane-manifest "$TC_PUBLIC_RUNTIME_MANIFEST" --output-dir outputs/my-new-qwen-capture
+.venv/bin/python -B techniques/integrations/qwen_ffn_fixture.py \
+  --checkpoint "$TC_QWEN_CHECKPOINT" --capture-root outputs/my-new-qwen-capture \
+  --layer 0 --output-dir outputs/my-new-qwen-ffn-fixture
+```
+
+两个输出目录必须是新的。实际模型、原始prompt/图片/张量只留本地ignored目录。捕获是带instrumentation的请求，不作普通wall分数；不会安装/替换App、下载模型、修改默认路由或清理系统缓存。
+
+[qwen_ffn_fixture.py](qwen_ffn_fixture.py)严格读取原checkpoint选定BF16 tensor与其capture，导出FP16数组、原BF16 compiled MLX replica输出及hash。BF16→FP16是新的近似表示，不自动继承原模型质量；Replica也不替代完整请求oracle。生成fixture后核心[tiling lab](../labs/ane.md)无需读取产品或兄弟源码。
+
+本轮结果：[真实Qwen FFN证据](../review/qwen-ffn-tiling-20261015.md)。GPU捕获成功不等于新候选通过；数值通过也不等于消费者更快或请求画质合格。

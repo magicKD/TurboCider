@@ -8,4 +8,8 @@
 
 Public Core ML 和 Metal 示例使用 Apple 公共 SDK/API。计算设备策略不等于实际 ANE placement，INT8 特征/存储不等于 INT8 硬件算术；SDK 与运行时要求由脚本和编译器明确检查。
 
+本轮新增固定版本来源卡：ccv/Liu Liu（K split、surface/actual backing，选定lib源码BSD-3-Clause）；vpipe/T-Go LLC（graph内tiling与runtime权重，Apache-2.0）；Apple coremltools（公共计算计划，BSD-3-Clause）；Apple ANE Transformers（FFN布局，Apple sample-code条款及ACKNOWLEDGEMENTS）；Anemll profiler（结构化诊断与需隔离的副作用，MIT）。具体文件SHA、阅读范围和许可边界在[来源索引](sources/README.md)与既有登记中保留。新MIL图、host probe、监督与汇总代码为独立API客户端/学习实现，不分发这些项目的runtime或手写compiled-bundle代码。
+
+2026-10-16新增MLX/Apple affine dispatch与GGML Metal导读。原创affine SG核不是MLX/GGML kernel移植；唯一新增直接代码摘录是[两段GGML dequantizer模板](assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal)，来自`ggml-org/llama.cpp@64e9bceb...`，Copyright (c) 2023-2026 The ggml authors。其函数体未改、wrapper另写，[完整MIT许可](assets/source-excerpts/ggml-dequant-64e9bce/LICENSE)及[PROVENANCE](assets/source-excerpts/ggml-dequant-64e9bce/PROVENANCE.json)一同保留。不能将直接摘录称为本目录原创，也不能把所选模板实例执行当成整个上游engine验收。
+
 若以后直接复制第三方代码/修改其具体实现，必须另行保留对应文件的版权、许可证和 NOTICE，并记录修改范围。不要因现在采用独立教学实现而推断原项目代码也可无条件改用 MIT；外部项目及权重仍受各自原许可约束。

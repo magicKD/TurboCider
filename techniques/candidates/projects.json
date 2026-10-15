@@ -53,7 +53,11 @@
       "entry_url": "https://github.com/ml-explore/mlx",
       "checkout": "mlx",
       "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign",
+      "reading_status": "selected-release-and-newer-affine-source-inspected-20261016",
+      "source_ids": ["upstream-mlx-affine"],
+      "decision_scope": "source learning and installed API experiments, not whole-engine qualification",
+      "source_variants": [{"checkout":"mlx-v0.32.0-research","tag":"v0.32.0","commit":"7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247"}],
+      "execution_status": "installed 0.32.0 packed/dense/custom full FFN measured; wheel not asserted equal to source tag",
       "sparse_paths": [
         "mlx/backend/metal",
         "tests",
@@ -66,7 +70,10 @@
       "entry_url": "https://github.com/ggml-org/llama.cpp",
       "checkout": "llama.cpp",
       "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "reading_status": "selected-format-metal-matmul-policy-source-inspected-20261016",
+      "source_ids": ["upstream-ggml-metal"],
+      "decision_scope": "selected source/excerpt knowledge, not full GGML backend qualification",
+      "execution_status": "licensed Q4_0/Q8_0 dequantizer excerpts executed via own client; whole backend not run"
     },
     {
       "id": "R08",
@@ -81,8 +88,12 @@
       "repository": "liuliu/ccv",
       "entry_url": "https://github.com/liuliu/ccv",
       "checkout": "ccv",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign",
+      "decision": "include",
+      "decision_scope": "knowledge source card, not backend qualification",
+      "reading_status": "selected-ranges-source-inspected-20261015",
+      "source_ids": ["upstream-ccv-coreml"],
+      "execution_status": "independent FP16 mechanism probes; upstream bridge not run",
+      "revisit_when": ["OS or source change", "native actual-backing verification", "matched INT8 recipe"],
       "sparse_paths": [
         "lib/nnc/mfa",
         "lib/nnc/gpu",
@@ -119,8 +130,12 @@
       "repository": "apple/coremltools",
       "entry_url": "https://github.com/apple/coremltools",
       "checkout": "coremltools",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign",
+      "decision": "include",
+      "decision_scope": "knowledge source card, not whole-package qualification",
+      "reading_status": "compute-plan-file-source-inspected-20261015",
+      "source_ids": ["upstream-coreml-plan"],
+      "execution_status": "installed 8.3 public conversion/prediction/plan APIs executed; selected Python file SHA matches checkout",
+      "revisit_when": ["coremltools or OS change", "graph/layout/policy change"],
       "sparse_paths": [
         "coremltools/converters/mil",
         "coremltools/models",
@@ -133,8 +148,12 @@
       "repository": "apple-aiml-research/ml-ane-transformers",
       "entry_url": "https://github.com/apple-aiml-research/ml-ane-transformers",
       "checkout": "ml-ane-transformers",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "decision": "include",
+      "decision_scope": "one FFN source card only",
+      "reading_status": "ffn-file-source-inspected-20261015",
+      "source_ids": ["upstream-ane-transformers-ffn"],
+      "execution_status": "upstream not run; independent channel-major matmul is not a Conv2d port",
+      "revisit_when": ["matched Conv1x1 versus matmul experiment", "model-specific residual/norm contract"]
     },
     {
       "id": "R15",
@@ -197,8 +216,12 @@
       "repository": "tgo-app-dev/vpipe",
       "entry_url": "https://github.com/tgo-app-dev/vpipe",
       "checkout": "vpipe",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "decision": "include",
+      "decision_scope": "emitter mechanism source card only",
+      "reading_status": "selected-emitter-ranges-source-inspected-20261015",
+      "source_ids": ["upstream-vpipe-emitter"],
+      "execution_status": "own public MIL tiling probes; upstream bundle emitter/worker not executed",
+      "revisit_when": ["worker full handoff source reading", "native shared IO", "OS bundle-format change"]
     },
     {
       "id": "R23",
@@ -237,8 +260,12 @@
       "repository": "Anemll/anemll-profile",
       "entry_url": "https://github.com/Anemll/anemll-profile",
       "checkout": "anemll-profile",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "decision": "include",
+      "decision_scope": "safety and metric-provenance source card",
+      "reading_status": "selected-source-ranges-inspected-20261015",
+      "source_ids": ["upstream-anemll-profile"],
+      "execution_status": "defer unmodified tool; own public plan probe executed",
+      "revisit_when": ["isolated no-cache-deletion/no-global-log patch", "deterministic inputs and every-call error checks"]
     },
     {
       "id": "R28",

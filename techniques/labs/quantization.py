@@ -1,4 +1,5 @@
 """Executable Q-format, W8A8 and SmoothQuant references; standard library only."""
+import math
 import random
 import struct
 
@@ -24,6 +25,27 @@ def unpack_codes(data, bits, count):
         raise ValueError("packed byte length/count mismatch")
     words = struct.unpack("<" + "I" * (len(data) // 4), data)
     return [(words[index // (32 // bits)] >> ((index % (32 // bits)) * bits)) & ((1 << bits) - 1) for index in range(count)]
+
+
+def ggml_q4_0_block(data):
+    """Independent 32-value oracle: FP16 scale, 16 low then 16 high nibbles."""
+    if len(data) != 18:
+        raise ValueError("Q4_0 requires exactly 18 bytes per 32 elements")
+    scale = struct.unpack("<e", data[:2])[0]
+    if not math.isfinite(scale):
+        raise ValueError("nonfinite Q4_0 scale")
+    codes = [value & 15 for value in data[2:]] + [value >> 4 for value in data[2:]]
+    return [(value - 8) * scale for value in codes]
+
+
+def ggml_q8_0_block(data):
+    """Independent 32-value oracle: FP16 scale followed by signed INT8 codes."""
+    if len(data) != 34:
+        raise ValueError("Q8_0 requires exactly 34 bytes per 32 elements")
+    scale = struct.unpack("<e", data[:2])[0]
+    if not math.isfinite(scale):
+        raise ValueError("nonfinite Q8_0 scale")
+    return [value * scale for value in struct.unpack("<32b", data[2:])]
 
 
 def affine_slice(data, *, rows, physical_columns, bits, first, count, scales, offsets, group):
@@ -56,8 +78,18 @@ def formats(seed=17):
         comparisons.append({"bits": bits, "bytes": len(packed), "physical_pitch": width,
                             "selected_columns": [8, 16], "correct": metrics(witness, selected),
                             "wrong_local_pitch": metrics(witness, wrong)})
+    payload = bytes(index | ((15 - index) << 4) for index in range(16))
+    q4 = struct.pack("<e", .125) + payload
+    correct = [(index - 8) * .125 for index in range(16)] + [(7 - index) * .125 for index in range(16)]
+    assert ggml_q4_0_block(q4) == correct
+    wrong = [(code - 8) * .125 for value in payload for code in (value & 15, value >> 4)]
+    q8 = struct.pack("<e", .25) + struct.pack("<32b", *range(-16, 16))
+    assert ggml_q8_0_block(q8) == [value * .25 for value in range(-16, 16)]
     return report("quant-formats", {"comparisons": comparisons,
-                  "note": "This is unsigned low-bit-first affine, NOT GGUF K-quants/ConvRot/NVFP4."})
+                  "ggml_controls": {"q4_0_bytes": len(q4), "q8_0_bytes": len(q8),
+                                    "wrong_interleaved_q4": metrics(correct, wrong),
+                                    "equal_size_is_not_layout_equivalence": {"ggml_two_q8_0_blocks": 68, "mlx_affine_q8_group64_fp16_metadata": 68}},
+                  "note": "Affine controls are unsigned low-bit-first; separate GGML block controls do not translate formats or qualify K-quants/ConvRot/NVFP4."})
 
 
 def w8a8(seed=17, rows=5, hidden=16, width=32):

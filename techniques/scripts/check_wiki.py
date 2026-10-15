@@ -51,7 +51,7 @@ def audit(root, include_integrations=False):
         if page != root / "README.md" and page not in incoming:
             errors.append(f"{page.relative_to(root)}: no incoming wiki link")
     manifest = root / "references" / "sources.json"
-    checked, snapshots, skipped_integrations = 0, 0, 0
+    checked, snapshots, external_snapshots, skipped_integrations = 0, 0, 0, 0
     if not manifest.exists():
         errors.append("missing references/sources.json")
     else:
@@ -74,6 +74,8 @@ def audit(root, include_integrations=False):
             checked += 1
             if source.get("sha256"):
                 snapshots += 1
+                if source.get("scope") != "local":
+                    external_snapshots += 1
                 if hashlib.sha256(path.read_bytes()).hexdigest() != source["sha256"]:
                     (warnings if source.get("optional", False) else errors).append("source snapshot changed; re-review: " + source["path"])
             if source.get("symbols"):
@@ -83,7 +85,8 @@ def audit(root, include_integrations=False):
                         errors.append(source["path"] + ": symbol missing: " + symbol)
     return {"pages": len(pages), "local_links": links - integration_links,
             "all_relative_links": links, "optional_integration_links": integration_links,
-            "source_files_checked": checked, "external_snapshots_checked": snapshots,
+            "source_files_checked": checked, "source_content_hashes_checked": snapshots,
+            "external_snapshots_checked": external_snapshots,
             "optional_integration_sources_skipped": skipped_integrations,
             "scope": "local paths/navigation/symbols; --include-integrations additionally checks optional product/sibling anchors; not semantic, URL or anchor validation",
             "errors": errors, "warnings": warnings}

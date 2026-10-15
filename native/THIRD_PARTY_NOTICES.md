@@ -10,6 +10,14 @@ license is in `THIRD_PARTY_NOTICES/Apache-2.0.txt` (source), or
 `Splash-ANE-NOTICE.md` and `Splash-Apache-2.0.txt` (distribution). Model weights
 and Splash inference binaries are not distributed.
 
+The research-only `dequantize_q4_0` and `dequantize_q8_0` excerpts under
+`techniques/assets/source-excerpts/ggml-dequant-64e9bce/` come from
+`ggml-org/llama.cpp`, commit `64e9bceb2c3a856efed96feda784a50947049feb`,
+`ggml/src/ggml-metal/kernels/dequantize.h`, Copyright (c) 2023-2026 The ggml
+authors, under MIT. The accompanying `LICENSE` and `PROVENANCE.json` retain
+the full license, source hash, selected ranges and modification scope. These
+excerpts are not part of the native App/CLI build targets.
+
 The FLUX.2/Qwen3/VAE implementation was ported with reference to mflux
 (commit 12fd27ea7015c6c872ced51b56b313306a543dd2). Model weights are not distributed.
 

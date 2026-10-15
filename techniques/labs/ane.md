@@ -92,3 +92,24 @@ overlay只改该子进程import路径，不替换项目环境。安装/网络访
 重点追踪：dynamic code/scales/headroom、hidden rotation/QDQ、down scales恢复、caller backing是否真被采用、late failure完整GPU重算、future banks、input/output alias、取消后reuse。可选两个fixtures的总进程wall是整套正确性检查时间，不可除以calls冒充ANE算子延迟。
 
 这些入口可扩成真实模型实验；当前toy验证只证明指定ABI/所有权/数值边界可运行，不授予端到端速度、普通adapter画质或分发资格。
+
+## 7. 完整图内tiling：合成smoke与真实fixture分开
+
+[tiling_graphs.py](ane/tiling_graphs.py)是原创公共MIL图，不复制上游未文档化bundle writer；[tiling_bench.py](ane/tiling_bench.py)比较compiled fused MLX与实际Core ML输出恢复/可选suffix/join。默认只在显式执行时运行小型合成数据，依赖已安装NumPy、MLX、CoreML和macOS；不安装包。
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 120 \
+  --output-dir outputs/my-new-tiling-launch -- .venv/bin/python -B \
+  techniques/labs/ane/tiling_bench.py --runtime-weights --layout channels \
+  --tile-k 41 --tile-n 63 --output-dir outputs/my-new-tiling-smoke
+```
+
+这个smoke含不整除K/N tail，但不是大模型性能结果。`--fixture`读取明确的本地通用fixture.json及校验过的完整数组，`--point`选择独立discovery/confirmation输入；不能tile/repeat几行模拟1024个真实row。产品捕获和原checkpoint导出在[integrations](../integrations/README.md)，核心实验不导入产品代码。
+
+`--route coreml`算完整FFN；`serial/hybrid --ane-channels ...`计算配对gate/up prefix与对应down partial，GPU算剩余channels，最后join。`--baseline serial --route hybrid`是同图serial/hybrid配对诊断，不能把这个分母的收益称全GPU加速。
+
+固定全输出与独立FP64抽样门槛失败时保留样本、停止该候选、不输出speedup。四次warmup与全部ABBA样本留下；不通过筛掉失败、降低容差或混合权重source“救回”候选。硬件放置始终unverified，plan不能替代物理trace。
+
+只使用新目录。监督器有独立进程组与显式timeout，保留失败日志；停止进程不自动证明设备drain，后续不复用该进程的buffer。runner检查磁盘余量与图大小，frozen可能占用多份权重副本，余量不足不自动删任何旧数据。权重常驻、准备与每层staging的边界须分别报告。
+
+2026-10-15已完成[真实Qwen layer0 FFN的这组实验](../review/qwen-ffn-tiling-20261015.md)，不是仅toy通过；但尚未达到产品/所有层/LoRA/端到端资格。

@@ -4,7 +4,7 @@
 
 ## 共同合同
 
-独立Objective-C++驱动只链接Foundation/Metal，不依赖生产库/MLX/privateAPI。FP32输入为确定性合成值，每个AB/BA pair相同输入、不同pair更新输入；4个warmup排除，8个hot默认ABBAABBA。所有输出逐元素比CPU double witness，末尾16个guard防越界；非有限/设备错误返回非零。
+前五项的独立Objective-C++驱动只链接Foundation/Metal，不依赖生产库/MLX/privateAPI；第六项另有明确MLX/NumPy依赖。前五项FP32输入为确定性合成值，每个AB/BA pair相同输入、不同pair更新输入；4个warmup排除，8个hot默认ABBAABBA。所有输出逐元素比CPU double witness，末尾16个guard防越界；非有限/设备错误返回非零。
 
 pipeline编译/setup与正式host wall分开；host wall含encode/submit/wait，GPU字段是command-buffer timestamps之和。比较单CB与多CB时，总和不包含同样的空隙，不能把它当requestwall。PSO/cache、validation和CPUoracle均不夹在timed span。
 
@@ -60,3 +60,30 @@ overlap比较独立A/B branches在同queue或两queue，B signal共享event、jo
 ## 结果如何迁移
 
 先总结错误/波动、host与device边界，再用真实weights/rows/strides测完整consumer。小shape的单窗口倍率不等于全模型；参考 [本轮真实设备记录](../review/labs-validation.md)。所有historical negative都可在硬件、SDK、布局或分工变化后重新建立候选，保留原失败控制以便判断到底改进了什么。
+
+## 6. MLX affine、原创SG变体与原始BF16控制
+
+[quantized_bench.py](metal/quantized_bench.py)比较packed、resident decoded cache、动态decode表达式、BM32/64、连续加载/row skew；默认是合成FFN，`--fixture`可使用明确的完整真实数组。macOS、NumPy、MLX需已安装；不安装包、不下载模型、不读取兄弟源码。
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 120 \
+  --output-dir outputs/my-new-affine-launch -- .venv/bin/python -B \
+  techniques/labs/metal/quantized_bench.py --scope gemm --rows 33 --hidden 96 \
+  --outputs 41 --group 32 --bits 4 --candidate sg64-skew --input-layout stride2 \
+  --output-dir outputs/my-new-affine-smoke
+```
+
+小样本是tail/stride/guard检查，不是Qwen速度证据。真实实验固定原始数据与source hashes，保留fused gate/up→SiLU×up→down。数学参考使用canonical FP16 decoded storage，先以CPU FP64见证检查FP32参考；与原BF16组件budget分开，不把近似量化当原模型无损。
+
+原始BF16控制另显式读取checkpoint/capture，只取有界的选定tensor并验证SHA，不写另一份大权重文件：
+
+```sh
+.venv/bin/python -B techniques/labs/metal/quantized_bench.py \
+  --fixture "$TC_FFN_FIXTURE" --point layer-0-step-19 --bits 8 \
+  --baseline bf16 --candidate packed --source-checkpoint "$TC_QWEN_CHECKPOINT" \
+  --capture-root "$TC_CAPTURE_ROOT" --output-dir outputs/my-new-original-control
+```
+
+这里保留原始`[1,M,H]` BF16消费者；候选输入cast/输出restore计入wall。记录的是host-until-output-ready，不是GPU逐kernel时间；本轮没有物理counter。缓存的setup与resident bytes单列，源码每run快照并结束校验，超时只停止owned进程组。
+
+[affine_decode_probe.py](metal/affine_decode_probe.py)实际检查四个strided operands及decode precision；[ggml_dequant_probe.py](metal/ggml_dequant_probe.py)执行有许可的选定上游模板体。它们是显式诊断，不自动生成模型资格。完整[本机结果与全部失败/确认记录](../review/gpu-affine-20261016.md)说明为什么原型更大tile、cache约4%和格式压缩都不能直接替换原始GPU。

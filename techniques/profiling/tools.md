@@ -88,6 +88,34 @@ python3 tools/native/quality_gate.py "$TC_REFERENCE_PNG" "$TC_CANDIDATE_PNG"
 
 ## 实现参考与实验
 
+### 公共计划与host timeline的安全入口
+
+[compute_plan.py](../labs/ane/compute_plan.py)只读取明确compiled model的公共MLComputePlan，不运行prediction、不抓全局日志、不删缓存。设备/cost是`predicted`，操作计数是对计划的`derived`；未知cost保留null。源码与版本界限见[来源卡](../sources/repos/coremltools-compute-plan.md)。
+
+[anemll-profile审查](../sources/repos/anemll-profile-safety.md)记录了原工具的全subsystem私有日志与删工具缓存路径，所以未直接运行原版。不把默认boundary penalty、逻辑weight bandwidth或“wall远大于估算”推断包装成实测硬件归因。
+
+[tiling_bench.py](../labs/ane/tiling_bench.py)的`--host-timeline`是显式诊断选项；[host_trace.py](../scripts/host_trace.py)将一个指定trial导出Chrome Trace/Perfetto事件JSON：
+
+```sh
+python3 -B techniques/scripts/host_trace.py "$TC_RUN/report.json" --trial 1
+```
+
+只接受同trial、已记录的host clock域，不补造GPU/ANE起止时间，不合并不同进程时钟。输出是结构化事件格式，未在本轮GUI viewer中验收；无timeline的原始正式run不能靠推测生成设备trace。实际[Qwen案例](../review/qwen-ffn-tiling-20261015.md)区分正式GPU对照与serial/hybrid配对host诊断。
+
+[policy_probe.py](../labs/ane/policy_probe.py)在同一compiled bundle、同一输入上交错CPU_ONLY/CPU_AND_NE，复核bundle与输入hash，独立FP64抽样。它帮助缩小policy/path数值差异，不给逐op硬件归因或正式timing分数；return0表示诊断采集完成，case gate可能明确失败。
+
+### 显式运行的小型MLX capture探针
+
+[mlx_capture_probe.py](../labs/metal/mlx_capture_probe.py)只捕获本进程的合成矩阵计算；需要macOS和已安装的NumPy、MLX。它不启动viewer、不控制Xcode，也不采集其他App。命令必须使用新的输出目录：
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 120 \
+  --output-dir outputs/my-new-capture-launch -- .venv/bin/python -B \
+  techniques/labs/metal/mlx_capture_probe.py --output-dir outputs/my-new-capture
+```
+
+只有输出通过独立FP64数值检查且产物非空才报告`captured`；捕获或清理失败保留失败receipt并非零退出。raw `.gputrace`可能包含buffer、路径与设备信息，必须留在本地；`.gitignore`同时排除GPU/Instruments capture及其zip。未profile的host wall样本与capture能力均不代表逐kernel实测、物理counter或模型性能资格。默认检索和CPU测试不运行此设备探针。
+
 可读实现：[参考代码](../labs/summarize.py)；[实验步骤与边界](../labs/profiling.md)；[本项全部 case / controls](../labs/catalog.json)。
 
 ```sh

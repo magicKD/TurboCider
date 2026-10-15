@@ -65,7 +65,9 @@ def load(root=ROOT):
             raise ValueError("catalog chapter must be Markdown")
         identity = "technique-" + re.sub(r"[^a-z0-9]+", "-", relative[:-3].casefold()).strip("-")
         node = {"id": identity, "kind": "technique", "path": relative, "title": title(path),
-                "section": [Path(relative).parts[0]], "sources": []}
+                "section": [Path(relative).parts[0]],
+                "sources": ["source-" + value for value in string_list(card.get("source_ids", []), "source_ids")],
+                "evidence_pages": ["evidence-" + value for value in string_list(card.get("evidence_ids", []), "evidence_ids")]}
         for field in ("code", "cases", "controls"):
             node[field] = string_list(card.get(field), field)
         if not isinstance(card.get("revisit_when"), str) or not card["revisit_when"].strip():
@@ -84,10 +86,16 @@ def load(root=ROOT):
         heading = source.get("role", path.name)
         if not isinstance(heading, str) or not heading.strip():
             raise ValueError("invalid local source role: " + identity)
-        nodes.append({"id": "source-" + identity, "kind": "source", "path": source["path"],
+        kind = source.get("kind", "source")
+        if kind not in ("source", "evidence"):
+            raise ValueError("unknown registered source/evidence kind: " + identity)
+        nodes.append({"id": kind + "-" + identity, "kind": kind, "path": source["path"],
                       "title": heading, "section": [Path(source["path"]).parts[0]],
                       "symbols": string_list(source.get("symbols", []), "symbols"),
-                      "code": [], "sources": []})
+                      **{key: source[key] for key in ("upstream", "license", "evidence") if key in source},
+                      "code": [],
+                      "sources": ["source-" + value for value in string_list(source.get("source_ids", []), "source_ids")],
+                      "evidence_pages": []})
     by_id, by_path = {}, {}
     for node in nodes:
         identity = node["id"]
@@ -98,9 +106,16 @@ def load(root=ROOT):
         by_id[identity] = node
         by_path[node["path"]] = identity
     for node in nodes:
-        node["sources"] = [by_path[code] for code in node["code"]
-                           if code in by_path and by_id[by_path[code]]["kind"] == "source"]
-    vocabulary = {"kind": ["technique", "source"],
+        inferred = [by_path[code] for code in node["code"]
+                    if code in by_path and by_id[by_path[code]]["kind"] == "source"]
+        node["sources"] = list(dict.fromkeys([*node["sources"], *inferred]))
+        for source in node["sources"]:
+            if source not in by_id or by_id[source]["kind"] != "source":
+                raise ValueError("unresolved local source card: " + source)
+        for evidence in node["evidence_pages"]:
+            if evidence not in by_id or by_id[evidence]["kind"] != "evidence":
+                raise ValueError("unresolved local evidence page: " + evidence)
+    vocabulary = {"kind": ["technique", "source", "evidence"],
                   "section": sorted({section for node in nodes for section in node["section"]})}
     return {"root": root, "nodes": sorted(nodes, key=lambda item: item["id"]),
             "by_id": by_id, "by_path": by_path, "vocabulary": vocabulary}
@@ -142,9 +157,11 @@ def query(index, text="", filters=None, limit=10):
             "scope": "catalog/local-source keyword retrieval; section is a document category, not device or performance evidence"}
 
 
-def get_page(index, lookup, follow_sources=False, include_code=False, maximum_bytes=24000):
+def get_page(index, lookup, follow_sources=False, include_code=False, maximum_bytes=24000, follow_evidence=False, offset_bytes=0):
     if type(maximum_bytes) is not int or not 256 <= maximum_bytes <= 256000:
         raise ValueError("maximum bytes must be 256..256000")
+    if type(offset_bytes) is not int or offset_bytes < 0:
+        raise ValueError("byte offset must be a nonnegative integer")
     if not isinstance(lookup, str):
         raise ValueError("a registered page ID or path is required")
     identity = lookup if lookup in index["by_id"] else index["by_path"].get(lookup)
@@ -154,22 +171,39 @@ def get_page(index, lookup, follow_sources=False, include_code=False, maximum_by
     wanted = [node]
     if follow_sources:
         wanted += [index["by_id"][source] for source in node["sources"]]
+    if follow_evidence:
+        wanted += [index["by_id"][evidence] for evidence in node["evidence_pages"]]
     remaining, pages, code, omitted_pages, omitted_code = maximum_bytes, [], [], [], []
 
-    def expand(relative):
+    def expand(relative, offset=0):
         nonlocal remaining
-        with local_file(index["root"], relative).open("rb") as stream:
+        path = local_file(index["root"], relative)
+        size = path.stat().st_size
+        if offset > size:
+            raise ValueError("byte offset exceeds the registered asset")
+        with path.open("rb") as stream:
+            stream.seek(offset)
             raw = stream.read(remaining + 1)
         selected = raw[:remaining]
+        try:
+            body = selected.decode("utf-8")
+        except UnicodeDecodeError as error:
+            if error.reason != "unexpected end of data" or error.end != len(selected):
+                raise ValueError("byte offset must start on a UTF-8 boundary") from error
+            selected = selected[:error.start]
+            body = selected.decode("utf-8")
         remaining -= len(selected)
-        return {"path": relative, "body": selected.decode("utf-8", errors="ignore"),
-                "truncated": len(selected) < len(raw)}
+        truncated = offset + len(selected) < size
+        return {"path": relative, "body": body, "truncated": truncated,
+                "byte_offset": offset, "total_file_bytes": size,
+                "next_byte_offset": offset + len(selected) if truncated else None}
 
     for item in wanted:
         if remaining <= 0:
             omitted_pages.append(item["id"])
         else:
-            pages.append({**expand(item["path"]), "id": item["id"], "metadata": item})
+            pages.append({**expand(item["path"], offset_bytes if item["id"] == identity else 0),
+                          "id": item["id"], "metadata": item})
     expanded = {item["path"] for item in pages}
     if include_code:
         for relative in node["code"]:

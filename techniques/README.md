@@ -5,6 +5,8 @@
 ## 从这里开始
 
 - 本轮深入研究：[源码研究与实测工作台](review/research-campaign-20261015.md)；跟踪roadmap、参考实现、profiling与Qwen真实工作负载，进行中项目不作为性能资格。
+- 固定版本取证：[自动生成的来源索引](sources/README.md) → [真实Qwen FFN与并发负结果](review/qwen-ffn-tiling-20261015.md)；来源、数值、性能与物理归因分开。
+- GPU源码到真实消费者：[MLX/GGML affine、tile与原始BF16控制](review/gpu-affine-20261016.md)，包含量化配方内收益、额外驻留成本与独立确认，不自动晋升产品默认。
 - 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
 - GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
 - 吸收外部实现：[设计样本](designs/README.md)包含 GPU 数据流、owned graph、GPU/ANE FFN、packed streaming、驻留与技术组合；核心设计和参考代码均在本目录，不必打开原项目。

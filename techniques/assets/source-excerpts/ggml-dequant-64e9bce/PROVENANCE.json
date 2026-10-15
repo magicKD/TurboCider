@@ -1,0 +1,23 @@
+{
+  "schema": "tc-source-excerpt-v1",
+  "repository": "ggml-org/llama.cpp",
+  "commit": "64e9bceb2c3a856efed96feda784a50947049feb",
+  "source_path": "ggml/src/ggml-metal/kernels/dequantize.h",
+  "source_sha256": "2dd5d69e65deb3718dd01a7e04d6ce529f008955fecfb1d1d8abab3245e43d25",
+  "captured_at": "2026-10-16",
+  "ranges": [
+    {
+      "symbol": "dequantize_q4_0",
+      "first_line": 131,
+      "last_line": 148
+    },
+    {
+      "symbol": "dequantize_q8_0",
+      "first_line": 325,
+      "last_line": 337
+    }
+  ],
+  "modifications": "Function bodies unchanged. Copyright prefix added. Probe supplies its own matching block structs and caller, uses safe math, and is not the whole GGML backend.",
+  "license": "MIT; accompanying LICENSE retained",
+  "upstream_execution_scope": "Only these templated dequantizers instantiated in an isolated public MLX Metal client; no whole-engine speed or compatibility qualification"
+}

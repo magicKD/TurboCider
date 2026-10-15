@@ -23,13 +23,22 @@
     },
     {
       "chapter": "metal/kernel-tuning.md",
+      "evidence_ids": ["gpu-affine-20261016", "gpu-affine-data-20261016"],
+      "source_ids": ["upstream-mlx-affine", "upstream-ggml-metal"],
       "cases": [
         "metal:vector",
         "metal:gemm"
       ],
       "code": [
         "labs/metal/kernels.metal",
-        "labs/metal/bench.mm"
+        "labs/metal/bench.mm",
+        "labs/metal/affine_gemm.py",
+        "labs/metal/affine_gemm.metal",
+        "labs/metal/quantized_bench.py",
+        "labs/metal/real_bf16_source.py",
+        "labs/metal/affine_decode_probe.py",
+        "labs/metal/ggml_dequant_probe.py",
+        "assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal"
       ],
       "controls": [
         "scalar/vector4 including tail",
@@ -93,6 +102,13 @@
     },
     {
       "chapter": "ane/coreml-graphs.md",
+      "evidence_ids": ["qwen-ffn-tiling-20261015", "qwen-ffn-tiling-data-20261015"],
+      "source_ids": [
+        "upstream-ccv-coreml",
+        "upstream-vpipe-emitter",
+        "upstream-coreml-plan",
+        "upstream-ane-transformers-ffn"
+      ],
       "cases": [
         "coreml:frozen-fp16",
         "coreml:runtime-fp16",
@@ -100,7 +116,11 @@
       ],
       "code": [
         "labs/ane/bench.py",
-        "labs/ane/shared_w8.py"
+        "labs/ane/shared_w8.py",
+        "labs/ane/tiling_graphs.py",
+        "labs/ane/tiling_bench.py",
+        "labs/ane/compute_plan.py",
+        "labs/ane/policy_probe.py"
       ],
       "controls": [
         "frozen/runtime inputs",
@@ -352,6 +372,8 @@
     },
     {
       "chapter": "memory/storage.md",
+      "evidence_ids": ["gpu-affine-20261016"],
+      "source_ids": ["upstream-mlx-affine", "upstream-ggml-metal"],
       "cases": [
         "quant-formats",
         "bounded-io",
@@ -471,6 +493,8 @@
     },
     {
       "chapter": "profiling/tools.md",
+      "evidence_ids": ["qwen-ffn-tiling-20261015"],
+      "source_ids": ["upstream-coreml-plan", "upstream-anemll-profile"],
       "cases": [
         "reference:lab-summary",
         "metal:graph",
@@ -479,7 +503,9 @@
       "code": [
         "labs/summarize.py",
         "labs/metal/run.py",
-        "labs/ane/bench.py"
+        "labs/ane/bench.py",
+        "labs/ane/compute_plan.py",
+        "labs/metal/mlx_capture_probe.py"
       ],
       "controls": [
         "actual calls vs unsupported/no-device",

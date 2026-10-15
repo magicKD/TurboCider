@@ -30,6 +30,10 @@ vpipe 文档与 WeightSet 实现特别处理非对齐文件offset的读窗口；
 
 拼接 fused matrix 后释放消费掉的源 tensor；read-once 不加入长期 cache；stream_into 不额外先建全 tensor 再 memcpy。mmap后又保存converted copy会两份都占住。只保留后缀时 w1/w3 可连续行读，w2需按列打包，时间与磁盘都算入 setup。
 
+[本轮真实FFN数据](../review/gpu-affine-20261016.md)提供了一个具体反例：288 MiB原始16-bit权重，affine Q8/Q4及metadata分别153/81 MiB；若保留packed再缓存FP16展开，就变成441/369 MiB。cache相对packed快一点，并不表示相对原始dense更快或更省RAM。这里都是逻辑权重量，不是实测request峰值；原生bank/租约/eviction与IO仍需完整请求确认。
+
+[GGML源码与GPU摘录](../sources/repos/ggml-metal-layouts.md)和[CPU格式oracle](../labs/quantization.py)还展示：两个Q8_0 blocks与MLX affine Q8 group64/FP16 metadata恰好都是68 bytes，却不能raw reinterpret；Q4_0前16/后16的nibble顺序也不是相邻交错。字节数、逻辑shape和路径相同都不能代替encoding/source证明。
+
 ## 来源验证与复用
 
 首次内容验证 → 持有source FD/generation → metadata/stat guards → request lease → actual receipt。派生 artifact 记录 parent digest、每项变换、覆盖范围、dtype/rounding 和输出内容身份。不要把派生BF16 view叫原始BF16权重，也不把路径相同当来源没变。

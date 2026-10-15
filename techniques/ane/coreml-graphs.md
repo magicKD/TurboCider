@@ -52,6 +52,16 @@ BF16 和 FP16 同为 16 bit，但指数范围不同。把 BF16 FFN 简单转 FP1
 
 ## 实现参考与实验
 
+### 图内K/N tiling：由真实消费者决定是否值得
+
+[ccv来源卡](../sources/repos/ccv-coreml-rowwise.md)给出K拆分与surface政策；[vpipe来源卡](../sources/repos/vpipe-runtime-tiling.md)区分图内分块和host多次调用。核心代数是先完成每个投影的K归约，再做SiLU；N切分须保持gate/up配对以及down对应列。不要将非线性移进K partial，也不要重复bias/residual。
+
+新的[图构造](../labs/ane/tiling_graphs.py)与[完整消费者驱动](../labs/ane/tiling_bench.py)提供frozen/runtime、2D row-major/4D channel-major、sigmoid/exp、GPU-only/CoreML/serial/hybrid对照。4D matmul的`[1,1,C,M]`不是旧frozen Conv图的`[1,C,1,M]`，不能只改shape不改pitch。K求和改变舍入，属于需数值验证的等价变换，不声称bitwise。
+
+首次[真实Qwen FFN实验](../review/qwen-ffn-tiling-20261015.md)使用完整1024×4096×12288与真实layer/timestep输入。CPU_AND_NE sigmoid路径被固定抽样门槛拒绝；同bundle CPU_ONLY对照后来满足门槛，不能将负结果泛化为所有CoreML图。exp通过组件数值，但完整CoreML消费者和半宽hybrid仍慢于compiled fused GPU。相同切分的并发相对串行有约1.16×收益，也不能据此替换更快的全GPU分母。
+
+这些是FP16/Python bridge/resident-weight结果，不是原生shared IO、W8A8或LoRA结论。具体失败、全部样本与重开条件在证据中；优化图的最终目标是完整消费者/请求，而非提高计划中的ANE op占比。
+
 可读实现：[参考代码](../labs/ane/bench.py)；[实验步骤与边界](../labs/ane.md)；[本项全部 case / controls](../labs/catalog.json)。
 
 ```sh

@@ -33,12 +33,24 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/labs/build/program", "techniques/labs/private/excerpt.json"]
         self.assertEqual(self.ignored(paths), set(paths))
 
+    def test_raw_profiling_captures_stay_local(self):
+        paths = ["owned-tiny.gputrace", "capture.trace",
+                 "techniques/labs/metal/owned-tiny.gputrace/metadata.json",
+                 "techniques/labs/metal/capture.trace/instrument_data",
+                 "techniques/labs/metal/owned-tiny.gputrace.zip",
+                 "techniques/labs/metal/capture.trace.zip"]
+        self.assertEqual(self.ignored(paths), set(paths))
+
     def test_curated_sources_and_examples_remain_trackable(self):
         paths = ["techniques/candidates/projects.json", "techniques/labs/catalog.json",
                  "techniques/references/sources.json", "techniques/review/new-validation.json",
                  "techniques/examples/paired-runs.json", "techniques/integrations/mfa_gemm_bench.swift",
                  "examples/requests/new-request.json", "tests/fixtures/database.json",
-                 "profiles/apple-device.example.json", "assets/example.png", ".env.example"]
+                 "profiles/apple-device.example.json", "assets/example.png", ".env.example",
+                 "techniques/sources/repos/mlx-affine-dispatch.md",
+                 "techniques/assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal",
+                 "techniques/labs/metal/mlx_capture_probe.py",
+                 "techniques/examples/profiling-summary.json", "tests/fixtures/tiny.npy"]
         self.assertEqual(self.ignored(paths), set())
 
 

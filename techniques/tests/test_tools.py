@@ -1,5 +1,6 @@
 """CPU-only tests for wiki helpers, independent of installed ML frameworks."""
 import copy
+import hashlib
 import importlib.util
 import json
 import re
@@ -215,6 +216,15 @@ class AlgebraTests(unittest.TestCase):
 
 
 class WikiTests(unittest.TestCase):
+    def test_local_asset_hash_is_not_external_checkout_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.small_wiki(directory, sources=[{"id":"local","scope":"local","path":"README.md",
+                "sha256":hashlib.sha256(b"# Example\n").hexdigest()}])
+            result = wiki.audit(root)
+            self.assertEqual(result["errors"],[])
+            self.assertEqual(result["source_content_hashes_checked"],1)
+            self.assertEqual(result["external_snapshots_checked"],0)
+
     def test_real_wiki_links_and_symbols(self):
         self.assertEqual(wiki.audit(ROOT)["errors"], [])
 
