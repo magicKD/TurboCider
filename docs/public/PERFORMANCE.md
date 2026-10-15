@@ -46,6 +46,34 @@ ranking. We use recorded medians rather than the fastest individual samples.
 - These archived observations were not rerun for this documentation update.
   See [samples and conditions](BENCHMARKS.md) before quoting a number.
 
+## SeedVR2 super-resolution vs ComfyUI — October 14, 2026
+
+Added October 15 from eight retained ABBA comparisons; no inference was rerun.
+Apple M4 Max / 64 GiB / macOS 26.6.2, original SeedVR2 3B FP16 weights,
+one Euler/simple step, CFG 1, no color correction or LoRA. These are
+super-resolution tasks, not image/video generation or ANE speedups.
+
+| Complete upscale request | Faster measured ComfyUI preset | ComfyUI | TurboCider GPU | Speedup | Time saved |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Image 256→512 | SDPA / GPU-only | 3.978 s | 0.828 s | **4.81×** | 79.2% |
+| Image 512→1024 | Default attention / ordinary residency | 15.535 s | 3.506 s | **4.43×** | 77.4% |
+| Video 256→512, 25 frames / 24 FPS | Default attention, MPS-compatible | 71.190 s | 20.586 s | **3.46×** | 71.1% |
+| Video 512→1024, 25 frames / 24 FPS | Default attention, MPS-compatible | 295.438 s | 85.011 s | **3.48×** | 71.2% |
+
+Each route has six fresh warm requests, including import, resize, VAE,
+sampling and PNG/silent H.264 MP4 export; setup and cold requests are separate.
+Each native median comes from the same paired record as the selected ComfyUI
+median. Native uses resident GPU FP16/FP32; both ComfyUI presets log FP16
+weights with BF16 manual casting, so this is not equal-precision parity.
+ComfyUI 0.39.0 / PyTorch 2.12.1 MPS uses explicit FP16 VAE; video needs the
+disclosed non-CUDA cache-transfer guard in a task-owned reference copy.
+
+All eight speed gates pass, but their records retain
+`overall_qualification_passed=false`. No matched cross-framework process-memory
+ranking or physical ANE occupancy is claimed. See the
+[complete report and cold controls](../benchmark/SEEDVR2_COMFYUI.md) and
+[retained evidence](BENCHMARKS.md#seedvr2-on-m4-max--october-14-2026).
+
 ## How much comes from ANE?
 
 For the recorded Z-Image workload, native GPU alone took **36.369 s**, versus
