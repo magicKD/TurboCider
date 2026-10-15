@@ -3,6 +3,7 @@
 #include <array>
 #include "sequence.hpp"
 #include "diagnostic_block_observer.hpp"
+#include "staged_attention_quantization.hpp"
 
 namespace tc::qwen21 {
 struct ReferenceLatents {
@@ -57,6 +58,22 @@ class Transformer {
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
                    const std::vector<ReferenceLatents> &references = {});
     size_t cached_layers() const { return prefix_.size(); }
+    // The caller resolves device/request policy once. Existing environment
+    // choices remain in effect unless this effective configuration is applied.
+    // Reconfiguration invalidates prefix and compiled state from the old recipe.
+    void configure_staged_optimizations(int attention_bits, bool qk_norm_rope);
+    int staged_attention_bits() const { return staged_attention_bits_; }
+    int staged_attention_cached_layers() const {
+        int count = 0;
+        for (const auto &entry : staged_attention_) count += bool(entry);
+        return count;
+    }
+    uint64_t staged_attention_cache_bytes() const {
+        uint64_t bytes = 0;
+        for (const auto &entry : staged_attention_) if (entry) bytes += entry->bytes();
+        return bytes;
+    }
+    double staged_attention_pack_seconds() const { return staged_attention_pack_seconds_; }
     // The caller restores lazy checkpoint arrays before each forward. After
     // each GPU block completes, discard its compiled constants and weights.
     void set_layer_release(std::function<void(const std::string &)> fn) {
@@ -152,6 +169,9 @@ class Transformer {
     DiagnosticBlockObserver diagnostic_block_observer_;
     std::function<void(const std::string &)> release_layer_;
     TransformerConfig config_;
+    int staged_attention_bits_ = 0;
+    std::vector<std::optional<StagedAttentionWeights>> staged_attention_;
+    double staged_attention_pack_seconds_ = 0;
     // Session-owned diagnostic bank; Q/K/V are concatenated once per model
     // load rather than rebuilding 3 GiB of matrices on every image request.
     const std::vector<Tensor> *fused_qkv_ = nullptr;

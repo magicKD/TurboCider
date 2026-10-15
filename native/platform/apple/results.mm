@@ -1,6 +1,7 @@
 #include "bridge.hpp"
 #include "../../core/quantized_execution_profiles.hpp"
 #include "../../models/qwen21/diagnostic_options.hpp"
+#include "../../models/qwen21/memory_policy.hpp"
 #include "../../models/qwen21/native_route.hpp"
 #include "../../models/qwen21/viggle_adapter.hpp"
 #include <cstdlib>
@@ -576,8 +577,13 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (local_references && std::string_view(local_references) == "3")
             [algorithm_approximations addObject:@"qwen21_last16_reference_local_attention_diagnostic"];
         const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
-        if (norm_rope && std::string_view(norm_rope) == "1")
+        const auto staged = qwen21::staged_optimization_options(r, device_info());
+        if (staged.qk_norm_rope || qwen21::option_enabled(norm_rope))
             [algorithm_approximations addObject:@"qwen21_metal_qk_norm_rope"];
+        if (staged.suffix_bits)
+            [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_staged_suffix_w%d", staged.suffix_bits]];
+        if (staged.attention_bits)
+            [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_staged_attention_w%d", staged.attention_bits]];
     }
     if (encoder_hybrid)
         [algorithm_approximations addObject:encoder_approximation_label(r)];
@@ -687,6 +693,9 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
     } mutableCopy];
     if (r.model == "qwen-image-2.1") {
         NSMutableArray *blocks = [NSMutableArray array];
+        const auto precision = qwen21::staged_quantized_precision(
+            qwen21::staged_optimization_options(r, device_info()));
+        if (!precision.empty()) report[@"precision"] = @(precision.c_str());
         for (int block : r.qwen21_gpu_full_ffn_blocks) [blocks addObject:@(block)];
         report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
@@ -2033,6 +2042,20 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"scope": @"managed encoder packed weights, refill slots and gathered embedding; excludes other activations/framework/OS"
         };
     }
+    if (result.qwen_staged_suffix.bits || result.qwen_staged_attention.bits) {
+        auto quantization = [](const QwenStagedQuantizationMetrics &m, NSString *activation) {
+            return @{@"bits": @(m.bits), @"group_size": @64, @"mode": @"affine",
+                     @"activation_dtype": activation, @"cached_layers": @(m.cached_layers),
+                     @"cache_bytes": @(m.cache_bytes), @"pack_seconds": @(m.pack_seconds),
+                     @"scope": @"request_owned_decode_only"};
+        };
+        if (result.qwen_staged_suffix.bits)
+            value[@"qwen21_staged_suffix_quantization"] = quantization(result.qwen_staged_suffix, @"float16");
+        if (result.qwen_staged_attention.bits)
+            value[@"qwen21_staged_attention_quantization"] = quantization(result.qwen_staged_attention, @"bfloat16");
+    }
+    if (r.model == "qwen-image-2.1")
+        value[@"qwen21_qk_norm_rope"] = @(result.qwen_qk_norm_rope);
     if (result.db_cache_enabled)
         value[@"qwen21_dbcache"] = @{
             @"mode": @(r.qwen21_dit_cache == "off" ? "diagnostic" : r.qwen21_dit_cache.c_str()),

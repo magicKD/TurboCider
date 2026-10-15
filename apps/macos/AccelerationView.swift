@@ -112,7 +112,7 @@ struct AccelerationView: View {
                         }))
                         .disabled(store.busy || (!qwenLowMemoryANEAvailable && config.qwen21W8A8 != true))
                         .accessibilityIdentifier("qwenLowMemoryANE")
-                    Text("使用已编译的冻结量化分区，仅支持 Apple M5 Pro、24 GiB 内存和 512×512 文生图。需选择匹配分区并关闭参考图、LoRA 与提示词增强；画面可能与纯 GPU 不同。")
+                    Text("使用已编译的冻结量化分区，仅支持 Apple M5 Pro、24 GiB 内存和 512×512 文生图。需选择匹配分区并关闭参考图、LoRA 与提示词增强；20–40 步、分阶段加载且未使用设备配置时，默认使用 4 位 GPU 权重缓存，也可选择 DiT 缓存。图像细节可能变化。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("此选项是冻结量化分区，与上面的 Runtime 实验不同。")
                         .font(.caption).foregroundStyle(.secondary)

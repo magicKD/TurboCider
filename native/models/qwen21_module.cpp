@@ -1,5 +1,6 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "qwen21/memory_policy.hpp"
 #include "qwen21/native_route.hpp"
 #include "qwen21/viggle_adapter.hpp"
 #include "qwen21/runtime_gpu_layer_config.hpp"
@@ -16,6 +17,9 @@ ModelModule qwen21_module() {
         [](const Request &r) {
             qwen21::validate_native_denoiser_request(r);
             const auto db_options = qwen21::db_cache_options(r);
+            const auto device = device_info();
+            const bool staged_optimizations = qwen21::qualified_staged_optimizations(r, device);
+            (void)qwen21::staged_optimization_options(r, device);
             if (db_options.enabled && (db_options.front_blocks != 8 || db_options.warmup_steps != 8))
                 require(db_options.diagnostic && r.execution == "gpu" && r.loras.empty(),
                         "Qwen21 alternative DiT front/warmup policies are diagnostic-only on the base GPU route");
@@ -291,7 +295,7 @@ ModelModule qwen21_module() {
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_HYBRID_REUSE_FINAL_LAST16_FFN_DIAGNOSTIC")),
                         "Qwen21 DBCache is diagnostic-only for 20...40-step 512px or validated 768x512/512x768 base GPU or GPU/ANE with 0...3 references and no step-FFN reuse");
             if (db_options.enabled && !db_options.diagnostic) {
-                require(r.allow_approximation && r.execution == "gpu" &&
+                require(staged_optimizations || (r.allow_approximation && r.execution == "gpu" &&
                             r.hybrid_mlp_mode == "auto" && r.width == 512 && r.height == 512 &&
                             r.steps >= 20 && r.steps <= 40 && !r.prompt_enhance &&
                             (r.qwen21_reference_size == 1024 ||
@@ -300,7 +304,7 @@ ModelModule qwen21_module() {
                             !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
                             r.dump.empty() &&
                             (r.operation == "image.generate" ? r.inputs.empty() :
-                             (!r.inputs.empty() && r.inputs.size() <= 3)),
+                             (!r.inputs.empty() && r.inputs.size() <= 3))),
                         "Qwen21 DiT cache presets require explicit approximation, 20...40-step 512px GPU base-schedule generation or 1...3 full-size/resized-512 edit references, with prompt enhancement off");
                 for (const char *name : {
                         "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
@@ -319,7 +323,10 @@ ModelModule qwen21_module() {
                         "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC",
                         "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"}) {
                     const char *value = std::getenv(name);
-                    require(!value || std::string_view(value) == "0",
+                    require(!value || std::string_view(value) == "0" ||
+                                (staged_optimizations && std::string_view(name) ==
+                                    "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE" &&
+                                 qwen21::option_enabled(value)),
                             std::string("Qwen21 DiT cache preset conflicts with experimental option ") + name);
                 }
             }

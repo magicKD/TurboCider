@@ -533,6 +533,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     auto plan = make_plan(r);
     const auto device = device_info();
     const bool layer_staged = layer_staged_t2i(r, device);
+    const bool staged_qualified = qualified_staged_optimizations(r, device);
+    const auto staged_options = staged_optimization_options(r, device);
     if (diagnostic_block_observer_)
         require(!warmup && !prepare_only && r.residency == "component_staged" && r.execution == "gpu" &&
                     r.operation == "image.generate" && r.width == 512 && r.height == 512 &&
@@ -541,7 +543,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && !db_cache &&
                     r.dump.empty() && r.noise_path.empty(),
                 "Qwen block observer requires component-staged 512px BaseOnly ordinary GPU generation");
-    require(!layer_staged || (!fused_qkv && !db_cache && !reuse_final_ffn &&
+    require(!layer_staged || (!fused_qkv && (!db_cache || staged_qualified) && !reuse_final_ffn &&
                 !half_reuse_ffn && !hybrid_reuse_ffn && !hybrid_reuse_last16),
             "Qwen21 layer-staged T2I does not support diagnostic QKV/FFN caches");
     require(!r.prompt.empty(), "Qwen21 requires a prompt");
@@ -1333,6 +1335,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (r.qwen21_w8a8 ? "w8a8" : "fp16") +
             std::string(r.qwen21_gpu_w8a16 ? ":w8a16" : ":bf16") +
             (layer_staged ? ":layer-staged" : ":resident") +
+            ":suffix-bits=" + std::to_string(staged_options.suffix_bits) +
             (r.qwen21_gpu_full_ffn_blocks.empty() ? ":full" : ":fallback357");
         // Keep the established 4096-channel path and permit the separately
         // calibrated 6144-channel W8A8 experiment only by explicit manifest.
@@ -1393,7 +1396,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (!hybrid_mlp_ || hybrid_runtime_options_ != runtime_options) {
             hybrid_mlp_.reset();
             hybrid_mlp_ = std::make_unique<HybridMLP>(
-                transformer_, *hybrid_, r.qwen21_gpu_w8a16, r.qwen21_gpu_full_ffn_blocks, layer_staged);
+                transformer_, *hybrid_, r.qwen21_gpu_w8a16, r.qwen21_gpu_full_ffn_blocks,
+                layer_staged, staged_options.suffix_bits);
             hybrid_runtime_options_ = runtime_options;
         }
     }
@@ -1428,6 +1432,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.db_cache_max_consecutive = db_cache ? db_max_consecutive : 0;
     result.db_cache_front_blocks = db_options.front_blocks;
     result.db_cache_warmup_steps = db_options.warmup_steps;
+    result.qwen_qk_norm_rope = staged_options.qk_norm_rope;
+    result.qwen_staged_suffix.bits = staged_options.suffix_bits;
+    result.qwen_staged_attention.bits = staged_options.attention_bits;
     const char *profile_segments = std::getenv("TURBOCIDER_QWEN21_PROFILE_PREFILL_SEGMENTS");
     if (profile_segments && std::string_view(profile_segments) == "1")
         result.selection += "; diagnostic synchronized block-0 prefill attention segments";
@@ -1477,6 +1484,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.precision = r.qwen21_w8a8
             ? (r.qwen21_gpu_w8a16 ? "w8a16_gpu+w8a8_mlp_fp16_io" : "bf16_gpu+w8a8_mlp_fp16_io")
             : "bf16_gpu+fp16_mlp_fp16_io";
+        if (staged_options.suffix_bits || staged_options.attention_bits)
+            result.precision = staged_quantized_precision(staged_options);
         result.selection = r.qwen21_w8a8
             ? "gpu_ane explicit experimental: W8A8 Core ML prefix + GPU FFN suffix, placement unverified"
             : "gpu_ane experimental: BF16 GPU suffix + FP16 Core ML CPU/ANE prefix; runtime placement not guaranteed";
@@ -1514,7 +1523,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.selection += "; diagnostic final prefill block target-only output";
     if (layer_staged) result.selection += "; BF16 layer-streamed text/DiT + staged VAE";
     if (layer_staged && hybrid_requested)
-        result.selection += "; request-owned compact BF16 GPU suffix cache";
+        result.selection += staged_options.suffix_bits
+            ? "; request-owned affine W" + std::to_string(staged_options.suffix_bits) + " GPU suffix cache"
+            : "; request-owned compact BF16 GPU suffix cache";
+    if (staged_options.attention_bits)
+        result.selection += "; request-owned affine W" + std::to_string(staged_options.attention_bits) +
+            " GPU attention weight cache";
     if (db_cache)
         result.selection += "; decode DiT cache " +
             std::string(db_options.diagnostic ? "diagnostic" : db_options.mode) +
@@ -1582,7 +1596,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.selection += "; experimental FP16 low-rank LoRA matmuls";
     if (lora_1024_generation(r))
         result.selection += "; experimental 1024px six-step runtime LoRA generation, FP32 rank; quality unqualified";
-    if (norm_rope && std::string_view(norm_rope) == "1")
+    if (staged_options.qk_norm_rope || option_enabled(norm_rope))
         result.selection += "; experimental fused Metal Q/K norm-RoPE";
     result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
     result.checkpoint = transformer_source_.filename().string();
@@ -1725,6 +1739,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             transformer_.erase_prefix(prefix);
             checkpoint(cancelled);
         });
+        if (staged_qualified)
+            dit.configure_staged_optimizations(staged_options.attention_bits, staged_options.qk_norm_rope);
         const uint64_t snapshot_memory_limit = r.memory_budget_bytes
             ? std::min(physical_bytes, r.memory_budget_bytes) : physical_bytes;
         const uint64_t snapshot_budget = std::min(uint64_t(8) << 30, snapshot_memory_limit / 8);
@@ -2112,6 +2128,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             dit.clear_step_cache(); // request-owned activation bank released before VAE
         }
         result.db_cache_steps = dit.db_cached_steps();
+        result.qwen_staged_attention = {dit.staged_attention_bits(), dit.staged_attention_cached_layers(),
+            dit.staged_attention_cache_bytes(), dit.staged_attention_pack_seconds()};
+        if (hybrid_mlp_)
+            result.qwen_staged_suffix = {hybrid_mlp_->staged_suffix_bits(), hybrid_mlp_->staged_suffix_cached_layers(),
+                hybrid_mlp_->staged_suffix_cache_bytes(), hybrid_mlp_->staged_suffix_pack_seconds()};
+        require(!staged_options.suffix_bits || result.qwen_staged_suffix.cached_layers == 32,
+                "Qwen21 staged suffix cache did not cover all 32 decode layers");
+        require(!staged_options.attention_bits || result.qwen_staged_attention.cached_layers == 32,
+                "Qwen21 staged attention cache did not cover all 32 decode layers");
         result.timings.denoise = seconds(dit_start); result.actual_steps = r.steps;
         if(transformer_gguf_)transformer_gguf_->bank->check_unchanged();
         if (r.qwen21_w8a8) {

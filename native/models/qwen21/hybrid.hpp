@@ -1,5 +1,6 @@
 #pragma once
 #include "../../backends/coreml.hpp"
+#include "staged_suffix_quantization.hpp"
 #include <array>
 #include <map>
 #include <optional>
@@ -10,7 +11,22 @@ namespace tc::qwen21 {
 class HybridMLP {
   public:
     HybridMLP(const Weights &, HybridSession &, bool gpu_w8a16 = false,
-              const std::vector<int> &gpu_full_blocks = {}, bool layer_staged = false);
+              const std::vector<int> &gpu_full_blocks = {}, bool layer_staged = false,
+              int staged_suffix_bits = 0);
+    int staged_suffix_bits() const { return staged_suffix_bits_; }
+    uint64_t staged_suffix_cache_bytes() const {
+        uint64_t bytes = 0;
+        for (const auto &entry : staged_quantized_suffix_)
+            if (entry) bytes += entry->bytes();
+        return bytes;
+    }
+    int staged_suffix_cached_layers() const {
+        int layers = 0;
+        for (const auto &entry : staged_quantized_suffix_)
+            if (entry) ++layers;
+        return layers;
+    }
+    double staged_suffix_pack_seconds() const { return staged_suffix_pack_seconds_; }
     // The result borrows the session-wide Core ML output backing. Caller must
     // materialize its consumer before any subsequent prediction on ane_.
     // Transformer::forward enforces this at the residual-update boundary.
@@ -34,6 +50,9 @@ class HybridMLP {
     bool gpu_w8a16_ = false;
     bool runtime_lora_suffix_ = false;
     bool layer_staged_ = false;
+    int staged_suffix_bits_ = 0;
+    double staged_suffix_pack_seconds_ = 0;
+    std::array<std::optional<StagedQuantizedSuffix>, 32> staged_quantized_suffix_;
     // Populate only while visiting each decode layer, after materializing
     // compact slices. Original checkpoint tensors are released that layer.
     // 6144-channel W8A8 leaves exactly 4.5 GiB of BF16 suffixes across 32 layers.

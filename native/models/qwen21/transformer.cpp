@@ -70,12 +70,30 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config,
     require(sum == config.head_dim, "Qwen21 RoPE axes must sum to head dimension");
 }
 
+void Transformer::configure_staged_optimizations(int attention_bits, bool qk_norm_rope) {
+    require(attention_bits == 0 || attention_bits == 4 || attention_bits == 8,
+            "Qwen21 staged attention bits must be 0, 4 or 8");
+    require((!attention_bits && !qk_norm_rope) || config_ == TransformerConfig{},
+            "Qwen21 staged optimizations require the standard transformer geometry");
+    require(!qk_norm_rope || (!metal_qk_rope_ && !fused_qkv_),
+            "Qwen21 Q/K norm-RoPE fusion cannot combine with another fused QKV/RoPE kernel");
+    if (attention_bits == staged_attention_bits_ && qk_norm_rope == metal_qk_norm_rope_) return;
+    staged_attention_bits_ = attention_bits;
+    metal_qk_norm_rope_ = qk_norm_rope;
+    reset();
+    staged_attention_.resize(attention_bits ? config_.layers : 0);
+    prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
+    reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear();
+}
+
 void Transformer::clear_db_residuals() {
     db_prev_front_residual_.reset(); db_middle_residual_.reset();
     db_consecutive_steps_ = 0; db_last_step_ = -1;
 }
 
 void Transformer::reset() {
+    for (auto &entry : staged_attention_) entry.reset();
+    staged_attention_pack_seconds_ = 0;
     prefix_.clear();
     cached_ffn_.clear();
     clear_db_residuals(); db_cached_steps_ = 0;
@@ -98,7 +116,7 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
 }
 
 bool Transformer::plain_prefix_route() const {
-    return !diagnostic_block_observer_ && !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
+    return !staged_attention_bits_ && !diagnostic_block_observer_ && !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
         !reference_local_attention_ && !prefill_last_target_only_ &&
         !profile_gpu_blocks_ && !profile_gpu_ops_ && !profile_prefill_segments_ &&
         !decode_mlp_ && !prefill_mlp_ && !project_qkv_ && !plan_mlp_ &&
@@ -301,6 +319,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
+    require(!staged_attention_bits_ ||
+                (cache_prefix && release_layer_ && !trace && !fused_qkv_ &&
+                 !layer_weights_ && !retire_weights_ && !project_qkv_ && !stage_qkv_ &&
+                 !plan_qkv_ && !plan_mlp_ && !prefill_mlp_ &&
+                 !diagnostic_block_observer_ && !weights_.has_runtime_loras() &&
+                 ffn_cache_mode_ == FFNCacheMode::Off),
+            "Qwen21 attention cache requires layer-released base hybrid decode without dynamic weights, QKV or step-FFN reuse");
     if (diagnostic_block_observer_)
         require(!trace && !split_mlp && !fused_qkv_ && !project_qkv_ &&
                     !metal_qk_rope_ && !metal_qk_norm_rope_ && !reference_local_attention_ &&
@@ -440,6 +465,24 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         const auto plan = split_candidate ? (plan_mlp_ ? plan_mlp_(i, ffn_rows) : MLPPlan::Split)
                                           : MLPPlan::Gpu;
         const bool split_this = plan == MLPPlan::Split || plan == MLPPlan::SplitUntimed;
+        const bool quantized_attention = reuse && staged_attention_bits_ != 0;
+        if (quantized_attention) {
+            require(split_this && decode_first_block_ == 0,
+                    "Qwen21 attention cache requires split FFN coverage for every decode layer");
+            auto &saved = staged_attention_.at(i);
+            if (!saved) {
+                const auto started = Clock::now();
+                const auto stem = "transformer_blocks." + std::to_string(i) + ".attn.";
+                for (const char *name : {"to_q", "to_k", "to_v", "to_out.0"})
+                    require(!weights_.has(stem + name + ".bias"),
+                            "Qwen21 staged attention requires bias-free projections");
+                saved.emplace(quantize_staged_attention({weights_.at(stem + "to_q.weight"),
+                    weights_.at(stem + "to_k.weight"), weights_.at(stem + "to_v.weight"),
+                    weights_.at(stem + "to_out.0.weight")}, staged_attention_bits_));
+                staged_attention_pack_seconds_ +=
+                    std::chrono::duration<double>(Clock::now() - started).count();
+            }
+        }
         const int qkv_rows = hidden.shape(1);
         const auto qkv_plan = project_qkv_ && !trace && plan_qkv_ ?
             plan_qkv_(i, qkv_rows) : QKVPlan::Hybrid;
@@ -468,6 +511,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             const bool profile_ops = profile_gpu_ops_ && !split_this && i == 0;
             const bool profile_segments = profile_prefill_segments_ && !reuse && !split_this && i == 0;
             auto block = [this, i, reuse, prefix_length, split_this, external_qkv, capture_ffn,
+                          quantized_attention, attention_bits = staged_attention_bits_,
                           target_only_block,
                           reuse_ffn_block,
                           profile_ops, profile_segments,
@@ -506,7 +550,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 auto attention_input = input;
                 mark("attention_input_norm", {input});
                 Tensor q(0.f), k(0.f), v(0.f);
-                if (external_qkv) {
+                if (quantized_attention) {
+                    q = staged_attention_project(input, args, 9, attention_bits);
+                    k = staged_attention_project(input, args, 12, attention_bits);
+                    v = heads(staged_attention_project(input, args, 15, attention_bits),
+                              config_.heads, config_.head_dim);
+                } else if (external_qkv) {
                     q = args[args.size() - 3];
                     k = args[args.size() - 2];
                     v = heads(args.back(), config_.heads, config_.head_dim);
@@ -612,7 +661,9 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     for (int gate = 1; gate < 4; ++gate)
                         mods[gate] = slice_axis(mods[gate], 1, prefix_length, mods[gate].shape(1));
                 }
-                auto projected = linear(output, weights, p + ".attn.to_out.0");
+                auto projected = quantized_attention
+                    ? staged_attention_project(output, args, 18, attention_bits)
+                    : linear(output, weights, p + ".attn.to_out.0");
                 mark("attention_output_projection", {projected});
                 hidden = hidden + mx::tanh(mods[1]) * projected;
                 auto after_attention = hidden;
@@ -652,6 +703,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         if (reuse_ffn_block) {
             args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
             ++last_ffn_reused_blocks_;
+        }
+        if (quantized_attention) {
+            // Exactly seven block inputs and two prefix K/V arrays precede
+            // this bank. The cache gate excludes every other dynamic ABI.
+            require(args.size() == 9, "Qwen21 staged attention block argument layout changed");
+            const auto &packed = staged_attention_.at(i)->arrays;
+            args.insert(args.end(), packed.begin(), packed.end());
         }
         // Probe complete blocks from the same materialized upstream inputs,
         // including staging, QKV join, attention and GPU FFN. The GPU probe
@@ -816,6 +874,11 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     // A callback or trace failure may occur after front residual publication.
     // Never let a retry consume that partially executed step's caches.
     clear_step_cache();
+    if (staged_attention_bits_) {
+        reset();
+        prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
+        reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear();
+    }
     throw;
 }
 } // namespace tc::qwen21

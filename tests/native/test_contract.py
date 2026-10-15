@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,6 +51,16 @@ def qwen21_streaming_device():
     return system["gpu"] == "Apple M5 Pro" and system["physical_memory_bytes"] == 24 << 30
 
 
+@contextmanager
+def qwen21_staged_environment(overrides=None):
+    with patch.dict(os.environ):
+        for key in list(os.environ):
+            if key.startswith('TURBOCIDER_QWEN21_'):
+                os.environ.pop(key)
+        os.environ.update(overrides or {})
+        yield
+
+
 class ContractTests(unittest.TestCase):
 
     def test_qwen21_layer_staged_t2i_fits_24gib_without_lowering_other_routes(self):
@@ -85,7 +96,8 @@ class ContractTests(unittest.TestCase):
         with patch.dict(os.environ, {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1'}):
             code, result, error = plan({**base, 'qwen21_w8a8': True})
             self.assertEqual(code, 0, error)
-            self.assertGreater(result['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+            self.assertEqual(result['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
+                             qwen21_streaming_device())
             code, explicit_off, error = plan({**base, 'qwen21_dit_cache': 'off'})
             self.assertEqual(code, 0, error)
             self.assertEqual(explicit_off['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
@@ -95,6 +107,166 @@ class ContractTests(unittest.TestCase):
                                            'ane_manifest': '', 'qwen21_dit_cache': mode})
             self.assertEqual(code, 0, error)
             self.assertGreater(cached_gpu['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+
+    def test_qwen21_staged_fast_plan_preserves_budget_and_cache_intent(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=40, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    qwen21_w8a8=True, ane_manifest='checkpoint-verified-at-execution.json')
+        qualified = qwen21_streaming_device()
+        base_labels = ['qwen21_decode_mlp_w8a8_per_tensor']
+        fast_labels = ['qwen21_metal_qk_norm_rope', 'qwen21_staged_suffix_w4',
+                       'qwen21_staged_attention_w4'] if qualified else []
+        expected_precision = ('bf16_prefill+w4_attention_bf16_io+w4_ffn_suffix_fp16_io+'
+                              'w8a8_mlp_prefix_fp16_io' if qualified else 'bf16_gpu+w8a8_mlp_fp16_io')
+        expected_budget = ((17 if qualified else 32) << 30) + 512 * 512 * 10240
+        with qwen21_staged_environment():
+            code, default, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(default['qwen21_dit_cache'], 'off')
+            self.assertEqual(default['precision'], expected_precision)
+            self.assertEqual(default['memory_estimate_bytes'], expected_budget)
+            self.assertCountEqual(default['algorithm_approximations'], base_labels + fast_labels)
+            for steps in (20, 25, 40):
+                for mode in ('auto', 'base_fused'):
+                    with self.subTest(steps=steps, mode=mode):
+                        code, cached, error = plan({**base, 'steps': steps,
+                                                   'hybrid_mlp_mode': mode, 'qwen21_dit_cache': 'fast'})
+                        if not qualified:
+                            self.assertNotEqual(code, 0)
+                            continue
+                        self.assertEqual(code, 0, error)
+                        self.assertEqual(cached['qwen21_dit_cache'], 'fast')
+                        self.assertEqual(cached['precision'], expected_precision)
+                        self.assertEqual(cached['memory_estimate_bytes'], expected_budget)
+                        self.assertCountEqual(cached['algorithm_approximations'],
+                                              base_labels + fast_labels + ['qwen21_decode_dit_cache'])
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1',
+                                         'TURBOCIDER_QWEN21_DBCACHE_FRONT_BLOCKS': '1',
+                                         'TURBOCIDER_QWEN21_DBCACHE_WARMUP_STEPS': '4'}):
+                code, disabled, error = plan({**base, 'qwen21_dit_cache': 'off'})
+                self.assertEqual(code, 0, error)
+                self.assertEqual(disabled['qwen21_dit_cache'], 'off')
+                self.assertEqual(disabled['precision'], expected_precision)
+                self.assertEqual(disabled['memory_estimate_bytes'], expected_budget)
+                self.assertCountEqual(disabled['algorithm_approximations'], base_labels + fast_labels)
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_STAGED_FAST_DEFAULTS': '0'}):
+                code, baseline, error = plan({**base, 'qwen21_dit_cache': 'off'})
+                self.assertEqual(code, 0, error)
+                self.assertEqual(baseline['precision'], 'bf16_gpu+w8a8_mlp_fp16_io')
+                self.assertEqual(baseline['memory_estimate_bytes'], expected_budget)
+                self.assertCountEqual(baseline['algorithm_approximations'], base_labels)
+                code, cached, error = plan({**base, 'qwen21_dit_cache': 'fast'})
+                if qualified:
+                    self.assertEqual(code, 0, error)
+                    self.assertEqual(cached['precision'], 'bf16_gpu+w8a8_mlp_fp16_io')
+                    self.assertEqual(cached['memory_estimate_bytes'], expected_budget)
+                    self.assertCountEqual(cached['algorithm_approximations'],
+                                          base_labels + ['qwen21_decode_dit_cache'])
+                else:
+                    self.assertNotEqual(code, 0)
+                with patch.dict(os.environ, {'TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC': '1'}):
+                    code, diagnostic, error = plan(base)
+                    self.assertEqual(code, 0, error)
+                    self.assertEqual(diagnostic['precision'], 'bf16_gpu+w8a8_mlp_fp16_io')
+                    self.assertEqual(diagnostic['memory_estimate_bytes'], expected_budget)
+                    self.assertCountEqual(diagnostic['algorithm_approximations'],
+                                          base_labels + ['qwen21_decode_dbcache_diagnostic'])
+
+    def test_qwen21_staged_plan_overrides_report_exact_approximations(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    qwen21_w8a8=True, ane_manifest='checkpoint-verified-at-execution.json',
+                    qwen21_dit_cache='off')
+        qualified = qwen21_streaming_device()
+        base_label = 'qwen21_decode_mlp_w8a8_per_tensor'
+        suffix = 'TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS'
+        attention = 'TURBOCIDER_QWEN21_STAGED_ATTN_BITS'
+        qk = 'TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE'
+        defaults = 'TURBOCIDER_QWEN21_STAGED_FAST_DEFAULTS'
+        cases = (
+            (4, 8, False, 'bf16_prefill+w8_attention_bf16_io+w4_ffn_suffix_fp16_io+w8a8_mlp_prefix_fp16_io'),
+            (8, 4, True, 'bf16_prefill+w4_attention_bf16_io+w8_ffn_suffix_fp16_io+w8a8_mlp_prefix_fp16_io'),
+            (4, 4, True, 'bf16_prefill+w4_attention_bf16_io+w4_ffn_suffix_fp16_io+w8a8_mlp_prefix_fp16_io'),
+            (8, 0, False, 'bf16_prefill+bf16_attention+w8_ffn_suffix_fp16_io+w8a8_mlp_prefix_fp16_io'),
+            (0, 8, False, 'bf16_prefill+w8_attention_bf16_io+bf16_ffn_suffix+w8a8_mlp_prefix_fp16_io'),
+            (0, 0, False, 'bf16_gpu+w8a8_mlp_fp16_io'),
+        )
+        with qwen21_staged_environment():
+            for use_defaults in ('0', '1'):
+                for suffix_bits, attention_bits, use_qk, precision in cases:
+                    with self.subTest(defaults=use_defaults, suffix=suffix_bits,
+                                      attention=attention_bits, qk=use_qk):
+                        with patch.dict(os.environ, {defaults: use_defaults, suffix: str(suffix_bits),
+                                                     attention: str(attention_bits), qk: str(int(use_qk))}):
+                            code, configured, error = plan(base)
+                            if not qualified and (suffix_bits or attention_bits):
+                                self.assertNotEqual(code, 0)
+                                self.assertIn('qualified M5 Pro 24 GiB', error)
+                                continue
+                            self.assertEqual(code, 0, error)
+                            self.assertEqual(configured['precision'], precision)
+                            labels = [base_label]
+                            if suffix_bits:
+                                labels.append(f'qwen21_staged_suffix_w{suffix_bits}')
+                            if attention_bits:
+                                labels.append(f'qwen21_staged_attention_w{attention_bits}')
+                            if use_qk:
+                                labels.append('qwen21_metal_qk_norm_rope')
+                            self.assertCountEqual(configured['algorithm_approximations'], labels)
+                            self.assertEqual(configured['memory_estimate_bytes'],
+                                             ((17 if qualified else 32) << 30) + 512 * 512 * 10240)
+            with patch.dict(os.environ, {qk: '0'}):
+                code, configured, error = plan(base)
+                self.assertEqual(code, 0, error)
+                labels = [base_label] + (['qwen21_staged_suffix_w4', 'qwen21_staged_attention_w4']
+                                         if qualified else [])
+                self.assertCountEqual(configured['algorithm_approximations'], labels)
+            for flag, values in ((defaults, ('', '2', 'true')),
+                                 (suffix, ('', '1', '16', '04', '-4')),
+                                 (attention, ('', '1', '16', '4x', '-8'))):
+                for value in values:
+                    with self.subTest(flag=flag, value=value), patch.dict(os.environ, {flag: value}):
+                        self.assertNotEqual(plan(base)[0], 0)
+
+    def test_qwen21_staged_plan_rejects_overrides_outside_qualified_request(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    qwen21_w8a8=True, ane_manifest='checkpoint-verified-at-execution.json',
+                    qwen21_dit_cache='off')
+        with qwen21_staged_environment():
+            for extra in (dict(residency='resident'), dict(steps=2), dict(steps=19), dict(steps=41),
+                          dict(qwen21_gpu_w8a16=True), dict(qwen21_w8a8=False), dict(dump_tensors='/tmp/qwen-plan-dump')):
+                with self.subTest(extra=extra):
+                    request = {**base, **extra}
+                    code, unchanged, error = plan(request)
+                    self.assertEqual(code, 0, error)
+                    self.assertCountEqual(unchanged['algorithm_approximations'],
+                                          ['qwen21_decode_mlp_w8a8_per_tensor' if request['qwen21_w8a8']
+                                           else 'qwen21_decode_mlp_fp16_partition'])
+                    self.assertNotEqual(plan({**request, 'qwen21_dit_cache': 'fast'})[0], 0)
+                    for flag in ('TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS', 'TURBOCIDER_QWEN21_STAGED_ATTN_BITS'):
+                        for value in ('4', '8'):
+                            with patch.dict(os.environ, {flag: value}):
+                                code, _, error = plan(request)
+                                self.assertNotEqual(code, 0)
+                                self.assertIn('qualified M5 Pro 24 GiB', error)
+                        with patch.dict(os.environ, {flag: '0'}):
+                            self.assertEqual(plan(request)[0], 0)
+            for flag, value in (('TURBOCIDER_QWEN21_METAL_QK_ROPE', '1'),
+                                ('TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC', '1'),
+                                ('TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV', '1'),
+                                ('TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC', '16'),
+                                ('TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION', '1'),
+                                ('TURBOCIDER_QWEN21_PROFILE_GPU_OPS', '1')):
+                with self.subTest(flag=flag), patch.dict(os.environ, {flag: value}):
+                    self.assertNotEqual(plan({**base, 'qwen21_dit_cache': 'fast'})[0], 0)
+                    with patch.dict(os.environ, {'TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS': '4'}):
+                        code, _, error = plan(base)
+                        self.assertNotEqual(code, 0)
+                        self.assertIn('qualified M5 Pro 24 GiB', error)
 
     def test_qwen21_low_memory_gate_preserves_new_hybrid_mode_estimates(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
