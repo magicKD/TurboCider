@@ -13,3 +13,7 @@ Public Core ML 和 Metal 示例使用 Apple 公共 SDK/API。计算设备策略�
 2026-10-16新增MLX/Apple affine dispatch与GGML Metal导读。原创affine SG核不是MLX/GGML kernel移植；唯一新增直接代码摘录是[两段GGML dequantizer模板](assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal)，来自`ggml-org/llama.cpp@64e9bceb...`，Copyright (c) 2023-2026 The ggml authors。其函数体未改、wrapper另写，[完整MIT许可](assets/source-excerpts/ggml-dequant-64e9bce/LICENSE)及[PROVENANCE](assets/source-excerpts/ggml-dequant-64e9bce/PROVENANCE.json)一同保留。不能将直接摘录称为本目录原创，也不能把所选模板实例执行当成整个上游engine验收。
 
 若以后直接复制第三方代码/修改其具体实现，必须另行保留对应文件的版权、许可证和 NOTICE，并记录修改范围。不要因现在采用独立教学实现而推断原项目代码也可无条件改用 MIT；外部项目及权重仍受各自原许可约束。
+
+GPU profiling新增[tmc/gputrace源码研究](sources/repos/gputrace-timing-provenance.md)（MIT，Travis Cline）与[Apple公共SDK合同](sources/official/metal-counters.md)。parser只在本地隔离构建/运行；Python adapter和公共Metal客户端为独立实现，不分发上游parser源码、Apple headers、framework或raw capture。官方文档/SDK不是MIT开源仓库，不以本目录许可覆盖其条款。
+
+新增[MLX SDPA源码卡](sources/repos/mlx-sdpa-dispatch.md)继续以Apple MIT源码为阅读对象，不复制其shader实现。attention原配方replay复用本仓库MIT客户端/Transformer调用公式，产品库仅作显式可选本地接入；CPU oracle、候选API客户端和data verifier为原创工具，不打包MLX或模型。

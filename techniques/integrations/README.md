@@ -40,3 +40,17 @@ python -B techniques/integrations/public_w8_product.py --coreml-overlay "$TC_COR
 [qwen_ffn_fixture.py](qwen_ffn_fixture.py)严格读取原checkpoint选定BF16 tensor与其capture，导出FP16数组、原BF16 compiled MLX replica输出及hash。BF16→FP16是新的近似表示，不自动继承原模型质量；Replica也不替代完整请求oracle。生成fixture后核心[tiling lab](../labs/ane.md)无需读取产品或兄弟源码。
 
 本轮结果：[真实Qwen FFN证据](../review/qwen-ffn-tiling-20261015.md)。GPU捕获成功不等于新候选通过；数值通过也不等于消费者更快或请求画质合格。
+
+## 有界attention原配方replay
+
+[capture_qwen_attention.py](capture_qwen_attention.py)只编译[独立小客户端](capture_qwen_attention.cpp)，显式复用与当前source/MLX assets匹配的已有public native library。不会自动重建全项目或替换App；不匹配时拒绝，不能用旧ABI勉强运行。
+
+```sh
+.venv/bin/python -B techniques/integrations/capture_qwen_attention.py \
+  --native-dir "$TC_NATIVE_DIR" --model-root "$TC_QWEN_ROOT" --seed 42 \
+  --output-dir outputs/my-new-attention-capture
+```
+
+ordinary GPU observer在actual完整step0、step1 layer0提供借用参数、真实prefix cache和原callable输出。客户端按原公式重放、暴露额外QKV/O，核对完整block/prefix/输入存储后才写BF16副本；它不是未改变compiled kernel内部的直接capture。两phase合计128MiB cap，停在VAE decode/export之前；普通路线可能预加载已有VAE权重。source、loaded runtime、文件hash与统计生成前后复核，私有/实验环境不继承到子进程。
+
+核心benchmark只需要这些显式raw文件，不需要产品或兄弟源码；[全部结果](../review/qwen-attention-20261016.md)与[步骤](../labs/gpu.md)包含独立seed确认、noop和empty-row拒绝。原始QKV与prompt/session本地数据不入库。

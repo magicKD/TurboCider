@@ -2,6 +2,8 @@
 
 [实验室](README.md) · [summarize.py](summarize.py) · [原始测量规则](../profiling/measurement.md)
 
+真实GPU的[未采样/capture/counter三模式](../profiling/gpu-timeline-and-counters.md)与[来源安全adapter](../profiling/trace-normalization.md)已经形成独立纵向链；[本机记录](../review/gpu-profiling-20261016.md)保留结构解析失败、不支持的采样点和synthetic反例。
+
 ## 直接读一份设备报告
 
 ```sh

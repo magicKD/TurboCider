@@ -67,6 +67,28 @@ class KnowledgeTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 knowledge.load(self.root)
 
+    def test_official_sdk_metadata_is_retained_without_a_fake_git_commit(self):
+        folder = self.root / "sources/official"
+        folder.mkdir(parents=True)
+        (folder / "example.md").write_text("# Official example\nAPI contract\n", encoding="utf-8")
+        self.sources["sources"].append({"id": "official-example", "scope": "local",
+            "path": "sources/official/example.md", "role": "official SDK contract",
+            "official": {"publisher": "API Publisher", "snapshot_identity": "SDK fixture"},
+            "evidence": {"runtime": "unknown"}})
+        self.catalog["entries"][0]["source_ids"] = ["official-example"]
+        self.save()
+        index = knowledge.load(self.root)
+        node = index["by_id"]["source-official-example"]
+        self.assertEqual(node["official"]["snapshot_identity"], "SDK fixture")
+        self.assertNotIn("upstream", node)
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            from generate_source_index import render
+            text = render(index)
+        finally:
+            sys.path.pop(0)
+        self.assertIn("| [API Publisher](official/example.md) | SDK fixture | unknown |", text)
+
     def test_local_evidence_has_a_distinct_kind_and_opt_in_expansion(self):
         (self.root / "references/evidence.json").write_text('{"status":"failed"}\n')
         self.sources["sources"].append({"id": "local-run", "kind": "evidence", "scope": "local",

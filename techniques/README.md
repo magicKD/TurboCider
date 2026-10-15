@@ -6,6 +6,9 @@
 
 - 本轮深入研究：[源码研究与实测工作台](review/research-campaign-20261015.md)；跟踪roadmap、参考实现、profiling与Qwen真实工作负载，进行中项目不作为性能资格。
 - 固定版本取证：[自动生成的来源索引](sources/README.md) → [真实Qwen FFN与并发负结果](review/qwen-ffn-tiling-20261015.md)；来源、数值、性能与物理归因分开。
+- GPU profiling纵向链：[公共counter与capture实验](profiling/gpu-timeline-and-counters.md) → [来源安全的trace归一化](profiling/trace-normalization.md) → [本机全部对照](review/gpu-profiling-20261016.md)，包含无Xcode时的真实能力和parser负结果。
+- 进一步实测：[timestamp校准](profiling/timestamp-calibration.md)与[真实Qwen BF16 host profiling](profiling/mlx-boundaries.md)；保留采集器负控，避免把单位校准、阶段drain和原程序性能混成一种资格。
+- Attention纵切：[原始block输入的有界重放、三候选与独立seed](review/qwen-attention-20261016.md)，包括stride见证、noop、empty-row拒绝与全部负结果；并未晋升产品默认。
 - GPU源码到真实消费者：[MLX/GGML affine、tile与原始BF16控制](review/gpu-affine-20261016.md)，包含量化配方内收益、额外驻留成本与独立确认，不自动晋升产品默认。
 - 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
 - GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
@@ -16,7 +19,7 @@
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
 - 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
-- 动手实现：[实验室](labs/README.md) → [45项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含40个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO。
+- 动手实现：[实验室](labs/README.md) → [49项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含40个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO。
 
 ## 目录
 
@@ -64,7 +67,7 @@
 
 `review/raw/`与`review/local/`也仅用于本地原始测量和机器配置，不纳入提交；经过整理、脱敏的`review/*.json`验证摘要继续跟踪。
 
-嵌套Swift的`.build/`、`.swiftpm/`、`DerivedData/`、Xcode结果包、CMake生成文件及实验`.cache/`、`.aneforge_cache/`也保持本地。不要用整个`references/`、JSON或媒体扩展名的宽泛规则屏蔽整理后的来源、验证摘要或测试fixture。
+嵌套Swift的`.build/`、`.swiftpm/`、`DerivedData/`、Xcode结果包、CMake生成文件及实验`.cache/`、`.aneforge_cache/`、`.aneforge-cache/`也保持本地。不要用整个`references/`、JSON或媒体扩展名的宽泛规则屏蔽整理后的来源、验证摘要或测试fixture。
 
 从仓库根目录执行（只需 Python 标准库）：
 

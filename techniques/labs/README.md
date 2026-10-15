@@ -65,6 +65,8 @@ Metal需要Apple GPU与macOS/CLT；CoreML需要兼容arm64 Python/NumPy/coremlto
 
 每次硬件benchmark串行运行，关掉本任务其他build/tests/profile，不擅自停止用户服务。低延迟小probe的百分比受主机调度影响，不自动推广默认。
 
+新增显式设备selector：`metal:counter-stage`对应Metal入口的`--diagnostic counter-stage`，参考[时钟校准](../profiling/timestamp-calibration.md)；`mlx:bf16-ffn-profile`对应[真实BF16 profile入口](metal/qwen_ffn_profile.py)，必须显式提供本地checkpoint/capture/fixture，见[MLX边界](../profiling/mlx-boundaries.md)。它们不由CPU `all`或默认查询执行，也不会自动下载模型。
+
 ## 对新模型如何使用
 
 先找章末的“实现参考与实验”，再复制 [技术卡](../templates/technique-card.md)写实际shape/encoding/拓扑。跑机制控制 → 用真实source/activation替换toy → 完整block → 完整请求与质量/内存/生命周期。已有负结果给出失败条件和`revisit_when`，可以改变边界、布局、精度、bucket、硬件或consumer重新探索；安全与来源检查不因探索而关闭。

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-16",
+  "source": "actual layer0 original-input observer replay, complete prefill/steady 32-head BF16 tensors; not unchanged internal compiled-kernel capture",
+  "discovery": {"capture_seed": 42, "phases": ["prefill", "steady"], "candidates": ["single-mask", "contiguous-v", "head-chunks"]},
+  "confirmation": {"capture_seed": 43, "same_prompt": true, "same_phases_and_candidates": true, "no_retuning": true},
+  "semantic_controls": ["tail", "causal-offset", "empty-fused", "empty-fallback", "head80", "gqa-vector", "gqa-full"],
+  "control_gate_note": "Empty rows use an explicit local zero-output gate. A failed API path is a scoped semantics observation, not a universal hardware claim.",
+  "capture_controls": {"whole_original_block_relative_l2_max": 0.001, "actual_prefix_logical_exact": true,
+                       "maximum_tensor_file_bytes": 134217728, "stopped_step": 1, "stopped_layer": 0},
+  "component_gates": {"full_original_replay_relative_l2_max": 0.01, "independent_cpu_row_relative_l2_max": 0.01, "empty_row_max_abs": 0.000001},
+  "trials": {"warmup": 4, "measured": 8, "order": "ABBA", "one_candidate_per_process": true},
+  "followup_diagnostics": {
+    "reason": "Discovery already-contiguous V arm has large host-ratio scatter; add an explicitly identical baseline graph instead of treating tiny ratios as wins.",
+    "candidate": "noop",
+    "phases": ["prefill", "steady"],
+    "capture_seed": 42,
+    "performance_promotion": false,
+    "quality_gates_unchanged": true
+  },
+  "scope": "prepared attention plus consumer restoration; layout work inside measured boundary; geometry-mask preparation/residency separately charged",
+  "rules": [
+    "All heads and keys are preserved; no reduced toy substituted for real 1048/1024-row data.",
+    "No speed ratio for any failed full/reference/empty-row gate or changed operands/source.",
+    "A no-op layout candidate or small-head no-split control is labelled, not promoted as a mechanism win.",
+    "Mask setup cannot be called free for a one-prefill-per-request workload.",
+    "Core gains are not whole-block, request, LoRA or image-quality qualification."
+  ]
+}

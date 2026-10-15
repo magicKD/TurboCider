@@ -88,6 +88,10 @@ python3 tools/native/quality_gate.py "$TC_REFERENCE_PNG" "$TC_CANDIDATE_PNG"
 
 ## 实现参考与实验
 
+实际GPU profiling的[三模式实验](gpu-timeline-and-counters.md)、[归一化合同](trace-normalization.md)及[本机证据](../review/gpu-profiling-20261016.md)分别说明采集、来源与资格；官方SDK和开源parser分别建卡，不把synthetic时间或库函数名录当执行测量。
+
+进一步区分[同trial时钟校准](timestamp-calibration.md)与[真实MLX FFN host边界](mlx-boundaries.md)：单位/端点通过不自动变成另一个backend的kernel时间，强制phase drain也不是无扰动的原程序。
+
 ### 公共计划与host timeline的安全入口
 
 [compute_plan.py](../labs/ane/compute_plan.py)只读取明确compiled model的公共MLComputePlan，不运行prediction、不抓全局日志、不删缓存。设备/cost是`predicted`，操作计数是对计划的`derived`；未知cost保留null。源码与版本界限见[来源卡](../sources/repos/coremltools-compute-plan.md)。
@@ -111,10 +115,10 @@ python3 -B techniques/scripts/host_trace.py "$TC_RUN/report.json" --trial 1
 ```sh
 python3 -B techniques/scripts/run_experiment.py --timeout 120 \
   --output-dir outputs/my-new-capture-launch -- .venv/bin/python -B \
-  techniques/labs/metal/mlx_capture_probe.py --output-dir outputs/my-new-capture
+  techniques/labs/metal/mlx_capture_probe.py --synchronize-boundary --output-dir outputs/my-new-capture
 ```
 
-只有输出通过独立FP64数值检查且产物非空才报告`captured`；捕获或清理失败保留失败receipt并非零退出。raw `.gputrace`可能包含buffer、路径与设备信息，必须留在本地；`.gitignore`同时排除GPU/Instruments capture及其zip。未profile的host wall样本与capture能力均不代表逐kernel实测、物理counter或模型性能资格。默认检索和CPU测试不运行此设备探针。
+只有输出通过独立FP64数值检查且产物非空才报告`captured`；它仍只表示artifact已创建，不保证dispatch可解析，必须追加独立结构核查。捕获或清理失败保留失败receipt并非零退出。raw `.gputrace`可能包含buffer、路径与设备信息，必须留在本地；`.gitignore`同时排除GPU/Instruments capture及其zip。未profile的host wall样本与capture能力均不代表逐kernel实测、物理counter或模型性能资格。默认检索和CPU测试不运行此设备探针。
 
 可读实现：[参考代码](../labs/summarize.py)；[实验步骤与边界](../labs/profiling.md)；[本项全部 case / controls](../labs/catalog.json)。
 

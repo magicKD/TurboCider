@@ -129,6 +129,7 @@ compile_commands.json
 /techniques/**/private/
 # Optional ANEForge experiments may create this cache beside their source.
 /techniques/**/.aneforge_cache/
+/techniques/**/.aneforge-cache/
 # Uncurated measurements and machine-local review data; keep review/*.json tracked.
 /techniques/review/raw/
 /techniques/review/local/

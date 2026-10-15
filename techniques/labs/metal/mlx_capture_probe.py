@@ -38,6 +38,11 @@ def capture_artifacts(capture, output):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--expression", choices=("compiled", "eager"), default="compiled")
+    parser.add_argument("--fresh-capture-inputs", action="store_true")
+    parser.add_argument("--synchronize-boundary", action="store_true")
+    parser.add_argument("--synchronize-before-start", action="store_true")
+    parser.add_argument("--synchronize-before-stop", action="store_true")
     args = parser.parse_args(argv)
     output = args.output_dir.resolve()
     try:
@@ -52,6 +57,11 @@ def main(argv=None):
         "production_qualified": False,
         "raw_trace_local_only": True,
         "formal_performance_score": False,
+        "capture_workload_coverage": "unverified until independent structural parsing",
+        "controls": {"expression": args.expression, "fresh_capture_inputs": args.fresh_capture_inputs,
+                     "synchronize_boundary": args.synchronize_boundary,
+                     "synchronize_before_start": args.synchronize_before_start,
+                     "synchronize_before_stop": args.synchronize_before_stop},
         "runner_sha256": sha256_file(source),
         "samples": [],
         "errors": [],
@@ -91,7 +101,9 @@ def main(argv=None):
         b = rng.uniform(-.1, .1, (256, 384)).astype(np.float32)
         x, w = mx.array(a), mx.array(b)
         mx.eval(x, w)
-        function = mx.compile(lambda left, right: mx.tanh(left @ right))
+        function = lambda left, right: mx.tanh(left @ right)
+        if args.expression == "compiled":
+            function = mx.compile(function)
         for _ in range(2):
             mx.eval(function(x, w))
         for _ in range(4):
@@ -103,10 +115,14 @@ def main(argv=None):
                 "wall_seconds": time.perf_counter() - now,
             })
         capture = output / "owned-tiny.gputrace"
+        if args.synchronize_boundary or args.synchronize_before_start:
+            mx.synchronize()
         mx.metal.start_capture(str(capture))
         started_capture = True
-        result = function(x, w)
+        result = function(mx.array(a), mx.array(b)) if args.fresh_capture_inputs else function(x, w)
         mx.eval(result)
+        if args.synchronize_boundary or args.synchronize_before_stop:
+            mx.synchronize()
         mx.metal.stop_capture()
         started_capture = False
         actual = np.array(result)

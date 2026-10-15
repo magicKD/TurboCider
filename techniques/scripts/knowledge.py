@@ -92,7 +92,7 @@ def load(root=ROOT):
         nodes.append({"id": kind + "-" + identity, "kind": kind, "path": source["path"],
                       "title": heading, "section": [Path(source["path"]).parts[0]],
                       "symbols": string_list(source.get("symbols", []), "symbols"),
-                      **{key: source[key] for key in ("upstream", "license", "evidence") if key in source},
+                      **{key: source[key] for key in ("upstream", "official", "license", "evidence") if key in source},
                       "code": [],
                       "sources": ["source-" + value for value in string_list(source.get("source_ids", []), "source_ids")],
                       "evidence_pages": []})

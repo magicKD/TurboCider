@@ -11,6 +11,8 @@ WIKI = LABS.parent
 CATEGORIES = ("hardware", "metal", "ane", "gpu-ane", "memory", "algorithms", "media", "profiling", "models", "designs")
 DEVICE_CASES = {"metal:" + name for name in ("vector", "fusion", "gemm", "norm-rope", "attention", "graph", "overlap")}
 DEVICE_CASES |= {"coreml:frozen-fp16", "coreml:runtime-fp16", "coreml:hybrid", "native:public-w8"}
+DEVICE_CASES |= {"metal:counter-stage", "mlx:bf16-ffn-profile"}
+DEVICE_CASES |= {"mlx:attention-replay"}
 REFERENCES = {"reference:" + name for name in ("split-ffn", "interval-peak", "model-header", "lab-summary")}
 
 

@@ -14,8 +14,11 @@ def summarize(document):
     if document.get("schema") == "turbocider-metal-teaching-lab-v1":
         if not document.get("actual_metal_dispatch") or not document.get("all_outputs_finite") or not document.get("tail_guards_intact"):
             raise ValueError("not a successful validated actual Metal report")
+        if document.get("source_inputs_unchanged") is False:
+            raise ValueError("source changed during measured run")
         samples = document["samples"]
-        context = {key: document.get(key) for key in ("case", "device", "os", "shape", "threads", "source_sha256", "scope")}
+        context = {key: document.get(key) for key in ("case", "device", "os", "shape", "threads", "source_sha256", "scope",
+                                                    "diagnostic_mode", "formal_performance_score")}
         field = "wall_seconds"
     elif document.get("schema") == "turbocider-technique-lab-v1" and document.get("lab_id") == "coreml-ffn":
         details = document["details"]
@@ -46,6 +49,8 @@ def summarize(document):
             "variant_worst_ms": {key: max(rows) * 1000 for key, rows in groups.items()},
             "variant_samples": {key: len(rows) for key, rows in groups.items()},
             "matched_pairs": len(pairs), "production_qualified": False,
+            "formal_performance_score": document.get("formal_performance_score") is True
+                and document.get("diagnostic_mode") == "none" and document.get("source_inputs_unchanged") is True,
             "warnings": ["Descriptive tiny-operator observations only; no automatic significance, E2E or physical ANE claim.",
                          "Do not multiply these times/ratios with unrelated caches, kernels or historical model campaigns."]}
 

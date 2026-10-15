@@ -33,7 +33,19 @@ python3 -B techniques/scripts/get_page.py gpu-ane/lora.md --follow-sources --inc
 
 `host_trace.py report.json --trial N`只把一个已记录的trial转为host-only Chrome Trace事件JSON，不补造GPU/ANE时钟、不启动viewer或实验。已有[真实Qwen案例](../review/qwen-ffn-tiling-20261015.md)展示为什么需要把完整GPU分母、同图serial/hybrid诊断与计划数据分开。
 
+原始BF16 Qwen profile另要求`host_trace.py report.json --point layer-0-step-10 --trial 0`明确选择diagnostic点，不把compiled formal样本导出成虚构phase时间。`curate_qwen_profile.py REPORT... --output NEW.json`独立复核源码/数值/事件并分别汇总；参见[MLX边界](../profiling/mlx-boundaries.md)。
+
 `curate_gpu_campaign.py --root ... --fixture ... --run group:run-name`是独立只读data verifier，不导入候选benchmark模块；复核固定门槛、pair、原始source budget标记、source snapshots与ratio。格式内mechanism收益与原始模型组件收益分别标注；后者budget失败时拒绝暴露model ratio。`--diagnostic`与`--failed-launch`保留所选摘录/精度控制和frontend失败，不把programming error变成硬件不支持。结果见[GPU affine研究](../review/gpu-affine-20261016.md)。
+
+`curate_attention_campaign.py --root ROOT --capture ID --run GROUP:ID --diagnostic ID --output NEW.json`独立复核显式attention选择：真实capture内容/source、完整head/query/stride、seed/phase绑定、全部ABBA、数值/empty-row拒绝与ratio。GROUP为control/discovery/confirmation/diagnostic，noop不能冒充候选确认；不导入候选模块、不自动找新run或跑设备。结果见[21个attention比较](../review/qwen-attention-20261016.md)，data verifier不是硬件attestation或性能reproducer。
+
+## GPU profiling的来源归一化
+
+`calibrate_metal_timestamps.py REPORT... --output NEW.json`只读显式native记录，核对ns/Mach reference bracket、同trial CB关联与完整样本，输出derived mapping；缺参考的历史数据不回填。当前[校准证据](../review/gpu-clock-evidence-20261016.json)保留1个采集器失败与11个通过记录，门槛和范围见[校准合同](../profiling/timestamp-calibration.md)。
+
+`normalize_gputrace.py input.json --parser-commit FULL_COMMIT --output outputs/new-normalized.json`只读明确JSON；不启动gputrace、viewer或GPU，不扫描shader目录。固定版本的synthetic/extracted/store0保留predicted，即使marker声称非近似也不晋升；profiler claim、未知版本、物理端点/单位仍需独立见证。空结果保留null物理耗时，不发明0秒。
+
+`curate_profiling_campaign.py --root ROOT --native RUN_ID --capture RUN_ID:PARSER_RUN_KEY --output NEW.json`只读选定采集目录，复核源码与capture hash、全部样本/配对/失败、counter sentinel和模式；诊断不输出正式倍率，原始metadata/路径不发布。大名录只嵌入明确有界的前缀并保留完整内容hash。命令不会递归发现未知run或执行实验；本轮完整选择见[profiling证据](../review/gpu-profiling-evidence-20261016.json)，边界见[trace归一化](../profiling/trace-normalization.md)。
 
 ## fetch_references.py
 

@@ -33,3 +33,9 @@ v0.32.0的Q4 decoder用类型U保存`scale/16`；另一个固定版本先转floa
 重开条件：库/OS/编译器、architecture、M/N/K、metadata dtype、布局、权重/LoRA source、驻留/IO政策变化。只有新的数值、消费者与请求证据才能晋升，不靠源码存在或版本号。
 
 [固定release源码](https://github.com/ml-explore/mlx/blob/7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247/mlx/backend/metal/quantized.cpp) · [固定kernel源码](https://github.com/ml-explore/mlx/blob/7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247/mlx/backend/metal/kernels/quantized.h) · [官方quantized_matmul API](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.quantized_matmul.html)。
+
+## Capture边界补充（2026-10-16）
+
+同一release额外检查`metal.cpp`的start/stop capture、`eval.cpp`的finalize/synchronize、`device.cpp`的`CommandEncoder::synchronize`及`transforms.cpp`的同步eval；文件SHA/范围沿用同一[sources.json](../../references/sources.json)登记。
+
+output event完成与capture边界的encoder end/commit/wait不是可以随意互换的证据。本机“仅停止前同步”控制改变了可解析结构，但parser仍未确认dispatch覆盖；不把它改写为`mx.eval`不等待输出，或声称wheel与该源码构建等价。详见[实际capture对照](../../review/gpu-profiling-20261016.md)。

@@ -53,11 +53,11 @@
       "entry_url": "https://github.com/ml-explore/mlx",
       "checkout": "mlx",
       "decision": "candidate",
-      "reading_status": "selected-release-and-newer-affine-source-inspected-20261016",
-      "source_ids": ["upstream-mlx-affine"],
+      "reading_status": "selected-release-affine-capture-and-sdpa-source-inspected-20261016",
+      "source_ids": ["upstream-mlx-affine", "upstream-mlx-sdpa"],
       "decision_scope": "source learning and installed API experiments, not whole-engine qualification",
       "source_variants": [{"checkout":"mlx-v0.32.0-research","tag":"v0.32.0","commit":"7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247"}],
-      "execution_status": "installed 0.32.0 packed/dense/custom full FFN measured; wheel not asserted equal to source tag",
+      "execution_status": "installed 0.32.0 full FFN, original BF16 host profiles and real attention replay candidates/semantic controls measured; wheel not asserted equal to source tag",
       "sparse_paths": [
         "mlx/backend/metal",
         "tests",
@@ -288,8 +288,12 @@
       "repository": "tmc/gputrace",
       "entry_url": "https://github.com/tmc/gputrace",
       "checkout": "gputrace",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "decision": "include",
+      "decision_scope": "selected parser/source knowledge and isolated CLI, not replay/profiler or product qualification",
+      "reading_status": "selected-timing-provenance-and-cli-source-inspected-20261016",
+      "source_ids": ["upstream-gputrace"],
+      "execution_status": "fixed CLI built; internal/timing and internal/trace tests passed; stats/timing exercised on owned captures, including failures",
+      "revisit_when": ["parser or capture-format change", "verified streamData/clock endpoints", "bounded shader source-mapping policy"]
     },
     {
       "id": "R31",

@@ -5,6 +5,162 @@
   "meaning": "Local paths are relative to techniques. Integration paths retain original repository-root/sibling anchors for optional provenance only; check with --include-integrations. Core learning and execution require no integration source. Snapshots are inspected content, not latest upstream.",
   "sources": [
     {
+      "id": "qwen-attention-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/qwen-attention-20261016.md",
+      "role": "Actual-input Qwen attention replay: exact layout/mask/head candidates, held-out seed and empty-row rejections",
+      "source_ids": ["upstream-mlx-sdpa"],
+      "evidence": {"production_qualified": false, "scope": "layer0 prepared operator plus consumer restoration; not original internal kernel capture"}
+    },
+    {
+      "id": "qwen-attention-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/qwen-attention-evidence-20261016.json",
+      "role": "All 21 attention comparisons, two source captures, empty-row diagnostics, failed gates, no-op and confirmation samples",
+      "evidence": {"production_qualified": false, "raw_tensor_files_embedded": false}
+    },
+    {
+      "id": "upstream-mlx-sdpa",
+      "scope": "local",
+      "path": "sources/repos/mlx-sdpa-dispatch.md",
+      "role": "MLX SDPA guards, GQA/mask semantics, vector/full layout predicates and finite-min online softmax",
+      "symbols": ["ScaledDotProductAttention::use_fallback", "copy_unless", "finite_min"],
+      "upstream": {
+        "repository": "ml-explore/mlx",
+        "topic": "SDPA",
+        "commit": "7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247",
+        "tag": "v0.32.0",
+        "captured_at": "2026-10-16",
+        "worktree_dirty": false,
+        "files": [
+          {"path": "mlx/fast.cpp", "sha256": "fa9c12db58e5aee9cff7ed02c155413be22701bdb3987e25a664f2607ffe318e", "read_ranges": [[613,864]]},
+          {"path": "mlx/backend/metal/scaled_dot_product_attention.cpp", "sha256": "3bbcb42e967a6520b701da59e370acaa6f37d2a7f67c9522f4e21ed13832514a", "read_ranges": [[1,255],[580,802]]},
+          {"path": "mlx/backend/metal/kernels/steel/attn/kernels/steel_attention.h", "sha256": "82d25e646d442a0a3da755a7f04941b0db2d71a72e41d0dcd6e089ea021f6f6a", "read_ranges": [[1,105],[128,476]]},
+          {"path": "mlx/backend/metal/device.cpp", "sha256": "2fb931a9ee21ffe6cf643cb092430c8801ce5f8cb115f954e4933f7de7dbe1ba", "read_ranges": [[943,960]]}
+        ]
+      },
+      "license": {"name": "MIT", "notice": "Apple copyright; API clients/oracle are original, no upstream shader body distributed"},
+      "evidence": {"implementation": "selected release guards, output/stride layout and mask/softmax source inspected",
+                   "runtime": "installed MLX 0.32.0 APIs and actual-input replay benchmark executed; not source-built backend or physical dispatch qualification"}
+    },
+    {
+      "id": "integration-qwen-attention-transformer",
+      "scope": "integration",
+      "path": "native/models/qwen21/transformer.cpp",
+      "sha256": "8840e7f306a203aee06a8c9b8e8048d14f9b5a95faccc3ce7a20e31bb1e658b8",
+      "role": "Optional ordinary Qwen norm/RoPE/segment attention/block observer provenance; source unchanged by this research",
+      "symbols": ["diagnostic_block_observer_", "auto pk = k, pv = v;"],
+      "optional": false
+    },
+    {
+      "id": "integration-qwen-attention-sequence",
+      "scope": "integration",
+      "path": "native/models/qwen21/sequence.cpp",
+      "sha256": "46ea3edf26f0eb8db173470e5b8b99f54e932dce708e1939b578698d586f5c9f",
+      "role": "Optional Qwen text/image causal segment geometry source; not a standalone dependency",
+      "symbols": ["make_sequence_geometry", "prefix_length"],
+      "optional": false
+    },
+    {
+      "id": "gpu-clock-and-qwen-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/gpu-clock-and-qwen-20261016.md",
+      "role": "Native clock bracket/command-window validation and real original-BF16 Qwen host profile",
+      "source_ids": ["official-metal-counters", "upstream-mlx-affine"],
+      "evidence": {"production_qualified": false, "scope": "same-run native clock mapping and layer0 host diagnostics, not MLX kernel timestamps"}
+    },
+    {
+      "id": "gpu-clock-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/gpu-clock-evidence-20261016.json",
+      "role": "Twelve clock controls: eleven accepted runs, retained collector alias failure and all derived stage windows",
+      "evidence": {"production_qualified": false, "historical_raw_counter_seconds_retrofitted": false}
+    },
+    {
+      "id": "qwen-bf16-profile-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/qwen-bf16-profiling-evidence-20261016.json",
+      "role": "Real Qwen step1/10/19 original BF16 compiled output-ready and separately staged host observations",
+      "evidence": {"production_qualified": false, "physical_device_timestamps": null, "native_counter_calibration_applied": false}
+    },
+    {
+      "id": "gpu-profiling-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/gpu-profiling-20261016.md",
+      "role": "M4 Max public stage timestamps, native capture ground truth and MLX/gputrace negative controls",
+      "source_ids": ["upstream-gputrace", "official-metal-counters", "upstream-mlx-affine"],
+      "evidence": {"production_qualified": false, "scope": "synthetic native operators and explicit capture diagnostics"}
+    },
+    {
+      "id": "gpu-profiling-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/gpu-profiling-evidence-20261016.json",
+      "role": "All-sample native profiling evidence, capture content hashes, failed parses and timing provenance",
+      "evidence": {"production_qualified": false, "raw_capture_metadata_exported": false}
+    },
+    {
+      "id": "upstream-gputrace",
+      "scope": "local",
+      "path": "sources/repos/gputrace-timing-provenance.md",
+      "role": "gputrace timing provenance: capture heuristics, synthetic name-based estimates and endpoint reconstruction",
+      "symbols": ["TimingMetricsExtractor.Extract", "selectGPUTraceTimings", "GenerateSyntheticTiming"],
+      "upstream": {
+        "repository": "tmc/gputrace",
+        "commit": "3d7d32e66605ba994fb0765bf9f287682bd7ccc7",
+        "worktree_dirty": false,
+        "captured_at": "2026-10-16",
+        "files": [
+          {"path": "internal/timing/timing.go", "sha256": "4949ff0deca43c40649de1f756e3e5b6670ddb545f19597c25fc7e364dbf0a24", "read_ranges": [[1,183]]},
+          {"path": "internal/timing/synthetic.go", "sha256": "71b3ec3a0c673a6cb99a8b86b7425b196c1a176c135e7233c02d1b8d7cb0c4d4", "read_ranges": [[1,110]]},
+          {"path": "internal/timing/store0.go", "sha256": "dfcd3c67bbbef222321c19185b1b0d81162e1b98f1239f5929cf5097af5cfb74", "read_ranges": [[1,173]]},
+          {"path": "internal/timing/metrics.go", "sha256": "d2c4e1108ba9311d2eaeb993969031a92f68ecce078f292b311024d4b951c3cc", "read_ranges": [[1,320]]},
+          {"path": "internal/mlxprof/gputrace.go", "sha256": "05179df8fe95831eeedd352d7b8ea4431f1f44617a50d4ac6873866776e7a0c0", "read_ranges": [[1,185]]},
+          {"path": "internal/trace/trace.go", "sha256": "74e9a35b60848e11bdc79a49854a9555f2a635b69f650a6984c3762f0b375753", "read_ranges": [[1,150],[230,330],[343,398]]},
+          {"path": "cmd/gputrace/cmd/stats.go", "sha256": "a3a0d6dbbe40c1ffbddbe2fcb2d776e53518004412fd4bbb7a18c1cb7fa42376", "read_ranges": [[1,155],[230,400],[430,563]]},
+          {"path": "cmd/gputrace/cmd/timing.go", "sha256": "8de1a8ef46fd3e86fddee897b8a6b21634815b961349de3d078020c2a0d7d040", "read_ranges": [[1,200],[210,295]]},
+          {"path": "cmd/gputrace/cmd/timeline.go", "sha256": "90e555769cdb6b76586f983768040d2b2ac96b2b55a867d6d17ad71431f63024", "read_ranges": [[408,480]]}
+        ]
+      },
+      "license": {"name": "MIT", "notice": "LICENSE; Copyright 2024-2026 Travis Cline; no upstream parser code copied into the wiki"},
+      "evidence": {"implementation": "selected parser, timing, CLI initialization and source-scanning paths inspected",
+                   "upstream_execution": "isolated CLI built; internal/timing and internal/trace tests passed; stats/timing ran on 10 owned captures; no replay/GUI qualification"}
+    },
+    {
+      "id": "official-metal-counters",
+      "scope": "local",
+      "path": "sources/official/metal-counters.md",
+      "role": "Apple public Metal counter, capture, sentinel and clock-domain contracts",
+      "symbols": ["GPUStartTime", "MTLCounterErrorValue", "MTLTimestamp"],
+      "official": {
+        "publisher": "Apple Metal public APIs",
+        "snapshot_identity": "macOS SDK 26.5 headers; docs read 2026-10-16",
+        "read_at": "2026-10-16",
+        "urls": [
+          "https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime",
+          "https://developer.apple.com/documentation/metal/mtlcounterresulttimestamp/timestamp",
+          "https://developer.apple.com/documentation/metal/mtltimestamp",
+          "https://developer.apple.com/documentation/metal/converting-gpu-timestamps-into-cpu-time"
+        ],
+        "sdk_files": [
+          {"path": "Metal.framework/Headers/MTLCounters.h", "sha256": "8973a1281dc62e54448e2b6e30954d0e304a3ea29a168a246e93cda2fe31441c"},
+          {"path": "Metal.framework/Headers/MTLComputePass.h", "sha256": "ce3092aaa01dcc487ffcaf6fd191ae1e00322dd7318cd02ed8b61af0310999fb"},
+          {"path": "Metal.framework/Headers/MTLDevice.h", "sha256": "d1ef1bb5bc85faeeec9bc85f49124a453a8cd33b1182b0a71a41ba0dc4ebbb89"},
+          {"path": "Metal.framework/Headers/MTLCommandBuffer.h", "sha256": "a5a1ead36de20b4c1f4dce8193b945fb981e67456ca4a3a1395d167c9df475e7"},
+          {"path": "usr/include/mach/mach_time.h", "sha256": "d690e304ea595ca216ed51e20aa9747e0b3bcb07446d996abe0080a231c7065f", "read_ranges": [[1,77]]},
+          {"path": "usr/include/_time.h", "sha256": "a3dceadf2c95133018af363187829ca072d85a93d69f9682a2e4fb993902f28d", "read_ranges": [[150,190]]}
+        ]
+      },
+      "license": {"name": "Apple SDK/documentation terms", "notice": "Original API-client examples only; SDK headers are not redistributed"},
+      "evidence": {"runtime": "owned capture and stage samples; new same-run clock brackets/windows validated on this configuration, not cross-device or MLX kernel qualification"}
+    },
+    {
       "id": "gpu-affine-20261016",
       "kind": "evidence",
       "scope": "local",
@@ -29,8 +185,15 @@
       "symbols": ["QuantizedMatmul::eval_gpu", "get_qmv_batch_limit", "QuantizedBlockLoader"],
       "upstream": {
         "repository": "ml-explore/mlx",
+        "topic": "affine",
         "commit": "7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247",
         "tag": "v0.32.0",
+        "additional_capture_boundary_files": [
+          {"path": "mlx/backend/metal/metal.cpp", "sha256": "1940552f056516c5474b56c4c65672c9187bacf2008fa0e3d44808642f49c2d6", "read_ranges": [[1,63]]},
+          {"path": "mlx/backend/metal/eval.cpp", "sha256": "e9a1bb547c4645c5c060a423476218070b578c3bef18df55c8cedb7b222da62c", "read_ranges": [[1,90]]},
+          {"path": "mlx/backend/metal/device.cpp", "sha256": "2fb931a9ee21ffe6cf643cb092430c8801ce5f8cb115f954e4933f7de7dbe1ba", "read_ranges": [[548,581]]},
+          {"path": "mlx/transforms.cpp", "sha256": "8fa8b540cd02e7d3ad9a942d5ff24872cb6b2c7842766449b175d7052adac8e2", "read_ranges": [[80,174],[322,351]]}
+        ],
         "files": [
           {"path": "mlx/backend/metal/quantized.cpp", "sha256": "0897c0f297a902b7a97eb6bde3746a5ed9d2672d8dafbc099f46e801bfed4e90", "read_ranges": [[84,150],[772,974],[1486,1568]]},
           {"path": "mlx/backend/metal/kernels/quantized.h", "sha256": "4da52bf4ee688165a65b84c52a5f4e82efcae7f69e8c74d9ee3e00bef463c99f", "read_ranges": [[486,660],[1190,1316]]}

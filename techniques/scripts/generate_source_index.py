@@ -19,7 +19,15 @@ def render(index):
         upstream = node["upstream"]
         evidence = node.get("evidence", {})
         state = evidence.get("upstream_execution", evidence.get("runtime", "unknown"))
-        lines.append(f'| [{upstream["repository"]}]({relative}) | `{upstream["commit"]}` | {state} |')
+        label = upstream["repository"] + (" · " + upstream["topic"] if upstream.get("topic") else "")
+        lines.append(f'| [{label}]({relative}) | `{upstream["commit"]}` | {state} |')
+    official_nodes = [node for node in index["nodes"] if node["kind"] == "source" and "official" in node]
+    if official_nodes:
+        lines += ["", "## 官方API与SDK来源", "", "| 来源 | 固定读取身份 | 本地证据边界 |", "| --- | --- | --- |"]
+        for node in official_nodes:
+            relative = Path(node["path"]).relative_to("sources").as_posix()
+            official = node["official"]
+            lines.append(f'| [{official["publisher"]}]({relative}) | {official["snapshot_identity"]} | {node.get("evidence", {}).get("runtime", "unknown")} |')
     lines += ["", "源码存在、局部数值通过、消费者性能通过与真实请求通过是独立状态。原创MIL实验验证一个机制，不等于验收整个上游项目。各文件SHA、阅读范围和许可边界在来源卡与登记中保留。", "",
               "```sh", "python3 -B techniques/scripts/query.py 'K tiling' --type source --limit 3",
               "python3 -B techniques/scripts/get_page.py ane/coreml-graphs.md --follow-sources --max-bytes 32000",

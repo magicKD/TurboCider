@@ -5,10 +5,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <limits>
+#include <mach/mach_time.h>
 #include <stdexcept>
 #include <string>
+#include <time.h>
 #include <vector>
 
 using Clock = std::chrono::steady_clock;
@@ -28,11 +31,41 @@ struct Runner {
     id<MTLCommandQueue> queue, queue2;
     id<MTLLibrary> library;
     NSMutableDictionary<NSString*, id<MTLComputePipelineState>>* pipelines;
-    explicit Runner(const char* source) {
+    id<MTLCounterSampleBuffer> counter_buffer = nil;
+    NSMutableArray<NSString*>* counter_labels = [NSMutableArray array];
+    bool counter_at_stage = false;
+    MTLTimestamp cpu_before = 0, gpu_before = 0;
+    NSDictionary* reference_before = nil;
+    NSMutableArray* completed_commands = [NSMutableArray array];
+    NSDictionary* counter_capabilities;
+    explicit Runner(const char* source, const std::string& diagnostic) {
         device = MTLCreateSystemDefaultDevice();
         check(device != nil, "Metal device unavailable in this execution context");
         queue = [device newCommandQueue]; queue2 = [device newCommandQueue];
         check(queue && queue2, "command queue unavailable");
+        NSMutableArray* sets = [NSMutableArray array];
+        id<MTLCounterSet> timestamp_set = nil;
+        for (id<MTLCounterSet> set in device.counterSets) {
+            NSMutableArray* counters = [NSMutableArray array];
+            for (id<MTLCounter> counter in set.counters) [counters addObject:counter.name];
+            [sets addObject:@{@"name":set.name, @"counters":counters}];
+            if ([set.name isEqualToString:MTLCommonCounterSetTimestamp]) timestamp_set = set;
+        }
+        const bool stage = [device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
+        const bool dispatch = [device supportsCounterSampling:MTLCounterSamplingPointAtDispatchBoundary];
+        counter_capabilities = @{@"sets":sets, @"at_stage_boundary":@(stage), @"at_dispatch_boundary":@(dispatch)};
+        if (diagnostic == "counter-stage" || diagnostic == "counter-dispatch") {
+            counter_at_stage = diagnostic == "counter-stage";
+            check(counter_at_stage ? stage : dispatch, "requested counter sampling point unsupported; no fallback");
+            check(timestamp_set != nil, "timestamp counter set unavailable");
+            auto descriptor = [MTLCounterSampleBufferDescriptor new];
+            descriptor.counterSet = timestamp_set;
+            descriptor.storageMode = MTLStorageModeShared;
+            descriptor.sampleCount = 64;
+            NSError* counter_error = nil;
+            counter_buffer = [device newCounterSampleBufferWithDescriptor:descriptor error:&counter_error];
+            check(counter_buffer != nil, counter_error ? counter_error.localizedDescription.UTF8String : "counter buffer unavailable");
+        }
         NSError* error = nil;
         NSString* text = [NSString stringWithContentsOfFile:[NSString stringWithUTF8String:source] encoding:NSUTF8StringEncoding error:&error];
         check(text != nil, "MSL source unavailable");
@@ -62,7 +95,24 @@ struct Runner {
                   const Params& params, size_t count, size_t threads) {
         auto state = pipeline(name);
         check(threads && threads <= state.maxTotalThreadsPerThreadgroup, "illegal threadgroup size");
-        auto encoder = [command computeCommandEncoder];
+        const NSUInteger index = counter_labels.count * 2;
+        id<MTLComputeCommandEncoder> encoder;
+        if (counter_buffer && counter_at_stage) {
+            check(index + 1 < counter_buffer.sampleCount, "counter sample cap exceeded");
+            auto pass = [MTLComputePassDescriptor computePassDescriptor];
+            pass.sampleBufferAttachments[0].sampleBuffer = counter_buffer;
+            pass.sampleBufferAttachments[0].startOfEncoderSampleIndex = index;
+            pass.sampleBufferAttachments[0].endOfEncoderSampleIndex = index + 1;
+            encoder = [command computeCommandEncoderWithDescriptor:pass];
+        } else {
+            encoder = [command computeCommandEncoder];
+        }
+        check(encoder != nil, "compute encoder unavailable");
+        encoder.label = name;
+        if (counter_buffer && !counter_at_stage) {
+            check(index + 1 < counter_buffer.sampleCount, "counter sample cap exceeded");
+            [encoder sampleCountersInBuffer:counter_buffer atSampleIndex:index withBarrier:YES];
+        }
         [encoder setComputePipelineState:state];
         for (NSUInteger i = 0; i < buffers.count; ++i) [encoder setBuffer:buffers[i] offset:0 atIndex:i];
         [encoder setBytes:&params length:sizeof(params) atIndex:buffers.count];
@@ -74,23 +124,93 @@ struct Runner {
             [encoder dispatchThreadgroups:MTLSizeMake((count + threads - 1) / threads, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
         }
+        if (counter_buffer && !counter_at_stage)
+            [encoder sampleCountersInBuffer:counter_buffer atSampleIndex:index + 1 withBarrier:YES];
         [encoder endEncoding];
+        if (counter_buffer) [counter_labels addObject:name];
     }
-    static double finish(id<MTLCommandBuffer> command) {
+    NSDictionary* sample_clock_reference(MTLTimestamp& cpu, MTLTimestamp& gpu) {
+        mach_timebase_info_data_t timebase{};
+        check(mach_timebase_info(&timebase) == KERN_SUCCESS && timebase.denom > 0, "Mach timebase unavailable");
+        const uint64_t mach_before = mach_absolute_time();
+        const uint64_t ns_before = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        [device sampleTimestamps:&cpu gpuTimestamp:&gpu];
+        const uint64_t ns_after = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        const uint64_t mach_after = mach_absolute_time();
+        return @{@"cpu_raw":@(cpu), @"gpu_raw":@(gpu), @"mach_ticks_before":@(mach_before),
+            @"mach_ticks_after":@(mach_after), @"uptime_ns_before":@(ns_before), @"uptime_ns_after":@(ns_after),
+            @"mach_timebase_numer":@(timebase.numer), @"mach_timebase_denom":@(timebase.denom),
+            @"source_kind":@"measured", @"reference_clock":@"mach_absolute_time and CLOCK_UPTIME_RAW; same process"};
+    }
+    void begin_diagnostic() {
+        [counter_labels removeAllObjects];
+        [completed_commands removeAllObjects];
+        if (counter_buffer) reference_before = sample_clock_reference(cpu_before, gpu_before);
+    }
+    id resolve_diagnostic() {
+        if (!counter_buffer) return [NSNull null];
+        MTLTimestamp cpu_after = 0, gpu_after = 0;
+        NSDictionary* reference_after = sample_clock_reference(cpu_after, gpu_after);
+        NSData* data = [counter_buffer resolveCounterRange:NSMakeRange(0, counter_labels.count * 2)];
+        check(data && data.length == counter_labels.count * 2 * sizeof(MTLCounterResultTimestamp), "missing/invalid resolved timestamp data");
+        NSMutableArray* values = [NSMutableArray array];
+        for (NSUInteger i = 0; i < counter_labels.count; ++i) {
+            MTLCounterResultTimestamp start, end;
+            std::memcpy(&start, static_cast<const uint8_t*>(data.bytes) + i * 2 * sizeof(start), sizeof(start));
+            std::memcpy(&end, static_cast<const uint8_t*>(data.bytes) + (i * 2 + 1) * sizeof(end), sizeof(end));
+            const bool valid = start.timestamp != MTLCounterErrorValue && end.timestamp != MTLCounterErrorValue &&
+                start.timestamp > 0 && end.timestamp > start.timestamp;
+            [values addObject:@{@"label":counter_labels[i], @"start_raw":@(start.timestamp), @"end_raw":@(end.timestamp),
+                @"valid":@(valid), @"delta_raw":valid ? @(end.timestamp - start.timestamp) : (id)[NSNull null]}];
+        }
+        return @{@"sampling_point":counter_at_stage ? @"stage-boundary" : @"dispatch-boundary-barrier",
+            @"source_kind":@"measured", @"clock_domain":@"device timestamp; raw unit not assumed",
+            @"cpu_pair_before_raw":@(cpu_before), @"gpu_pair_before_raw":@(gpu_before),
+            @"cpu_pair_after_raw":@(cpu_after), @"gpu_pair_after_raw":@(gpu_after),
+            @"reference_before":reference_before, @"reference_after":reference_after,
+            @"completed_command_windows":[completed_commands copy],
+            @"duration_seconds": [NSNull null], @"samples":values};
+    }
+    double finish(id<MTLCommandBuffer> command) {
         [command waitUntilCompleted];
         check(command.status == MTLCommandBufferStatusCompleted,
               command.error ? command.error.localizedDescription.UTF8String : "device command failed");
-        const double duration = command.GPUEndTime - command.GPUStartTime;
-        check(std::isfinite(duration) && duration >= 0, "invalid GPU timestamps");
+        const double begin = command.GPUStartTime, end = command.GPUEndTime;
+        const double duration = end - begin;
+        check(std::isfinite(begin) && std::isfinite(end) && begin > 0 && duration > 0,
+              "missing/nonpositive GPU timestamps; not a measured zero duration");
+        if (counter_buffer) [completed_commands addObject:@{@"start_host_seconds":@(begin), @"end_host_seconds":@(end),
+            @"duration_seconds":@(duration), @"source_kind":@"measured", @"scope":@"completed command buffer; not stage-only time"}];
         return duration;
     }
+};
+
+struct CaptureScope {
+    bool active = false;
+    void start(id<MTLDevice> device, const char* path) {
+        auto manager = [MTLCaptureManager sharedCaptureManager];
+        check([manager supportsDestination:MTLCaptureDestinationGPUTraceDocument], "GPU trace destination unavailable");
+        auto descriptor = [MTLCaptureDescriptor new];
+        descriptor.captureObject = device;
+        descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+        descriptor.outputURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
+        NSError* error = nil;
+        active = [manager startCaptureWithDescriptor:descriptor error:&error];
+        check(active, error ? error.localizedDescription.UTF8String : "capture failed");
+    }
+    void stop() { if (active) { [[MTLCaptureManager sharedCaptureManager] stopCapture]; active = false; } }
+    ~CaptureScope() { stop(); }
 };
 
 int main(int argc, const char** argv) {
     @autoreleasepool {
         try {
-            check(argc == 10, "usage: bench kernels.metal case repeats count m n k threads seed");
+            check(argc == 10 || argc == 12 || argc == 13, "usage: bench kernels.metal case repeats count m n k threads seed [diagnostic capture-path [steps]]");
             const std::string kind = argv[2];
+            const std::string diagnostic = argc >= 12 ? argv[10] : "none";
+            const int steps = argc == 13 ? std::stoi(argv[12]) : 16;
+            check(steps >= 1 && steps <= 32, "steps must be 1..32 within counter capacity");
+            check(diagnostic == "none" || diagnostic == "counter-stage" || diagnostic == "counter-dispatch" || diagnostic == "capture", "unknown diagnostic mode");
             const int repeats = std::stoi(argv[3]), count = std::stoi(argv[4]);
             const int m = std::stoi(argv[5]), n = std::stoi(argv[6]), k = std::stoi(argv[7]);
             const int threads = std::stoi(argv[8]), seed = std::stoi(argv[9]);
@@ -99,7 +219,7 @@ int main(int argc, const char** argv) {
             check(kind == "vector" || kind == "fusion" || kind == "gemm" || kind == "norm-rope" || kind == "attention" || kind == "graph" || kind == "overlap", "unknown case");
             check(kind != "attention" || (n <= 128 && k <= 32), "attention oracle caps N128/D32");
             check(kind != "norm-rope" || k % 2 == 0, "RoPE needs even head dimension");
-            auto setup = Clock::now(); Runner runtime(argv[1]);
+            auto setup = Clock::now(); Runner runtime(argv[1], diagnostic);
             size_t elements = (kind == "gemm") ? size_t(m) * n :
                               (kind == "norm-rope" || kind == "attention") ? size_t(m) * k : size_t(count);
             auto x = runtime.allocate(std::max(elements, size_t(m) * k));
@@ -109,7 +229,7 @@ int main(int argc, const char** argv) {
             auto a_out = runtime.allocate(elements), b_out = runtime.allocate(elements);
             auto event = [runtime.device newSharedEvent];
             if (kind == "overlap") check(event != nil, "shared events unavailable");
-            Params params{uint32_t(m), uint32_t(n), uint32_t(k), uint32_t(elements), .99f, .01f, 1, 16};
+            Params params{uint32_t(m), uint32_t(n), uint32_t(k), uint32_t(elements), .99f, .01f, 1, uint32_t(steps)};
             // Materialize/compile all pipelines BEFORE measured samples.
             NSArray<NSString*>* names = kind == "vector" ? @[@"vector_scalar", @"vector4"] :
                 kind == "fusion" ? @[@"scale_bias", @"silu_only", @"vector_scalar", @"fused_epilogue"] :
@@ -120,6 +240,8 @@ int main(int argc, const char** argv) {
             for (NSString* name in names) runtime.pipeline(name);
             const double setup_seconds = seconds(setup);
             NSMutableArray* samples = [NSMutableArray array];
+            NSMutableArray* warmup_samples = [NSMutableArray array];
+            CaptureScope capture;
             double maximum_error = 0;
             for (int trial = -4; trial < repeats; ++trial) {
                 const bool candidate = ((trial + 4) % 4 == 1 || (trial + 4) % 4 == 2);
@@ -132,6 +254,8 @@ int main(int argc, const char** argv) {
                 std::fill_n(yp, elements, std::numeric_limits<float>::quiet_NaN());
                 std::fill_n(yp + elements, 16, 1234567.f);
                 double gpu_seconds = 0, intersection = 0;
+                runtime.begin_diagnostic();
+                if (diagnostic == "capture" && trial == 0) capture.start(runtime.device, argv[11]);
                 const auto start = Clock::now();
                 if (kind == "overlap") {
                     auto first = [runtime.queue commandBuffer];
@@ -144,7 +268,7 @@ int main(int argc, const char** argv) {
                     [join encodeWaitForEvent:event value:value];
                     runtime.dispatch(join, @"vector_scalar", @[a_out, b_out, out], params, elements, threads);
                     [first commit]; [second commit]; [join commit];
-                    gpu_seconds = Runner::finish(first) + Runner::finish(second) + Runner::finish(join);
+                    gpu_seconds = runtime.finish(first) + runtime.finish(second) + runtime.finish(join);
                     intersection = std::max(0., std::min(first.GPUEndTime, second.GPUEndTime) -
                                                  std::max(first.GPUStartTime, second.GPUStartTime));
                 } else if (kind == "graph") {
@@ -154,10 +278,10 @@ int main(int argc, const char** argv) {
                         auto output = step == params.steps - 1 ? out : (step % 2 ? temp2 : temp);
                         auto command = candidate ? graph : [runtime.queue commandBuffer];
                         runtime.dispatch(command, @"scale_bias", @[input, b, output], params, elements, threads);
-                        if (!candidate) { [command commit]; gpu_seconds += Runner::finish(command); }
+                        if (!candidate) { [command commit]; gpu_seconds += runtime.finish(command); }
                         input = output;
                     }
-                    if (candidate) { [graph commit]; gpu_seconds = Runner::finish(graph); }
+                    if (candidate) { [graph commit]; gpu_seconds = runtime.finish(graph); }
                 } else {
                     auto command = [runtime.queue commandBuffer];
                     if (kind == "vector") runtime.dispatch(command, candidate ? @"vector4" : @"vector_scalar", @[x, b, out], params, candidate ? (elements + 3) / 4 : elements, threads);
@@ -178,9 +302,11 @@ int main(int argc, const char** argv) {
                         }
                     }
                     if (kind == "attention") runtime.dispatch(command, candidate ? @"attention_online" : @"attention_dense", @[x, b, v, out], params, m, threads);
-                    [command commit]; gpu_seconds = Runner::finish(command);
+                    [command commit]; gpu_seconds = runtime.finish(command);
                 }
                 const double wall = seconds(start);
+                id counter_diagnostic = runtime.resolve_diagnostic();
+                if (diagnostic == "capture" && trial == 0) capture.stop();
                 // Validate EVERY output and guards, OUTSIDE the timed boundary.
                 for (size_t index = 0; index < elements; ++index) {
                     double expected = 0;
@@ -221,15 +347,23 @@ int main(int argc, const char** argv) {
                     maximum_error = std::max(error, maximum_error);
                 }
                 for (size_t guard = 0; guard < 16; ++guard) check(yp[elements + guard] == 1234567.f, "output tail overwrite");
-                if (trial >= 0) [samples addObject:@{@"variant":candidate ? @"candidate" : @"baseline", @"pair":@(trial / 2),
+                NSDictionary* sample = @{@"trial":@(trial), @"warmup":@(trial < 0),
+                    @"variant":candidate ? @"candidate" : @"baseline", @"pair":@((trial + 4) / 2 - 2),
                     @"input_generation":@(input_generation), @"wall_seconds":@(wall),
-                    @"gpu_command_seconds_sum":@(gpu_seconds), @"observed_gpu_branch_timestamp_intersection_seconds":@(intersection)}];
+                    @"gpu_command_seconds_sum":@(gpu_seconds), @"counter_diagnostic":counter_diagnostic,
+                    @"observed_gpu_branch_timestamp_intersection_seconds":@(intersection)};
+                [(trial >= 0 ? samples : warmup_samples) addObject:sample];
             }
+            capture.stop();
             print_json(@{@"schema":@"turbocider-metal-teaching-lab-v1", @"case":[NSString stringWithUTF8String:kind.c_str()],
                 @"device":runtime.device.name, @"source_inputs_synthetic":@YES, @"actual_metal_dispatch":@YES,
                 @"physical_ane_placement":@"not applicable: GPU-only experiment", @"production_qualified":@NO,
+                @"diagnostic_mode":[NSString stringWithUTF8String:diagnostic.c_str()],
+                @"formal_performance_score":@(diagnostic == "none"), @"counter_capabilities":runtime.counter_capabilities,
+                @"captured_trial":diagnostic == "capture" ? @0 : (id)[NSNull null],
+                @"steps":@(steps),
                 @"setup_compile_pipeline_seconds":@(setup_seconds), @"excluded_warmup_samples":@4,
-                @"shape":@[@(m),@(n),@(k)], @"vector_count":@(count), @"threads":@(threads), @"samples":samples,
+                @"shape":@[@(m),@(n),@(k)], @"vector_count":@(count), @"threads":@(threads), @"samples":samples, @"warmup_samples":warmup_samples,
                 @"maximum_abs_error":@(maximum_error), @"all_outputs_finite":@YES, @"tail_guards_intact":@YES,
                 @"scope":@"Small actual GPU operator boundary. Host wall includes encode/submit/wait; validation/setup excluded. GPU sums are not E2E or ANE overlap evidence."});
             return 0;

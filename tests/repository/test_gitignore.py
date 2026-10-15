@@ -21,6 +21,8 @@ class GitignoreTests(unittest.TestCase):
                  "apps/macos/DerivedData/Build/temp.o", "apps/macos/tests.xcresult/Info.plist",
                  "apps/macos/release.xcarchive/Info.plist", "techniques/labs/.cache/compiled.bin",
                  "techniques/integrations/.aneforge_cache/weights.bin",
+                 "techniques/integrations/.aneforge-cache/program/weights.bin",
+                 "techniques/labs/ane/.aneforge-cache/tuning.json",
                  "techniques/integrations/CMakeFiles/cmake.check_cache",
                  "techniques/integrations/CMakeCache.txt", "techniques/integrations/cmake_install.cmake",
                  "techniques/integrations/compile_commands.json"]
@@ -50,7 +52,10 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/sources/repos/mlx-affine-dispatch.md",
                  "techniques/assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal",
                  "techniques/labs/metal/mlx_capture_probe.py",
-                 "techniques/examples/profiling-summary.json", "tests/fixtures/tiny.npy"]
+                 "techniques/examples/profiling-summary.json", "tests/fixtures/tiny.npy",
+                 "techniques/review/gpu-clock-evidence-20261016.json",
+                 "techniques/review/qwen-attention-evidence-20261016.json",
+                 "techniques/sources/official/metal-counters.md"]
         self.assertEqual(self.ignored(paths), set())
 
 

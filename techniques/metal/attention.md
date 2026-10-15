@@ -43,6 +43,18 @@ Encoder GQA 应避免不必要复制 KV heads；但必须确认 backend 支持�
 
 可探索新的fused projection/attention边界、固定tile图、不同mask/head形状、KV布局与新SDK/芯片；先构建真实smallcase并比较完整分支，不把旧H3结果扩成“所有ANE attention都不值得做”。
 
+## 2026-10-16：真实Qwen纵切与源码走查
+
+[MLX固定读本](../sources/repos/mlx-sdpa-dispatch.md)说明full/vector的head_dim、GQA、mask与copy predicates不同。full路径接受末维stride=1的interleaved V，输出又故意按token-major存储；不能把所有`row_contiguous=false`都当错误。新SDK或营销芯片名也不证明实际NAX路径，源码guard与运行binary身份分开保存。
+
+本机使用原GPU block observer的actual arguments，按同一MLX公式重放并额外导出Q/K/V/O；全block/prefix控制通过，但不是未改变compiled kernel内部的直接抓取。数据包含两seed、32 heads、D128、真实1048-row prefill/1024-row steady，没有缩小head数或重复toy行。
+
+`single-mask`、调用内`contiguous-v`、8-head chunks恢复完整原消费者后都保留数值；目前未见稳定胜过原分段/单次SDPA的收益。原样graph noop、显式准备/驻留和所有确认pair说明为什么不能晋升1–2%的表面差异。全O对BF16 replay reference误差0；FP64是选head/query、完整K/输出列的独立row见证，不是全输出FP64或请求画质。
+
+特别的反例：当前binary的全false mask行未满足本轮零输出约定；常量V=1时，D64/K29返回29/32，K32返回1。有限sentinel、tail与归一化是解释方向，不是已定位的硬件故障。需要zero语义的调用方应明确实现/验证safe-key与置零等机制，不能假设所有路径自然返回0；本轮未修改产品默认。
+
+完整[实验/失败/不确定性](../review/qwen-attention-20261016.md)与[逐样本证据](../review/qwen-attention-evidence-20261016.json)。复现入口是[attention_bench.py](../labs/metal/attention_bench.py)、[CPU独立数学](../labs/metal/attention_math.py)、[只读原始BF16 reader](../labs/metal/attention_source.py)与[empty-row探针](../labs/metal/attention_empty_probe.py)。
+
 ## 最小验收
 
 同 source 的 dense control、all-exact sparse control、真实中晚层 QKV、多 prompt/seed、完整 stage 和视频；视频 motion/temporal/身份门禁独立于 latent cosine。默认 dense，除非候选真正通过既定范围。

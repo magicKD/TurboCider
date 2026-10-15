@@ -205,6 +205,17 @@ class MetadataAndEvidence(unittest.TestCase):
         value = self.device_report(); value["tail_guards_intact"] = False
         with self.assertRaises(ValueError): summarize.summarize(value)
 
+    def test_summary_keeps_diagnostic_mode_and_refuses_changed_sources(self):
+        for mode in ("none", "counter-stage", "capture", "unknown"):
+            value = self.device_report()
+            value.update(diagnostic_mode=mode, formal_performance_score=True, source_inputs_unchanged=True)
+            result = summarize.summarize(value)
+            self.assertEqual(result["context"]["diagnostic_mode"], mode)
+            self.assertEqual(result["formal_performance_score"], mode == "none")
+        value["source_inputs_unchanged"] = False
+        with self.assertRaises(ValueError):
+            summarize.summarize(value)
+
     def test_emit_no_overwrite_and_no_nonfinite_file(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "report.json"

@@ -87,3 +87,21 @@ python3 -B techniques/scripts/run_experiment.py --timeout 120 \
 这里保留原始`[1,M,H]` BF16消费者；候选输入cast/输出restore计入wall。记录的是host-until-output-ready，不是GPU逐kernel时间；本轮没有物理counter。缓存的setup与resident bytes单列，源码每run快照并结束校验，超时只停止owned进程组。
 
 [affine_decode_probe.py](metal/affine_decode_probe.py)实际检查四个strided operands及decode precision；[ggml_dequant_probe.py](metal/ggml_dequant_probe.py)执行有许可的选定上游模板体。它们是显式诊断，不自动生成模型资格。完整[本机结果与全部失败/确认记录](../review/gpu-affine-20261016.md)说明为什么原型更大tile、cache约4%和格式压缩都不能直接替换原始GPU。
+
+## 7. 原始attention replay、layout与mask合同
+
+[attention_bench.py](metal/attention_bench.py)用同一完整BF16输入比较product-style segment/single SDPA与single-mask、调用内V contiguous、head-chunks。`--capture-root`只读明确的[有界原配方replay](../integrations/README.md)，不导入产品、下载或重建模型。
+
+```sh
+.venv/bin/python -B techniques/labs/metal/attention_bench.py \
+  --capture-root "$TC_ATTENTION_CAPTURE" --phase prefill --candidate single-mask \
+  --output-dir outputs/my-new-attention-comparison
+.venv/bin/python -B techniques/labs/metal/attention_bench.py \
+  --control causal-offset --candidate contiguous-v --output-dir outputs/my-new-sdpa-control
+.venv/bin/python -B techniques/labs/metal/attention_empty_probe.py \
+  --output-dir outputs/my-new-empty-row-diagnostic
+```
+
+所有GPU实验串行。恢复保存的replay stride并实际GPU见证，不把序列化contiguous文件当原layout；mask准备和逻辑bytes另列，转换/restore/join计入wall。full reference与独立CPU row gate失败不给ratio；empty probe return0仅表示采集，zero gate可以全false。
+
+`mlx:attention-replay`是本显式设备入口，不由CPU `all`或查询执行。[21个对照、noop和新seed确认](../review/qwen-attention-20261016.md)目前没有产品晋升；[源码卡](../sources/repos/mlx-sdpa-dispatch.md)记录版本与未覆盖的head/mask/长序列范围。

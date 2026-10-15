@@ -48,14 +48,23 @@
     },
     {
       "chapter": "metal/attention.md",
+      "source_ids": ["upstream-mlx-sdpa"],
+      "evidence_ids": ["qwen-attention-20261016", "qwen-attention-data-20261016"],
       "cases": [
         "online-attention",
-        "metal:attention"
+        "metal:attention",
+        "mlx:attention-replay"
       ],
       "code": [
         "labs/operators.py",
-        "labs/metal/kernels.metal"
+        "labs/metal/kernels.metal",
+        "labs/metal/attention_bench.py",
+        "labs/metal/attention_math.py",
+        "labs/metal/attention_source.py",
+        "labs/metal/attention_empty_probe.py",
+        "scripts/curate_attention_campaign.py"
       ],
+      "integration_code": ["integrations/capture_qwen_attention.py", "integrations/capture_qwen_attention.cpp"],
       "controls": [
         "dense/online exact masks",
         "structured sparse error and empty-mask CPU control"
@@ -492,9 +501,45 @@
       "revisit_when": "new timestamp source, boundary, sample plan or energy instrumentation"
     },
     {
+      "chapter": "profiling/timestamp-calibration.md",
+      "source_ids": ["official-metal-counters"],
+      "evidence_ids": ["gpu-clock-and-qwen-20261016", "gpu-clock-data-20261016"],
+      "cases": ["metal:counter-stage", "metal:gemm", "metal:graph"],
+      "code": ["labs/metal/bench.mm", "labs/metal/run.py", "scripts/calibrate_metal_timestamps.py"],
+      "controls": ["measured ns and Mach reference hypotheses, not integer-name assumptions", "same-trial immutable windows; reject valid units with wrong command association"],
+      "revisit_when": "new SoC/OS/timebase, clock drift, reference brackets, collector ownership or sampling point changes"
+    },
+    {
+      "chapter": "profiling/mlx-boundaries.md",
+      "source_ids": ["upstream-mlx-affine", "official-metal-counters"],
+      "evidence_ids": ["gpu-clock-and-qwen-20261016", "qwen-bf16-profile-data-20261016"],
+      "cases": ["mlx:bf16-ffn-profile"],
+      "code": ["labs/metal/qwen_ffn_profile.py", "labs/metal/real_bf16_source.py", "scripts/curate_qwen_profile.py", "scripts/host_trace.py"],
+      "controls": ["original BF16 checkpoint/capture identity and consumer ABI, independent sampled FP64", "compiled output-ready and deliberately drained staged host events cannot share a performance denominator"],
+      "revisit_when": "graph/compiler/precision/source/LoRA/layout, point/layer or complete request boundary changes"
+    },
+    {
+      "chapter": "profiling/trace-normalization.md",
+      "source_ids": ["upstream-gputrace", "official-metal-counters"],
+      "evidence_ids": ["gpu-profiling-20261016", "gpu-profiling-data-20261016"],
+      "cases": ["reference:lab-summary", "metal:gemm"],
+      "code": ["scripts/normalize_gputrace.py", "scripts/curate_profiling_campaign.py", "labs/summarize.py"],
+      "controls": ["heuristic or synthetic source cannot become measured via a false marker", "missing/zero data is null, not physical zero GPU time"],
+      "revisit_when": "new parser commit, validated streamData, clock/endpoint calibration or capture format"
+    },
+    {
+      "chapter": "profiling/gpu-timeline-and-counters.md",
+      "source_ids": ["official-metal-counters", "upstream-gputrace", "upstream-mlx-affine"],
+      "evidence_ids": ["gpu-profiling-20261016", "gpu-profiling-data-20261016"],
+      "cases": ["metal:gemm", "metal:vector", "metal:graph"],
+      "code": ["labs/metal/run.py", "labs/metal/bench.mm", "labs/metal/kernels.metal", "labs/metal/mlx_capture_probe.py"],
+      "controls": ["unprofiled operator timing separated from capture and counter diagnostics", "query actual sets and sample points; sentinel/unsupported is never silently zero or fallback"],
+      "revisit_when": "timestamp unit calibration, counter availability, OS/SKU or complete model-consumer association changes"
+    },
+    {
       "chapter": "profiling/tools.md",
-      "evidence_ids": ["qwen-ffn-tiling-20261015"],
-      "source_ids": ["upstream-coreml-plan", "upstream-anemll-profile"],
+      "evidence_ids": ["qwen-ffn-tiling-20261015", "gpu-profiling-20261016"],
+      "source_ids": ["upstream-coreml-plan", "upstream-anemll-profile", "upstream-gputrace", "official-metal-counters"],
       "cases": [
         "reference:lab-summary",
         "metal:graph",
@@ -505,7 +550,10 @@
         "labs/metal/run.py",
         "labs/ane/bench.py",
         "labs/ane/compute_plan.py",
-        "labs/metal/mlx_capture_probe.py"
+        "labs/metal/mlx_capture_probe.py",
+        "labs/metal/bench.mm",
+        "scripts/normalize_gputrace.py",
+        "scripts/curate_profiling_campaign.py"
       ],
       "controls": [
         "actual calls vs unsupported/no-device",
