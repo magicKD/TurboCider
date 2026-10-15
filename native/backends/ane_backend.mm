@@ -16,8 +16,10 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
                                     GraphGeometry expected, BackendPolicy policy,
                                     std::optional<int> calibrated_channels,std::optional<int> channel_override,
-                                    std::optional<int> bucket_override) {
+                                    std::optional<int> bucket_override, int fixed_bucket_rows) {
     BuiltExecutor result;
+    if(bucket_override && (fixed_bucket_rows || configured_request_rows()))
+        throw std::runtime_error("Private bucket modes are mutually exclusive");
     if(bucket_override && (*bucket_override<32 || *bucket_override>8192 || *bucket_override%32 ||
             policy.preferred!=BackendPreference::Private || !policy.allow_private || expected.kind!=Kind::SwiGLU || calibrated_channels))
         throw std::runtime_error("Private bucket override requires rows32..8192 aligned32, explicit authorized SwiGLU and no calibration");
@@ -47,22 +49,45 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
     if(bucket_override && channels<=0)throw std::runtime_error("Private bucket override requires fixed positive intermediate channels");
     if (channels && !try_private) throw std::runtime_error("channel split requires an authorized private W8A8 backend");
     if(runtime_template_w8a8(manifest)) {
+        if(fixed_bucket_rows)throw std::runtime_error("Public W8A8 template does not support a private fixed bucket override");
         if(policy.preferred!=BackendPreference::Public || channels || fp16_values || bf16_boundaries || requested_group)
             throw std::runtime_error("Public W8A8 template requires Public policy and its explicit row/basis ABI");
         result.executor=std::make_unique<PublicW8Graph>(manifest,budget,expected);
         return result;
     }
+    auto descriptor = runtime_template_descriptor(manifest);
+    if (!descriptor.has_public_artifact() && policy.preferred == BackendPreference::Public)
+        throw std::runtime_error("private runtime ANE shape descriptor requires a private backend; it has no Public Core ML artifact");
+    // Both descriptor types validate the complete model before any capability
+    // fallback or smaller channel split. A malformed config must not be hidden.
+    auto shape = descriptor.shape;
+    if (shape.kind != expected.kind || shape.hidden != expected.hidden || shape.width != expected.width ||
+        (expected.require_lora_inputs && !shape.lora_inputs))
+        throw std::runtime_error("runtime ANE graph does not match model FFN geometry");
+    if(fixed_bucket_rows) {
+        if(!try_private || descriptor.has_public_artifact() || channels<=0 || configured_request_rows() ||
+                fixed_bucket_rows<512 || fixed_bucket_rows>2048 || fixed_bucket_rows%128)
+            throw std::runtime_error("fixed bucket override requires Private channels, descriptor rows and bounded128 geometry");
+        shape.rows=fixed_bucket_rows;
+    }
+    if (configured_request_rows()) {
+        if (!try_private || descriptor.has_public_artifact() || channels <= 0)
+            throw std::runtime_error("request rows require Private channel splitting and a shape-only descriptor");
+        shape.rows = private_request_bucket(expected.request_rows);
+    }
     if (try_private) {
         // Malformed manifests/geometries remain configuration failures, not
         // capability fallback. Only the native graph consumes this shape.
-        auto shape = runtime_template_shape(manifest);
-        if (shape.kind != expected.kind || shape.hidden != expected.hidden || shape.width != expected.width ||
-            (expected.require_lora_inputs && !shape.lora_inputs))
-            throw std::runtime_error("runtime ANE graph does not match model FFN geometry");
         if(bucket_override)shape.rows=*bucket_override;
         if (calibrated_channels && channels == 0) {
             result.fallback_reason = "native channel calibration selected optimized GPU-only";
             return result;
+        }
+        [[maybe_unused]] std::filesystem::path private_cache;
+        if (const char *raw = std::getenv("TURBOCIDER_PRIVATE_ANE_CACHE_DIR")) {
+            private_cache = raw;
+            if (private_cache.empty() || !private_cache.is_absolute() || private_cache.native().size() > 4096)
+                throw std::runtime_error("TURBOCIDER_PRIVATE_ANE_CACHE_DIR requires a bounded absolute directory path");
         }
         try {
 #ifdef TURBOCIDER_ENABLE_PRIVATE_ANE
@@ -76,8 +101,8 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
             if (channels) shape.width = channels; // base template still validated against the FULL model
             if (calibrated_channels) shape.lora_inputs = expected.require_lora_inputs;
             std::unique_ptr<Executor> graph = path != "fp16" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,
-                std::filesystem::path{},path=="convrot_w8a8"?W8Basis::ComfyH256:W8Basis::SylvesterDH)) :
-                std::unique_ptr<Executor>(std::make_unique<PrivateGraph>(shape,budget));
+                private_cache,path=="convrot_w8a8"?W8Basis::ComfyH256:W8Basis::SylvesterDH)) :
+                std::unique_ptr<Executor>(std::make_unique<PrivateGraph>(shape,budget,private_cache));
             std::string error;
             const auto start = std::chrono::steady_clock::now();
             if (!graph->self_test(error)) throw CapabilityError("private ANE self-test failed: " + error);
@@ -93,6 +118,11 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
             if (policy.preferred == BackendPreference::Private) throw;
             result.fallback_reason = error.what();
         }
+    }
+    if (!descriptor.has_public_artifact()) {
+        if (!result.fallback_reason.empty()) result.fallback_reason += "; ";
+        result.fallback_reason += "private runtime ANE shape descriptor has no Public Core ML artifact; using GPU";
+        return result;
     }
     result.executor = std::make_unique<RuntimeGraph>(manifest, budget, false, false, expected);
     return result;

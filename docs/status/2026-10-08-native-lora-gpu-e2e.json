@@ -1,0 +1,52 @@
+{
+  "schema": "native-lora-gpu-e2e-status-v1",
+  "date": "2026-10-08",
+  "runtime_build_id": "tc-runtime-build-v1-6d914980eefe568b7acc3c919a50e145b14b35d35e44c6482b7b305488841748",
+  "machine": "M4 Pro / 48 GiB",
+  "branch": "dev-verify",
+  "analysis": "outputs/native-lora-e2e-20261008/analysis.json",
+  "verification": "outputs/native-lora-e2e-20261008/verification.json",
+  "cleanup": "outputs/native-lora-e2e-20261008/owned-cleanup.json",
+  "comparison": {
+    "request_delta_seconds": 4.497818541999997,
+    "request_slowdown_percent": 21.480608867779203,
+    "denoise_delta_seconds": 3.3479652080000015,
+    "denoise_slowdown_percent": 23.41305311971582,
+    "native_prepare_fraction_of_request_delta": 0.2882160235889749,
+    "mean_steady_progress_slowdown_percent": 16.61906198341132
+  },
+  "actual_native_lora": {
+    "adapter_count": 1,
+    "adapter_revision": "5107af3bb42a4b9aceb9283d39cbb3cc4d2658fcf7d8e8914314f993300eca9f",
+    "adapter_sha256": "bafb91d0047df3f9b8a5a850b0c967f051164314d8aad778dfa34d9c24ec345b",
+    "completed": true,
+    "completed_steps": 6,
+    "enabled": true,
+    "logical_projections": 227,
+    "max_rank": 128,
+    "ordered_terms": 227,
+    "precision_recipe": "runtime-lora-tiled8x32-fp32-fma-low-fp32-scaled-ordered-bf16-bias-last-v1",
+    "resolved_bindings": 195,
+    "schema_version": 1,
+    "scratch_bytes": 52047872,
+    "source_generation": 3,
+    "source_kind": "verified-held-fd",
+    "source_strength": 1,
+    "variant": "viggle-r128-6step",
+    "verified_artifact_digest": "d2ba4f7b04f3025b1c04b7a13825267f5f581f7c5616c36e23ba688b95378c80"
+  },
+  "qualification": {
+    "functional_candidate": "explicit experimental GPU Viggle r128 strength1/6step/512/no refs",
+    "performance_qualified": false,
+    "auto_enabled": false,
+    "app_changed": false,
+    "hybrid_lora_validated": false,
+    "conclusion": "complete runtime LoRA route passes this pair; native is slower, no speedup claim"
+  },
+  "models_generated": 2,
+  "pairs": 1,
+  "downloads": 0,
+  "checkpoint_copies": 0,
+  "owned_removed_count": 238,
+  "owned_removed_bytes": 20427792
+}

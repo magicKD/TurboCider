@@ -44,6 +44,16 @@ import Foundation
         try check(image.inputs?.first?.role == "source" && image.inputs?.first?.kind == "image", "image source role/kind mismatch")
         let imageV2 = NativeRequestV2(legacy: image)
         try check(imageV2.outputs[0].kind == "image", "schema-2 image output kind mismatch")
+        let imageHistory = NativeJob(id: UUID(), createdAt: Date(), request: image,
+            state: "succeeded", phase: "complete", completed: 1, total: 1, elapsed: 1,
+            modelPath: root.path)
+        let historyStudio = StudioState(directory: root.appendingPathComponent("history-reuse"))
+        historyStudio.reuse(imageHistory)
+        try check(historyStudio.draft.modelID == model.id && historyStudio.draft.operation == "image.upscale" &&
+                  historyStudio.draft.activeAssets.first?.mediaKind == "image",
+                  "SeedVR2 history was mistaken for the auxiliary Real-ESRGAN upscaler")
+        try check(imageHistory.routeSummary == nil,
+                  "SeedVR2 history fabricated an auxiliary Core ML x4 execution label")
         for policy in ["resident", "component_staged"] {
             studio.draft.residency = policy
             let intent = try studio.draft.request(output: root.appendingPathComponent("residency-\(policy).png"))
@@ -127,6 +137,14 @@ import Foundation
                   "source frame count/FPS were not applied to the draft")
         try check(video.inputs?.first?.kind == "video" && video.inputs?.first?.role == "source", "video source role/kind mismatch")
         try check(NativeRequestV2(legacy: video).outputs[0].kind == "video", "schema-2 video output kind mismatch")
+        let videoHistory = NativeJob(id: UUID(), createdAt: Date(), request: video,
+            state: "succeeded", phase: "complete", completed: 1, total: 1, elapsed: 1,
+            modelPath: root.path)
+        historyStudio.reuse(videoHistory)
+        try check(historyStudio.draft.activeAssets.first?.mediaKind == "video" &&
+                  historyStudio.draft.activeAssets.first?.frames == video.frames &&
+                  historyStudio.draft.activeAssets.first?.fps == video.fps,
+                  "old/API video history lost its source kind/frame/FPS metadata during reuse")
         let source = studio.draft.activeAssets[0]
         try check(FileManager.default.fileExists(atPath: source.path) && source.width == 512 && source.height == 512,
                   "video source was not staged with oriented dimensions")

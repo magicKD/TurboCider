@@ -24,6 +24,7 @@ class PrivateW8Graph final : public Executor {
     WeightCacheStats weight_cache_stats() const override;
     WeightCodeCacheReport weight_code_cache_stats() const override;
     StagePipelineStats stage_pipeline_stats() const override;
+    A8SinglePassStats activation_stage_stats() const override;
     bool device_submission_fence_enabled() const override;
     bool activation_lookahead_enabled() const override;
     void stage_weights(std::vector<WeightView>) override;

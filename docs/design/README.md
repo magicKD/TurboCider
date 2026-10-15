@@ -1,5 +1,30 @@
 # TurboCider 设计文档
 
+2026-10-08：[Native encoder 与无 KV 编辑首步 ANE](qwen-image-gpu-ane-command-graph/23-native-encoder-prefill-ane.md)补上共享行适配、Session预热、物理完成后复用和提交后的下一层源准备；仍是W1实验路径。
+
+2026-10-08：[Qwen Image GPU / ANE Command Graph 改造设计](qwen-image-gpu-ane-command-graph/README.md)。
+A 路线保留 MLX 并验证事件适配；N 路线是独立的 Splash 风格 Native Metal Graph 后端，
+自己编码完整 DiT／Euler，管理 command buffers、实际资源和 GPU／ANE 交接。
+[后端定位与 MLX 能力边界](qwen-image-gpu-ane-command-graph/10-native-metal-graph-backend.md)说明两路线；
+[完整后端规格](qwen-image-gpu-ane-command-graph/16-splash-native-backend-spec.md)对照 Splash 全部 runtime 层，
+细化可信算子、graph lowering、buffer liveness、有界 segment、完成证据和两个 block 的 W2 方案。
+先 Base、再 LoRA；复用 vpipe 的批处理／residency 思路及本地模型、source、内存合同，不另建模型库或账本。
+
+当前 Native Base／private W1S 已有一组完整请求记录，见
+[Base E2E](../status/2026-10-08-native-register-w1-base-e2e.md)；GPU LoRA 全目标接入与
+后续 hybrid ABI 见 [17](qwen-image-gpu-ane-command-graph/17-native-lora-integration.md)。
+新 SGMMA 的[组件筛选](../status/2026-10-08-native-lora-sgmma-screen.md)和
+[六步整图配对](../status/2026-10-08-native-lora-sgmma-e2e.md)分别记录：单层有收益，但整图仍比 MLX 慢。
+当前[LoRA hybrid 基础实现](../status/2026-10-08-native-lora-foundation.md)已补齐 Spec／MIL emitter 与 validated low 拆分，
+CPU 和 tiny 共享 low 检查通过；真实暖机对照受内存预算保护提前结束，stages／controller 尚未接通。
+新增[Edit encoder GPU 融合实现](qwen-image-gpu-ane-command-graph/18-edit-encoder-acceleration.md)：真实1–3图1024 reference计算有收益，512 reference整图encoder没有明显收益；[本轮证据](../status/2026-10-08-qwen-edit-encoder.md)明确质量／性能范围。
+第一版[Edit encoder ANE runtime](qwen-image-gpu-ane-command-graph/19-edit-encoder-ane-runtime.md)参考Splash当前HEAD，复用私有W8A8语言FFN通道executor；单层有收益，但完整encoder慢10.03%、conditioning未过5%线，见[历史状态](../status/2026-10-08-qwen-ane-encoder.md)。
+前轮[encoder runtime继续优化](qwen-image-gpu-ane-command-graph/20-encoder-runtime-optimization.md)加入BF16 MPP partial／dynamic compiled复用，完整encoder少3.93%、语言少10.09%；新旧hybrid输出一致，8%数值筛选通过，完整性能未达5%筛选，见[状态](../status/2026-10-08-qwen-encoder-followup.md)。
+最新[encoder调度与校准](qwen-image-gpu-ane-command-graph/21-encoder-scheduling-and-calibration.md)补齐1152/1664分区、Session准备复用、提交当前GPU后的下一层预取和36层S1校准；三图完整encoder省时8.85%，准备复用后11.01%，误差仍5.754%，保持诊断和GPU默认，见[新状态](../status/2026-10-08-qwen-encoder-scheduling.md)。
+新增[完整Native Metal编辑encoder](qwen-image-gpu-ane-command-graph/22-native-edit-encoder.md)完成视觉27层＋语言36层和单图实验：
+独立FP32 encoder省时24.93%，实际六步编辑encoder省时7.49%、整图少1.59%，见[状态](../status/2026-10-08-qwen-native-encoder.md)。
+保持显式GPU实验与MLX默认，Native encoder ANE/W2、统一IR、内存档位和App UI继续独立验收；设计伪代码不当作实际API或性能证据。
+
 2026-09-30：受限内存下的 encoder/DiT GGUF Q4–Q8、默认提前1层/可扩至2层的有限解码、
 ConvRot优化、M5 GPU W8A8及静态/runtime ANE设计，见
 [量化执行设计目录](quantized-execution/README.md)。该目录区分设计、现有能力和

@@ -56,7 +56,9 @@ inline NSDictionary *validate_input(id input) {
         [input[@"request_digest"] isEqual:request_digest(request)],"worker_request_digest_mismatch");
     return input;
 }
-inline NSDictionary *read_input(const char *path) {
+// Shared bounded, non-following reader. Each command applies its own validator;
+// this does not broaden the public streaming worker's request authority.
+inline id read_input_object(const char *path) {
     int fd=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK);
     require(fd>=0,"worker_input_open_failed");
     struct Close { int fd; ~Close(){close(fd);} } close_fd{fd};
@@ -72,8 +74,9 @@ inline NSDictionary *read_input(const char *path) {
     require(fstat(fd,&after)==0 && before.st_size==after.st_size &&
         before.st_mtimespec.tv_sec==after.st_mtimespec.tv_sec && before.st_mtimespec.tv_nsec==after.st_mtimespec.tv_nsec &&
         before.st_ctimespec.tv_sec==after.st_ctimespec.tv_sec && before.st_ctimespec.tv_nsec==after.st_ctimespec.tv_nsec,"worker_input_changed");
-    return validate_input([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
+    return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 }
+inline NSDictionary *read_input(const char *path) {return validate_input(read_input_object(path));}
 inline NSMutableDictionary *terminal(NSDictionary *input, const char *runtime) {
     return [@{@"protocol_version":@1,@"job_id":input[@"job_id"],@"request_id":input[@"request_id"],
         @"request_digest":input[@"request_digest"],@"status":@"error",@"actual_container":@"cli_worker",

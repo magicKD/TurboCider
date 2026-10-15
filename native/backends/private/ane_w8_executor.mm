@@ -3,6 +3,7 @@
 #include "ane_mil.hpp"
 #include "../ane_memory.hpp"
 #include "../ane_w8a8_math.hpp"
+#include "../ane_w8_stage.hpp"
 #include "../ane_backend.hpp"
 #include "../ane_weight_identity.hpp"
 #import <Foundation/Foundation.h>
@@ -70,6 +71,9 @@ struct PrivateW8Graph::Impl {
     // Exactly two source-independent banks, reused across every layer/step.
     struct Bank {
         Surface g, sg, u, su, d, sd;
+        // Exactly the S1 that produced this bank's gate/up codes, retained
+        // through every A8 launch, including future-bank activation.
+        std::optional<DeviceMatrixView> input_column_scale;
         std::array<Surface,6> bound;
         bool ready = false;
         Bank(private_api::Device &dev, const GraphShape &s) : g(dev,s.width,s.hidden,Element::I8), sg(dev,s.width,1,Element::FP16),
@@ -121,18 +125,19 @@ struct PrivateW8Graph::Impl {
             gsel.basis==basis && usel.basis==basis && dsel.basis==basis &&
             gsel.activation_group_size==0 && usel.activation_group_size==0 && dsel.activation_group_size==0,
             "W8 source projection selection/recipe mismatch");
-        auto &b = *banks[target]; b.ready = false;
-        // Reset ONLY this retired execution slot to its original writable
-        // scratch. A cached binding is immutable and must never be refilled.
+        w8_stage::validate_swiglu_column_scales(weights, s.hidden);
+        auto &b = *banks[target]; b.ready = false; b.input_column_scale.reset();
         b.bound={b.g,b.sg,b.u,b.su,b.d,b.sd};
-        std::array<std::optional<private_api::QuantStage>,3> producers;
+        std::array<std::optional<private_api::QuantStage>, 3> producers;
+        // A later binding/submission can throw after an earlier producer was
+        // committed. Drain those tickets before this bank can be reused.
         struct ProducerDrain {
             decltype(producers) &tickets;
             std::atomic<bool> &disabled;
             ~ProducerDrain() {
-                for(auto &ticket:tickets)if(ticket) {
-                    try {if(ticket->finish().timed_out)disabled=true;}
-                    catch(...) {disabled=true;}
+                for (auto &ticket : tickets) if (ticket) {
+                    try { if (ticket->finish().timed_out) disabled = true; }
+                    catch (...) { disabled = true; }
                 }
             }
         } drain{producers,disabled};
@@ -141,11 +146,17 @@ struct PrivateW8Graph::Impl {
         producers[2]=device.bind_w8(weights[2].source,dsel,b.bound[4],b.bound[5]);
         // Wait ALL producers even on the first failure; source owners and slot
         // leases must not be released while another GPU encoder still uses them.
-        const auto gr = producers[0]->finish(), ur = producers[1]->finish(), dr = producers[2]->finish();
-        if(gr.timed_out || ur.timed_out || dr.timed_out)disabled=true;
-        for(auto &producer:producers)producer.reset(); // callbacks retain timed-out GPU resources
-        check(gr.ok && ur.ok && dr.ok, "W8 GPU weight staging failed");
-        b.ready = true;
+        std::array<private_api::Completion, 3> completed;
+        for (size_t i = 0; i < producers.size(); ++i) {
+            completed[i] = producers[i]->finish();
+            if (completed[i].timed_out) disabled = true;
+            // On timeout the command's completion owns its resources; the
+            // disabled bank cannot be reused. Do not wait a second deadline.
+            producers[i].reset();
+        }
+        for (const auto &completion : completed) if (!completion.ok)
+            throw CapabilityError("W8 GPU weight staging failed: " + completion.error);
+        b.input_column_scale = gsel.column_scale; b.ready = true;
     }
     void stage(std::vector<DeviceWeightRegion> weights) {
         const int next=current<0?0:current^1;
@@ -167,6 +178,9 @@ struct PrivateW8Graph::Impl {
             adapter->gate.buffer != output.buffer && adapter->up.buffer != output.buffer)), "W8 source/output aliases");
         if (s.lora_inputs && !adapter) for (auto *slot : {dg.get(),du.get()}) std::memset(slot->data(),0,slot->rows()*slot->pitch());
         auto &b = *banks[current];
+        check(!b.input_column_scale || (b.input_column_scale->buffer != input.buffer && b.input_column_scale->buffer != output.buffer &&
+            (!adapter || (b.input_column_scale->buffer != adapter->gate.buffer && b.input_column_scale->buffer != adapter->up.buffer &&
+                          b.input_column_scale->buffer != adapter->hidden.buffer))), "W8 S1 aliases launch input/output/correction");
         std::array<std::optional<private_api::QuantStage>, 2> activations;
         // Drain every submitted producer even on cancellation, a late input
         // failure, or a failed ANE/epilogue. Never allow recovery to overwrite
@@ -184,9 +198,12 @@ struct PrivateW8Graph::Impl {
         } drain{activations, disabled};
         auto stage_activation = [&](int row, int slot) {
             DeviceWeightView activation{input.buffer,input.buffer_bytes,input.offset_bytes + size_t(row)*(input.row_stride_bytes ? input.row_stride_bytes : size_t(s.hidden)*(input.dtype==DType::FP32?4:2)),
-                input.row_stride_bytes,s.rows,s.hidden,DeviceWeightEncoding::Dense,input.dtype,32,{}, {},input.owner};
+                input.row_stride_bytes,s.rows,s.hidden,DeviceWeightEncoding::Dense,input.dtype,32,{}, {},input.owner,input.allocation_identity};
             const bool comfy=basis==W8Basis::ComfyH256;
-            activations[slot] = device.stage_w8(activation,{0,s.rows,0,s.hidden,comfy?256:128,comfy?0u:20260930u,true,basis,activation_group_size},*x[slot],*tx[slot]);
+            W8StageSpec selection{0,s.rows,0,s.hidden,comfy?256:128,comfy?0u:20260930u,true,basis,activation_group_size};
+            selection.column_scale = b.input_column_scale;
+            selection.inverse_column_scale = b.input_column_scale.has_value();
+            activations[slot] = device.stage_w8(activation,std::move(selection),*x[slot],*tx[slot]);
         };
         for (int row = 0; row < input.rows; row += s.rows) {
             const int slot = a8_lookahead ? (row / s.rows) % 2 : 0;
@@ -313,6 +330,7 @@ std::string PrivateW8Graph::weight_recipe() const {
 std::string PrivateW8Graph::data_path() const{return impl_->basis==W8Basis::ComfyH256?"w8a8_convrot":"w8a8_hadamard";}
 WeightCacheStats PrivateW8Graph::weight_cache_stats() const{return impl_->device.scale_cache_stats();}
 StagePipelineStats PrivateW8Graph::stage_pipeline_stats() const{return impl_->device.stage_pipeline_stats();}
+A8SinglePassStats PrivateW8Graph::activation_stage_stats() const{return impl_->device.a8_single_pass_stats();}
 WeightCodeCacheReport PrivateW8Graph::weight_code_cache_stats() const{return impl_->device.weight_code_cache_stats();}
 bool PrivateW8Graph::device_submission_fence_enabled() const{return impl_->launch_fence;}
 bool PrivateW8Graph::activation_lookahead_enabled() const{return impl_->a8_lookahead;}
@@ -336,7 +354,7 @@ void PrivateW8Graph::stage_device_weights(std::vector<DeviceWeightView> sources)
 void PrivateW8Graph::stage_device_weight_regions(std::vector<DeviceWeightRegion> sources){
     discard_prefetched_weights();
     auto &p=*impl_;p.worker.join();check(p.verified&&!p.disabled,"W8 self-test required/executor disabled");p.result={};
-    if(p.current>=0)p.banks[p.current]->ready=false;
+    if(p.current>=0) {p.banks[p.current]->ready=false;p.banks[p.current]->input_column_scale.reset();}
     p.worker.submit([&p,sources=std::move(sources)]{auto start=Clock::now();try{p.stage(sources);p.result.ok=true;}catch(const std::exception&e){p.result.error=e.what();}p.result.stage_seconds=elapsed(start);});
 }
 void PrivateW8Graph::prefetch_device_weight_regions(std::vector<DeviceWeightRegion> sources) {
@@ -354,10 +372,10 @@ void PrivateW8Graph::prefetch_device_weight_regions(std::vector<DeviceWeightRegi
 std::optional<RunResult> PrivateW8Graph::activate_prefetched_weights(std::span<const DeviceWeightRegion> expected) {
     auto &p=*impl_;
     if(!p.future_pending || expected.size()!=p.future_sources.size() ||
-       !std::equal(expected.begin(),expected.end(),p.future_sources.begin(),same_weight_region))return std::nullopt;
+       !std::equal(expected.begin(),expected.end(),p.future_sources.begin(),w8_stage::same_region))return std::nullopt;
     // Both reuse fences: current ANE/epilogue consumer and future GPU producer.
     p.worker.join();p.staging_worker.join();
-    if(p.current>=0)p.banks[p.current]->ready=false;
+    if(p.current>=0) {p.banks[p.current]->ready=false;p.banks[p.current]->input_column_scale.reset();}
     p.result=p.future_result;
     if(p.result.ok)p.current=p.future_bank;else p.current=-1;
     p.future_pending=false;p.future_bank=-1;p.future_sources.clear();
@@ -367,7 +385,8 @@ void PrivateW8Graph::discard_prefetched_weights() {
     auto &p=*impl_;
     if(!p.future_pending)return;
     p.staging_worker.join();
-    p.banks[p.future_bank]->ready=false;p.future_pending=false;p.future_bank=-1;p.future_sources.clear();
+    p.banks[p.future_bank]->ready=false;p.banks[p.future_bank]->input_column_scale.reset();
+    p.future_pending=false;p.future_bank=-1;p.future_sources.clear();
 }
 RunResult PrivateW8Graph::wait_stage(){return finish();}
 void PrivateW8Graph::launch_device(DeviceMatrixView input,DeviceMatrixView output,std::optional<DeviceAdapterInput> adapter){
@@ -443,7 +462,7 @@ bool PrivateW8Graph::self_test(std::string &error){
                 diff+=double(actual-expected)*(actual-expected);norm+=double(expected)*expected;}
             check(norm>0&&std::sqrt(diff/norm)<.05,"W8 numerical/weight-switch self-test failed");
         }
-        p.verified=true;for(auto&b:p.banks)b->ready=false;p.current=-1;p.result={};
+        p.verified=true;for(auto&b:p.banks){b->ready=false;b->input_column_scale.reset();}p.current=-1;p.result={};
     });
     try{p.worker.join();error.clear();return true;}catch(const std::exception&e){error=e.what();return false;}
 }

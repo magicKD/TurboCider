@@ -5,6 +5,23 @@
 当前实现层次、整理范围和已验收/未验收边界见
 [2026-09-30 代码与进度](runtime-ane-current-2026-09-30.md)。
 
+2026-10-01 笔记本接续：用户重新授权测试后，已交付 `0f8dfa7` App。
+[本机验收](2026-10-01-resumed-validation.md)包含 FFN 失败回收、微型动态
+INT8/Hadamard 数值和设备计划检查；[参考编码与工作流验收](2026-10-01-qwen-reference-encoding.md)
+包含实际 App 换装和公开三参考图路径。M4 Pro / 48 GiB 的单次冷编辑中，
+可选 ref512 为 25.16 s，标准 ref1024 为 37.28 s；该近似会改变纹理，
+严格 MAE 门槛未通过，默认仍为 1024。动态 INT8 候选没有证明提速，未接入 App。
+最终[笔记本验收与决策](2026-10-01-runtime-ane-decision.md)补齐人物一致性模板、
+QKV 失败回收/取消复用检查，并区分私有临时图与 Core ML 系统缓存的生命周期。
+下面的 M4 Max 历史性能结果不构成当前笔记本的 ANE 加速证明。
+
+后续[完整动态 SwiGLU](2026-10-01-app-refresh-and-swiglu.md)和
+[GPU 三路对照](2026-10-01-cancellable-import-and-gpu-int8.md)已完成隔离数值验证。
+中等尺寸 Core ML Q/DQ 没有有效提速证据；普通 GPU 整数 ALU 路线约慢于
+匹配 FP16 对照 3.10 倍，均不接入产品开关。当前参考缩放与 Playground
+功能已交付到实际打开的 `67563e8` App；`d572abe` 导入取消修复包的真实
+替换与 UI 点验因 Mac 锁屏待完成。编译成功不代表已更新运行中的 App。
+
 使用入口：[请求模板与选路](../../examples/requests/README.md)；
 维护入口：[原生后端](../../native/backends/README.md)、
 [验证工具](../../tools/validation/README.md)。最快base与可复用LoRA图是两种

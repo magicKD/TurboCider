@@ -7,6 +7,11 @@ if [[ -z "${DEVELOPER_DIR:-}" ]]; then
  fi
 fi
 source tools/native/dependencies.sh
+PACKAGE_ONLY="${TURBOCIDER_BUILD_PACKAGE_ONLY:-0}"
+case "$PACKAGE_ONLY" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_PACKAGE_ONLY must be 0 or 1\n' >&2; exit 2 ;;
+esac
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
 PRIVATE_ANE="${TURBOCIDER_ENABLE_PRIVATE_ANE:-0}"
 VAE_CAUSAL_EXPERIMENT="${TURBOCIDER_BUILD_VAE_CAUSAL_EXPERIMENT:-0}"
@@ -93,6 +98,9 @@ bundled_streaming_catalog() {
   --output "$BUILD_IDENTITY_DIR" "$@"
 }
 bundled_streaming_catalog
+"$BUILD_IDENTITY_PYTHON" tools/native/generate_image_workflow_catalog.py \
+ --input native/workflows/image_workflows.json \
+ --output "$BUILD_IDENTITY_DIR/image_workflows_catalog_generated.hpp"
 # Native identity and catalog implementations require these generated headers.
 # Missing generation fails instead of sharing a manual fallback ID/catalog.
 COMMON+=(-I "$BUILD_IDENTITY_DIR")
@@ -139,9 +147,17 @@ SOURCES=(
  native/platform/apple/wan_session.mm native/platform/apple/h3_session.mm native/platform/apple/h3_mlx_session.mm native/platform/apple/ltx_session.mm
  native/platform/apple/llada_session.mm
  native/api/c_api.mm
+ native/workflows/image_workflows.mm
  native/runtime/execution.cpp native/runtime/plan.cpp native/runtime/residency.cpp native/runtime/memory_policy.cpp native/runtime/memory_accounting.cpp native/runtime/memory_manifest.cpp native/runtime/memory_schedule.cpp native/runtime/memory_plan.cpp native/runtime/memory_scheduler.cpp native/runtime/memory_watchdog.cpp native/runtime/memory_trace.cpp native/runtime/memory_execution.cpp native/runtime/lora_identity.cpp
  native/backends/mlx.cpp native/backends/coreml.mm native/backends/artifact_cache.mm native/backends/coreml_resources.mm
- native/backends/ane_memory.cpp native/backends/ane_gpu.mm native/backends/ane_runtime.mm native/backends/ane_public_w8.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_channel_calibration.cpp native/backends/ane_qkv.cpp
+ native/backends/ane_memory.cpp native/backends/ane_gpu.mm native/backends/ane_runtime.mm native/backends/ane_public_w8.mm native/backends/ane_backend.mm native/backends/ane_ffn.cpp native/backends/ane_channel_calibration.cpp native/backends/ane_qkv.cpp native/backends/ane_smoothquant.mm
+ native/backends/metal_graph/backend.mm native/backends/metal_graph/native_ffn.mm
+ native/backends/metal_graph/native_linear.mm native/backends/metal_graph/mlx_bridge.cpp
+ native/backends/metal_graph/native_lora.mm native/backends/metal_graph/native_gate_up.mm
+ native/backends/metal_graph/mlx_ffn_island.cpp
+ native/backends/metal_graph/native_attention.mm native/backends/metal_graph/native_qwen_ops.mm
+ native/backends/metal_graph/native_step_ops.mm
+ native/backends/metal_graph/memory_bridge.cpp
  native/models/registry.cpp native/models/flux_module.cpp native/models/wan_module.cpp native/models/h3_module.cpp native/models/h3_mlx_module.cpp native/models/ltx_module.cpp native/models/z_image_module.cpp native/models/z_image_gguf_module.cpp native/models/llada_module.cpp
 native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_mlx/vdn_mlx.cpp native/models/h3_mlx/vsa.cpp native/models/h3_mlx/vsa_attention.cpp native/models/h3_mlx/conditioner_math.cpp native/models/h3_mlx/conditioner.cpp native/models/h3_mlx/dit.cpp native/models/h3_mlx/pipeline.cpp native/models/h3_mlx/vae_weights.cpp native/models/h3_mlx/audio_vae.cpp native/models/h3_mlx/video_vae.cpp native/platform/apple/h3_mlx_checkpoint.mm native/platform/apple/h3_mlx_shards.mm native/platform/apple/h3_mlx_prompt_cache.mm native/platform/apple/h3_mlx_vae_config.mm
  native/models/ltx_mlx/block.cpp native/models/ltx_mlx/model.cpp native/models/ltx_mlx/native.cpp
@@ -149,6 +165,11 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/models/qwen21/transformer.cpp
+ native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
+ native/models/qwen21/native_block.cpp
+ native/models/qwen21/native_denoiser.cpp native/models/qwen21/native_denoiser_math.cpp
+ native/models/qwen21/mlx_native_denoiser.cpp
+ native/models/qwen21/native_memory_plan.cpp native/models/qwen21/native_session.cpp
  native/models/qwen21/hybrid.cpp
  native/models/qwen21/sequence.cpp
  native/models/qwen21/text_encoder.cpp
@@ -178,9 +199,10 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/flux2/flux_vae.cpp native/models/flux2/flux_encode.cpp
  native/media/image.mm native/media/input.mm native/media/video.mm native/media/audio.mm
  native/media/pe_image.mm
+ native/media/reference_preparation.mm
 )
 if [[ "$PRIVATE_ANE" == "1" ]]; then
- SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm)
+ SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm native/backends/metal_graph/native_ane_handoff.mm native/backends/metal_graph/native_ane_stages.mm native/backends/metal_graph/native_hybrid_ffn.mm native/backends/metal_graph/native_prefill_ffn.mm)
 fi
 if [[ "$VAE_CAUSAL_EXPERIMENT" == "1" ]]; then
  SOURCES+=(tools/native/seedvr2_vae_ane_causal_conv.mm)
@@ -257,11 +279,24 @@ if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
  exit 0
 fi
-"$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
-"$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+if [[ "$PACKAGE_ONLY" == "0" ]]; then
+ "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_dit_streaming_probe.c -o "$VIDEO_OUT/h3_dit_streaming_probe.o"
+ "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_dit_streaming_probe.o" -L"$OUT" -lturbocider -o "$OUT/h3-dit-streaming-probe" -Wl,-rpath,@executable_path
+fi
 "$CC" -std=c11 -O3 -Wall -Wextra -Werror -D_DARWIN_C_SOURCE -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I "$VIDEO_ROOT" -c tools/native/h3_quantize_stream_cache.c -o "$VIDEO_OUT/h3_quantize_stream_cache.o"
 "$CC" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$VIDEO_OUT/h3_quantize_stream_cache.o" -L"$OUT" -lturbocider -o "$OUT/h3-quantize-stream-cache" -Wl,-rpath,@executable_path
-"$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+"$CXX" "${COMMON[@]}" -fobjc-arc apps/cli/main.mm services/turbociderd/service.mm native/core/json_keys.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/turbocider"
+if [[ "$PACKAGE_ONLY" == "1" ]]; then
+ runtime_build_identity --verify
+ bundled_streaming_catalog --verify
+ if [[ "${TURBOCIDER_NATIVE_ONLY:-0}" != "1" ]]; then
+  export TURBOCIDER_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+  export TURBOCIDER_BUILD_OUTPUT_DIR="$OUT"
+  TURBOCIDER_BUILD_APP_ONLY=1 tools/native/build_app.sh
+ fi
+ printf 'Built package binaries; test and auxiliary probe targets skipped\n'
+ exit 0
+fi
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"

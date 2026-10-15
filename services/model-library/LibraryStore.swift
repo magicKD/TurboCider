@@ -74,9 +74,9 @@ struct LibraryStore: Sendable {
             .appendingPathComponent("TurboCider/Models", isDirectory: true)
     }
 
-    init(root: URL = LibraryStore.defaultRoot) throws {
+    init(root: URL = LibraryStore.defaultRoot, createIfMissing: Bool = true) throws {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
-        try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
+        if createIfMissing { try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true) }
     }
 
     func acquireLease() throws -> LibraryLease {
@@ -105,9 +105,16 @@ struct LibraryStore: Sendable {
         let lease = try acquireLease(); defer { withExtendedLifetime(lease) {} }
         try Self.validateIdentifier(modelID)
         let canonical = path.standardizedFileURL.resolvingSymlinksInPath()
-        guard try canonical.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
-            throw LibraryFailure(message: "Choose an existing model directory.")
-        }
+        let isDirectory = try canonical.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        if ["real-esrgan-x2plus", "real-esrgan-x4plus"].contains(modelID) {
+            let ext = canonical.pathExtension.lowercased()
+            guard (isDirectory && ["mlpackage", "mlmodelc"].contains(ext)) || (!isDirectory && ext == "mlmodel") else {
+                throw LibraryFailure(message: "请选择解压后的 Core ML 模型（.mlpackage、.mlmodelc 或 .mlmodel），不能登记 ZIP。")
+            }
+            if ext == "mlpackage", !FileManager.default.fileExists(atPath: canonical.appendingPathComponent("Manifest.json").path) {
+                throw LibraryFailure(message: "Core ML 模型包缺少 Manifest.json，请重新解压。")
+            }
+        } else if !isDirectory { throw LibraryFailure(message: "Choose an existing model directory.") }
         for (key, component) in components {
             try Self.validateRelativePath(key)
             guard !component.compatibility.isEmpty, FileManager.default.fileExists(atPath: component.path) else {

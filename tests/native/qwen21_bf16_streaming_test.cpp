@@ -1,6 +1,9 @@
 #include "models/qwen21/bf16_streaming.hpp"
 #include "models/qwen21/transformer.hpp"
 #include "models/qwen21/text_encoder.hpp"
+#include "models/qwen21/pipeline.hpp"
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <cstring>
 #include <fcntl.h>
@@ -16,6 +19,27 @@ void equal(const Tensor &a,const Tensor &b,const char *reason) {
 }
 int main(int argc,char **argv) {try {
     require(argc==5,"encoder,denoiser,malformed,owned-change fixtures required");configure_streams();mx::set_cache_limit(0);
+    {
+        const auto root=std::filesystem::path(argv[1]).parent_path()/"request-gates";
+        for(const char *name:{"diffusion_models/qwen_image_2.1_bf16.safetensors",
+                "text_encoders/qwen3vl_8b_bf16.safetensors","vae/qwen_image_2.1_vae_bf16.safetensors",
+                "processor/tokenizer.json"}) {
+            const auto path=root/name;std::filesystem::create_directories(path.parent_path());std::ofstream(path)<<"";
+        }
+        Session session(root);Request request;request.model="qwen-image-2.1";request.operation="image.generate";
+        request.width=request.height=512;request.steps=8;request.execution="gpu";request.residency="component_staged";
+        std::atomic<bool> cancelled{false};
+        auto rejects_with=[&](const char *reason) {
+            std::string error;
+            try{session.generate(request,{},cancelled);}catch(const std::exception &e){error=e.what();}
+            require(error.find(reason)!=std::string::npos,"streaming silently ignored an incompatible request recipe");
+        };
+        ::setenv("TURBOCIDER_QWEN21_BF16_STREAMING","1",1);
+        request.qwen21_dit_cache="balanced";rejects_with("DiT cache off");
+        request.qwen21_dit_cache="off";::setenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU","1",1);
+        rejects_with("excludes another math/cache/profiling recipe");
+        ::unsetenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");::unsetenv("TURBOCIDER_QWEN21_BF16_STREAMING");
+    }
     std::atomic<bool> cancel{false};Weights text_weights,dit_weights;
     text_weights.load_file(argv[1]);dit_weights.load_file(argv[2]);text_weights.materialize();dit_weights.materialize();
     Tokens tokens;tokens.ids={4,7,11,4};tokens.valid=4;

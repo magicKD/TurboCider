@@ -1,0 +1,200 @@
+{
+  "schema": "qwen21-native-encoder-status-v1",
+  "runtime_build_id": "tc-runtime-build-v1-28d1c029316037cb0ddeb142671684b97089974a33ebbee62267df3ba6dd65d5",
+  "source_files": 577,
+  "backend": "native_owned_metal_vision27_language36_gpu",
+  "models_downloaded": 0,
+  "model_exports": 0,
+  "scope": {
+    "output_size": [
+      512,
+      512
+    ],
+    "references": 1,
+    "reference_size": 1024,
+    "language_rows": 1066
+  },
+  "complete_encoder_comparisons": [
+    {
+      "arm": "gpu",
+      "request": 0,
+      "rows": 1066,
+      "total_encoder_seconds": 5.76813225,
+      "vision_seconds": 1.689040958,
+      "language_seconds": 3.817270208,
+      "rrms": null,
+      "saving_percent": 0.0,
+      "native": {}
+    },
+    {
+      "arm": "native-fp32",
+      "request": 0,
+      "rows": 1066,
+      "total_encoder_seconds": 4.329883584,
+      "vision_seconds": 1.363896083,
+      "language_seconds": 2.66337,
+      "rrms": 0.027913235182673912,
+      "saving_percent": 24.934391301447704,
+      "native": {
+        "dispatches": 1053,
+        "future_weight_windows": 30,
+        "gpu_wait_seconds": 3.419684087,
+        "graph_submissions": 33,
+        "language_layers": 36,
+        "physically_complete": true,
+        "preparation_seconds": 0.003269459,
+        "skipped_future_windows": 0,
+        "source_ready_seconds": 0.556037211,
+        "vision_layers": 27
+      }
+    },
+    {
+      "arm": "native-bf16",
+      "request": 0,
+      "rows": 1066,
+      "total_encoder_seconds": 4.223802417,
+      "vision_seconds": 1.308504709,
+      "language_seconds": 2.615043917,
+      "rrms": 0.03083780341291161,
+      "saving_percent": 26.773481710652526,
+      "native": {
+        "dispatches": 1053,
+        "future_weight_windows": 30,
+        "gpu_wait_seconds": 3.3566727120000004,
+        "graph_submissions": 33,
+        "language_layers": 36,
+        "physically_complete": true,
+        "preparation_seconds": 0.002940083999999999,
+        "skipped_future_windows": 0,
+        "source_ready_seconds": 0.5148719539999999,
+        "vision_layers": 27
+      }
+    },
+    {
+      "arm": "native-reuse",
+      "request": 0,
+      "rows": 1066,
+      "total_encoder_seconds": 4.200282834,
+      "vision_seconds": 1.319508,
+      "language_seconds": 2.6077365,
+      "rrms": 0.03083780341291161,
+      "saving_percent": 27.181232122408424,
+      "native": {
+        "dispatches": 1053,
+        "future_weight_windows": 30,
+        "gpu_wait_seconds": 3.383401416,
+        "graph_submissions": 33,
+        "language_layers": 36,
+        "physically_complete": true,
+        "preparation_seconds": 0.001514499,
+        "skipped_future_windows": 0,
+        "source_ready_seconds": 0.49282125,
+        "vision_layers": 27
+      }
+    },
+    {
+      "arm": "native-reuse",
+      "request": 1,
+      "rows": 1066,
+      "total_encoder_seconds": 4.171208875,
+      "vision_seconds": 1.30182575,
+      "language_seconds": 2.600237166,
+      "rrms": 0.03083780341291161,
+      "saving_percent": 27.685276720206968,
+      "native": {
+        "dispatches": 1053,
+        "future_weight_windows": 30,
+        "gpu_wait_seconds": 3.3618571230000005,
+        "graph_submissions": 33,
+        "language_layers": 36,
+        "physically_complete": true,
+        "preparation_seconds": 2.08e-07,
+        "skipped_future_windows": 0,
+        "source_ready_seconds": 0.492503586,
+        "vision_layers": 27
+      }
+    }
+  ],
+  "full_edit_pair": {
+    "timings": [
+      {
+        "denoise": 28.682130958,
+        "hybrid_setup": 0,
+        "image_encode": 0.920219542,
+        "request_wall": 39.304575791,
+        "text_encode": 5.447247292,
+        "vae_decode": 0.956039084
+      },
+      {
+        "denoise": 28.549237833,
+        "hybrid_setup": 0,
+        "image_encode": 0.927223,
+        "request_wall": 38.680462916,
+        "text_encode": 5.039036166,
+        "vae_decode": 0.965305625
+      }
+    ],
+    "saving_percent": {
+      "text_encode": 7.4938974516452035,
+      "request_wall": 1.5878885916965029,
+      "denoise": 0.4633307239081986,
+      "image_encode": -0.7610638201378273,
+      "vae_decode": -0.9692638256199059
+    },
+    "image_comparison": {
+      "pixel_rrms": 0.008825387060652052,
+      "limit": 0.08,
+      "mean_absolute_pixel_delta": 0.8542086283365885,
+      "pixel_equal": false,
+      "visual_review": "pass: teapot silhouette, placement, spout/handle/lid and studio light close; subtle texture differences; one example"
+    },
+    "seed": 42,
+    "steps": 6,
+    "lora": "local Viggle v0.2.1 r128 strength1"
+  },
+  "default_backend": "mlx",
+  "native_default_vision_precision": "fp32",
+  "ane_executed": false,
+  "experimental": true,
+  "release_qualified": false,
+  "tests": {
+    "generated": "pass",
+    "real_first_two_vision_and_language_layers": "pass",
+    "native_attention_cpu_checks": 65,
+    "api_contract": {
+      "tests": 129,
+      "skipped": 3,
+      "status": "pass"
+    },
+    "result_metadata": "pass",
+    "app_and_model_library_build": "pass"
+  },
+  "limitations": [
+    "one bounded complete encoder group and one single-reference image pair; shared OS/compiler caches not reset",
+    "native encoder source-ready remains a host boundary; no native encoder ANE/W2",
+    "no App UI acceptance or general memory capacity qualification",
+    "BF16 vision GEMM has conditioning screen only"
+  ],
+  "receipts": {
+    "outputs/qwen21-native-encoder-20261008/generated-r3-supervisor.json": "6a13c9a066b2f744564b88b934705af77084e6af77b815039ba4ed0650473f19",
+    "outputs/qwen21-native-encoder-20261008/components-r3-supervisor.json": "ab97cfbdcf31fdd020df4a73b560baf863b1d208a727edb05cb16030e70368f1",
+    "outputs/qwen21-native-encoder-20261008/full-r3-supervisor.json": "469e65c3fdebe60c02bf1d9b78f2ea4d265c4f201c403d2d0842374f44cca867",
+    "outputs/qwen21-native-encoder-20261008/e2e/receipt.json": "b5890911051bb7604406a622df4256772bf5db3ca22c9e91e3fb9495cc0e8c47"
+  },
+  "cleanup_bytes": 244511492,
+  "final_verification": {
+    "runtime_build_id": "tc-runtime-build-v1-28d1c029316037cb0ddeb142671684b97089974a33ebbee62267df3ba6dd65d5",
+    "sources_verified": 577,
+    "new_local_doc_links_checked": 23,
+    "cleanup_bytes": 244511492,
+    "models_downloaded": 0,
+    "model_exports": 0,
+    "tests": {
+      "api_contract": "129 pass;3 skipped",
+      "native_attention": "65 CPU checks pass",
+      "result_metadata": "pass",
+      "native_probe_cpu": "pass",
+      "app_and_helper": "build pass"
+    }
+  }
+}

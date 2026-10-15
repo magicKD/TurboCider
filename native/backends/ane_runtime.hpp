@@ -27,6 +27,9 @@ struct GraphGeometry {
     Kind kind;
     int hidden, width;
     bool require_lora_inputs = false;
+    // Actual steady-state FFN rows, supplied by the model after tokenization.
+    // Used only by the explicit Private request-row policy.
+    int request_rows = 0;
 };
 
 // Borrowed immutable row-major matrix. Sources must remain alive and readable
@@ -85,6 +88,11 @@ struct W8StageSpec {
     bool transpose = false; // A8 channel-major vs W8 out/in
     W8Basis basis = W8Basis::SylvesterDH;
     int activation_group_size = 0; // 0: per-token; 256: explicit Comfy A8 groups
+    // Validated immutable SmoothQuant S1, one FP32 value per FULL source
+    // column. Applied before H128: W*S1, or X/S1 for transpose A8. H512 does
+    // not use S1. The ticket/bank owns its allocation; cache keys stay weak.
+    std::optional<DeviceMatrixView> column_scale{};
+    bool inverse_column_scale = false;
 };
 // Logical selection over an unchanged physical source. In particular a down
 // channel slice keeps the full packed row pitch/metadata geometry and owner.
@@ -136,8 +144,17 @@ struct GraphShape {
     int output_width() const { return kind == Kind::Matmul ? width : hidden; }
 };
 
-// Parse the runtime template's geometry/ABI only. Private executors emit their
-// own native MIL and do not load or claim validation of its Core ML artifact.
+enum class RuntimeArtifactKind { PublicCoreML, PrivateShape };
+struct RuntimeTemplateDescriptor {
+    GraphShape shape;
+    RuntimeArtifactKind artifact = RuntimeArtifactKind::PublicCoreML;
+    bool has_public_artifact() const { return artifact == RuntimeArtifactKind::PublicCoreML; }
+};
+
+// A private_runtime_shape descriptor contains geometry only, without a Core ML
+// model or checkpoint. Legacy runtime_weight_fp16 templates remain supported.
+// Parsing either format does not claim validation of a compiled artifact.
+RuntimeTemplateDescriptor runtime_template_descriptor(const std::filesystem::path &manifest);
 GraphShape runtime_template_shape(const std::filesystem::path &manifest);
 bool runtime_template_w8a8(const std::filesystem::path &manifest);
 struct RuntimeArtifactSnapshot {
@@ -179,6 +196,12 @@ struct StagePipelineStats {
     bool specialized = false;
     uint64_t variants = 0;
 };
+struct A8SinglePassStats {
+    bool requested = false, pipeline_compiled = false;
+    // Committed staging submissions, including executor capability self-test.
+    // No kernel timing, successful completion or physical overlap claim.
+    uint64_t eligible_submissions = 0, ineligible_submissions = 0;
+};
 
 // Model/scheduler contract, independent of Core ML and private ObjC classes.
 // All executors share the same source views, row chunks, adapter corrections,
@@ -191,6 +214,10 @@ class Executor {
     virtual size_t slot_bytes() const = 0;
     virtual size_t estimated_bytes() const = 0;
     virtual double load_seconds() const = 0;
+    // Public artifact/model/binding phases; other executors report total load.
+    virtual double artifact_seconds() const { return 0; }
+    virtual double model_load_seconds() const { return 0; }
+    virtual double bind_seconds() const { return 0; }
     virtual bool self_test(std::string &error) = 0;
     virtual void stage_weights(std::vector<WeightView> weights) = 0;
     virtual RunResult wait_stage() = 0;
@@ -207,6 +234,7 @@ class Executor {
     virtual WeightCacheStats weight_cache_stats() const { return {}; }
     virtual WeightCodeCacheReport weight_code_cache_stats() const { return {}; }
     virtual StagePipelineStats stage_pipeline_stats() const { return {}; }
+    virtual A8SinglePassStats activation_stage_stats() const { return {}; }
     virtual bool device_submission_fence_enabled() const { return false; }
     virtual bool activation_lookahead_enabled() const { return false; }
     virtual void stage_device_weights(std::vector<DeviceWeightView>) {
@@ -246,6 +274,38 @@ class Executor {
 // Source/output buffers must outlive the asynchronous job and finish().
 class RuntimeGraph : public Executor {
   public:
+    // Verified private artifact and loaded model only: no IOSurfaces, feature
+    // bindings, prediction worker, self-test or model-dependent weights. It
+    // can be prepared on a separate owning thread, then transferred after
+    // that thread has joined. Concurrent use of one Prepared is unsupported.
+    class Prepared {
+      public:
+        ~Prepared();
+        Prepared(Prepared &&) noexcept;
+        Prepared &operator=(Prepared &&) noexcept;
+        Prepared(const Prepared &) = delete;
+        Prepared &operator=(const Prepared &) = delete;
+
+        const GraphShape &shape() const;
+        size_t estimated_bytes() const;
+        double artifact_seconds() const;
+        double model_load_seconds() const;
+
+      private:
+        friend class RuntimeGraph;
+        struct Impl;
+        explicit Prepared(std::unique_ptr<Impl>);
+        std::unique_ptr<Impl> impl_;
+    };
+
+    // Both prepare and bind reserve the complete graph estimate against the
+    // current budget/live-memory observation. Preparation does not prove
+    // sufficient memory remains available when the model phase changes.
+    static std::unique_ptr<Prepared> prepare(const std::filesystem::path &manifest,
+                          size_t memory_budget_bytes, bool cpu_only = false,
+                          std::optional<GraphGeometry> expected = std::nullopt);
+    explicit RuntimeGraph(std::unique_ptr<Prepared> prepared,
+                          size_t bind_memory_budget_bytes, bool scalar_staging = false);
     explicit RuntimeGraph(const std::filesystem::path &manifest,
                           size_t memory_budget_bytes, bool cpu_only = false,
                           bool scalar_staging = false,
@@ -258,6 +318,11 @@ class RuntimeGraph : public Executor {
     const GraphShape &shape() const override;
     size_t slot_bytes() const override;
     size_t estimated_bytes() const override;
+    double artifact_seconds() const override;
+    double model_load_seconds() const override;
+    double bind_seconds() const override;
+    // Sum of artifact verification, model loading and binding work. Queue
+    // wait/encoder overlap is intentionally excluded; it is not request wall.
     double load_seconds() const override;
 
     // Checks TWO weight sets and nonzero input on this actual shape. Caller

@@ -17,7 +17,7 @@ inline Tensor sigmas(int width, int height, int steps) {
     return mx::concatenate({1.f - complement / scale, mx::zeros({1}, mx::float32)});
 }
 
-// Viggle v0.2.1 r256 six-step student: shift its shipped raw sigma nodes with
+// Viggle v0.2.1 r128/r256 six-step student: shift its shipped raw sigma nodes with
 // the same resolution-dependent Qwen21 mu, but do not apply the base model's
 // terminal 0.02 stretch (the adapter ships shift_terminal: null).
 inline Tensor viggle_v021_sigmas(int width, int height) {

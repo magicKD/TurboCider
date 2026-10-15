@@ -14,6 +14,7 @@ struct W8Params {
     uint meta_pitch, meta_dtype, offset_pitch, offset_dtype, has_offset;
     uint row_begin, rows, column_begin, columns, block, code_pitch, scale_pitch, transpose;
     uint source_aligned, seed_low, seed_high, basis, activation_group;
+    uint has_column_scale, inverse_column_scale;
     float norm;
 };
 inline uint w8_u16(device const uchar *p) { return uint(p[0]) | (uint(p[1]) << 8); }
@@ -69,6 +70,19 @@ inline float w8_decode(device const uchar *src, device const uchar *scales, devi
     int code = int((group < 2 ? low & 15 : low >> 4) | (((high >> (2 * group)) & 3) << 4)) - 32;
     float d = from_half(ushort(w8_u16(a + 208))) * float(char(a[192 + h * 8 + j / 16 + group * 2]));
     return d * float(code);
+}
+// S1 is full physical-column FP32 metadata, supplied only by a validated
+// profile. Check every code pass too: a row-scale cache hit skips scales.
+inline float w8_apply_column_scale(float value, uint column, constant W8Params &p,
+                                   device const float *column_scale, device atomic_uint *status) {
+    if (!p.has_column_scale) return value;
+    const float scale = column_scale[column];
+    if (!isfinite(scale) || scale < 0.0625f || scale > 16.f) {
+        atomic_fetch_or_explicit(status, 16u, memory_order_relaxed); return 0.f;
+    }
+    const float result = p.inverse_column_scale ? value / scale : value * scale;
+    if (!isfinite(result)) { atomic_fetch_or_explicit(status, 16u, memory_order_relaxed); return 0.f; }
+    return result;
 }
 // The exact recipe's +/-1 signs are immutable 2KiB CPU-generated metadata.
 // Never recompute the same 64-bit hash for every value/rotation block on GPU.
@@ -179,13 +193,14 @@ kernel void tc_ane_sylvester_register_codes(device const uchar *src [[buffer(0)]
 }
 kernel void tc_ane_w8_scales(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
     device const uchar *offsets [[buffer(2)]], device ushort *dst [[buffer(3)]], device atomic_uint *status [[buffer(4)]],
-    constant W8Params &p [[buffer(5)]], constant float *signs [[buffer(6)]],
+    constant W8Params &p [[buffer(5)]], constant float *signs [[buffer(6)]], device const float *column_scale [[buffer(7)]],
     uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_threadgroup]]) {
     threadgroup float v[512]; float peak = 0;
     const uint block = tc_w8_specialize ? tc_w8_block : p.block;
     for (uint col = 0; col < p.columns; col += block) {
         float x = w8_decode(src, scales, offsets, p.row_begin + row, p.column_begin + col + lane, p);
         if (!isfinite(x)) { atomic_fetch_or_explicit(status, 1u, memory_order_relaxed); x = 0; }
+        x = w8_apply_column_scale(x, p.column_begin + col + lane, p, column_scale, status);
         float rotated = w8_rotate(x, v, lane, p, signs);
         if (!isfinite(rotated)) atomic_fetch_or_explicit(status, 2u, memory_order_relaxed);
         peak = max(peak, abs(rotated));
@@ -204,12 +219,13 @@ kernel void tc_ane_w8_scales(device const uchar *src [[buffer(0)]], device const
 }
 kernel void tc_ane_w8_codes(device const uchar *src [[buffer(0)]], device const uchar *scales [[buffer(1)]],
     device const uchar *offsets [[buffer(2)]], device const ushort *row_scales [[buffer(3)]], device char *dst [[buffer(4)]],
-    device atomic_uint *status [[buffer(5)]], constant W8Params &p [[buffer(6)]], constant float *signs [[buffer(7)]],
+    device atomic_uint *status [[buffer(5)]], constant W8Params &p [[buffer(6)]], constant float *signs [[buffer(7)]], device const float *column_scale [[buffer(8)]],
     uint2 tile [[threadgroup_position_in_grid]], uint lane [[thread_index_in_threadgroup]]) {
     const uint block = tc_w8_specialize ? tc_w8_block : p.block;
     threadgroup float v[512]; uint row = tile.x, col = tile.y * block + lane;
     float x = w8_decode(src, scales, offsets, p.row_begin + row, p.column_begin + col, p);
     if (!isfinite(x)) { atomic_fetch_or_explicit(status,1u,memory_order_relaxed); x=0; }
+    x = w8_apply_column_scale(x, p.column_begin + col, p, column_scale, status);
     float rotated = w8_rotate(x, v, lane, p, signs);
     if (!isfinite(rotated)) atomic_fetch_or_explicit(status,2u,memory_order_relaxed);
     float scale = from_half(row_scales[p.activation_group ? ulong(tile.y)*p.scale_pitch/2+row : ulong(row)*p.scale_pitch/2]);

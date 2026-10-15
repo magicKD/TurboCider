@@ -1,0 +1,402 @@
+{
+  "schema": "tc-native-request-scale-cache-v1",
+  "date": "2026-10-08",
+  "status": "implemented_default_off_host_build_and_generated_device_paths_passed",
+  "runtime_build_id": "tc-runtime-build-v1-16fecb41f7b0243a518481d5f01d5dac5da5e93ac78c3712033f4bb2c7a13dbf",
+  "source_manifest_matches_at_recording": true,
+  "source_manifest_entries": 563,
+  "implementation": {
+    "request": "qwen21_native_scale_cache",
+    "default": false,
+    "request_domain": "explicit private native Qwen Base W1 only; strict bool v1/v2 and presence validation",
+    "ownership": "actual MLX Data allocation control block plus native handle/full view/revision/generation/fixed recipe; native allocations use actual owner; generic imports without allocation identity cannot cache",
+    "lifetime": "one DenoiserRun/controller; strong source/buffer owners retained through complete physical drain",
+    "commit": "after sealed producer and restore/finite/aggregate physical completion, not at encode or event signal",
+    "failure": "controller retirement retires all entries; no late completion revival",
+    "dispatches": {
+      "cold_w": 9,
+      "hit_w": 6,
+      "a8_each_invocation": 2
+    },
+    "msl_arithmetic": "unchanged; reuse existing scale_copy and original W8 codes/A8/restore",
+    "production_entries": 32,
+    "production_payload_bytes": 1048576,
+    "phase_additional_upper_bytes": 1572864,
+    "phase_additional_sites": 1,
+    "phase_additional_backings": 32,
+    "cache_disabled_phase_sites_backings": [
+      38,
+      105
+    ],
+    "cache_enabled_phase_sites_backings": [
+      39,
+      137
+    ],
+    "new_prepare_psos": 1,
+    "expected_full20step_counts_not_measured": {
+      "misses": 32,
+      "hits": 576,
+      "unit": "one gate/up/down layer lookup"
+    },
+    "disk_cache": false
+  },
+  "validation": {
+    "full_private_native_build": "passed native/package-only; process-local CLT; three legacy deprecation warnings",
+    "strict_host_public_private": "passed",
+    "cpu_tests": [
+      {
+        "binary": "build/native-scale-cache-contract-20261008/native-weight-scale-cache-contract-test",
+        "sha256": "45e755a23bdea80b274ddf2edccfce7dfb45fade42f83898af64e12f78342d78",
+        "returncode": 0,
+        "stdout": "native_weight_scale_cache_contract=PASS ownership=control_block views_recipes_epochs=checked stale_publish=checked expired_owners=checked production_payload=1048576 tiny_payload=4608 devices=0 models=0\n",
+        "stderr": "",
+        "scope": "CPU only; no model/device creation"
+      },
+      {
+        "binary": "build/native-scale-cache-integration-cpu-20261008/denoiser-contract",
+        "sha256": "f076a2c5494fff0e5a49d209e03a8d5302d35347ce040703e8bde4571a094de5",
+        "returncode": 0,
+        "stdout": "native_qwen_hybrid_denoiser_cpu_contract=PASS devices=0 models=0\n",
+        "stderr": "",
+        "scope": "CPU only; no model/device creation"
+      },
+      {
+        "binary": "build/native-scale-cache-integration-cpu-20261008/route-public",
+        "sha256": "248408d333ecc62c8885685ece0715d7033163da71a79769accf30b426e2345c",
+        "returncode": 0,
+        "stdout": "native_qwen_scale_cache_route_contract=PASS devices=0 models=0\n",
+        "stderr": "",
+        "scope": "CPU only; no model/device creation"
+      },
+      {
+        "binary": "build/native-scale-cache-integration-cpu-20261008/route-private",
+        "sha256": "80ca2f6b1c8c5b7081e78c5e3aba46d2e9cc463cdab4a6d1c9bd80ac490596e7",
+        "returncode": 0,
+        "stdout": "native_qwen_scale_cache_route_contract=PASS devices=0 models=0\n",
+        "stderr": "",
+        "scope": "CPU only; no model/device creation"
+      },
+      {
+        "binary": "build/native-scale-cache-phase-cpu-20261008/native-memory-plan-test",
+        "sha256": "b1235279e497a3a47619350caaf0081658c014ad056ddf7a0a0519eb3af9fedd",
+        "returncode": 0,
+        "stdout": "native_phase_memory=PASS sites=22 production_backings=89 actual_context_hooks=checked hybrid_sites=38 hybrid_backings=105 cache_sites=39 cache_backings=137 compact_cache=checked bounded_status_reuse=checked duplicate_owners=checked budget_and_zero_ledger_finish=checked device_created=0\n",
+        "stderr": "",
+        "scope": "CPU only; no model/device creation"
+      }
+    ],
+    "stage_source_checks": 428,
+    "stage_layout_checks": 82,
+    "stage_fixture_cpu_checks": 649,
+    "request_route_tests": 9,
+    "native_contract_tests": 129,
+    "native_contract_skips": 3,
+    "initial_contract_environment": "one profile test failed under restricted Metal-device visibility; unchanged code passed with actual device-profile access; both raw logs preserved",
+    "e2e_supervisor_cpu_tests": 7
+  },
+  "generated_gpu_staging": {
+    "sequence": "A -> B -> hit A -> cold A, generic and register",
+    "submissions": 8,
+    "dispatches": 82,
+    "ane_requests": 0,
+    "models": 0,
+    "byte_exact": true,
+    "source_padding_cache_guards": "passed",
+    "prevalidation_rejections_per_recipe": 8,
+    "scope": "scale/code/A8 bytes; no cache metadata/driver publication proof alone"
+  },
+  "generated_complete_controller": {
+    "scope": "M32/H128/F1024/A512 generated Base FFN; one dense and three private hybrid requests, no model/E2E",
+    "invocations": [
+      {
+        "scale_cache_invocation": "1",
+        "source": "A",
+        "slot": "0",
+        "hit": "0",
+        "miss": "1",
+        "generation": "1",
+        "physical_complete": "1",
+        "finite": "1",
+        "wall_seconds": "0.001622167",
+        "producer_seconds": "0.000812",
+        "producer_gpu_span_seconds": "0.000223583309",
+        "gpu_complement_span_seconds": "0.0001776666613"
+      },
+      {
+        "scale_cache_invocation": "2",
+        "source": "B",
+        "slot": "1",
+        "hit": "0",
+        "miss": "1",
+        "generation": "2",
+        "physical_complete": "1",
+        "finite": "1",
+        "wall_seconds": "0.001404708",
+        "producer_seconds": "0.000728959",
+        "producer_gpu_span_seconds": "0.0002229583915",
+        "gpu_complement_span_seconds": "0.0001857500756"
+      },
+      {
+        "scale_cache_invocation": "3",
+        "source": "A",
+        "slot": "0",
+        "hit": "1",
+        "miss": "0",
+        "generation": "3",
+        "physical_complete": "1",
+        "finite": "1",
+        "wall_seconds": "0.001348833",
+        "producer_seconds": "0.000688959",
+        "producer_gpu_span_seconds": "0.0001495833276",
+        "gpu_complement_span_seconds": "0.0001832500566"
+      }
+    ],
+    "receipt_fields": {
+      "H": "128",
+      "F": "1024",
+      "M": "32",
+      "A": "512",
+      "seed": "2026100801",
+      "cache_capacity": "2",
+      "scale_payload_bytes": "4608",
+      "hits": "1",
+      "misses": "2",
+      "prepare_seconds": "0.077699541",
+      "rrms_cold": "0.02475652297",
+      "rrms_hit": "0.02475652297",
+      "rrms_limit": "0.08",
+      "max_abs": "0.0004119873047",
+      "cosine": "0.9996935111",
+      "max_role": "diagnostic_only",
+      "bitwise_A_after_B": "1",
+      "source_hash_algorithm": "fixture_rolling64",
+      "source_hashes": "7720265982852127100,7363827942675081159,14588206048622611589,4839926660217538019,14386603895570823387,1621041803592838206,9592789290545908879",
+      "source_immutable": "1",
+      "padding_preserved": "1",
+      "physical_complete": "1",
+      "ledger_peak_bytes": "2326924",
+      "scale_payload_excludes_allocation_page_rounding": "1"
+    },
+    "hits": 1,
+    "misses": 2,
+    "payload_bytes": 4608,
+    "rrms": 0.02475652297,
+    "rrms_limit": 0.08,
+    "bitwise_cold_hit_after_B": true,
+    "source_padding_finite_physical_complete": "passed",
+    "ledger_released": true,
+    "whole_process_peak_footprint_bytes": 103826008,
+    "timing_scope": "diagnostic tiny single sequence, not cold/hot ranking or model speedup"
+  },
+  "qualification": {
+    "real_model_scale_cache": false,
+    "new_scale_cache_e2e": false,
+    "cache_performance": false,
+    "full_model_quality_memory": false,
+    "MLX_Data_identity_device_import_probe": false,
+    "lora_edit_zimage_app": false,
+    "w1r_w2": false,
+    "previous_register_e2e": "4fd1e980 build/cache off; does not transfer performance qualification to this build or cache"
+  },
+  "artifacts": [
+    {
+      "path": "build/native-w1-scale-cache-20261008/libturbocider.dylib",
+      "bytes": 10065072,
+      "sha256": "9544347849c2f2d23b2e1b5cb2a3d3ceb3e80d0d0245f171816ebbd54078a70e"
+    },
+    {
+      "path": "build/native-w1-scale-cache-20261008/turbocider",
+      "bytes": 309384,
+      "sha256": "3702be1e63bdd435db091118d8f6527e170fc186a4580630fb02ee39fef8aac0"
+    },
+    {
+      "path": "build/native-w1-scale-cache-20261008/runtime-build/runtime-build-manifest.json",
+      "bytes": 154921,
+      "sha256": "1fe8984d94a98e1a23694defe77a7bc610e8919bfcaf1f3223207549d371d765"
+    },
+    {
+      "path": "build/native-w1-scale-reuse-20261008/stage-component/native-ane-scale-reuse-component",
+      "bytes": 426032,
+      "sha256": "19b02b43ed66bf02fa6d41373ee0449ebada6afc5f69f936655c419812e2b9d9"
+    },
+    {
+      "path": "build/native-scale-cache-controller-20261008/native-hybrid-ffn-component",
+      "bytes": 773320,
+      "sha256": "30d3f4f4736b9b8a2d46ef07e5f07b05ebf2c92ed2b693a36f6930e1178a9faa"
+    },
+    {
+      "path": "build/native-scale-cache-contract-20261008/native-weight-scale-cache-contract-test",
+      "bytes": 74696,
+      "sha256": "45e755a23bdea80b274ddf2edccfce7dfb45fade42f83898af64e12f78342d78"
+    },
+    {
+      "path": "build/native-scale-cache-integration-cpu-20261008/denoiser-contract",
+      "bytes": 41600,
+      "sha256": "f076a2c5494fff0e5a49d209e03a8d5302d35347ce040703e8bde4571a094de5"
+    },
+    {
+      "path": "build/native-scale-cache-integration-cpu-20261008/route-public",
+      "bytes": 61472,
+      "sha256": "248408d333ecc62c8885685ece0715d7033163da71a79769accf30b426e2345c"
+    },
+    {
+      "path": "build/native-scale-cache-integration-cpu-20261008/route-private",
+      "bytes": 61472,
+      "sha256": "80ca2f6b1c8c5b7081e78c5e3aba46d2e9cc463cdab4a6d1c9bd80ac490596e7"
+    },
+    {
+      "path": "build/native-scale-cache-phase-cpu-20261008/native-memory-plan-test",
+      "bytes": 729480,
+      "sha256": "b1235279e497a3a47619350caaf0081658c014ad056ddf7a0a0519eb3af9fedd"
+    }
+  ],
+  "tool_sources": [
+    {
+      "path": "tools/native/native_ane_scale_reuse_component.mm",
+      "bytes": 21177,
+      "sha256": "36f550c5d8529015d1ff9b0fbf05ecc7229d48fe1bcb7d2e4161720d28823cfb"
+    },
+    {
+      "path": "tools/native/build_native_ane_scale_reuse_component.sh",
+      "bytes": 888,
+      "sha256": "a8f8b4d2d9f2397e12d8d921c5b8a5c0e7273b3c76a77dd31701b5251b0c403f"
+    },
+    {
+      "path": "tools/native/native_hybrid_ffn_component.cpp",
+      "bytes": 30605,
+      "sha256": "ec67f08837f905cbecb7e1c26462fde793833bbb1fc8f0db1c39dc5ec1682761"
+    },
+    {
+      "path": "tools/native/build_native_hybrid_ffn_component.sh",
+      "bytes": 1933,
+      "sha256": "816f8279123d094ef44eec19d3d5b7c5aa8728b1be9daeb7a5301e9e7b3c5434"
+    },
+    {
+      "path": "tools/native/native_qwen_hybrid_ffn_replay.cpp",
+      "bytes": 28725,
+      "sha256": "c782be636aab7db5d1e58a809ed0f2813d8c57a12fbdde5cf5d10edc6d8812f3"
+    },
+    {
+      "path": "tools/native/build_native_weight_scale_cache_contract_test.sh",
+      "bytes": 447,
+      "sha256": "b0d624e7a10d349d01fcf451726e2e8d4ee373f5afb417d33fe149db5b8c6bc7"
+    },
+    {
+      "path": "tests/native/native_weight_scale_cache_contract_test.cpp",
+      "bytes": 11919,
+      "sha256": "7253e3cef1c3ba0e7de35a0d75c6dfff6c2aa175d1ea82b90b8ed4cf37239d1f"
+    },
+    {
+      "path": "tests/native/native_qwen_scale_cache_route_test.cpp",
+      "bytes": 2967,
+      "sha256": "a3565912df2fbee2bf87b90c163ad6506de38917268a9630cf40029a36331d26"
+    },
+    {
+      "path": "tests/native/native_memory_plan_test.cpp",
+      "bytes": 23953,
+      "sha256": "d32f993093d26105f3db4bd0ec9361d651ec3214ff6f189ab36174921f82b755"
+    },
+    {
+      "path": "tests/native/test_qwen_native_route.py",
+      "bytes": 15952,
+      "sha256": "5ceecb8d5a100a3637f378d8e9f4c14291813b3effd2246099853c378c482d1f"
+    },
+    {
+      "path": "tools/validation/run_qwen_native_e2e.py",
+      "bytes": 11272,
+      "sha256": "67c25729de9fd58b50530ba0528b9b17531b8c36160d71ece7ca29f6a5168a81"
+    },
+    {
+      "path": "tests/native/test_qwen_native_e2e_supervisor.py",
+      "bytes": 6663,
+      "sha256": "b98f77da9c8ed6b0149099e856e3128e4c720e12eed21c06ea57c157d95cc497"
+    }
+  ],
+  "receipts": [
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/build.log",
+      "bytes": 2246,
+      "sha256": "6da8316860b399860c5d9055ded373123b8f408ee7b7eb497fa8b17f068baa73"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/contract-tests-device-profile.log",
+      "bytes": 17764,
+      "sha256": "f791ae3e10baa28d52b4539cbead90d0e28ba52fcf97046dc8caebd9e61235fa"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/contract-tests.log",
+      "bytes": 18332,
+      "sha256": "94c3dea2d74780934c84c44d5b8c6b54409503dfee633ff9fe41f97986246178"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/controller-cache-reuse-time.log",
+      "bytes": 777,
+      "sha256": "daa91b92505dc0e24f16e1c1348f06f336540a55490361a50d2c1a476e4dac6e"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/controller-cache-reuse.log",
+      "bytes": 1522,
+      "sha256": "94645511ec27abb21719d11a7ed6a5c8babe85567df677e5d9f8612867e57893"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/controller-fixture-host.log",
+      "bytes": 267,
+      "sha256": "0d0fe7f59d4e91009e023df48f129c9f2d9fc54e30d21f4f73806c53b1005955"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/e2e-supervisor-tests.log",
+      "bytes": 105,
+      "sha256": "83166b089fbcb82fac63f22522fa6ae99bb5e46368cd35d756277fd463dd6346"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/route-tests.log",
+      "bytes": 107,
+      "sha256": "956a0c36ba55bb397484b342828153465a6efc7aa26b941cbfc3ed4f89e9cc8a"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/stage-byte-reuse-time.log",
+      "bytes": 777,
+      "sha256": "5aa62711129f3460173a51131b8eaaba9bb2e2b27073b779aea133f0969e424e"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/stage-byte-reuse.log",
+      "bytes": 557,
+      "sha256": "c54ca528983ebe95e28a2a399e77a1dca44a49a916c53d5d2c95320107589135"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/stage-fixture-host.log",
+      "bytes": 593,
+      "sha256": "2cd2b2317dae5a8c284f5acc4f89c6156602350ca06973fc9a1e1d6639001fda"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/stage-host.log",
+      "bytes": 1652,
+      "sha256": "a3a98d93d88bf740e3f0a8648ba3d0d3ae7306ea557dde86b8be73d086de2d6f"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/owned-cleanup.json",
+      "bytes": 51535,
+      "sha256": "7e00103e481861e94e11a94bdcd9905d0b49997414d23e259d2516def3c27eb7"
+    },
+    {
+      "path": "outputs/native-w1-scale-cache-20261008/cpu-integration-receipt.json",
+      "bytes": 2109,
+      "sha256": "d177c4ad90fc520b3084e6cd6dcc9fdb83e1f9a60bf303a15b51251fbf56c2f0"
+    },
+    {
+      "path": "build/native-scale-cache-contract-20261008/cpu-receipt.json",
+      "bytes": 805,
+      "sha256": "136f3f10dd4768554351523fd5281e933e8010de103be443fb72210b99ebfe28"
+    }
+  ],
+  "owned_cleanup": {
+    "removed_file_count": 240,
+    "removed_bytes": 20894148,
+    "verified_removed": true,
+    "preserved_artifacts_sha256_unchanged": true
+  },
+  "model_downloads": 0,
+  "model_loads": 0,
+  "full_checkpoint_copies": 0,
+  "next": "one bounded same-input real FFN cache-off/on test with actual imported MLX source identities and complete paths; only if net benefit then one matched Base E2E; continue native LoRA/edit/Z/App and W2 work independently"
+}

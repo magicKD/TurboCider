@@ -50,7 +50,7 @@ struct ZImageAppTests {
         studio.draft.acceleration = StudioAcceleration(policy: "gpu")
         try saveConfiguration("03-z-image-lora-gpu")
         let preparation = try studio.preparationRequest(modelID: "z-image-turbo", output: root.appendingPathComponent("unused-prepare.png"))
-        try check(preparation.loras?.count == 1 && preparation.width == 512 && preparation.steps == 9, "Load discarded LoRA or task settings")
+        try check(preparation.loras?.count == 1 && preparation.width == 512 && preparation.steps == 8, "Load discarded LoRA or task settings")
         try await store.prepare(modelURL: model, request: preparation, warmup: false)
         let prepared = try JSONSerialization.jsonObject(with: Data(store.resourceReport!.utf8)) as! [String: Any]
         try check(prepared["prepared"] as? Bool == true && !FileManager.default.fileExists(atPath: preparation.output), "Load unexpectedly generated an image")

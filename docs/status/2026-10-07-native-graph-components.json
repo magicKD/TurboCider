@@ -1,0 +1,225 @@
+{
+  "schema": "native-metal-graph-components-v1",
+  "date": "2026-10-07",
+  "git_head": "8d12b44cc764d079ee31c6092725e22fcc8fb9e0",
+  "working_tree": "dirty; source digests identify actual primitive/FFN code",
+  "source_sha256": {
+    "native/backends/metal_graph/backend.hpp": "e49cb33556d14baedcedb7c590b828987a52792fb68fe45c16bd0c7d44153aba",
+    "native/backends/metal_graph/backend.mm": "e1b625b66a284791a8354bae7ec6ee6582a9f5d97785a6bfe4db8966ec118bb9",
+    "native/backends/metal_graph/native_ffn.hpp": "9db40984924773213b93f5aba15a648a6c9162f2e24c267bfe38997e28ce60c7",
+    "native/backends/metal_graph/native_ffn.mm": "6ea3000c6f4cfd1d9e29b27f942555ceeed04bd5b91cb4a39f9c902455ee4bf7",
+    "native/backends/metal_graph/kernels/dense_ffn.hpp": "d57e96d5c562994687e41b7d781591c5b1f3568604418df3725e467328d5e4ea",
+    "native/backends/metal_graph/mlx_bridge.hpp": "1d75bb13dc460f509ad4fd643d5d3c76972a05dd1be6a14a7a8107e2a1c7438b",
+    "native/backends/metal_graph/mlx_bridge.cpp": "41fe2effb17f8092f304ab933329b2d3cf08f43fb8a8e33548b16804b600d60c",
+    "native/backends/metal_graph/mlx_ffn_island.hpp": "31b1b4e8ab97a895a629f4571b953adb4f32e1be219dfe585e66ecf11c1c4496",
+    "native/backends/metal_graph/mlx_ffn_island.cpp": "12d3614b3700d87fe08882a21b6bc3f4b53701f5177659fb069327bb92522bb0",
+    "tools/native/native_qwen_ffn_replay.cpp": "ed3f300bb9febb5bfc287c0150be168b1770c2db151c7d0b5aec7f819276bc91",
+    "tools/native/build_native_qwen_ffn_replay.sh": "fb00fcd02799a8917f7b79cfea1bb3fa8a2098beebcd6ca5c8caa9d9c5495757",
+    "tools/native/native_ffn_component.mm": "60cff833a3bc99445efa04f7b3d39cdd0b4dc4dfeaa0f00459ddbe569b6cbf8a",
+    "tests/native/test_native_ffn_component.py": "ff8cf5ca7c183684df4e2188876f48ac12286f81d54508e5b90546e1ba9a88bc",
+    "tests/native/metal_graph_backend_test.cpp": "2d409127d0b4370a7acb245e9986f811a2a9ec71ee08ec8a373d29d96b6b9164",
+    "tools/native/build_metal_graph_backend_test.sh": "6f1274cfb7917cdad66398b57fd0d4ebc035bd3635391628ba4ad44de933a237",
+    "native/backends/metal_graph/native_linear.hpp": "f103ed6c51c8f5471fc5bc759ed7e8124f8eb1cd4dd3c010fd92d86d9668c90e",
+    "native/backends/metal_graph/native_linear.mm": "73e0243f31aef27873b99494c03cc434149d66376ed5ca32fd5ee4c3a8579ece",
+    "native/backends/metal_graph/kernels/dense_linear.hpp": "14980aab78df441fbd2bf38f5f79ec16b76834327d83c202cf54d7e544628a6d",
+    "tests/native/native_linear_contract_test.cpp": "e5fe450251baaacb22a430c4c17fb7d7ed4330987df4ebb413571e8f51f27ffb",
+    "tests/native/test_native_linear_contract.py": "0964c3a3b969575218feeaf7bb4dd4d9ab188a1a6b029a381be699d942878452",
+    "tools/native/build.sh": "8c8b6d1ab189669c9cf2a9a5e6152f80c37dd399ceda3d86c772dfed70d03891",
+    "native/backends/ane_gpu.hpp": "399133c2dc4ba28f5fa25dbebe71ec810e644ac41f13a6277a8fa02a9097f1aa",
+    "native/backends/private/ane_program.hpp": "35dfcb28a9ddbe995665b87eb52b2d0dbce30c851b2ef69d2f5ca90d6f4da661",
+    "native/backends/private/ane_program.mm": "fe6c23c99e4c331c9769929cbddf92d82722cfd8f2bedda90b9f0a860444569e",
+    "native/backends/private/ane_ticket_state.hpp": "1c193febf9c005ee209dabaa2363c7b0d13e1010e526bc68d6f04a308cd6fcde",
+    "tests/native/private_ane_ticket_state_test.cpp": "9306beb9fe68816fe6f0d721f4d25a478467891ead5256fc7b04c138c8706060",
+    "tools/native/build_private_ane_ticket_state_test.sh": "a74a672ab951d1afb21f72a4ec0a5febfac6b9d7d035f6f92d98ec7254032912"
+  },
+  "model_downloads": 0,
+  "full_checkpoint_copies": 0,
+  "new_e2e_groups": 0,
+  "metal_backend_contract": {
+    "device": "Apple M4 Pro",
+    "exit_code": 0,
+    "scope": "32 FP32 elements; copied parameters, event segmentation, import accounting, owner lifetime, range/capacity rejection, host timeout and late completion"
+  },
+  "native_ffn_tiny_contract": {
+    "valid_geometry_cpu": 3,
+    "invalid_geometry_cpu": 5,
+    "real_geometry_pso_prepares": 4,
+    "tiny_cases": 3,
+    "dispatches": 6,
+    "finite_values_checked": 10368,
+    "hidden_down_output_reference_errors": 0,
+    "rejected_bindings": 9,
+    "initial_compile_issue": "default language lacked MPP; explicit Metal4 + safe precise math fixed; first failed prepare submitted zero commands"
+  },
+  "real_ffn_replays": [
+    {
+      "schema": "native-qwen-ffn-replay-v1",
+      "scope": "BaseOnly layer0 FFN W0 island; not native DiT, ANE, E2E or qualification",
+      "source_identity_kind": "canonical-stat-identity",
+      "source_identity": "4c9828dbea7037e9967e357d6f69cba56f10703f071994bc5f2cbf2bf1efcae0",
+      "existing_gpu_library_build": "tc-runtime-build-v1-ec25a1634a7abf42f4e29524c8873bef4c603468f0160060a546c10eac96246f",
+      "native_recipe": "dense-bf16-mpp32x128-gate-sigmoid-silu-hidden-bf16-v1",
+      "device": "Apple M4 Pro",
+      "channels": 12288,
+      "rows": 1024,
+      "prepare_ms": 86.319083,
+      "native_wall_scope": "allocation/import/encode/submit/physical completion; PSO prep separate",
+      "samples": [
+        {
+          "layer": 0,
+          "step": 1,
+          "input_sha256": "51fd17115e87a719c9fe65f776832be3a786b6292aa48eb9178c2bd7bdbf3813",
+          "rrms": 0.00150962290354,
+          "gpu_ms": [
+            42.016,
+            41.953292
+          ],
+          "native_wall_ms": [
+            41.625333,
+            41.083875
+          ],
+          "native_device_ms": [
+            40.8547499683,
+            40.8484999789
+          ]
+        },
+        {
+          "layer": 0,
+          "step": 19,
+          "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+          "rrms": 0.00107847189065,
+          "gpu_ms": [
+            41.9675,
+            41.968625
+          ],
+          "native_wall_ms": [
+            41.292833,
+            41.066417
+          ],
+          "native_device_ms": [
+            40.8554166788,
+            40.8369583311
+          ]
+        }
+      ],
+      "receipt_path": "outputs/qwen-real-ffn-20261007/native-ffn-base-full.json",
+      "gpu_mean_ms": 41.97635425,
+      "native_wall_mean_ms": 41.2671145,
+      "wall_reduction_fraction": 0.016896173159201888,
+      "samples_warning": "2 points from one layer/prompt; 2 timings each, no confidence interval or E2E qualification",
+      "driver_compile_cache_state": "uncontrolled; reported prepare_ms is not a cold-start certificate"
+    },
+    {
+      "schema": "native-qwen-ffn-replay-v1",
+      "scope": "BaseOnly layer0 FFN W0 island; not native DiT, ANE, E2E or qualification",
+      "source_identity_kind": "canonical-stat-identity",
+      "source_identity": "4c9828dbea7037e9967e357d6f69cba56f10703f071994bc5f2cbf2bf1efcae0",
+      "existing_gpu_library_build": "tc-runtime-build-v1-ec25a1634a7abf42f4e29524c8873bef4c603468f0160060a546c10eac96246f",
+      "native_recipe": "dense-bf16-mpp32x128-gate-sigmoid-silu-hidden-bf16-v1",
+      "device": "Apple M4 Pro",
+      "channels": 6144,
+      "rows": 1024,
+      "prepare_ms": 325.778292,
+      "native_wall_scope": "allocation/import/encode/submit/physical completion; PSO prep separate",
+      "samples": [
+        {
+          "layer": 0,
+          "step": 1,
+          "input_sha256": "51fd17115e87a719c9fe65f776832be3a786b6292aa48eb9178c2bd7bdbf3813",
+          "rrms": 0.00185591937043,
+          "gpu_ms": [
+            21.733625,
+            21.479375
+          ],
+          "native_wall_ms": [
+            20.895792,
+            20.733042
+          ],
+          "native_device_ms": [
+            20.4909166787,
+            20.4925000435
+          ]
+        },
+        {
+          "layer": 0,
+          "step": 19,
+          "input_sha256": "c53fa81904e5cf6e5f056144f3a96c4cf3b47264cdf9988abe67c320c54b4005",
+          "rrms": 0.00128600234166,
+          "gpu_ms": [
+            21.08025,
+            21.203958
+          ],
+          "native_wall_ms": [
+            21.033583,
+            20.853583
+          ],
+          "native_device_ms": [
+            20.5108749215,
+            20.6398334121
+          ]
+        }
+      ],
+      "receipt_path": "outputs/qwen-real-ffn-20261007/native-ffn-base-half.json",
+      "gpu_mean_ms": 21.374302,
+      "native_wall_mean_ms": 20.879,
+      "wall_reduction_fraction": 0.023172780098269397,
+      "samples_warning": "2 points from one layer/prompt; 2 timings each, no confidence interval or E2E qualification",
+      "driver_compile_cache_state": "uncontrolled; reported prepare_ms is not a cold-start certificate"
+    }
+  ],
+  "qualification": {
+    "native_dit": false,
+    "native_attention": false,
+    "new_gpu_ane_graph": false,
+    "lora": false,
+    "app": false,
+    "default_enabled": false,
+    "reason": "FFN island W0 only; small/noisy component advantage, further native block and handoff proof required"
+  },
+  "native_linear_host_contract": {
+    "cpu_checks": 53,
+    "strict_host_syntax": "passed",
+    "device_created": false,
+    "shader_numerics_qualified": false,
+    "bias": "explicitly rejected",
+    "scope": "BF16 MPP dense projection foundation; not a native block"
+  },
+  "private_ticket_state_contract": {
+    "cpu": "passed",
+    "strict_host_syntax": "passed",
+    "device_executions": 0,
+    "scope": "sticky retirement and nonblocking observation; physical completion means callback observed under current private protocol",
+    "unresolved": "legacy force-signal/prequeued restore, external events/surfaces and common completion domain still require separate native handoff implementation"
+  },
+  "full_build": {
+    "exit_code": 0,
+    "scope": "private-enabled native library/CLI and Swift App compile; no App run or model E2E",
+    "developer_dir": "/Library/Developer/CommandLineTools",
+    "default_xcode_issue": "loader/SDK lookup failed before compilation; process-local CLT override succeeded",
+    "output_directory": "build/native-graph-20261007",
+    "artifacts": {
+      "libturbocider.dylib": {
+        "bytes": 9490192,
+        "sha256": "f2004683d5241e2ac6a2ae5aa57f596f444eae479b53f4b8a433236df54d6e93"
+      },
+      "turbocider": {
+        "bytes": 309176,
+        "sha256": "6c7d3cd28b7438f4fe2c6f6c04b111d113fd874a2b69e6f7a8686387d71ac641"
+      },
+      "TurboCiderNativeApp": {
+        "bytes": 12069616,
+        "sha256": "a8859bc470008e4a581480195e1c433105e2015580ab83648e0319b73919769a"
+      }
+    },
+    "runtime_build_id": "tc-runtime-build-v1-cc89c452a03717b5e6504cb81087758f5fb0b50a1d612c7f1f8864ad022119c9",
+    "catalog_runtime_id": "tc-catalog-runtime-v1-1eec9bc96f369bec5b58c8a97860a1feca176c9aa296ff5fb1f543df056ac269",
+    "log": "outputs/qwen-real-ffn-20261007/native-graph-build.log",
+    "deprecated_warnings": "existing CommonCrypto/fastMathEnabled warnings; new primitives strict host compile passed"
+  },
+  "owned_cache_cleanup": {
+    "main_output_bytes_before": 246251899,
+    "main_output_bytes_after": 24685903,
+    "removed_file_bytes": 222039596,
+    "scope": "only this turn owned .o/.a/module-cache and tiny component build directories; current dist App, existing models/captures and old runtime retained"
+  }
+}

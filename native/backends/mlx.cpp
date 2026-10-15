@@ -6,11 +6,13 @@
 #include "dense_gpu_projection.hpp"
 #include "dense_gpu_lora_b.hpp"
 #include "mlx_fd_reader.hpp"
+#include "lora_metadata.hpp"
 #include "gguf_read_snapshot.hpp"
 #include "../core/gguf.hpp"
 #include "../runtime/streaming/source_lease.hpp"
 #include "../platform/apple/platform.hpp"
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -237,6 +239,7 @@ void Weights::load_lease(
             ++index;
         }
         require(!values_.empty(), "streaming lease contains no tensors");
+        source_leases_.push_back(lease);
     } catch (...) {
         clear();
         throw;
@@ -312,8 +315,13 @@ void Weights::bind_arrays(const std::vector<std::string> &keys,
                           const std::vector<Tensor> &arrays, size_t offset) {
     require(offset <= arrays.size() && keys.size() <= arrays.size() - offset,
             "weight binding array range is invalid");
-    values_.clear();
-    runtime_loras_.clear();
+    // Rebinding releases old source/LoRA ownership but keeps the caller's
+    // declared packed geometry, including Q4/g64 and Q8/g128.
+    const int group_size = affine_group_size_;
+    const int bits = affine_bits_;
+    clear();
+    affine_group_size_ = group_size;
+    affine_bits_ = bits;
     values_.reserve(keys.size());
     for (size_t index = 0; index < keys.size(); ++index)
         values_.emplace(keys[index], arrays[offset + index]);
@@ -778,10 +786,53 @@ Tensor Weights::project_base_slice(const Tensor &x, const std::string &prefix,
     return output;
 }
 
-Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
-                              int row_start, int row_end, int col_start, int col_end, bool add_bias) const {
-    return project_slice_rank_impl(x,prefix,row_start,row_end,col_start,col_end,add_bias,nullptr);
+Tensor Weights::runtime_lora_low(const Tensor &x, const RuntimeLoRA &adapter,
+                                int col_start, int col_end,
+                                LoRAWorkspace *workspace) const {
+    const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
+    if (workspace) {
+        for (const auto &entry : workspace->entries_) {
+            if (entry.owner == this && entry.input.id() == x.id() &&
+                entry.down.id() == adapter.down.id() &&
+                entry.column_start == col_start && entry.column_end == col_end &&
+                entry.rank_dtype == rank_dtype && entry.bf16_operands == runtime_lora_bf16_fp32_ranks_)
+                return entry.low;
+        }
+    }
+    auto low = runtime_lora_rank(x, adapter.down, col_start, col_end);
+    if (workspace)
+        workspace->entries_.push_back({this, x, adapter.down, low,
+                                       col_start, col_end, rank_dtype, runtime_lora_bf16_fp32_ranks_});
+    return low;
 }
+
+Tensor Weights::project_slice(const Tensor &x, const std::string &prefix,
+                              int row_start, int row_end, int col_start, int col_end, bool add_bias, LoRAWorkspace *workspace) const {
+    return project_slice_rank_impl(x,prefix,row_start,row_end,col_start,col_end,add_bias,nullptr,workspace);
+}
+Tensor Weights::apply_runtime_lora_slice(const Tensor &base, const Tensor &x,
+                                       const std::string &prefix,
+                                       int row_start, int row_end,
+                                       int col_start, int col_end, bool add_bias,
+                                       LoRAWorkspace *workspace) const {
+    const auto &weight = at(prefix + ".weight");
+    require(weight.ndim() == 2, "supplied-base LoRA requires matrix weights: " + prefix);
+    if (quantized(prefix))
+        require(at(prefix + ".scales").ndim() == 2,
+                "supplied-base LoRA requires matrix scales: " + prefix);
+    const int logical_input = logical_input_width(prefix);
+    require(x.ndim() > 0 && row_start >= 0 && row_start < row_end &&
+                row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
+                col_end <= logical_input && x.shape(-1) == col_end - col_start,
+            "invalid supplied-base LoRA slice geometry: " + prefix);
+    auto expected_shape = x.shape();
+    expected_shape.back() = row_end - row_start;
+    require(base.shape() == expected_shape,
+            "supplied base projection shape does not match LoRA slice: " + prefix);
+    return project_slice_rank_impl(x,prefix,row_start,row_end,col_start,col_end,add_bias,nullptr,workspace,&base);
+}
+
+
 Tensor Weights::project_slice_with_ranks(const Tensor &x,const std::string &prefix,const std::vector<Tensor> &ranks,
     int rs,int re,int cs,int ce,bool bias) const {
     return project_slice_rank_impl(x,prefix,rs,re,cs,ce,bias,&ranks);
@@ -826,8 +877,8 @@ std::vector<Tensor> Weights::lora_input_ranks(const Tensor &x,const std::string 
     return result;
 }
 Tensor Weights::project_slice_rank_impl(const Tensor &x,const std::string &prefix,
-    int row_start,int row_end,int col_start,int col_end,bool add_bias,const std::vector<Tensor> *ranks) const {
-    auto output = project_base_slice(x,prefix,row_start,row_end,col_start,col_end,false);
+    int row_start,int row_end,int col_start,int col_end,bool add_bias,const std::vector<Tensor> *ranks, LoRAWorkspace *workspace, const Tensor *base) const {
+    auto output = base ? *base : project_base_slice(x,prefix,row_start,row_end,col_start,col_end,false);
     auto runtime = runtime_loras_.find(prefix);
     if(ranks)require(ranks->size()==(runtime==runtime_loras_.end()?0:runtime->second.size()),"shared projection rank adapter count mismatch");
     size_t rank_index=0;
@@ -841,7 +892,7 @@ Tensor Weights::project_slice_rank_impl(const Tensor &x,const std::string &prefi
             // fused gate/up adapter, intersect its global output row range
             // before selecting the corresponding low-rank B rows.
             const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
-            auto low = ranks ? ranks->at(index) : runtime_lora_rank(x,adapter.down,col_start,col_end);
+            auto low = ranks ? ranks->at(index) : runtime_lora_low(x,adapter,col_start,col_end,workspace);
             auto expected=x.shape();expected.back()=adapter.down.shape(0);
             require(low.shape()==expected && low.dtype()==rank_dtype,"shared projection rank shape/dtype mismatch");
             const int begin = first - row_start, end = last - row_start;
@@ -868,8 +919,8 @@ Tensor Weights::project_slice_rank_impl(const Tensor &x,const std::string &prefi
 Tensor Weights::lora_delta_slice(const Tensor &x, const std::string &prefix,
                                  int row_start, int row_end,
                                  int col_start, int col_end,
-                                 std::optional<mx::Dtype> output_dtype) const {
-    return lora_delta_slice_rank_impl(&x,x.shape(),x.dtype(),prefix,row_start,row_end,col_start,col_end,output_dtype,nullptr);
+                                 std::optional<mx::Dtype> output_dtype, LoRAWorkspace *workspace) const {
+    return lora_delta_slice_rank_impl(&x,x.shape(),x.dtype(),prefix,row_start,row_end,col_start,col_end,output_dtype,nullptr,workspace);
 }
 Tensor Weights::lora_delta_slice_with_ranks(const Tensor &x,const std::string &prefix,const std::vector<Tensor> &ranks,
     int rs,int re,int cs,int ce,std::optional<mx::Dtype> dtype) const {
@@ -881,7 +932,7 @@ Tensor Weights::lora_delta_from_ranks(const mx::Shape &shape,mx::Dtype input_dty
 }
 Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &input_shape,mx::Dtype input_dtype,
     const std::string &prefix,int row_start,int row_end,
-    int col_start,int col_end,std::optional<mx::Dtype> output_dtype,const std::vector<Tensor> *ranks) const {
+    int col_start,int col_end,std::optional<mx::Dtype> output_dtype,const std::vector<Tensor> *ranks, LoRAWorkspace *workspace) const {
     const auto &weight = at(prefix + ".weight");
     require(weight.ndim() == 2 && row_start >= 0 && row_start < row_end &&
                 row_end <= weight.shape(0) && col_start >= 0 && col_start < col_end &&
@@ -908,7 +959,7 @@ Tensor Weights::lora_delta_slice_rank_impl(const Tensor *x,const mx::Shape &inpu
         if (first >= last) continue;
         const auto rank_dtype = runtime_lora_fp16_ ? mx::float16 : mx::float32;
         require(col_end<=adapter.down.shape(1),"shared delta rank column range mismatch");
-        auto low = ranks ? ranks->at(index) : runtime_lora_rank(*x,adapter.down,col_start,col_end);
+        auto low = ranks ? ranks->at(index) : runtime_lora_low(*x,adapter,col_start,col_end,workspace);
         auto expected=input_shape;expected.back()=adapter.down.shape(0);
         require(low.shape()==expected && low.dtype()==rank_dtype,"shared delta rank shape/dtype mismatch");
         const int begin = first - row_start, end = last - row_start;
@@ -1120,8 +1171,29 @@ void Weights::clear() {
     values_.clear();
     runtime_loras_.clear();
     lease_readers_.clear();
+    source_leases_.clear();
+    lora_source_count_ = 0;
+    native_lora_rejection_.clear();
     affine_group_size_ = 32;
     affine_bits_ = 0;
+}
+
+Weights::RuntimeLoRASnapshot Weights::runtime_lora_snapshot() const {
+    RuntimeLoRASnapshot result;
+    result.native_metadata_compatible = native_lora_rejection_.empty();
+    result.native_rejection_reason = native_lora_rejection_;
+    result.fp16_rank_math = runtime_lora_fp16_;
+    for (const auto& [prefix, terms] : runtime_loras_) {
+        ResolvedLoRABinding binding{prefix,{}};
+        for (const auto& term : terms)
+            binding.ordered_terms.push_back({term.down,term.up,term.down.dtype(),term.up.dtype(),
+                term.scale,term.output_start,term.output_end,term.source_adapter_ordinal,
+                bool(term.source_lease),term.source_logical_id,term.source_role,term.source_lease,term.source_strength});
+        result.bindings.push_back(std::move(binding));
+    }
+    std::sort(result.bindings.begin(),result.bindings.end(),
+        [](const auto& a,const auto& b) { return a.prefix<b.prefix; });
+    return result;
 }
 
 size_t Weights::bytes() const {
@@ -1147,25 +1219,30 @@ void Weights::materialize() {
 }
 size_t Weights::apply_loras(const std::vector<LoRAAsset> &adapters, const std::string &role,
                             const Event &event, std::atomic<bool> &cancelled,
-                            bool inference_time) {
-    return apply_loras_impl(adapters,role,event,cancelled,inference_time,{},{});
+                            bool inference_time, bool strict_targets) {
+    return apply_loras_impl(adapters,role,event,cancelled,inference_time,{},{},strict_targets);
 }
 size_t Weights::apply_loras_leased(const std::vector<LoRAAsset> &adapters,const std::string &role,
     const Event &event,std::atomic<bool> &cancelled,bool inference_time,
-    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids) {
+    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids, bool strict_targets) {
     require(lease && lease->has_verified_content(),"LoRA lease requires native verified content");
-    return apply_loras_impl(adapters,role,event,cancelled,inference_time,lease,ids);
+    return apply_loras_impl(adapters,role,event,cancelled,inference_time,lease,ids,strict_targets);
+}
+size_t Weights::apply_loras_lease(const std::shared_ptr<const streaming::SourceLease>& lease,
+    const std::vector<std::string>& ids,const std::vector<LoRAAsset>& adapters,
+    const std::string& role,const Event& event,std::atomic<bool>& cancelled,
+    bool inference_time,bool strict_targets) {
+    return apply_loras_leased(adapters,role,event,cancelled,inference_time,lease,ids,strict_targets);
 }
 size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const std::string &role,
     const Event &event,std::atomic<bool> &cancelled,bool inference_time,
-    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids) try {
+    const std::shared_ptr<const streaming::SourceLease> &lease,const std::vector<std::string> &ids, bool strict_targets) try {
     require(!lease || ids.size()==adapters.size(),"LoRA lease logical ids must match adapters");
     if(lease)lease->revalidate_after_drain();
     size_t applied = 0;
     for (size_t index = 0; index < adapters.size(); ++index) {
         const auto &adapter = adapters[index];
         if (adapter.role != role) continue;
-        require(std::filesystem::is_regular_file(adapter.path), "LoRA file missing: " + adapter.path);
         checkpoint(cancelled); event("load_lora", int(index), int(adapters.size()));
         std::shared_ptr<mlx::core::io::Reader> reader;
         if(lease) {
@@ -1180,33 +1257,60 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
         }
         auto data=reader?mx::load_safetensors(reader):mx::load_safetensors(adapter.path);
         if(reader)lease_readers_.push_back(reader);
+        const auto metadata=lora_metadata::inspect(data.second);
         std::map<std::string, LoRAPair> pairs;
         for (auto &[raw, value] : data.first) {
             auto stem = raw;
+            auto assign = [&](std::optional<Tensor>& destination) {
+                if (destination && native_lora_rejection_.empty())
+                    native_lora_rejection_="ambiguous LoRA factor/alpha suffix: "+stem;
+                destination=value; // Preserve the legacy resolver's behavior.
+            };
             if (remove_suffix(stem, ".lora_A.default.weight") || remove_suffix(stem, ".lora_A.weight") ||
-                remove_suffix(stem, ".lora_down.weight")) pairs[stem].down = value;
+                remove_suffix(stem, ".lora_down.weight")) assign(pairs[stem].down);
             else if (remove_suffix(stem, ".lora_B.default.weight") || remove_suffix(stem, ".lora_B.weight") ||
-                     remove_suffix(stem, ".lora_up.weight")) pairs[stem].up = value;
-            else if (remove_suffix(stem, ".alpha") || remove_suffix(stem, ".lora_alpha")) pairs[stem].alpha = value;
+                     remove_suffix(stem, ".lora_up.weight")) assign(pairs[stem].up);
+            else if (remove_suffix(stem, ".alpha") || remove_suffix(stem, ".lora_alpha")) assign(pairs[stem].alpha);
+            else {
+                if (native_lora_rejection_.empty()) native_lora_rejection_="unsupported LoRA tensor: "+raw;
+                if (strict_targets) throw std::invalid_argument("unsupported LoRA tensor: " + raw);
+            }
         }
         size_t adapter_applied = 0;
         for (auto &[stem, pair] : pairs) {
-            if (!pair.down && !pair.up) continue;
+            if (!pair.down && !pair.up) {
+                if (native_lora_rejection_.empty()) native_lora_rejection_="orphan LoRA alpha: "+stem;
+                require(!strict_targets, "orphan LoRA alpha: " + stem);
+                continue;
+            }
             require(pair.down && pair.up, "incomplete LoRA pair: " + stem);
             const auto &down = *pair.down, &up = *pair.up;
             require(down.ndim() == 2 && up.ndim() == 2 && down.shape(0) == up.shape(1),
                     "invalid LoRA rank geometry: " + stem);
+            if (strict_targets)
+                require(down.shape(0) > 0 && down.shape(1) > 0 && up.shape(0) > 0,
+                        "LoRA rank and dimensions must be positive: " + stem);
             float scale = adapter.strength;
+            std::optional<float> tensor_alpha;
             if (pair.alpha) {
                 require(pair.alpha->size() == 1, "LoRA alpha must be scalar: " + stem);
                 // item<T>() reads storage as T; it does not convert BF16,
                 // FP16 or integer scalar metadata to a floating-point value.
                 const auto alpha = mx::astype(*pair.alpha, mx::float32).item<float>();
                 require(std::isfinite(alpha), "LoRA alpha must be finite: " + stem);
+                tensor_alpha = alpha;
                 scale *= alpha / float(down.shape(0));
             }
             require(std::isfinite(scale), "LoRA effective scale must be finite: " + stem);
+            if (native_lora_rejection_.empty())
+                native_lora_rejection_=metadata.rejection_for(down.shape(0),tensor_alpha);
+            auto bind_runtime = [&](const std::string& prefix,const Tensor& selected,
+                                    int first,int last) {
+                runtime_loras_[prefix].push_back({down,selected,scale,first,last,
+                    lora_source_count_+index,lease,lease?ids[index]:std::string{},adapter.role,adapter.strength});
+            };
             const auto targets = lora_targets(stem);
+            const auto applied_before_pair = adapter_applied;
             auto resolve_target_key = [&](const std::string &target) {
                 auto key = target.ends_with(".weight") ? target : target + ".weight";
                 // FLUX owns a real `to_out.0.weight`; Z-Image's Comfy layout
@@ -1222,6 +1326,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
             for (const auto &target : targets)
                 ++target_key_counts[resolve_target_key(target)];
             int offset = 0;
+            int64_t consumed_output_rows = 0;
             for (const auto &target : targets) {
                 auto key = resolve_target_key(target);
                 auto found = values_.find(key);
@@ -1236,8 +1341,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                     }
                     const int logical_input = convrot(prefix)
                         ? (base.dtype() == mx::uint32 ? base.shape(1) * 4 : base.shape(1))
-                        : (quantized(prefix) ? at(prefix + ".scales").shape(1) * 32
-                                              : base.shape(1));
+                        : logical_input_width(prefix);
                     require(base.ndim() == 2 && logical_input == down.shape(1),
                             "LoRA input does not match " + target);
                     int rows = base.shape(0);
@@ -1247,6 +1351,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                                         ? up
                                         : slice_axis(up, 0, offset, offset + rows);
                     offset += rows;
+                    consumed_output_rows += rows;
                     if (inference_time) {
                         // If multiple logical targets resolve to one fused
                         // base projection, preserve the adapter's row slice.
@@ -1255,8 +1360,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                         const bool shared_projection = target_key_counts[key] > 1;
                         const int output_start = shared_projection ? offset - rows : 0;
                         const int output_end = shared_projection ? offset : rows;
-                        runtime_loras_[prefix].push_back(
-                            {down, selected, scale, output_start, output_end});
+                        bind_runtime(prefix,selected,output_start,output_end);
                     } else {
                         auto delta = mx::matmul(mx::astype(selected, mx::float32),
                                                 mx::astype(down, mx::float32)) *
@@ -1284,7 +1388,8 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                                     base.shape(1) == down.shape(1),
                                 "Qwen21 fused gate/up LoRA geometry does not match " + target);
                         int start = qwen_mlp[2] == "gate_layer" ? 0 : up.shape(0);
-                        runtime_loras_[prefix].push_back({down, up, scale, start, start + up.shape(0)});
+                        bind_runtime(prefix,up,start,start+up.shape(0));
+                        consumed_output_rows += up.shape(0);
                         ++adapter_applied;
                         continue;
                     }
@@ -1306,19 +1411,18 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                     auto base = fused->second;
                     const int logical_input = convrot(fused_prefix)
                         ? (base.dtype() == mx::uint32 ? base.shape(1) * 4 : base.shape(1))
-                        : (quantized(fused_prefix) ?
-                            at(fused_prefix + ".scales").shape(1) * 32 : base.shape(1));
+                        : logical_input_width(fused_prefix);
                     require(base.ndim() == 2 && base.shape(0) % 3 == 0 &&
                                 logical_input == down.shape(1),
                             "Z-Image fused QKV geometry does not match " + target);
                     int rows = base.shape(0) / 3;
                     require(up.shape(0) == rows,
                             "Z-Image LoRA output does not match " + target);
+                    consumed_output_rows += rows;
                     char which = std::string(projection[2])[0];
                     int begin = which == 'q' ? 0 : (which == 'k' ? rows : 2 * rows);
                     if (inference_time) {
-                        runtime_loras_[fused_prefix].push_back({down, up, scale, begin,
-                                                                 begin + rows});
+                        bind_runtime(fused_prefix,up,begin,begin+rows);
                         ++adapter_applied;
                         continue;
                     }
@@ -1338,6 +1442,14 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                     ++adapter_applied;
                 }
             }
+            if (adapter_applied-applied_before_pair!=targets.size() || consumed_output_rows!=up.shape(0))
+                if (native_lora_rejection_.empty()) native_lora_rejection_="LoRA target/output range was not fully consumed: "+stem;
+            if (strict_targets) {
+                require(adapter_applied - applied_before_pair == targets.size(),
+                        "LoRA target did not match all " + role + " weights: " + stem);
+                require(consumed_output_rows == up.shape(0),
+                        "LoRA output rows do not exactly match target weights: " + stem);
+            }
         }
         require(adapter_applied > 0, "LoRA did not match any " + role + " weights: " + adapter.path);
         applied += adapter_applied; event("load_lora", int(index + 1), int(adapters.size()));
@@ -1351,6 +1463,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
         if(!sources.empty())mx::eval(sources);
         lease->revalidate_after_drain();checkpoint(cancelled);
     }
+    lora_source_count_ += adapters.size();
     return applied;
 } catch (...) {
     // LoRA deltas replace weight entries as they are materialized.  If a

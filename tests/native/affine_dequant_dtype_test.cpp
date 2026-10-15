@@ -48,6 +48,12 @@ int main() { try {
         require(same(packed.project_base_slice(partial, "p", 1, 6, 128, 256, false),
                      mx::quantized_matmul(partial, q, s, b, true, group, bits, "affine")),
                 "sliced packed projection differs");
+        auto base_slice = packed.project_base_slice(partial, "p", 1, 6, 128, 256, false);
+        require(same(packed.apply_runtime_lora_slice(base_slice, partial, "p", 1, 6, 128, 256, false), base_slice),
+                "supplied-base LoRA slice lost declared affine geometry");
+        Weights cleared = packed;
+        cleared.clear();
+        cleared.set_affine_quantization(32, bits == 4 ? 8 : 4);
         if (group == 64 && bits == 4) {
             Weights wrong;
             wrong.set_affine_quantization(32, 4);

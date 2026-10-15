@@ -23,12 +23,12 @@ RunResult Session::run_bf16_streamed(const Request &r,const Event &event,std::at
     require(!prepare_only && r.model=="qwen-image-2.1" && r.operation=="image.generate" && r.inputs.empty() &&
         r.width==512 && r.height==512 && r.steps>=2 && r.steps<=40 && r.execution=="gpu" &&
         r.residency=="component_staged" && r.loras.empty() && !r.prompt_enhance && r.hybrid_mlp_mode=="auto" &&
-        r.ane_manifest.empty() && r.encoder_ane_manifest.empty() && !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+        r.ane_manifest.empty() && r.encoder_ane_manifest.empty() && r.qwen21_dit_cache=="off" && !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
         !r.streaming.active() && !r.streaming_offload && !r.memory_constrained.enabled && !r.memory_budget_bytes &&
         transformer_source_.extension()==".safetensors" && encoder_source_.extension()==".safetensors",
-        "Qwen private original-BF16 streaming needs component-staged512 base GPU generation/warmup; public RAM authority not implemented");
+        "Qwen private original-BF16 streaming needs component-staged512 base GPU generation/warmup with DiT cache off; public RAM authority not implemented");
     for(const char *flag:{"TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS","TURBOCIDER_QWEN21_ENCODER_RETAIN_RUNTIME",
-        "TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU","TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC","TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
+        "TURBOCIDER_QWEN21_ENCODER_COMPILED_GPU","TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU","TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC","TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
         "TURBOCIDER_QWEN21_PREFILL_LAST_TARGET_ONLY_DIAGNOSTIC","TURBOCIDER_QWEN21_GPU_REUSE_FINAL_FFN",
         "TURBOCIDER_QWEN21_GPU_REUSE_PENULTIMATE_EVEN_FFN","TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
         "TURBOCIDER_QWEN21_METAL_QK_ROPE","TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE","TURBOCIDER_QWEN21_PROFILE_GPU_BLOCKS",

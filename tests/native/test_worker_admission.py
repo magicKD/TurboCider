@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parents[2]
 cli = Path(os.environ.get('TURBOCIDER_TEST_NATIVE_DIR', root / 'build/native')) / 'turbocider'
 with tempfile.TemporaryDirectory(prefix='tc-admission-') as directory:
     missing = str(Path(directory) / 'absent.json')
-    for mode in ['worker-query', 'worker-generate']:
+    for mode in ['worker-query', 'worker-generate', 'worker-runtime-generate']:
         for token in [b'', b'\0', b'\1']:
             proc = subprocess.run([str(cli), mode, missing, '--supervised'], input=token,
                                   capture_output=True, timeout=5)

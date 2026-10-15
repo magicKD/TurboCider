@@ -124,7 +124,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
             for(int i=0;i<3;++i)views[layer][i]=calibration_source(sources[layer][i]);
             if(lora) {
                 adapters[layer]=workload.adapter(depth[layer]);
-                require(adapters[layer]->gate_up && adapters[layer]->gate_up_channels && adapters[layer]->down_and_add,
+                require(adapters[layer]->gate_up && adapters[layer]->channel_gate_up && adapters[layer]->down_and_add,
                     "LoRA calibration requires full/range gate-up and ONE full-hidden down callbacks");
             }
         }
@@ -196,7 +196,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                 if(!ok)throw CapabilityError("native calibration W8 staging failed");
                 outputs.emplace_back(device,spec.packed_rows,shape.rows,Element::FP16);
                 if(lora) {
-                    auto deltas=adapters[layer]->gate_up_channels(input,fg,fa);
+                    auto deltas=adapters[layer]->channel_gate_up(input,fg,fa);
                     std::pair<Tensor,Tensor> c{pad_correction(deltas.first,fa),pad_correction(deltas.second,fa)};
                     mx::eval({c.first,c.second});
                     frozen_dg.emplace_back(device,fa,shape.rows,Element::FP16);
@@ -252,7 +252,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
                         item.restoration.push_back({outputs[layer].slice_rows(h+1,fa),matrix(tail_hidden.back(),shape.rows,fa),
                             0,workload.dtype==mx::bfloat16?DType::BF16:DType::FP16,1.f});
                         item.correction_producer=[&,layer]() {
-                            auto delta=adapters[layer]->gate_up_channels(input,fg,fa);
+                            auto delta=adapters[layer]->channel_gate_up(input,fg,fa);
                             auto g=pad_correction(delta.first,fa),u=pad_correction(delta.second,fa);mx::eval({g,u});
                             return std::make_pair(matrix(g,shape.rows,fa),matrix(u,shape.rows,fa));
                         };
@@ -292,7 +292,7 @@ ChannelSelection HybridFfn::calibrate_channels(const std::filesystem::path &mani
         if(!proposal.ane_channels)return select(0,false,"gpu_only",proposal.reason);
         // Fresh actual inference executor, not the independent measurement
         // adapter. It must stage/launch/restore/join through run_channels().
-        HybridFfn candidate(manifest,h,width,budget,cancelled,lora,nullptr,proposal.ane_channels);
+        HybridFfn candidate(manifest,h,width,budget,cancelled,lora,std::nullopt,{},nullptr,proposal.ane_channels);
         if(!candidate.available())return select(0,false,"rejected","proposed graph failed actual admission/self-test");
         candidate.scheduler_=std::make_unique<RowScheduler>(shape.rows,1,PartitionAxis::IntermediateChannels);
         candidate.fixed_async_=true;candidate.profile_=false;candidate.defer_channel_join_=false;

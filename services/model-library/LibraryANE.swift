@@ -37,7 +37,13 @@ struct LibraryANEPartition: Codable, Identifiable, Sendable {
             throw LibraryFailure(message: "ANE manifest 无效：需要 schema 2、形状、checkpoint 和完整分区列表。")
         }
         let hidden = shape["K"] as? Int
-        let inferred = hidden == 3840 ? "z-image-turbo" : hidden == 3072 ? "flux2-klein-4b" : ""
+        let exportIdentity = raw["export_identity"] as? [String: Any]
+        let qwen = hidden == 4096 && shape["mlp_width"] as? Int == 12288 &&
+            exportIdentity?["owner"] as? String == "turbocider.qwen21.dit.coreml.v1" &&
+            exportIdentity?["tensor_layout"] as? String == "qwen21" &&
+            source["blocks"] as? [Int] == Array(0..<32)
+        let inferred = hidden == 3840 ? "z-image-turbo" : hidden == 3072 ? "flux2-klein-4b" :
+            qwen ? "qwen-image-2.1" : ""
         let model = modelID == "auto" ? inferred : modelID
         guard !inferred.isEmpty, model == inferred, shape["N"] as? Int == hidden else {
             throw LibraryFailure(message: "ANE 分区架构与所选基础模型不匹配。")
@@ -46,7 +52,7 @@ struct LibraryANEPartition: Codable, Identifiable, Sendable {
         guard ["fixed", "range", "enumerated"].contains(mode), mode != "fixed" || buckets.count == 1 else {
             throw LibraryFailure(message: "ANE 形状模式与容量列表不一致。")
         }
-        let count = model == "z-image-turbo" ? 32 : 20
+        let count = model == "flux2-klein-4b" ? 20 : 32
         guard artifacts.count == count else { throw LibraryFailure(message: "ANE 分区不完整：需要 \(count) 个分区。") }
         var kind: String?
         for index in 0..<count {

@@ -12,7 +12,7 @@ ModelModule z_image_module() {
         [] {
             return Recipe{"z-image-turbo",
                           {{"text_encode", {}},
-                           {"denoise", {"text_encode"}, 9},
+                           {"denoise", {"text_encode"}, 8},
                            {"vae_decode", {"denoise"}},
                            {"export", {"vae_decode"}}},
                           true};
@@ -92,7 +92,7 @@ ModelModule z_image_module() {
             d.executor_operations = d.operations;
             d.inputs = {"text"};
             d.output = "image";
-            d.steps = 9;
+            d.steps = 8;
             d.frames = 1;
             d.width = 1024;
             d.height = 1024;

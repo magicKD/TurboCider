@@ -465,7 +465,8 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                  (ane_mlp_end == 4096 || ane_mlp_end == 6144 || ane_mlp_end == 8192) &&
                  output_channels == hidden + ane_mlp_end && !impl_->flexible &&
                  impl_->buckets.size() == 1 && impl_->buckets[0] == 1024 &&
-                 activation_precision == "int8" && a8_graph == "sq_v1_both" &&
+                 ((activation_precision == "int8" && a8_graph == "sq_v1_both") ||
+                  (activation_precision == "fp16" && weight_variant == "fp16" && a8_graph.empty())) &&
                  output_scale == 1.f &&
                  [d[@"shape"][@"output_channels"] isKindOfClass:NSNumber.class] &&
                  [d[@"shape"][@"output_channels"] intValue] == output_channels) ||

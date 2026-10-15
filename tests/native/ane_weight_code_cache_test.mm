@@ -2,6 +2,7 @@
 #include "../../native/backends/ane_w8a8_math.hpp"
 #include "../../native/backends/ane_weight_code_cache.hpp"
 #import <Metal/Metal.h>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -186,6 +187,29 @@ int main() {
         check(leased.weight_code_cache_stats().evictions>evictions,"expired source generation retained by code cache");
         leased.clear_weight_code_cache();wait_live(leased,0);
         // Zero-copy reader ownership and immutable bank isolation.
+        {
+            Device s1_cached(false,true,1<<20);
+            Surface sc(s1_cached,5,512,Element::I8),ss(s1_cached,5,1,Element::FP16);
+            Buffer s1(metal,size_t(view.cols)*sizeof(float)),s2(metal,size_t(view.cols)*sizeof(float));
+            std::fill_n(static_cast<float*>(s1.value.contents),view.cols,1.f);
+            std::fill_n(static_cast<float*>(s2.value.contents),view.cols,2.f);
+            auto s1_spec=spec;
+            s1_spec.column_scale=DeviceMatrixView{(__bridge void*)s1.value,s1.value.length,0,1,view.cols,0,DType::FP32,s1.owner,s1.owner};
+            auto stage_s1=[&] {
+                auto job=s1_cached.stage_w8(view,s1_spec,sc,ss);
+                check(job.finish().ok,"S1 code-cache staging failed");
+            };
+            stage_s1();stage_s1();
+            check(s1_cached.weight_code_cache_stats().fills==1 && s1_cached.weight_code_cache_stats().hits==1,
+                "same S1 generation did not reuse converted codes");
+            s1_spec.column_scale=DeviceMatrixView{(__bridge void*)s2.value,s2.value.length,0,1,view.cols,0,DType::FP32,s2.owner,s2.owner};
+            stage_s1();
+            check(s1_cached.weight_code_cache_stats().fills==2,
+                "code cache reused weights converted with another S1 generation");
+            s1_spec.column_scale.reset();stage_s1();
+            check(s1_cached.weight_code_cache_stats().fills==3,
+                "code cache reused S1-scaled weights for an unscaled request");
+        }
         Device native(false,true,32768,WeightCodeCacheStorage::NativeSurface);
         Surface scratch_codes(native,5,512,Element::I8),scratch_scales(native,5,1,Element::FP16);
         std::optional<Surface> held_codes,held_scales,held_view;

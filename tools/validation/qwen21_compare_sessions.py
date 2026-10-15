@@ -56,13 +56,13 @@ def validate_db_cache_pair(baseline, candidate, before_baseline=None, before_can
     """Check a DBCache run's saved work against its actual hybrid predictions."""
     assert baseline.get("qwen21_dbcache") is None, "DBCache baseline is already cached"
     cache = candidate.get("qwen21_dbcache")
-    assert cache and cache["front_blocks"] == 8 and cache["back_blocks"] == 0
-    assert cache["warmup_steps"] == 8 and 0 < cache["threshold"] <= 0.5
+    assert cache and cache["front_blocks"] in (1, 8) and cache["back_blocks"] == 0
+    assert cache["warmup_steps"] in (4, 8) and 0 < cache["threshold"] <= 0.5
     assert 1 <= cache.get("max_consecutive", 2) <= 8, "invalid consecutive skip bound"
     skipped = cache["cached_steps"]
     assert 0 <= skipped < candidate["steps"] - cache["warmup_steps"], (
         "DBCache skip count exceeds its eligible decode steps")
-    assert cache["saved_middle_blocks"] == skipped * 24, "DBCache saved-block count disagrees"
+    assert cache["saved_middle_blocks"] == skipped * (32 - cache["front_blocks"]), "DBCache saved-block count disagrees"
     if before_baseline is not None:
         assert before_candidate is not None and baseline["hybrid"]["checkpoint_sha256_verified"]
         assert candidate["hybrid"]["checkpoint_sha256_verified"]

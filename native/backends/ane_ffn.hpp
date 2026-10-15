@@ -7,6 +7,7 @@
 #include "ane_row_window.hpp"
 #include "mlx.hpp"
 #include "../runtime/session.hpp"
+#include "../runtime/async_preparation.hpp"
 #include <cstdlib>
 
 namespace tc::ane {
@@ -78,7 +79,7 @@ class HybridFfn {
         // Optional channel-only correction: exactly [first, first+count) of
         // each logical gate/up half. Row executors keep the full callback;
         // channel callers without this extension remain compatible.
-        std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> gate_up_channels = {};
+        std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)> channel_gate_up = {};
         std::optional<ChannelDownRanks> channel_down_ranks = std::nullopt;
     };
     struct CalibrationWorkload {
@@ -94,16 +95,34 @@ class HybridFfn {
     };
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs = false,
+              std::optional<PreparationResult<RuntimeGraph::Prepared>> prepared = std::nullopt,
+              std::string scheduler_identity = {},
               const CalibrationWorkload *calibration = nullptr,
               std::optional<int> calibrated_channels = std::nullopt,
-              std::optional<int> channel_override = std::nullopt);
-    HybridFfn(const std::filesystem::path &,int,int,size_t,std::atomic<bool> &,bool,
-              const CalibrationWorkload *,std::optional<int>,std::optional<int>,std::optional<int> bucket_override);
+              std::optional<int> channel_override = std::nullopt,
+              std::optional<int> bucket_override = std::nullopt,
+              int request_rows = 0, int fixed_bucket_rows = 0);
+    HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
+              size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
+              const CalibrationWorkload *calibration,
+              std::optional<int> calibrated_channels = std::nullopt,
+              std::optional<int> channel_override = std::nullopt,
+              std::optional<int> bucket_override = std::nullopt)
+        : HybridFfn(manifest, hidden, width, memory_budget, cancelled, require_lora_inputs,
+                    std::nullopt, {}, calibration, calibrated_channels, channel_override, bucket_override) {}
     ~HybridFfn();
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
     void begin_request(const std::string &adapter_identity = {},
                        std::optional<MemoryObservation> observation = std::nullopt);
+    // Encoder-only phase reporting for a reused executor. Ordinary DiT callers
+    // retain session-cumulative metrics. Call only after begin_request/drain.
+    void reset_phase_metrics(bool reused);
+    // Experimental request-bound S1 only. Values are immutable FP32 [1,H]
+    // and small enough to retain alongside the current/future W8 banks.
+    // Empty scales clear a previous profile after all device work is drained.
+    void set_smoothquant(const std::string &content_digest = {},
+                        const std::function<std::vector<Tensor>()> &make_scales = {}, int layers = 32);
     // Explicit family policy, not an error fallback or a precision change.
     // Install only while idle; these blocks use the family's complete GPU
     // path without staging or invoking any FFN/LoRA bridge callback.
@@ -130,6 +149,11 @@ class HybridFfn {
     HybridMetrics metrics() const;
     const std::string &reason() const { return reason_; }
     bool available() const { return graph_ && !failed_; }
+    // Current ownership, unlike the historical slot-byte metrics. A failed
+    // optional route must release all of these before returning GPU output.
+    bool retains_resources() const {
+        return graph_ || !weights_.empty() || !smoothquant_.empty() || output_.capacity() || hidden_.capacity();
+    }
     bool usable_configuration() const { return available() || calibration_declined_; }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
     bool channel_split() const { return axis_ == PartitionAxis::IntermediateChannels; }
@@ -137,6 +161,8 @@ class HybridFfn {
     int ane_channels() const { return metrics_.runtime_weight_ane_channels; }
     bool fp32_channel_join() const { return fp32_channel_join_; }
     static std::string executor_configuration_identity();
+    // Lightweight file identity for scheduling only, never model validation.
+    static std::string scheduler_source_identity(const std::filesystem::path &);
     std::string backend_label(bool gguf = false) const {
         if (metrics_.runtime_weight_backend.empty()) return gguf ? "mlx_cpp_metal_gguf" : "mlx_cpp_metal";
         return std::string(gguf ? "mlx_cpp_metal_gguf+" : "mlx_cpp_metal+") +
@@ -170,6 +196,7 @@ class HybridFfn {
     PartitionAxis axis_ = PartitionAxis::Rows;
     RowPolicy row_policy_;
     std::vector<Tensor> weights_;
+    std::vector<Tensor> smoothquant_;
     // Worker scratch only. Copy completed results into independently owned
     // tensors before publishing them to GPU consumers or adapter callbacks.
     std::vector<uint16_t> output_, hidden_;
@@ -194,14 +221,19 @@ class HybridFfn {
     size_t memory_budget_ = 0;
     std::string reason_;
     std::string adapter_identity_;
+    std::string scheduler_identity_, scheduler_cache_key_;
     std::chrono::steady_clock::time_point pre_start_;
     void degrade(const std::string &, int layer);
     void release_for_memory(const std::string &reason);
     bool admit_scratch(int ane_rows, bool adapter);
     Tensor run_channels(int, const Tensor &, const Gpu &, const ChannelGpu &,
                         std::atomic<bool> &, const Adapter *, const NextWeights &);
-    std::vector<DeviceWeightRegion> device_regions(const std::vector<FfnWeight> &) const;
+    std::vector<DeviceWeightRegion> device_regions(const std::vector<FfnWeight> &, int layer) const;
+    uint64_t retained_bytes() const;
+    uint64_t smoothquant_bank_margin() const;
+    void fill_activation_stage_metrics(HybridMetrics &) const;
     void maybe_prefetch(int, int, const NextWeights &);
+    void save_scheduler();
     static DeviceWeightView calibration_source(const FfnWeight &);
     static ChannelSelection calibrate_channels(const std::filesystem::path &, int, int, size_t,
         std::atomic<bool> &, bool, const CalibrationWorkload &);

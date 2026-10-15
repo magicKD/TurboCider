@@ -2,6 +2,7 @@
 #import <CoreML/CoreML.h>
 #import <CoreVideo/CoreVideo.h>
 #include <dispatch/dispatch.h>
+#include "../../native/backends/ane_public_w8_availability.hpp"
 #include <algorithm>
 #include <bit>
 #include <chrono>
@@ -25,7 +26,7 @@ struct Slot {
         check(CVPixelBufferCreate(kCFAllocatorDefault,c,r,i8?kCVPixelFormatType_OneComponent8:kCVPixelFormatType_OneComponent16Half,
               (__bridge CFDictionaryRef)attributes,&pixel)==kCVReturnSuccess && pixel,"public pixel buffer allocation failed");
         array=[[MLMultiArray alloc] initWithPixelBuffer:pixel shape:@[@(r),@(c)]];
-        if(!array || !CVPixelBufferGetIOSurface(pixel) || array.dataType!=(i8?MLMultiArrayDataTypeInt8:MLMultiArrayDataTypeFloat16)) {
+        if(!array || !CVPixelBufferGetIOSurface(pixel) || array.dataType!=tc::ane::public_w8_array_type(i8)) {
             CVPixelBufferRelease(pixel);pixel=nullptr;throw std::runtime_error("public INT8/FP16 IOSurface array binding failed");
         }
     }
@@ -96,7 +97,7 @@ int main(int argc,char **argv) {
             NSData *encoded_plan=[NSJSONSerialization dataWithJSONObject:planned options:NSJSONWritingSortedKeys error:&error];
             check(encoded_plan!=nil,"compute plan receipt serialization failed");
             NSString *plan_json=[[NSString alloc] initWithData:encoded_plan encoding:NSUTF8StringEncoding];
-            const auto expected=i8?MLMultiArrayDataTypeInt8:MLMultiArrayDataTypeFloat16;
+            const auto expected=tc::ane::public_w8_array_type(i8);
             check(model.modelDescription.inputDescriptionsByName.count==2 && model.modelDescription.outputDescriptionsByName.count==1,"actual public feature count differs");
             for(NSString *name in @[@"x",@"w"])
                 check(model.modelDescription.inputDescriptionsByName[name].multiArrayConstraint.dataType==expected,"actual public input datatype differs");

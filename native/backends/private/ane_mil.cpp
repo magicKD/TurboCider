@@ -1,6 +1,7 @@
 #include "ane_mil.hpp"
 #include "ane_mil_round.hpp"
 #include "ane_mil_round_compact.hpp"
+#include "../metal_graph/native_ane_lora_contract.hpp"
 #include <algorithm>
 #include "../ane_w8a8_math.hpp"
 #include <cstring>
@@ -171,7 +172,11 @@ std::string w8_matmul_program(const GraphShape &s) {
     return "program(1.3)\n{\n    func main_ane<ios18>(" + input_buffer(s.hidden, s.rows) + " x, " + input_buffer(s.width, s.hidden) +
         " w) {\n" + body + "    } -> (y);\n}\n";
 }
-W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,int activation_group_size,int hidden_group_size,bool bf16_value_boundaries) {
+namespace {
+namespace lora_contract = tc::metal_graph::native_ane_lora_contract;
+W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,
+    int activation_group_size,int hidden_group_size,bool bf16_value_boundaries,
+    const lora_contract::Spec* native_lora = nullptr) {
     // An explicit 4224-row bucket can cover 1024px image tokens and up to
     // 128 caption tokens in one request. Keep the existing smaller buckets
     // available: fewer handoffs are not a model-speed/quality guarantee.
@@ -195,6 +200,7 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     const int rotation_block=comfy?256:512;
     W8FfnProgram result;
     result.headroom = headroom; result.packed_rows = s.hidden + 1 + (s.lora_inputs ? s.width : 0);
+    if(native_lora)result.packed_rows=int(native_lora->packed_rows());
     if (result.packed_rows > 32768) throw CapabilityError("private W8A8 packed output too tall");
     // Model-independent grouped H, never checkpoint W. Comfy is a distinct
     // direct-code basis, NOT a different seed of the Sylvester recipe.
@@ -225,6 +231,17 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     };
     auto f = [&](const std::string &name, int r, const std::string &expression) { line(typed("fp16", r, s.rows) + " " + name + " = " + expression); };
     std::vector<std::string> carrier_checks;
+    // These checks precede narrowing/quantization and cannot be hidden by
+    // finite INT8 codes. Include the largest finite FP16 value, matching the
+    // immutable contract's CPU boundary validator; NaN comparisons fail.
+    const auto finite_boundary = [&](const std::string& value,int rows,const std::string& prefix) {
+        const auto magnitude=prefix+"_abs",safe=prefix+"_safe",bad=prefix+"_bad",token=prefix+"_token";
+        f(magnitude,rows,"abs(x = "+value+")");
+        line(typed("bool",rows,s.rows)+" "+safe+" = less_equal(x = "+magnitude+", y = fp16(65504))");
+        f(bad,rows,"select(cond = "+safe+", a = fp16(0), b = fp16(1))");
+        f(token,1,"reduce_max(x = "+bad+", axes = tensor<int32, [1]>([2]), keep_dims = bool(true))");
+        carrier_checks.push_back(token);
+    };
     auto round_boundary = [&](const std::string &input,const std::string &prefix) {
         // Guard BEFORE quantize can turn an Inf/NaN intermediate into finite
         // integer codes. 65408 is the first finite-half value that BF16-RNE
@@ -298,9 +315,19 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
     }
     if (s.lora_inputs) {
         input("fp16", "dg", s.width, s.rows); input("fp16", "du", s.width, s.rows);
+        if(native_lora) {
+            finite_boundary("gt",s.width,"native_gate_base");
+            finite_boundary("us",s.width,"native_up_base");
+            finite_boundary("dg_t",s.width,"native_gate_delta");
+            finite_boundary("du_t",s.width,"native_up_delta");
+        }
         f("gc", s.width, "add(x = gt, y = dg_t)");
         f("du_safe", s.width, "real_div(x = du_t, y = fp16(" + std::to_string(headroom) + "))");
         f("uc", s.width, "add(x = us, y = du_safe)"); gate = "gc"; up = "uc";
+        if(native_lora) {
+            finite_boundary(gate,s.width,"native_gate_corrected");
+            finite_boundary(up,s.width,"native_up_corrected");
+        }
     }
     f("neg", s.width, "mul(x = " + gate + ", y = fp16(-1))"); f("eg", s.width, "exp(x = neg)");
     f("denom", s.width, "add(x = eg, y = fp16(1))"); f("silu", s.width, "real_div(x = " + gate + ", y = denom)");
@@ -310,6 +337,38 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         const auto hsafe=round_boundary("hsafe_raw","hidden_bf16_value");
         f("hsafe",s.width,"mul(x = "+hsafe+", y = fp16(1))");
     } else f("hsafe", s.width, "mul(x = silu, y = " + up + ")");
+    std::string rank_output;
+    if(native_lora) {
+        finite_boundary("silu",s.width,"native_silu");
+        finite_boundary("hsafe",s.width,"native_hidden");
+        if(native_lora->variant()==lora_contract::Variant::Rank128Candidate) {
+            const int rank=int(native_lora->rank());
+            input("fp16","ad",rank,s.width);
+            // ad is [rank,C], not [C,rank]. Check the entire dynamic factor
+            // before dot products; the native GPU writer must also reject
+            // BF16->FP16 narrowing overflow before sealing its producer.
+            line(typed("fp16",rank,s.width)+" native_ad_abs = abs(x = ad_t)");
+            line(typed("bool",rank,s.width)+" native_ad_safe = less_equal(x = native_ad_abs, y = fp16(65504))");
+            line(typed("fp16",rank,s.width)+" native_ad_bad = select(cond = native_ad_safe, a = fp16(0), b = fp16(1))");
+            line("tensor<fp16, [1, 1, 1, 1]> native_ad_token = reduce_max(x = native_ad_bad, axes = tensor<int32, [2]>([2, 3]), keep_dims = bool(true))");
+            carrier_checks.push_back("native_ad_token");
+            for(int begin=0;begin<s.width;begin+=2048) {
+                const int count=std::min(2048,s.width-begin);
+                const auto suffix=std::to_string(begin),a="native_ad"+suffix,h="native_ah"+suffix,
+                    partial="native_lowp"+suffix;
+                line(typed("fp16",rank,count)+" "+a+" = slice_by_size(x = ad_t, begin = tensor<int32, [4]>([0, 0, 0, "+suffix+"]), size = tensor<int32, [4]>("+shape(rank,count)+"))");
+                f(h,count,"slice_by_size(x = hsafe, begin = tensor<int32, [4]>([0, 0, "+suffix+", 0]), size = tensor<int32, [4]>("+shape(count,s.rows)+"))");
+                f(partial,rank,"matmul(transpose_x = bool(false), transpose_y = bool(false), x = "+a+", y = "+h+")");
+                finite_boundary(partial,rank,"native_low_partial"+suffix);
+                if(rank_output.empty())rank_output=partial;
+                else {
+                    const auto sum="native_lows"+suffix;
+                    f(sum,rank,"add(x = "+rank_output+", y = "+partial+")");
+                    finite_boundary(sum,rank,"native_low_sum"+suffix);rank_output=sum;
+                }
+            }
+        }
+    }
     const auto c = std::to_string(s.width), m = std::to_string(s.rows);
     line("tensor<fp16, [1, " + c + ", 1, " + m + "]> h4 = reshape(x = hsafe, shape = tensor<int32, [4]>([1, " + c + ", 1, " + m + "]))");
     const auto rb=std::to_string(rotation_block);
@@ -321,6 +380,7 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         const auto hr=round_boundary("hr_raw","rotated_hidden_bf16_value");
         f("hr",s.width,"mul(x = "+hr+", y = fp16(1))");
     } else f("hr", s.width, "reshape(x = hr4, shape = tensor<int32, [4]>(" + shape(s.width, s.rows) + "))");
+    if(native_lora)finite_boundary("hr",s.width,"native_rotated_hidden");
     if(hidden_grouped) {
         const auto groups=std::to_string(s.width/256),gshape="[1, "+groups+", 256, "+m+"]",pshape="[1, "+groups+", 1, "+m+"]";
         line("tensor<fp16, "+gshape+"> hg = reshape(x = hr, shape = tensor<int32, [4]>("+gshape+"))");
@@ -340,8 +400,9 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         f("ratio", s.width, "real_div(x = hr, y = floor)"); f("a8", s.width, "mul(x = ratio, y = fp16(127))");
         line(typed("int8", s.width, s.rows) + " hq = quantize(input = a8, scale = fp16(1), output_dtype = string(\"int8\"))");
     }
-    if(bf16_value_boundaries) {
+    if(bf16_value_boundaries || native_lora) {
         f("hscale_positive",1,"mul(x = floor, y = fp16(0x1.0204081020408p+0))");
+        if(native_lora)finite_boundary("hscale_positive",1,"native_hscale");
         std::string any=carrier_checks.front();
         for(size_t i=1;i<carrier_checks.size();++i) {
             const auto next="carrier_bad"+std::to_string(i);
@@ -351,11 +412,45 @@ W8FfnProgram w8_swiglu_program(const GraphShape &s, uint64_t seed, float headroo
         f("hscale",1,"select(cond = carrier_ok, a = hscale_positive, b = fp16(-1))");
     } else f("hscale", 1, "mul(x = floor, y = fp16(0x1.0204081020408p+0))");
     const auto y = projection("d", "wd", "hq", s.hidden, s.width,hidden_grouped?"hratio_group":"");
-    const std::string outputs = "(" + y + ", hscale" + (s.lora_inputs ? ", hsafe" : "") + ")";
+    std::string hscale="hscale";
+    if(native_lora) {
+        finite_boundary(y,s.hidden,"native_down_normalized");
+        // Final guard aggregates all critical pre-quantization and rank
+        // boundaries, including the last down dot. This sentinel is consumed
+        // by the sealed GPU restore, never an independent physical permit.
+        std::string any=carrier_checks.front();
+        for(size_t i=1;i<carrier_checks.size();++i) {
+            const auto next="native_all_bad"+std::to_string(i);
+            f(next,1,"maximum(x = "+any+", y = "+carrier_checks[i]+")");any=next;
+        }
+        line(typed("bool",1,s.rows)+" native_all_ok = less(x = "+any+", y = fp16(0.5))");
+        f("native_checked_hscale",1,"select(cond = native_all_ok, a = hscale, b = fp16(-1))");
+        hscale="native_checked_hscale";
+    }
+    const std::string extra=native_lora && native_lora->variant()==lora_contract::Variant::Rank128Candidate?
+        ", "+rank_output:s.lora_inputs?", hsafe":"";
+    const std::string outputs = "(" + y + ", "+hscale+extra+")";
     f("packed", result.packed_rows, "concat(values = " + outputs + ", axis = int32(2), interleave = bool(false))");
     const int pitch = (s.rows + 31) / 32 * 32; const auto plane = std::to_string(uint64_t(result.packed_rows) * pitch);
     line(buffer(result.packed_rows, s.rows) + " y = tensor_to_tensor_buffer<ios17>(input = packed, interleave_factors = tensor<uint8, [4]>([1, 1, 1, 1]), strides = tensor<int64, [4]>([" + plane + ", " + plane + ", " + std::to_string(pitch) + ", 1]))");
     result.mil = "program(1.3)\n{\n    func main_ane<ios18>(" + parameters + ") {\n" + body + "    } -> (y);\n}\n";
+    return result;
+}
+} // namespace
+
+W8FfnProgram w8_swiglu_program(const GraphShape& shape,uint64_t seed,float headroom,W8Basis basis,
+    int activation_group_size,int hidden_group_size,bool bf16_value_boundaries) {
+    // Preserve legacy/default emitted bytes and original public signature.
+    return w8_swiglu_program_impl(shape,seed,headroom,basis,activation_group_size,hidden_group_size,bf16_value_boundaries);
+}
+
+W8FfnProgram native_lora_program(const tc::metal_graph::native_ane_lora_contract::Spec& spec) {
+    const auto& geometry=spec.geometry();
+    const bool base=spec.variant()==lora_contract::Variant::Base;
+    GraphShape shape{Kind::SwiGLU,int(geometry.rows),int(geometry.hidden),int(geometry.ane_channels),0,0,!base};
+    auto result=w8_swiglu_program_impl(shape,20260930,spec.headroom(),W8Basis::SylvesterDH,0,0,false,base?nullptr:&spec);
+    if(result.packed_rows!=int(spec.packed_rows()))
+        throw CapabilityError("native LoRA emitter output disagrees with immutable ABI");
     return result;
 }
 }

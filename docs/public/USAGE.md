@@ -6,9 +6,31 @@ TurboCider's App, CLI, C / Swift SDK and Unix socket API share a native runtime.
 Production inference does not start Python model workers. Offline conversion,
 Core ML export and premerged LoRA preparation are separate tasks.
 
+## Playground settings
+
+Playground has an independently collapsible settings panel on the right, with
+model directory, canvas dimensions, steps, seed, memory management, LoRA
+strength/strategy, DiT cache and reference encoding. Each template saves its
+own settings; switching templates does not change Creation. Synchronizing from
+Creation is an explicit action and retains the template's images and instruction.
+
+New image canvases and templates start at 512×512. Existing saved dimensions
+remain unchanged; use the ratio presets or edit width/height for another size.
+Qwen defaults to `component_staged`: encoder weights are released before DiT
+execution, and DiT is released before final decoding. Some bounded conditioning
+caches may remain; this does not mean every allocation is immediately zero.
+
+Fast 512 reference encoding can be combined with DiT cache for GPU base/ordinary
+LoRA editing at 512×512 and 20–40 steps with 1–3 references. These are explicit
+approximations, separate from resizing the imported file or output canvas.
+Six-step Viggle Turbo keeps DiT cache off; its preset is applied only when
+requested. Incompatible parameters display a reason and recovery controls.
+
 ## Requests and CLI
 
 ```sh
+dist/cli/turbocider --help
+dist/cli/turbocider capabilities
 dist/cli/turbocider doctor
 dist/cli/turbocider models
 dist/cli/turbocider plan request.json

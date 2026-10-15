@@ -39,6 +39,8 @@ rm -rf "$APP" "$DIST/cli"
 mkdir -p "$BIN" "$RES" "$DIST/cli"
 cp "$OUT"/TurboCiderNativeApp "$BIN/"
 cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
+mkdir -p "$RES/ModelBrands"
+cp assets/branding/model-brands/* "$RES/ModelBrands/"
 cp assets/config/local-streaming-profile.json "$RES/"
 cp "$OUT"/turbocider "$BIN/"
 for folder in "$BIN" "$DIST/cli"; do
@@ -95,6 +97,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>${PACKAGE_MIN_MACOS}</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>UTExportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>org.turbocider.studio-reference</string>
+<key>UTTypeDescription</key><string>TurboCider reference image ordering</string>
+<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+</dict></array>
 </dict></plist>
 PLIST
 codesign --force --sign - "$DIST/cli/turbocider"
@@ -102,3 +109,6 @@ codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 printf 'Local ad-hoc signed App: %s\n' "$APP"
 printf 'Packaged minimum macOS: %s\n' "$PACKAGE_MIN_MACOS"
+
+# Pure-Python HTTP adapter and ComfyUI nodes; no model/runtime dependencies.
+"${TURBOCIDER_BUILD_PYTHON:-python3}" tools/comfyui/package.py --output-dir "$DIST/comfyui"

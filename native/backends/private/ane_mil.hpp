@@ -2,6 +2,8 @@
 #include "../ane_runtime.hpp"
 #include <string>
 
+namespace tc::metal_graph::native_ane_lora_contract { class Spec; }
+
 namespace tc::ane::private_api {
 // Native fixed micrograph emitter, no externally supplied MIL and no embedded
 // checkpoint weights. FP16 infrastructure baseline; NOT a W8A8 emitter.
@@ -19,4 +21,8 @@ struct W8FfnProgram {
 W8FfnProgram w8_swiglu_program(const GraphShape &, uint64_t rotation_seed = 20260930, float headroom = 64.f,
                              W8Basis basis = W8Basis::SylvesterDH, int activation_group_size = 0,
                              int hidden_group_size = -1, bool bf16_value_boundaries = false);
+// Native hybrid LoRA has a distinct immutable ABI and finite-boundary recipe.
+// No model/factor constants: dg/du and, for Rank128, Adown remain runtime inputs.
+// This only emits MIL; it does not prove compilation/placement or create a job.
+W8FfnProgram native_lora_program(const tc::metal_graph::native_ane_lora_contract::Spec&);
 }

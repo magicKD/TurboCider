@@ -1,0 +1,1171 @@
+{
+  "schema": "tc-native-denoiser-real-block-status-v1",
+  "date": "2026-10-08",
+  "recorded_at_utc": "2026-10-07T17:41:42.421265+00:00",
+  "branch": "dev-verify",
+  "head": "8d12b44cc764d079ee31c6092725e22fcc8fb9e0",
+  "device": "Apple M4 Pro",
+  "memory_GiB": 48,
+  "scope": {
+    "models_downloaded": 0,
+    "checkpoints_copied": 0,
+    "new_e2e_image_groups": 0,
+    "app_launches_or_replacements": 0,
+    "native_full_base_dit_euler_operator_coverage": true,
+    "native_complete_real_request_qualification": false,
+    "native_gpu_ane_parallel_qualification": false,
+    "native_lora_qualification": false,
+    "native_z_image_qualification": false,
+    "native_edit_geometry": "tiny only; existing encoder and VAE unchanged",
+    "production_memory_context_bridge": false,
+    "session_native_delegate_enabled": false,
+    "default_route_changed": false
+  },
+  "current_artifacts": {
+    "runtime_build": "tc-runtime-build-v1-03830b95639c2d7a4c3fd92fb1258b4cdda4386fa1d03bec79670ed44da0690c",
+    "artifacts": [
+      {
+        "path": "build/native-graph-20261008-denoiser/libturbocider.dylib",
+        "bytes": 9758368,
+        "sha256": "e32219a622d241a008cd1d568f0e60c8e3d58795f34dbd7ab3b424838cef55fb"
+      },
+      {
+        "path": "build/native-graph-components-20261008/native-qwen-denoiser-component",
+        "bytes": 130256,
+        "sha256": "f527c7bdc087d586d0edb1449d8e9b00ec4b5f0876caa3a32bf0f1b0c83e16b7"
+      },
+      {
+        "path": "build/native-graph-components-20261008/native-qwen-block-replay",
+        "bytes": 389352,
+        "sha256": "8eb37fe3df5df28fadd5e9ae0eab418e183ba4ee42d0dfbd98a7c970aa1d7919",
+        "execution_scope": "compiled only after timed-output hash addition; no real model execution"
+      }
+    ]
+  },
+  "measured_artifacts_historical": {
+    "runtime_build": "tc-runtime-build-v1-013a2874857ed460bb295048cf4fe086a1fbb2b6639045990f65b007fbdd498d",
+    "artifacts": [
+      {
+        "path": "build/native-graph-20261008-denoiser/libturbocider.dylib",
+        "bytes": 9741472,
+        "sha256": "0cffe70a190cd838166ffa7daceac1c06731fdb4f214f976b12e930e19c7124f"
+      },
+      {
+        "path": "build/native-graph-components-20261008/native-qwen-denoiser-component",
+        "bytes": 109872,
+        "sha256": "250bd0ad1123ece8a7fcd415e5f430f0fa14d07a63400b29abf134ea90e8dbf7"
+      },
+      {
+        "path": "build/native-graph-components-20261008/native-qwen-block-replay",
+        "bytes": 389224,
+        "sha256": "4e26006a9df0bf1ab30b76a6b53d182966d45a8dd4b2ad31a1470023ace5f3b4"
+      }
+    ]
+  },
+  "tiny_v4": {
+    "oracle": "actual existing MLX Transformer + actual BF16 Euler",
+    "geometry": {
+      "hidden": 128,
+      "heads": 1,
+      "head_dim": 128,
+      "ffn": 256,
+      "layers": 2,
+      "steps": 2
+    },
+    "rrms_limit": 0.01,
+    "max_abs_limit": 0.01,
+    "cases": [
+      {
+        "case": "base",
+        "steps": 2,
+        "layers": 2,
+        "reference": "existing-mlx-transformer",
+        "rrms": 0,
+        "max_abs": 0,
+        "rrms_limit": 0.01,
+        "max_abs_limit": 0.01,
+        "request_bytes": 55300,
+        "block_arena_bytes": 26880,
+        "prefix_bytes": 3072,
+        "source_padding_hashes": 27,
+        "mode": "strict",
+        "reference_euler": "delta->BF16;noise*delta->BF16;latent+product->BF16",
+        "conditioning_recipe": "qwen-condition-silu-bf16-fast-exp-denom-recip-gelu-bf16-scalars-rms-fp32-expand-v3",
+        "ffn_recipe": "dense-bf16-mpp32x128-gate-sigmoid-fast-exp-denom-recip-bf16-silu-hidden-v3",
+        "drain_contract": "no-submission/status/zero/success/negative-checked",
+        "strict_threshold_passed": true,
+        "accepted": true,
+        "count": 256,
+        "reference_peak": 1.921875,
+        "relative_denominator_floor": 1e-06,
+        "absolute_error": {
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.02,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "relative_error": {
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.05,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bf16_ulp_error": {
+          "signed_zero": "coalesced",
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            null
+          ],
+          "counts": [
+            256,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "largest_abs_errors": [
+          {
+            "row": 0,
+            "column": 0,
+            "reference": -0.78125,
+            "native": -0.78125,
+            "reference_bf16": "0xbf48",
+            "native_bf16": "0xbf48",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "reference": -0.5234375,
+            "native": -0.5234375,
+            "reference_bf16": "0xbf06",
+            "native_bf16": "0xbf06",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "reference": 0.0517578125,
+            "native": 0.0517578125,
+            "reference_bf16": "0x3d54",
+            "native_bf16": "0x3d54",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.000244140625,
+            "reference_upper_ulp_size": 0.000244140625
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "reference": 0.2275390625,
+            "native": 0.2275390625,
+            "reference_bf16": "0x3e69",
+            "native_bf16": "0x3e69",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0009765625,
+            "reference_upper_ulp_size": 0.0009765625
+          },
+          {
+            "row": 0,
+            "column": 4,
+            "reference": -0.33984375,
+            "native": -0.33984375,
+            "reference_bf16": "0xbeae",
+            "native_bf16": "0xbeae",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          }
+        ]
+      },
+      {
+        "case": "ref1",
+        "steps": 2,
+        "layers": 2,
+        "reference": "existing-mlx-transformer",
+        "rrms": 0,
+        "max_abs": 0,
+        "rrms_limit": 0.01,
+        "max_abs_limit": 0.01,
+        "request_bytes": 97028,
+        "block_arena_bytes": 49920,
+        "prefix_bytes": 7168,
+        "source_padding_hashes": 30,
+        "mode": "strict",
+        "reference_euler": "delta->BF16;noise*delta->BF16;latent+product->BF16",
+        "conditioning_recipe": "qwen-condition-silu-bf16-fast-exp-denom-recip-gelu-bf16-scalars-rms-fp32-expand-v3",
+        "ffn_recipe": "dense-bf16-mpp32x128-gate-sigmoid-fast-exp-denom-recip-bf16-silu-hidden-v3",
+        "drain_contract": "no-submission/status/zero/success/negative-checked",
+        "strict_threshold_passed": true,
+        "accepted": true,
+        "count": 384,
+        "reference_peak": 2.09375,
+        "relative_denominator_floor": 1e-06,
+        "absolute_error": {
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.02,
+            null
+          ],
+          "counts": [
+            384,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "relative_error": {
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.05,
+            null
+          ],
+          "counts": [
+            384,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bf16_ulp_error": {
+          "signed_zero": "coalesced",
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            null
+          ],
+          "counts": [
+            384,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "largest_abs_errors": [
+          {
+            "row": 0,
+            "column": 0,
+            "reference": -0.796875,
+            "native": -0.796875,
+            "reference_bf16": "0xbf4c",
+            "native_bf16": "0xbf4c",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "reference": -0.51953125,
+            "native": -0.51953125,
+            "reference_bf16": "0xbf05",
+            "native_bf16": "0xbf05",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "reference": 0.0283203125,
+            "native": 0.0283203125,
+            "reference_bf16": "0x3ce8",
+            "native_bf16": "0x3ce8",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0001220703125,
+            "reference_upper_ulp_size": 0.0001220703125
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "reference": 0.236328125,
+            "native": 0.236328125,
+            "reference_bf16": "0x3e72",
+            "native_bf16": "0x3e72",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0009765625,
+            "reference_upper_ulp_size": 0.0009765625
+          },
+          {
+            "row": 0,
+            "column": 4,
+            "reference": -0.326171875,
+            "native": -0.326171875,
+            "reference_bf16": "0xbea7",
+            "native_bf16": "0xbea7",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          }
+        ]
+      },
+      {
+        "case": "ref2",
+        "steps": 2,
+        "layers": 2,
+        "reference": "existing-mlx-transformer",
+        "rrms": 0,
+        "max_abs": 0,
+        "rrms_limit": 0.01,
+        "max_abs_limit": 0.01,
+        "request_bytes": 118788,
+        "block_arena_bytes": 61440,
+        "prefix_bytes": 10240,
+        "source_padding_hashes": 34,
+        "mode": "strict",
+        "reference_euler": "delta->BF16;noise*delta->BF16;latent+product->BF16",
+        "conditioning_recipe": "qwen-condition-silu-bf16-fast-exp-denom-recip-gelu-bf16-scalars-rms-fp32-expand-v3",
+        "ffn_recipe": "dense-bf16-mpp32x128-gate-sigmoid-fast-exp-denom-recip-bf16-silu-hidden-v3",
+        "drain_contract": "no-submission/status/zero/success/negative-checked",
+        "strict_threshold_passed": true,
+        "accepted": true,
+        "count": 384,
+        "reference_peak": 2.109375,
+        "relative_denominator_floor": 1e-06,
+        "absolute_error": {
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.02,
+            null
+          ],
+          "counts": [
+            384,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "relative_error": {
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            0.001,
+            0.005,
+            0.01,
+            0.05,
+            null
+          ],
+          "counts": [
+            384,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bf16_ulp_error": {
+          "signed_zero": "coalesced",
+          "max": 0,
+          "bin_upper_bounds": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            null
+          ],
+          "counts": [
+            384,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "largest_abs_errors": [
+          {
+            "row": 0,
+            "column": 0,
+            "reference": -0.7890625,
+            "native": -0.7890625,
+            "reference_bf16": "0xbf4a",
+            "native_bf16": "0xbf4a",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "reference": -0.5234375,
+            "native": -0.5234375,
+            "reference_bf16": "0xbf06",
+            "native_bf16": "0xbf06",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.00390625,
+            "reference_upper_ulp_size": 0.00390625
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "reference": 0.041015625,
+            "native": 0.041015625,
+            "reference_bf16": "0x3d28",
+            "native_bf16": "0x3d28",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.000244140625,
+            "reference_upper_ulp_size": 0.000244140625
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "reference": 0.2216796875,
+            "native": 0.2216796875,
+            "reference_bf16": "0x3e63",
+            "native_bf16": "0x3e63",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.0009765625,
+            "reference_upper_ulp_size": 0.0009765625
+          },
+          {
+            "row": 0,
+            "column": 4,
+            "reference": -0.3203125,
+            "native": -0.3203125,
+            "reference_bf16": "0xbea4",
+            "native_bf16": "0xbea4",
+            "abs_error": 0,
+            "relative_error": 0,
+            "bf16_ulps": 0,
+            "reference_lower_ulp_size": 0.001953125,
+            "reference_upper_ulp_size": 0.001953125
+          }
+        ]
+      }
+    ],
+    "drain_success_no_submission_zero_negative_contract_checks": true,
+    "device_timeout_fault_injection": false
+  },
+  "silu_v4": [
+    {
+      "component": "silu",
+      "reference": "actual-compiled-tc-silu",
+      "recipe": "qwen-condition-silu-bf16-fast-exp-denom-recip-gelu-bf16-scalars-rms-fp32-expand-v3",
+      "rrms": 0,
+      "max_abs": 0,
+      "required_bf16_ulps": 0,
+      "accepted": true,
+      "count": 1024,
+      "reference_peak": 100,
+      "relative_denominator_floor": 1e-06,
+      "absolute_error": {
+        "mean": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "bin_upper_bounds": [
+          0,
+          0.001,
+          0.005,
+          0.01,
+          0.02,
+          null
+        ],
+        "counts": [
+          1024,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "relative_error": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "bin_upper_bounds": [
+          0,
+          0.001,
+          0.005,
+          0.01,
+          0.05,
+          null
+        ],
+        "counts": [
+          1024,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "bf16_ulp_error": {
+        "signed_zero": "coalesced",
+        "max": 0,
+        "bin_upper_bounds": [
+          0,
+          1,
+          2,
+          4,
+          8,
+          null
+        ],
+        "counts": [
+          1024,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "largest_abs_errors": [
+        {
+          "row": 0,
+          "column": 0,
+          "reference": 0,
+          "native": 0,
+          "reference_bf16": "0x8000",
+          "native_bf16": "0x8000",
+          "abs_error": 0,
+          "relative_error": 0,
+          "bf16_ulps": 0,
+          "reference_lower_ulp_size": 9.183549616e-41,
+          "reference_upper_ulp_size": 9.183549616e-41
+        },
+        {
+          "row": 0,
+          "column": 1,
+          "reference": 0,
+          "native": 0,
+          "reference_bf16": "0x8000",
+          "native_bf16": "0x8000",
+          "abs_error": 0,
+          "relative_error": 0,
+          "bf16_ulps": 0,
+          "reference_lower_ulp_size": 9.183549616e-41,
+          "reference_upper_ulp_size": 9.183549616e-41
+        },
+        {
+          "row": 0,
+          "column": 2,
+          "reference": -1.795589924e-06,
+          "native": -1.795589924e-06,
+          "reference_bf16": "0xb5f1",
+          "native_bf16": "0xb5f1",
+          "abs_error": 0,
+          "relative_error": 0,
+          "bf16_ulps": 0,
+          "reference_lower_ulp_size": 7.450580597e-09,
+          "reference_upper_ulp_size": 7.450580597e-09
+        },
+        {
+          "row": 0,
+          "column": 3,
+          "reference": -0.04931640625,
+          "native": -0.04931640625,
+          "reference_bf16": "0xbd4a",
+          "native_bf16": "0xbd4a",
+          "abs_error": 0,
+          "relative_error": 0,
+          "bf16_ulps": 0,
+          "reference_lower_ulp_size": 0.000244140625,
+          "reference_upper_ulp_size": 0.000244140625
+        },
+        {
+          "row": 0,
+          "column": 4,
+          "reference": -0.2392578125,
+          "native": -0.2392578125,
+          "reference_bf16": "0xbe75",
+          "native_bf16": "0xbe75",
+          "abs_error": 0,
+          "relative_error": 0,
+          "bf16_ulps": 0,
+          "reference_lower_ulp_size": 0.0009765625,
+          "reference_upper_ulp_size": 0.0009765625
+        }
+      ]
+    }
+  ],
+  "silu_diagnostic": {
+    "v3_strict_0_ulp_failed": true,
+    "mismatching_values": 1,
+    "total_values": 1024,
+    "x": -6.84375,
+    "difference_bf16_ulps": 2,
+    "cause": "actual compiled MLX SiLU agrees with Fast exp BF16 936 at midpoint; native Precise exp BF16 940, as does separately materialized MLX sigmoid*input",
+    "fix": "explicit metal::fast::exp only in conditioning/FFN SiLU; BF16 primitive rounding preserved; global Safe/Precise unchanged",
+    "thresholds_relaxed": false
+  },
+  "real_block_v3": {
+    "runtime_build": "tc-runtime-build-v1-013a2874857ed460bb295048cf4fe086a1fbb2b6639045990f65b007fbdd498d",
+    "source_identity": "4c9828dbea7037e9967e357d6f69cba56f10703f071994bc5f2cbf2bf1efcae0",
+    "encoder_source_identity": "f3517962164eea3a12db6729954d4060cf7eca347f14d7dd959bb519915e0149",
+    "tokenizer_source_identity": "91a862407c591f412924ede6eb2b27102c025b8b74cf1a1a900359e5f5d5ed8f",
+    "warmups_each_phase": 1,
+    "paired_samples_each_phase": 2,
+    "completed_gpu_dit_steps": 1,
+    "stopped_step": 1,
+    "stopped_layer": 0,
+    "prompt": "A cobalt blue ceramic teapot on a pale wooden table, soft window light, realistic product photography.",
+    "seed": 42,
+    "prepare_ms": 228.419084,
+    "tensor_files_bytes": 0,
+    "vae_weights_preloaded": true,
+    "vae_decode": false,
+    "png_export": false,
+    "elapsed_seconds": 9.666382540948689,
+    "swap_before": "vm.swapusage: total = 4096.00M  used = 3305.75M  free = 790.25M  (encrypted)",
+    "swap_after": "vm.swapusage: total = 4096.00M  used = 3305.75M  free = 790.25M  (encrypted)",
+    "samples": [
+      {
+        "phase": "prefill",
+        "rows": 1053,
+        "gpu_ms": [
+          69.900125,
+          69.160167
+        ],
+        "native_wall_ms": [
+          65.41225,
+          64.706542
+        ],
+        "native_device_ms": [
+          64.6576249273,
+          64.4703749567
+        ],
+        "mean_gpu_ms": 69.530146,
+        "mean_native_wall_ms": 65.05939599999999,
+        "wall_reduction_percent": 6.429944789703168,
+        "speedup": 1.0687179758016814,
+        "warmup_output_error": {
+          "rrms": 0.000114954685714,
+          "max_abs": 1,
+          "finite_values": 4313088
+        },
+        "prefix_compact_copy_bytes": 475136,
+        "prefix_compact_copy_wall_ms": 2.918667,
+        "workspace_bytes": 138018816,
+        "graph_steps": 17
+      },
+      {
+        "phase": "steady",
+        "rows": 1024,
+        "gpu_ms": [
+          66.209417,
+          65.51075
+        ],
+        "native_wall_ms": [
+          63.513875,
+          63.09325
+        ],
+        "native_device_ms": [
+          62.8049583174,
+          62.791250064
+        ],
+        "mean_gpu_ms": 65.8600835,
+        "mean_native_wall_ms": 63.3035625,
+        "wall_reduction_percent": 3.881745761831601,
+        "speedup": 1.0403851047087596,
+        "warmup_output_error": {
+          "rrms": 7.51552260363e-05,
+          "max_abs": 0.5,
+          "finite_values": 4194304
+        },
+        "prefix_compact_copy_bytes": 475136,
+        "prefix_compact_copy_wall_ms": 0.945375,
+        "workspace_bytes": 151470080,
+        "graph_steps": 18
+      }
+    ],
+    "limitations": [
+      "only layer0, one prompt, two timed samples each phase; no statistical or E2E claim",
+      "prepare, imports, preallocated output/workspace and prefix copies excluded; internal runtime allocations counted",
+      "GPU diagnostic eval boundary and pinned Data disable input donation, may affect allocation and cross-block lazy scheduling",
+      "v3 native error/finite scan after warmup only; timed native outputs not individually compared",
+      "native steady consumes actual GPU prefix compact copy, not native-produced prefix",
+      "v4 source/math/drain/probe changes do not inherit v3 performance qualification"
+    ],
+    "probe_followup": {
+      "timed_native_output_sha_equals_screen_sha": true,
+      "checks_outside_timing": true,
+      "host_compile_passed": true,
+      "real_model_rerun_after_change": false
+    }
+  },
+  "cpu_verification": {
+    "step_bf16_and_finite_contract_passed": true,
+    "buffer_actual_impl_lifetime_contract_passed": true,
+    "time_rope_sequence_math_passed": true,
+    "bf16_error_diagnostic_contract_passed": true,
+    "prefix_interleaved_scan_45_contracts_passed": true,
+    "ops_and_ffn_v3_cpu_contracts": "agent-run PASS recorded in task transcript; no standalone log",
+    "strict_host_and_offline_ops_msl": "agent-run PASS recorded in task transcript; complete FFN Metal4 validated by tiny device execution"
+  },
+  "cleanup": {
+    "receipt": "outputs/qwen-native-denoiser-20261008/owned-cleanup.json",
+    "files_removed": 301,
+    "bytes_removed": 30727645,
+    "MiB_removed": 29.304165840148926,
+    "all_listed_files_absent": true,
+    "retained_measured_v3_bytes": 10130696,
+    "retained_current_runtime_and_probe_artifacts": true,
+    "models_dist_baselines_global_caches_removed": false
+  },
+  "source_digests_current": [
+    {
+      "path": "native/backends/metal_graph/backend.hpp",
+      "bytes": 10106,
+      "sha256": "840cdb3185a1e466bd9a7273f5ddfffcf00a57635c50cf15af937ec11ca51053"
+    },
+    {
+      "path": "native/backends/metal_graph/backend.mm",
+      "bytes": 26033,
+      "sha256": "4fcd7664f91dfa8a91bc7a24c9a740e9251b2084440e63516e4476612873b3ea"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/dense_attention.hpp",
+      "bytes": 14299,
+      "sha256": "43ec21aa7798f8a7a5f7b2dcf641a7f31092ab1f352a883336ee6213489e7f92"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/dense_ffn.hpp",
+      "bytes": 6841,
+      "sha256": "ebdf8cdd2b672c981d8cf348bfe5529166ad822fb37fe9b66b23e6eb267e244d"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/dense_linear.hpp",
+      "bytes": 8416,
+      "sha256": "fecf0614c9fba341dd4c5befe58b1321b65dad8617155d3a919c2b8c8bee11d1"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/qwen_ops.hpp",
+      "bytes": 17596,
+      "sha256": "acd72ebc34fd1d19c8b2f1b10721b185e9c16ec10d94d7baf04651da329079cd"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/step_ops.hpp",
+      "bytes": 7913,
+      "sha256": "7386da41df72b09e6283e7077721411a12c8f67bb626d4da0604c2a8cf6cd9bd"
+    },
+    {
+      "path": "native/backends/metal_graph/kernels/vendor/steel_attention_support.hpp",
+      "bytes": 38578,
+      "sha256": "b9b5e3bdab01338cf61bac187a8a7199f5e1de4984a62354015b17b5ab9f9f61"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_bridge.cpp",
+      "bytes": 3779,
+      "sha256": "41fe2effb17f8092f304ab933329b2d3cf08f43fb8a8e33548b16804b600d60c"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_bridge.hpp",
+      "bytes": 1071,
+      "sha256": "1d75bb13dc460f509ad4fd643d5d3c76972a05dd1be6a14a7a8107e2a1c7438b"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_ffn_island.cpp",
+      "bytes": 1970,
+      "sha256": "12d3614b3700d87fe08882a21b6bc3f4b53701f5177659fb069327bb92522bb0"
+    },
+    {
+      "path": "native/backends/metal_graph/mlx_ffn_island.hpp",
+      "bytes": 984,
+      "sha256": "31b1b4e8ab97a895a629f4571b953adb4f32e1be219dfe585e66ecf11c1c4496"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ane_handoff.hpp",
+      "bytes": 5044,
+      "sha256": "2c8dcb492c884b1637f08ae03a0526cd624d4393a9b0249ec6be2ed5243e4671"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ane_handoff.mm",
+      "bytes": 11921,
+      "sha256": "7cbd594f3f8fb4b64928d1ba8fbd56cf92d5f432729c477a885da6f2d11f5d87"
+    },
+    {
+      "path": "native/backends/metal_graph/native_attention.hpp",
+      "bytes": 1890,
+      "sha256": "b7c42243f9fc31fe3c81ea0cb0baf5339cb531d00fdc923915fa13cb8af8a610"
+    },
+    {
+      "path": "native/backends/metal_graph/native_attention.mm",
+      "bytes": 3145,
+      "sha256": "7ff53e4c59900865c42cc1c7d2fcf0cf1b48b2532c9beb63876413369fa22ed6"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ffn.hpp",
+      "bytes": 2165,
+      "sha256": "9db40984924773213b93f5aba15a648a6c9162f2e24c267bfe38997e28ce60c7"
+    },
+    {
+      "path": "native/backends/metal_graph/native_ffn.mm",
+      "bytes": 7015,
+      "sha256": "6ea3000c6f4cfd1d9e29b27f942555ceeed04bd5b91cb4a39f9c902455ee4bf7"
+    },
+    {
+      "path": "native/backends/metal_graph/native_linear.hpp",
+      "bytes": 1349,
+      "sha256": "0ce03b11f004aa49879134929579726a978486dd944ce9bcf442be1d352140b7"
+    },
+    {
+      "path": "native/backends/metal_graph/native_linear.mm",
+      "bytes": 3639,
+      "sha256": "b82e52b6f33d77d75cce5a16cd583e55d0e2cb8347769041f6a5ae8a50127a10"
+    },
+    {
+      "path": "native/backends/metal_graph/native_qwen_ops.hpp",
+      "bytes": 6202,
+      "sha256": "e11c2ead86a67fb0b6e0efaf66fde27722ad5439fef41283adb08f13d1bac7ee"
+    },
+    {
+      "path": "native/backends/metal_graph/native_qwen_ops.mm",
+      "bytes": 17178,
+      "sha256": "82c3c6414fea8145dd3846532425da08fe8a10c39c51a9ac8d35aa57007ca415"
+    },
+    {
+      "path": "native/backends/metal_graph/native_step_ops.hpp",
+      "bytes": 2225,
+      "sha256": "7dff86023119af1128bca28d0add59664186ba3c7ced49839d77e1430967f03f"
+    },
+    {
+      "path": "native/backends/metal_graph/native_step_ops.mm",
+      "bytes": 5517,
+      "sha256": "91e9cbde39a76553fe63736aaaab7772ab6f7af35c0f40b95529fc758cb9e734"
+    },
+    {
+      "path": "native/models/qwen21/diagnostic_block_observer.hpp",
+      "bytes": 1185,
+      "sha256": "15785a326d11ac43b542d4ef3f49c292b1b63628cba76b174d0e8cccaec7d631"
+    },
+    {
+      "path": "native/models/qwen21/mlx_native_denoiser.cpp",
+      "bytes": 4783,
+      "sha256": "192a231f033d19f7183d3a1cc1c0f7aebb548af7fa1f9b94654fcf66710bca36"
+    },
+    {
+      "path": "native/models/qwen21/mlx_native_denoiser.hpp",
+      "bytes": 624,
+      "sha256": "930b8d601d8efc93e3c359aa70368a51bde3c26f51451d5c3323aa6b16fb4b3e"
+    },
+    {
+      "path": "native/models/qwen21/native_block.cpp",
+      "bytes": 15180,
+      "sha256": "d1d9eaf210d779854a747e0ff46ce345ca7d4bd0338367ce8c8a3c8e963b2f8e"
+    },
+    {
+      "path": "native/models/qwen21/native_block.hpp",
+      "bytes": 4411,
+      "sha256": "9962543fc50d9578a85c1712d271f2bed91cf1bb2f68f83380c0d92395b93756"
+    },
+    {
+      "path": "native/models/qwen21/native_denoiser.cpp",
+      "bytes": 21659,
+      "sha256": "a255e030b6f866ace028d0b6c7219c58de585525b31c31a7b6ade5675358cadb"
+    },
+    {
+      "path": "native/models/qwen21/native_denoiser.hpp",
+      "bytes": 4467,
+      "sha256": "a44ffba0da84738f2b6ff41ae1bbcd7a3e60db403eb3915bb72d6af307ed1740"
+    },
+    {
+      "path": "native/models/qwen21/native_denoiser_math.cpp",
+      "bytes": 2052,
+      "sha256": "813ff1272c4863a3d9d5c32c7d920fcdd0835d5ea7b487143c9c1054f3f58553"
+    },
+    {
+      "path": "native/models/qwen21/pipeline.cpp",
+      "bytes": 89659,
+      "sha256": "fb0f01e22c61145ee0b609ac42beb74e3becd09d3d58c9b93f3c9388862e4ade"
+    },
+    {
+      "path": "native/models/qwen21/pipeline.hpp",
+      "bytes": 3484,
+      "sha256": "c4efc5e8fdab3ad46480443885f5a264d7eb6b2d4242893364ce68f04d5e93d7"
+    },
+    {
+      "path": "native/models/qwen21/transformer.cpp",
+      "bytes": 47028,
+      "sha256": "467449011f596035f00e09c0cd052fab9a91eeab8364df067cb2fbfd580f461e"
+    },
+    {
+      "path": "native/models/qwen21/transformer.hpp",
+      "bytes": 9958,
+      "sha256": "99d1c3ebe008ae3d1ce1d88a4551518603a4e80f77ceb480cc67230e928b9ef4"
+    },
+    {
+      "path": "tools/native/build.sh",
+      "bytes": 30974,
+      "sha256": "8b5ee7e075dc53abd416716ad03ef1adb984520c7b8e784678d56eca88e549fb"
+    },
+    {
+      "path": "tools/native/build_native_qwen_block_replay.sh",
+      "bytes": 1584,
+      "sha256": "54b1827999c86930a0294c8ce7f15c103e34b0f21220088e086826210519874f"
+    },
+    {
+      "path": "tools/native/build_native_qwen_denoiser_component.sh",
+      "bytes": 1599,
+      "sha256": "42cd98c9ecadc9e404aecc394ae5b03eea8082ddb9c7cb30241eda339c1d431c"
+    },
+    {
+      "path": "tools/native/native_qwen_block_replay.cpp",
+      "bytes": 29340,
+      "sha256": "f2df6eaecc015b477c6988a151fb7046dbfba03355bae539f828e5d6b294c4cc"
+    },
+    {
+      "path": "tools/native/native_qwen_block_replay_math.hpp",
+      "bytes": 6035,
+      "sha256": "2632659f70e6572e3b785ac765cc4219253bfe91dc13e6382eef2aed7578609b"
+    },
+    {
+      "path": "tools/native/native_qwen_denoiser_component.cpp",
+      "bytes": 32879,
+      "sha256": "f860aaf1877f38237a0a799e633aede4ed60ae921ed6c6c6c94ea3e896107fcb"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/cpu-step.log",
+      "bytes": 122,
+      "sha256": "96f7faee8c9503641c80e3e8c27108933c8ed59581109c120171cdca92bf3707"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/cpu-lifetime.log",
+      "bytes": 106,
+      "sha256": "f059f1f7cee7583c7e5df9c2a76cc4ef3839d0ad5edf9940614f6b9fbe35e4ac"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/cpu-denoiser-math.log",
+      "bytes": 147,
+      "sha256": "82b307e40b7e30e977a5a9149a7999b41dd0adec1b094764707c84b17d76bec9"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/cpu-error-diagnostics.log",
+      "bytes": 53,
+      "sha256": "75a3703738674191a8a262e0ac63a63345cfe5faa3f0c6e6c57c8925f1ac01a5"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/cpu-probe-math-interleaved.log",
+      "bytes": 80,
+      "sha256": "f8777bbe0b7c7f8a43803c2f1d260fd006dbba6e2c52b9de15a074a173e0249b"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/cpu-probe-repeatability-host.log",
+      "bytes": 362,
+      "sha256": "32e12a4a0f231426af6bd73a2c69a5b583117c8e89b11887c888e1b0205e35c2"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/native-build.v4.log",
+      "bytes": 2246,
+      "sha256": "3d6df25981394b5f45aebd46137a71ec39ff78f5c0f2182812b0e0b1ff8a8dd5"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/tiny-component-build.v4.log",
+      "bytes": 126,
+      "sha256": "3fcf2d1e51c2cb7f0c54a69dff1226fee1d067144e98cab94d66c7f2658c8561"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-probe-build.v4.repeatability.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/silu-device.v3.log",
+      "bytes": 2075,
+      "sha256": "76dcc991f1930efec7b2b768e7f256fdd839c0735bccc2fb335ba93025c15ad5"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/silu-math-device.v3.log",
+      "bytes": 15072,
+      "sha256": "721a21ea1d90f6b8d588c880604a28c90118d155d81041c0cec31b52cadff580"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/silu-device.v4.log",
+      "bytes": 1978,
+      "sha256": "f4232cc8bc6717988bfdafeb6781bd7cf21c4ad4f3d6420a3e3b854fb2c94356"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/tiny-denoiser-device.v3.log",
+      "bytes": 6710,
+      "sha256": "faa94dc6d4cfe34529a54bc844afaed0cabbd1319aaaec5f85f7707c0eda76ab"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/tiny-denoiser-device.v4.log",
+      "bytes": 6950,
+      "sha256": "2a0343da80956ee76eece1fa59b7aa9417a3c0a20e62f980eb4532329ad950de"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-base.log",
+      "bytes": 108,
+      "sha256": "2763dca47d70f6302089729c4223d48f3c2153aa1b899d96fa70a47390107874"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-base.v2.log",
+      "bytes": 1252,
+      "sha256": "e323634df4e0bfe1e3871db1a8c5d7358660096b9b9b330f311b17fa782a15ca"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-base.v3.log",
+      "bytes": 1617,
+      "sha256": "6a00f68bcc70785ec8273270e087feb15d3afadc40257250a268601dee388c65"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-base.v3.json",
+      "bytes": 5077,
+      "sha256": "9dbede474958bcda0bfa874c69551c9354dfa1e002e86fb62f02754164adbb97"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-launch.json",
+      "bytes": 761,
+      "sha256": "63480a066cfe0f3c98f2dd411d083b9c2c5789cb64c925a80ab61cac9da68379"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-launch.v2.json",
+      "bytes": 764,
+      "sha256": "bd09c7ce8536c99d14b77238f366e9bceef644ccb6035a86cec7767c9a95b115"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/real-block-launch.v3.json",
+      "bytes": 763,
+      "sha256": "e42743396971e6482d1517641bf6b447f139b0962a991af749d5be5da3e14883"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/runtime-build-manifest.v3.json",
+      "bytes": 151982,
+      "sha256": "651175b3de67ea21ad560b172b740c35862fbf55a0cb2ae1cf07bfd27af29403"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/runtime-build-manifest.v4.json",
+      "bytes": 151982,
+      "sha256": "cee65d289d634809457fb3520b742ddf61c06f43515087c14e1c0788ff0dcb6d"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/owned-cleanup.json",
+      "bytes": 72402,
+      "sha256": "46b4228f7c408a556d54dd3b912cd7c9b13453e94c64771fd5bd35884b649db2"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/source-snapshot-v3/native_qwen_denoiser_component.cpp",
+      "bytes": 25607,
+      "sha256": "67f35093523c3b596289c78ab91ac45853e73bddb6283954df41ad99d26d0235"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/measured-v3/libturbocider.dylib",
+      "bytes": 9741472,
+      "sha256": "0cffe70a190cd838166ffa7daceac1c06731fdb4f214f976b12e930e19c7124f"
+    },
+    {
+      "path": "outputs/qwen-native-denoiser-20261008/measured-v3/native-qwen-block-replay",
+      "bytes": 389224,
+      "sha256": "4e26006a9df0bf1ab30b76a6b53d182966d45a8dd4b2ad31a1470023ace5f3b4"
+    }
+  ],
+  "next": [
+    "Session/source/admission ledger bridge and whole base GPU-only paired request",
+    "native GPU/ANE FFN complete branch including staging, restore/join and slot lifetime",
+    "LoRA numerical and source identity extension",
+    "Z-image adapter, edit encoder and App advanced route qualification"
+  ]
+}

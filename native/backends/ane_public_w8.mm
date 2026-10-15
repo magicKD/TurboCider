@@ -2,6 +2,8 @@
 #include "ane_gpu.hpp"
 #include "ane_memory.hpp"
 #include "ane_w8a8_math.hpp"
+#include "ane_w8_stage.hpp"
+#include "ane_public_w8_availability.hpp"
 #include "ane_backend.hpp"
 #include "ane_weight_identity.hpp"
 #import <CoreML/CoreML.h>
@@ -32,11 +34,12 @@ struct CoreArray {
     CVPixelBufferRef pixel=nullptr;
     MLMultiArray *array=nil;
     explicit CoreArray(gpu::Surface value):owner(std::move(value)) {
+        const auto expected_type = public_w8_array_type(owner.element()==gpu::Element::I8);
         check(!owner.is_view(),"Public Core ML bindings require whole surfaces");
         check(CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault,(IOSurfaceRef)owner.native_iosurface(),nullptr,&pixel)==kCVReturnSuccess && pixel,
               "Public Core ML cannot wrap shared IOSurface");
         array=[[MLMultiArray alloc] initWithPixelBuffer:pixel shape:@[@(owner.rows()),@(owner.columns())]];
-        if(!array || array.dataType!=(owner.element()==gpu::Element::I8?MLMultiArrayDataTypeInt8:MLMultiArrayDataTypeFloat16)) {
+        if(!array || array.dataType!=expected_type) {
             CVPixelBufferRelease(pixel);pixel=nullptr;throw CapabilityError("Public Core ML shared surface dtype mismatch");
         }
     }
@@ -375,7 +378,9 @@ struct PublicW8Graph::Impl {
     }
 };
 PublicW8Graph::PublicW8Graph(const std::filesystem::path &manifest,size_t budget,std::optional<GraphGeometry> expected)
-    :impl_(std::make_unique<Impl>()) {
+    {
+    public_w8_array_type(true); // fail before Metal queues, arenas or model loading
+    impl_=std::make_unique<Impl>();
     @autoreleasepool {
         auto start=Clock::now();auto &p=*impl_;p.artifact=snapshot_runtime_w8a8(manifest);p.shape=p.artifact.shape;p.basis=p.artifact.basis;
         const auto &shape=p.shape;
@@ -458,7 +463,7 @@ void PublicW8Graph::prefetch_device_weight_regions(std::vector<DeviceWeightRegio
 std::optional<RunResult> PublicW8Graph::activate_prefetched_weights(std::span<const DeviceWeightRegion> expected) {
     auto &p=*impl_;
     if(!p.future_pending || expected.size()!=p.future_sources.size() ||
-       !std::equal(expected.begin(),expected.end(),p.future_sources.begin(),same_weight_region))return std::nullopt;
+       !std::equal(expected.begin(),expected.end(),p.future_sources.begin(),w8_stage::same_region))return std::nullopt;
     // Both reuse fences: current ANE/epilogue consumer and future GPU producer.
     p.worker.join();p.staging_worker.join();
     if(p.current>=0)p.banks[p.current]->ready=false;

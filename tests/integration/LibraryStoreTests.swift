@@ -48,6 +48,16 @@ import Darwin
         try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
         try Data("weights".utf8).write(to: external.appendingPathComponent("weights.bin"))
         let store = try LibraryStore(root: root.appendingPathComponent("library"))
+        let upscaleStore = try LibraryStore(root: root.appendingPathComponent("upscale-library"))
+        let package = external.appendingPathComponent("x2.mlpackage")
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        try rejects { _ = try upscaleStore.register(modelID: "real-esrgan-x2plus", path: package) }
+        try Data("{}".utf8).write(to: package.appendingPathComponent("Manifest.json"))
+        let upscaler = try upscaleStore.register(modelID: "real-esrgan-x2plus", path: package)
+        try check(try upscaleStore.register(modelID: upscaler.modelID, path: package).id == upscaler.id, "Upscaler registration duplicated")
+        try rejects { _ = try upscaleStore.register(modelID: "real-esrgan-x4plus", path: external) }
+        try upscaleStore.unregister(id: upscaler.id)
+        try check(FileManager.default.fileExists(atPath: package.path), "Removing upscale registration deleted package")
         let registration = try store.register(modelID: "z-image-turbo", path: external)
         let duplicate = try store.register(modelID: "z-image-turbo", path: external)
         try check(registration.id == duplicate.id && !registration.managed, "External registration is not idempotent")

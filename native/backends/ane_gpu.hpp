@@ -4,6 +4,7 @@
 #include "ane_runtime.hpp"
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <utility>
 
 namespace tc::ane::gpu {
@@ -17,9 +18,48 @@ enum class WeightCodeCacheStorage;
 inline constexpr size_t scale_cache_budget_bytes = 4u << 20;
 uint64_t configured_weight_code_cache_bytes();
 
+// Optional adapter to the caller's existing memory ledger. The original
+// IOSurface owns this token; importing its MTLBuffer never charges it again.
+// A token may die on a completion thread, so its release must not call a live
+// request context directly. Empty hooks retain the legacy component behavior.
+struct SurfaceAllocationHooks {
+    std::function<std::shared_ptr<void>(size_t, std::string_view)> reserve;
+    std::function<void(const std::shared_ptr<void>&, void*, size_t)> allocated;
+};
+
+// A retained view of an existing IOSurface-backed allocation, never a second
+// MTLBuffer wrapper or a new memory charge. The owner and allocation_identity
+// share Surface's original backing generation; slices retain that same owner.
+struct SurfaceBufferLease {
+    void *native_buffer = nullptr, *native_device = nullptr;
+    size_t backing_bytes = 0, allocated_bytes = 0;
+    size_t offset_bytes = 0, size_bytes = 0, row_stride_bytes = 0;
+    uint32_t rows = 0, cols = 0;
+    Element element = Element::FP16;
+    std::shared_ptr<void> owner;
+    std::weak_ptr<void> allocation_identity;
+
+    // Metadata validation only; the importing Metal executor must also check
+    // the actual MTLBuffer.device. A lease does not certify data readiness.
+    void validate(void *expected_device) const {
+        const size_t item = element == Element::I8 ? 1 : element == Element::FP16 ? 2 : 0;
+        if (!native_buffer || !native_device || !expected_device || native_device != expected_device ||
+            !owner || allocation_identity.expired() || owner.owner_before(allocation_identity) ||
+            allocation_identity.owner_before(owner) || !item || !rows || !cols ||
+            size_t(cols) > std::numeric_limits<size_t>::max() / item ||
+            row_stride_bytes < size_t(cols) * item || row_stride_bytes % item ||
+            offset_bytes % item || size_t(rows) > std::numeric_limits<size_t>::max() / row_stride_bytes ||
+            size_bytes != size_t(rows) * row_stride_bytes || !backing_bytes || allocated_bytes < backing_bytes ||
+            offset_bytes > backing_bytes || size_bytes > backing_bytes - offset_bytes)
+            throw CapabilityError("ANE SurfaceBufferLease invalid owner/device/geometry");
+    }
+};
+
 class Surface {
   public:
     Surface(Device &, uint32_t rows, uint32_t columns, Element);
+    Surface(Device &, uint32_t rows, uint32_t columns, Element,
+            SurfaceAllocationHooks, std::string_view label);
     size_t bytes() const;
     size_t pitch() const;
     uint32_t rows() const;
@@ -27,6 +67,7 @@ class Surface {
     Element element() const;
     void *data() const; // caller must not access while the ticket is live
     void *native_iosurface() const; // borrowed; retain this Surface through Core ML/GPU completion
+    SurfaceBufferLease metal_buffer_lease() const;
     bool is_view() const { return row_begin_ || row_count_; }
     Surface slice_rows(uint32_t begin, uint32_t count) const; // consumer view only, not an ANE binding
   private:
@@ -60,6 +101,7 @@ class Device {
     Device(bool scale_cache, bool specialize);
     Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes);
     Device(bool scale_cache, bool specialize, uint64_t weight_code_cache_bytes, WeightCodeCacheStorage);
+    void *native_device() const; // borrowed; retain Device or an exported SurfaceBufferLease
     void *shared_event() const;
     void release_after_failure(uint64_t value) const;
     std::string name() const;
@@ -93,6 +135,7 @@ class Device {
     uint64_t weight_code_cache_budget_bytes() const;
     void clear_weight_code_cache(); // producer tickets retain their own capacity leases
     StagePipelineStats stage_pipeline_stats() const;
+    A8SinglePassStats a8_single_pass_stats() const;
   private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
@@ -107,11 +150,20 @@ class Device {
 struct Completion {
     bool ok = false, timed_out = false;
     std::string error;
+    // Populated by private_api::Ticket. Legacy GPU Transfer/QuantStage callers
+    // conservatively leave these false until their completion contracts migrate.
+    // physical_complete means the driver completion callback was observed under
+    // the current private protocol (or no work was submitted); it does not prove
+    // ANE placement or certify all OS/driver failure modes. A timeout/event
+    // safety-release or enqueue rejection is NOT that evidence. retired is
+    // sticky: late completion cannot publish that output.
+    bool physical_complete = false, retired = false;
 };
 class QuantStage {
   public:
     Completion finish(std::chrono::milliseconds timeout = std::chrono::seconds(30));
     uint32_t validation_flags() const;
+    bool single_pass() const;
     void *ready_event() const; // opaque MTLSharedEvent retained by this ticket
     uint64_t ready_value() const { return 1; }
   private:

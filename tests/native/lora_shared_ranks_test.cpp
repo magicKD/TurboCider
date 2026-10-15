@@ -32,6 +32,7 @@ int main(int argc,char **argv) {
                 const auto [cs,ce]=columns;
                 auto x=slice_axis(input,-1,cs,ce);auto ranks=weights.lora_input_ranks(x,p+"gate_up",cs,ce);
                 require(ranks.size()==4,"stacked gate/up rank count mismatch");
+                Weights::LoRAWorkspace workspace;
                 for(auto range:{std::pair{0,128},std::pair{384,640},std::pair{768,1024}}) {
                     auto expected=weights.project_slice(x,p+"gate_up",range.first,range.second,cs,ce,false);
                     auto actual=weights.project_slice_with_ranks(x,p+"gate_up",ranks,range.first,range.second,cs,ce,false);
@@ -39,6 +40,21 @@ int main(int argc,char **argv) {
                     auto shared=weights.lora_delta_slice_with_ranks(x,p+"gate_up",ranks,range.first,range.second,cs,ce);
                     mx::eval({expected,actual,delta,shared});
                     require(rel(actual,expected)<1e-6f && rel(shared,delta)<1e-6f,"shared slice changed LoRA arithmetic");
+                    auto cached=weights.project_slice(x,p+"gate_up",range.first,range.second,cs,ce,false,&workspace);
+                    auto base=weights.project_base_slice(x,p+"gate_up",range.first,range.second,cs,ce,false);
+                    auto supplied=weights.apply_runtime_lora_slice(base,x,p+"gate_up",range.first,range.second,cs,ce,false,&workspace);
+                    auto correction=weights.lora_delta_slice(x,p+"gate_up",range.first,range.second,cs,ce,std::nullopt,&workspace);
+                    require(rel(cached,actual)<1e-6f && rel(supplied,actual)<1e-6f && rel(correction,shared)<1e-6f,
+                        "workspace/supplied-base and explicit shared ranks diverged after merge");
+                }
+                require(workspace.low_rank_projections()==4,"workspace repeated a bound adapter rank");
+                if(!rank_half) {
+                    weights.set_runtime_lora_bf16_fp32_ranks(true);
+                    auto changed=weights.project_slice(x,p+"gate_up",0,1024,cs,ce,false,&workspace);
+                    auto fresh=weights.project_slice(x,p+"gate_up",0,1024,cs,ce,false);
+                    require(rel(changed,fresh)<1e-6f && workspace.low_rank_projections()==8,
+                        "workspace reused ranks across operand recipe changes");
+                    weights.set_runtime_lora_bf16_fp32_ranks(false);
                 }
                 bool rejected=false;ranks.pop_back();
                 try{weights.lora_delta_slice_with_ranks(x,p+"gate_up",ranks,0,128,cs,ce);}catch(const std::exception&){rejected=true;}

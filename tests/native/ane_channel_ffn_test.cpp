@@ -246,7 +246,7 @@ int main(int argc,char**argv) {
                 check(down_calls==(strength?1:0),"down-LoRA rounded separately per channel/chunk");
                 check(full_gate_calls==0&&range_gate_calls==(strength?1:0),"narrow correction computed full gate/up or ran in base");
                 if(strength) {
-                    auto legacy=adapter;legacy.gate_up_channels={};
+                    auto legacy=adapter;legacy.channel_gate_up={};
                     full_gate_calls=range_gate_calls=down_calls=0;
                     runtime.stage(0,rows,{gu[0],gu[1],w.at(p+"out.weight")});
                     auto legacy_y=runtime.run(0,x,full,cancelled,&legacy,channel_gpu);
