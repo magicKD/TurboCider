@@ -67,9 +67,9 @@ struct TurboCiderNativeApp: App {
     }
 }
 private enum StudioPage: String, CaseIterable, Identifiable {
-    case studio = "创作", playground = "Playground", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
+    case studio = "创作", seedvr2 = "SeedVR2 超分", playground = "Playground", library = "素材库", tasks = "任务", models = "模型", api = "本地 API"
     var id: String { rawValue }
-    var symbol: String { switch self { case .studio: return "sparkles"; case .playground: return "square.grid.2x2"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
+    var symbol: String { switch self { case .studio: return "sparkles"; case .seedvr2: return "arrow.up.left.and.arrow.down.right"; case .playground: return "square.grid.2x2"; case .library: return "photo.on.rectangle"; case .tasks: return "clock"; case .models: return "cpu"; case .api: return "network" } }
 }
 private let ciderAccent = Color(red: 0.02, green: 0.70, blue: 0.64)
 private func operationName(_ value: String) -> String {
@@ -174,6 +174,9 @@ struct StudioView: View {
     }
     private var workflowOperations: [String] {
         if imageUpscaling { return ["image.generate", "image.transform", "image.edit"] }
+        if studio.draft.modelID == "seedvr2-3b" {
+            return model?.availableOperations.filter { $0.hasPrefix(studio.creationKind + ".") } ?? []
+        }
         if studio.draft.modelID == "qwen-image-2.1" { return ["image.generate", "image.edit"] }
         return studio.creationOperations.filter { $0 != "image.upscale" || studio.draft.modelID == "seedvr2-3b" }
     }
@@ -191,6 +194,8 @@ struct StudioView: View {
         case "video.image": return "选择首帧图片，描述镜头与动作。"
         case "video.keyframes": return "按顺序添加首帧与尾帧，描述画面如何变化。"
         case "video.reference": return "添加参考图，描述人物、场景和动作。"
+        case "image.upscale": return "添加源图片，选择输出尺寸，使用 SeedVR2 单步恢复清晰度。原图保留。"
+        case "video.upscale": return "添加 2–121 帧的源视频，保留完整帧数和整数源 FPS。输出为无音轨 MP4。"
         default: return model?.isVideo == true ? "描述场景、镜头与动作，在本机生成视频。" : "描述主体、场景与风格，在本机生成图片。"
         }
     }
@@ -225,7 +230,10 @@ struct StudioView: View {
                     else { Image(systemName: "sparkles").foregroundStyle(ciderAccent) }
                     Text("TurboCider").font(.title3.weight(.semibold))
                 }.padding(.horizontal, 12).padding(.top, 16)
-                List(StudioPage.allCases, selection: $page) { item in Label(item.rawValue, systemImage: item.symbol).tag(item) }.listStyle(.sidebar)
+                List(StudioPage.allCases, selection: $page) { item in
+                    Label(item.rawValue, systemImage: item.symbol).tag(item)
+                        .accessibilityIdentifier("navigation-\(item.id)")
+                }.listStyle(.sidebar)
                 VStack(alignment: .leading, spacing: 5) {
                     Label("本机运行", systemImage: "circle.fill").foregroundStyle(.green).font(.caption)
                     Text(api.running ? "API 服务运行中" : store.sessionState).font(.caption).foregroundStyle(.secondary)
@@ -239,6 +247,9 @@ struct StudioView: View {
             Group {
                 switch page ?? .studio {
                 case .studio: workspace
+                case .seedvr2:
+                    if studio.draft.modelID == "seedvr2-3b" { workspace }
+                    else { seedvr2StartPage }
                 case .playground:
                     PlaygroundView(state: playground, creator: studio, store: store, api: api,
                         submitting: $submitting, showCreation: { page = .studio },
@@ -261,7 +272,7 @@ struct StudioView: View {
             ToolbarItem(placement: .automatic) { Text((page == .playground ? playground.saved : studio.saved) ? "草稿已保存" : "草稿尚未保存").font(.caption).foregroundStyle(.secondary) }
             ToolbarItem { Button { studio.newDraft(); focusInput(); imageUpscaling = false; page = .studio } label: { Label("新建创作", systemImage: "square.and.pencil") }.disabled(store.busy || assetControlsLocked) }
             ToolbarItem {
-                if page == .studio {
+                if page == .studio || page == .seedvr2 {
                     Button { inspector.toggle() } label: { Label(inspector ? "收起设置" : "展开设置", systemImage: "sidebar.right") }
                         .help(inspector ? "收起模型与生成设置" : "展开模型与生成设置")
                         .accessibilityIdentifier("toggleInspector").accessibilityValue(inspector ? "已展开" : "已收起")
@@ -285,9 +296,16 @@ struct StudioView: View {
         .onChange(of: studio.draft.operation) { _, _ in focusInput() }
         .onChange(of: studio.workspaceResetID) { _, _ in
             focusInput(); imageUpscaling = false; annotationAsset = nil; preparationAsset = nil; showingCanvasSizing = false
-            showingRecentResults = false; ignoredStatusID = store.jobs.first?.id; page = .studio
+            showingRecentResults = false; ignoredStatusID = store.jobs.first?.id
+            page = studio.draft.modelID == "seedvr2-3b" ? .seedvr2 : .studio
         }
-        .onChange(of: page) { _, _ in showingRecentResults = false }
+        .onChange(of: page) { _, next in
+            showingRecentResults = false
+            if next == .seedvr2, studio.draft.modelID != "seedvr2-3b" { showSeedVR2() }
+        }
+        .onChange(of: studio.draft.modelID) { _, id in
+            if page == .seedvr2 && id != "seedvr2-3b" { page = .studio }
+        }
         .onChange(of: upscaleSourcePath) { _, _ in
             if imageUpscaling { selected = nil; compareOriginal = false; resultSelection.clear() }
         }
@@ -331,6 +349,12 @@ struct StudioView: View {
     }
     private var workspace: some View {
         VStack(spacing: 0) {
+            if studio.draft.modelID == "seedvr2-3b" && !imageUpscaling {
+                SeedVR2UpscaleControls(studio: studio,
+                    locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
+                    manageModels: { librarySelection = "seedvr2-3b"; page = .models })
+                    .padding(.horizontal, 18).padding(.top, 12)
+            }
             creationHeader.padding(.horizontal, 18).padding(.vertical, 12)
             if imageUpscaling {
                 ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath,
@@ -343,6 +367,28 @@ struct StudioView: View {
                 generationWorkspace
             }
         }
+    }
+    private var seedvr2StartPage: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right").font(.largeTitle)
+            Text("SeedVR2 图像 / 视频超分").font(.title2)
+            Text("使用已有原始 FP16 模型，单步恢复图片或完整短视频。\n原媒体保留；当前视频不保留音轨。")
+                .multilineTextAlignment(.center).foregroundStyle(.secondary)
+            HStack {
+                Button("图像超分") { showSeedVR2(kind: "image") }
+                Button("视频超分") { showSeedVR2(kind: "video") }
+            }.buttonStyle(.borderedProminent)
+                .disabled(store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+            if let message = studio.message { Text(message).font(.caption).foregroundStyle(.orange) }
+        }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    private func showSeedVR2(kind: String? = nil) {
+        guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
+              !store.resolvingAcceleration else {
+            studio.message = "请先完成当前任务或停止本地 API，再进入 SeedVR2 超分。"; return
+        }
+        guard studio.activateSeedVR2Upscaling(kind: kind) else { return }
+        imageUpscaling = false; page = .seedvr2; focusInput()
     }
     @ViewBuilder private var creationHeader: some View {
         if imageUpscaling {
@@ -618,7 +664,9 @@ struct StudioView: View {
                         .accessibilityIdentifier("generationUpscale").help("生成后超分")
                 }
                 Button(action: generate) {
-                    Label(store.busy ? "正在生成" : (studio.creationKind == "video" ? "生成视频" : editingImage ? "生成修改" : "生成图片"), systemImage: "arrow.up")
+                    Label(store.busy ? (studio.draft.modelID == "seedvr2-3b" ? "正在超分" : "正在生成")
+                          : studio.draft.modelID == "seedvr2-3b" ? "开始\(studio.creationKind == "video" ? "视频" : "图像")超分"
+                          : (studio.creationKind == "video" ? "生成视频" : editingImage ? "生成修改" : "生成图片"), systemImage: "arrow.up")
                         .padding(.horizontal, 8).padding(.vertical, 4)
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
                     .disabled(store.busy || api.running || api.changing || submitting || studio.imageInputsBusy ||
@@ -765,7 +813,7 @@ struct StudioView: View {
     }
     private var inspectorContents: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("生成设置").font(.headline)
+            Text(studio.draft.modelID == "seedvr2-3b" ? "超分设置" : "生成设置").font(.headline)
             VStack(alignment: .leading, spacing: 8) {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
                     ForEach(studio.creationModels) { item in
@@ -798,10 +846,11 @@ struct StudioView: View {
                     Text("采样步数")
                     TextField("采样步数", value: $studio.draft.steps, format: .number)
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
-                        .disabled(studio.draft.qwen21TurboLoRA != nil)
+                        .disabled(studio.draft.qwen21TurboLoRA != nil || studio.draft.modelID == "seedvr2-3b")
                     Button("重置") { studio.draft.steps = studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
                 }
-                Text(studio.draft.qwen21TurboLoRA != nil ? "Turbo 快速模式固定使用专用 6 步采样。"
+                Text(studio.draft.modelID == "seedvr2-3b" ? "SeedVR2 固定为单步恢复；不使用文本提示词，不自动截帧。"
+                     : studio.draft.qwen21TurboLoRA != nil ? "Turbo 快速模式固定使用专用 6 步采样。"
                      : studio.draft.usesQwen21FastReferenceEncoding ? "快速 512 参考编码使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
                      : studio.draft.modelID == "qwen-image-2.1" && (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off") ? "普通 LoRA 与 DiT 缓存使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
                      : studio.draft.modelID.hasPrefix("z-image-turbo") ? "1–50 步，默认 \(model?.default_steps ?? 8) 步。其他步数的画质与加速收益需自行验证。" : "1–50 步，默认 \(model?.default_steps ?? 4) 步。")
@@ -869,6 +918,10 @@ struct StudioView: View {
                 HStack {
                     TextField("帧数", value: $studio.draft.frames, format: .number).textFieldStyle(.roundedBorder)
                     TextField("FPS", value: $studio.draft.fps, format: .number).textFieldStyle(.roundedBorder)
+                }.disabled(studio.draft.modelID == "seedvr2-3b")
+                if studio.draft.modelID == "seedvr2-3b" {
+                    Text("帧数和 FPS 从源视频读取并锁定；更换源视频会自动更新。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if model?.canGenerateAudio == true {
                     Toggle("生成音频", isOn: $studio.draft.audio).controlSize(.small)

@@ -1521,6 +1521,30 @@ final class StudioState: ObservableObject {
         message = nil
     }
     var creationKind: String { draft.operation.hasPrefix("video.") ? "video" : "image" }
+    @discardableResult func activateSeedVR2Upscaling(kind: String? = nil) -> Bool {
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return false }
+        let media = kind ?? creationKind
+        guard ["image", "video"].contains(media),
+              let model = models.first(where: { $0.id == "seedvr2-3b" }),
+              model.supports(media + ".upscale") else {
+            message = "当前引擎没有可用的 SeedVR2 图像 / 视频超分。"; return false
+        }
+        if draft.modelID != model.id { selectModel(model.id) }
+        changeOperation(media + ".upscale")
+        save()
+        return true
+    }
+    func applySeedVR2OutputPreset(_ preset: SeedVR2OutputPreset) {
+        guard draft.modelID == "seedvr2-3b", !imageInputsBusy,
+              let source = draft.activeAssets.first else {
+            message = "请先选择一份参与超分的源图片或视频。"; return
+        }
+        do {
+            let size = try preset.dimensions(source: source)
+            draft.width = size.width; draft.height = size.height
+            message = nil; save()
+        } catch { message = error.localizedDescription }
+    }
     var creationModels: [StudioModel] {
         models.filter { model in model.availableOperations.contains { $0.hasPrefix(creationKind + ".") } }
     }

@@ -2,6 +2,11 @@
 
 TurboCider supports **2× and 4×** super-resolution using local Real-ESRGAN x2plus / x4plus Core ML models. Inference, image decoding, tiling and PNG export use Swift and Apple frameworks; the App's upscaling backend requires no Python, PyTorch or coremltools.
 
+For the native **SeedVR2** image/video restoration model, use the separate
+**SeedVR2 超分** sidebar entry and [SeedVR2 guide](SEEDVR2.md). Its one-step
+GPU pipeline, model weights, output-size choices and video limits are distinct
+from the auxiliary Real-ESRGAN upscalers described below.
+
 ## Use
 
 1. Open **模型**, choose the **超分** category, then select **Real-ESRGAN x2plus** or **x4plus**. Use **下载模型** to save the ZIP in your browser, unzip it, and choose **导入并校验本地模型…**. The App checks the actual scale and prepares the Core ML package natively; importing a model never enables automatic upscaling.

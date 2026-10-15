@@ -72,10 +72,32 @@ The VAE's internal 4n+1 padding is removed before export, preserving the source
 frame count. Current video output is silent H.264 MP4; soundtracks are not
 preserved. Image output is PNG.
 
-The App exposes “图像超分” and “视频超分”. Choose the SeedVR2 model, register
-its directory, then add a source image or video. Video import fills the source
-frame count/FPS. GPU is the default execution route; unqualified ANE
-manifests, LoRA, graph-compilation and streaming options fail explicitly.
+### App: SeedVR2 超分
+
+1. Open **模型 → 超分 → SeedVR2**, and register the existing model directory
+   containing both DiT and VAE. SeedVR2 also appears in the image/video filters.
+   Registration retains the original files; no download starts automatically.
+2. Click **SeedVR2 超分** in the sidebar. Use **图片 / 视频** to select the
+   source kind, then add one source image or video. This entry uses the native
+   SeedVR2 engine, not the separate Real-ESRGAN x2/x4 Core ML upscaler.
+3. Choose **2× / 4× / 长边 512 / 长边 1024**. These source-based shortcuts
+   preserve aspect ratio up to the native 16-pixel alignment and reject sizes
+   beyond the current 2048-pixel per-axis bound. Explicit width/height remain
+   available in the right inspector. Start with 512 or 1024 for testing.
+4. Click **开始图像超分 / 开始视频超分**. Every request is one restoration
+   step, without a prompt. The source is preserved; PNG/silent MP4 outputs
+   appear in the shared history with progress and cancellation controls.
+
+Video import fills and locks the complete source frame count/FPS; output-size
+shortcuts do not truncate frames or change the frame rate. The existing 2–121
+frame, integer-CFR and silent-output limits still apply. **省内存建议** applies
+the existing staged/VAE settings explicitly; it is not a hard memory guarantee.
+Detailed VAE controls are under **模型 → SeedVR2 → 加速与编译缓存**; residency
+can also be selected in the creation inspector's advanced settings.
+
+GPU is the default execution route; unqualified ANE manifests, LoRA,
+graph-compilation and streaming options fail explicitly. Ordinary creation,
+Playground, Real-ESRGAN and existing model paths remain available.
 
 To package an already tested isolated native build without replacing a running
 App, set both output directories explicitly. The targeted App build includes

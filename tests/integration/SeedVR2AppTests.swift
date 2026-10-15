@@ -28,6 +28,38 @@ import Foundation
         }
         let model = try StudioModel.catalog().first(where: { $0.id == "seedvr2-3b" }).unwrap("SeedVR2 catalog entry missing")
         try check(model.supports("image.upscale") && model.supports("video.upscale"), "both upscale operations must be advertised")
+        let quick = StudioState(directory: root.appendingPathComponent("quick-controls"))
+        let oldID = quick.draft.modelID
+        try check(!quick.activateSeedVR2Upscaling(kind: "unsupported") && quick.draft.modelID == oldID,
+                  "invalid SeedVR2 workflow mutated the generation draft")
+        quick.importing = true
+        try check(!quick.activateSeedVR2Upscaling(kind: "image") && quick.draft.modelID == oldID,
+                  "SeedVR2 workflow changed during an input import")
+        quick.importing = false
+        try check(quick.activateSeedVR2Upscaling(kind: "image") && quick.draft.modelID == model.id &&
+                  quick.draft.operation == "image.upscale" && quick.draft.steps == 1 && !quick.draft.audio &&
+                  quick.draft.acceleration?.policy == "gpu", "SeedVR2 quick entry did not select safe GPU defaults")
+        let rectangle = StudioAsset(path: "metadata-only.png", name: "rectangle", width: 320, height: 160)
+        quick.draft.assets = [rectangle]; quick.draft.initImageID = rectangle.id
+        quick.applySeedVR2OutputPreset(.long512)
+        try check(quick.draft.width == 512 && quick.draft.height == 256, "long-edge preset distorted a rectangle")
+        quick.applySeedVR2OutputPreset(.scale4)
+        try check(quick.draft.width == 1280 && quick.draft.height == 640, "4x source preset dimensions differ")
+        var tooLarge = rectangle; tooLarge.width = 2000; tooLarge.height = 1000
+        quick.draft.assets = [tooLarge]
+        quick.applySeedVR2OutputPreset(.scale2)
+        try check(quick.message != nil && quick.draft.width == 1280 && quick.draft.height == 640,
+                  "oversized preset silently clamped output or partially changed the draft")
+        var malformed = rectangle; malformed.width = Int.max
+        do { _ = try SeedVR2OutputPreset.scale4.dimensions(source: malformed); throw NativeFailure(message: "malformed source accepted") }
+        catch let error as NativeFailure { try check(error.message.contains("源媒体尺寸"), "wrong malformed-source rejection") }
+        var clip = rectangle; clip.kind = "video"; clip.frames = 25; clip.fps = 24
+        quick.draft.assets = [clip]
+        try check(quick.activateSeedVR2Upscaling(kind: "video") && quick.draft.frames == 25 && quick.draft.fps == 24,
+                  "SeedVR2 video quick entry lost source frame/FPS binding")
+        quick.applySeedVR2OutputPreset(.long1024)
+        try check(quick.draft.width == 1024 && quick.draft.height == 512 && quick.draft.frames == 25 && quick.draft.fps == 24,
+                  "resolution shortcut truncated or retimed the source video")
         studio.draft.modelPaths[model.id] = root.path
         studio.selectModel(model.id)
         let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 512, pixelsHigh: 512,

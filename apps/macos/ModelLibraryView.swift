@@ -112,7 +112,7 @@ struct ModelLibraryView: View {
             }
         }.padding(24)
             .task {
-                if let selection, UpscaleVariant.from(modelID: selection) != nil { category = .upscale }
+                if let selection, UpscaleVariant.from(modelID: selection) != nil || selection == "seedvr2-3b" { category = .upscale }
                 library.refresh(studio: studio)
             }
             .onChange(of: store.busy) { _, busy in if !busy { library.refresh(studio: studio) } }

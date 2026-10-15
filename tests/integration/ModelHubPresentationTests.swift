@@ -17,7 +17,24 @@ import Foundation
         try unifiedSelection(models: models, qwen: qwen, video: video, readOnly: readOnly)
         try searches(models: models, qwen: qwen, first: first, second: second)
         try inspectionStates(models: models, qwen: qwen, first: first, second: second)
+        try seedVR2Categories()
         print("PASS model hub metadata: multiple installations/local filtering, unified selection, categories, alternate paths/brand/variant search, strict inspection identity and conservative local states; no file IO/network/GPU")
+    }
+
+    private static func seedVR2Categories() throws {
+        let value: [String: Any] = ["id": "seedvr2-3b", "name": "SeedVR2 3B", "executor": true,
+            "output": "image+video", "operations": ["image.upscale", "video.upscale"],
+            "default_steps": 1, "default_frames": 1, "default_width": 1024, "default_height": 1024]
+        let seed = try JSONDecoder().decode(StudioModel.self, from: JSONSerialization.data(withJSONObject: value))
+        for category in [ModelHubCategory.upscale, .video, .image] {
+            let hub = ModelHubPresentation.make(models: [seed], installations: [], modelPaths: [:], upscalePaths: [:],
+                selectionID: seed.id, query: "SeedVR2 视频 超分", category: category)
+            try check(hub.selectedEntry?.id == seed.id, "SeedVR2 disappeared from \(category) discovery/search")
+        }
+        let upscale = ModelHubPresentation.make(models: [seed], installations: [], modelPaths: [:], upscalePaths: [:],
+            selectionID: seed.id, category: .upscale)
+        try check(upscale.entries.count == 1 + UpscaleVariant.allCases.count && upscale.selectedEntry?.model?.id == seed.id,
+                  "native SeedVR2 replaced auxiliary Real-ESRGAN registrations or lost its own engine identity")
     }
 
     private static func localInstallations(models: [StudioModel], qwen: StudioModel,

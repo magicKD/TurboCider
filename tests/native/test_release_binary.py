@@ -53,8 +53,19 @@ class ReleaseBinaryTests(unittest.TestCase):
     def test_targeted_app_build_includes_model_library_helper(self):
         source = (ROOT / 'tools/native/build_app.sh').read_text()
         helper = source.index('services/model-library/main.swift -o "$OUT/turbocider-library"')
-        targeted = source.index('if [[ "${TURBOCIDER_APP_TARGETS:-all}" == "seedvr2" ]]')
+        self.assertIn('APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"', source)
+        targeted = source.index('if [[ "$APP_TARGETS" == seedvr2 ]]')
         self.assertLess(helper, targeted)
+        self.assertLess(source.index('-o "$OUT/TurboCiderNativeApp"'), targeted)
+        block = source[targeted:source.index('\nfi', targeted)]
+        self.assertIn('tests/integration/SeedVR2AppTests.swift', block)
+        self.assertIn('tests/integration/ModelHubPresentationTests.swift', block)
+
+    def test_attention_support_notices_are_in_app_and_cli(self):
+        source = (ROOT / 'tools/native/package.sh').read_text()
+        self.assertIn('cp THIRD_PARTY_NOTICES/mlx-steel-attention.md "$RES/MLX-Steel-Attention-NOTICE.md"', source)
+        self.assertIn('cp THIRD_PARTY_NOTICES/Apache-2.0.txt "$RES/Apache-2.0.txt"', source)
+        self.assertIn('cp "$RES/MLX-Steel-Attention-NOTICE.md" "$RES/Apache-2.0.txt" "$DIST/cli/"', source)
 
     def test_package_output_override_scopes_app_and_cli_together(self):
         source = (ROOT / 'tools/native/package.sh').read_text()

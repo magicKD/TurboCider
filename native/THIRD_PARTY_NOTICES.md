@@ -57,6 +57,11 @@ FastVideo's Apache-2.0 license and TAEHV's upstream license are included in
 as `FastVideo-LICENSE.txt` and `TAEHV-LICENSE.txt` in distribution resources.
 Model weights are not distributed in this repository.
 
+The native Metal graph attention support derives from Apple MLX Steel and the
+Apache-2.0 vpipe adapter. Source attribution, modification details and the MIT
+license are in `THIRD_PARTY_NOTICES/mlx-steel-attention.md`; distributions include
+`MLX-Steel-Attention-NOTICE.md`, `MLX-LICENSE.txt` and `Apache-2.0.txt`.
+
 The historical Python worker is retained only in `tools/validation/wan/` as a
 development oracle. It is not linked, discovered or copied into the App/CLI.
 Production Wan sessions use the native components above; source repository

@@ -72,12 +72,17 @@ struct ModelHubPresentation {
             switch category {
             case .all: break
             case .image: guard model?.isVideo == false else { return }
-            case .video: guard model?.isVideo == true else { return }
-            case .upscale: guard upscaler != nil else { return }
+            case .video:
+                guard model?.isVideo == true || model?.availableOperations.contains(where: { $0.hasPrefix("video.") }) == true else { return }
+            case .upscale:
+                guard upscaler != nil || model?.availableOperations.contains(where: { $0.hasSuffix(".upscale") }) == true else { return }
             }
             var terms = [id, model?.name ?? upscaler?.title ?? ""] + paths + (searchMetadata[id] ?? [])
             terms += registered.flatMap { [$0.name, $0.path, $0.provider ?? "", $0.repository ?? "", $0.revision ?? ""] }
             terms += aliases(for: id)
+            if model?.availableOperations.contains(where: { $0.hasSuffix(".upscale") }) == true {
+                terms.append("超分 upscale restoration 图像 image 视频 video")
+            }
             terms.append(upscaler != nil ? "超分 upscale upscaler Real-ESRGAN" : model?.isVideo == true ? "视频 video" : "图像 image")
             let searchable = terms.joined(separator: " ")
             guard tokens.allSatisfy({ searchable.localizedCaseInsensitiveContains($0) }) else { return }
