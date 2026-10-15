@@ -113,3 +113,21 @@ python3 -B techniques/scripts/run_experiment.py --timeout 120 \
 只使用新目录。监督器有独立进程组与显式timeout，保留失败日志；停止进程不自动证明设备drain，后续不复用该进程的buffer。runner检查磁盘余量与图大小，frozen可能占用多份权重副本，余量不足不自动删任何旧数据。权重常驻、准备与每层staging的边界须分别报告。
 
 2026-10-15已完成[真实Qwen layer0 FFN的这组实验](../review/qwen-ffn-tiling-20261015.md)，不是仅toy通过；但尚未达到产品/所有层/LoRA/端到端资格。
+
+## 8. 图搜索与私有 e5rt 的显式研究入口
+
+[search-qualification](search_contracts.py)是纯标准库的身份/接受逻辑教学case；[机制页](../ane/graph-rewrite-search.md)把结构提示、编译资产、数值/性能资格拆开。实际[ANEForge执行](../integrations/README.md)依赖调用方的固定上游副本，明确属于可选integration，不是本目录核心依赖或默认device selector。
+
+[本机记录](../review/aneforge-20261016.md)包含13组真实同步实验、SiLU失败缩减、exp重写、INT8/reduction负结果和活owner的view/copy/poison控制。全部first/warm/timed检查由[独立FP64 oracle](ane/precision_oracle.py)与固定门槛约束；约3×的host-fed小图局部观察不能借给真实Qwen GPU生产者、GPU/ANE并发或完整请求。
+
+## 9. 私有PMU采集不等于数值执行
+
+[原创native客户端](ane/pmu_probe.mm)和[显式CLI](ane/pmu_probe.py)只依赖本地代码/Apple SDK；默认仅准备小MIL，`--device`才实际执行。完整physical pitch、输出poison、代际输入、完整FP16输出SHA与unload控制见[81次本机记录](../review/ane-pmu-20261016.md)。mask0/2/15的所测路径没有取得counter，不称“0活动”。
+
+检索入口和CPU负控见[PMU技术卡](../profiling/ane-pmu-lab.md) / [pmu.py](pmu.py)。真实counter还需要独立生命周期、单位、聚合和workload缩放证据；不能用其他项目的性能数字填空。
+
+## 10. 真实BF16 GPU分母与私有FFN分担
+
+[完整消费者机制](../gpu-ane/private-ffn-boundary.md)说明为什么serial与hybrid都必须和完整GPU比较。[七个真实source运行](../review/qwen-private-ffn-20261016.md)保留全M/H/F及GPU余下channels，交接/转换/join全部计入；固定2048channels后在step19/10和24-group及pre-arm排空控制中确认局部warm收益，不是只测小matmul。
+
+核心[稳定公式/切片](silu_domain.py)与[独立FP64 witness](ane/qwen_witness.py)在本目录内；[ANEForge真实数据入口](../integrations/README.md)是明确可选upstream integration。它尚不是实际shared IOSurface、全请求或新产品后端默认。

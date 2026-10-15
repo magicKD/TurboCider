@@ -31,6 +31,8 @@ Public 同步 prediction worker 和 Private 真实 device event 的时序语义�
 
 ## 研究环境的安全默认
 
+新增[ANEForge源码与图搜索](graph-rewrite-search.md)已有[本机同步e5rt探针与失败缩减](../review/aneforge-20261016.md)。它保持为显式可选integration：没有修改产品后端，mask0x4不自动当成物理trace；结构winner cache也不代替checkpoint/LoRA精度资格。
+
 显式 opt-in、独立新 build/output 目录、有界 banks/slots/pipelines、超时 quarantine、严格 source recipe。保留失败记录；不改用户权重、系统 wired/swap、电源策略、用户服务；不因实验需要清理原模型腾空间。
 
 [Public W8 实现](../../docs/status/public-w8-shared-ffn-2026-10-07.md)证明公共 API 也可复用 GPU IO/normalized FFN；不要把 Private 热态成绩借给 Public，也不要把 Public 能编译借成 Private 系统兼容保证。

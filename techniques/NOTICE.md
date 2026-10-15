@@ -17,3 +17,9 @@ Public Core ML 和 Metal 示例使用 Apple 公共 SDK/API。计算设备策略�
 GPU profiling新增[tmc/gputrace源码研究](sources/repos/gputrace-timing-provenance.md)（MIT，Travis Cline）与[Apple公共SDK合同](sources/official/metal-counters.md)。parser只在本地隔离构建/运行；Python adapter和公共Metal客户端为独立实现，不分发上游parser源码、Apple headers、framework或raw capture。官方文档/SDK不是MIT开源仓库，不以本目录许可覆盖其条款。
 
 新增[MLX SDPA源码卡](sources/repos/mlx-sdpa-dispatch.md)继续以Apple MIT源码为阅读对象，不复制其shader实现。attention原配方replay复用本仓库MIT客户端/Transformer调用公式，产品库仅作显式可选本地接入；CPU oracle、候选API客户端和data verifier为原创工具，不打包MLX或模型。
+
+[ANEForge来源卡](sources/repos/aneforge-rewrite-search.md)固定MIT源码与原作者Spencer H. Bryngelson署名；本机在ignored副本保留上游LICENSE/NOTICE并构建shim，不向Wiki分发该实现或binary。新增cache/gate教学代码、FP64 oracle、API probe和data verifier均为原创客户端；不把上游MIT许可扩大到Apple私有接口或系统软件。
+
+[ane_pmu_profiler](sources/repos/ane-pmu-provenance.md)的固定tree未找到明确许可，只保留原创源码导读/独立API实验和脱敏结果，不分发上游source/binary/model。[measure_ane_capacity](sources/repos/ane-capacity-pmu.md)有BSD-3-Clause，Copyright (c) 2025 Koan-Sin Tan；本轮也是只读学习与本地编译，没有将App/模型/代码体纳入Wiki。PMU decoder、合成MIL/container writer、native客户端、独立数学witness与verifier为原创实现，格式/selector知识不等于Apple接口稳定或分发授权。
+
+[真实Qwen private-prefix实验](review/qwen-private-ffn-20261016.md)继续只发布原创API集成、稳定公式/切片、独立数学witness与data verifier；原始checkpoint/激活/私有程序binary保持本地。ANEForge/MLX继续遵循其原许可，模型权重许可不由本Wiki改变；公开证据的hash/范围/误差/时间不包含原始tensor或用户会话。

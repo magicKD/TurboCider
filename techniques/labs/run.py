@@ -17,6 +17,9 @@ import partition_axes
 import contracts
 import model_stages
 import heterogeneous
+import search_contracts
+import pmu
+import silu_domain
 
 CASES = {
     "quant-formats": quantization.formats,
@@ -59,6 +62,9 @@ CASES = {
     "optional-devices": heterogeneous.optional_devices,
     "resource-hazards": heterogeneous.resource_hazards,
     "precision-islands": heterogeneous.precision_islands,
+    "search-qualification": search_contracts.qualification,
+    "pmu-provenance": pmu.provenance,
+    "silu-domain": silu_domain.domain,
 }
 
 

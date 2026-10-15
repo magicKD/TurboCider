@@ -6,7 +6,10 @@
 
 | 来源 | 固定commit | 阅读/运行证据 |
 | --- | --- | --- |
+| [freedomtan/measure_ane_capacity](repos/ane-capacity-pmu.md) | `2d3809ba2a3654db71d6790574c9b0247d5b4493` | bounded original FP16 CLI ran with owned TMPDIR/package; serialization succeeded but no ANE bundle, PMU branch skipped; no upstream numerical or hardware-rate qualification |
+| [freedomtan/ane_pmu_profiler](repos/ane-pmu-provenance.md) | `20080a945096eb5932490b024120b513ae5427e2` | local native CLI built; help, missing-model and owned-conv controls executed, including ordinary debug-signature control; no PMU payload reproduced |
 | [apple-aiml-research/ml-ane-transformers](repos/apple-ane-transformers-ffn.md) | `590eb35913622cdef217ebc5329047aab389ac98` | not-run |
+| [sbryngelson/ANEForge](repos/aneforge-rewrite-search.md) | `896c4943c5ebf811c0e815f8d1381fd1e157fa7d` | isolated shim, 13 bounded probes and seven real-source layer0 full-consumer serial/hybrid runs executed; whole-request/LoRA/zero-copy/PMU/upstream-corpus qualification not obtained |
 | [Anemll/anemll-profile](repos/anemll-profile-safety.md) | `bf8528105a0e61fda2c80d2c9b19615ecab9b7fa` | not-run-unmodified; safety hold |
 | [liuliu/ccv](repos/ccv-coreml-rowwise.md) | `66dc16a3a3b688adfa6dc1d19eeeb3071beeb701` | not-run |
 | [apple/coremltools](repos/coremltools-compute-plan.md) | `a207b1a3452eafe02f2d870f486287834af2c82d` | installed coremltools 8.3.0; this Python file has the same SHA as the checkout, not a claim of whole-package equivalence |

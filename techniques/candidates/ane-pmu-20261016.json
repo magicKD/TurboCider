@@ -1,0 +1,25 @@
+{
+  "schema": "tc-research-candidate-v1",
+  "id": "ane-pmu-20261016",
+  "source_ids": ["upstream-ane-pmu", "upstream-ane-capacity"],
+  "evidence_ids": ["ane-pmu-20261016", "ane-pmu-data-20261016"],
+  "knowledge_decision": "include",
+  "physical_counter_decision": "not-qualified",
+  "production_decision": "defer",
+  "scope": "owned finite FP16 affine and 1x1 conv, direct private MIL route on M4 Max/macOS26.6.2; bounded original MPSGraph serialization route",
+  "observed": {
+    "owned_graph_runs": 9,
+    "independently_witnessed_complete_calls": 81,
+    "profile_requested_calls": 63,
+    "stats_objects_received": 0,
+    "stats_surface_witnessed_profile_calls": 54,
+    "stats_surface_nonzero_samples": 0,
+    "original_profiler_missing_model_active_exit0": true,
+    "original_capacity_pmu_branch_entered": false,
+    "strict_capture_gate_exit_code": 3
+  },
+  "missing": ["actual nonempty PMU payload", "validated schema, index/name and units", "cumulative/request-local scope", "reset/overflow/aggregation and clock calibration", "physical placement and real-Qwen/hybrid/request qualification"],
+  "revisit_when": ["OS/SDK/framework or upstream commit changes", "owned serialized ANE region/capture policy changes", "raw payload becomes available with known workload controls"],
+  "security_downgrade_performed": false,
+  "automatic_runtime_selection": false
+}

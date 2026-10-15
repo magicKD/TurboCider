@@ -20,6 +20,9 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/integrations/.swiftpm/configuration/workspace-state.json",
                  "apps/macos/DerivedData/Build/temp.o", "apps/macos/tests.xcresult/Info.plist",
                  "apps/macos/release.xcarchive/Info.plist", "techniques/labs/.cache/compiled.bin",
+                 ".aneforge_cache/weights.bin", ".aneforge-cache/tuning.json",
+                 "experimental/ane/.aneforge_cache/model/weights.bin",
+                 "tools/ane/.aneforge-cache/model/program.mil",
                  "techniques/integrations/.aneforge_cache/weights.bin",
                  "techniques/integrations/.aneforge-cache/program/weights.bin",
                  "techniques/labs/ane/.aneforge-cache/tuning.json",
@@ -55,6 +58,11 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/examples/profiling-summary.json", "tests/fixtures/tiny.npy",
                  "techniques/review/gpu-clock-evidence-20261016.json",
                  "techniques/review/qwen-attention-evidence-20261016.json",
+                 "techniques/review/ane-pmu-evidence-20261016.json",
+                 "techniques/review/aneforge-evidence-20261016.json",
+                 "techniques/review/qwen-private-ffn-evidence-20261016.json",
+                 "techniques/labs/ane/pmu_probe.mm",
+                 "techniques/labs/ane/qwen_witness.py",
                  "techniques/sources/official/metal-counters.md"]
         self.assertEqual(self.ignored(paths), set())
 

@@ -1,0 +1,22 @@
+{
+  "schema": "tc-research-candidate-v1",
+  "id": "aneforge-e5rt-20261016",
+  "source_ids": ["upstream-aneforge-search"],
+  "evidence_ids": ["aneforge-20261016", "aneforge-data-20261016"],
+  "knowledge_decision": "include",
+  "production_decision": "defer",
+  "scope": "synthetic frozen-FP16 host-fed subgraphs on one M4 Max/macOS/private runtime combination",
+  "mechanisms": ["separate structure, compile-asset and numerical identities", "strict budget enforcement outside a soft-return tuner", "subgraph/scalar failure reduction", "exp-form SiLU under an explicit input domain", "borrowed-view owner and copy contracts"],
+  "local_observations": {
+    "actual_device_experiments": 13,
+    "first_warm_measured_calls_retained": 351,
+    "all_call_relative_l2_limit": 0.01,
+    "upstream_original_silu_gate": "rejected for this private program recipe",
+    "exp_ffn_seed17_and29": "local numerical pass and host-boundary performance observation; no product qualification",
+    "int8_and_reduction_mechanism_speedups": "not stably confirmed",
+    "physical_ane_attestation": false
+  },
+  "missing": ["real Qwen source and activations", "wider activation domain/extremes", "actual GPU-ANE handoff and concurrency", "LoRA/full-request quality", "compile-error/cancel lifecycle", "PMU semantics and long-running memory/thermal qualification"],
+  "revisit_when": ["upstream/OS/SDK/compiler changes", "source weights, LoRA, calibration or input domain changes", "new shape/layout/producer-consumer boundary", "independent full-request evidence"],
+  "automatic_runtime_selection": false
+}

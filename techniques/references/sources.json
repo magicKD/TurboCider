@@ -5,6 +5,342 @@
   "meaning": "Local paths are relative to techniques. Integration paths retain original repository-root/sibling anchors for optional provenance only; check with --include-integrations. Core learning and execution require no integration source. Snapshots are inspected content, not latest upstream.",
   "sources": [
     {
+      "id": "qwen-private-ffn-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/qwen-private-ffn-20261016.md",
+      "role": "Real original-BF16 Qwen layer0 full GPU vs private-prefix serial/hybrid consumers, frozen-share held-out timesteps and copy/residency/startup scope",
+      "source_ids": ["upstream-aneforge-search", "upstream-mlx-affine"],
+      "evidence": {"production_qualified": false, "scope": "warm complete FFN replica consumer, not original large kernel, whole block/request, LoRA or zero-copy qualification"}
+    },
+    {
+      "id": "qwen-private-ffn-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/qwen-private-ffn-evidence-20261016.json",
+      "role": "All 297 complete-consumer calls across three discovery and four confirmation runs, source verification, validation-drained timing control, host intervals and one retained frontend failure",
+      "evidence": {"production_qualified": false, "raw_tensor_values_embedded": false, "raw_machine_timestamps_exported": false}
+    },
+    {
+      "id": "ane-pmu-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/ane-pmu-20261016.md",
+      "role": "Private PMU capture absence on numerically validated owned graphs; original CLI false positives and skipped MPSGraph branch",
+      "source_ids": [
+        "upstream-ane-pmu",
+        "upstream-ane-capacity"
+      ],
+      "evidence": {
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      }
+    },
+    {
+      "id": "ane-pmu-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/ane-pmu-evidence-20261016.json",
+      "role": "Nine owned graph runs, all 81 full input/output SHA witnesses, five upstream CLI controls and actual counter absence",
+      "evidence": {
+        "production_qualified": false,
+        "raw_opaque_buffers_exported": false
+      }
+    },
+    {
+      "id": "upstream-ane-pmu",
+      "scope": "local",
+      "path": "sources/repos/ane-pmu-provenance.md",
+      "role": "ane_pmu_profiler loader, stats interfaces, unconditional active status, host-clock relabelling and unverified accumulator assumptions",
+      "symbols": [
+        "checkAndPrintDriverStatus",
+        "gLiveHwTimeNs",
+        "perfCounterData"
+      ],
+      "upstream": {
+        "repository": "freedomtan/ane_pmu_profiler",
+        "commit": "20080a945096eb5932490b024120b513ae5427e2",
+        "captured_at": "2026-10-16",
+        "worktree_dirty": false,
+        "files": [
+          {
+            "path": "README.md",
+            "sha256": "f959d8a6ad68bb1479fea37415e282f45232856c2486710bda0eb2aa500a25a9",
+            "read_ranges": [
+              [
+                1,
+                316
+              ]
+            ]
+          },
+          {
+            "path": "dump_ane_pmu.m",
+            "sha256": "776d2cee97ed308cc938911e3187d0ca5377920acbee6f7598f6a59e26bb3828",
+            "read_ranges": [
+              [
+                1,
+                1162
+              ]
+            ]
+          },
+          {
+            "path": "coreai_loader.m",
+            "sha256": "07875a3e6757a5cb0c81df8ce2a185a26b049df0357a0d5147f9b45d65c3e7c2",
+            "read_ranges": [
+              [
+                1,
+                496
+              ]
+            ]
+          },
+          {
+            "path": "coreai_loader.h",
+            "sha256": "0799978ab93d97f727f2d108a6b95f68038d1b334facc9159478c130b8e237d3",
+            "read_ranges": [
+              [
+                1,
+                138
+              ]
+            ]
+          },
+          {
+            "path": "model_compiler.m",
+            "sha256": "f30bf2eb562a67b805bc29b2a7e373a0fac95664b0fd348898a0c0c5d27a4c85",
+            "read_ranges": [
+              [
+                1,
+                50
+              ]
+            ]
+          },
+          {
+            "path": "model_compiler.h",
+            "sha256": "1a92cb3c205b4092d78605de0e0e72bb7a6937d0c80fe40dc91c2c7495796782",
+            "read_ranges": [
+              [
+                1,
+                33
+              ]
+            ]
+          },
+          {
+            "path": "model_compiler_bridge.swift",
+            "sha256": "cda2613b619c482036e7422d209df3aa999b03f07ad9a36696d587bd0940b8f5",
+            "read_ranges": [
+              [
+                1,
+                37
+              ]
+            ]
+          },
+          {
+            "path": "odiec_pipeline.c",
+            "sha256": "450a72f243587a445c292b557d392738409a098654dfec19532bb6e3635cb96a",
+            "read_ranges": [
+              [
+                1,
+                101
+              ]
+            ]
+          },
+          {
+            "path": "odiec_pipeline.h",
+            "sha256": "97a6b9de8f345360393a1bf01284d9b814ed233f0e6dedb53d2a897bd1cc1630",
+            "read_ranges": [
+              [
+                1,
+                118
+              ]
+            ]
+          },
+          {
+            "path": "ANE_Performance_PMU_Technical_Report.md",
+            "sha256": "1fa3b6f5360e80ba903f41b87da2b108f3b6f3adad9564e0de49b7606e7c7457",
+            "read_ranges": [
+              [
+                1,
+                836
+              ]
+            ]
+          },
+          {
+            "path": "Makefile",
+            "sha256": "2664e33553204ba0f35f7746c489a83ac02bdd587bd573d7212f6a99d0b6e537",
+            "read_ranges": [
+              [
+                1,
+                52
+              ]
+            ]
+          },
+          {
+            "path": "entitlements.plist",
+            "sha256": "d8aa9a1cd17bb4dafa119cc600ec739b3344f255100372dddb85b7e60472590a",
+            "read_ranges": [
+              [
+                1,
+                8
+              ]
+            ]
+          }
+        ]
+      },
+      "license": {
+        "status": "no repository license grant found in pinned tree",
+        "notice": "No upstream implementation, model or binary distributed; original API clients and summaries only"
+      },
+      "evidence": {
+        "implementation": "complete profiler/loader/report plus small compiler/pipeline sources inspected",
+        "upstream_execution": "local native CLI built; help, missing-model and owned-conv controls executed, including ordinary debug-signature control; no PMU payload reproduced"
+      }
+    },
+    {
+      "id": "upstream-ane-capacity",
+      "scope": "local",
+      "path": "sources/repos/ane-capacity-pmu.md",
+      "role": "MPSGraph serialization to optional ANECIR PMU branch, unsafe latest-temp fallback and derived UI latency extrema",
+      "symbols": [
+        "activeBundlePath",
+        "preferredDevice=2",
+        "minLatencyMs=avg*0.95"
+      ],
+      "upstream": {
+        "repository": "freedomtan/measure_ane_capacity",
+        "commit": "2d3809ba2a3654db71d6790574c9b0247d5b4493",
+        "captured_at": "2026-10-16",
+        "worktree_dirty": false,
+        "files": [
+          {
+            "path": "README.md",
+            "sha256": "1b17d24a6962850164b0f91661935092a5c882df61ef4b889e77b84cee126ee2",
+            "read_ranges": [
+              [
+                1,
+                170
+              ]
+            ]
+          },
+          {
+            "path": "measure_ane_pmu.m",
+            "sha256": "0843de0613fc3d03aa50e088275b7cd39f8f29876064e2bc0d928fea89307c77",
+            "read_ranges": [
+              [
+                1,
+                723
+              ]
+            ]
+          },
+          {
+            "path": "ANECapacityApp/ANECapacityApp/ANEClientBridge.mm",
+            "sha256": "4368974d52565531d839289f1608ded3d9f38fa8bdbfdf00988b09c86b561fa1",
+            "read_ranges": [
+              [
+                150,
+                245
+              ],
+              [
+                650,
+                835
+              ]
+            ]
+          },
+          {
+            "path": "ANECapacityApp/ANECapacityApp/MILCapacityEngineBridge.mm",
+            "sha256": "3c6b0c135cab0499c5a7e99dc8e8793fb65beb2612c4f024c18bf3e558e7667f",
+            "read_ranges": [
+              [
+                415,
+                550
+              ]
+            ]
+          },
+          {
+            "path": "docs/How_to_Interpret_measure_ane_pmu_Numbers.md",
+            "sha256": "5725b418e74570d47131b17377ceea3d79e37cfaf680d845fb0cde1e6ddab3cf",
+            "read_ranges": [
+              [
+                1,
+                80
+              ]
+            ]
+          },
+          {
+            "path": "Makefile",
+            "sha256": "d08483b9174079c8e42d74dcf0340b0fd2cf3a94299c13a0e9046a6326fddd49",
+            "read_ranges": [
+              [
+                1,
+                89
+              ]
+            ]
+          },
+          {
+            "path": "LICENSE",
+            "sha256": "35fbc6e23fe553195563f68bf49bd25c39dfc4b13d31cdee89df6cc1175d7898",
+            "read_ranges": [
+              [
+                1,
+                28
+              ]
+            ]
+          }
+        ]
+      },
+      "license": {
+        "name": "BSD-3-Clause",
+        "notice": "Copyright (c) 2025 Koan-Sin Tan; no upstream code bodies/assets redistributed"
+      },
+      "evidence": {
+        "implementation": "complete 723-line CLI and selected README/App/guide sources inspected",
+        "upstream_execution": "bounded original FP16 CLI ran with owned TMPDIR/package; serialization succeeded but no ANE bundle, PMU branch skipped; no upstream numerical or hardware-rate qualification"
+      }
+    },
+    {
+      "id": "aneforge-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/aneforge-20261016.md",
+      "role": "Pinned e5rt execution, cache/precision control-flow negatives, SiLU failure reduction and two-seed synthetic FFN confirmation",
+      "source_ids": ["upstream-aneforge-search"],
+      "evidence": {"production_qualified": false, "scope": "synthetic host-fed subgraphs; no Qwen, handoff or physical ANE qualification"}
+    },
+    {
+      "id": "aneforge-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/aneforge-evidence-20261016.json",
+      "role": "All 15 receipts: 13 actual device comparisons, CPU contracts, retained frontend failure, scalar and owner controls",
+      "evidence": {"production_qualified": false, "physical_device_attestation": false}
+    },
+    {
+      "id": "upstream-aneforge-search",
+      "scope": "local",
+      "path": "sources/repos/aneforge-rewrite-search.md",
+      "role": "ANEForge structural autotune cache, content-addressed compilation, soft precision-budget selection and private synchronous e5rt owner boundaries",
+      "symbols": ["_graph_key", "_emit_program_dir", "tune_precision", "Model.__call__"],
+      "upstream": {
+        "repository": "sbryngelson/ANEForge",
+        "commit": "896c4943c5ebf811c0e815f8d1381fd1e157fa7d",
+        "captured_at": "2026-10-16",
+        "worktree_dirty": false,
+        "files": [
+          {"path": "aneforge/_optimize.py", "sha256": "ee1fdcfd9bb4d9549da7db9bf2ff936b38280a0275f3e41d3cdfc4b46cd1885b", "read_ranges": [[1,725]]},
+          {"path": "aneforge/_runtime.py", "sha256": "0bb71d905d7e09eada68bdc429a7c27145bd5b37f105510efa460eba0c4a58b0", "read_ranges": [[1,280]]},
+          {"path": "aneforge/_compile.py", "sha256": "fd8b2d85826695c262bc4af7b7e204d146101eb4d6a3e30f43c70d8495dd1b02", "read_ranges": [[1,65],[170,215],[366,402],[805,925],[1008,1093],[1334,1435]]},
+          {"path": "aneforge/_rewrite.py", "sha256": "88c59d1924e03b6832075f20ad5875d5da02a8c26ca601f68be67fa4d4d9c892", "read_ranges": [[1,155]]},
+          {"path": "aneforge/graph.py", "sha256": "f1f345e3c1e36cfb6f9104eb5248ecda8f29fee447b8fd9d8875f2d839d6a91f", "read_ranges": [[1,140],[155,215],[382,404],[990,1042]]},
+          {"path": "aneforge/_circuit.py", "sha256": "9478876a1cd582b035749fd051c7bcc3288fb7fd0a9c9379e347ab083fc1ba93", "read_ranges": [[1,54]]},
+          {"path": "aneforge/_targets.py", "sha256": "63104176e33ccc730a4b1855309077458303b0010d4981f5bf578c5826cd9d7b", "read_ranges": [[1,160]]},
+          {"path": "aneforge/_blob.py", "sha256": "96fa142716bad055f4f15d3ec7c40b0ae480c5e21b0ab3fab4f178404f1a2d44", "read_ranges": [[1,86]]},
+          {"path": "aneforge/_lib/ane_e5rt_dispatch.mm", "sha256": "b99fa37a7a4be6891604e9012174dd7d0231902a8d3554f5a06f60b1f1f585ae", "read_ranges": [[1,173],[246,727]]},
+          {"path": "aneforge/_lib/build.sh", "sha256": "254df0b9448bd9f7992479744752ca834cca033417004203498f01cd8d0d63cb", "read_ranges": [[1,12]]}
+        ]
+      },
+      "license": {"name": "MIT", "notice": "Copyright (c) 2026 Spencer H. Bryngelson; LICENSE/NOTICE retained in local source copy; no upstream implementation or Apple framework distributed"},
+      "evidence": {"implementation": "selected graph/compiler/rewrite/target and complete optimizer/runtime source inspected",
+                   "upstream_execution": "isolated shim, 13 bounded probes and seven real-source layer0 full-consumer serial/hybrid runs executed; whole-request/LoRA/zero-copy/PMU/upstream-corpus qualification not obtained"}
+    },
+    {
       "id": "qwen-attention-20261016",
       "kind": "evidence",
       "scope": "local",

@@ -9,6 +9,9 @@
 - GPU profiling纵向链：[公共counter与capture实验](profiling/gpu-timeline-and-counters.md) → [来源安全的trace归一化](profiling/trace-normalization.md) → [本机全部对照](review/gpu-profiling-20261016.md)，包含无Xcode时的真实能力和parser负结果。
 - 进一步实测：[timestamp校准](profiling/timestamp-calibration.md)与[真实Qwen BF16 host profiling](profiling/mlx-boundaries.md)；保留采集器负控，避免把单位校准、阶段drain和原程序性能混成一种资格。
 - Attention纵切：[原始block输入的有界重放、三候选与独立seed](review/qwen-attention-20261016.md)，包括stride见证、noop、empty-row拒绝与全部负结果；并未晋升产品默认。
+- ANE图搜索：[缓存身份、严格门槛与失败缩减](ane/graph-rewrite-search.md) → [ANEForge固定源码](sources/repos/aneforge-rewrite-search.md) → [13组实机比较和负控](review/aneforge-20261016.md)；合成host-fed结果不作为Qwen/handoff资格。
+- ANE profiling：[PMU payload/单位/生命周期合同](profiling/ane-pmu-lab.md)与[81次完整输出的本机记录](review/ane-pmu-20261016.md)；推理通过但counter未取得，保留CLI假阳性、skip与null，不套用上游峰值。
+- 真实FFN分担：[完整GPU分母、精度岛与交接成本](gpu-ane/private-ffn-boundary.md) → [Qwen layer0三档探索和冻结参数确认](review/qwen-private-ffn-20261016.md)；private copy-bridge在所测warm组件约1.08–1.12×，不是全请求/零拷贝或默认资格。
 - GPU源码到真实消费者：[MLX/GGML affine、tile与原始BF16控制](review/gpu-affine-20261016.md)，包含量化配方内收益、额外驻留成本与独立确认，不自动晋升产品默认。
 - 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
 - GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
@@ -19,7 +22,7 @@
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
 - 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
-- 动手实现：[实验室](labs/README.md) → [49项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含40个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO。
+- 动手实现：[实验室](labs/README.md) → [52项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含43个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/真实模型集成另需显式opt-in。
 
 ## 目录
 

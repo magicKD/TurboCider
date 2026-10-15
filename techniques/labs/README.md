@@ -50,7 +50,7 @@ python3 -B techniques/labs/run.py w8a8-reference --options '{"rows":7,"hidden":3
 python3 -B -m unittest discover -s techniques/tests -v
 ```
 
-40个case共享少量参考函数，但各自有不同的baseline/candidate/negative control；不是给所有章节重复挂同一FFN toy。`--options`只接受该case真实函数参数，CPU矩阵实验有规模上限；大shape转实际设备probe或修改受控实验，不暗示CPU上限是硬件限制。
+43个case共享少量参考函数，但各自有不同的baseline/candidate/negative control；不是给所有章节重复挂同一FFN toy。`search-qualification`只演示[缓存身份与严格gate](../ane/graph-rewrite-search.md)，`pmu-provenance`只演示[counter缺失/未知与生命周期合同](../profiling/ane-pmu-lab.md)，`silu-domain`只演示[稳定公式与配对切片](../gpu-ane/private-ffn-boundary.md)，不导入或调用私有后端。`--options`只接受该case真实函数参数，CPU矩阵实验有规模上限；大shape转实际设备probe或修改受控实验，不暗示CPU上限是硬件限制。
 
 ## 小型真实设备实验
 
@@ -66,6 +66,8 @@ Metal需要Apple GPU与macOS/CLT；CoreML需要兼容arm64 Python/NumPy/coremlto
 每次硬件benchmark串行运行，关掉本任务其他build/tests/profile，不擅自停止用户服务。低延迟小probe的百分比受主机调度影响，不自动推广默认。
 
 新增显式设备selector：`metal:counter-stage`对应Metal入口的`--diagnostic counter-stage`，参考[时钟校准](../profiling/timestamp-calibration.md)；`mlx:bf16-ffn-profile`对应[真实BF16 profile入口](metal/qwen_ffn_profile.py)，必须显式提供本地checkpoint/capture/fixture，见[MLX边界](../profiling/mlx-boundaries.md)。它们不由CPU `all`或默认查询执行，也不会自动下载模型。
+
+`private:pmu`对应[自包含private CLI](ane/pmu_probe.py)的显式`--device`，默认仅准备有界合成图；见[PMU合同](../profiling/ane-pmu-lab.md)。数值通过但PMU缺失返回3，不能当硬件资格；不需要改安全设置。
 
 ## 对新模型如何使用
 

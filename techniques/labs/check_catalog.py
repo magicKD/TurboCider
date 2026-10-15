@@ -13,6 +13,7 @@ DEVICE_CASES = {"metal:" + name for name in ("vector", "fusion", "gemm", "norm-r
 DEVICE_CASES |= {"coreml:frozen-fp16", "coreml:runtime-fp16", "coreml:hybrid", "native:public-w8"}
 DEVICE_CASES |= {"metal:counter-stage", "mlx:bf16-ffn-profile"}
 DEVICE_CASES |= {"mlx:attention-replay"}
+DEVICE_CASES |= {"private:pmu"}
 REFERENCES = {"reference:" + name for name in ("split-ffn", "interval-peak", "model-header", "lab-summary")}
 
 

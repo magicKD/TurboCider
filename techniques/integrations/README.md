@@ -54,3 +54,46 @@ python -B techniques/integrations/public_w8_product.py --coreml-overlay "$TC_COR
 ordinary GPU observer在actual完整step0、step1 layer0提供借用参数、真实prefix cache和原callable输出。客户端按原公式重放、暴露额外QKV/O，核对完整block/prefix/输入存储后才写BF16副本；它不是未改变compiled kernel内部的直接capture。两phase合计128MiB cap，停在VAE decode/export之前；普通路线可能预加载已有VAE权重。source、loaded runtime、文件hash与统计生成前后复核，私有/实验环境不继承到子进程。
 
 核心benchmark只需要这些显式raw文件，不需要产品或兄弟源码；[全部结果](../review/qwen-attention-20261016.md)与[步骤](../labs/gpu.md)包含独立seed确认、noop和empty-row拒绝。原始QKV与prompt/session本地数据不入库。
+
+## 可选 ANEForge 上游执行
+
+[aneforge_probe.py](aneforge_probe.py)只接受仓库ignored `outputs/` 下调用方显式准备的源码副本。需要预先核对[固定source与安全边界](../sources/repos/aneforge-rewrite-search.md)；它不会 clone、install、auto-build、运行上游pytest/conftest、下载模型或修改已有checkout。Python3.11/NumPy可运行CPU合同；device模式另需macOS/CLT、MLX与预构建shim。
+
+先设 `TC_ANEFORGE_CHECKOUT` 为审核过的固定checkout路径，再使用新的任务目录；不把下列build命令用于原checkout：
+
+```sh
+mkdir outputs/my-new-aneforge
+mkdir outputs/my-new-aneforge/source
+cp -R "$TC_ANEFORGE_CHECKOUT/aneforge" outputs/my-new-aneforge/source/aneforge
+cp "$TC_ANEFORGE_CHECKOUT/LICENSE" "$TC_ANEFORGE_CHECKOUT/NOTICE" "$TC_ANEFORGE_CHECKOUT/AGENTS.md" outputs/my-new-aneforge/source/
+sh outputs/my-new-aneforge/source/aneforge/_lib/build.sh
+python3 -B techniques/scripts/run_experiment.py --timeout 120 \
+  --output-dir outputs/my-new-aneforge/cpu-launch -- .venv/bin/python -B \
+  techniques/integrations/aneforge_probe.py --source-root outputs/my-new-aneforge/source \
+  --mode cpu --output-dir outputs/my-new-aneforge/cpu
+python3 -B techniques/scripts/run_experiment.py --timeout 120 \
+  --output-dir outputs/my-new-aneforge/ffn-launch -- .venv/bin/python -B \
+  techniques/integrations/aneforge_probe.py --source-root outputs/my-new-aneforge/source \
+  --mode device --case ffn --candidate exp-silu --shape 128 512 1024 --seed 29 \
+  --gpu-output-conversion compiled --gpu-compute fp32 --output-dir outputs/my-new-aneforge/ffn
+```
+
+脚本为自己子进程指定dylib/cache与禁止自动构建，保留breaker；一次失败后不能立即换新进程绕过15s退避。不启用profiling、fork-safety例外、experimental async、多op共享或系统权限变更。只测合成有界输入；完整GPU/ANE输入copy、同步与FP32输出恢复计入host-fed wall。borrowed view只在owner活着时测试，不做真正UAF。
+
+`matmul --candidate int8`与`reduction --candidate reduce-matmul`可复核其他图；`activation/projection-silu --candidate exp-silu`用于保持独立oracle的手动子图缩减，不是假称自动最小化工具。CPU控制流mock与设备数值/性能分开。当前[15份记录](../review/aneforge-20261016.md)中的所有失败、强GPU对照和独立seed都保留；不改变产品默认。核心的[CPU学习实现](../labs/search_contracts.py)完全不需要该上游副本。
+
+## 真实Qwen private-prefix完整FFN消费者
+
+[aneforge_qwen_ffn.py](aneforge_qwen_ffn.py)读取明确的[原BF16 checkpoint/捕获/fixture](qwen_ffn_fixture.py)，不以FP16文件倒推原始权重。它复用已审核的ANEForge隔离copy/shim，只发射小比例constant prefix图；完整GPU基线、serial/hybrid和完整BF16输出恢复均保留，不修改产品/App。
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 180 \
+  --output-dir outputs/my-new-real-private-launch -- .venv/bin/python -B \
+  techniques/integrations/aneforge_qwen_ffn.py --source-root "$TC_ANEFORGE_COPY" \
+  --fixture "$TC_REAL_FIXTURE" --checkpoint "$TC_QWEN_CHECKPOINT" --capture-root "$TC_FFN_CAPTURE" \
+  --point layer-0-step-19 --share 2048 --repeats 24 --output-dir outputs/my-new-real-private
+```
+
+显式numpy/MLX依赖与upstream副本仅属于此可选集成，不是techniques核心必需品。先核对512MiB admission与常量图存储余量；保留失败breaker、owned进程timeout与全样本，不清系统cache/旧实验。raw checkpoint、激活、时间戳/机器路径不发布。
+
+边界是ready原BF16 GPU input→ready完整BF16 GPU output：GPU→host FP16、Model feed/execute/read/cast、GPU remainder、restore/join均计入，CPU验证在边界外。不声明零拷贝/physical overlap；全输出对BF16 replica与独立full/prefix FP64样本分别过固定门槛。API线程重叠不是物理counter。本轮[所有比较与held-out确认](../review/qwen-private-ffn-20261016.md)有局部warm收益，但完整请求/LoRA/内存/冷启动等资格仍缺。

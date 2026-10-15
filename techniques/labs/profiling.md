@@ -4,6 +4,8 @@
 
 真实GPU的[未采样/capture/counter三模式](../profiling/gpu-timeline-and-counters.md)与[来源安全adapter](../profiling/trace-normalization.md)已经形成独立纵向链；[本机记录](../review/gpu-profiling-20261016.md)保留结构解析失败、不支持的采样点和synthetic反例。
 
+ANE的[PMU合同与有界原生客户端](../profiling/ane-pmu-lab.md)另区分numerical execution、counter capture与物理单位/生命周期资格。[本机81次输出](../review/ane-pmu-20261016.md)通过但未取得counter，缺失不回填成0；标准库`pmu-provenance`和独立完整tensor hash verifier可离线运行。
+
 ## 直接读一份设备报告
 
 ```sh

@@ -3,6 +3,41 @@
   "purpose": "Required code paths are relative to techniques and entirely local. integration_code is optional product traceability, never a core dependency. Every technical chapter maps to executable cases, controls and revisit conditions; no automatic model qualification.",
   "entries": [
     {
+      "chapter": "gpu-ane/private-ffn-boundary.md",
+      "cases": ["silu-domain", "search-qualification"],
+      "code": ["labs/silu_domain.py", "labs/ane/qwen_witness.py", "scripts/curate_qwen_private_ffn.py"],
+      "integration_code": ["techniques/integrations/aneforge_qwen_ffn.py"],
+      "source_ids": ["upstream-aneforge-search", "upstream-mlx-affine"],
+      "evidence_ids": ["qwen-private-ffn-20261016", "qwen-private-ffn-data-20261016"],
+      "controls": ["complete original BF16 GPU denominator, paired gate/up/down and complete GPU remainder",
+                   "all-call full/prefix source and independent FP64 sample gates; conversion/feed/restore/join included",
+                   "three-arm serial/hybrid controls, frozen-share held-out timesteps and 24-group confirmation; host overlap is not physical overlap"],
+      "revisit_when": "source/LoRA, workload/domain, backend/OS/library, residency, actual backing or full-request consumer changes"
+    },
+    {
+      "chapter": "profiling/ane-pmu-lab.md",
+      "cases": ["pmu-provenance", "private:pmu"],
+      "code": ["labs/pmu.py", "labs/ane/pmu_probe.py", "labs/ane/pmu_probe.mm", "scripts/curate_pmu_campaign.py"],
+      "controls": ["missing object, empty/zeroed/unknown payload and successful inference remain distinct",
+                   "reset/wrap cannot be clamped to zero; no assumed GHz, units or cumulative scope",
+                   "all synthetic outputs independently reconstructed, physical pitch/poison/unload checked, strict capture gate returns 3"],
+      "source_ids": ["upstream-ane-pmu", "upstream-ane-capacity"],
+      "evidence_ids": ["ane-pmu-20261016", "ane-pmu-data-20261016"],
+      "revisit_when": "OS/SDK/private ABI, serialized region/backend path or actual raw payload changes; unit/scope/overflow qualification required"
+    },
+    {
+      "chapter": "ane/graph-rewrite-search.md",
+      "cases": ["search-qualification"],
+      "code": ["labs/search_contracts.py", "labs/ane/precision_oracle.py", "scripts/curate_aneforge_campaign.py"],
+      "controls": ["same structure with changed frozen weights cannot inherit numerical qualification",
+                   "failed first/warmup/timed gates never expose a speed ratio; three-arm balanced order retained",
+                   "single-op SiLU failure reduction and alive view/copy/poison controls"],
+      "source_ids": ["upstream-aneforge-search"],
+      "evidence_ids": ["aneforge-20261016", "aneforge-data-20261016"],
+      "revisit_when": "OS/SDK/upstream implementation, weight/LoRA/input domain, shape/layout/mask or consumer handoff changes",
+      "integration_code": ["techniques/integrations/aneforge_probe.py"]
+    },
+    {
       "chapter": "hardware/apple-silicon.md",
       "cases": [
         "bucket-selection",

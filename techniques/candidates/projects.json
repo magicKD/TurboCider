@@ -176,8 +176,12 @@
       "repository": "sbryngelson/ANEForge",
       "entry_url": "https://github.com/sbryngelson/ANEForge",
       "checkout": "ANEForge",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "decision": "include",
+      "decision_scope": "fixed source/contract knowledge and bounded synthetic experiments, not product backend qualification",
+      "reading_status": "optimizer-runtime-and-selected-graph-emitter-shim-source-inspected-20261016",
+      "source_ids": ["upstream-aneforge-search"],
+      "execution_status": "isolated e5rt shim, 13 probes, cache/precision negatives and seven actual-source Qwen layer0 full GPU/serial/hybrid runs; warm full-consumer observation confirmed at frozen share with validation-drained control, no full request/LoRA/zero-copy/PMU or upstream corpus qualification",
+      "revisit_when": ["OS/SDK/upstream ref change", "activation domain or frozen weights/LoRA change", "actual GPU-ANE consumer and complete request confirmation"]
     },
     {
       "id": "R18",
@@ -280,8 +284,13 @@
       "repository": "freedomtan/ane_pmu_profiler",
       "entry_url": "https://github.com/freedomtan/ane_pmu_profiler",
       "checkout": "ane_pmu_profiler",
-      "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "decision": "include",
+      "decision_scope": "knowledge/provenance contracts and bounded owned experiments, not PMU or product qualification",
+      "reading_status": "complete-profiler-loader-report-and-small-pipeline-source-inspected-20261016",
+      "source_ids": ["upstream-ane-pmu", "upstream-ane-capacity"],
+      "execution_status": "original CLI false positives reproduced; nine original-client runs numerically witnessed with no PMU payload; associated capacity CLI skipped PMU branch",
+      "supplementary_checkout": {"repository": "freedomtan/measure_ane_capacity", "checkout": "measure_ane_capacity-research-20261016", "commit": "2d3809ba2a3654db71d6790574c9b0247d5b4493"},
+      "revisit_when": ["new OS/private ABI/upstream source", "owned serialized ANE region or capture policy changes", "actual payload plus lifecycle/units/scale witnesses; no security downgrade"]
     },
     {
       "id": "R30",

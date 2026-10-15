@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -283,6 +284,37 @@ class WikiTests(unittest.TestCase):
 class StandaloneTests(unittest.TestCase):
     def test_real_learning_assets_and_imports_are_local(self):
         self.assertEqual(standalone.audit(ROOT)["errors"], [])
+
+    def test_isolated_copy_excludes_caches_and_raw_captures_but_keeps_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "source"
+            artifacts = (
+                ".cache/compiled.bin", "labs/.pytest_cache/state.json",
+                "labs/ane/.aneforge_cache/weights.bin", "integrations/.aneforge-cache/tuning.json",
+                "integrations/.build/release/probe", "integrations/.swiftpm/state.json",
+                "labs/DerivedData/Build/temp.o", "labs/CMakeFiles/cmake.check_cache",
+                "labs/metal/raw.gputrace/metadata.json", "labs/metal/raw.trace/data",
+                "labs/metal/raw.gputrace.zip", "labs/metal/raw.trace.zip",
+                "outputs/report.json", "labs/private/session.json",
+            )
+            portable = ("labs/ane/probe.py", "review/evidence.json", "examples/tiny.npy")
+            for relative in artifacts + portable:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture\n")
+
+            def child(command, **kwargs):
+                destination = Path(kwargs["cwd"]) / "techniques"
+                for relative in artifacts:
+                    self.assertFalse((destination / relative).exists(), relative)
+                for relative in portable:
+                    self.assertEqual((destination / relative).read_text(), "fixture\n", relative)
+                return standalone.subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+            with patch.object(standalone, "audit", return_value={"errors": []}), \
+                    patch.object(standalone.subprocess, "run", side_effect=child) as run:
+                self.assertEqual(standalone.isolate(root)["errors"], [])
+                self.assertEqual(run.call_count, 5)
 
     def copy_wiki(self, directory):
         target = Path(directory) / "techniques"

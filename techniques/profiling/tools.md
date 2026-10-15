@@ -88,6 +88,8 @@ python3 tools/native/quality_gate.py "$TC_REFERENCE_PNG" "$TC_CANDIDATE_PNG"
 
 ## 实现参考与实验
 
+私有ANE工具先看[PMU payload/clock/lifecycle合同](ane-pmu-lab.md)与[原工具/关联CLI本机负控](../review/ane-pmu-20261016.md)。源码的ACTIVE文字、退出0、框架标签、默认0寄存器都不能授予遥测资格；本机有完整数值证明，但所测路径的counter仍缺失。使用[显式自包含probe](../labs/ane/pmu_probe.py)，不改SIP/AMFI/boot-args/系统权限，不自动抓其他进程或系统cache。
+
 实际GPU profiling的[三模式实验](gpu-timeline-and-counters.md)、[归一化合同](trace-normalization.md)及[本机证据](../review/gpu-profiling-20261016.md)分别说明采集、来源与资格；官方SDK和开源parser分别建卡，不把synthetic时间或库函数名录当执行测量。
 
 进一步区分[同trial时钟校准](timestamp-calibration.md)与[真实MLX FFN host边界](mlx-boundaries.md)：单位/端点通过不自动变成另一个backend的kernel时间，强制phase drain也不是无扰动的原程序。

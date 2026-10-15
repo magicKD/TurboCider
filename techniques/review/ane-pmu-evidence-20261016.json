@@ -1,0 +1,3075 @@
+{
+  "schema": "tc-ane-pmu-campaign-evidence-v1",
+  "curator_sha256": "277303fd6293762678922ff8ab0cdc40b7f4f1535d39043c629b41d5fde56502",
+  "contract_helper_sha256": "c0b8e136f9ed6904bc7cbd974109546f8dcadc537c2e7ff25a2b68ee4ccfa46d",
+  "production_qualified": false,
+  "counter_semantics_qualified": false,
+  "upstream_commit": "20080a945096eb5932490b024120b513ae5427e2",
+  "capacity_commit": "2d3809ba2a3654db71d6790574c9b0247d5b4493",
+  "raw_opaque_buffers_exported": false,
+  "runs": [
+    {
+      "id": "affine-mask0",
+      "raw_report_sha256": "cd89c055265e6f0cd09a4f026a4d420514f3b5dba4669a4b0ceceee700cc27ab",
+      "supervisor_sha256": "d1afe58f52eb6d0144379c441daeddbac0f77ee8b16bc2fa109f1dcda2ee4281",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "not-requested",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 0,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 0,
+        "shape_nchw": [
+          1,
+          32,
+          1,
+          32
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "b94304cd23b3c6e68e573f5a35eefbb7b08e2836a691ba29f5d83dbda2c3535c",
+          "pmu_probe.mm": "08773ebbbd9f700f5ca1be1eeb71ec56b745d12d6ee097cb40f263b7b4d3a45b"
+        },
+        "recipe": "exact finite dyadic FP16 affine y=2*x+0.25; changing generations; no model weights",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "requested_mask": 0,
+          "compile_wall_ns": 34572792,
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "unload_succeeded": true,
+          "counter_semantics_qualified": false,
+          "samples": [
+            {
+              "warmup": true,
+              "input_sha256": "3da2ad803a29ffd39e9c8b55820d249aeef97eeb1ede7f094fe9e1fcf6c12c65",
+              "output_sha256": "672443151ffe63ef191cf9ff6f9e971cf29b4999e907a83d317f5aae24f3f675",
+              "numeric_pass": true,
+              "input_generation": 0,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 274625,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 0,
+              "api_wall_ns": 251958,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": true,
+              "input_sha256": "3180f1a180c7bf407960907b0f1b3d163dfb72e0830b8f283bdf9250e1d1abc7",
+              "output_sha256": "01613f2666367763441e7aee1dfe8461df674e6ef697f49d4af9818b0aea5842",
+              "numeric_pass": true,
+              "input_generation": 1,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 144916,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 1,
+              "api_wall_ns": 131625,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": true,
+              "input_sha256": "283c94efd9f9e36b8c7f6c681ea4848d0a02d79b38ce8935d843f2c18e752a17",
+              "output_sha256": "de015a0fd48afd093d151b40b40997415af986c820db47956f1730b397dbb8a6",
+              "numeric_pass": true,
+              "input_generation": 2,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 129292,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 2,
+              "api_wall_ns": 115375,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "8b39ba5d207a780c8c3644ef2ab797fc543c5807cd146f808dc7d9b1fc1e47d9",
+              "output_sha256": "6788bf4353f1d5615d44f8ea75073a7423ce1a5f7afc5c767850de5deeeea68e",
+              "numeric_pass": true,
+              "input_generation": 3,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 111125,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 3,
+              "api_wall_ns": 98208,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "b5b7eb6a8c212e23215f4f67f6be78cbe5018c7cc73b91c1375c2e2bf192ed08",
+              "output_sha256": "d8c571c45c85af75d48fadac8e949628ca0ec321b91bedfea31f482c93c1a96b",
+              "numeric_pass": true,
+              "input_generation": 4,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 123417,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 4,
+              "api_wall_ns": 110791,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "111893f77080b2edc0e3cc6c5ba755c60db8e14e92a17533b432e6249209e513",
+              "output_sha256": "a277fd8aa4cbebc1f6ee2f4aff32a7968d9b893d7dd879e29c50015a82401e05",
+              "numeric_pass": true,
+              "input_generation": 5,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 119291,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 5,
+              "api_wall_ns": 106875,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "3d907d36a35c9792f6c668bf50ec10c29595caa56217a730da1b24a3351110ad",
+              "output_sha256": "eb7be2065a50043345c5094a34ce6ac76294befed83768543f052935bb118d41",
+              "numeric_pass": true,
+              "input_generation": 6,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 113000,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 6,
+              "api_wall_ns": 100833,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "7fd347464071d999f7b6b2d6e2198900fcf4b1a21cac30a177ceef4ea1fae20d",
+              "output_sha256": "51db4dc493bd0a4918ff123b143fc742894e1546389821977f6a280dc9349fa9",
+              "numeric_pass": true,
+              "input_generation": 7,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 115333,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 7,
+              "api_wall_ns": 103041,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "afe108b44a5e6b8433bf3e8c2ada34a203fe50f403e87e1af1fced40ce936cfc",
+              "output_sha256": "f68c8d4885d368d5da39466b2afb50c0b71110c16aca7916d17d2a91ecf94195",
+              "numeric_pass": true,
+              "input_generation": 8,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 128625,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 8,
+              "api_wall_ns": 116417,
+              "maximum_abs_error": 0
+            }
+          ],
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "load_wall_ns": 21248791,
+          "stage": "evaluate",
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "physical_device_drain": "not a global-device observation",
+          "mapping_reuse_after_failure": false,
+          "production_qualified": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "status": "executed-and-numerically-validated",
+          "errors": []
+        },
+        "model_mil_sha256": "14d2b0cbc6635d9bcdc49996f704a951e7a7004512f598a15db5d879fcdd4010",
+        "build_wall_ns": 442093083,
+        "build_returncode": 0,
+        "binary_sha256": "63cc4fe1d399a5d5f582275e70156529ff5ea2c48f988e181fccc7d9773b2363",
+        "native_returncode": 0,
+        "raw_native_sha256": "d286d90229098f0c3d58e87e212557fa1fdca30a8f578f0dd2d0a74d3fcf2258",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "affine-mask15",
+      "raw_report_sha256": "7157d6ff271af7c68ff979c0a88d297cdf3e4e7b32440c313113ade7f07cb981",
+      "supervisor_sha256": "fbcfd1c8eb21a0386f9c82745844449dacba909dda2b42b72acb4958092a4a17",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 0,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 15,
+        "shape_nchw": [
+          1,
+          32,
+          1,
+          32
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "b94304cd23b3c6e68e573f5a35eefbb7b08e2836a691ba29f5d83dbda2c3535c",
+          "pmu_probe.mm": "08773ebbbd9f700f5ca1be1eeb71ec56b745d12d6ee097cb40f263b7b4d3a45b"
+        },
+        "recipe": "exact finite dyadic FP16 affine y=2*x+0.25; changing generations; no model weights",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "requested_mask": 15,
+          "compile_wall_ns": 28372000,
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "unload_succeeded": true,
+          "counter_semantics_qualified": false,
+          "samples": [
+            {
+              "warmup": true,
+              "input_sha256": "3da2ad803a29ffd39e9c8b55820d249aeef97eeb1ede7f094fe9e1fcf6c12c65",
+              "output_sha256": "672443151ffe63ef191cf9ff6f9e971cf29b4999e907a83d317f5aae24f3f675",
+              "numeric_pass": true,
+              "input_generation": 0,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 332083,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 0,
+              "api_wall_ns": 308500,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": true,
+              "input_sha256": "3180f1a180c7bf407960907b0f1b3d163dfb72e0830b8f283bdf9250e1d1abc7",
+              "output_sha256": "01613f2666367763441e7aee1dfe8461df674e6ef697f49d4af9818b0aea5842",
+              "numeric_pass": true,
+              "input_generation": 1,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 166959,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 1,
+              "api_wall_ns": 148042,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": true,
+              "input_sha256": "283c94efd9f9e36b8c7f6c681ea4848d0a02d79b38ce8935d843f2c18e752a17",
+              "output_sha256": "de015a0fd48afd093d151b40b40997415af986c820db47956f1730b397dbb8a6",
+              "numeric_pass": true,
+              "input_generation": 2,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 144834,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 2,
+              "api_wall_ns": 128083,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "8b39ba5d207a780c8c3644ef2ab797fc543c5807cd146f808dc7d9b1fc1e47d9",
+              "output_sha256": "6788bf4353f1d5615d44f8ea75073a7423ce1a5f7afc5c767850de5deeeea68e",
+              "numeric_pass": true,
+              "input_generation": 3,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 129416,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 3,
+              "api_wall_ns": 114500,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "b5b7eb6a8c212e23215f4f67f6be78cbe5018c7cc73b91c1375c2e2bf192ed08",
+              "output_sha256": "d8c571c45c85af75d48fadac8e949628ca0ec321b91bedfea31f482c93c1a96b",
+              "numeric_pass": true,
+              "input_generation": 4,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 120750,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 4,
+              "api_wall_ns": 108000,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "111893f77080b2edc0e3cc6c5ba755c60db8e14e92a17533b432e6249209e513",
+              "output_sha256": "a277fd8aa4cbebc1f6ee2f4aff32a7968d9b893d7dd879e29c50015a82401e05",
+              "numeric_pass": true,
+              "input_generation": 5,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 114917,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 5,
+              "api_wall_ns": 102875,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "3d907d36a35c9792f6c668bf50ec10c29595caa56217a730da1b24a3351110ad",
+              "output_sha256": "eb7be2065a50043345c5094a34ce6ac76294befed83768543f052935bb118d41",
+              "numeric_pass": true,
+              "input_generation": 6,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 115667,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 6,
+              "api_wall_ns": 103958,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "7fd347464071d999f7b6b2d6e2198900fcf4b1a21cac30a177ceef4ea1fae20d",
+              "output_sha256": "51db4dc493bd0a4918ff123b143fc742894e1546389821977f6a280dc9349fa9",
+              "numeric_pass": true,
+              "input_generation": 7,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 101125,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 7,
+              "api_wall_ns": 90375,
+              "maximum_abs_error": 0
+            },
+            {
+              "warmup": false,
+              "input_sha256": "afe108b44a5e6b8433bf3e8c2ada34a203fe50f403e87e1af1fced40ce936cfc",
+              "output_sha256": "f68c8d4885d368d5da39466b2afb50c0b71110c16aca7916d17d2a91ecf94195",
+              "numeric_pass": true,
+              "input_generation": 8,
+              "all_outputs_finite": true,
+              "host_prepare_call_readback_ns": 114875,
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "trial": 8,
+              "api_wall_ns": 104333,
+              "maximum_abs_error": 0
+            }
+          ],
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "load_wall_ns": 20849291,
+          "stage": "evaluate",
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "physical_device_drain": "not a global-device observation",
+          "mapping_reuse_after_failure": false,
+          "production_qualified": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "status": "executed-and-numerically-validated",
+          "errors": []
+        },
+        "model_mil_sha256": "14d2b0cbc6635d9bcdc49996f704a951e7a7004512f598a15db5d879fcdd4010",
+        "build_wall_ns": 440995500,
+        "build_returncode": 0,
+        "binary_sha256": "63cc4fe1d399a5d5f582275e70156529ff5ea2c48f988e181fccc7d9773b2363",
+        "native_returncode": 0,
+        "raw_native_sha256": "0e08b990fde37eaec5ff1f218c11d65853c75012f50ace34cb3eb50ba4c2aca4",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "affine-mask15-v2",
+      "raw_report_sha256": "79c00eaf7951c585b443ab2575471456c76775698acba2300725bf2a594b0a0a",
+      "supervisor_sha256": "336ffb085afe445b12c827f7cb88430aa2ef19c93a0f062204144b4cb201c238",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 9,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 15,
+        "recipe_kind": "affine",
+        "shape_nchw": [
+          1,
+          32,
+          1,
+          32
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "7df5146cdc9e80c01377530742fdf2c96405c40bea51305e5a6f5dcd0c056efe",
+          "pmu_probe.mm": "973af5218832f28ffa179fb6cedaca659db32e6045e68723bf42f9f706ff885f"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "requested_mask": 15,
+          "recipe_kind": "affine",
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "compile_wall_ns": 41332375,
+          "counter_semantics_qualified": false,
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "672443151ffe63ef191cf9ff6f9e971cf29b4999e907a83d317f5aae24f3f675",
+              "host_prepare_call_readback_ns": 353625,
+              "input_generation": 0,
+              "api_wall_ns": 328875,
+              "maximum_abs_error": 0,
+              "input_sha256": "3da2ad803a29ffd39e9c8b55820d249aeef97eeb1ede7f094fe9e1fcf6c12c65"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "01613f2666367763441e7aee1dfe8461df674e6ef697f49d4af9818b0aea5842",
+              "host_prepare_call_readback_ns": 160667,
+              "input_generation": 1,
+              "api_wall_ns": 145625,
+              "maximum_abs_error": 0,
+              "input_sha256": "3180f1a180c7bf407960907b0f1b3d163dfb72e0830b8f283bdf9250e1d1abc7"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "de015a0fd48afd093d151b40b40997415af986c820db47956f1730b397dbb8a6",
+              "host_prepare_call_readback_ns": 142666,
+              "input_generation": 2,
+              "api_wall_ns": 128333,
+              "maximum_abs_error": 0,
+              "input_sha256": "283c94efd9f9e36b8c7f6c681ea4848d0a02d79b38ce8935d843f2c18e752a17"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "6788bf4353f1d5615d44f8ea75073a7423ce1a5f7afc5c767850de5deeeea68e",
+              "host_prepare_call_readback_ns": 136417,
+              "input_generation": 3,
+              "api_wall_ns": 119334,
+              "maximum_abs_error": 0,
+              "input_sha256": "8b39ba5d207a780c8c3644ef2ab797fc543c5807cd146f808dc7d9b1fc1e47d9"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "d8c571c45c85af75d48fadac8e949628ca0ec321b91bedfea31f482c93c1a96b",
+              "host_prepare_call_readback_ns": 127542,
+              "input_generation": 4,
+              "api_wall_ns": 108167,
+              "maximum_abs_error": 0,
+              "input_sha256": "b5b7eb6a8c212e23215f4f67f6be78cbe5018c7cc73b91c1375c2e2bf192ed08"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "a277fd8aa4cbebc1f6ee2f4aff32a7968d9b893d7dd879e29c50015a82401e05",
+              "host_prepare_call_readback_ns": 121958,
+              "input_generation": 5,
+              "api_wall_ns": 107834,
+              "maximum_abs_error": 0,
+              "input_sha256": "111893f77080b2edc0e3cc6c5ba755c60db8e14e92a17533b432e6249209e513"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "eb7be2065a50043345c5094a34ce6ac76294befed83768543f052935bb118d41",
+              "host_prepare_call_readback_ns": 130958,
+              "input_generation": 6,
+              "api_wall_ns": 114625,
+              "maximum_abs_error": 0,
+              "input_sha256": "3d907d36a35c9792f6c668bf50ec10c29595caa56217a730da1b24a3351110ad"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "51db4dc493bd0a4918ff123b143fc742894e1546389821977f6a280dc9349fa9",
+              "host_prepare_call_readback_ns": 117500,
+              "input_generation": 7,
+              "api_wall_ns": 102708,
+              "maximum_abs_error": 0,
+              "input_sha256": "7fd347464071d999f7b6b2d6e2198900fcf4b1a21cac30a177ceef4ea1fae20d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "f68c8d4885d368d5da39466b2afb50c0b71110c16aca7916d17d2a91ecf94195",
+              "host_prepare_call_readback_ns": 119959,
+              "input_generation": 8,
+              "api_wall_ns": 106250,
+              "maximum_abs_error": 0,
+              "input_sha256": "afe108b44a5e6b8433bf3e8c2ada34a203fe50f403e87e1af1fced40ce936cfc"
+            }
+          ],
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24"
+          },
+          "stage": "evaluate",
+          "load_wall_ns": 21463750,
+          "physical_device_drain": "not a global-device observation",
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "production_qualified": false,
+          "unload_succeeded": true,
+          "mapping_reuse_after_failure": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "status": "executed-and-numerically-validated",
+          "errors": []
+        },
+        "model_mil_sha256": "14d2b0cbc6635d9bcdc49996f704a951e7a7004512f598a15db5d879fcdd4010",
+        "build_wall_ns": 476458875,
+        "build_returncode": 0,
+        "binary_sha256": "c6612a4df7e95e3caa2caa7465a0264a2d5f8b3ebd348011be685fc319cc9ce6",
+        "native_returncode": 0,
+        "raw_native_sha256": "cd7de48533c0f7c107ea9e7cf1c5ce3deaa54e2978f9816c17643b0590e8e23c",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "conv-mask15",
+      "raw_report_sha256": "e5b878a683014e3ccaf4a6290fc9d2e2723f541057ec9d9be6a8c9121f731664",
+      "supervisor_sha256": "58d8d4d2b519af9270bbe1c39a11a0b45ab03f83f10809d001919755bee737cb",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 9,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 15,
+        "recipe_kind": "conv",
+        "shape_nchw": [
+          1,
+          32,
+          1,
+          32
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "7df5146cdc9e80c01377530742fdf2c96405c40bea51305e5a6f5dcd0c056efe",
+          "pmu_probe.mm": "973af5218832f28ffa179fb6cedaca659db32e6045e68723bf42f9f706ff885f"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "requested_mask": 15,
+          "recipe_kind": "conv",
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "compile_wall_ns": 29621000,
+          "counter_semantics_qualified": false,
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "203c91c67ff47b216dbe2c03134207e748fb9db7964c00ca9be55865e96a0dc9",
+              "host_prepare_call_readback_ns": 297084,
+              "input_generation": 0,
+              "api_wall_ns": 273583,
+              "maximum_abs_error": 0,
+              "input_sha256": "3da2ad803a29ffd39e9c8b55820d249aeef97eeb1ede7f094fe9e1fcf6c12c65"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "721448a6aabcf4145905ef352e9a6c898f15f169b5674382aab9c566fabe00ea",
+              "host_prepare_call_readback_ns": 134500,
+              "input_generation": 1,
+              "api_wall_ns": 121416,
+              "maximum_abs_error": 0,
+              "input_sha256": "3180f1a180c7bf407960907b0f1b3d163dfb72e0830b8f283bdf9250e1d1abc7"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "00ec0c308c62d66011d042f8185e904c15426c6293ba431cc69de67d4deacaa8",
+              "host_prepare_call_readback_ns": 114167,
+              "input_generation": 2,
+              "api_wall_ns": 101583,
+              "maximum_abs_error": 0,
+              "input_sha256": "283c94efd9f9e36b8c7f6c681ea4848d0a02d79b38ce8935d843f2c18e752a17"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "402662e8dd4a5118d30895e8087a3be84c3d2914f1627919b538fb92738936fa",
+              "host_prepare_call_readback_ns": 100000,
+              "input_generation": 3,
+              "api_wall_ns": 88125,
+              "maximum_abs_error": 0,
+              "input_sha256": "8b39ba5d207a780c8c3644ef2ab797fc543c5807cd146f808dc7d9b1fc1e47d9"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "3120075158496a7fce8ce80d37f0e6078898ac604284d950def2e388dc907830",
+              "host_prepare_call_readback_ns": 108042,
+              "input_generation": 4,
+              "api_wall_ns": 93625,
+              "maximum_abs_error": 0,
+              "input_sha256": "b5b7eb6a8c212e23215f4f67f6be78cbe5018c7cc73b91c1375c2e2bf192ed08"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "af80291568b0d3d170979bbe788d7ad38c559c963efa44774df36b43b7935cff",
+              "host_prepare_call_readback_ns": 95333,
+              "input_generation": 5,
+              "api_wall_ns": 83708,
+              "maximum_abs_error": 0,
+              "input_sha256": "111893f77080b2edc0e3cc6c5ba755c60db8e14e92a17533b432e6249209e513"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "bb199147a9ee945846016ae3945a1256cc07a99ee618546f95c9de7c9dd3fdd3",
+              "host_prepare_call_readback_ns": 123834,
+              "input_generation": 6,
+              "api_wall_ns": 107958,
+              "maximum_abs_error": 0,
+              "input_sha256": "3d907d36a35c9792f6c668bf50ec10c29595caa56217a730da1b24a3351110ad"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "e72d34dd84a83f91374c86535a8176cffc1426a6ea6998e1b87f2815decb5a87",
+              "host_prepare_call_readback_ns": 107250,
+              "input_generation": 7,
+              "api_wall_ns": 94750,
+              "maximum_abs_error": 0,
+              "input_sha256": "7fd347464071d999f7b6b2d6e2198900fcf4b1a21cac30a177ceef4ea1fae20d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "b42d053a3da5f89b7d05905244f79498a76af55e610a63de29223b4146948854",
+              "host_prepare_call_readback_ns": 112750,
+              "input_generation": 8,
+              "api_wall_ns": 100791,
+              "maximum_abs_error": 0,
+              "input_sha256": "afe108b44a5e6b8433bf3e8c2ada34a203fe50f403e87e1af1fced40ce936cfc"
+            }
+          ],
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24"
+          },
+          "stage": "evaluate",
+          "load_wall_ns": 20564125,
+          "physical_device_drain": "not a global-device observation",
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "production_qualified": false,
+          "unload_succeeded": true,
+          "mapping_reuse_after_failure": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 64,
+            "Depth": 1,
+            "PlaneCount": 32,
+            "BatchStride": 2048,
+            "Type": "Float16",
+            "Width": 32,
+            "PlaneStride": 64,
+            "Channels": 32
+          },
+          "status": "executed-and-numerically-validated",
+          "errors": []
+        },
+        "model_mil_sha256": "7b0461f1651ee0b59bd29fbafa95bea95c46b2f142b0fba7997cb40c39bbede9",
+        "weights_blob_sha256": "4e4c31296e9180e714bcac3f06547d8b58c273092351e8a6414b60d5b24d5974",
+        "build_wall_ns": 485271666,
+        "build_returncode": 0,
+        "binary_sha256": "c6612a4df7e95e3caa2caa7465a0264a2d5f8b3ebd348011be685fc319cc9ce6",
+        "native_returncode": 0,
+        "raw_native_sha256": "2dfaf8b1e4dfb30d144b362dee52fb3292c1ebac934dbf0cd11b0d671ce60719",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "conv-large15",
+      "raw_report_sha256": "607ecec87fc69265f6675559cb39c37afa382952d4fde1fced42e5f9fc803a01",
+      "supervisor_sha256": "7739a89fb370d6c8bdd66d75f2d8f79086206d5485933197800dae1df2fea065",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 9,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 15,
+        "recipe_kind": "conv",
+        "shape_nchw": [
+          1,
+          128,
+          1,
+          512
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "7df5146cdc9e80c01377530742fdf2c96405c40bea51305e5a6f5dcd0c056efe",
+          "pmu_probe.mm": "973af5218832f28ffa179fb6cedaca659db32e6045e68723bf42f9f706ff885f"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "requested_mask": 15,
+          "recipe_kind": "conv",
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "compile_wall_ns": 34335750,
+          "counter_semantics_qualified": false,
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "e63fa9c75626ead8769b89f36095a7c30d8269754a5fd02a5aafadce5e5c16b5",
+              "host_prepare_call_readback_ns": 710417,
+              "input_generation": 0,
+              "api_wall_ns": 338708,
+              "maximum_abs_error": 0,
+              "input_sha256": "8ef9de890e4b678f1ec5f5a3210e471e0cbd8869facc6b4be22ac2daf7ee2baf"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "07f7b2f2d63877343071b71b63897847f7ba86c772900f318a9eff882b343f79",
+              "host_prepare_call_readback_ns": 462208,
+              "input_generation": 1,
+              "api_wall_ns": 167291,
+              "maximum_abs_error": 0,
+              "input_sha256": "78ec7d0c407d43aa5cf56077443959b5f62ea487333205f0de37359c158d2168"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "57af212062c707f88ea92f1c026f4c2c99e5d2a645f8d339a98387d74d7568be",
+              "host_prepare_call_readback_ns": 420917,
+              "input_generation": 2,
+              "api_wall_ns": 168167,
+              "maximum_abs_error": 0,
+              "input_sha256": "99f5ac5a0d3d6c21aabceeaeb63673b05f3fc9607a07aa4fbf700465bfeaa41d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "f0a776623b92d74c17b167e160a1e4d3d9e083cc7e21196d1722348839b3f8c3",
+              "host_prepare_call_readback_ns": 372083,
+              "input_generation": 3,
+              "api_wall_ns": 150708,
+              "maximum_abs_error": 0,
+              "input_sha256": "e019c02a31aedac02077da8a75c659190e77b8849c6dc18591822e365ec7689a"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "5726654d69db835b6d7ffee1d2deacbeb5c7026d4ec2e729cf2faf667b6ea7bc",
+              "host_prepare_call_readback_ns": 346417,
+              "input_generation": 4,
+              "api_wall_ns": 149209,
+              "maximum_abs_error": 0,
+              "input_sha256": "c7e839883bde42f18001821f6cc680ffbf2ba6a5e91320371c2242e8b975e813"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "85f5cc79856a2a76293d762d00848e56d57a1069590685cf677b7037bba12181",
+              "host_prepare_call_readback_ns": 325500,
+              "input_generation": 5,
+              "api_wall_ns": 136000,
+              "maximum_abs_error": 0,
+              "input_sha256": "a168758be6fa4b1e466dca2afe04cd3444edf5fc09ebf970a544e65f6b641081"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "387ce729a5b49b1edb713aea4102193b54018ee8705d58b7609146500de74622",
+              "host_prepare_call_readback_ns": 331583,
+              "input_generation": 6,
+              "api_wall_ns": 152875,
+              "maximum_abs_error": 0,
+              "input_sha256": "f99993d94c6204647c4d36e6c97de99ba891ad51d9168798fb7366a279ac99c5"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "415dab40cddfaef19497a23ac448467b862a89fe1f30b64acbe6e61b2e05ac0e",
+              "host_prepare_call_readback_ns": 310667,
+              "input_generation": 7,
+              "api_wall_ns": 135250,
+              "maximum_abs_error": 0,
+              "input_sha256": "80b98921f365f0e79fb570fabfc87d6c2a70c19de92cb1d8d09fe5a33867a863"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "cb0c0438c245091eee9b40945742b4933a7f005dc6902fc83da4ff0621464cf0",
+              "host_prepare_call_readback_ns": 321750,
+              "input_generation": 8,
+              "api_wall_ns": 147375,
+              "maximum_abs_error": 0,
+              "input_sha256": "4e4f4997783b7838e96b7fc9c78157fc92e262b5522b04cc36939e787d7beb54"
+            }
+          ],
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24"
+          },
+          "stage": "evaluate",
+          "load_wall_ns": 20891750,
+          "physical_device_drain": "not a global-device observation",
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "production_qualified": false,
+          "unload_succeeded": true,
+          "mapping_reuse_after_failure": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "status": "executed-and-numerically-validated",
+          "errors": []
+        },
+        "model_mil_sha256": "b7575552edaf720f20f41f6c649f686e10173ca81024a688b8b3a606628e1ed4",
+        "weights_blob_sha256": "a73288af863637e92dea864f88ab42f66ad5c7574cdefd919d3c908c2f2e9577",
+        "build_wall_ns": 500057750,
+        "build_returncode": 0,
+        "binary_sha256": "c6612a4df7e95e3caa2caa7465a0264a2d5f8b3ebd348011be685fc319cc9ce6",
+        "native_returncode": 0,
+        "raw_native_sha256": "f0b8c338f91dddca5bf4b731b3356d870b10dc48139fe93d536257f8e0d506ab",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "conv-mask2-profile",
+      "raw_report_sha256": "a2c37a9811d74a02864d9e51fb9d5c801052064ede0205a0e9b67ceb1a38f387",
+      "supervisor_sha256": "46eceaac399f3acf23cb8169b242ccbd13fabefe2d5a01937f4fe01acbf7cc6d",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 9,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 2,
+        "recipe_kind": "conv",
+        "compile_profiling_requested": true,
+        "shape_nchw": [
+          1,
+          128,
+          1,
+          512
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "dc5e42dfade8ab262be3fd6e053232a016a217198e376039c4e219171b0baf81",
+          "pmu_probe.mm": "fb065dd78f30c751d34b6179e38abb7d922f1f7c042b42524199b45b46f6f7a8"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "status": "executed-and-numerically-validated",
+          "requested_mask": 2,
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "load_wall_ns": 20547083,
+          "stage": "evaluate",
+          "errors": [],
+          "compile_profiling_requested": true,
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "+driverMaskForANEFMask:": "I20@0:8I16",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8"
+          },
+          "recipe_kind": "conv",
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "e63fa9c75626ead8769b89f36095a7c30d8269754a5fd02a5aafadce5e5c16b5",
+              "host_prepare_call_readback_ns": 700750,
+              "input_generation": 0,
+              "api_wall_ns": 308000,
+              "maximum_abs_error": 0,
+              "input_sha256": "8ef9de890e4b678f1ec5f5a3210e471e0cbd8869facc6b4be22ac2daf7ee2baf"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "07f7b2f2d63877343071b71b63897847f7ba86c772900f318a9eff882b343f79",
+              "host_prepare_call_readback_ns": 495833,
+              "input_generation": 1,
+              "api_wall_ns": 198959,
+              "maximum_abs_error": 0,
+              "input_sha256": "78ec7d0c407d43aa5cf56077443959b5f62ea487333205f0de37359c158d2168"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "57af212062c707f88ea92f1c026f4c2c99e5d2a645f8d339a98387d74d7568be",
+              "host_prepare_call_readback_ns": 434459,
+              "input_generation": 2,
+              "api_wall_ns": 168625,
+              "maximum_abs_error": 0,
+              "input_sha256": "99f5ac5a0d3d6c21aabceeaeb63673b05f3fc9607a07aa4fbf700465bfeaa41d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "f0a776623b92d74c17b167e160a1e4d3d9e083cc7e21196d1722348839b3f8c3",
+              "host_prepare_call_readback_ns": 394625,
+              "input_generation": 3,
+              "api_wall_ns": 169417,
+              "maximum_abs_error": 0,
+              "input_sha256": "e019c02a31aedac02077da8a75c659190e77b8849c6dc18591822e365ec7689a"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "5726654d69db835b6d7ffee1d2deacbeb5c7026d4ec2e729cf2faf667b6ea7bc",
+              "host_prepare_call_readback_ns": 378167,
+              "input_generation": 4,
+              "api_wall_ns": 150833,
+              "maximum_abs_error": 0,
+              "input_sha256": "c7e839883bde42f18001821f6cc680ffbf2ba6a5e91320371c2242e8b975e813"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "85f5cc79856a2a76293d762d00848e56d57a1069590685cf677b7037bba12181",
+              "host_prepare_call_readback_ns": 357250,
+              "input_generation": 5,
+              "api_wall_ns": 164375,
+              "maximum_abs_error": 0,
+              "input_sha256": "a168758be6fa4b1e466dca2afe04cd3444edf5fc09ebf970a544e65f6b641081"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "387ce729a5b49b1edb713aea4102193b54018ee8705d58b7609146500de74622",
+              "host_prepare_call_readback_ns": 344083,
+              "input_generation": 6,
+              "api_wall_ns": 158000,
+              "maximum_abs_error": 0,
+              "input_sha256": "f99993d94c6204647c4d36e6c97de99ba891ad51d9168798fb7366a279ac99c5"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "415dab40cddfaef19497a23ac448467b862a89fe1f30b64acbe6e61b2e05ac0e",
+              "host_prepare_call_readback_ns": 335208,
+              "input_generation": 7,
+              "api_wall_ns": 158709,
+              "maximum_abs_error": 0,
+              "input_sha256": "80b98921f365f0e79fb570fabfc87d6c2a70c19de92cb1d8d09fe5a33867a863"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "cb0c0438c245091eee9b40945742b4933a7f005dc6902fc83da4ff0621464cf0",
+              "host_prepare_call_readback_ns": 328625,
+              "input_generation": 8,
+              "api_wall_ns": 161917,
+              "maximum_abs_error": 0,
+              "input_sha256": "4e4f4997783b7838e96b7fc9c78157fc92e262b5522b04cc36939e787d7beb54"
+            }
+          ],
+          "counter_semantics_qualified": false,
+          "production_qualified": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "compile_wall_ns": 36820917,
+          "unload_succeeded": true,
+          "physical_device_drain": "not a global-device observation",
+          "mapping_reuse_after_failure": false
+        },
+        "model_mil_sha256": "b7575552edaf720f20f41f6c649f686e10173ca81024a688b8b3a606628e1ed4",
+        "weights_blob_sha256": "a73288af863637e92dea864f88ab42f66ad5c7574cdefd919d3c908c2f2e9577",
+        "build_wall_ns": 501799417,
+        "build_returncode": 0,
+        "binary_sha256": "c921ba8876c160af1edb2c45f39dc5cbe5909a8fbbc5819feed080d4e025d688",
+        "native_returncode": 0,
+        "raw_native_sha256": "8a1d7cb6d7838e8b3054b24083b2326baad8a1720c4ef3776909d124a549a020",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "conv-large0",
+      "raw_report_sha256": "13d0db91459927b8ac9c9318bc05b34afb1fb64f3e3e34dd0cdc94771ce77f11",
+      "supervisor_sha256": "161c56c88aae2a323c92dd112588541f8f61133b193d1e55a466a206017d92cc",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "not-requested",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 0,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 0,
+        "recipe_kind": "conv",
+        "compile_profiling_requested": false,
+        "shape_nchw": [
+          1,
+          128,
+          1,
+          512
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "dc5e42dfade8ab262be3fd6e053232a016a217198e376039c4e219171b0baf81",
+          "pmu_probe.mm": "fb065dd78f30c751d34b6179e38abb7d922f1f7c042b42524199b45b46f6f7a8"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "status": "executed-and-numerically-validated",
+          "requested_mask": 0,
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "load_wall_ns": 23089917,
+          "stage": "evaluate",
+          "errors": [],
+          "compile_profiling_requested": false,
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "+driverMaskForANEFMask:": "I20@0:8I16",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8"
+          },
+          "recipe_kind": "conv",
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "e63fa9c75626ead8769b89f36095a7c30d8269754a5fd02a5aafadce5e5c16b5",
+              "host_prepare_call_readback_ns": 744667,
+              "input_generation": 0,
+              "api_wall_ns": 344250,
+              "maximum_abs_error": 0,
+              "input_sha256": "8ef9de890e4b678f1ec5f5a3210e471e0cbd8869facc6b4be22ac2daf7ee2baf"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "07f7b2f2d63877343071b71b63897847f7ba86c772900f318a9eff882b343f79",
+              "host_prepare_call_readback_ns": 516417,
+              "input_generation": 1,
+              "api_wall_ns": 182917,
+              "maximum_abs_error": 0,
+              "input_sha256": "78ec7d0c407d43aa5cf56077443959b5f62ea487333205f0de37359c158d2168"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "57af212062c707f88ea92f1c026f4c2c99e5d2a645f8d339a98387d74d7568be",
+              "host_prepare_call_readback_ns": 427458,
+              "input_generation": 2,
+              "api_wall_ns": 159875,
+              "maximum_abs_error": 0,
+              "input_sha256": "99f5ac5a0d3d6c21aabceeaeb63673b05f3fc9607a07aa4fbf700465bfeaa41d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "f0a776623b92d74c17b167e160a1e4d3d9e083cc7e21196d1722348839b3f8c3",
+              "host_prepare_call_readback_ns": 383333,
+              "input_generation": 3,
+              "api_wall_ns": 141333,
+              "maximum_abs_error": 0,
+              "input_sha256": "e019c02a31aedac02077da8a75c659190e77b8849c6dc18591822e365ec7689a"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "5726654d69db835b6d7ffee1d2deacbeb5c7026d4ec2e729cf2faf667b6ea7bc",
+              "host_prepare_call_readback_ns": 361750,
+              "input_generation": 4,
+              "api_wall_ns": 140084,
+              "maximum_abs_error": 0,
+              "input_sha256": "c7e839883bde42f18001821f6cc680ffbf2ba6a5e91320371c2242e8b975e813"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "85f5cc79856a2a76293d762d00848e56d57a1069590685cf677b7037bba12181",
+              "host_prepare_call_readback_ns": 341292,
+              "input_generation": 5,
+              "api_wall_ns": 136167,
+              "maximum_abs_error": 0,
+              "input_sha256": "a168758be6fa4b1e466dca2afe04cd3444edf5fc09ebf970a544e65f6b641081"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "387ce729a5b49b1edb713aea4102193b54018ee8705d58b7609146500de74622",
+              "host_prepare_call_readback_ns": 325959,
+              "input_generation": 6,
+              "api_wall_ns": 136792,
+              "maximum_abs_error": 0,
+              "input_sha256": "f99993d94c6204647c4d36e6c97de99ba891ad51d9168798fb7366a279ac99c5"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "415dab40cddfaef19497a23ac448467b862a89fe1f30b64acbe6e61b2e05ac0e",
+              "host_prepare_call_readback_ns": 320333,
+              "input_generation": 7,
+              "api_wall_ns": 144500,
+              "maximum_abs_error": 0,
+              "input_sha256": "80b98921f365f0e79fb570fabfc87d6c2a70c19de92cb1d8d09fe5a33867a863"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "cb0c0438c245091eee9b40945742b4933a7f005dc6902fc83da4ff0621464cf0",
+              "host_prepare_call_readback_ns": 322709,
+              "input_generation": 8,
+              "api_wall_ns": 153917,
+              "maximum_abs_error": 0,
+              "input_sha256": "4e4f4997783b7838e96b7fc9c78157fc92e262b5522b04cc36939e787d7beb54"
+            }
+          ],
+          "counter_semantics_qualified": false,
+          "production_qualified": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "compile_wall_ns": 37898000,
+          "unload_succeeded": true,
+          "physical_device_drain": "not a global-device observation",
+          "mapping_reuse_after_failure": false
+        },
+        "model_mil_sha256": "b7575552edaf720f20f41f6c649f686e10173ca81024a688b8b3a606628e1ed4",
+        "weights_blob_sha256": "a73288af863637e92dea864f88ab42f66ad5c7574cdefd919d3c908c2f2e9577",
+        "build_wall_ns": 483921292,
+        "build_returncode": 0,
+        "binary_sha256": "c921ba8876c160af1edb2c45f39dc5cbe5909a8fbbc5819feed080d4e025d688",
+        "native_returncode": 0,
+        "raw_native_sha256": "ea165dcb48abd6a4bdd0eb29f210ad9e88f8085d89fd49669bb9154ad6c9e9fb",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "conv-large15-confirm",
+      "raw_report_sha256": "70c187a52a016d90ca3789ac64e694bfe127ecae774ace69e3877fd9cd016878",
+      "supervisor_sha256": "3b5b057b09942f13c46f4edef59efdec1e47d54e6eed98e87b1c1496f13c368c",
+      "child_returncode": 0,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 9,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "executed",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 15,
+        "recipe_kind": "conv",
+        "compile_profiling_requested": false,
+        "shape_nchw": [
+          1,
+          128,
+          1,
+          512
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "dc5e42dfade8ab262be3fd6e053232a016a217198e376039c4e219171b0baf81",
+          "pmu_probe.mm": "1bc50eba6419501f31fdd9217e37f624f5879011c1b140f791e4d6999a78e087"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "status": "executed-and-numerically-validated",
+          "requested_mask": 15,
+          "mask_translation_readonly": [
+            {
+              "driver_mask_returned": 0,
+              "anef_mask": 0
+            },
+            {
+              "driver_mask_returned": 4,
+              "anef_mask": 2
+            },
+            {
+              "driver_mask_returned": 15,
+              "anef_mask": 15
+            }
+          ],
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "load_wall_ns": 21976291,
+          "stage": "evaluate",
+          "errors": [],
+          "compile_profiling_requested": false,
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "+driverMaskForANEFMask:": "I20@0:8I16",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8"
+          },
+          "recipe_kind": "conv",
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEPerformanceStats.driverMaskForANEFMask:": "I20@0:8I16",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "e63fa9c75626ead8769b89f36095a7c30d8269754a5fd02a5aafadce5e5c16b5",
+              "host_prepare_call_readback_ns": 658375,
+              "input_generation": 0,
+              "api_wall_ns": 283291,
+              "maximum_abs_error": 0,
+              "input_sha256": "8ef9de890e4b678f1ec5f5a3210e471e0cbd8869facc6b4be22ac2daf7ee2baf"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "07f7b2f2d63877343071b71b63897847f7ba86c772900f318a9eff882b343f79",
+              "host_prepare_call_readback_ns": 468625,
+              "input_generation": 1,
+              "api_wall_ns": 171416,
+              "maximum_abs_error": 0,
+              "input_sha256": "78ec7d0c407d43aa5cf56077443959b5f62ea487333205f0de37359c158d2168"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "57af212062c707f88ea92f1c026f4c2c99e5d2a645f8d339a98387d74d7568be",
+              "host_prepare_call_readback_ns": 408625,
+              "input_generation": 2,
+              "api_wall_ns": 146625,
+              "maximum_abs_error": 0,
+              "input_sha256": "99f5ac5a0d3d6c21aabceeaeb63673b05f3fc9607a07aa4fbf700465bfeaa41d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "f0a776623b92d74c17b167e160a1e4d3d9e083cc7e21196d1722348839b3f8c3",
+              "host_prepare_call_readback_ns": 369542,
+              "input_generation": 3,
+              "api_wall_ns": 144792,
+              "maximum_abs_error": 0,
+              "input_sha256": "e019c02a31aedac02077da8a75c659190e77b8849c6dc18591822e365ec7689a"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "5726654d69db835b6d7ffee1d2deacbeb5c7026d4ec2e729cf2faf667b6ea7bc",
+              "host_prepare_call_readback_ns": 354583,
+              "input_generation": 4,
+              "api_wall_ns": 131750,
+              "maximum_abs_error": 0,
+              "input_sha256": "c7e839883bde42f18001821f6cc680ffbf2ba6a5e91320371c2242e8b975e813"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "85f5cc79856a2a76293d762d00848e56d57a1069590685cf677b7037bba12181",
+              "host_prepare_call_readback_ns": 328667,
+              "input_generation": 5,
+              "api_wall_ns": 131667,
+              "maximum_abs_error": 0,
+              "input_sha256": "a168758be6fa4b1e466dca2afe04cd3444edf5fc09ebf970a544e65f6b641081"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "387ce729a5b49b1edb713aea4102193b54018ee8705d58b7609146500de74622",
+              "host_prepare_call_readback_ns": 321916,
+              "input_generation": 6,
+              "api_wall_ns": 133791,
+              "maximum_abs_error": 0,
+              "input_sha256": "f99993d94c6204647c4d36e6c97de99ba891ad51d9168798fb7366a279ac99c5"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "415dab40cddfaef19497a23ac448467b862a89fe1f30b64acbe6e61b2e05ac0e",
+              "host_prepare_call_readback_ns": 322958,
+              "input_generation": 7,
+              "api_wall_ns": 128917,
+              "maximum_abs_error": 0,
+              "input_sha256": "80b98921f365f0e79fb570fabfc87d6c2a70c19de92cb1d8d09fe5a33867a863"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "cb0c0438c245091eee9b40945742b4933a7f005dc6902fc83da4ff0621464cf0",
+              "host_prepare_call_readback_ns": 320459,
+              "input_generation": 8,
+              "api_wall_ns": 149209,
+              "maximum_abs_error": 0,
+              "input_sha256": "4e4f4997783b7838e96b7fc9c78157fc92e262b5522b04cc36939e787d7beb54"
+            }
+          ],
+          "counter_semantics_qualified": false,
+          "production_qualified": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "compile_wall_ns": 32405000,
+          "unload_succeeded": true,
+          "physical_device_drain": "not a global-device observation",
+          "mapping_reuse_after_failure": false
+        },
+        "model_mil_sha256": "b7575552edaf720f20f41f6c649f686e10173ca81024a688b8b3a606628e1ed4",
+        "weights_blob_sha256": "a73288af863637e92dea864f88ab42f66ad5c7574cdefd919d3c908c2f2e9577",
+        "build_wall_ns": 494380625,
+        "build_returncode": 0,
+        "binary_sha256": "1da574fa41fd329b253b56791b4c45a33151022b56d1388d1488774b34457bbd",
+        "native_returncode": 0,
+        "raw_native_sha256": "166476dfae93d05f58778486afba2428bf1aaac503017bb24ed0b0e6480c6a1c",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    },
+    {
+      "id": "conv-strict15",
+      "raw_report_sha256": "e8f1dbdc58fbe7d4ee05bdf9260fb70d9266efc4ecea1089e08ba72c29762269",
+      "supervisor_sha256": "e222ca3723be7b8c40f2e6e19436a76535bc6fc1db705f6a315771800c5a8d94",
+      "child_returncode": 3,
+      "child_exit_confirmed": true,
+      "independent_validation": {
+        "calls_independently_witnessed": 9,
+        "capture_state": "unavailable-for-this-run",
+        "payload_state_counts": {
+          "missing-object": 9
+        },
+        "stats_surface_observed_calls": 9,
+        "physical_duration_seconds": null,
+        "counter_rates": null,
+        "production_qualified": false,
+        "counter_semantics_qualified": false
+      },
+      "report": {
+        "schema": "tc-private-ane-pmu-probe-v1",
+        "status": "execution-passed-pmu-unavailable",
+        "production_qualified": false,
+        "counter_semantics_qualified": false,
+        "requested_mask": 15,
+        "recipe_kind": "conv",
+        "compile_profiling_requested": false,
+        "shape_nchw": [
+          1,
+          128,
+          1,
+          512
+        ],
+        "source_sha256": {
+          "pmu_probe.py": "485936280f288068f2b9d2ef5a364f4a26617ecc0fcca83fcf0c5aeefb2b489d",
+          "pmu_probe.mm": "1bc50eba6419501f31fdd9217e37f624f5879011c1b140f791e4d6999a78e087"
+        },
+        "recipe": "synthetic finite FP16 affine y=2*x+0.25 or dense dyadic 1x1 conv; full independent numerical check",
+        "formal_performance_score": false,
+        "errors": [],
+        "macos": "26.6.2",
+        "python": "3.9.6",
+        "native": {
+          "input_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "status": "executed-and-numerically-validated",
+          "requested_mask": 15,
+          "mask_translation_readonly": [
+            {
+              "driver_mask_returned": 0,
+              "anef_mask": 0
+            },
+            {
+              "driver_mask_returned": 4,
+              "anef_mask": 2
+            },
+            {
+              "driver_mask_returned": 15,
+              "anef_mask": 15
+            }
+          ],
+          "host_ane": {
+            "architecture": "h16g",
+            "core_count_reported": 16
+          },
+          "load_wall_ns": 21897542,
+          "stage": "evaluate",
+          "errors": [],
+          "compile_profiling_requested": false,
+          "stats_selector_metadata_only": {
+            "-perfCounterData": "@16@0:8",
+            "+statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:": "@40@0:8@16Q24@32",
+            "-stringForPerfCounter:": "@20@0:8i16",
+            "-hwExecutionTime": "Q16@0:8",
+            "-initWithReconstructedData:hardwareExecutionNS:": "@32@0:8@16Q24",
+            "-emitPerfcounterSignpostsWithModelStringID:": "v24@0:8Q16",
+            "-performanceCounters": "@16@0:8",
+            "+statsWithHardwareExecutionNS:": "@24@0:8Q16",
+            "-initWithHardwareExecution:perfCounterData:ANEStatsRawData:": "@40@0:8Q16@24@32",
+            "+statsWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "+driverMaskForANEFMask:": "I20@0:8I16",
+            "-initWithRequestPerformanceBuffer:statsBufferSize:": "@32@0:8^^v16^I24",
+            "-pStatsRawData": "@16@0:8"
+          },
+          "recipe_kind": "conv",
+          "private_method_signatures": {
+            "_ANEClient.loadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEModel.modelAtURL:key:": "@32@0:8@16@24",
+            "_ANEClient.unloadModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEPerformanceStats.driverMaskForANEFMask:": "I20@0:8I16",
+            "_ANEIOSurfaceObject.objectWithIOSurface:": "@24@0:8^{__IOSurface=}16",
+            "_ANEClient.evaluateWithModel:options:request:qos:error:": "B52@0:8@16@24@32I40^@44",
+            "_ANEPerformanceStatsIOSurface.objectWithIOSurface:statType:": "@32@0:8@16q24",
+            "_ANERequest.requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:": "@64@0:8@16@24@32@40@48@56",
+            "_ANEClient.compileModel:options:qos:error:": "B44@0:8@16@24I32^@36",
+            "_ANEClient.sharedConnection": "@16@0:8"
+          },
+          "schema": "tc-private-ane-pmu-native-v1",
+          "samples": [
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 0,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "e63fa9c75626ead8769b89f36095a7c30d8269754a5fd02a5aafadce5e5c16b5",
+              "host_prepare_call_readback_ns": 704833,
+              "input_generation": 0,
+              "api_wall_ns": 332500,
+              "maximum_abs_error": 0,
+              "input_sha256": "8ef9de890e4b678f1ec5f5a3210e471e0cbd8869facc6b4be22ac2daf7ee2baf"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 1,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "07f7b2f2d63877343071b71b63897847f7ba86c772900f318a9eff882b343f79",
+              "host_prepare_call_readback_ns": 474042,
+              "input_generation": 1,
+              "api_wall_ns": 179250,
+              "maximum_abs_error": 0,
+              "input_sha256": "78ec7d0c407d43aa5cf56077443959b5f62ea487333205f0de37359c158d2168"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": true,
+              "trial": 2,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "57af212062c707f88ea92f1c026f4c2c99e5d2a645f8d339a98387d74d7568be",
+              "host_prepare_call_readback_ns": 432500,
+              "input_generation": 2,
+              "api_wall_ns": 164709,
+              "maximum_abs_error": 0,
+              "input_sha256": "99f5ac5a0d3d6c21aabceeaeb63673b05f3fc9607a07aa4fbf700465bfeaa41d"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 3,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "f0a776623b92d74c17b167e160a1e4d3d9e083cc7e21196d1722348839b3f8c3",
+              "host_prepare_call_readback_ns": 380500,
+              "input_generation": 3,
+              "api_wall_ns": 153250,
+              "maximum_abs_error": 0,
+              "input_sha256": "e019c02a31aedac02077da8a75c659190e77b8849c6dc18591822e365ec7689a"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 4,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "5726654d69db835b6d7ffee1d2deacbeb5c7026d4ec2e729cf2faf667b6ea7bc",
+              "host_prepare_call_readback_ns": 356333,
+              "input_generation": 4,
+              "api_wall_ns": 142666,
+              "maximum_abs_error": 0,
+              "input_sha256": "c7e839883bde42f18001821f6cc680ffbf2ba6a5e91320371c2242e8b975e813"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 5,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "85f5cc79856a2a76293d762d00848e56d57a1069590685cf677b7037bba12181",
+              "host_prepare_call_readback_ns": 324875,
+              "input_generation": 5,
+              "api_wall_ns": 135500,
+              "maximum_abs_error": 0,
+              "input_sha256": "a168758be6fa4b1e466dca2afe04cd3444edf5fc09ebf970a544e65f6b641081"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 6,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "387ce729a5b49b1edb713aea4102193b54018ee8705d58b7609146500de74622",
+              "host_prepare_call_readback_ns": 325291,
+              "input_generation": 6,
+              "api_wall_ns": 146667,
+              "maximum_abs_error": 0,
+              "input_sha256": "f99993d94c6204647c4d36e6c97de99ba891ad51d9168798fb7366a279ac99c5"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 7,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "415dab40cddfaef19497a23ac448467b862a89fe1f30b64acbe6e61b2e05ac0e",
+              "host_prepare_call_readback_ns": 311083,
+              "input_generation": 7,
+              "api_wall_ns": 136541,
+              "maximum_abs_error": 0,
+              "input_sha256": "80b98921f365f0e79fb570fabfc87d6c2a70c19de92cb1d8d09fe5a33867a863"
+            },
+            {
+              "stats": {
+                "hardware_time_raw": null,
+                "object_present": false,
+                "raw_words": null,
+                "payload_bytes": null
+              },
+              "stats_surface": {
+                "total_bytes": 4096,
+                "nonzero_bytes": 0,
+                "opaque_bytes_exported": false,
+                "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+              },
+              "all_outputs_finite": true,
+              "warmup": false,
+              "trial": 8,
+              "numeric_pass": true,
+              "relative_l2": 0,
+              "output_sha256": "cb0c0438c245091eee9b40945742b4933a7f005dc6902fc83da4ff0621464cf0",
+              "host_prepare_call_readback_ns": 344750,
+              "input_generation": 8,
+              "api_wall_ns": 165000,
+              "maximum_abs_error": 0,
+              "input_sha256": "4e4f4997783b7838e96b7fc9c78157fc92e262b5522b04cc36939e787d7beb54"
+            }
+          ],
+          "counter_semantics_qualified": false,
+          "production_qualified": false,
+          "output_descriptor": {
+            "Height": 1,
+            "Offset": null,
+            "Batches": 1,
+            "RowStride": 1024,
+            "Depth": 1,
+            "PlaneCount": 128,
+            "BatchStride": 131072,
+            "Type": "Float16",
+            "Width": 512,
+            "PlaneStride": 1024,
+            "Channels": 128
+          },
+          "compile_wall_ns": 35486917,
+          "unload_succeeded": true,
+          "physical_device_drain": "not a global-device observation",
+          "mapping_reuse_after_failure": false
+        },
+        "counter_capture_status": "unavailable-for-this-run",
+        "model_mil_sha256": "b7575552edaf720f20f41f6c649f686e10173ca81024a688b8b3a606628e1ed4",
+        "weights_blob_sha256": "a73288af863637e92dea864f88ab42f66ad5c7574cdefd919d3c908c2f2e9577",
+        "build_wall_ns": 499731875,
+        "build_returncode": 0,
+        "binary_sha256": "1da574fa41fd329b253b56791b4c45a33151022b56d1388d1488774b34457bbd",
+        "native_returncode": 0,
+        "raw_native_sha256": "1ac1117af60f136619d84b34449e9fd36283fea534a4ee9c4d810ea233d574e4",
+        "source_inputs_unchanged": true,
+        "model_source_unchanged": true
+      }
+    }
+  ],
+  "upstream_cli_controls": [
+    {
+      "id": "upstream-help",
+      "returncode": 0,
+      "child_exit_confirmed": true,
+      "binary_sha256": "7ca3deac677e8643f40d8b26b6c718dd0b9c386411a00433f2c6f07aa975b437",
+      "stdout_sha256": "a72208caa6f1d748b2bce0b4b93a95616eceb1fbc8ba8c7f9eb29fd99d34c030",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor_sha256": "86fecc50174e25788b060610b057afe7d242863d59621a3f0b94485f6fc281b2",
+      "claimed_pmu_active": false,
+      "model_missing_reported": false,
+      "no_stats_object_reported": false,
+      "pmu_branch_entered_marker": false,
+      "numeric_qualified": false,
+      "counter_qualified": false
+    },
+    {
+      "id": "upstream-missing",
+      "returncode": 0,
+      "child_exit_confirmed": true,
+      "binary_sha256": "7ca3deac677e8643f40d8b26b6c718dd0b9c386411a00433f2c6f07aa975b437",
+      "stdout_sha256": "2dc0902a24a94f181db0ab9fb7c973688a5b1196f69902f8209621021914c9b3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor_sha256": "a81688d8a47c9358845ee81f68386cb8c94c9f723d7a76fadf8cc7da7338b2a8",
+      "claimed_pmu_active": true,
+      "model_missing_reported": true,
+      "no_stats_object_reported": false,
+      "pmu_branch_entered_marker": false,
+      "numeric_qualified": false,
+      "counter_qualified": false
+    },
+    {
+      "id": "upstream-owned-conv",
+      "returncode": 0,
+      "child_exit_confirmed": true,
+      "binary_sha256": "7ca3deac677e8643f40d8b26b6c718dd0b9c386411a00433f2c6f07aa975b437",
+      "stdout_sha256": "6f02993b131618cfbe58a86f0c17d8f02e17d56cc5703b172c03f404c6d1a62d",
+      "stderr_sha256": "1c75f6a6cae2cced24671a9f95e70fe640feab6824aa93ba56b261018e041391",
+      "supervisor_sha256": "55f772cc414319ad05377b1136bd70f4590f1177db1c7fc6b5a56b9cd4d029c7",
+      "claimed_pmu_active": true,
+      "model_missing_reported": false,
+      "no_stats_object_reported": true,
+      "pmu_branch_entered_marker": false,
+      "numeric_qualified": false,
+      "counter_qualified": false
+    },
+    {
+      "id": "upstream-debug-conv",
+      "returncode": 0,
+      "child_exit_confirmed": true,
+      "binary_sha256": "c19bca2ab3dc1039dcf9460e3d2496499f916ebc14dcc070bab59c6185a47f27",
+      "stdout_sha256": "850db5205b4921a50fef763754b71da3199b91c8a6ba49cee4b460e12a874f66",
+      "stderr_sha256": "1c75f6a6cae2cced24671a9f95e70fe640feab6824aa93ba56b261018e041391",
+      "supervisor_sha256": "53000d5885a9cd287e7364044962aae7dfd84243ec324fbacf6de8efc7b1bd3c",
+      "claimed_pmu_active": true,
+      "model_missing_reported": false,
+      "no_stats_object_reported": true,
+      "pmu_branch_entered_marker": false,
+      "numeric_qualified": false,
+      "counter_qualified": false
+    },
+    {
+      "id": "capacity-owned",
+      "returncode": 0,
+      "child_exit_confirmed": true,
+      "binary_sha256": "551da70d304e07ab0f1738b5889133b5032634497208a5d93c28224e8bb63c1f",
+      "stdout_sha256": "c5aec14ef94859dcfa488e93fa0a232d4b7da102187e7db9c1db031902aba7b2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor_sha256": "b48710fbed7bb724e088f5a7840736e199cbc67b35e70e80ebc95ec9d328fb7c",
+      "claimed_pmu_active": false,
+      "model_missing_reported": false,
+      "no_stats_object_reported": false,
+      "pmu_branch_entered_marker": false,
+      "numeric_qualified": false,
+      "counter_qualified": false
+    }
+  ],
+  "debug_signature_entitlements_readonly": {
+    "com.apple.security.get-task-allow": true
+  },
+  "capacity_export": {
+    "ane_bundle_present": false,
+    "files": [
+      {
+        "path": "manifest.plist",
+        "sha256": "8c635b1fbd630c38c6a2a3d296bd3508a9121504eec15ca4c465d1a90e726030"
+      },
+      {
+        "path": "model_0.mpsgraph",
+        "sha256": "b1b8a9c9e33dd306e92f58dcda722c57b60a2ac2b71de0d15fc520fae702e2f1"
+      },
+      {
+        "path": "model_1.mpsgraph",
+        "sha256": "a30c0075eda4954e26aa44774d2b2cd0e5005e3277ee1ba66a41f6adc3c25d2d"
+      },
+      {
+        "path": "reflection.fb",
+        "sha256": "a2ee7c8d41002a94be8eff3ab43654bcdc19816adee9b316efca6ae14fab3be7"
+      },
+      {
+        "path": "resources.bin",
+        "sha256": "65b203078930dd15b355cfbb3b02af1b091d1f9beb1d425f6dfdb982fa26c7ae"
+      }
+    ]
+  }
+}

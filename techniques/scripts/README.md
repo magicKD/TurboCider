@@ -25,6 +25,12 @@ python3 -B techniques/scripts/get_page.py gpu-ane/lora.md --follow-sources --inc
 
 ## 来源索引、实验监督与证据归一化
 
+`curate_qwen_private_ffn.py --root ROOT --fixture FILE --checkpoint FILE --capture-root ROOT --upstream-root PINNED --source-root COPY --run discovery:ID --run confirmation:ID --failure ID --output NEW.json`只读指定原件，用标准库复核原始BF16 tensor/capture内容、NPY真实row pitch上的native配对prefix SHA、源码/MIL/blob/shim、完整三arm顺序/gate/host依赖和独立ratio算术。不导入候选/ANE/MLX、不跑设备或重新执行输出tensor；删除公开capsule中的原始文件时间戳，不回填缺失的历史binary字段。见[真实Qwen private FFN报告](../review/qwen-private-ffn-20261016.md)。
+
+`curate_pmu_campaign.py --root ROOT --upstream-root PINNED --capacity-root PINNED_CAPACITY --run ID ... --output NEW.json`只读指定原件，不导入native/candidate builder、抓统一日志或跑设备。对自有合成图用独立标准库math.fsum/FP16生成完整input/output SHA，核对所有generation/布局/时间/失败及source/binary/MIL身份；原工具ACTIVE/exit0和capacity skip保持独立状态。结果见[ANE PMU报告](../review/ane-pmu-20261016.md)，没有取得counter就不给物理时间/频率/吞吐。
+
+`curate_aneforge_campaign.py --root ROOT --upstream-root PINNED_CHECKOUT --run ID ... --output NEW.json`读取显式上游/隔离实验记录，不导入ANEForge、candidate runner或MLX。核对固定clean commit、完整副本、各run源码/shim/MIL/blob、所有first/warm/timed gate与三arm平衡顺序；保留初始frontend失败及缺少快照的较弱lineage，不自动下载、构建或跑设备。它是data verifier，不重新执行数学/硬件。当前[13组同步设备结果](../review/aneforge-20261016.md)与核心[缓存/接受合同](../labs/search_contracts.py)均经同一catalog/source入口检索。
+
 `generate_source_index.py`从同一登记生成[sources目录](../sources/README.md)，默认只打印Markdown，`--check`拒绝索引漂移；不会fetch上游。
 
 `run_experiment.py --timeout ... --output-dir ... -- command args`是显式执行边界，不由检索调用。只监督自己新建的进程组，超时保留stdout/stderr与失败receipt；不输出环境变量、不触发隐式安装，也不以进程停止冒充设备drain。
@@ -74,7 +80,7 @@ python3 techniques/scripts/check_wiki.py
 python3 -B techniques/scripts/check_standalone.py --isolate
 ```
 
-静态核查9项已吸收设计、6个模型阶段、必需本地代码/测试、imports和native quoted includes。随后只复制techniques到新临时目录，忽略继承的PYTHON路径，实际运行全部unit tests、wiki/catalog/checker和所有CPU cases；不复制产品源码、兄弟仓库、模型或依赖环境。通过不能代替语义审稿，变更检测有反例测试。
+静态核查9项已吸收设计、6个模型阶段、必需本地代码/测试、imports和native quoted includes。随后只复制techniques到新临时目录，排除本地构建/工具缓存（含ANEForge）和原始profiling capture，保留正式证据与小型fixture；忽略继承的PYTHON路径，实际运行全部unit tests、wiki/catalog/checker和所有CPU cases。不复制产品源码、兄弟仓库、模型或依赖环境。通过不能代替语义审稿，变更检测有反例测试。
 
 可用具备依赖的Python显式选择真实设备验证，各项串行：
 
