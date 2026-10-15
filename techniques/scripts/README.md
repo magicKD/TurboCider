@@ -4,7 +4,31 @@
 
 这里维护首版离线辅助工具；新增逐主题参考实现与真实设备实验统一在 [实验室](../labs/README.md)，不和这些纯CPU工具混称。
 
-Python3.9+标准库；本轮验证使用本机Python。默认脚本不联网、不下载模型、不调用GPU、不改系统参数、不删除用户数据；`check_standalone.py --isolate --device ...`是显式选择的小型设备验证例外。只读输入，结果打印stdout；若要保存报告，由调用方明确选择新产物路径。测试临时fixture使用系统临时目录并自行回收。
+Python3.9+标准库；本轮验证使用本机Python。默认脚本不联网、不下载模型、不调用GPU、不改系统参数、不删除用户数据；`check_standalone.py --isolate --device ...`是显式选择的小型设备验证例外，`fetch_references.py --download`显式允许新建参考源码checkout。只读输入，结果打印stdout；若要保存报告，由调用方明确选择新产物路径。测试临时fixture使用系统临时目录并自行回收。
+
+## query.py / get_page.py
+
+```sh
+python3 -B techniques/scripts/query.py LoRA --type technique --section gpu-ane --limit 3
+python3 -B techniques/scripts/get_page.py gpu-ane/lora.md --follow-sources --include-code --max-bytes 12000
+```
+
+直接读取现有`labs/catalog.json`与`references/sources.json`，不依赖尚未建立的词表或第二份章节清单。当前覆盖catalog章节与`scope=local`来源；不扫描整个工作区、不读取产品源码或兄弟checkout，也不执行被查询的代码。章节ID从相对路径生成，例如`technique-gpu-ane-lora`；重命名章节会改变ID。
+
+关键词支持中文原文与英文，不做语义别名扩展；多词按OR匹配，再按标题、case/controls/symbols、正文命中加权排序，ID用于稳定排序。`--type technique|source`与`--section`只过滤文档类别，重复过滤值按AND处理，不代表该页通过了设备/性能资格。当前没有stage/device/backend等精细元数据，未知过滤项拒绝，不猜测标签。
+
+展开只接受登记的ID或相对路径，拒绝绝对路径、越界路径与外部symlink。正文和可选来源/代码共用字节预算；`truncated`、`omitted_pages`、`omitted_code`明确披露裁剪与省略，不默默丢失来源。JSON结构和元数据不计入正文预算。默认输出JSON，查询另有`--compact`。
+
+## fetch_references.py
+
+```sh
+python3 -B techniques/scripts/fetch_references.py --project R01 --project R08 \
+  --reference-root "$TC_REFERENCE_ROOT"
+```
+
+[候选清单](../candidates/projects.json)保留roadmap项目ID；列入清单不等于已审读、兼容或复现。默认只生成计划/只读检查，缺失目录不会创建。进度写stderr，stdout始终是单个JSON receipt。
+
+只有显式增加`--download`才联网浅克隆缺失项目，可选sparse checkout；不运行上游脚本、不安装依赖。已有目录从不fetch/reset/clean，即使同时传入`--download`也只检查；检查禁用可选Git写锁和fsmonitor命令。失败或超时保留部分checkout供人工检查，不自动删除。`--output`可显式保存新receipt，已有文件拒绝覆盖；原始receipt应保存在已忽略的`outputs/`。
 
 ## check_wiki.py
 

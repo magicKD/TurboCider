@@ -1,8 +1,8 @@
-# 可选产品接入：与自包含核心分开
+# 可选产品与上游接入：与自包含核心分开
 
 [总目录](../README.md) · [自包含 ANE 样本](../labs/ane.md) · [混合 FFN 设计](../designs/hybrid-ffn.md)
 
-本目录保留原来的完整 TurboCider 原生 Public W8A8 集成能力，没有用较小教学边界冒充或替代它。它需要产品`native/`、`tools/`、`tests/native/`，**不是学习核心的运行依赖**，也不依赖 Splash/vpipe/Sana checkout。只复制`techniques/`时，使用本地 CPU/Metal/Core ML 样本，不运行这个可选接入脚本。
+本目录的 Public W8A8 脚本保留原来的完整 TurboCider 原生集成能力，没有用较小教学边界冒充或替代它。它需要产品`native/`、`tools/`、`tests/native/`，**不是学习核心的运行依赖**，也不依赖 Splash/vpipe/Sana checkout。只复制`techniques/`时，使用本地 CPU/Metal/Core ML 样本，不运行这些可选接入。
 
 [public_w8_product.py](public_w8_product.py)导出完整 normalized SwiGLU/W8A8 图，调用产品两个原生 fixture，测试真实 GPU stage→CoreML→restore、修正输入、bank/source、late failure 等合同。仍不授予实际模型 LoRA、端到端性能或硬件 ANE 驻留资格。
 
@@ -11,3 +11,11 @@ python -B techniques/integrations/public_w8_product.py --coreml-overlay "$TC_COR
 ```
 
 使用已准备好NumPy/CoreML等依赖的Python环境；脚本不安装包或下载模型。原始报告写新的ignored路径，源码输入前后校验SHA。历史结果见[上一轮验收](../review/labs-validation.md)，当前教学源码结果另见[自包含验收](../review/self-contained-validation.md)。
+
+## MFA / MPS GEMM研究客户端
+
+[mfa_gemm_bench.swift](mfa_gemm_bench.swift)是可选的原始Swift客户端，需要另外固定版本的`philipturner/metal-flash-attention`之`FlashAttention`模块；目前参考版本为`8671cddc38f19a6eadb804dee6a3ca2954b8bf32`。在上游的隔离副本中添加executable target使用，不修改参考checkout，也不将它加入产品依赖。
+
+它比较合成FP16输入的MPS与MFA单个驻留GEMM，含ABBA顺序、每对输入generation、完整command完成、padding初始化、逐轮NaN输出poison、尾部guard、有限值检查和每arm独立的抽样double oracle。它不是完整FFN、真实权重、模型质量或端到端性能验证；MPS也不等于产品优化后的compiled MLX基线。
+
+2026-10-15已有尝试在上游动态Metal shader编译时报`illegal string literal in 'asm'`；另一次上游测试缺少XCTest。尚无有效的数值/性能报告。本次整理仅通过Swift语法解析，未重新构建上游或运行GPU；不能据此宣称兼容性或加速。研究状态继续在[工作台](../review/research-campaign-20261015.md)保留。

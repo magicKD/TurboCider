@@ -4,6 +4,7 @@
 
 ## 从这里开始
 
+- 本轮深入研究：[源码研究与实测工作台](review/research-campaign-20261015.md)；跟踪roadmap、参考实现、profiling与Qwen真实工作负载，进行中项目不作为性能资格。
 - 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
 - GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
 - 吸收外部实现：[设计样本](designs/README.md)包含 GPU 数据流、owned graph、GPU/ANE FFN、packed streaming、驻留与技术组合；核心设计和参考代码均在本目录，不必打开原项目。
@@ -12,6 +13,7 @@
 - GPU/ANE 专题：[切分代数](gpu-ane/partitioning.md) → [交接和所有权](gpu-ane/shared-memory.md) → [调度](gpu-ane/scheduling.md) → [校准](gpu-ane/calibration.md)。
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
+- 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
 - 动手实现：[实验室](labs/README.md) → [45项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含40个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO。
 
 ## 目录
@@ -59,6 +61,8 @@
 `examples/`保留可移植的小型输入，`review/`保留核查摘要；原始报告、编译产物和依赖 overlay 放在根目录已忽略的`outputs/`。若在实验目录内工作，可使用同样已忽略的`build/`、`dist/`、`outputs/`、`results/`、`artifacts/`、`scratch/`或`private/`子目录；对话摘录只保留在这些本地目录中，不纳入提交。
 
 `review/raw/`与`review/local/`也仅用于本地原始测量和机器配置，不纳入提交；经过整理、脱敏的`review/*.json`验证摘要继续跟踪。
+
+嵌套Swift的`.build/`、`.swiftpm/`、`DerivedData/`、Xcode结果包、CMake生成文件及实验`.cache/`、`.aneforge_cache/`也保持本地。不要用整个`references/`、JSON或媒体扩展名的宽泛规则屏蔽整理后的来源、验证摘要或测试fixture。
 
 从仓库根目录执行（只需 Python 标准库）：
 

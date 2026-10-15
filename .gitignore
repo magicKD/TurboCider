@@ -14,9 +14,11 @@
 xcuserdata/
 
 # Swift / Xcode
-/.build/
-/.swiftpm/
-/DerivedData/
+.build/
+.swiftpm/
+DerivedData/
+*.xcresult/
+*.xcarchive/
 
 # Python bytecode and tool caches
 __pycache__/
@@ -26,6 +28,7 @@ __pycache__/
 .mypy_cache/
 .pyright/
 .ruff_cache/
+.cache/
 .coverage
 .coverage.*
 htmlcov/
@@ -50,6 +53,10 @@ pip-wheel-metadata/
 *.air
 *.metallib
 *.dSYM/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
 
 # Local configuration and credentials
 .env
@@ -113,6 +120,8 @@ pip-wheel-metadata/
 /techniques/**/artifacts/
 /techniques/**/scratch/
 /techniques/**/private/
+# Optional ANEForge experiments may create this cache beside their source.
+/techniques/**/.aneforge_cache/
 # Uncurated measurements and machine-local review data; keep review/*.json tracked.
 /techniques/review/raw/
 /techniques/review/local/

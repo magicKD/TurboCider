@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "origin": {
+    "document": "TurboCider_Apple_Silicon_Wiki_Learning_Roadmap.md",
+    "sha256": "247f7e92e49ae6ba886c6a0dca6fc53b01aa82028a40f258d4f33473121aa242",
+    "date": "2026-10-15"
+  },
+  "policy": "Inventory of research candidates, not a claim of source review, compatibility or reproduction. Explicit fetch only; existing worktrees preserved.",
+  "projects": [
+    {
+      "id": "R01",
+      "repository": "mit-han-lab/KernelWiki",
+      "entry_url": "https://github.com/mit-han-lab/KernelWiki",
+      "checkout": "KernelWiki",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R02",
+      "repository": "NVlabs/kda",
+      "entry_url": "https://github.com/NVlabs/kda",
+      "checkout": "kda",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R03",
+      "repository": "tinygrad/tinygrad",
+      "entry_url": "https://github.com/tinygrad/tinygrad",
+      "checkout": "tinygrad",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R04",
+      "repository": "ScalingIntelligence/KernelBench",
+      "entry_url": "https://github.com/ScalingIntelligence/KernelBench",
+      "checkout": "KernelBench",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R05",
+      "repository": "Lazarus-931/MetalBench",
+      "entry_url": "https://github.com/Lazarus-931/MetalBench",
+      "checkout": "MetalBench",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R06",
+      "repository": "ml-explore/mlx",
+      "entry_url": "https://github.com/ml-explore/mlx",
+      "checkout": "mlx",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign",
+      "sparse_paths": [
+        "mlx/backend/metal",
+        "tests",
+        "docs"
+      ]
+    },
+    {
+      "id": "R07",
+      "repository": "ggml-org/llama.cpp",
+      "entry_url": "https://github.com/ggml-org/llama.cpp",
+      "checkout": "llama.cpp",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R08",
+      "repository": "philipturner/metal-flash-attention",
+      "entry_url": "https://github.com/philipturner/metal-flash-attention",
+      "checkout": "metal-flash-attention",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R09",
+      "repository": "liuliu/ccv",
+      "entry_url": "https://github.com/liuliu/ccv",
+      "checkout": "ccv",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign",
+      "sparse_paths": [
+        "lib/nnc/mfa",
+        "lib/nnc/gpu",
+        "test/unit/nnc",
+        "test/int/nnc"
+      ]
+    },
+    {
+      "id": "R10",
+      "repository": "philipturner/metal-benchmarks",
+      "entry_url": "https://github.com/philipturner/metal-benchmarks",
+      "checkout": "metal-benchmarks",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R11",
+      "repository": "pytorch/pytorch",
+      "entry_url": "https://github.com/pytorch/pytorch",
+      "checkout": "pytorch",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R12",
+      "repository": "yshenaw/ComfyUI-SolAttn-MPS",
+      "entry_url": "https://github.com/yshenaw/ComfyUI-SolAttn-MPS",
+      "checkout": "ComfyUI-SolAttn-MPS",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R13",
+      "repository": "apple/coremltools",
+      "entry_url": "https://github.com/apple/coremltools",
+      "checkout": "coremltools",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign",
+      "sparse_paths": [
+        "coremltools/converters/mil",
+        "coremltools/models",
+        "coremltools/optimize",
+        "docs"
+      ]
+    },
+    {
+      "id": "R14",
+      "repository": "apple-aiml-research/ml-ane-transformers",
+      "entry_url": "https://github.com/apple-aiml-research/ml-ane-transformers",
+      "checkout": "ml-ane-transformers",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R15",
+      "repository": "apple-aiml-research/ml-stable-diffusion",
+      "entry_url": "https://github.com/apple-aiml-research/ml-stable-diffusion",
+      "checkout": "ml-stable-diffusion",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R16",
+      "repository": "apple/coreai-models",
+      "entry_url": "https://github.com/apple/coreai-models",
+      "checkout": "coreai-models",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R17",
+      "repository": "sbryngelson/ANEForge",
+      "entry_url": "https://github.com/sbryngelson/ANEForge",
+      "checkout": "ANEForge",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R18",
+      "repository": "MrZaKaRiA/ane",
+      "entry_url": "https://github.com/MrZaKaRiA/ane",
+      "checkout": "ane",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R19",
+      "repository": "hollance/neural-engine",
+      "entry_url": "https://github.com/hollance/neural-engine",
+      "checkout": "neural-engine",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R20",
+      "repository": "skyfallsin/apple-neural-engine-field-guide",
+      "entry_url": "https://github.com/skyfallsin/apple-neural-engine-field-guide",
+      "checkout": "apple-neural-engine-field-guide",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R21",
+      "repository": "Anemll/anemll",
+      "entry_url": "https://github.com/Anemll/anemll",
+      "checkout": "anemll",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R22",
+      "repository": "tgo-app-dev/vpipe",
+      "entry_url": "https://github.com/tgo-app-dev/vpipe",
+      "checkout": "vpipe",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R23",
+      "repository": "incoai/splash",
+      "entry_url": "https://github.com/incoai/splash",
+      "checkout": "splash",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R24",
+      "repository": "drawthingsai/draw-things-community",
+      "entry_url": "https://github.com/drawthingsai/draw-things-community",
+      "checkout": "draw-things-community",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R25",
+      "repository": "mflux-community/mflux",
+      "entry_url": "https://github.com/mflux-community/mflux",
+      "checkout": "mflux",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R26",
+      "repository": "johnmai-dev/ANE-LM",
+      "entry_url": "https://github.com/johnmai-dev/ANE-LM",
+      "checkout": "ANE-LM",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R27",
+      "repository": "Anemll/anemll-profile",
+      "entry_url": "https://github.com/Anemll/anemll-profile",
+      "checkout": "anemll-profile",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R28",
+      "repository": "Anemll/anemll-bench",
+      "entry_url": "https://github.com/Anemll/anemll-bench",
+      "checkout": "anemll-bench",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R29",
+      "repository": "freedomtan/ane_pmu_profiler",
+      "entry_url": "https://github.com/freedomtan/ane_pmu_profiler",
+      "checkout": "ane_pmu_profiler",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R30",
+      "repository": "tmc/gputrace",
+      "entry_url": "https://github.com/tmc/gputrace",
+      "checkout": "gputrace",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R31",
+      "repository": "tlkh/asitop",
+      "entry_url": "https://github.com/tlkh/asitop",
+      "checkout": "asitop",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R32",
+      "repository": "context-labs/mactop",
+      "entry_url": "https://github.com/context-labs/mactop",
+      "checkout": "mactop",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R33",
+      "repository": "google/perfetto",
+      "entry_url": "https://github.com/google/perfetto",
+      "checkout": "perfetto",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R34",
+      "repository": "leejet/stable-diffusion.cpp",
+      "entry_url": "https://github.com/leejet/stable-diffusion.cpp",
+      "checkout": "stable-diffusion.cpp",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R35",
+      "repository": "alibaba/MNN",
+      "entry_url": "https://github.com/alibaba/MNN",
+      "checkout": "MNN",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R36",
+      "repository": "Tencent/ncnn",
+      "entry_url": "https://github.com/Tencent/ncnn",
+      "checkout": "ncnn",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R37",
+      "repository": "ggml-org/whisper.cpp",
+      "entry_url": "https://github.com/ggml-org/whisper.cpp",
+      "checkout": "whisper.cpp",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R38",
+      "repository": "MetalPetal/MetalPetal",
+      "entry_url": "https://github.com/MetalPetal/MetalPetal",
+      "checkout": "MetalPetal",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R39",
+      "repository": "FFmpeg/FFmpeg",
+      "entry_url": "https://github.com/FFmpeg/FFmpeg",
+      "checkout": "FFmpeg",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R40",
+      "repository": "mit-han-lab/smoothquant",
+      "entry_url": "https://github.com/mit-han-lab/smoothquant",
+      "checkout": "smoothquant",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R41",
+      "repository": "nunchux-ai/nunchaku",
+      "entry_url": "https://github.com/nunchux-ai/nunchaku",
+      "checkout": "nunchaku",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R42",
+      "repository": "vipshop/cache-dit",
+      "entry_url": "https://github.com/vipshop/cache-dit",
+      "checkout": "cache-dit",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    },
+    {
+      "id": "R43",
+      "repository": "NVlabs/Sana",
+      "entry_url": "https://github.com/NVlabs/Sana/tree/sol-engine",
+      "checkout": "Sana",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign",
+      "branch": "sol-engine"
+    },
+    {
+      "id": "R44",
+      "repository": "Anemll/anemll-flash-mlx",
+      "entry_url": "https://github.com/Anemll/anemll-flash-mlx",
+      "checkout": "anemll-flash-mlx",
+      "decision": "candidate",
+      "reading_status": "not-reviewed-this-campaign"
+    }
+  ]
+}
