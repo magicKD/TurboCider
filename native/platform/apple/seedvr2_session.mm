@@ -338,8 +338,22 @@ class SeedVR2Session final : public ModelSession {
             @"seconds": @(elapsed(started)), @"mlx_active_bytes": @(mx::get_active_memory()),
             @"mlx_peak_bytes": @(mx::get_peak_memory())}, r, plan);
     }
-    RunResult generate(const Request &r, const Event &event, std::atomic<bool> &cancelled) override {
+    RunResult generate(const Request &r, const Event &callback, std::atomic<bool> &cancelled) override {
         require(r.model == "seedvr2-3b", "request model differs from SeedVR2 session");
+        int encoded_frames = 0, decoded_frames = 0;
+        // The old VAE callbacks restart 0...5 for every temporal slice/frame.
+        // Publish completed whole-source work, not a repeatedly resetting bar.
+        const Event event = [&](const std::string &phase, int completed, int total) {
+            if (!callback) return;
+            if (phase == "seedvr2_vae_encode") {
+                if (completed == total) encoded_frames += encoded_frames == 0 ? std::min(5,r.frames) : 4;
+                callback("seedvr2_encode_progress",std::min(encoded_frames,r.frames),r.frames);
+            } else if (phase == "seedvr2_vae_decode_frame") {
+                callback("seedvr2_decode_progress",std::min(++decoded_frames,r.frames),r.frames);
+            } else if (phase == "seedvr2_vae_decode") {
+                callback("seedvr2_decode_progress",std::min(decoded_frames,r.frames),r.frames);
+            } else callback(phase,completed,total);
+        };
         const auto plan = make_plan(r);
         ResidencyPolicy::validate_budget(plan, device_info().physical_memory);
         const bool video = r.operation == "video.upscale";

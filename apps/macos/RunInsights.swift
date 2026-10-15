@@ -7,6 +7,9 @@ struct RunInsights {
     let editPrefixCacheHit: Bool?
     let textSeconds: Double?
     let denoiseSeconds: Double?
+    let vaeEncodeSeconds: Double?
+    let vaeDecodeSeconds: Double?
+    let isSeedVR2: Bool
     let activeBytes: Double?
     let peakBytes: Double?
     let coreMLCalls: Int?
@@ -46,6 +49,8 @@ struct RunInsights {
                 : selections.contains("edit prefix KV snapshot miss") ? false : nil
         } else { editPrefixCacheHit = nil }
         textSeconds = number(times, "text_encode"); denoiseSeconds = number(times, "denoise")
+        vaeEncodeSeconds = number(times,"vae_encode"); vaeDecodeSeconds = number(times,"vae_decode")
+        isSeedVR2 = raw["model"] as? String == "seedvr2-3b"
         activeBytes = number(memory, "mlx_active_bytes"); peakBytes = number(memory, "mlx_peak_bytes")
         coreMLCalls = count(hybrid, "calls_session_total"); coreMLBlocks = count(hybrid, "block_count"); coreMLRows = count(hybrid, "bucket")
         coreMLLoadSeconds = number(hybrid, "load_seconds")

@@ -7,6 +7,7 @@ struct ImageUpscaleView: View {
     @ObservedObject var studio: StudioState
     var showSettings = true
     @Binding var sourcePath: String
+    var showsWorkspaceTitle = true
     var manageModels: () -> Void
     var historyContent: AnyView? = nil
     var selectedPreviewJob: NativeJob? = nil
@@ -28,7 +29,7 @@ struct ImageUpscaleView: View {
             VStack(spacing: 8) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("图像超分").font(.title2)
+                    if showsWorkspaceTitle { Text("图像超分").font(.title2) }
                     Text("x2plus 放大 2 倍，x4plus 放大 4 倍。原图保留，结果另存为 PNG。")
                         .foregroundStyle(.secondary)
                     HStack {

@@ -1421,6 +1421,15 @@ final class StudioState: ObservableObject {
         draft.seedvr2VAE = options
         save()
     }
+    func applySeedVR2SpeedSettings() {
+        guard draft.modelID == "seedvr2-3b" else { return }
+        draft.residency = "resident"
+        // Qualified frame histories avoid repeated concatenation; no spatial
+        // approximation, file spill or model reload is needed on this route.
+        draft.seedvr2VAE = NativeSeedVR2VAEConfig(history: "frames")
+        message = "已选择常驻权重、完整空间计算、4 GiB 缓存及分帧历史，不降低恢复分辨率。省内存设置并不保证更快。"
+        save()
+    }
     func installZImage(model: URL, sharedText: URL?) throws {
         let installed = try ZImageInstallation.install(model: model, sharedText: sharedText,
             directory: LibraryStore.defaultRoot.appendingPathComponent("bindings"))

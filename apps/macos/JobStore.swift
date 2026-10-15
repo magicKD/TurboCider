@@ -17,6 +17,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var secondsPerStep: Double?
     /// Denoise boundary 0→1; absent when that boundary was not observed or in older history.
     var firstDenoiseStepSeconds: Double? = nil
+    var phaseStartedElapsed: Double? = nil
     var modelPath: String?
     var outputDeleted: Bool?
     /// Public selector metadata is persisted for display/reuse only. Native
@@ -76,6 +77,9 @@ struct NativeJob: Codable, Identifiable, Sendable {
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
               let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plan = result["plan"] as? [String: Any], let execution = plan["execution"] as? String else { return nil }
+        if request.model == "seedvr2-3b" {
+            return "\(execution.hasPrefix("gpu_ane") ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU") · 原始 FP16 权重 / FP32 稳定状态"
+        }
         if request.model == "z-image-turbo", let checkpoint = result["checkpoint"] as? String,
            let variant = ZImageVariant.all.first(where: { $0.filename == URL(fileURLWithPath: checkpoint).lastPathComponent }) {
             let precision = variant.title.components(separatedBy: " · ")[0]
@@ -1065,10 +1069,17 @@ final class NativeJobStore: ObservableObject {
             }
             return
         }
+        if jobs[i].request.model == "seedvr2-3b" {
+            // Per-frame export is part of decode; streaming imports must not
+            // replace the encode stage while its source is being consumed.
+            if event.phase == "seedvr2_vae_export_frame" ||
+                (event.phase == "seedvr2_video_import" && jobs[i].phase == "seedvr2_encode_progress") { return }
+        }
         var current = jobs[i]
         current.state = cancelRequested ? "cancelling" : "running"
         if event.phase == "denoise", denoiseStart == nil { denoiseStart = event.completed }
         let offset = event.phase == "denoise" ? (denoiseStart ?? 0) : 0
+        if current.phase != event.phase { current.phaseStartedElapsed = event.elapsed_seconds }
         current.phase = event.phase; current.completed = event.completed - offset; current.total = event.total - offset
         current.elapsed = event.elapsed_seconds
         current.secondsPerStep = telemetry.observe(event)

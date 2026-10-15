@@ -46,9 +46,15 @@ STATE+=(apps/macos/ModelHubPresentation.swift)
 STATE+=(apps/macos/EditingCanvasSizing.swift apps/macos/ItemProviderDataLoader.swift apps/macos/PlaygroundState.swift)
 APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"
 case "$APP_TARGETS" in
- all|seedvr2) ;;
- *) printf 'TURBOCIDER_APP_TARGETS must be all or seedvr2\n' >&2; exit 2 ;;
+ all|seedvr2|upscale-presentation) ;;
+ *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2 or upscale-presentation\n' >&2; exit 2 ;;
 esac
+if [[ "$APP_TARGETS" == upscale-presentation ]]; then
+ "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" apps/macos/SeedVR2UpscaleControls.swift tests/integration/UpscalePresentationTests.swift -o "$OUT/turbocider-upscale-presentation-tests"
+ "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" apps/macos/RunInsights.swift tests/integration/RunInsightsTests.swift -o "$OUT/turbocider-run-insights-tests"
+ printf 'Built upscale presentation and run-insights tests\n'
+ exit 0
+fi
 if [[ "$APP_ONLY" == 0 && "$APP_TARGETS" == all ]]; then
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PlaygroundStateTests.swift -o "$OUT/turbocider-playground-tests"
 "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/EditingCanvasSizingTests.swift -o "$OUT/turbocider-editing-canvas-tests"

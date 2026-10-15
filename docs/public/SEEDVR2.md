@@ -72,14 +72,15 @@ The VAE's internal 4n+1 padding is removed before export, preserving the source
 frame count. Current video output is silent H.264 MP4; soundtracks are not
 preserved. Image output is PNG.
 
-### App: SeedVR2 超分
+### App: 超分 workspace
 
 1. Open **模型 → 超分 → SeedVR2**, and register the existing model directory
    containing both DiT and VAE. SeedVR2 also appears in the image/video filters.
    Registration retains the original files; no download starts automatically.
-2. Click **SeedVR2 超分** in the sidebar. Use **图片 / 视频** to select the
-   source kind, then add one source image or video. This entry uses the native
-   SeedVR2 engine, not the separate Real-ESRGAN x2/x4 Core ML upscaler.
+2. Click **超分** in the sidebar. Use **图片 / 视频** to select the source
+   kind, then choose the model at the top. SeedVR2 supports both kinds;
+   Real-ESRGAN x2plus/x4plus are image-only and are not offered for videos.
+   Select SeedVR2 and add one source image or video to use this native engine.
 3. Choose **2× / 4× / 长边 512 / 长边 1024**. These source-based shortcuts
    preserve aspect ratio up to the native 16-pixel alignment and reject sizes
    beyond the current 2048-pixel per-axis bound. Explicit width/height remain
@@ -90,10 +91,23 @@ preserved. Image output is PNG.
 
 Video import fills and locks the complete source frame count/FPS; output-size
 shortcuts do not truncate frames or change the frame rate. The existing 2–121
-frame, integer-CFR and silent-output limits still apply. **省内存建议** applies
-the existing staged/VAE settings explicitly; it is not a hard memory guarantee.
+frame, integer-CFR and silent-output limits still apply. **速度优先** explicitly
+selects resident weights, full spatial computation, buffered I/O, frame history
+and a 4-GiB allocator cache. **省内存** selects staged weights, streaming video
+I/O, frame history and a 1-GiB cache, retaining explicit spatial-row choices.
+The current effective settings are visible. Neither shortcut lowers output
+resolution or drops frames; the memory option can be slower and is not a hard
+memory guarantee. No new speed/approximation qualification is implied.
 Detailed VAE controls are under **模型 → SeedVR2 → 加速与编译缓存**; residency
 can also be selected in the creation inspector's advanced settings.
+
+Running SeedVR2 requests show five stages: preparation/import, VAE encode,
+model restoration, VAE decode and save. Encode/decode count completed source
+frames across the whole clip, not a repeatedly resetting 0–5 slice counter.
+Restoration counts all 32 transformer blocks. Elapsed time updates once per
+second; encode/decode remaining time is a current-stage estimate after at least
+five completed frames, not a guaranteed whole-request ETA. Completed request
+details report VAE encode, restoration and VAE decode seconds separately.
 
 GPU is the default execution route; unqualified ANE manifests, LoRA,
 graph-compilation and streaming options fail explicitly. Ordinary creation,

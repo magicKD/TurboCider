@@ -60,6 +60,12 @@ import Foundation
         quick.applySeedVR2OutputPreset(.long1024)
         try check(quick.draft.width == 1024 && quick.draft.height == 512 && quick.draft.frames == 25 && quick.draft.fps == 24,
                   "resolution shortcut truncated or retimed the source video")
+        quick.applySeedVR2MemoryAdvice()
+        quick.applySeedVR2SpeedSettings()
+        try check(quick.draft.residency == "resident" && quick.draft.seedvr2VAE?.history == "frames" &&
+                  quick.draft.seedvr2VAE?.allocator_cache_bytes == UInt64(4)<<30 &&
+                  quick.draft.seedvr2VAE?.spatial == "full" && quick.draft.frames == 25 && quick.draft.fps == 24 &&
+                  quick.draft.width == 1024 && quick.draft.height == 512,"speed preference changed media or did not reset memory-only schedules")
         studio.draft.modelPaths[model.id] = root.path
         studio.selectModel(model.id)
         let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 512, pixelsHigh: 512,
@@ -76,6 +82,13 @@ import Foundation
         try check(image.inputs?.first?.role == "source" && image.inputs?.first?.kind == "image", "image source role/kind mismatch")
         let imageV2 = NativeRequestV2(legacy: image)
         try check(imageV2.outputs[0].kind == "image", "schema-2 image output kind mismatch")
+        try check(UpscaleModelChoice.allCases.filter(\.supportsVideo) == [.seedvr2],"image-only model advertised for video")
+        let frameProgress = SeedVR2ProgressPresentation(phase: "seedvr2_decode_progress",completed: 49,total: 97)
+        try check(frameProgress.stage == 3 && frameProgress.detail.contains("49 / 97") && frameProgress.fraction! > 0.5,
+                  "whole-video decode progress unclear")
+        try check(frameProgress.remainingStageSeconds(elapsed: 98) == 96,"stage ETA differs")
+        try check(SeedVR2ProgressPresentation(phase: "seedvr2_dit_stage_load",completed: 0,total: 1).fraction == nil,
+                  "model reload presented as completed frames")
         let imageHistory = NativeJob(id: UUID(), createdAt: Date(), request: image,
             state: "succeeded", phase: "complete", completed: 1, total: 1, elapsed: 1,
             modelPath: root.path)

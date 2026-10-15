@@ -726,6 +726,7 @@ Tensor VAE::decode_slice(const Tensor &input, Caches *cache, bool initial,
                 }
                 ++*next_frame;
             } else frames.push_back(y);
+            if (event) event("seedvr2_vae_decode_frame",1,1);
         }
     }
     if (sink) {
