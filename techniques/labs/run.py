@@ -14,6 +14,9 @@ import quantization
 import systems
 import upscaling
 import partition_axes
+import contracts
+import model_stages
+import heterogeneous
 
 CASES = {
     "quant-formats": quantization.formats,
@@ -39,6 +42,23 @@ CASES = {
     "profiling-scopes": media.profiling_scopes,
     "upscale-tiles": upscaling.tiled_upscale,
     "partition-axes": partition_axes.partition_axes,
+    "owned-command-graph": contracts.owned_graph,
+    "dual-bank-handoff": contracts.dual_bank_handoff,
+    "packed-weight-store": contracts.packed_weights,
+    "residency-policy": contracts.residency_policy,
+    "hybrid-policy": contracts.hybrid_policy,
+    "stage-encoder": model_stages.encoder_buckets,
+    "stage-llm": model_stages.llm_prefill,
+    "stage-decode": model_stages.llm_decode,
+    "stage-dit": model_stages.dit_conditioning,
+    "stage-vae": model_stages.vae_output_tiles,
+    "parallel-branches": heterogeneous.parallel_branches,
+    "attention-head-shards": heterogeneous.attention_head_shards,
+    "consumer-strides": heterogeneous.consumer_strides,
+    "segmented-ffn": heterogeneous.segmented_ffn,
+    "optional-devices": heterogeneous.optional_devices,
+    "resource-hazards": heterogeneous.resource_hazards,
+    "precision-islands": heterogeneous.precision_islands,
 }
 
 

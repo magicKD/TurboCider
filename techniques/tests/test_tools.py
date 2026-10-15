@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import re
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ compare = module("compare_runs", "scripts/compare_runs.py")
 memory = module("interval_peak", "scripts/interval_peak.py")
 history = module("history_index", "scripts/history_index.py")
 wiki = module("check_wiki", "scripts/check_wiki.py")
+standalone = module("check_standalone", "scripts/check_standalone.py")
 split = module("split_ffn", "examples/split_ffn_reference.py")
 
 
@@ -219,6 +221,18 @@ class WikiTests(unittest.TestCase):
     def test_fenced_links_are_not_navigation(self):
         self.assertNotIn("missing.md", wiki.without_fences("```md\n[x](missing.md)\n```\nreal"))
 
+    def test_product_links_are_optional_not_missing_local_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.small_wiki(directory, "# Example\n[optional product trace](../native/missing.hpp)\n")
+            self.assertEqual(wiki.audit(root)["errors"], [])
+            self.assertEqual(wiki.audit(root)["optional_integration_links"], 1)
+            self.assertTrue(wiki.audit(root, include_integrations=True)["errors"])
+
+    def test_required_local_source_cannot_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.small_wiki(directory, sources=[{"id": "escape", "path": "../source.py", "scope": "local"}])
+            self.assertTrue(any("escapes techniques" in value for value in wiki.audit(root)["errors"]))
+
     def small_wiki(self, directory, readme="# Example\n", sources=None):
         root = Path(directory) / "wiki"
         (root / "references").mkdir(parents=True)
@@ -254,6 +268,47 @@ class WikiTests(unittest.TestCase):
             result = wiki.audit(root)
             self.assertTrue(any("symbol missing" in error for error in result["errors"]))
             self.assertTrue(any("snapshot changed" in warning for warning in result["warnings"]))
+
+
+class StandaloneTests(unittest.TestCase):
+    def test_real_learning_assets_and_imports_are_local(self):
+        self.assertEqual(standalone.audit(ROOT)["errors"], [])
+
+    def copy_wiki(self, directory):
+        target = Path(directory) / "techniques"
+        shutil.copytree(ROOT, target)
+        return target
+
+    def test_escaping_required_code_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_wiki(directory)
+            path = root / "labs/catalog.json"
+            value = json.loads(path.read_text())
+            value["entries"][0]["code"].append("../native/secret.hpp")
+            path.write_text(json.dumps(value))
+            self.assertTrue(any("non-local code" in value for value in standalone.audit(root)["errors"]))
+
+    def test_dynamic_external_import_and_native_include_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_wiki(directory)
+            (root / "labs/forbidden.py").write_text("import sibling_runtime\nimportlib.util.spec_from_file_location('x', '../x.py')\n")
+            (root / "labs/forbidden.mm").write_text('#include "../../../native/runtime.hpp"\n')
+            errors = standalone.audit(root)["errors"]
+            self.assertTrue(any("undeclared import" in value for value in errors))
+            self.assertTrue(any("dynamic source loading" in value for value in errors))
+            self.assertTrue(any("native include escapes" in value for value in errors))
+
+    def test_missing_named_stage_and_design_fail_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_wiki(directory)
+            path = root / "references/absorbed-designs.json"
+            value = json.loads(path.read_text())
+            value["stages"].pop()
+            value["designs"].pop()
+            path.write_text(json.dumps(value))
+            errors = standalone.audit(root)["errors"]
+            self.assertTrue(any("model-stage coverage" in value for value in errors))
+            self.assertTrue(any("absorbed-design coverage" in value for value in errors))
 
 
 if __name__ == "__main__":

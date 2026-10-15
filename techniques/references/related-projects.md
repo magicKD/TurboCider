@@ -1,5 +1,7 @@
 # 其他参考项目与可迁移技巧
 
+外部项目的可复用机制已落为[本地设计样本](../designs/README.md)、[GPU/ANE 方案](../designs/hybrid-ffn.md)与[分阶段地图](../models/stage-map.md)。以下版本/文件是可选溯源，不需要为了理解方案打开其他仓库。
+
 [总目录](../README.md) · [证据地图](evidence-map.md)
 
 本页是已读本地源码/项目文档的路由索引，不进行跨项目速度排名。外部目录可缺失，不进入TurboCider构建；具体head见`sources.json`。不复制第三方代码时无需搬整套依赖，若以后摘录实现须保留实际许可证/NOTICE并重新核查。

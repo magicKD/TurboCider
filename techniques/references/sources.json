@@ -1,91 +1,977 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "audit_date": "2026-10-15",
   "turbocider_base_commit": "ad8100f",
-  "meaning": "Selected literal source anchors, not a complete dependency manifest or a new benchmark. Paths are relative to the TurboCider repository root. Optional sibling checkouts are not runtime dependencies. External snapshot hashes identify inspected content, not latest upstream.",
+  "meaning": "Local paths are relative to techniques. Integration paths retain original repository-root/sibling anchors for optional provenance only; check with --include-integrations. Core learning and execution require no integration source. Snapshots are inspected content, not latest upstream.",
   "sources": [
-    {"id": "backend-maintenance", "path": "native/backends/README.md", "role": "current implementation contracts"},
-    {"id": "acceleration-status", "path": "docs/status/acceleration.md", "role": "current decision index with dated historical measurements"},
-    {"id": "latest-merge", "path": "docs/status/2026-10-15-main-into-dev.md", "role": "matched build/cache case"},
-    {"id": "latest-merge-data", "path": "docs/design/validation/main-dev-merge-performance-20261015.json", "role": "retained machine-readable samples"},
-    {"id": "registry", "path": "native/models/registry.cpp", "role": "model integration"},
-    {"id": "session", "path": "native/runtime/session.hpp", "role": "model lifecycle"},
-    {"id": "device-policy", "path": "native/runtime/device_optimizations.hpp", "symbols": ["measured_device_optimizations", "device_optimizations", "24ull << 30"], "role": "exact hardware gate"},
-    {"id": "executor-abi", "path": "native/backends/ane_runtime.hpp", "symbols": ["DeviceMatrixView", "DeviceWeightView", "DeviceWeightRegion", "GraphShape", "RuntimeArtifactSnapshot"], "role": "ownership and precision contract"},
-    {"id": "ffn-abi", "path": "native/backends/ane_ffn.hpp", "symbols": ["class HybridFfn", "class SourceScope", "ChannelDownRanks", "CalibrationWorkload"], "role": "model callbacks and lifetime"},
-    {"id": "ffn-runtime", "path": "native/backends/ane_ffn.cpp", "symbols": ["HybridFfn::", "run_channels"], "role": "actual orchestration"},
-    {"id": "row-scheduler", "path": "native/backends/ane_scheduler.hpp", "symbols": ["class RowScheduler", "peek_plan", "HybridUntimed", "class RowSchedulerCache"], "role": "adaptive complete-block policy"},
-    {"id": "channel-cost", "path": "native/backends/ane_cost_model.hpp", "symbols": ["class ChannelCostModel", "calibration_layer_seconds", "requires_candidate_trial"], "role": "conservative bandwidth policy"},
-    {"id": "channel-calibration", "path": "native/backends/ane_channel_calibration.cpp", "symbols": ["HybridFfn::calibrate_channels", "measure_w8_channel_point", "numerical_trial", "trial.accepts()"], "role": "integrated candidate trial, synthetic activation"},
-    {"id": "coreml-backing", "path": "native/backends/coreml.mm", "symbols": ["MLComputeUnitsCPUAndNeuralEngine", "outputBackings", "actual_output.dataPointer"], "role": "public prediction and actual output handling"},
-    {"id": "artifact-lease", "path": "native/backends/ane_artifact_lease.hpp", "role": "owned verified compiled snapshot"},
-    {"id": "shared-stager", "path": "native/backends/ane_gpu.hpp", "role": "shared Metal-only staging/IO contract"},
-    {"id": "public-w8", "path": "native/backends/ane_public_w8.mm", "role": "public runtime W8 executor"},
-    {"id": "private-w8", "path": "native/backends/private/ane_w8_executor.mm", "role": "explicit research executor"},
-    {"id": "quant-recipe", "path": "native/backends/ane_w8a8_math.hpp", "symbols": ["w8a8_recipe", "comfy_h256_sign", "rotate_block", "quantize_rotated"], "role": "independent recipes and rounding"},
-    {"id": "runtime-export", "path": "tools/coreml/export_runtime_ane.py", "symbols": ["def geometry", "def make_program", "def _publish_exclusively"], "role": "checkpoint-independent FP16 graph"},
-    {"id": "w8-export", "path": "tools/coreml/export_runtime_w8a8_ffn.py", "role": "public W8A8 FFN graph"},
-    {"id": "native-graph", "path": "native/backends/metal_graph/backend.hpp", "symbols": ["allocation_identity", "class CommandGraph", "struct Completion", "physically_complete"], "role": "owned graph and completion"},
-    {"id": "native-graph-implementation", "path": "native/backends/metal_graph/backend.mm", "role": "actual Metal commands"},
-    {"id": "affine-mpp", "path": "native/backends/affine_gpu_mpp.hpp", "symbols": ["projection_mpp_fp32", "physical", "row_begin"], "role": "guarded research GEMM"},
-    {"id": "qk-fusion", "path": "native/models/qwen21/metal/qk_norm_rope.hpp", "role": "actual model kernel"},
-    {"id": "gguf-decode", "path": "native/core/gguf_decode.hpp", "role": "format-specific CPU witness"},
-    {"id": "block-residency", "path": "native/runtime/block_residency.h", "symbols": ["tc_block_residency_plan_build", "refill_slots", "activation_reserve_bytes"], "role": "working-set policy not RSS cap"},
-    {"id": "stage-executor", "path": "native/runtime/streaming/context.hpp", "symbols": ["class StageExecutor", "class ModelSlotAdapter"], "role": "common slot execution contract"},
-    {"id": "slot-pool", "path": "native/runtime/streaming/slot_pool.cpp", "role": "slot lifetime implementation"},
-    {"id": "source-lease", "path": "native/runtime/streaming/source_lease.hpp", "role": "source identity"},
-    {"id": "read-ahead", "path": "native/runtime/streaming/read_ahead_worker.hpp", "symbols": ["class ReadAheadWorker", "std::exception_ptr", "stop_and_drain", "::pread"], "role": "one bounded job and error propagation"},
-    {"id": "memory-accounting", "path": "native/runtime/memory_accounting.cpp", "role": "one native memory ledger"},
-    {"id": "conditioning", "path": "native/models/qwen21/conditioning_cache.hpp", "role": "condition cache identity"},
-    {"id": "cache-policy", "path": "docs/status/2026-09-30-qwen21-dit-cache.md", "role": "residual reuse and qualification"},
-    {"id": "prefix-history", "path": "docs/status/qwen21-resident-prefix-kv-2026-09-26.md", "role": "cross-seed/LoRA guard history"},
-    {"id": "prefetch-negative", "path": "docs/status/private-ane-prefetch-2026-10-03.md", "role": "hits without E2E gain"},
-    {"id": "deferred-owned", "path": "docs/status/private-ane-deferred-join-2026-10-05.md", "role": "output ownership and limited speed evidence"},
-    {"id": "lora-ranks", "path": "docs/status/local512-split-down-ranks-2026-10-08.md", "role": "down-rank algebra and negative result"},
-    {"id": "lora-joint", "path": "docs/status/local512-qwen-joint-ab-2026-10-09.md", "role": "actual A-to-B and E2E cost"},
-    {"id": "native-sgmma-negative", "path": "docs/status/2026-10-08-native-lora-sgmma-e2e.md", "role": "component versus whole request"},
-    {"id": "qwen-shares-data", "path": "docs/design/validation/local512-qwen-prefill-shares-20261010.json", "role": "actual phases, failed load qualification"},
-    {"id": "m5-z-history", "path": "docs/design/m5-ane-adaptation.md", "role": "bucket/suffix hardware-specific observations"},
-    {"id": "m5-qwen-history", "path": "docs/status/qwen21-m5pro-24gb-streaming-ane.md", "role": "bounded suffix and scoped wired restoration"},
-    {"id": "sparse-negative", "path": "docs/design/ltx-stage2-sparse-results.md", "role": "full-stage/media sparse results"},
-    {"id": "h3-int6", "path": "docs/design/h3-mlx-int6-fastvideo-parity-plan.md", "role": "model/source/noise/MRoPE parity"},
-    {"id": "ltx-lifecycle", "path": "docs/design/ltx25-ltx-mac-acceleration-parity-plan.md", "role": "dual streams/stage release/finalizer history"},
-    {"id": "seedvr2-vae", "path": "native/models/seedvr2/vae.cpp", "symbols": ["norm_conv", "group_norm", "phase_history"], "role": "actual VAE math and lifetime"},
-    {"id": "seedvr2-vae-plan", "path": "docs/design/seedvr2-vae-optimization.md", "role": "global-state/streaming/current boundaries"},
-    {"id": "seedvr2-shared-tiles", "path": "docs/design/seedvr2-vae-ane-feasibility.md", "role": "corrected full-boundary comparison"},
-    {"id": "seedvr2-block-io", "path": "docs/design/seedvr2-block-weight-residency.md", "role": "actual reader-error correction and component memory"},
-    {"id": "seedvr2-comfy-data", "path": "docs/design/validation/seedvr2-comfy-benchmark-current-20261015.json", "role": "retained source/version/sample evidence"},
-    {"id": "sampler", "path": "tools/native/process_tree_sampler.py", "symbols": ["ProcessIdentity", "phys_footprint_bytes", "DEFAULT_MAX_GAP_MS", "--launch"], "role": "independent process-tree evidence"},
-    {"id": "sampler-verifier", "path": "tools/native/verify_process_tree_samples.py", "role": "gaps/hash-chain completeness"},
-    {"id": "quality-tool", "path": "tools/native/quality_gate.py", "symbols": ["def image_metrics", "--min-correlation"], "role": "decoded RGB metrics not full RGBA quality"},
-    {"id": "upscale", "path": "docs/public/IMAGE_UPSCALING.md", "role": "real ESRGAN tiling/preload contract"},
-    {"id": "splash-command", "path": "../splash/runtime/metal/CommandGraph.hpp", "optional": true, "revision": "134807b80bd6f64b1533cb1306358c042bb750d5", "sha256": "5c8ff5b4d7616ee27657527634c276e011aa67da0456cb4e7fc1d89d42105909", "symbols": ["class CommandGraph", "payloads_"], "role": "external graph reference"},
-    {"id": "splash-weights", "path": "../splash/runtime/model/WeightStore.cpp", "optional": true, "revision": "134807b80bd6f64b1533cb1306358c042bb750d5", "sha256": "e7ab10c4f25f3e2be734afe282c29082d5cd20aec283a4c64841b7b2235f23e0", "symbols": ["MAP_SHARED", "wrapSharedMemory"], "role": "external immutable packed mapping"},
-    {"id": "splash-ffn", "path": "../references/splash-ffn/runtime/ops/AneFfn.hpp", "optional": true, "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0", "sha256": "0977e40671758ce1057fdcb2dfe1cecaa18eec58b312069c6e100bf80a9b5d2d", "symbols": ["class AneFfn", "setMinimumRows", "setBreaker"], "role": "external channel/double-bank reference"},
-    {"id": "splash-calibration", "path": "../references/splash-ffn/runtime/ops/AneFfnCalibration.hpp", "optional": true, "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0", "sha256": "de943bf059776970ca9cc3a21633e4583e9705b86f88f9f602e29521af05459b", "symbols": ["struct Model", "minimumRows", "class Breaker"], "role": "external model/breaker reference"},
-    {"id": "vpipe-memory", "path": "../references/vpipe/docs/MODEL-MEMORY.md", "optional": true, "revision": "c2989a76841888e4d8d208fad4f476c487710962", "sha256": "38083817270777b08f1bc67d835550767e7d8f3a10f400b7ac26c1ff6e775e2d", "role": "external phase/resource contract"},
-    {"id": "vpipe-residency", "path": "../references/vpipe/generative-models/shared/block-residency.h", "optional": true, "revision": "c2989a76841888e4d8d208fad4f476c487710962", "sha256": "f0309e84f709e819187d4f7f95084408ff9862b5f2ab70fce5425b68b4b1c231", "symbols": ["class BlockResidency", "note_reserve_allocated"], "role": "external anti-thrash policy"},
-    {"id": "vpipe-refill", "path": "../references/vpipe/generative-models/shared/streamed-refill.h", "optional": true, "revision": "c2989a76841888e4d8d208fad4f476c487710962", "sha256": "c548dc52a87a3ed95760876448317b49b80b174c38dbdd8e0ce84e607059607f", "symbols": ["enum class RefillDst", "kUnservable", "kFailed"], "role": "external typed refill/error distinction"},
-    {"id": "mac-transformer", "path": "../gpu_ane/mac_transformer/docs/EXPLORATION_REPORT_2026-09-01.md", "optional": true, "revision": "9f322e10e0165e59d498e6a0daf17ad750a9bb12", "role": "external topology/micro/E2E history"},
-    {"id": "flux2-engine", "path": "../gpu_ane/flux2-engine/docs/ARCHITECTURE.md", "optional": true, "revision": "98aa6f1710a44e220a4b2829a250fa9fdbc3daec", "role": "external persistent hybrid design"},
-    {"id": "ane-research", "path": "../gpu_ane/ANE/README.md", "optional": true, "revision": "d91c9845c0784dec7753048954fc6d0e8411fe29", "role": "external private research only"},
-    {"id": "sol-attn", "path": "../references/ComfyUI-SolAttn-MPS/README.md", "optional": true, "revision": "45071126b0c1ee30b0e6b7103fa9d70924828ba5", "role": "external tiled sparse/finite-media pitfalls"},
-    {"id": "smoothquant", "path": "../references/smoothquant/README.md", "optional": true, "role": "external scale/activation calibration principle"},
-    {"id": "sana-compose", "path": "../Sana/techniques/compose.py", "optional": true, "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418", "sha256": "dea51f006da9aaba773b50b5873fb2ee3a5fad03fbae2eb61538203991bf7819", "symbols": ["def check_conflicts", "def compose"], "role": "external capability/effect composition read, not imported"},
-    {"id": "sana-technique", "path": "../Sana/techniques/technique.py", "optional": true, "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418", "sha256": "a02f5f1ee9d50f84b3d6aeb650472e7880f4abe53f2a9e7807cb68e49b5fc755", "symbols": ["class Technique", "class Capability", "class Phase", "EXCLUSIVE_SEAMS"], "role": "external runtime seams design"},
-    {"id": "sana-schedules", "path": "../Sana/techniques/schedule.py", "optional": true, "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418", "symbols": ["class Schedule", "def by_stage"], "role": "external step/stage parameter design"},
-    {"id": "sana-diffusion-ptq", "path": "../Sana/site_docs/techniques/quant/diffusion_ptq.md", "optional": true, "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418", "role": "external diffusion calibration search space"},
-    {"id": "splash-w8-deep", "path": "../references/splash-ffn/runtime/ops/AneFfn.cpp", "optional": true, "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0", "sha256": "3f60b30ea9012d3810c6623b02b55d8cb0616b645ee86d4b93e9f416ddd4657f", "symbols": ["kSegment = 2560", "rotationSigns", "std::mt19937"], "role": "external segmentation/sign recipe implementation read only"},
-    {"id": "splash-measurement-deep", "path": "../references/splash-ffn/runtime/ops/AneFfnMeasurement.cpp", "optional": true, "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0", "sha256": "fe4e6a207df2a3fca38548e3a377d1a04cbb340bed4e30edb2239c22ac265611", "symbols": ["Measurement::layer", "Measurement::gpuPart", "kTimedShares"], "role": "external stand-in/fixed-overhead measurement design"},
-    {"id": "splash-handoff-deep", "path": "../references/splash-ffn/runtime/ane/Handoff.mm", "optional": true, "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0", "symbols": ["enum class Phase", "Handoff::queue", "outstanding"], "role": "external retirement/deadline owner contract"},
-    {"id": "public-int8-sdk-guard", "path": "native/backends/ane_public_w8_availability.hpp", "symbols": ["public_w8_array_type", "MLMultiArrayDataTypeInt8"], "role": "actual SDK/runtime INT8 public feature gate"},
-    {"id": "upscaler-implementation", "path": "apps/macos/ImageUpscaler.swift", "symbols": ["protocol UpscalePredictor", "static func reflect", "premultipliedLast"], "role": "actual tile/padding/alpha public model adapter"},
-    {"id": "lab-common", "path": "techniques/labs/common.py", "symbols": ["def rotate", "def quantize_rows", "production_qualified"], "role": "new standalone CPU witnesses"},
-    {"id": "lab-metal", "path": "techniques/labs/metal/kernels.metal", "symbols": ["gemm_sg8", "attention_online", "norm_rope"], "role": "new independent real Metal teaching kernels"},
-    {"id": "lab-metal-driver", "path": "techniques/labs/metal/bench.mm", "symbols": ["input_generation", "tail_guards_intact", "GPUEndTime"], "role": "new complete numeric/timing controls"},
-    {"id": "lab-public-coreml", "path": "techniques/labs/ane/bench.py", "symbols": ["frozen_program", "first_prediction_seconds", "mx.async_eval"], "role": "new actual Public/MLX lifecycle and FFN branch lab"},
-    {"id": "lab-public-w8-wrapper", "path": "techniques/labs/ane/shared_w8.py", "symbols": ["native_source_sha256_before_after", "runtime_temp_isolated", "private_class_strings_found"], "role": "new native INT8 bridge integration entry"},
-    {"id": "lab-int8-python-probe", "path": "techniques/labs/ane/probe_python_int8.py", "symbols": ["python_bridge_supported", "CPU_ONLY", "value type not convertible"], "role": "actual API-level negative control with an open re-test path"},
-    {"id": "lab-partition-axes", "path": "techniques/labs/partition_axes.py", "symbols": ["hidden_input_reduce_before_activation", "kv_sequence_global_softmax_merge", "uma_time_lower_bound_seconds"], "role": "CPU dimension/merge algebra and synthetic shared-bandwidth witness"}
+    {
+      "id": "backend-maintenance",
+      "path": "native/backends/README.md",
+      "role": "current implementation contracts",
+      "scope": "integration"
+    },
+    {
+      "id": "acceleration-status",
+      "path": "docs/status/acceleration.md",
+      "role": "current decision index with dated historical measurements",
+      "scope": "integration"
+    },
+    {
+      "id": "latest-merge",
+      "path": "docs/status/2026-10-15-main-into-dev.md",
+      "role": "matched build/cache case",
+      "scope": "integration"
+    },
+    {
+      "id": "latest-merge-data",
+      "path": "docs/design/validation/main-dev-merge-performance-20261015.json",
+      "role": "retained machine-readable samples",
+      "scope": "integration"
+    },
+    {
+      "id": "registry",
+      "path": "native/models/registry.cpp",
+      "role": "model integration",
+      "scope": "integration"
+    },
+    {
+      "id": "session",
+      "path": "native/runtime/session.hpp",
+      "role": "model lifecycle",
+      "scope": "integration"
+    },
+    {
+      "id": "device-policy",
+      "path": "native/runtime/device_optimizations.hpp",
+      "symbols": [
+        "measured_device_optimizations",
+        "device_optimizations",
+        "24ull << 30"
+      ],
+      "role": "exact hardware gate",
+      "scope": "integration"
+    },
+    {
+      "id": "executor-abi",
+      "path": "native/backends/ane_runtime.hpp",
+      "symbols": [
+        "DeviceMatrixView",
+        "DeviceWeightView",
+        "DeviceWeightRegion",
+        "GraphShape",
+        "RuntimeArtifactSnapshot"
+      ],
+      "role": "ownership and precision contract",
+      "scope": "integration"
+    },
+    {
+      "id": "ffn-abi",
+      "path": "native/backends/ane_ffn.hpp",
+      "symbols": [
+        "class HybridFfn",
+        "class SourceScope",
+        "ChannelDownRanks",
+        "CalibrationWorkload"
+      ],
+      "role": "model callbacks and lifetime",
+      "scope": "integration"
+    },
+    {
+      "id": "ffn-runtime",
+      "path": "native/backends/ane_ffn.cpp",
+      "symbols": [
+        "HybridFfn::",
+        "run_channels"
+      ],
+      "role": "actual orchestration",
+      "scope": "integration"
+    },
+    {
+      "id": "row-scheduler",
+      "path": "native/backends/ane_scheduler.hpp",
+      "symbols": [
+        "class RowScheduler",
+        "peek_plan",
+        "HybridUntimed",
+        "class RowSchedulerCache"
+      ],
+      "role": "adaptive complete-block policy",
+      "scope": "integration"
+    },
+    {
+      "id": "channel-cost",
+      "path": "native/backends/ane_cost_model.hpp",
+      "symbols": [
+        "class ChannelCostModel",
+        "calibration_layer_seconds",
+        "requires_candidate_trial"
+      ],
+      "role": "conservative bandwidth policy",
+      "scope": "integration"
+    },
+    {
+      "id": "channel-calibration",
+      "path": "native/backends/ane_channel_calibration.cpp",
+      "symbols": [
+        "HybridFfn::calibrate_channels",
+        "measure_w8_channel_point",
+        "numerical_trial",
+        "trial.accepts()"
+      ],
+      "role": "integrated candidate trial, synthetic activation",
+      "scope": "integration"
+    },
+    {
+      "id": "coreml-backing",
+      "path": "native/backends/coreml.mm",
+      "symbols": [
+        "MLComputeUnitsCPUAndNeuralEngine",
+        "outputBackings",
+        "actual_output.dataPointer"
+      ],
+      "role": "public prediction and actual output handling",
+      "scope": "integration"
+    },
+    {
+      "id": "artifact-lease",
+      "path": "native/backends/ane_artifact_lease.hpp",
+      "role": "owned verified compiled snapshot",
+      "scope": "integration"
+    },
+    {
+      "id": "shared-stager",
+      "path": "native/backends/ane_gpu.hpp",
+      "role": "shared Metal-only staging/IO contract",
+      "scope": "integration"
+    },
+    {
+      "id": "public-w8",
+      "path": "native/backends/ane_public_w8.mm",
+      "role": "public runtime W8 executor",
+      "scope": "integration"
+    },
+    {
+      "id": "private-w8",
+      "path": "native/backends/private/ane_w8_executor.mm",
+      "role": "explicit research executor",
+      "scope": "integration"
+    },
+    {
+      "id": "quant-recipe",
+      "path": "native/backends/ane_w8a8_math.hpp",
+      "symbols": [
+        "w8a8_recipe",
+        "comfy_h256_sign",
+        "rotate_block",
+        "quantize_rotated"
+      ],
+      "role": "independent recipes and rounding",
+      "scope": "integration"
+    },
+    {
+      "id": "runtime-export",
+      "path": "tools/coreml/export_runtime_ane.py",
+      "symbols": [
+        "def geometry",
+        "def make_program",
+        "def _publish_exclusively"
+      ],
+      "role": "checkpoint-independent FP16 graph",
+      "scope": "integration"
+    },
+    {
+      "id": "w8-export",
+      "path": "tools/coreml/export_runtime_w8a8_ffn.py",
+      "role": "public W8A8 FFN graph",
+      "scope": "integration"
+    },
+    {
+      "id": "native-graph",
+      "path": "native/backends/metal_graph/backend.hpp",
+      "symbols": [
+        "allocation_identity",
+        "class CommandGraph",
+        "struct Completion",
+        "physically_complete"
+      ],
+      "role": "owned graph and completion",
+      "scope": "integration"
+    },
+    {
+      "id": "native-graph-implementation",
+      "path": "native/backends/metal_graph/backend.mm",
+      "role": "actual Metal commands",
+      "scope": "integration"
+    },
+    {
+      "id": "affine-mpp",
+      "path": "native/backends/affine_gpu_mpp.hpp",
+      "symbols": [
+        "projection_mpp_fp32",
+        "physical",
+        "row_begin"
+      ],
+      "role": "guarded research GEMM",
+      "scope": "integration"
+    },
+    {
+      "id": "qk-fusion",
+      "path": "native/models/qwen21/metal/qk_norm_rope.hpp",
+      "role": "actual model kernel",
+      "scope": "integration"
+    },
+    {
+      "id": "gguf-decode",
+      "path": "native/core/gguf_decode.hpp",
+      "role": "format-specific CPU witness",
+      "scope": "integration"
+    },
+    {
+      "id": "block-residency",
+      "path": "native/runtime/block_residency.h",
+      "symbols": [
+        "tc_block_residency_plan_build",
+        "refill_slots",
+        "activation_reserve_bytes"
+      ],
+      "role": "working-set policy not RSS cap",
+      "scope": "integration"
+    },
+    {
+      "id": "stage-executor",
+      "path": "native/runtime/streaming/context.hpp",
+      "symbols": [
+        "class StageExecutor",
+        "class ModelSlotAdapter"
+      ],
+      "role": "common slot execution contract",
+      "scope": "integration"
+    },
+    {
+      "id": "slot-pool",
+      "path": "native/runtime/streaming/slot_pool.cpp",
+      "role": "slot lifetime implementation",
+      "scope": "integration"
+    },
+    {
+      "id": "source-lease",
+      "path": "native/runtime/streaming/source_lease.hpp",
+      "role": "source identity",
+      "scope": "integration"
+    },
+    {
+      "id": "read-ahead",
+      "path": "native/runtime/streaming/read_ahead_worker.hpp",
+      "symbols": [
+        "class ReadAheadWorker",
+        "std::exception_ptr",
+        "stop_and_drain",
+        "::pread"
+      ],
+      "role": "one bounded job and error propagation",
+      "scope": "integration"
+    },
+    {
+      "id": "memory-accounting",
+      "path": "native/runtime/memory_accounting.cpp",
+      "role": "one native memory ledger",
+      "scope": "integration"
+    },
+    {
+      "id": "conditioning",
+      "path": "native/models/qwen21/conditioning_cache.hpp",
+      "role": "condition cache identity",
+      "scope": "integration"
+    },
+    {
+      "id": "cache-policy",
+      "path": "docs/status/2026-09-30-qwen21-dit-cache.md",
+      "role": "residual reuse and qualification",
+      "scope": "integration"
+    },
+    {
+      "id": "prefix-history",
+      "path": "docs/status/qwen21-resident-prefix-kv-2026-09-26.md",
+      "role": "cross-seed/LoRA guard history",
+      "scope": "integration"
+    },
+    {
+      "id": "prefetch-negative",
+      "path": "docs/status/private-ane-prefetch-2026-10-03.md",
+      "role": "hits without E2E gain",
+      "scope": "integration"
+    },
+    {
+      "id": "deferred-owned",
+      "path": "docs/status/private-ane-deferred-join-2026-10-05.md",
+      "role": "output ownership and limited speed evidence",
+      "scope": "integration"
+    },
+    {
+      "id": "lora-ranks",
+      "path": "docs/status/local512-split-down-ranks-2026-10-08.md",
+      "role": "down-rank algebra and negative result",
+      "scope": "integration"
+    },
+    {
+      "id": "lora-joint",
+      "path": "docs/status/local512-qwen-joint-ab-2026-10-09.md",
+      "role": "actual A-to-B and E2E cost",
+      "scope": "integration"
+    },
+    {
+      "id": "native-sgmma-negative",
+      "path": "docs/status/2026-10-08-native-lora-sgmma-e2e.md",
+      "role": "component versus whole request",
+      "scope": "integration"
+    },
+    {
+      "id": "qwen-shares-data",
+      "path": "docs/design/validation/local512-qwen-prefill-shares-20261010.json",
+      "role": "actual phases, failed load qualification",
+      "scope": "integration"
+    },
+    {
+      "id": "m5-z-history",
+      "path": "docs/design/m5-ane-adaptation.md",
+      "role": "bucket/suffix hardware-specific observations",
+      "scope": "integration"
+    },
+    {
+      "id": "m5-qwen-history",
+      "path": "docs/status/qwen21-m5pro-24gb-streaming-ane.md",
+      "role": "bounded suffix and scoped wired restoration",
+      "scope": "integration"
+    },
+    {
+      "id": "sparse-negative",
+      "path": "docs/design/ltx-stage2-sparse-results.md",
+      "role": "full-stage/media sparse results",
+      "scope": "integration"
+    },
+    {
+      "id": "h3-int6",
+      "path": "docs/design/h3-mlx-int6-fastvideo-parity-plan.md",
+      "role": "model/source/noise/MRoPE parity",
+      "scope": "integration"
+    },
+    {
+      "id": "ltx-lifecycle",
+      "path": "docs/design/ltx25-ltx-mac-acceleration-parity-plan.md",
+      "role": "dual streams/stage release/finalizer history",
+      "scope": "integration"
+    },
+    {
+      "id": "seedvr2-vae",
+      "path": "native/models/seedvr2/vae.cpp",
+      "symbols": [
+        "norm_conv",
+        "group_norm",
+        "phase_history"
+      ],
+      "role": "actual VAE math and lifetime",
+      "scope": "integration"
+    },
+    {
+      "id": "seedvr2-vae-plan",
+      "path": "docs/design/seedvr2-vae-optimization.md",
+      "role": "global-state/streaming/current boundaries",
+      "scope": "integration"
+    },
+    {
+      "id": "seedvr2-shared-tiles",
+      "path": "docs/design/seedvr2-vae-ane-feasibility.md",
+      "role": "corrected full-boundary comparison",
+      "scope": "integration"
+    },
+    {
+      "id": "seedvr2-block-io",
+      "path": "docs/design/seedvr2-block-weight-residency.md",
+      "role": "actual reader-error correction and component memory",
+      "scope": "integration"
+    },
+    {
+      "id": "seedvr2-comfy-data",
+      "path": "docs/design/validation/seedvr2-comfy-benchmark-current-20261015.json",
+      "role": "retained source/version/sample evidence",
+      "scope": "integration"
+    },
+    {
+      "id": "sampler",
+      "path": "tools/native/process_tree_sampler.py",
+      "symbols": [
+        "ProcessIdentity",
+        "phys_footprint_bytes",
+        "DEFAULT_MAX_GAP_MS",
+        "--launch"
+      ],
+      "role": "independent process-tree evidence",
+      "scope": "integration"
+    },
+    {
+      "id": "sampler-verifier",
+      "path": "tools/native/verify_process_tree_samples.py",
+      "role": "gaps/hash-chain completeness",
+      "scope": "integration"
+    },
+    {
+      "id": "quality-tool",
+      "path": "tools/native/quality_gate.py",
+      "symbols": [
+        "def image_metrics",
+        "--min-correlation"
+      ],
+      "role": "decoded RGB metrics not full RGBA quality",
+      "scope": "integration"
+    },
+    {
+      "id": "upscale",
+      "path": "docs/public/IMAGE_UPSCALING.md",
+      "role": "real ESRGAN tiling/preload contract",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-command",
+      "path": "../splash/runtime/metal/CommandGraph.hpp",
+      "optional": true,
+      "revision": "134807b80bd6f64b1533cb1306358c042bb750d5",
+      "sha256": "5c8ff5b4d7616ee27657527634c276e011aa67da0456cb4e7fc1d89d42105909",
+      "symbols": [
+        "class CommandGraph",
+        "payloads_"
+      ],
+      "role": "external graph reference",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-weights",
+      "path": "../splash/runtime/model/WeightStore.cpp",
+      "optional": true,
+      "revision": "134807b80bd6f64b1533cb1306358c042bb750d5",
+      "sha256": "e7ab10c4f25f3e2be734afe282c29082d5cd20aec283a4c64841b7b2235f23e0",
+      "symbols": [
+        "MAP_SHARED",
+        "wrapSharedMemory"
+      ],
+      "role": "external immutable packed mapping",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-ffn",
+      "path": "../references/splash-ffn/runtime/ops/AneFfn.hpp",
+      "optional": true,
+      "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0",
+      "sha256": "0977e40671758ce1057fdcb2dfe1cecaa18eec58b312069c6e100bf80a9b5d2d",
+      "symbols": [
+        "class AneFfn",
+        "setMinimumRows",
+        "setBreaker"
+      ],
+      "role": "external channel/double-bank reference",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-calibration",
+      "path": "../references/splash-ffn/runtime/ops/AneFfnCalibration.hpp",
+      "optional": true,
+      "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0",
+      "sha256": "de943bf059776970ca9cc3a21633e4583e9705b86f88f9f602e29521af05459b",
+      "symbols": [
+        "struct Model",
+        "minimumRows",
+        "class Breaker"
+      ],
+      "role": "external model/breaker reference",
+      "scope": "integration"
+    },
+    {
+      "id": "vpipe-memory",
+      "path": "../references/vpipe/docs/MODEL-MEMORY.md",
+      "optional": true,
+      "revision": "c2989a76841888e4d8d208fad4f476c487710962",
+      "sha256": "38083817270777b08f1bc67d835550767e7d8f3a10f400b7ac26c1ff6e775e2d",
+      "role": "external phase/resource contract",
+      "scope": "integration"
+    },
+    {
+      "id": "vpipe-residency",
+      "path": "../references/vpipe/generative-models/shared/block-residency.h",
+      "optional": true,
+      "revision": "c2989a76841888e4d8d208fad4f476c487710962",
+      "sha256": "f0309e84f709e819187d4f7f95084408ff9862b5f2ab70fce5425b68b4b1c231",
+      "symbols": [
+        "class BlockResidency",
+        "note_reserve_allocated"
+      ],
+      "role": "external anti-thrash policy",
+      "scope": "integration"
+    },
+    {
+      "id": "vpipe-refill",
+      "path": "../references/vpipe/generative-models/shared/streamed-refill.h",
+      "optional": true,
+      "revision": "c2989a76841888e4d8d208fad4f476c487710962",
+      "sha256": "c548dc52a87a3ed95760876448317b49b80b174c38dbdd8e0ce84e607059607f",
+      "symbols": [
+        "enum class RefillDst",
+        "kUnservable",
+        "kFailed"
+      ],
+      "role": "external typed refill/error distinction",
+      "scope": "integration"
+    },
+    {
+      "id": "mac-transformer",
+      "path": "../gpu_ane/mac_transformer/docs/EXPLORATION_REPORT_2026-09-01.md",
+      "optional": true,
+      "revision": "9f322e10e0165e59d498e6a0daf17ad750a9bb12",
+      "role": "external topology/micro/E2E history",
+      "scope": "integration"
+    },
+    {
+      "id": "flux2-engine",
+      "path": "../gpu_ane/flux2-engine/docs/ARCHITECTURE.md",
+      "optional": true,
+      "revision": "98aa6f1710a44e220a4b2829a250fa9fdbc3daec",
+      "role": "external persistent hybrid design",
+      "scope": "integration"
+    },
+    {
+      "id": "ane-research",
+      "path": "../gpu_ane/ANE/README.md",
+      "optional": true,
+      "revision": "d91c9845c0784dec7753048954fc6d0e8411fe29",
+      "role": "external private research only",
+      "scope": "integration"
+    },
+    {
+      "id": "sol-attn",
+      "path": "../references/ComfyUI-SolAttn-MPS/README.md",
+      "optional": true,
+      "revision": "45071126b0c1ee30b0e6b7103fa9d70924828ba5",
+      "role": "external tiled sparse/finite-media pitfalls",
+      "scope": "integration"
+    },
+    {
+      "id": "smoothquant",
+      "path": "../references/smoothquant/README.md",
+      "optional": true,
+      "role": "external scale/activation calibration principle",
+      "scope": "integration"
+    },
+    {
+      "id": "sana-compose",
+      "path": "../Sana/techniques/compose.py",
+      "optional": true,
+      "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418",
+      "sha256": "dea51f006da9aaba773b50b5873fb2ee3a5fad03fbae2eb61538203991bf7819",
+      "symbols": [
+        "def check_conflicts",
+        "def compose"
+      ],
+      "role": "external capability/effect composition read, not imported",
+      "scope": "integration"
+    },
+    {
+      "id": "sana-technique",
+      "path": "../Sana/techniques/technique.py",
+      "optional": true,
+      "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418",
+      "sha256": "a02f5f1ee9d50f84b3d6aeb650472e7880f4abe53f2a9e7807cb68e49b5fc755",
+      "symbols": [
+        "class Technique",
+        "class Capability",
+        "class Phase",
+        "EXCLUSIVE_SEAMS"
+      ],
+      "role": "external runtime seams design",
+      "scope": "integration"
+    },
+    {
+      "id": "sana-schedules",
+      "path": "../Sana/techniques/schedule.py",
+      "optional": true,
+      "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418",
+      "symbols": [
+        "class Schedule",
+        "def by_stage"
+      ],
+      "role": "external step/stage parameter design",
+      "scope": "integration"
+    },
+    {
+      "id": "sana-diffusion-ptq",
+      "path": "../Sana/site_docs/techniques/quant/diffusion_ptq.md",
+      "optional": true,
+      "revision": "d0c0a4685ab5dc2336d18b7213d85f13def92418",
+      "role": "external diffusion calibration search space",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-w8-deep",
+      "path": "../references/splash-ffn/runtime/ops/AneFfn.cpp",
+      "optional": true,
+      "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0",
+      "sha256": "3f60b30ea9012d3810c6623b02b55d8cb0616b645ee86d4b93e9f416ddd4657f",
+      "symbols": [
+        "kSegment = 2560",
+        "rotationSigns",
+        "std::mt19937"
+      ],
+      "role": "external segmentation/sign recipe implementation read only",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-measurement-deep",
+      "path": "../references/splash-ffn/runtime/ops/AneFfnMeasurement.cpp",
+      "optional": true,
+      "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0",
+      "sha256": "fe4e6a207df2a3fca38548e3a377d1a04cbb340bed4e30edb2239c22ac265611",
+      "symbols": [
+        "Measurement::layer",
+        "Measurement::gpuPart",
+        "kTimedShares"
+      ],
+      "role": "external stand-in/fixed-overhead measurement design",
+      "scope": "integration"
+    },
+    {
+      "id": "splash-handoff-deep",
+      "path": "../references/splash-ffn/runtime/ane/Handoff.mm",
+      "optional": true,
+      "revision": "80827e1c3593f7d10c266394e4d4381321b73ad0",
+      "symbols": [
+        "enum class Phase",
+        "Handoff::queue",
+        "outstanding"
+      ],
+      "role": "external retirement/deadline owner contract",
+      "scope": "integration"
+    },
+    {
+      "id": "public-int8-sdk-guard",
+      "path": "native/backends/ane_public_w8_availability.hpp",
+      "symbols": [
+        "public_w8_array_type",
+        "MLMultiArrayDataTypeInt8"
+      ],
+      "role": "actual SDK/runtime INT8 public feature gate",
+      "scope": "integration"
+    },
+    {
+      "id": "upscaler-implementation",
+      "path": "apps/macos/ImageUpscaler.swift",
+      "symbols": [
+        "protocol UpscalePredictor",
+        "static func reflect",
+        "premultipliedLast"
+      ],
+      "role": "actual tile/padding/alpha public model adapter",
+      "scope": "integration"
+    },
+    {
+      "id": "lab-common",
+      "path": "labs/common.py",
+      "symbols": [
+        "def rotate",
+        "def quantize_rows",
+        "production_qualified"
+      ],
+      "role": "new standalone CPU witnesses",
+      "scope": "local"
+    },
+    {
+      "id": "lab-metal",
+      "path": "labs/metal/kernels.metal",
+      "symbols": [
+        "gemm_sg8",
+        "attention_online",
+        "norm_rope"
+      ],
+      "role": "new independent real Metal teaching kernels",
+      "scope": "local"
+    },
+    {
+      "id": "lab-metal-driver",
+      "path": "labs/metal/bench.mm",
+      "symbols": [
+        "input_generation",
+        "tail_guards_intact",
+        "GPUEndTime"
+      ],
+      "role": "new complete numeric/timing controls",
+      "scope": "local"
+    },
+    {
+      "id": "lab-public-coreml",
+      "path": "labs/ane/bench.py",
+      "symbols": [
+        "frozen_program",
+        "first_prediction_seconds",
+        "mx.async_eval"
+      ],
+      "role": "new actual Public/MLX lifecycle and FFN branch lab",
+      "scope": "local"
+    },
+    {
+      "id": "lab-public-w8-wrapper",
+      "path": "labs/ane/shared_w8.py",
+      "symbols": [
+        "native_source_sha256_before_after",
+        "runtime_temp_isolated",
+        "private_class_strings_found"
+      ],
+      "role": "new native INT8 bridge integration entry",
+      "scope": "local"
+    },
+    {
+      "id": "lab-int8-python-probe",
+      "path": "labs/ane/probe_python_int8.py",
+      "symbols": [
+        "python_bridge_supported",
+        "CPU_ONLY",
+        "value type not convertible"
+      ],
+      "role": "actual API-level negative control with an open re-test path",
+      "scope": "local"
+    },
+    {
+      "id": "lab-partition-axes",
+      "path": "labs/partition_axes.py",
+      "symbols": [
+        "hidden_input_reduce_before_activation",
+        "kv_sequence_global_softmax_merge",
+        "uma_time_lower_bound_seconds"
+      ],
+      "role": "CPU dimension/merge algebra and synthetic shared-bandwidth witness",
+      "scope": "local"
+    },
+    {
+      "id": "local-model-stages",
+      "path": "labs/model_stages.py",
+      "symbols": [
+        "class CausalKV",
+        "def speculative_distribution",
+        "def transpose_conv1d"
+      ],
+      "scope": "local",
+      "role": "self-contained independent teaching implementation"
+    },
+    {
+      "id": "local-contracts",
+      "path": "labs/contracts.py",
+      "symbols": [
+        "class OwnedGraph",
+        "class DualBank",
+        "class PackedStore",
+        "class FixedResidency"
+      ],
+      "scope": "local",
+      "role": "self-contained independent teaching implementation"
+    },
+    {
+      "id": "local-public-graphs",
+      "path": "labs/ane/graphs.py",
+      "symbols": [
+        "def runtime_fp16",
+        "def shared_int8"
+      ],
+      "scope": "local",
+      "role": "self-contained independent teaching implementation"
+    },
+    {
+      "id": "local-public-native",
+      "path": "labs/ane/native_shared_io.mm",
+      "symbols": [
+        "outputBackings",
+        "getBytesWithHandler",
+        "physical",
+        "IOSurfaceCreate"
+      ],
+      "scope": "local",
+      "role": "self-contained independent teaching implementation"
+    },
+    {
+      "id": "gpu-ane-read-mla-readme",
+      "path": "../gpu_ane/mac_local_ai/README.md",
+      "scope": "integration",
+      "optional": true,
+      "revision": "a2113ff983513a785c77a0b6dbb2f09eef2d43cd",
+      "working_tree_dirty": true,
+      "sha256": "977049154ed67aed1d7ad39873ce8127ad3b427d2ed6820782b117c4e7cb3d26",
+      "role": "overview and interpretation boundaries"
+    },
+    {
+      "id": "gpu-ane-read-mla-heteromem",
+      "path": "../gpu_ane/mac_local_ai/research/HETEROMEM_REPORT_2026-07-29.md",
+      "scope": "integration",
+      "optional": true,
+      "revision": "a2113ff983513a785c77a0b6dbb2f09eef2d43cd",
+      "working_tree_dirty": true,
+      "sha256": "d61b14534cf5cc2f8dfcacfa19cc6f61c5edde69a86e6038c2b93a5ef0c007f4",
+      "role": "sections 1-3: consumer strides, segmented IR and hazard identity"
+    },
+    {
+      "id": "gpu-ane-read-mla-flux2",
+      "path": "../gpu_ane/mac_local_ai/docs/FLUX2_ANE.md",
+      "scope": "integration",
+      "optional": true,
+      "revision": "a2113ff983513a785c77a0b6dbb2f09eef2d43cd",
+      "working_tree_dirty": true,
+      "sha256": "3a60a8c5b9308874a20eb7aea7360e6d8f806a81b75523257de5527ad12f6a8d",
+      "role": "export/shape/quality/persistent-service sections"
+    },
+    {
+      "id": "gpu-ane-read-mla-bridge",
+      "path": "../gpu_ane/mac_local_ai/Sources/Flux2ANEBridge/module.mm",
+      "scope": "integration",
+      "optional": true,
+      "revision": "a2113ff983513a785c77a0b6dbb2f09eef2d43cd",
+      "working_tree_dirty": true,
+      "sha256": "63d43535445a5a2c1ab8ae2999ee427c5c97a8bc48fbfe8e776f65f2ab1990c2",
+      "role": "buffer acquisition, binding cache, caller backing and owner release"
+    },
+    {
+      "id": "gpu-ane-read-mla-hazard",
+      "path": "../gpu_ane/mac_local_ai/Sources/MetalResourceHazard/main.mm",
+      "scope": "integration",
+      "optional": true,
+      "revision": "a2113ff983513a785c77a0b6dbb2f09eef2d43cd",
+      "working_tree_dirty": true,
+      "sha256": "afbf0abf6c7ab1e1bbf4cf4bfd49c4a38141452a035e4d348c7e1d1527bc3f66",
+      "role": "resource construction/identity/hazard modes and offsets"
+    },
+    {
+      "id": "gpu-ane-read-mla-gdn",
+      "path": "../gpu_ane/mac_local_ai/research/scripts/simulate_gdn_fp32_precision_island.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "a2113ff983513a785c77a0b6dbb2f09eef2d43cd",
+      "working_tree_dirty": true,
+      "sha256": "83fdfb3243a75d1bfc7295477b80b8e89ea52d9e24fcd4071d85f18417a9c032",
+      "role": "FP32 shadow projection/conv/parameters/state and consumer correction"
+    },
+    {
+      "id": "gpu-ane-read-mt-arch",
+      "path": "../gpu_ane/mac_transformer/docs/ARCHITECTURE.md",
+      "scope": "integration",
+      "optional": true,
+      "revision": "9f322e10e0165e59d498e6a0daf17ad750a9bb12",
+      "working_tree_dirty": false,
+      "sha256": "ce7cc200e4da793db547dbd120a5a2ae2f3b3ee088ef8565fd79ec679cce8f06",
+      "role": "channel MLP/topologies/ABI/lifecycle/planner/timing"
+    },
+    {
+      "id": "gpu-ane-read-mt-planner",
+      "path": "../gpu_ane/mac_transformer/src/mac_transformer/planner.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "9f322e10e0165e59d498e6a0daf17ad750a9bb12",
+      "working_tree_dirty": false,
+      "sha256": "b9d4eaf0c4dae8543e1d4e0f4fb5690f586eb7a366a6db3825a9507b62604ac1",
+      "role": "optional widths and p95 critical-path selection"
+    },
+    {
+      "id": "gpu-ane-read-mt-workloads",
+      "path": "../gpu_ane/mac_transformer/src/mac_transformer/workloads.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "9f322e10e0165e59d498e6a0daf17ad750a9bb12",
+      "working_tree_dirty": false,
+      "sha256": "1ae7bec8efad1cc5430db56bfe83abb6f4fe7c095355fba29e4c71f767cc1cde",
+      "role": "topology-specific candidate axes and scope accounting"
+    },
+    {
+      "id": "gpu-ane-read-mt-native",
+      "path": "../gpu_ane/mac_transformer/native/mac_transformer.mm",
+      "scope": "integration",
+      "optional": true,
+      "revision": "9f322e10e0165e59d498e6a0daf17ad750a9bb12",
+      "working_tree_dirty": false,
+      "sha256": "1710a01c4a0b9735dbd6023bfb666aa3abe5ac8f59e71559cf977932e7c1f1f5",
+      "role": "CoreML tensor shape/strides/backing and persistent worker/join seams"
+    },
+    {
+      "id": "gpu-ane-read-flux-arch",
+      "path": "../gpu_ane/flux2-engine/docs/ARCHITECTURE.md",
+      "scope": "integration",
+      "optional": true,
+      "revision": "98aa6f1710a44e220a4b2829a250fa9fdbc3daec",
+      "working_tree_dirty": true,
+      "sha256": "f7645a874a8f092b41f5b614873cafd350681335e643a61cf314a8b14a366d57",
+      "role": "module/lifecycle/backend routing"
+    },
+    {
+      "id": "gpu-ane-read-flux-ops",
+      "path": "../gpu_ane/flux2-engine/src/flux2_engine/backends/hybrid_ops.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "98aa6f1710a44e220a4b2829a250fa9fdbc3daec",
+      "working_tree_dirty": true,
+      "sha256": "93fe074466eb44fdb2c3a195ef5699cbdb564a89595dbd8d3d4755cbe245c779",
+      "role": "packed slices, GPU attention, ANE MLP, partial join and complement"
+    },
+    {
+      "id": "gpu-ane-read-flux-backend",
+      "path": "../gpu_ane/flux2-engine/src/flux2_engine/backends/hybrid.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "98aa6f1710a44e220a4b2829a250fa9fdbc3daec",
+      "working_tree_dirty": true,
+      "sha256": "6a642c1123a88901a81852217a78683a667c098a6e05070a40b2e35761d40020",
+      "role": "persistent sessions, output slots, request serialization and row calculation"
+    },
+    {
+      "id": "gpu-ane-read-flux-catalog",
+      "path": "../gpu_ane/flux2-engine/src/flux2_engine/artifacts.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "98aa6f1710a44e220a4b2829a250fa9fdbc3daec",
+      "working_tree_dirty": true,
+      "sha256": "e974043d2e93897cee35ebb7825719be522d0a6b15c00ee886cc42fcebd4bdef",
+      "role": "smallest bucket, dimensions, blocks, prefix and artifact admission"
+    },
+    {
+      "id": "gpu-ane-read-mflux-single",
+      "path": "../gpu_ane/mflux/src/mflux/models/flux2/model/flux2_transformer/single_transformer_block.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "051ba9ff25c9a8a8703356053a012a0dfad3fe39",
+      "working_tree_dirty": false,
+      "sha256": "f437a6601921b0ad9bafd94001d817dccadfbf206f44ed7c7265e312e7fd1d25",
+      "role": "LN/modulation and final residual gate"
+    },
+    {
+      "id": "gpu-ane-read-mflux-parallel",
+      "path": "../gpu_ane/mflux/src/mflux/models/flux2/model/flux2_transformer/parallel_self_attention.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "051ba9ff25c9a8a8703356053a012a0dfad3fe39",
+      "working_tree_dirty": false,
+      "sha256": "d927cc35f54ba9a8eedf293ae0aa0e2bc214cf72714241a6e5c37e1603ec056d",
+      "role": "joint QKV/MLP projection, concat and output projection"
+    },
+    {
+      "id": "gpu-ane-read-mflux-ff",
+      "path": "../gpu_ane/mflux/src/mflux/models/flux2/model/flux2_transformer/feed_forward.py",
+      "scope": "integration",
+      "optional": true,
+      "revision": "051ba9ff25c9a8a8703356053a012a0dfad3fe39",
+      "working_tree_dirty": false,
+      "sha256": "0f31196f465a387b972537cbf91df841a13ee9c09b26b10915eca4baa35f94de",
+      "role": "SwiGLU paired gate/up order"
+    },
+    {
+      "id": "local-heterogeneous-samples",
+      "path": "labs/heterogeneous.py",
+      "scope": "local",
+      "symbols": [
+        "def parallel_branches",
+        "def consumer_strides",
+        "def choose_partition",
+        "def precision_islands"
+      ],
+      "role": "independent local gpu_ane-inspired topology/ABI/planner samples"
+    }
   ]
 }

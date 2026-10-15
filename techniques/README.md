@@ -1,15 +1,18 @@
 # Apple Silicon 图像 / 视频生成优化百科
 
-面向新模型接入、已有模型提速和性能回退诊断的工程手册。重点是 **Metal GPU、ANE，以及二者在统一内存上的协同**，不是开关大全或硬件峰值排名。核查基线：TurboCider `ad8100f`，2026-10-15；新增内容不改变产品默认、请求协议、权重或发行资格。
+面向新模型接入、已有模型提速和性能回退诊断的工程手册。重点是 **Metal GPU、ANE，以及二者在统一内存上的协同**，不是开关大全或硬件峰值排名。产品溯源基线：TurboCider `ad8100f`；自包含扩展基于 `193b356`，2026-10-15；不改变产品默认、请求协议、权重或发行资格。
 
 ## 从这里开始
 
+- 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
+- GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
+- 吸收外部实现：[设计样本](designs/README.md)包含 GPU 数据流、owned graph、GPU/ANE FFN、packed streaming、驻留与技术组合；核心设计和参考代码均在本目录，不必打开原项目。
 - 新项目：[完整SOP](guides/sop.md) → [新模型接入](guides/new-model.md) → [完整走查示例](guides/worked-example.md) → [验收清单](templates/new-model-checklist.md)。
 - 已有瓶颈：[故障 / 症状索引](guides/troubleshooting.md) → [测量口径](profiling/measurement.md) → [现有工具](profiling/tools.md)。
 - GPU/ANE 专题：[切分代数](gpu-ane/partitioning.md) → [交接和所有权](gpu-ane/shared-memory.md) → [调度](gpu-ane/scheduling.md) → [校准](gpu-ane/calibration.md)。
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
-- 动手实现：[实验室](labs/README.md) → [28项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含23个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与原生W8A8共享IO。
+- 动手实现：[实验室](labs/README.md) → [45项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含40个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO。
 
 ## 目录
 
@@ -24,10 +27,15 @@
 | 媒体链路 | [VAE / 卷积 / tiling](media/vae.md) · [视频音频 IO](media/video-and-audio.md) · [辅助图像超分](media/upscaling.md) |
 | Profiling | [计时、内存、质量](profiling/measurement.md) · [工具与命令](profiling/tools.md) |
 | 实战与来源 | [模型迁移配方](models/recipes.md) · [Splash](references/splash.md) · [vpipe](references/vpipe.md) · [其他项目](references/related-projects.md) · [证据地图](references/evidence-map.md) · [历史对话经验](references/history-lessons.md) |
-| 维护 | [覆盖审计](review/coverage.md) · [当前验证](review/labs-validation.md) · [历史验证](review/validation.md) |
+| 按阶段加速 | [完整地图](models/stage-map.md) · [Encoder](models/encoders.md) · [Prefill](models/llm-prefill.md) · [Decode](models/llm-decode.md) · [DiT](models/dit.md) · [VAE/媒体](models/vae-and-media.md) · [Pipeline](models/pipeline.md) |
+| GPU/ANE专项 | [项目对照与源码范围](references/gpu-ane-projects.md) · [按模型选并行](models/hybrid-selection.md) · [拓扑](designs/parallel-topologies.md) · [布局/segments/identity](designs/consumer-abi.md) · [可选三设备与精度岛](designs/heterogeneous-planner.md) |
+| 自包含设计 | [设计样本](designs/README.md) · [吸收账本](references/absorbed-designs.json) · [署名与实现边界](NOTICE.md) |
+| 维护 | [当前自包含验收](review/self-contained-validation.md) · [覆盖审计](review/coverage.md) · [上一轮设备验证](review/labs-validation.md) · [首版历史验证](review/validation.md) |
 | 实现与复现 | [实验室](labs/README.md) · [GPU kernels](labs/gpu.md) · [ANE/W8A8](labs/ane.md) · [量化推导](labs/quantization.md) · [SOP](guides/sop.md) · [KernelWiki/Sana](references/kernelwiki-sana.md) · [Splash W8A8导读](references/splash-w8a8-walkthrough.md) · [扩展验证](review/labs-validation.md) |
 
 ## 阅读约定
+
+核心学习路径与必需代码均包含在`techniques/`。标准库样本可以单独复制本目录运行；真实设备样本另需明确列出的 Apple SDK、NumPy/CoreML/MLX 依赖，不需要兄弟仓库。链接到产品`native/`、`tools/`、`docs/`或上游网站的内容只用于可选溯源/生产接入；[integrations](integrations/README.md)明确标为可选，不属于离线核心。默认检查只验证本地资产，`--include-integrations`可追加完整仓库来源核查；[隔离检查](scripts/check_standalone.py)实际验证核心没有暗中导入产品代码。
 
 每个技巧回答：什么时候用、为什么成立、怎样实现、如何测、哪些情况不适用。标签含义：
 
@@ -50,6 +58,8 @@
 
 `examples/`保留可移植的小型输入，`review/`保留核查摘要；原始报告、编译产物和依赖 overlay 放在根目录已忽略的`outputs/`。若在实验目录内工作，可使用同样已忽略的`build/`、`dist/`、`outputs/`、`results/`、`artifacts/`、`scratch/`或`private/`子目录；对话摘录只保留在这些本地目录中，不纳入提交。
 
+`review/raw/`与`review/local/`也仅用于本地原始测量和机器配置，不纳入提交；经过整理、脱敏的`review/*.json`验证摘要继续跟踪。
+
 从仓库根目录执行（只需 Python 标准库）：
 
 ```sh
@@ -60,6 +70,7 @@ python3 techniques/scripts/interval_peak.py techniques/examples/memory-plan.json
 python3 techniques/examples/split_ffn_reference.py
 python3 -B techniques/labs/run.py all
 python3 -B techniques/labs/check_catalog.py
+python3 -B techniques/scripts/check_standalone.py --isolate
 ```
 
-`examples/`是合成CPU演示；`labs/`明确区分参考数学/模拟与真实Metal/CoreML执行，小型设备结果不等于新模型加速。真实模型工具、依赖和风险见 [工具手册](profiling/tools.md)。不复制大型模型代码或产物；独立教学实现直接链接生产参考与第三方出处。
+`examples/`是合成CPU演示；`labs/`明确区分参考数学/模拟与真实Metal/CoreML执行，小型设备结果不等于新模型加速。真实模型工具、依赖和风险见 [工具手册](profiling/tools.md)。不复制大型模型代码或产物；第三方核心思想先在[本地设计](designs/README.md)中展开，原始出处仅供追溯。

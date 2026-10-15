@@ -1,0 +1,244 @@
+{
+  "schema": "turbocider-techniques-self-contained-evidence-v1",
+  "date": "2026-10-15",
+  "base_commit": "193b356",
+  "scope": "Independent design and model-stage learning samples. No model backend/release/physical-ANE or end-to-end speed qualification.",
+  "isolation": {
+    "only_top_level_copy": [
+      "techniques"
+    ],
+    "product_or_sibling_source_present": false,
+    "python_import_environment_ignored": true,
+    "all_cpu_and_selected_device_commands_passed": true
+  },
+  "coverage": {
+    "absorbed_designs": 9,
+    "model_stages": 6,
+    "technical_chapters": 45,
+    "cpu_experiments": 40,
+    "unit_test_methods": 107,
+    "unit_tests_skipped": 0,
+    "python_versions_tested": [
+      "3.9.6",
+      "3.11.16"
+    ],
+    "stage_guide_pages_including_map_and_selection": 8,
+    "gpu_ane_projects_inspected": 4,
+    "gpu_ane_source_files_inspected": 17
+  },
+  "required_source_sha256": {
+    "examples/split_ffn_reference.py": "d3c6d71e8a5a5e5b8f1ddd5084d425533b7c9dce724aac5a8007e5409fbc0ad3",
+    "labs/__init__.py": "151357d5be5da8f697db24f0258dc681adfbd167e6ef80e4c4621e3dd7b7e060",
+    "labs/ane/bench.py": "ffa41d79e0cde5b8d5501b309e3ec0637df919e5bf9c9ac48b38086b6256598b",
+    "labs/ane/graphs.py": "333141b7bdd95c4793b8da3e3555738c3fa7e5232b7feb723e4ff775b08b6001",
+    "labs/ane/native_shared_io.mm": "62648c25072c4ad866cd0b16eba9cfa157f822e6527e3aa4025d6532931800e2",
+    "labs/ane/probe_python_int8.py": "a1b4e69b50e1af7d6fe3c9dbeedd804d2f898d547717f22a75ef635b46c4d8a2",
+    "labs/ane/shared_w8.py": "36cd2aea66d05765d1371b0738e07ba990ff3851fbc0991f3611eb9aba387b0f",
+    "labs/caches.py": "88c2ad2978a9cf488dc49b24fcf63e2b6426d8539c546efc61547dc4589f6f66",
+    "labs/check_catalog.py": "1d240170151648016b9790c2a8e3278a080895e45d39e17022d8fee1a62a241b",
+    "labs/common.py": "7ff7ff5791b6772293e9960546a53c28a810d2e09f6e72b91e1785ebcd123924",
+    "labs/contracts.py": "b05317848cf486ac78472da4f5148eea65818a7b06042794f827d83eeafbff4b",
+    "labs/heterogeneous.py": "f00df4929728fc1b9be78a903ea55a4861693cde002f19012e5894a901199d86",
+    "labs/inspect_model.py": "3dc54b01ab48f07ed1ea7f7502a786a520901d5605e02725c38cc8b2479b0d73",
+    "labs/media.py": "928a104d350640286d8c0d5f24468d7b223c09e11c1cbb12c921bf6ef612b9d0",
+    "labs/metal/bench.mm": "132752a48ef4d61202d1aec48199b50dccaeaf648de81528632f6b22daad8b4c",
+    "labs/metal/kernels.metal": "2aa8bb2fb315077ebe6f9dc161c27c94351ead27071fa731f7e4f85fb3fef6a2",
+    "labs/metal/run.py": "c1bc49d9b958e8c80d7dc6b259186fa34c52c2b52c520f45603ab9fec58c05dc",
+    "labs/model_stages.py": "867e8dea071ebaba83f61528d4f81a8b634498ec5a1db9b3c3be6d5b0ade2642",
+    "labs/operators.py": "fa39e9b72e9a13772f61bd5e48eb0d814cc8a14feb9ede45db5eaffc6739a2e4",
+    "labs/partition_axes.py": "e9fc5e6aa4c85b0d40165cf8e4e7d02046cd7e6674ca99b63c0d08d7a8e35c06",
+    "labs/policies.py": "cfd294095d33f9b57b0c52fe8b3b7f0e8c408148794ca4d5aba3b907dab0f213",
+    "labs/quantization.py": "5a74fdfd6942290d7b2f60b41e19f52eb3e1881b0638abde90948eb5cc0f5dfe",
+    "labs/run.py": "b850368b0984a6dbdac0f7ea0ed3703ed4099b11e7d31184fe38d46f8a8ce3ed",
+    "labs/summarize.py": "8cc6b8a10d475ce78f82167700e0d567f14f0347ab6b9556e8a9f607277f16fa",
+    "labs/systems.py": "a972ea5c1f93b7737b92a2a1fca90eb53405ea774af059d1a2358fea49d1bb01",
+    "labs/upscaling.py": "d3519711423565446b4f1270daceba4ffcf82300ad5d0024cf10f30a34e12403",
+    "scripts/check_standalone.py": "f58936375e4bd04fa208a9e25671e97cd76314dcf2cfed67735300e53e5bdadd",
+    "scripts/check_wiki.py": "4fcff87b1634c459776f19e547a53739d1d76f7ed6b30eaa1acbe6d81f098494",
+    "scripts/compare_runs.py": "c3ae201ac2cf4f4cae15b525ec4e70d2cb103bc13f6850ceb5b51c93f22c0186",
+    "scripts/history_index.py": "d5d4ce1b8e44d06c0ddf417b21069e4e449a38563a68669263de6c0b0c69f907",
+    "scripts/interval_peak.py": "5f5ea07c7dd253127680f7bdcdf1ab12e30b9fd9281bdc22b344f8fa0730a748",
+    "tests/test_contracts.py": "286648635a70108fd6f90ba64ba9a2a9d475134212393486b83cc35982d185b9",
+    "tests/test_heterogeneous.py": "0847afb3dbf9bef6b50946891e4dd19de023ff05f111aa32096ab6412364b373",
+    "tests/test_labs.py": "5a40476581aa90d5c701934eeb280e16a61a8847a8d3151de8594e54dae4f3e3",
+    "tests/test_stages.py": "fb71e86d1c34cb9bc011a14470154381aedfe6f231a75ce78eebb356ae7a2e36",
+    "tests/test_tools.py": "2c97060aa331159ff2830f1b3b36c589e0456080b0a449a8beb20434fda4404a"
+  },
+  "device_report_source_bindings_verified": [
+    "labs/ane/bench.py",
+    "labs/ane/graphs.py",
+    "labs/ane/native_shared_io.mm",
+    "labs/metal/bench.mm",
+    "labs/metal/kernels.metal"
+  ],
+  "device_checks": [
+    {
+      "case": "python -E -B techniques/labs/metal/run.py gemm --m 33 --n 41 --k 29",
+      "exit_code": 0,
+      "production_qualified": false,
+      "physical_ane_placement": "unverified",
+      "kind": "actual_metal_gemm",
+      "device": "Apple M4 Max",
+      "shape": [
+        33,
+        41,
+        29
+      ],
+      "max_abs": 1.1101710600813774e-07,
+      "finite": true,
+      "tail_guards": true,
+      "hot_samples": 8,
+      "input_generations": [
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "case": "python -E -B techniques/labs/ane/bench.py --kind frozen-fp16",
+      "exit_code": 0,
+      "production_qualified": false,
+      "physical_ane_placement": "unverified",
+      "kind": "frozen-fp16",
+      "backend": "public_coreml_python",
+      "shape": [
+        33,
+        128,
+        512
+      ],
+      "compute_units_policy": "cpu-ne",
+      "coremltools": "9.0",
+      "prediction_calls_including_warmup": 12,
+      "hot_samples": 8,
+      "max_component_relative_l2": 0.004647806838953811,
+      "max_abs": 0.000535765666812002,
+      "numerical_relative_l2_gate": 0.02,
+      "synthetic_weight_sha256": "3b98b718978ec365a85e4b12a29a452e4fe5aeb075e2d39eb6e0d07c6d47ebe2",
+      "setup_seconds": {
+        "conversion_seconds": 0.03850029199384153,
+        "compile_seconds": 0.027385458117350936,
+        "load_seconds": 0.028953874949365854,
+        "first_prediction_seconds": 0.002065208973363042
+      },
+      "host_median_seconds_by_variant": {
+        "coreml": 6.495858542621136e-05
+      }
+    },
+    {
+      "case": "python -E -B techniques/labs/ane/bench.py --kind runtime-fp16",
+      "exit_code": 0,
+      "production_qualified": false,
+      "physical_ane_placement": "unverified",
+      "kind": "runtime-fp16",
+      "backend": "public_coreml_python",
+      "shape": [
+        33,
+        128,
+        512
+      ],
+      "compute_units_policy": "cpu-ne",
+      "coremltools": "9.0",
+      "prediction_calls_including_warmup": 12,
+      "hot_samples": 8,
+      "max_component_relative_l2": 0.004647806838953811,
+      "max_abs": 0.000535765666812002,
+      "numerical_relative_l2_gate": 0.02,
+      "synthetic_weight_sha256": "3b98b718978ec365a85e4b12a29a452e4fe5aeb075e2d39eb6e0d07c6d47ebe2",
+      "setup_seconds": {
+        "conversion_seconds": 0.03660841705277562,
+        "compile_seconds": 0.02606012485921383,
+        "load_seconds": 0.026445292169228196,
+        "first_prediction_seconds": 0.002535749925300479
+      },
+      "host_median_seconds_by_variant": {
+        "coreml": 0.00030210393015295267
+      }
+    },
+    {
+      "case": "python -E -B techniques/labs/ane/bench.py --compare-gpu",
+      "exit_code": 0,
+      "production_qualified": false,
+      "physical_ane_placement": "unverified",
+      "kind": "frozen-fp16",
+      "backend": "public_coreml_python+mlx_gpu",
+      "shape": [
+        33,
+        128,
+        512
+      ],
+      "compute_units_policy": "cpu-ne",
+      "coremltools": "9.0",
+      "prediction_calls_including_warmup": 6,
+      "hot_samples": 8,
+      "max_component_relative_l2": 0.0030383310120051877,
+      "max_abs": 0.0003393087576323145,
+      "numerical_relative_l2_gate": 0.02,
+      "synthetic_weight_sha256": "3b98b718978ec365a85e4b12a29a452e4fe5aeb075e2d39eb6e0d07c6d47ebe2",
+      "setup_seconds": {
+        "conversion_seconds": 0.037763833068311214,
+        "compile_seconds": 0.026988541008904576,
+        "load_seconds": 0.025995833100751042,
+        "first_prediction_seconds": 0.002046208828687668
+      },
+      "host_median_seconds_by_variant": {
+        "gpu": 0.00018791703041642904,
+        "hybrid": 0.000233312021009624
+      }
+    },
+    {
+      "case": "python -E -B techniques/labs/ane/shared_w8.py",
+      "exit_code": 0,
+      "production_qualified": false,
+      "physical_ane_placement": "unverified",
+      "kind": "actual_native_int8_shared_matmul",
+      "graph_kind": "single normalized INT8-input matmul, not SwiGLU or LoRA",
+      "native": {
+        "passed": true,
+        "output_fallback_copies": 0,
+        "tail_guard_intact": true,
+        "input_sharing": "same IOSurface backing in Metal buffer and native MLMultiArray",
+        "compute_units_policy": "CPU_AND_NE; actual placement unverified",
+        "synchronization": "serial producer-complete -> prediction-return -> consumer-complete",
+        "shape_mkn": [
+          33,
+          128,
+          64
+        ],
+        "maximum_abs_error": 0.0001220703125,
+        "generations": 2,
+        "abs_error_gate": 0.003
+      },
+      "coremltools": "9.0",
+      "binary_sha256": "b1ef5c24ae0aedc87ccbdea21979c2264567e9036cace0c4f99f4f03b6011032",
+      "private_class_strings_found": []
+    }
+  ],
+  "optional_raw_reports_not_required_for_learning": [
+    {
+      "path": "outputs/techniques-gpu-ane-supplement-cpu-validation-20261015.json",
+      "sha256": "0fe2dafc7e29c59be57a9144e50a083cced0390e1888d0837fec4c94a127ab85",
+      "status": "passed"
+    },
+    {
+      "path": "outputs/techniques-self-contained-final-device-validation-20261015.json",
+      "sha256": "7a2d972d1fff3e4b70853aa766eddde1ff8cd602e43dfde179de9ec4f793a1af",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "CPU exactness uses small Python-float fixtures, not device rounding or full model parity.",
+    "Native shared INT8 sample is serial normalized matmul; full product W8A8/LoRA fixtures remain optional integrations, not new standalone evidence.",
+    "The one-token speculative probability witness is not a complete multi-token decoder.",
+    "No model weights, new SDK/packages, app/runtime defaults or system configuration were changed.",
+    "Metal unavailable in sandbox on first attempt; actual device runs required explicit authorization.",
+    "fastMathEnabled deprecation warnings retained; not numerical failures.",
+    "Hybrid small-FFN timings are exploratory and may be slower than optimized GPU; no acceleration claim."
+  ],
+  "snapshot_provenance": {
+    "cpu": "Latest supplement: 107 tests, 40 CPU cases, nine designs, only techniques copied.",
+    "hardware": "Previously executed isolated five-device checks retained only after verifying all directly bound hardware sources and local helpers remain unchanged.",
+    "new_supplement_device_measurement": false,
+    "external_sources": "Selected working-tree files pinned in references/gpu-ane-sources.json; dirty states preserved, no sibling execution."
+  }
+}

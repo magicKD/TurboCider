@@ -1,5 +1,7 @@
 # 模型配方：从相似拓扑迁移，而非照搬开关
 
+先按[模型阶段地图](stage-map.md)和[本地设计](../designs/README.md)理解算法与可运行样本；本篇的具体模型/产品源码路径是额外接入线索，不是离线学习前置条件。
+
 [总目录](../README.md) · [新模型纵切](../guides/new-model.md)
 
 以下是优化入口与历史经验，不是当前所有operation/机器的支持表。实际可用性看当前module、`plan`、manifest和actual result；历史日期/精度/冷暖不能混用。

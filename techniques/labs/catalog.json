@@ -1,34 +1,814 @@
 {
-  "schema_version": 1,
-  "purpose": "Each technical chapter has executable cases, readable code, controls and a way to reopen exploration. Cases are teaching/integration references, not automatic model qualification.",
+  "schema_version": 2,
+  "purpose": "Required code paths are relative to techniques and entirely local. integration_code is optional product traceability, never a core dependency. Every technical chapter maps to executable cases, controls and revisit conditions; no automatic model qualification.",
   "entries": [
-    {"chapter":"hardware/apple-silicon.md","cases":["bucket-selection","metal:vector"],"code":["techniques/labs/systems.py","techniques/labs/metal/bench.mm","native/runtime/device_optimizations.hpp"],"controls":["actual rows vs canvas-only bucket","actual Metal device vs assumed profile"],"revisit_when":"new SoC/RAM/OS or bucket/geometry; establish a new profile"},
-    {"chapter":"metal/kernel-tuning.md","cases":["metal:vector","metal:gemm"],"code":["techniques/labs/metal/kernels.metal","techniques/labs/metal/bench.mm"],"controls":["scalar/vector4 including tail","scalar/SG8 CPU double witness"],"revisit_when":"new BM/BN/BK/SIMD groups, dtype, SDK or physical layout"},
-    {"chapter":"metal/attention.md","cases":["online-attention","metal:attention"],"code":["techniques/labs/operators.py","techniques/labs/metal/kernels.metal"],"controls":["dense/online exact masks","structured sparse error and empty-mask CPU control"],"revisit_when":"different sequence/head shape, block traversal, routing or pooled correction"},
-    {"chapter":"metal/fusion-and-layout.md","cases":["norm-rope","precision-boundaries","metal:fusion","metal:norm-rope"],"code":["techniques/labs/operators.py","techniques/labs/quantization.py","techniques/labs/metal/kernels.metal"],"controls":["separate/fused complete boundary","wrong positions and explicit rounding witness"],"revisit_when":"new epilogue, tensor layout, precision or compiler contraction policy"},
-    {"chapter":"metal/command-graphs.md","cases":["metal:graph","slot-ownership"],"code":["techniques/labs/metal/bench.mm","techniques/labs/systems.py","native/backends/metal_graph/backend.hpp"],"controls":["per-dispatch vs one command buffer","late completion and overwrite refusal"],"revisit_when":"deeper segment or different completion/cancellation contract"},
-    {"chapter":"ane/coreml-graphs.md","cases":["coreml:frozen-fp16","coreml:runtime-fp16","native:public-w8"],"code":["techniques/labs/ane/bench.py","techniques/labs/ane/shared_w8.py","tools/coreml/export_runtime_w8a8_ffn.py"],"controls":["frozen/runtime inputs","real native INT8 IO rather than Python cast"],"revisit_when":"new graph lowering/shape/compute policy/feature bridge"},
-    {"chapter":"ane/lifecycle.md","cases":["startup-amortization","coreml:frozen-fp16","slot-ownership"],"code":["techniques/labs/ane/bench.py","techniques/labs/systems.py"],"controls":["convert/compile/load/first/hot","one-shot vs repeated requests"],"revisit_when":"load-only, new cache tier or phase-scoped sessions"},
-    {"chapter":"ane/quantization.md","cases":["w8a8-reference","w4a8-reference","smoothquant","quant-formats","native:public-w8"],"code":["techniques/labs/quantization.py","techniques/labs/common.py","techniques/labs/ane/shared_w8.py"],"controls":["integer dot/LUT vs DQ and source error","holdout alpha sweep and source pitch"],"revisit_when":"W4A8, grouping, rotations, S1 or sensitive-layer policies"},
-    {"chapter":"ane/performance-limits.md","cases":["startup-amortization","bucket-selection","share-calibration","native:public-w8"],"code":["techniques/labs/systems.py","techniques/labs/policies.py","techniques/labs/ane/shared_w8.py"],"controls":["fixed overhead vs useful rows","complete independent spans vs exposed wait"],"revisit_when":"graph tiling/SRAM expression/row threshold or hardware changes"},
-    {"chapter":"ane/private-ane.md","cases":["slot-ownership","native:public-w8"],"code":["techniques/labs/systems.py","techniques/labs/ane/shared_w8.py","native/backends/private/ane_w8_executor.mm"],"controls":["public binary private-class isolation","timeout/quarantine lifetime"],"revisit_when":"explicitly authorized isolated research with new ABI/device evidence"},
-    {"chapter":"gpu-ane/partitioning.md","cases":["partition-axes","reference:split-ffn","coreml:hybrid","overlap-dag"],"code":["techniques/labs/partition_axes.py","techniques/examples/split_ffn_reference.py","techniques/labs/ane/bench.py","techniques/labs/systems.py"],"controls":["full/channel/row/hidden axis algebra","full GPU vs real GPU suffix/CoreML prefix"],"revisit_when":"different topology, channel unit, rows or precision"},
-    {"chapter":"gpu-ane/axes-and-bandwidth.md","cases":["partition-axes","share-calibration","overlap-dag"],"code":["techniques/labs/partition_axes.py","techniques/labs/policies.py","techniques/labs/systems.py"],"controls":["hidden input/output and global-softmax legal merge","wrong branch nonlinearities/local RMS/local softmax"],"revisit_when":"new split axis, communication, layout, UMA traffic or downstream consumer"},
-    {"chapter":"gpu-ane/shared-memory.md","cases":["slot-ownership","native:public-w8"],"code":["techniques/labs/systems.py","techniques/labs/ane/shared_w8.py","native/backends/ane_gpu.hpp"],"controls":["wrong generation and live-reader overwrite","actual IOSurface/MLMultiArray shared IO"],"revisit_when":"new backing, pitch, event or output ownership boundary"},
-    {"chapter":"gpu-ane/scheduling.md","cases":["overlap-dag","bucket-selection","coreml:hybrid","metal:overlap"],"code":["techniques/labs/systems.py","techniques/labs/ane/bench.py","techniques/labs/metal/bench.mm"],"controls":["legal vs missing dependency","serial/two GPU queues and measured timestamp intersection"],"revisit_when":"different contention, prefetch frontier, phases or queue schedule"},
-    {"chapter":"gpu-ane/lora.md","cases":["reference:split-ffn","native:public-w8"],"code":["techniques/examples/split_ffn_reference.py","techniques/labs/ane/shared_w8.py","native/backends/ane_ffn.hpp"],"controls":["corrected hidden and one down B","native base/A/base and late-failure recovery"],"revisit_when":"shared ranks, fused B, changed rank/strength or operator boundary"},
-    {"chapter":"gpu-ane/calibration.md","cases":["share-calibration","coreml:hybrid"],"code":["techniques/labs/policies.py","techniques/labs/ane/bench.py","native/backends/ane_channel_calibration.cpp"],"controls":["memory-admitted measured-range proposal","new actual candidate execution vs optimized GPU"],"revisit_when":"new complete traffic samples or nonlinear model fit"},
-    {"chapter":"gpu-ane/experiment-ledger.md","cases":["profiling-scopes","share-calibration"],"code":["techniques/labs/media.py","techniques/labs/policies.py","techniques/labs/summarize.py"],"controls":["operator vs request scope","paired inputs and failed evidence retained"],"revisit_when":"historical failure trigger has materially changed"},
-    {"chapter":"memory/residency.md","cases":["reference:interval-peak","slot-ownership"],"code":["techniques/scripts/interval_peak.py","techniques/labs/systems.py"],"controls":["alias-backed phase intervals","live readers vs apparent lexical release"],"revisit_when":"new phase overlap, lower RAM, external pools or peak movement"},
-    {"chapter":"memory/streaming.md","cases":["bounded-io","slot-ownership"],"code":["techniques/labs/systems.py","native/runtime/streaming/read_ahead_worker.hpp"],"controls":["serial vs bounded one-future checksum","short read and late generation errors"],"revisit_when":"different block/pool/slot layout, source encoding or access trace"},
-    {"chapter":"memory/storage.md","cases":["quant-formats","bounded-io","reference:model-header"],"code":["techniques/labs/quantization.py","techniques/labs/systems.py","techniques/labs/inspect_model.py"],"controls":["full pitch vs local pitch","metadata bounds/offsets and positional FD cursor"],"revisit_when":"aligned pack, mmap/pread/typed refill or new format"},
-    {"chapter":"algorithms/caches.md","cases":["cache-identity","residual-reuse"],"code":["techniques/labs/caches.py"],"controls":["content and effective recipe invalidations","off/full vs bounded residual replay"],"revisit_when":"new cache object, invalidation proof or calibrated timestep policy"},
-    {"chapter":"algorithms/approximations.md","cases":["token-merge","residual-reuse","online-attention","technique-composition"],"code":["techniques/labs/caches.py","techniques/labs/operators.py","techniques/labs/policies.py"],"controls":["mass/position and actual approximation error","off identity and combination seam conflicts"],"revisit_when":"new error budget, holdout set, route or model topology"},
-    {"chapter":"media/vae.md","cases":["causal-halo","global-stat-tiles","media-backpressure"],"code":["techniques/labs/operators.py","techniques/labs/media.py"],"controls":["full context vs lost halo/local norm","initial fold vs subsequent temporal taps"],"revisit_when":"different causal/spatial phases, graph boundaries or tile schedule"},
-    {"chapter":"media/video-and-audio.md","cases":["media-backpressure","profiling-scopes"],"code":["techniques/labs/media.py"],"controls":["buffered vs bounded full RGBA checksum","rational FPS and nested spans"],"revisit_when":"different codec/source cadence/AV requirements or bounded pipeline"},
-    {"chapter":"media/upscaling.md","cases":["upscale-tiles","media-backpressure"],"code":["techniques/labs/upscaling.py","techniques/labs/media.py","apps/macos/ImageUpscaler.swift"],"controls":["whole-frame vs overlap/halo/feather callback","local-reflect approximation and alpha preservation"],"revisit_when":"new spatial-only overlap/padding/feather or actual upscaler source"},
-    {"chapter":"profiling/measurement.md","cases":["profiling-scopes","reference:lab-summary"],"code":["techniques/labs/media.py","techniques/labs/summarize.py"],"controls":["interval union vs sum of nested spans","power vs total energy and matched input pairs"],"revisit_when":"new timestamp source, boundary, sample plan or energy instrumentation"},
-    {"chapter":"profiling/tools.md","cases":["reference:lab-summary","metal:graph","coreml:frozen-fp16"],"code":["techniques/labs/summarize.py","techniques/labs/metal/run.py","techniques/labs/ane/bench.py"],"controls":["actual calls vs unsupported/no-device","setup/validation outside timed operator"],"revisit_when":"new hardware counters or instrumentation overhead"},
-    {"chapter":"models/recipes.md","cases":["reference:model-header","technique-composition","reference:split-ffn"],"code":["techniques/labs/inspect_model.py","techniques/labs/policies.py","techniques/examples/split_ffn_reference.py"],"controls":["actual source dtype/table vs names","model capabilities/topology vs copied profile"],"revisit_when":"new architecture, source, shape, adapter or hardware"}
+    {
+      "chapter": "hardware/apple-silicon.md",
+      "cases": [
+        "bucket-selection",
+        "metal:vector"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/metal/bench.mm"
+      ],
+      "controls": [
+        "actual rows vs canvas-only bucket",
+        "actual Metal device vs assumed profile"
+      ],
+      "revisit_when": "new SoC/RAM/OS or bucket/geometry; establish a new profile",
+      "integration_code": [
+        "native/runtime/device_optimizations.hpp"
+      ]
+    },
+    {
+      "chapter": "metal/kernel-tuning.md",
+      "cases": [
+        "metal:vector",
+        "metal:gemm"
+      ],
+      "code": [
+        "labs/metal/kernels.metal",
+        "labs/metal/bench.mm"
+      ],
+      "controls": [
+        "scalar/vector4 including tail",
+        "scalar/SG8 CPU double witness"
+      ],
+      "revisit_when": "new BM/BN/BK/SIMD groups, dtype, SDK or physical layout"
+    },
+    {
+      "chapter": "metal/attention.md",
+      "cases": [
+        "online-attention",
+        "metal:attention"
+      ],
+      "code": [
+        "labs/operators.py",
+        "labs/metal/kernels.metal"
+      ],
+      "controls": [
+        "dense/online exact masks",
+        "structured sparse error and empty-mask CPU control"
+      ],
+      "revisit_when": "different sequence/head shape, block traversal, routing or pooled correction"
+    },
+    {
+      "chapter": "metal/fusion-and-layout.md",
+      "cases": [
+        "norm-rope",
+        "precision-boundaries",
+        "metal:fusion",
+        "metal:norm-rope"
+      ],
+      "code": [
+        "labs/operators.py",
+        "labs/quantization.py",
+        "labs/metal/kernels.metal"
+      ],
+      "controls": [
+        "separate/fused complete boundary",
+        "wrong positions and explicit rounding witness"
+      ],
+      "revisit_when": "new epilogue, tensor layout, precision or compiler contraction policy"
+    },
+    {
+      "chapter": "metal/command-graphs.md",
+      "cases": [
+        "metal:graph",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/metal/bench.mm",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "per-dispatch vs one command buffer",
+        "late completion and overwrite refusal"
+      ],
+      "revisit_when": "deeper segment or different completion/cancellation contract",
+      "integration_code": [
+        "native/backends/metal_graph/backend.hpp"
+      ]
+    },
+    {
+      "chapter": "ane/coreml-graphs.md",
+      "cases": [
+        "coreml:frozen-fp16",
+        "coreml:runtime-fp16",
+        "native:public-w8"
+      ],
+      "code": [
+        "labs/ane/bench.py",
+        "labs/ane/shared_w8.py"
+      ],
+      "controls": [
+        "frozen/runtime inputs",
+        "real native INT8 IO rather than Python cast"
+      ],
+      "revisit_when": "new graph lowering/shape/compute policy/feature bridge",
+      "integration_code": [
+        "tools/coreml/export_runtime_w8a8_ffn.py"
+      ]
+    },
+    {
+      "chapter": "ane/lifecycle.md",
+      "cases": [
+        "startup-amortization",
+        "coreml:frozen-fp16",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/ane/bench.py",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "convert/compile/load/first/hot",
+        "one-shot vs repeated requests"
+      ],
+      "revisit_when": "load-only, new cache tier or phase-scoped sessions"
+    },
+    {
+      "chapter": "ane/quantization.md",
+      "cases": [
+        "w8a8-reference",
+        "w4a8-reference",
+        "smoothquant",
+        "quant-formats",
+        "native:public-w8"
+      ],
+      "code": [
+        "labs/quantization.py",
+        "labs/common.py",
+        "labs/ane/shared_w8.py"
+      ],
+      "controls": [
+        "integer dot/LUT vs DQ and source error",
+        "holdout alpha sweep and source pitch"
+      ],
+      "revisit_when": "W4A8, grouping, rotations, S1 or sensitive-layer policies"
+    },
+    {
+      "chapter": "ane/performance-limits.md",
+      "cases": [
+        "startup-amortization",
+        "bucket-selection",
+        "share-calibration",
+        "native:public-w8"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/policies.py",
+        "labs/ane/shared_w8.py"
+      ],
+      "controls": [
+        "fixed overhead vs useful rows",
+        "complete independent spans vs exposed wait"
+      ],
+      "revisit_when": "graph tiling/SRAM expression/row threshold or hardware changes"
+    },
+    {
+      "chapter": "ane/private-ane.md",
+      "cases": [
+        "slot-ownership",
+        "native:public-w8"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/ane/shared_w8.py"
+      ],
+      "controls": [
+        "public binary private-class isolation",
+        "timeout/quarantine lifetime"
+      ],
+      "revisit_when": "explicitly authorized isolated research with new ABI/device evidence",
+      "integration_code": [
+        "native/backends/private/ane_w8_executor.mm"
+      ]
+    },
+    {
+      "chapter": "gpu-ane/partitioning.md",
+      "cases": [
+        "partition-axes",
+        "reference:split-ffn",
+        "coreml:hybrid",
+        "overlap-dag"
+      ],
+      "code": [
+        "labs/partition_axes.py",
+        "examples/split_ffn_reference.py",
+        "labs/ane/bench.py",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "full/channel/row/hidden axis algebra",
+        "full GPU vs real GPU suffix/CoreML prefix"
+      ],
+      "revisit_when": "different topology, channel unit, rows or precision"
+    },
+    {
+      "chapter": "gpu-ane/axes-and-bandwidth.md",
+      "cases": [
+        "partition-axes",
+        "share-calibration",
+        "overlap-dag"
+      ],
+      "code": [
+        "labs/partition_axes.py",
+        "labs/policies.py",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "hidden input/output and global-softmax legal merge",
+        "wrong branch nonlinearities/local RMS/local softmax"
+      ],
+      "revisit_when": "new split axis, communication, layout, UMA traffic or downstream consumer"
+    },
+    {
+      "chapter": "gpu-ane/shared-memory.md",
+      "cases": [
+        "slot-ownership",
+        "native:public-w8"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/ane/shared_w8.py"
+      ],
+      "controls": [
+        "wrong generation and live-reader overwrite",
+        "actual IOSurface/MLMultiArray shared IO"
+      ],
+      "revisit_when": "new backing, pitch, event or output ownership boundary",
+      "integration_code": [
+        "native/backends/ane_gpu.hpp"
+      ]
+    },
+    {
+      "chapter": "gpu-ane/scheduling.md",
+      "cases": [
+        "overlap-dag",
+        "bucket-selection",
+        "coreml:hybrid",
+        "metal:overlap"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/ane/bench.py",
+        "labs/metal/bench.mm"
+      ],
+      "controls": [
+        "legal vs missing dependency",
+        "serial/two GPU queues and measured timestamp intersection"
+      ],
+      "revisit_when": "different contention, prefetch frontier, phases or queue schedule"
+    },
+    {
+      "chapter": "gpu-ane/lora.md",
+      "cases": [
+        "reference:split-ffn"
+      ],
+      "code": [
+        "examples/split_ffn_reference.py"
+      ],
+      "controls": [
+        "corrected hidden and one down B",
+        "nonuniform splits, row equivalence and zero/negative strength"
+      ],
+      "revisit_when": "shared ranks, fused B, changed rank/strength or operator boundary",
+      "integration_code": [
+        "native/backends/ane_ffn.hpp"
+      ]
+    },
+    {
+      "chapter": "gpu-ane/calibration.md",
+      "cases": [
+        "share-calibration",
+        "hybrid-policy",
+        "coreml:hybrid"
+      ],
+      "code": [
+        "labs/policies.py",
+        "labs/ane/bench.py"
+      ],
+      "controls": [
+        "memory-admitted measured-range proposal",
+        "new actual candidate execution vs optimized GPU"
+      ],
+      "revisit_when": "new complete traffic samples or nonlinear model fit",
+      "integration_code": [
+        "native/backends/ane_channel_calibration.cpp"
+      ]
+    },
+    {
+      "chapter": "gpu-ane/experiment-ledger.md",
+      "cases": [
+        "profiling-scopes",
+        "share-calibration"
+      ],
+      "code": [
+        "labs/media.py",
+        "labs/policies.py",
+        "labs/summarize.py"
+      ],
+      "controls": [
+        "operator vs request scope",
+        "paired inputs and failed evidence retained"
+      ],
+      "revisit_when": "historical failure trigger has materially changed"
+    },
+    {
+      "chapter": "memory/residency.md",
+      "cases": [
+        "reference:interval-peak",
+        "slot-ownership"
+      ],
+      "code": [
+        "scripts/interval_peak.py",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "alias-backed phase intervals",
+        "live readers vs apparent lexical release"
+      ],
+      "revisit_when": "new phase overlap, lower RAM, external pools or peak movement"
+    },
+    {
+      "chapter": "memory/streaming.md",
+      "cases": [
+        "bounded-io",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/systems.py"
+      ],
+      "controls": [
+        "serial vs bounded one-future checksum",
+        "short read and late generation errors"
+      ],
+      "revisit_when": "different block/pool/slot layout, source encoding or access trace",
+      "integration_code": [
+        "native/runtime/streaming/read_ahead_worker.hpp"
+      ]
+    },
+    {
+      "chapter": "memory/storage.md",
+      "cases": [
+        "quant-formats",
+        "bounded-io",
+        "reference:model-header"
+      ],
+      "code": [
+        "labs/quantization.py",
+        "labs/systems.py",
+        "labs/inspect_model.py"
+      ],
+      "controls": [
+        "full pitch vs local pitch",
+        "metadata bounds/offsets and positional FD cursor"
+      ],
+      "revisit_when": "aligned pack, mmap/pread/typed refill or new format"
+    },
+    {
+      "chapter": "algorithms/caches.md",
+      "cases": [
+        "cache-identity",
+        "residual-reuse"
+      ],
+      "code": [
+        "labs/caches.py"
+      ],
+      "controls": [
+        "content and effective recipe invalidations",
+        "off/full vs bounded residual replay"
+      ],
+      "revisit_when": "new cache object, invalidation proof or calibrated timestep policy"
+    },
+    {
+      "chapter": "algorithms/approximations.md",
+      "cases": [
+        "token-merge",
+        "residual-reuse",
+        "online-attention",
+        "technique-composition"
+      ],
+      "code": [
+        "labs/caches.py",
+        "labs/operators.py",
+        "labs/policies.py"
+      ],
+      "controls": [
+        "mass/position and actual approximation error",
+        "off identity and combination seam conflicts"
+      ],
+      "revisit_when": "new error budget, holdout set, route or model topology"
+    },
+    {
+      "chapter": "media/vae.md",
+      "cases": [
+        "causal-halo",
+        "global-stat-tiles",
+        "media-backpressure"
+      ],
+      "code": [
+        "labs/operators.py",
+        "labs/media.py"
+      ],
+      "controls": [
+        "full context vs lost halo/local norm",
+        "initial fold vs subsequent temporal taps"
+      ],
+      "revisit_when": "different causal/spatial phases, graph boundaries or tile schedule"
+    },
+    {
+      "chapter": "media/video-and-audio.md",
+      "cases": [
+        "media-backpressure",
+        "profiling-scopes"
+      ],
+      "code": [
+        "labs/media.py"
+      ],
+      "controls": [
+        "buffered vs bounded full RGBA checksum",
+        "rational FPS and nested spans"
+      ],
+      "revisit_when": "different codec/source cadence/AV requirements or bounded pipeline"
+    },
+    {
+      "chapter": "media/upscaling.md",
+      "cases": [
+        "upscale-tiles",
+        "media-backpressure"
+      ],
+      "code": [
+        "labs/upscaling.py",
+        "labs/media.py"
+      ],
+      "controls": [
+        "whole-frame vs overlap/halo/feather callback",
+        "local-reflect approximation and alpha preservation"
+      ],
+      "revisit_when": "new spatial-only overlap/padding/feather or actual upscaler source",
+      "integration_code": [
+        "apps/macos/ImageUpscaler.swift"
+      ]
+    },
+    {
+      "chapter": "profiling/measurement.md",
+      "cases": [
+        "profiling-scopes",
+        "reference:lab-summary"
+      ],
+      "code": [
+        "labs/media.py",
+        "labs/summarize.py"
+      ],
+      "controls": [
+        "interval union vs sum of nested spans",
+        "power vs total energy and matched input pairs"
+      ],
+      "revisit_when": "new timestamp source, boundary, sample plan or energy instrumentation"
+    },
+    {
+      "chapter": "profiling/tools.md",
+      "cases": [
+        "reference:lab-summary",
+        "metal:graph",
+        "coreml:frozen-fp16"
+      ],
+      "code": [
+        "labs/summarize.py",
+        "labs/metal/run.py",
+        "labs/ane/bench.py"
+      ],
+      "controls": [
+        "actual calls vs unsupported/no-device",
+        "setup/validation outside timed operator"
+      ],
+      "revisit_when": "new hardware counters or instrumentation overhead"
+    },
+    {
+      "chapter": "models/recipes.md",
+      "cases": [
+        "reference:model-header",
+        "technique-composition",
+        "reference:split-ffn"
+      ],
+      "code": [
+        "labs/inspect_model.py",
+        "labs/policies.py",
+        "examples/split_ffn_reference.py"
+      ],
+      "controls": [
+        "actual source dtype/table vs names",
+        "model capabilities/topology vs copied profile"
+      ],
+      "revisit_when": "new architecture, source, shape, adapter or hardware"
+    },
+    {
+      "chapter": "designs/gpu-dataflow.md",
+      "cases": [
+        "metal:gemm",
+        "metal:attention",
+        "quant-formats"
+      ],
+      "code": [
+        "labs/metal/kernels.metal",
+        "labs/operators.py",
+        "labs/quantization.py"
+      ],
+      "controls": [
+        "scalar/SG8 and dense/online device controls",
+        "packed physical pitch vs incorrect local pitch"
+      ],
+      "revisit_when": "new tile, shape, precision, pack or downstream consumer"
+    },
+    {
+      "chapter": "designs/owned-graphs.md",
+      "cases": [
+        "owned-command-graph",
+        "metal:graph",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/contracts.py",
+        "labs/metal/bench.mm"
+      ],
+      "controls": [
+        "mutated caller params vs owned snapshot",
+        "timeout retains owners and cancellation discards publication"
+      ],
+      "revisit_when": "new command segmentation, alias, queue or cancellation contract"
+    },
+    {
+      "chapter": "designs/hybrid-ffn.md",
+      "cases": [
+        "dual-bank-handoff",
+        "hybrid-policy",
+        "reference:split-ffn",
+        "partition-axes",
+        "coreml:hybrid"
+      ],
+      "code": [
+        "labs/contracts.py",
+        "examples/split_ffn_reference.py",
+        "labs/partition_axes.py",
+        "labs/ane/bench.py"
+      ],
+      "controls": [
+        "complete channel nonlinearities and down LoRA",
+        "wrong source, backpressure and timeout generation"
+      ],
+      "revisit_when": "new H/F/M, weight recipe, LoRA, bank depth or graph"
+    },
+    {
+      "chapter": "designs/packed-streaming.md",
+      "cases": [
+        "packed-weight-store",
+        "bounded-io",
+        "quant-formats"
+      ],
+      "code": [
+        "labs/contracts.py",
+        "labs/systems.py",
+        "labs/quantization.py"
+      ],
+      "controls": [
+        "bounds/overlap/readonly owner vs corrupt pack",
+        "numeric F16/BF16 conversion vs reinterpret and short payload"
+      ],
+      "revisit_when": "new format, alignment, typed consumer, IO or pool"
+    },
+    {
+      "chapter": "designs/residency-and-phases.md",
+      "cases": [
+        "residency-policy",
+        "reference:interval-peak",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/contracts.py",
+        "scripts/interval_peak.py",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "sequential LRU vs fixed subset",
+        "reserve subtraction, ratchet and actual last-reader completion"
+      ],
+      "revisit_when": "new lower RAM, phases, resident feedback, block sizes or peers"
+    },
+    {
+      "chapter": "designs/technique-composition.md",
+      "cases": [
+        "technique-composition",
+        "residual-reuse",
+        "share-calibration"
+      ],
+      "code": [
+        "labs/policies.py",
+        "labs/caches.py"
+      ],
+      "controls": [
+        "exclusive writers and same-phase effect hazards",
+        "off identity and disjoint explicit schedules"
+      ],
+      "revisit_when": "new hooks, stages, precision/reuse composition or schedule horizon"
+    },
+    {
+      "chapter": "models/stage-map.md",
+      "cases": [
+        "stage-encoder",
+        "stage-llm",
+        "stage-decode",
+        "stage-dit",
+        "stage-vae"
+      ],
+      "code": [
+        "labs/model_stages.py"
+      ],
+      "controls": [
+        "separate bidirectional/causal/diffusion/conv contracts",
+        "exact local witnesses vs explicitly approximate controls"
+      ],
+      "revisit_when": "new architecture, modality, stage graph or workload"
+    },
+    {
+      "chapter": "models/encoders.md",
+      "cases": [
+        "stage-encoder",
+        "cache-identity",
+        "norm-rope"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/caches.py",
+        "labs/operators.py"
+      ],
+      "controls": [
+        "masked bucket preserves valid tokens",
+        "bidirectional prefix layer keys depend on suffix"
+      ],
+      "revisit_when": "new encoder mask, pooling, source, adapters or preprocessing"
+    },
+    {
+      "chapter": "models/llm-prefill.md",
+      "cases": [
+        "stage-llm",
+        "online-attention",
+        "dual-bank-handoff"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/operators.py",
+        "labs/contracts.py"
+      ],
+      "controls": [
+        "full/chunked/single-token causal GQA equality",
+        "wrong global causal offset or source rejects"
+      ],
+      "revisit_when": "new rope/mask, chunk, KV geometry, source or device"
+    },
+    {
+      "chapter": "models/llm-decode.md",
+      "cases": [
+        "stage-decode",
+        "stage-llm",
+        "quant-formats"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/quantization.py"
+      ],
+      "controls": [
+        "accept/reject residual gives target categorical law",
+        "always accepting draft changes the law"
+      ],
+      "revisit_when": "new batch/context/KV format, sampler, draft or target"
+    },
+    {
+      "chapter": "models/dit.md",
+      "cases": [
+        "stage-dit",
+        "residual-reuse",
+        "partition-axes"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/caches.py",
+        "labs/partition_axes.py"
+      ],
+      "controls": [
+        "AdaLN and cross-only immutable KV hoist",
+        "changed conditioning or guidance before nonlinearity fails"
+      ],
+      "revisit_when": "new topology, CFG, timestep policy, LoRA or precision"
+    },
+    {
+      "chapter": "models/vae-and-media.md",
+      "cases": [
+        "stage-vae",
+        "causal-halo",
+        "global-stat-tiles",
+        "media-backpressure"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/operators.py",
+        "labs/media.py"
+      ],
+      "controls": [
+        "output-coordinate gather vs independent scatter oracle",
+        "input crop, local normalization and lost temporal history"
+      ],
+      "revisit_when": "new stride/padding, tile, groups, temporal chunk or graph"
+    },
+    {
+      "chapter": "models/pipeline.md",
+      "cases": [
+        "startup-amortization",
+        "profiling-scopes",
+        "media-backpressure",
+        "reference:interval-peak"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/media.py",
+        "scripts/interval_peak.py"
+      ],
+      "controls": [
+        "cold/hot break-even and interval unions",
+        "phase aliases, output backpressure and complete writer boundary"
+      ],
+      "revisit_when": "new critical path, phase overlap, memory budget or media format"
+    },
+    {
+      "chapter": "designs/parallel-topologies.md",
+      "cases": [
+        "parallel-branches",
+        "attention-head-shards",
+        "partition-axes"
+      ],
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/partition_axes.py"
+      ],
+      "controls": [
+        "parallel same-input branches vs wrong sequential rewrite",
+        "complete head output projection partials vs missing head"
+      ],
+      "revisit_when": "new block topology, bias/gate, head/KV ownership, mask, RoPE or adapter"
+    },
+    {
+      "chapter": "designs/consumer-abi.md",
+      "cases": [
+        "consumer-strides",
+        "segmented-ffn",
+        "resource-hazards",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/systems.py"
+      ],
+      "controls": [
+        "explicit 4D element strides vs default producer order",
+        "paired segments, gate/up order, actual allocation aliases and completion"
+      ],
+      "revisit_when": "new producer/consumer layout, backing, quant groups, resource identity or epoch"
+    },
+    {
+      "chapter": "designs/heterogeneous-planner.md",
+      "cases": [
+        "optional-devices",
+        "precision-islands",
+        "hybrid-policy"
+      ],
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/contracts.py"
+      ],
+      "controls": [
+        "optional CPU/ANE, profitable triple and full GPU fallback",
+        "state-only precision cannot recover already rounded parameters"
+      ],
+      "revisit_when": "new actual device profiles, QoS, tail, memory, state lifetime, source or precision island"
+    },
+    {
+      "chapter": "models/hybrid-selection.md",
+      "cases": [
+        "parallel-branches",
+        "attention-head-shards",
+        "optional-devices",
+        "consumer-strides"
+      ],
+      "code": [
+        "labs/heterogeneous.py"
+      ],
+      "controls": [
+        "model topology determines legal branch overlap",
+        "complete consumer/deadline/quality gates vs names or nominal throughput"
+      ],
+      "revisit_when": "new model graph, workload, source/LoRA, precision, device or serving contract"
+    }
   ]
 }

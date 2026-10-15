@@ -8,17 +8,17 @@ from run import CASES
 
 LABS = Path(__file__).resolve().parent
 WIKI = LABS.parent
-REPO = WIKI.parent
-CATEGORIES = ("hardware", "metal", "ane", "gpu-ane", "memory", "algorithms", "media", "profiling", "models")
+CATEGORIES = ("hardware", "metal", "ane", "gpu-ane", "memory", "algorithms", "media", "profiling", "models", "designs")
 DEVICE_CASES = {"metal:" + name for name in ("vector", "fusion", "gemm", "norm-rope", "attention", "graph", "overlap")}
 DEVICE_CASES |= {"coreml:frozen-fp16", "coreml:runtime-fp16", "coreml:hybrid", "native:public-w8"}
 REFERENCES = {"reference:" + name for name in ("split-ffn", "interval-peak", "model-header", "lab-summary")}
 
 
-def audit(document=None, wiki=WIKI, repo=REPO):
+def audit(document=None, wiki=WIKI):
     if document is None:
-        document = json.loads((LABS / "catalog.json").read_text(encoding="utf-8"))
-    expected = {str(page.relative_to(wiki)) for category in CATEGORIES for page in (wiki / category).glob("*.md")}
+        document = json.loads((wiki / "labs/catalog.json").read_text(encoding="utf-8"))
+    expected = {str(page.relative_to(wiki)) for category in CATEGORIES for page in (wiki / category).glob("*.md")
+                if page.name != "README.md"}
     errors, seen, used = [], set(), set()
     for entry in document["entries"]:
         chapter = entry["chapter"]
@@ -30,8 +30,8 @@ def audit(document=None, wiki=WIKI, repo=REPO):
         elif "labs/" not in (wiki / chapter).read_text(encoding="utf-8"):
             errors.append("chapter does not link its implementation lab: " + chapter)
         for code in entry["code"]:
-            path = (repo / code).resolve()
-            if not path.is_relative_to(repo.resolve()) or not path.is_file():
+            path = (wiki / code).resolve()
+            if not path.is_relative_to(wiki.resolve()) or not path.is_file():
                 errors.append("missing/nonportable code: " + code)
         if not entry["cases"] or not entry["code"] or len(entry["controls"]) < 2 or not entry["revisit_when"].strip():
             errors.append("incomplete executable/control/revisit card: " + chapter)
@@ -45,7 +45,7 @@ def audit(document=None, wiki=WIKI, repo=REPO):
         errors.append("CPU case not discoverable from any technical chapter: " + case)
     return {"technical_chapters": len(expected), "cards": len(seen), "cpu_cases": len(CASES),
             "device_case_selectors": len(DEVICE_CASES), "errors": errors,
-            "scope": "coverage/paths/known selectors/control fields only; not semantic or device qualification"}
+            "scope": "local required code/chapters/selectors/controls/revisit; optional integration_code is not a dependency; not semantic or device qualification"}
 
 
 if __name__ == "__main__":

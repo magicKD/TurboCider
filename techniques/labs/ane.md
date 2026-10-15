@@ -1,16 +1,18 @@
 # ANE实验：冷启动、runtime图与真实fork-join
 
-[实验室](README.md) · [Python生命周期/混合驱动](ane/bench.py) · [原生Public W8驱动](ane/shared_w8.py)
+[实验室](README.md) · [Python生命周期/混合驱动](ane/bench.py) · [独立原生INT8驱动](ane/shared_w8.py) · [本地图定义](ane/graphs.py)
 
 ## 1. 三种实现边界
 
 | 模式 | 实际实现 | 学习重点 |
 | --- | --- | --- |
 | `frozen-fp16` | 独立MIL SwiGLU，base weights为图常量 | 省runtime W stage vs 多图/多来源绑定成本 |
-| `runtime-fp16` | 直接调用仓库FP16 runtime emitter，X/Wg/Wu/Wd是输入 | 固定shape跨层复用，但prediction/weightfeature有成本 |
-| `runtime-w8a8` | 导出仓库完整W8图并调用原生shared IO fixtures | INT8 features、GPU rotation/stage、CoreML、GPU restore与完整hidden ABI |
+| `runtime-fp16` | 直接调用本目录graphs.py，X/Wg/Wu/Wd是输入 | 固定shape跨层复用，但prediction/weightfeature有成本 |
+| `runtime-w8a8` | 历史CLI别名，转入本地单INT8 matmul shared IO样本 | INT8 feature、physical pitch、actual output与owner；不是完整FFN |
 
 都是公共CoreML；没有为方便而自动加载PrivateAPI。`CPU+NE`是策略，actualANE placement/overlap/INT8MAC另需独立证据。
+
+独立复制本目录时，把命令中的`.venv/bin/python`替换为已准备NumPy/CoreML等依赖的Python；虚拟环境/Apple SDK不是随本目录打包的源码。FP16和native样本的必要实现均在本目录，不需要TurboCider其他源码或任何兄弟checkout。
 
 ## 2. 冷启动要拆到哪里
 
@@ -40,11 +42,13 @@ python3 -B techniques/labs/run.py startup-amortization
 
 ## 4. INT8 Python桥接的真实限制与原生解法
 
-本轮在CoreML9中成功构图后，Python `CompiledMLModel.predict()` 对NumPy int8 features报`value type not convertible`。这是Python adapter限制，不是W8A8图或ANE不能执行的证明。把输入cast为float后继续挂W8A8标签是不正确的对照。
+上一轮在CoreML9中成功构图后，Python `CompiledMLModel.predict()` 对NumPy int8 features报`value type not convertible`。这是Python adapter限制，不是W8A8图或ANE不能执行的证明。把输入cast为float后继续挂W8A8标签是不正确的对照。
 
-`shared_w8.py`复用当前公共原生实现：IOSurface→CVPixelBuffer→MLMultiArray的实际INT8类型，保留row/plane pitch与owner，GPU staging/ready、同步CoreML、restore/consumer完成。它使用固定M33/H128/F512含LoRA-input ABI的两个原生fixture，不冒充任意shape的性能benchmark。
+`shared_w8.py`现在只编译本目录的[native_shared_io.mm](ane/native_shared_io.mm)，图来自[graphs.py](ane/graphs.py)：Metal写真实INT8 IOSurface，CoreML消费同一backing，实际输出再由Metal读取。固定M33/K128/N64、两次不同输入generation、FP64 integer-dot oracle与tail guard。它特意隔离单normalized matmul的feature ABI，不声称完整W8A8 SwiGLU/LoRA、rotation或GPU/ANE overlap。
 
-公共INT8 type gate是macOS26/SDK26；这个现有fixture构建脚本另设置minimum deployment26.2，因此复现本夹具需满足该target。其他系统可另建合适target并独立验证，不将此构建设置当作ANE普遍硬件限制。
+`outputBackings`只是一项请求；原生代码检查实际返回pixelBuffer，若没有采用目标backing则按实际strides复制并报告copy次数，不能把所有执行称为零拷贝。
+
+公共INT8 type gate由macOS26/SDK26明确检查；本地编译使用当前SDK，不依赖产品build脚本。旧的完整生产fixture曾设置deployment26.2，其限制只属于可选integration，不是ANE普遍硬件限制。
 
 ```sh
 .venv/bin/python -B techniques/labs/ane/shared_w8.py --output outputs/lab-public-w8.json
@@ -75,10 +79,16 @@ overlay只改该子进程import路径，不替换项目环境。安装/网络访
 
 返回0代表该最小bridge成功，3是明确toolchain/bridge限制，1是其他prediction失败；它不证明整个W8A8 FFN或ANE支持。
 
-## 5. 读原生实现的路线
+## 5. 不离开本目录的阅读路线
+
+[混合FFN完整设计](../designs/hybrid-ffn.md) → [CPU normalized W8A8](quantization.py) / [完整LoRA切分](../examples/split_ffn_reference.py) → [本地MIL图](ane/graphs.py) → [本地原生共享IO](ane/native_shared_io.mm)。双bank、graph/source/scale/rotation、失败整块回退均在这些本地说明和代码中；不需要先打开其他仓库。
+
+## 6. 可选产品接入，不是核心依赖
+
+原先更完整的Public W8A8/LoRA/late-failure两个生产fixture保留在[public_w8_product.py](../integrations/public_w8_product.py)，没有为自包含而删除该能力；它需要完整TurboCider，独立复制techniques时不要调用。详见[integrations](../integrations/README.md)。以下链接只用于生产实现对接：
 
 [PublicW8](../../native/backends/ane_public_w8.mm) → [shared Surface/Transfer](../../native/backends/ane_gpu.hpp) → [MSL stager](../../native/backends/ane_w8_kernels.hpp) → [graph emitter](../../tools/coreml/export_runtime_w8a8_ffn.py)。
 
-重点追踪：dynamic code/scales/headroom、hidden rotation/QDQ、down scales恢复、caller backing是否真被采用、late failure完整GPU重算、future banks、input/output alias、取消后reuse。两个fixtures的总进程wall是整套正确性检查时间，不可除以calls冒充ANE算子延迟。
+重点追踪：dynamic code/scales/headroom、hidden rotation/QDQ、down scales恢复、caller backing是否真被采用、late failure完整GPU重算、future banks、input/output alias、取消后reuse。可选两个fixtures的总进程wall是整套正确性检查时间，不可除以calls冒充ANE算子延迟。
 
 这些入口可扩成真实模型实验；当前toy验证只证明指定ABI/所有权/数值边界可运行，不授予端到端速度、普通adapter画质或分发资格。

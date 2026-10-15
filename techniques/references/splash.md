@@ -1,5 +1,7 @@
 # Splash：模型专用内核与显式执行图
 
+不跳仓库的学习路径：[owned graph](../designs/owned-graphs.md)、[GPU 数据流](../designs/gpu-dataflow.md)、[不可变权重](../designs/packed-streaming.md)、[GPU/ANE FFN](../designs/hybrid-ffn.md)已在本目录展开算法与实现。下列原文件表只作可选版本溯源，不是阅读前置条件。
+
 [总目录](../README.md) · [其他参考](related-projects.md)
 
 ## 核查来源与版本

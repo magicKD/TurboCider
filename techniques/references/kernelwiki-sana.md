@@ -1,5 +1,7 @@
 # KernelWiki与Sana：借组织方式与通用接缝，不照搬后端
 
+已吸收到本目录的实现方案：[技术组合与 schedule](../designs/technique-composition.md)、[GPU 数据流](../designs/gpu-dataflow.md)、[DiT 分阶段方案](../models/dit.md)，配套[本地 policies](../labs/policies.py)与[量化实现](../labs/quantization.py)。下面的源码路径和网页用于出处核查，不是核心学习依赖。
+
 [总目录](../README.md) · [实验室](../labs/README.md) · [技术卡](../templates/technique-card.md)
 
 ## KernelWiki的启发

@@ -2,13 +2,12 @@
 """Tiny PUBLIC Core ML FFN lifecycle and optional MLX/channel fork-join lab.
 
 No original models, private API, product library, download or global env edits.
-Frozen FP16 works with coremltools 8.3; runtime W8 uses the repo's exact public
-macOS26/CoreML9 exporter, and explicitly reports unsupported on older tooling.
+Frozen/runtime FP16 use local graphs. The separate native INT8 sample isolates
+the public shared-feature ABI and explicitly rejects unsupported tooling.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
-import importlib.util
 import hashlib
 import math
 from pathlib import Path
@@ -18,17 +17,8 @@ import tempfile
 import time
 
 LABS = Path(__file__).resolve().parents[1]
-ROOT = LABS.parents[1]
 sys.path.insert(0, str(LABS))
 from common import emit, file_sha, report
-
-
-def load_exporter(name):
-    source = ROOT / "tools/coreml" / name
-    spec = importlib.util.spec_from_file_location("tc_lab_" + source.stem, source)
-    value = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(value)
-    return value, source
 
 
 def numeric_metrics(reference, actual, np):
@@ -80,7 +70,7 @@ def main():
         parser.error("GPU comparison needs frozen FP16 and a proper interior channel split")
     if args.kind == "runtime-w8a8":
         if (args.rows, args.hidden, args.width) != (33, 128, 512):
-            parser.error("native shared W8 integration fixture uses M33/H128/F512; adapt its native source for another test geometry")
+            parser.error("the separate shared INT8 ABI fixture has fixed geometry; use shared_w8.py directly")
         from shared_w8 import run
         return run(overlay=args.coreml_overlay, output=args.output)
     if args.coreml_overlay:
@@ -98,16 +88,17 @@ def main():
     wg, wu, wd = [(rng.normal(0, .04, shape)).astype(np.float16) for shape in ((f, h), (f, h), (h, f))]
     weight_digest = hashlib.sha256(b"".join(value.tobytes() for value in (wg, wu, wd))).hexdigest()
     prefix = args.ane_channels if args.compare_gpu else f
-    exporter, source = None, Path(__file__)
+    source = Path(__file__)
     conversion_start = time.perf_counter()
     with redirect_stdout(sys.stderr):
         if args.kind == "frozen-fp16":
             program = frozen_program(ct, np, wg[:prefix], wu[:prefix], wd[:, :prefix], m)
         else:
-            exporter, source = load_exporter("export_runtime_ane.py")
+            from graphs import runtime_fp16
+            source = Path(__file__).with_name("graphs.py")
             # Match frozen's exp-SiLU/full-K three projections. Otherwise a
             # different reduction/lowering would confound a storage-ABI lesson.
-            program = exporter.make_program(exporter.geometry("swiglu", m, h, f, max(h, f), f))
+            program = runtime_fp16(m, h, f)
         model = ct.convert(program, convert_to="mlprogram", minimum_deployment_target=ct.target.macOS15,
                            compute_precision=ct.precision.FLOAT16, skip_model_load=True)
     conversion_seconds = time.perf_counter() - conversion_start

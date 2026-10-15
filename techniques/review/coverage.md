@@ -1,10 +1,12 @@
 # 知识库覆盖与清理审计
 
-[总目录](../README.md) · [本轮验证](validation.md)
+[总目录](../README.md) · [当前自包含验收](self-contained-validation.md) · [首版历史验证](validation.md)
 
 核查对象是用户要求的可复用优化百科，而非“所有新硬件/模型都已提速”。每行分别检查内容、证据和新项目可执行性；自动链接/测试不能代替这里的语义审稿。
 
-后续实现扩展已增加 [实验室](../labs/README.md)、[28项逐章代码/case/controls映射](../labs/catalog.json)、[SOP](../guides/sop.md)与 [技术卡](../templates/technique-card.md)。本次“每个技术子项有实现参考”的覆盖由独立catalogcheck与人工匹配共同检查，不只看Markdown数量；真实运行与限制见 [扩展验证](labs-validation.md)。
+后续实现扩展已增加 [实验室](../labs/README.md)、[45项逐章代码/case/controls映射](../labs/catalog.json)、[SOP](../guides/sop.md)与 [技术卡](../templates/technique-card.md)。本次“每个技术子项有实现参考”的覆盖由独立catalogcheck与人工匹配共同检查，不只看Markdown数量；真实运行与限制见 [扩展验证](labs-validation.md)。
+
+自包含扩展新增[9项完整设计](../designs/README.md)、[6阶段及总览/选择指南](../models/stage-map.md)、本地contracts/model_stages、独立CoreML graphs/native bridge和techniques-only运行门禁。[吸收账本](../references/absorbed-designs.json)关联设计→本地源码→case→tests；产品/兄弟来源降为明确可选溯源，不以忽略它们来代替本地实现。
 
 | 原始要求 / 关键面 | 本地交付证据 | 审查结论 |
 | --- | --- | --- |
@@ -21,6 +23,8 @@
 | 问题/可能解决方法/比较分析 | [troubleshooting](../guides/troubleshooting.md)、[20cases](../gpu-ane/experiment-ledger.md) | 症状/先查证据/下一步；正负结果/范围/分母分开 |
 | 新模型能否按wiki实施 | [newmodel](../guides/new-model.md)、[workedexample](../guides/worked-example.md)、[checklist](../templates/new-model-checklist.md)、[recipes](../models/recipes.md) | 已从真实接口做桌面走查，CPU代数/预算可跑；未虚称新模型GPU资格 |
 | 干净且可持续完善 | 入口、来源manifest、bounded辅助工具、覆盖/验证记录、根README导航 | 不复制大型产物，不改runtime/default，不引入第二套模型/内存系统 |
+
+gpu_ane专项追加[mac_local_ai / mac_transformer / flux2-engine / mflux阅读](../references/gpu-ane-projects.md)，抽出parallel topology、consumer ABI和可选设备/精度岛三个设计；7个独立CPU demo与反例测试均落在[heterogeneous.py](../labs/heterogeneous.py)，不是只挂外部文件索引。
 
 ## 审稿发现后修正的关键问题
 

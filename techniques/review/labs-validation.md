@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [实验室](../labs/README.md) · [逐章映射](../labs/catalog.json) · [覆盖审计](coverage.md)
 
+这是上一轮的历史设备记录，源码快照对应`193b356`；后来`bench.py`与`shared_w8.py`已为自包含重构，不能把下列历史SHA/原生FFN夹具结果当作新源码验证。当前结果见[自包含验收](self-contained-validation.md)；原完整生产夹具入口保留在[integrations](../integrations/README.md)。
+
 2026-10-15，基于同一TurboCider `ad8100f`。这是第二轮实现层扩展，和 [首版历史验收](validation.md)分开；不将旧GPU/ANE模型成绩重标为本轮测量。
 
 ## 已完成的实测类型

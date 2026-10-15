@@ -1,5 +1,7 @@
 # 证据地图与更新规则
 
+这是可选的产品/原项目证据地图，不是自包含学习依赖。[吸收账本](absorbed-designs.json)记录本地设计、代码、测试和出处对应关系；[设计目录](../designs/README.md)与[阶段地图](../models/stage-map.md)可直接离线阅读。
+
 [总目录](../README.md) · [案例比较](../gpu-ane/experiment-ledger.md) · [机器来源清单](sources.json)
 
 ## 本轮核查范围

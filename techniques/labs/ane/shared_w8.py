@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Export a tiny true Public W8A8 graph and run the repo's native shared-IO fixtures.
+"""Local Metal -> INT8 Core ML -> Metal shared-IO sample, not a full FFN.
 
-Python/CoreML9 creates the artifact, native IOSurface/MLMultiArray binds INT8.
-This is actual integration/parity/lifetime testing, not a timing benchmark.
+Only files next to this script and public system frameworks are compiled.
+See ane.md for the distinction from the historical product integration test.
 """
 import argparse
 from contextlib import redirect_stdout
-import importlib.util
-from pathlib import Path
+import json
 import os
+from pathlib import Path
 import platform
 import subprocess
 import sys
@@ -16,12 +16,13 @@ import tempfile
 import time
 
 LABS = Path(__file__).resolve().parents[1]
-ROOT = LABS.parents[1]
 sys.path.insert(0, str(LABS))
 from common import emit, file_sha, report
 
 
 def run(*, overlay=None, output=None):
+    if output and (Path(output).exists() or Path(output).is_symlink()):
+        raise ValueError("report already exists")
     if overlay:
         source = Path(overlay).resolve()
         if not (source / "coremltools/__init__.py").is_file():
@@ -29,61 +30,57 @@ def run(*, overlay=None, output=None):
         sys.path.insert(0, str(source))
     with redirect_stdout(sys.stderr):
         import coremltools as ct
+        import numpy as np
     if platform.system() != "Darwin" or not hasattr(ct.target, "macOS26"):
-        emit(report("public-w8-shared-io", {"status": "unsupported", "reason": "native public INT8 ABI needs macOS26/CoreML9",
+        emit(report("public-w8-shared-io", {"status": "unsupported", "reason": "public INT8 feature ABI needs macOS26/CoreML9",
                                            "coremltools": ct.__version__}, backend="public_coreml_unavailable"), output)
         return 3
-    exporter_path = ROOT / "tools/coreml/export_runtime_w8a8_ffn.py"
-    spec = importlib.util.spec_from_file_location("tc_w8_shared_lab_exporter", exporter_path)
-    exporter = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(exporter)
-    native_sources = ["native/backends/ane_public_w8.mm", "native/backends/ane_gpu.mm",
-                      "tests/native/ane_public_w8_test.mm", "tests/native/ane_public_w8_executor_test.mm",
-                      "tools/native/build_ane_public_w8_test.sh"]
-    source_pins = {name: file_sha(ROOT / name) for name in native_sources}
+    from graphs import shared_int8
+    root = Path(__file__).resolve().parent
+    source_pins = {name: file_sha(root / name) for name in ("graphs.py", "native_shared_io.mm")}
     child_env = {key: value for key, value in os.environ.items() if not key.startswith("TURBOCIDER_")}
-    with tempfile.TemporaryDirectory(prefix="tc-technique-public-w8-") as temporary:
-        folder = Path(temporary).resolve()
-        graph, build, runtime_tmp = folder / "graph", folder / "build", folder / "runtime-tmp"
-        runtime_tmp.mkdir()
+    with tempfile.TemporaryDirectory(prefix="tc-technique-local-int8-") as temporary:
+        folder = Path(temporary)
+        package, compiled = folder / "graph.mlpackage", folder / "graph.mlmodelc"
         start = time.perf_counter()
         with redirect_stdout(sys.stderr):
-            metadata = exporter.export(graph, exporter.geometry(33, 128, 512, 512, True))
+            model = ct.convert(shared_int8(), convert_to="mlprogram", minimum_deployment_target=ct.target.macOS26,
+                inputs=[ct.TensorType(name="x", shape=(128, 33), dtype=np.int8),
+                        ct.TensorType(name="w", shape=(64, 128), dtype=np.int8)],
+                compute_precision=ct.precision.FLOAT16, skip_model_load=True)
+            model.save(str(package))
+            ct.models.utils.compile_model(str(package), destination_path=str(compiled))
         export_compile_seconds = time.perf_counter() - start
-        built = subprocess.run(["bash", "tools/native/build_ane_public_w8_test.sh"], cwd=ROOT,
-            env={**child_env, "TURBOCIDER_NATIVE_OUT": str(build)}, text=True, capture_output=True, timeout=120)
+        binary = folder / "shared-int8-lab"
+        command = ["xcrun", "clang++", "-std=c++17", "-O2", "-fobjc-arc", "-Wall", "-Wextra",
+                   str(root / "native_shared_io.mm"), "-framework", "Foundation", "-framework", "Metal",
+                   "-framework", "CoreML", "-framework", "CoreVideo", "-framework", "IOSurface", "-o", str(binary)]
+        built = subprocess.run(command, env=child_env, capture_output=True, text=True, timeout=120)
         if built.returncode:
-            emit(report("public-w8-shared-io", {"status": "native_build_failed", "stderr": built.stderr}, backend="public_coreml_native"), output)
-            return built.returncode
-        fixtures = []
-        for name in ("ane-public-w8-test", "ane-public-w8-executor-test"):
-            binary = build / name
-            began = time.perf_counter()
-            result = subprocess.run([str(binary), str(graph / "manifest.json")], cwd=ROOT,
-                                    env={**child_env, "TMPDIR": str(runtime_tmp)},
-                                    text=True, capture_output=True, timeout=120)
-            elapsed = time.perf_counter() - began
-            symbols = subprocess.check_output(["strings", str(binary)], text=True)
-            unexpected = [value for value in ("_ANEClient", "_ANERequest", "_ANEIOSurfaceObject", "_ANESharedEvents") if value in symbols]
-            passed = result.returncode == 0 and "PASS" in result.stdout and not unexpected
-            fixtures.append({"fixture": name, "passed": passed, "exit_code": result.returncode,
-                             "stdout": result.stdout, "stderr": result.stderr, "binary_sha256": file_sha(binary),
-                             "private_class_strings_found": unexpected,
-                             "whole_fixture_process_seconds_not_operator_latency": elapsed})
-            if not passed:
-                emit(report("public-w8-shared-io", {"status": "integration_failed", "fixtures": fixtures}, backend="public_coreml_native"), output)
-                return 1
-        if source_pins != {name: file_sha(ROOT / name) for name in native_sources}:
-            raise ValueError("native fixture inputs changed during the run")
-    emit(report("public-w8-shared-io", {"status": "integration_passed", "coremltools": ct.__version__,
-        "graph_shape": [33, 128, 512], "lora_inputs": True,
-        "export_compile_seconds": export_compile_seconds, "exporter_sha256": file_sha(exporter_path),
-        "graph_input_names": list(metadata["inputs"]), "fixtures": fixtures,
-        "native_source_sha256_before_after": source_pins,
-        "runtime_temp_isolated": True,
-        "limits": "Original tiny native fixtures, synthetic corrections. No model LoRA, E2E speedup, physical ANE placement/INT8 MAC or full release qualification."},
-        scope="actual public GPU staging/CoreML/GPU restore integration with native INT8 shared IO", backend="public_coreml_native"), output)
-    return 0
+            emit(report("public-w8-shared-io", {"status": "native_build_failed", "stderr": built.stderr}), output)
+            return 1
+        result = subprocess.run([str(binary), str(compiled)], env={**child_env, "TMPDIR": str(folder)},
+                                capture_output=True, text=True, timeout=120)
+        symbols = subprocess.check_output(["strings", str(binary)], text=True)
+        private = [name for name in ("_ANEClient", "_ANERequest", "_ANEIOSurfaceObject", "_ANESharedEvents") if name in symbols]
+        try:
+            native = json.loads(result.stdout)
+        except ValueError:
+            native = {"status": "invalid_native_report"}
+        if source_pins != {name: file_sha(root / name) for name in source_pins}:
+            raise ValueError("local native fixture inputs changed during the run")
+        passed = result.returncode == 0 and native.get("passed") is True and not private
+        details = {"status": "integration_passed" if passed else "integration_failed", "native": native,
+                   "graph_kind": "single normalized INT8-input matmul, not SwiGLU or LoRA",
+                   "coremltools": ct.__version__, "export_compile_seconds": export_compile_seconds,
+                   "native_source_sha256_before_after": source_pins, "exporter_sha256": source_pins["graphs.py"],
+                   "binary_sha256": file_sha(binary), "private_class_strings_found": private,
+                   "runtime_temp_isolated": True, "build_warnings": built.stderr, "stderr": result.stderr,
+                   "limits": "Serial ownership/ABI/parity sample, not physical ANE residency, INT8 MAC, overlap or end-to-end speed evidence."}
+        del model
+    emit(report("public-w8-shared-io", details, backend="public_coreml_native",
+                scope="actual local Metal producer/public Core ML/Metal consumer shared-feature ABI"), output)
+    return 0 if passed else 1
 
 
 def main():
@@ -91,8 +88,6 @@ def main():
     parser.add_argument("--coreml-overlay", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    if args.output and (args.output.exists() or args.output.is_symlink()):
-        parser.error("report already exists")
     return run(overlay=args.coreml_overlay, output=args.output)
 
 

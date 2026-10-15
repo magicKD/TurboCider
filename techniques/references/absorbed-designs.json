@@ -1,0 +1,323 @@
+{
+  "schema_version": 1,
+  "contract": "All design chapters, implementations, cases and tests below are local to techniques. source_ids refer to optional provenance in sources.json, never build/runtime requirements. Samples are independent teaching implementations, not bit-exact upstream ports or full model backends.",
+  "optional_device_dependencies": [
+    "Apple Metal/Core ML/CoreVideo/IOSurface SDKs on macOS",
+    "coremltools and numpy for public graph generation",
+    "mlx for the optional actual GPU/Core ML FFN comparison"
+  ],
+  "designs": [
+    {
+      "id": "gpu-dataflow",
+      "source_ids": [
+        "splash-weights",
+        "sana-technique"
+      ],
+      "chapter": "designs/gpu-dataflow.md",
+      "code": [
+        "labs/metal/kernels.metal",
+        "labs/metal/bench.mm",
+        "labs/operators.py",
+        "labs/quantization.py"
+      ],
+      "cases": [
+        "metal:gemm",
+        "metal:attention",
+        "quant-formats"
+      ],
+      "tests": [
+        "tests/test_labs.py"
+      ],
+      "boundary": "Real tiny Metal kernels and CPU algebra; not a production tiled/packed model backend"
+    },
+    {
+      "id": "owned-graphs",
+      "source_ids": [
+        "splash-command"
+      ],
+      "chapter": "designs/owned-graphs.md",
+      "code": [
+        "labs/contracts.py",
+        "labs/metal/bench.mm"
+      ],
+      "cases": [
+        "owned-command-graph",
+        "metal:graph"
+      ],
+      "tests": [
+        "tests/test_contracts.py"
+      ],
+      "boundary": "CPU ownership state machine plus separate actual Metal batching; CPU completion is not a device fence"
+    },
+    {
+      "id": "hybrid-ffn",
+      "source_ids": [
+        "splash-ffn",
+        "splash-calibration",
+        "splash-w8-deep",
+        "splash-measurement-deep",
+        "splash-handoff-deep"
+      ],
+      "chapter": "designs/hybrid-ffn.md",
+      "code": [
+        "labs/contracts.py",
+        "examples/split_ffn_reference.py",
+        "labs/partition_axes.py",
+        "labs/ane/bench.py",
+        "labs/ane/graphs.py",
+        "labs/ane/native_shared_io.mm"
+      ],
+      "cases": [
+        "dual-bank-handoff",
+        "reference:split-ffn",
+        "share-calibration",
+        "hybrid-policy",
+        "coreml:hybrid",
+        "native:public-w8"
+      ],
+      "tests": [
+        "tests/test_contracts.py",
+        "tests/test_labs.py"
+      ],
+      "boundary": "Exact split/LoRA math, bank model, real tiny FP16 fork/join, serial INT8 matmul ABI; not upstream mt19937/segment bit parity or full native W8A8 FFN/LoRA"
+    },
+    {
+      "id": "packed-streaming",
+      "source_ids": [
+        "splash-weights",
+        "vpipe-refill"
+      ],
+      "chapter": "designs/packed-streaming.md",
+      "code": [
+        "labs/contracts.py",
+        "labs/systems.py",
+        "labs/inspect_model.py"
+      ],
+      "cases": [
+        "packed-weight-store",
+        "bounded-io"
+      ],
+      "tests": [
+        "tests/test_contracts.py",
+        "tests/test_labs.py"
+      ],
+      "boundary": "TCLAB01 immutable pack, numeric refill and actual tiny pread; not original format compatibility or OS mmap performance"
+    },
+    {
+      "id": "residency",
+      "source_ids": [
+        "vpipe-memory",
+        "vpipe-residency"
+      ],
+      "chapter": "designs/residency-and-phases.md",
+      "code": [
+        "labs/contracts.py",
+        "scripts/interval_peak.py",
+        "labs/systems.py"
+      ],
+      "cases": [
+        "residency-policy",
+        "reference:interval-peak",
+        "slot-ownership"
+      ],
+      "tests": [
+        "tests/test_contracts.py",
+        "tests/test_tools.py"
+      ],
+      "boundary": "Policy/phase accounting; actual resident pages, last readers and release require a production adapter"
+    },
+    {
+      "id": "composition",
+      "source_ids": [
+        "sana-compose",
+        "sana-technique",
+        "sana-schedules",
+        "sana-diffusion-ptq"
+      ],
+      "chapter": "designs/technique-composition.md",
+      "code": [
+        "labs/policies.py",
+        "labs/caches.py",
+        "labs/quantization.py"
+      ],
+      "cases": [
+        "technique-composition",
+        "residual-reuse",
+        "smoothquant"
+      ],
+      "tests": [
+        "tests/test_labs.py"
+      ],
+      "boundary": "Bounded explicit-step effect checker and reference mechanisms; stage adapter and joint model-quality qualification remain separate"
+    },
+    {
+      "id": "parallel-topologies",
+      "source_ids": [
+        "gpu-ane-read-mt-workloads",
+        "gpu-ane-read-mt-planner",
+        "gpu-ane-read-mflux-single",
+        "gpu-ane-read-mflux-parallel",
+        "gpu-ane-read-flux-ops"
+      ],
+      "chapter": "designs/parallel-topologies.md",
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/partition_axes.py"
+      ],
+      "cases": [
+        "parallel-branches",
+        "attention-head-shards",
+        "partition-axes"
+      ],
+      "tests": [
+        "tests/test_heterogeneous.py",
+        "tests/test_labs.py"
+      ],
+      "boundary": "Small exact topology/head math; no original model/backend, head-placement or device-speed claim"
+    },
+    {
+      "id": "consumer-abi",
+      "source_ids": [
+        "gpu-ane-read-mla-heteromem",
+        "gpu-ane-read-mla-bridge",
+        "gpu-ane-read-mla-hazard",
+        "gpu-ane-read-mt-native"
+      ],
+      "chapter": "designs/consumer-abi.md",
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/systems.py"
+      ],
+      "cases": [
+        "consumer-strides",
+        "segmented-ffn",
+        "resource-hazards",
+        "slot-ownership"
+      ],
+      "tests": [
+        "tests/test_heterogeneous.py",
+        "tests/test_labs.py"
+      ],
+      "boundary": "CPU address/paired-segment/alias and synthetic hazard models, not actual 4D CoreML SEOP or current-driver overlap proof"
+    },
+    {
+      "id": "heterogeneous-planner",
+      "source_ids": [
+        "gpu-ane-read-mt-planner",
+        "gpu-ane-read-mla-gdn",
+        "gpu-ane-read-flux-backend",
+        "gpu-ane-read-flux-catalog"
+      ],
+      "chapter": "designs/heterogeneous-planner.md",
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/contracts.py"
+      ],
+      "cases": [
+        "optional-devices",
+        "precision-islands",
+        "hybrid-policy"
+      ],
+      "tests": [
+        "tests/test_heterogeneous.py",
+        "tests/test_contracts.py"
+      ],
+      "boundary": "Synthetic profiles, optional devices and scalar precision-state witness; no production planner fit or GDN implementation"
+    }
+  ],
+  "stages": [
+    {
+      "id": "encoder",
+      "chapter": "models/encoders.md",
+      "code": [
+        "labs/model_stages.py",
+        "labs/caches.py"
+      ],
+      "cases": [
+        "stage-encoder",
+        "cache-identity"
+      ],
+      "tests": [
+        "tests/test_stages.py"
+      ]
+    },
+    {
+      "id": "prefill",
+      "chapter": "models/llm-prefill.md",
+      "code": [
+        "labs/model_stages.py",
+        "labs/partition_axes.py"
+      ],
+      "cases": [
+        "stage-llm",
+        "partition-axes"
+      ],
+      "tests": [
+        "tests/test_stages.py",
+        "tests/test_labs.py"
+      ]
+    },
+    {
+      "id": "decode",
+      "chapter": "models/llm-decode.md",
+      "code": [
+        "labs/model_stages.py"
+      ],
+      "cases": [
+        "stage-decode",
+        "stage-llm"
+      ],
+      "tests": [
+        "tests/test_stages.py"
+      ]
+    },
+    {
+      "id": "dit",
+      "chapter": "models/dit.md",
+      "code": [
+        "labs/model_stages.py",
+        "labs/caches.py"
+      ],
+      "cases": [
+        "stage-dit",
+        "residual-reuse"
+      ],
+      "tests": [
+        "tests/test_stages.py",
+        "tests/test_labs.py"
+      ]
+    },
+    {
+      "id": "vae",
+      "chapter": "models/vae-and-media.md",
+      "code": [
+        "labs/model_stages.py",
+        "labs/operators.py"
+      ],
+      "cases": [
+        "stage-vae",
+        "causal-halo"
+      ],
+      "tests": [
+        "tests/test_stages.py",
+        "tests/test_labs.py"
+      ]
+    },
+    {
+      "id": "pipeline",
+      "chapter": "models/pipeline.md",
+      "code": [
+        "labs/media.py",
+        "scripts/interval_peak.py"
+      ],
+      "cases": [
+        "profiling-scopes",
+        "reference:interval-peak"
+      ],
+      "tests": [
+        "tests/test_tools.py",
+        "tests/test_labs.py"
+      ]
+    }
+  ]
+}

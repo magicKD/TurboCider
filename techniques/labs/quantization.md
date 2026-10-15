@@ -59,7 +59,7 @@ python3 -B techniques/labs/run.py smoothquant
 
 ## 5. 设备实现与探索轴
 
-在 [ANE CLI](ane.md)里，runtime W8直接调用仓库公共完整FFN emitter，保留runtime INT8 features、hidden Q/DQ与所有scale；不是用INT8文件名装饰FP16模板。CoreML9/macOS26是这条ABI的要求，其他合法W8A8表达可另作实验。
+本地[完整W8A8 CPU实现](quantization.py)包含rotation、normalized scales、hidden Q/DQ与down恢复；[ANE CLI](ane.md)的native样本隔离单INT8 matmul共享feature ABI，不把它当完整FFN。公共INT8特征要求由CoreML9/macOS26/SDK26明确检查。原完整产品FFN emitter与native fixtures仍可通过[可选接入](../integrations/README.md)运行，其他合法W8A8表达可独立实验。
 
 建议探索：per-token/per-group A8、W4A8与LUT、S1平滑、grouped Hadamard、K-segmentation、敏感层GPU、headroom的动态scalar、GPU FP32 restore。每次固定来源与当前最强GPU分母；新recipe分别做结构、数值和完整请求测试，不把某个失败group或现有guard理解为永久不可行。
 
