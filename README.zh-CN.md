@@ -111,6 +111,7 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | `bindings/`、`integrations/comfyui/` | C / Swift SDK、Python HTTP 客户端与 ComfyUI 节点 |
 | `tools/`、`tests/` | 构建、转换、回归测试和性能验证 |
 | `docs/public/`、`docs/benchmark/` | 使用指南与可核查的评测记录 |
+| [`techniques/`](techniques/README.md) | Apple Silicon 优化百科：Metal、ANE、GPU/ANE 协同、内存、profiling 与新模型接入 |
 
 [文档入口](docs/public/README.md) · [模型库](docs/public/MODEL_LIBRARY.md) · [缓存与内存](docs/public/CACHES.md)
 

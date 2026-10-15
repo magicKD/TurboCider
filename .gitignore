@@ -69,6 +69,9 @@ pip-wheel-metadata/
 *.sqlite
 *.sqlite3
 *.db
+# Root-local LMDB runtime cache; keep any intentional database fixtures trackable.
+/data.mdb
+/lock.mdb
 
 # TurboCider generated artifacts and runtime state
 /outputs/
@@ -100,6 +103,16 @@ pip-wheel-metadata/
 /docs/design/validation/local/
 /docs/design/validation/raw/
 /docs/design/validation/*.raw.json
+
+# Technique labs: local builds, raw runs, scratch work and private session exports.
+# Keep examples/, catalog.json and curated review/ evidence tracked.
+/techniques/**/build/
+/techniques/**/dist/
+/techniques/**/outputs/
+/techniques/**/results/
+/techniques/**/artifacts/
+/techniques/**/scratch/
+/techniques/**/private/
 
 # Downloaded model weights and compiled model caches
 *.safetensors
