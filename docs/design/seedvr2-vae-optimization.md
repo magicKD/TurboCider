@@ -33,6 +33,17 @@ region but moves the maximum to final-stage norm1/conv1, reducing the complete
 decoder by only133.7 MB. Further work must address that new maximum and persistent
 history/whole-request residency, not credit local savings as a completed goal.
 
+The later [request observer / norm-pack / advice follow-up](seedvr2-vae-norm-pack-and-resource-advice.md)
+confirms the dual route's request maximum is already reached between the last
+DiT block's start and final output completion, before decode. A new compile-
+isolated full-statistics norm/SiLU/halo pack keeps complete25 pixels byte-exact
+to dual and passes original-FP32; decoder ABBA measures54.005/53.601 s (small
+0.75% difference) and another268.4 MB active reduction, not a new overall peak
+win. The ordinary App now explains real source limits, current scratch quota,
+free-space snapshots/unknown observations and measured-case reference sizes;
+it neither truncates video nor relaxes admission. Whole-request block-weight/
+complete-context state scheduling remains an important next residency task.
+
 ## Streaming decoded output
 
 Keep the exact existing temporal partition and causal histories. At the

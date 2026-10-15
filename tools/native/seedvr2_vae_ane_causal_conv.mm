@@ -2,10 +2,12 @@
 // no full temporal concatenation. Offline tooling, not an App/default backend.
 #include "seedvr2_vae_ane_causal_conv.hpp"
 #include "seedvr2_vae_upscale_io.hpp"
+#include "../../native/models/seedvr2/metal/group_norm.hpp"
 namespace tc::seedvr2 {
 namespace {
 using namespace tc::seedvr2_upscale_probe;
 struct Geometry{uint32_t h,w,th,tw,hi,wi,y,x,cs,rs,outputs;};
+struct NormParameters {std::array<Tensor,3> means,inverses;Tensor weight,bias;};
 const char *shader=R"METAL(
 #include <metal_stdlib>
 using namespace metal;
@@ -39,10 +41,40 @@ kernel void tc_seedvr2_ane_causal_consume(device const half *src [[buffer(0)]],d
     if(c<p.outputs && pos<p.th*p.tw && p.y+pos/p.tw<p.h && p.x+pos%p.tw<p.w)
         out[((p.y+pos/p.tw)*p.w+p.x+pos%p.tw)*p.outputs+c]=tile[lp][lc];
 }
+kernel void tc_seedvr2_ane_norm_causal_pack(device const half *current [[buffer(0)]],device const half *past0 [[buffer(1)]],
+    device const half *past1 [[buffer(2)]],device ushort *out [[buffer(3)]],constant P &p [[buffer(4)]],
+    device const float *mean0 [[buffer(5)]],device const float *inverse0 [[buffer(6)]],
+    device const float *mean1 [[buffer(7)]],device const float *inverse1 [[buffer(8)]],
+    device const float *mean2 [[buffer(9)]],device const float *inverse2 [[buffer(10)]],
+    device const half *weight [[buffer(11)]],device const half *bias [[buffer(12)]],
+    uint tid [[thread_index_in_threadgroup]],uint3 group [[threadgroup_position_in_grid]]){
+    threadgroup ushort tile[16][17];
+    uint lc=tid%16,lp=tid/16,c=group.x*16+lc,pos=group.y*16+lp;
+    ushort word=0;
+    if(c<768 && pos<p.hi*p.wi){
+        int iy=int(p.y+pos/p.wi)-1,ix=int(p.x+pos%p.wi)-1;
+        // Padding is zero AFTER normalization/activation, not an affine of a
+        // zero-valued source pixel. Old frames use their own full-frame stats.
+        if(iy>=0 && iy<int(p.h) && ix>=0 && ix<int(p.w)){
+            uint channel=c%256,index=(uint(iy)*p.w+uint(ix))*256+channel,g=channel/8;
+            float raw=float(c<256?past0[index]:(c<512?past1[index]:current[index]));
+            float mean=c<256?mean0[g]:(c<512?mean1[g]:mean2[g]);
+            float inverse=c<256?inverse0[g]:(c<512?inverse1[g]:inverse2[g]);
+            float normalized=(raw-mean)*inverse;
+            volatile float scaled=normalized*float(weight[channel]);
+            half value=half(scaled+float(bias[channel]));
+            half sigmoid=half(1.0f/(1.0f+metal::precise::exp(-float(value))));
+            value=half(float(value)*float(sigmoid));word=as_type<ushort>(value);
+        }
+    }
+    tile[lp][lc]=word;threadgroup_barrier(mem_flags::mem_threadgroup);
+    c=group.x*16+lp;pos=group.y*16+lc;
+    if(c<768 && pos<p.hi*p.wi)out[c*p.cs+(pos/p.wi)*p.rs+pos%p.wi]=tile[lc][lp];
+}
 )METAL";
 struct CausalIO{
     id<MTLDevice> device=MTLCreateSystemDefaultDevice();id<MTLCommandQueue> queue=nil;
-    id<MTLComputePipelineState> pack=nil,consume=nil;
+    id<MTLComputePipelineState> pack=nil,consume=nil,norm_pack=nil;
     CausalIO(){
         check(device!=nil,"causal Metal device unavailable");queue=[device newCommandQueue];check(queue!=nil,"causal Metal queue unavailable");
         auto options=[MTLCompileOptions new];options.mathMode=MTLMathModeSafe;
@@ -51,20 +83,31 @@ struct CausalIO{
         if(!library)throw std::runtime_error(std::string("causal shader: ")+error.localizedDescription.UTF8String);
         pack=[device newComputePipelineStateWithFunction:[library newFunctionWithName:@"tc_seedvr2_ane_causal_pack"] error:&error];
         consume=[device newComputePipelineStateWithFunction:[library newFunctionWithName:@"tc_seedvr2_ane_causal_consume"] error:&error];
-        check(pack && consume && pack.maxTotalThreadsPerThreadgroup>=256 && consume.maxTotalThreadsPerThreadgroup>=256,
+        norm_pack=[device newComputePipelineStateWithFunction:[library newFunctionWithName:@"tc_seedvr2_ane_norm_causal_pack"] error:&error];
+        check(pack && consume && norm_pack && pack.maxTotalThreadsPerThreadgroup>=256 && consume.maxTotalThreadsPerThreadgroup>=256 && norm_pack.maxTotalThreadsPerThreadgroup>=256,
             "causal transpose kernels unavailable");
     }
     std::unique_ptr<Submission> submit(const Tensor &current,const Tensor &past0,const Tensor &past1,const Tensor &out,
-        const Tensor &bias,Geometry geometry,int columns,Slot *producer,int next,Slot *consumer,int previous){
+        const Tensor &bias,Geometry geometry,int columns,Slot *producer,int next,Slot *consumer,int previous,const NormParameters *norm=nullptr){
         auto pending=std::make_unique<Submission>();pending->owners={current,past0,past1,out,bias};
         pending->command=[queue commandBuffer];check(pending->command!=nil,"causal command allocation failed");
         if(producer){
             auto p=geometry;p.y=(next/columns)*p.th;p.x=(next%columns)*p.tw;
             p.cs=producer->input.array.strides[1].unsignedIntValue;p.rs=producer->input.array.strides[2].unsignedIntValue;
             [pending->surfaces addObject:producer->input.array];auto encoder=[pending->command computeCommandEncoder];check(encoder!=nil,"causal pack encoder failed");
-            [encoder setComputePipelineState:pack];[encoder setBuffer:buffer(current,device) offset:0 atIndex:0];
+            [encoder setComputePipelineState:(norm?norm_pack:pack)];[encoder setBuffer:buffer(current,device) offset:0 atIndex:0];
             [encoder setBuffer:buffer(past0,device) offset:0 atIndex:1];[encoder setBuffer:buffer(past1,device) offset:0 atIndex:2];
             [encoder setBuffer:producer->input.metal offset:0 atIndex:3];[encoder setBytes:&p length:sizeof(p) atIndex:4];
+            if(norm){
+                for(int tap=0;tap<3;++tap){
+                    pending->owners.push_back(norm->means[tap]);pending->owners.push_back(norm->inverses[tap]);
+                    [encoder setBuffer:buffer(norm->means[tap],device) offset:0 atIndex:5+tap*2];
+                    [encoder setBuffer:buffer(norm->inverses[tap],device) offset:0 atIndex:6+tap*2];
+                }
+                pending->owners.push_back(norm->weight);pending->owners.push_back(norm->bias);
+                [encoder setBuffer:buffer(norm->weight,device) offset:0 atIndex:11];
+                [encoder setBuffer:buffer(norm->bias,device) offset:0 atIndex:12];
+            }
             [encoder dispatchThreadgroups:MTLSizeMake(48,(p.hi*p.wi+15)/16,1) threadsPerThreadgroup:MTLSizeMake(256,1,1)];[encoder endEncoding];
         }
         if(consumer){
@@ -138,7 +181,7 @@ struct CausalRuntime{
             check(std::memcmp(&expected,actual+((size_t(p.y+row)*p.w+p.x+col)*p.outputs+c),2)==0,"causal bias/assembly differs bitwise");++stats->consume_checked_words;
         }
     }
-    Tensor run(const Tensor &input,const FrameHistory &previous,const Tensor &weight,const Tensor &bias){
+    Tensor run(const Tensor &input,const FrameHistory &previous,const Tensor &weight,const Tensor &bias,const NormParameters *norm=nullptr){
         check(!active.test_and_set(),"causal runtime cannot be used concurrently");
         struct Unlock{std::atomic_flag &value;~Unlock(){value.clear();}}unlock{active};
         @autoreleasepool{
@@ -152,10 +195,24 @@ struct CausalRuntime{
             auto prepare=[](const Tensor &value){auto out=mx::contiguous(value);mx::eval(out);
                 if(out.offset()!=0){out=mx::full(out.shape(),out,out.dtype());mx::eval(out);}return out;};
             std::array<Tensor,3> sources{prepare(previous[0]),prepare(previous[1]),prepare(input)};auto shift=prepare(bias);
+            std::unique_ptr<NormParameters> normalized;
+            if(norm){
+                require(outputs==128 && norm->weight.shape()==mx::Shape{256} && norm->bias.shape()==mx::Shape{256} &&
+                    norm->weight.dtype()==mx::float16 && norm->bias.dtype()==mx::float16,"invalid norm-pack affine operands");
+                for(int tap=0;tap<3;++tap)require(norm->means[tap].shape()==mx::Shape{1,32} && norm->inverses[tap].shape()==mx::Shape{1,32} &&
+                    norm->means[tap].dtype()==mx::float32 && norm->inverses[tap].dtype()==mx::float32,"invalid full-frame norm-pack statistics");
+                normalized=std::make_unique<NormParameters>(NormParameters{{prepare(norm->means[0]),prepare(norm->means[1]),prepare(norm->means[2])},
+                    {prepare(norm->inverses[0]),prepare(norm->inverses[1]),prepare(norm->inverses[2])},prepare(norm->weight),prepare(norm->bias)});
+            }
+            auto expected=sources;
+            if(verify_io && normalized){
+                for(int tap=0;tap<3;++tap)expected[tap]=metal::group_norm(sources[tap],normalized->weight,normalized->bias,true);
+                mx::eval({expected[0],expected[1],expected[2]});
+            }
             auto z=mx::full({1,1,h,w,outputs},std::numeric_limits<float>::quiet_NaN(),mx::float16);mx::eval(z);mx::synchronize();checkpoint(cancelled);
             const int columns=(w+tw-1)/tw,tiles=((h+th-1)/th)*columns;
             Geometry geometry{uint32_t(h),uint32_t(w),uint32_t(th),uint32_t(tw),uint32_t(th+2),uint32_t(tw+2),0,0,0,0,uint32_t(outputs)};
-            auto submit=[&](Slot *producer,int next,Slot *consumer,int last){return io.submit(sources[2],sources[0],sources[1],z,shift,geometry,columns,producer,next,consumer,last);};
+            auto submit=[&](Slot *producer,int next,Slot *consumer,int last){return io.submit(sources[2],sources[0],sources[1],z,shift,geometry,columns,producer,next,consumer,last,normalized.get());};
             auto predict=[&](Slot &slot,int tile){checkpoint(cancelled);NSError *error=nil;
                 auto result=[model predictionFromFeatures:slot.provider options:slot.options error:&error];
                 if(!result)throw std::runtime_error(std::string("causal predict: ")+error.localizedDescription.UTF8String);
@@ -164,16 +221,16 @@ struct CausalRuntime{
                     [out.shape isEqual:slot.output.array.shape] && [out.strides isEqual:slot.output.array.strides],"causal output backing/shape/stride not honored");
                 ++stats->backing_hits;slot.last_tile=tile;checkpoint(cancelled);
             };
-            auto first=submit(slots[0].get(),0,nullptr,-1);first->join();first.reset();witness_pack(*slots[0],0,geometry,columns,sources);
+            auto first=submit(slots[0].get(),0,nullptr,-1);first->join();first.reset();witness_pack(*slots[0],0,geometry,columns,expected);
             for(int tile=0;tile<tiles;++tile){
                 checkpoint(cancelled);auto future=submit(tile+1<tiles?slots[(tile+1)%2].get():nullptr,tile+1,tile>0?slots[(tile-1)%2].get():nullptr,tile-1);
                 predict(*slots[tile%2],tile);future->join();future.reset();
-                if(tile+1<tiles)witness_pack(*slots[(tile+1)%2],tile+1,geometry,columns,sources);
+                if(tile+1<tiles)witness_pack(*slots[(tile+1)%2],tile+1,geometry,columns,expected);
                 if(tile>0)witness_consume(*slots[(tile-1)%2],tile-1,geometry,columns,z,shift);
             }
             auto final=submit(nullptr,-1,slots[(tiles-1)%2].get(),tiles-1);final->join();final.reset();
             witness_consume(*slots[(tiles-1)%2],tiles-1,geometry,columns,z,shift);
-            checkpoint(cancelled);++stats->frames;stats->boundary_seconds+=elapsed(started);return z;
+            checkpoint(cancelled);++stats->frames;if(norm)++stats->norm_pack_frames;stats->boundary_seconds+=elapsed(started);return z;
         }
     }
 };
@@ -187,5 +244,14 @@ ExperimentalCausalConv make_experimental_ane_upscale_causal_conv(const std::file
     std::atomic<bool> &cancelled,std::shared_ptr<ExperimentalCausalConvStats> &stats,bool verify_io){
     stats=std::make_shared<ExperimentalCausalConvStats>();auto runtime=std::make_shared<CausalRuntime>(manifest,cpu,cancelled,stats,verify_io,true);
     return [runtime](const Tensor &input,const FrameHistory &past,const Tensor &weight,const Tensor &bias){return runtime->run(input,past,weight,bias);};
+}
+ExperimentalNormCausalConv make_experimental_ane_norm_causal_conv(const std::filesystem::path &manifest,bool cpu,
+    std::atomic<bool> &cancelled,std::shared_ptr<ExperimentalCausalConvStats> &stats,bool verify_io){
+    stats=std::make_shared<ExperimentalCausalConvStats>();auto runtime=std::make_shared<CausalRuntime>(manifest,cpu,cancelled,stats,verify_io,false);
+    return [runtime](const ExperimentalNormFrame &input,const ExperimentalNormHistory &past,const Tensor &scale,const Tensor &shift,const Tensor &weight,const Tensor &bias){
+        require(past.size()==2,"norm-pack needs two complete original histories");
+        NormParameters norm{{past[0].mean,past[1].mean,input.mean},{past[0].inverse,past[1].inverse,input.inverse},scale,shift};
+        return runtime->run(input.pixels,{past[0].pixels,past[1].pixels},weight,bias,&norm);
+    };
 }
 }

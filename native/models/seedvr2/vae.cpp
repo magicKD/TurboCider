@@ -44,6 +44,9 @@ std::array<uint64_t,3> VAE::phase_history(const Caches *cache) const {
     if(cache){
         for(const auto &[key,value]:cache->compact)inspect(value);
         for(const auto &[key,frames]:cache->frames)for(const auto &value:frames)inspect(value);
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        for(const auto &[key,frames]:cache->norm_frames)for(const auto &frame:frames){inspect(frame.pixels);inspect(frame.mean);inspect(frame.inverse);}
+#endif
     }
     return {unique,logical,unavailable};
 }
@@ -83,6 +86,7 @@ void VAE::configure(const std::optional<SeedVR2VAEConfig> &config) {
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
     experimental_causal_conv_={};
     experimental_upscale_causal_conv_={};
+    experimental_norm_causal_conv_={};
 #endif
 #if defined(TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT
     experimental_upscale_projection_={};
@@ -362,6 +366,32 @@ Tensor VAE::group_norm(const Tensor &x, const std::string &key, bool activate) c
 }
 Tensor VAE::norm_conv(const Tensor &input,const std::string &norm_key,const std::string &conv_key,
                      Caches *cache,bool initial) const {
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+    if(experimental_norm_causal_conv_ && cache && cache->temporal && conv_key=="decoder.up_blocks.3.resnets.0.conv1"){
+        require(input.shape(0)==1 && input.shape(1)==1 && input.shape(4)==256 && input.dtype()==mx::float16,
+            "norm-pack experiment requires one complete original frame");
+        auto raw=mx::contiguous(input);mx::eval(raw);
+        if(raw.offset()!=0 || raw.buffer_size()>raw.nbytes()+size_t(getpagesize())){
+            raw=mx::full(raw.shape(),raw,raw.dtype());mx::eval(raw);
+        }
+        const auto statistics=metal::spatial_norm_statistics(raw);
+        ExperimentalNormFrame current{raw,statistics.mean,statistics.inverse};
+        auto &previous=cache->norm_frames[conv_key];
+        if(initial){
+            require(previous.empty(),"norm-pack initial history was not fresh");
+            // Preserve the original first-frame FP32 folded convolution. Do
+            // not also retain a normalized history beside the raw history.
+            auto result=conv(group_norm(input,norm_key),conv_key,nullptr,true,false,true);
+            mx::eval(result);previous={current,current};return result;
+        }
+        require(previous.size()==2 && !cache->frames.count(conv_key),"norm-pack history changed representation");
+        auto result=experimental_norm_causal_conv_(current,previous,weights_.at(norm_key+".weight"),weights_.at(norm_key+".bias"),
+            weights_.at(conv_key+".weight"),weights_.at(conv_key+".bias"));
+        require(result.is_available() && result.shape()==mx::Shape{1,1,input.shape(2),input.shape(3),128} && result.dtype()==mx::float16,
+            "norm-pack experiment returned an incomplete activation");
+        previous={previous.back(),current};return result;
+    }
+#endif
     if (!cache || !cache->spatial_enabled || !cache->spatial || !cache->spatial->eligible(input))
         return conv(group_norm(input,norm_key),conv_key,cache,initial,false,true);
     require(norm_recipe_ == "metal" && input.shape(0)==1 && input.shape(1)==1,

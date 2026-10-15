@@ -23,7 +23,8 @@ int main(int argc,char **argv){
     try{
         tc::require(argc==7 || argc==8,"usage: causal-decode-bench MODEL FIXTURE HOT_MANIFEST FRESH_OUTPUT gpu|ne|cpu|upscale|dual ITERATIONS [UPSCALE_MANIFEST]");
         const std::filesystem::path model(argv[1]),output(argv[4]);const std::string route(argv[5]);const int repeats=std::stoi(argv[6]);
-        const bool upscale=route=="upscale" || route=="dual",hot=route=="ne" || route=="cpu" || route=="dual";
+        const bool norm_pack=route=="norm" || route=="dual_norm";
+        const bool upscale=route=="upscale" || route=="dual" || route=="dual_norm",hot=route=="ne" || route=="cpu" || route=="dual" || norm_pack;
         tc::require(!std::filesystem::exists(output) && (route=="gpu" || hot || upscale) && repeats>=2 && repeats<=7 && upscale==(argc==8),
             "fresh output/known route and 2...7 fresh iterations required");std::filesystem::create_directories(output);
         mx::set_default_device(mx::Device::gpu);auto fixture=mx::load_safetensors(argv[2]).first;
@@ -42,7 +43,8 @@ int main(int argc,char **argv){
         tc::seedvr2::VAE vae;vae.load(model/"vae/seedvr2_ema_vae_fp16.safetensors");
         tc::SeedVR2VAEConfig config;config.history="frames";config.share_upscale_history=true;vae.configure(config);
         std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> stats,upscale_stats;
-        if(hot)vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(argv[3],route=="cpu",cancelled,stats));
+        if(norm_pack)vae.use_experimental_norm_causal_conv(tc::seedvr2::make_experimental_ane_norm_causal_conv(argv[3],false,cancelled,stats));
+        else if(hot)vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(argv[3],route=="cpu",cancelled,stats));
         if(upscale)vae.use_experimental_upscale_causal_conv(tc::seedvr2::make_experimental_ane_upscale_causal_conv(argv[7],false,cancelled,upscale_stats));
         mx::synchronize();mx::clear_cache();Sampler sampler;std::ofstream out(output/"report.json");tc::require(bool(out),"cannot write causal benchmark report");
         out<<std::setprecision(17)<<"{\"schema\":\"seedvr2-vae-causal-decode-bench-v1\",\"route\":\""<<route<<"\",\"frames\":"<<frames
@@ -51,6 +53,7 @@ int main(int argc,char **argv){
             double nx=0,ny=0,dot=0,error=0;int emitted=0;uint64_t unequal=0;bool first_gpu=false;
             const uint64_t old_frames=stats?stats->frames.load():0,old_calls=stats?stats->coreml_calls.load():0;
             const uint64_t old_shared=vae.shared_upscale_frames();const double old_boundary=stats?stats->boundary_seconds:0;
+            const uint64_t old_norm_frames=stats?stats->norm_pack_frames:0;
             const uint64_t old_up_frames=upscale_stats?upscale_stats->frames.load():0,old_up_calls=upscale_stats?upscale_stats->coreml_calls.load():0;
             const double old_up_boundary=upscale_stats?upscale_stats->boundary_seconds:0;
             mx::reset_peak_memory();const auto start=tc::Clock::now();
@@ -82,6 +85,7 @@ int main(int argc,char **argv){
                 calls==expected_calls && completed==uint64_t(hot?frames-1:0) &&
                 up_calls==expected_up_calls && up_completed==uint64_t(upscale?frames-1:0) &&
                 (!stats || stats->coreml_calls==stats->backing_hits) && (!upscale_stats || upscale_stats->coreml_calls==upscale_stats->backing_hits) &&
+                (!stats || stats->norm_pack_frames-old_norm_frames==uint64_t(norm_pack?frames-1:0)) &&
                 vae.shared_upscale_frames()-old_shared==uint64_t(frames>1?frames:0),"fresh complete decoder quality/execution gate failed");
             if(iteration)out<<',';
             out<<"{\"iteration\":"<<iteration<<",\"warm\":"<<(iteration?"true":"false")<<",\"seconds_with_host_quality\":"<<seconds
@@ -91,6 +95,7 @@ int main(int argc,char **argv){
                 <<",\"causal_boundary_seconds\":"<<(stats?stats->boundary_seconds-old_boundary:0)
                 <<",\"upscale_coreml_calls\":"<<up_calls<<",\"upscale_causal_frames\":"<<up_completed
                 <<",\"total_coreml_calls\":"<<calls+up_calls<<",\"per_frame_quality_checked\":true"
+                <<",\"norm_pack_frames\":"<<(stats?stats->norm_pack_frames-old_norm_frames:0)
                 <<",\"upscale_causal_boundary_seconds\":"<<(upscale_stats?upscale_stats->boundary_seconds-old_up_boundary:0)<<'}';out.flush();
             std::cout<<"PASS iteration="<<iteration<<" route="<<route<<" seconds="<<seconds<<" active="<<peak<<" calls="<<calls+up_calls<<'\n';
         }

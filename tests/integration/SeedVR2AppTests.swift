@@ -89,6 +89,38 @@ import Foundation
         studio.changeOperation("image.upscale");studio.applySeedVR2MemoryAdvice()
         try check(studio.draft.seedvr2VAE?.encoder == "buffered" && studio.draft.seedvr2VAE?.decoder == "buffered" &&
                   studio.draft.seedvr2VAE?.share_upscale_history == false,"image advice selected invalid streaming or unused sharing")
+        func resourceAdvice(_ options: NativeSeedVR2VAEConfig, free: UInt64?, sourceFrames: Int? = 25,
+                            configuredFrames: Int = 25, width: Int = 1024, height: Int = 1024,
+                            physical: UInt64 = UInt64(64) << 30, operation: String = "video.upscale") -> [SeedVR2ResourceAdvice.Notice] {
+            SeedVR2ResourceAdvice.notices(operation: operation,width: width,height: height,sourceFrames: sourceFrames,
+                configuredFrames: configuredFrames,physicalMemory: physical,options: options,temporaryFreeBytes: free)
+        }
+        var rows = NativeSeedVR2VAEConfig();rows.spatial = "file_rows"
+        let lowSpace = resourceAdvice(rows,free: UInt64(6) << 30)
+        try check(lowSpace.contains { $0.id == "scratch_space_low" } && lowSpace.contains { $0.id == "scratch_reference" },
+            "known 1024 row-file disk pressure was not explained")
+        var combined = rows;combined.encoder_spatial = "file_rows"
+        try check(!resourceAdvice(combined,free: UInt64(15) << 29).contains { $0.id == "scratch_space_low" },
+            "independent encoder/decoder file peaks were incorrectly summed")
+        var encoderRows = NativeSeedVR2VAEConfig();encoderRows.encoder_spatial = "file_rows"
+        try check(!resourceAdvice(encoderRows,free: UInt64(3) << 30).contains { $0.id == "scratch_space_low" },
+            "encoder-only advice incorrectly used the decoder scratch peak")
+        rows.spatial_disk_budget_bytes = UInt64(4) << 30
+        try check(resourceAdvice(rows,free: UInt64(10) << 30).contains { $0.id == "scratch_quota_low" },
+            "explicit scratch quota was ignored")
+        let missingSpace = resourceAdvice(rows,free: nil)
+        try check(missingSpace.contains { $0.id == "scratch_space_unknown" } && !missingSpace.contains { $0.id == "scratch_space_low" },
+            "unavailable free-space observation was converted into zero")
+        try check(resourceAdvice(rows,free: UInt64(10) << 30,width: 768).contains { $0.id == "scratch_reference_unknown" },
+            "an unmeasured rectangular target inherited a square scratch guarantee")
+        let imageAdvice = resourceAdvice(rows,free: 0,sourceFrames: nil,configuredFrames: 1,operation: "image.upscale")
+        try check(imageAdvice.contains { $0.id == "image_no_history_files" } && !imageAdvice.contains { $0.id == "scratch_space_low" },
+            "single-frame advice incorrectly required video history files")
+        let longSource = resourceAdvice(rows,free: UInt64(10) << 30,sourceFrames: 200,configuredFrames: 25)
+        try check(longSource.contains { $0.id == "model_frame_limit" } && longSource.contains { $0.id == "source_frame_mismatch" },
+            "imported full source frame count was replaced by a shorter draft")
+        try check(resourceAdvice(rows,free: UInt64(10) << 30,physical: UInt64(16) << 30).contains { $0.id == "low_memory_unqualified" },
+            "low-memory advice implied qualified 16-GiB operation")
         studio.draft = adviceSnapshot
         studio.draft.seedvr2VAE = nil
         try check(video.operation == "video.upscale" && video.frames == 25 && video.fps == 24,

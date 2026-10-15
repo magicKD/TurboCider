@@ -15,6 +15,10 @@ using EncodedFrameSource = std::function<Tensor(int)>;
 using UpscaleInputObserver = std::function<void(const std::string &, const Tensor &, bool, bool)>;
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
 using ExperimentalCausalConv=std::function<Tensor(const Tensor &,const FrameHistory &,const Tensor &,const Tensor &)>;
+struct ExperimentalNormFrame {Tensor pixels,mean,inverse;};
+using ExperimentalNormHistory=std::vector<ExperimentalNormFrame>;
+using ExperimentalNormCausalConv=std::function<Tensor(const ExperimentalNormFrame &,const ExperimentalNormHistory &,
+    const Tensor &,const Tensor &,const Tensor &,const Tensor &)>;
 #endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
 struct VAEPhaseObservation {
@@ -49,6 +53,7 @@ class VAE {
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
     ExperimentalCausalConv experimental_causal_conv_;
     ExperimentalCausalConv experimental_upscale_causal_conv_;
+    ExperimentalNormCausalConv experimental_norm_causal_conv_;
 #endif
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE
     VAEPhaseObserver phase_observer_;
@@ -60,6 +65,9 @@ class VAE {
     using CompactCaches = std::unordered_map<std::string, Tensor>;
     struct Caches {
         CompactCaches compact; FrameHistoryMap frames;
+#if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
+        std::unordered_map<std::string,ExperimentalNormHistory> norm_frames;
+#endif
         bool temporal = true;
         bool spatial_head_only = false;
         bool spatial_enabled = true;
@@ -108,9 +116,14 @@ class VAE {
     void observe_upscale_inputs(UpscaleInputObserver observer) { upscale_input_observer_ = std::move(observer); }
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
     void use_experimental_causal_conv(ExperimentalCausalConv execute){
-        require(bool(execute) && history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
+        require(bool(execute) && !experimental_norm_causal_conv_ && history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
             norm_recipe_=="metal" && spatial_recipe_=="full","causal-conv experiment requires full native frame history");
         experimental_causal_conv_=std::move(execute);
+    }
+    void use_experimental_norm_causal_conv(ExperimentalNormCausalConv execute){
+        require(bool(execute) && !experimental_causal_conv_ && history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
+            norm_recipe_=="metal" && spatial_recipe_=="full","norm-pack experiment requires full native frame history and its own hotconv callback");
+        experimental_norm_causal_conv_=std::move(execute);
     }
     void use_experimental_upscale_causal_conv(ExperimentalCausalConv execute){
         require(bool(execute) && history_recipe_=="frames" && conv_recipe_=="singleton2d" &&
@@ -167,6 +180,7 @@ class VAE {
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT
         experimental_causal_conv_={};
         experimental_upscale_causal_conv_={};
+        experimental_norm_causal_conv_={};
 #endif
         share_upscale_history_=false;shared_upscale_frames_=0;shared_upscale_logical_bytes_=0;
 #if defined(TURBOCIDER_ENABLE_VAE_PHASE_PROFILE) && TURBOCIDER_ENABLE_VAE_PHASE_PROFILE

@@ -119,7 +119,7 @@ class ReleaseBinaryTests(unittest.TestCase):
             policy(['-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=0'])
             def output(command,**kwargs):return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
             with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
-            for marker in ('tc_seedvr2_ane_causal_pack','causal-conv experiment returned an incomplete activation','seedvr2-causal-request-pixels-v1'):
+            for marker in ('tc_seedvr2_ane_causal_pack','tc_seedvr2_ane_norm_causal_pack','causal-conv experiment returned an incomplete activation','seedvr2-causal-request-pixels-v1'):
                 with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
                     marker if command[0]=='strings' else output(command)):
                     with self.assertRaisesRegex(ValueError,'contains unqualified VAE causal'):release.check(library,manifest)

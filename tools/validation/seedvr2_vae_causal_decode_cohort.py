@@ -17,7 +17,7 @@ from export_seedvr2_ffn import tree_identity
 
 
 def validate_observation(value,route,frames,height,width,repeats,bank,upscale_bank=None):
-    hot=route in ("ne","cpu","dual");upscale=route in ("upscale","dual")
+    hot=route in ("ne","cpu","dual","norm","dual_norm");upscale=route in ("upscale","dual","dual_norm")
     if upscale and upscale_bank is None:raise ValueError("upscale benchmark needs its independent full-output bank")
     if (value.get("schema")!="seedvr2-vae-causal-decode-bench-v1" or value.get("status")!="complete" or
         value.get("route")!=route or (value.get("frames"),value.get("height"),value.get("width"))!=(frames,height,width) or
@@ -32,6 +32,7 @@ def validate_observation(value,route,frames,height,width,repeats,bank,upscale_ba
             row.get("causal_frames")!=(frames-1 if hot else 0) or row.get("initial_gpu_frame_checked") is not True or
             row.get("per_frame_quality_checked") is not True or
             row.get("upscale_coreml_calls",0)!=expected_up or row.get("upscale_causal_frames",0)!=(frames-1 if upscale else 0) or
+            row.get("norm_pack_frames",0)!=(frames-1 if route in ("norm","dual_norm") else 0) or
             row.get("quality_passed") is not True or (route=="gpu" and row.get("unequal_values")!=0) or
             type(row.get("mlx_active_peak_bytes")) is not int or row["mlx_active_peak_bytes"]<=0):
             raise ValueError("warm benchmark frame/phase/actual execution coverage differs")
@@ -54,12 +55,12 @@ def main():
     for name in ("probe","model","fixture","manifest","output"):parser.add_argument("--"+name,type=Path,required=True)
     parser.add_argument("--repeats",type=int,default=3)
     parser.add_argument("--upscale-manifest",type=Path)
-    parser.add_argument("--reference-route",choices=("gpu","ne"),default="gpu")
-    parser.add_argument("--candidate-route",choices=("ne","upscale","dual"),default="ne")
+    parser.add_argument("--reference-route",choices=("gpu","ne","dual"),default="gpu")
+    parser.add_argument("--candidate-route",choices=("ne","upscale","dual","norm","dual_norm"),default="ne")
     args=parser.parse_args()
     if args.output.exists() or not 2<=args.repeats<=7:parser.error("fresh output and bounded repetitions required")
     if args.reference_route==args.candidate_route:parser.error("distinct reference/candidate routes required")
-    if bool(args.upscale_manifest)!=(args.candidate_route in ("upscale","dual")):
+    if bool(args.upscale_manifest)!=(args.candidate_route in ("upscale","dual","dual_norm") or args.reference_route=="dual"):
         parser.error("upscale/dual candidates require exactly one explicit upscale bank")
     for name in ("probe","model","fixture","manifest"):setattr(args,name,getattr(args,name).resolve(strict=True))
     bank=json.loads(args.manifest.read_text());validate_causal_bank(bank)
@@ -90,7 +91,7 @@ def main():
         for index,route in enumerate(report["order"]):
             destination=args.output/f"{index}-{route}"
             command=[str(args.probe),str(args.model),str(args.fixture),str(args.manifest),str(destination),route,str(args.repeats)]
-            if route in ("upscale","dual"):command.append(str(args.upscale_manifest))
+            if route in ("upscale","dual","dual_norm"):command.append(str(args.upscale_manifest))
             print(f"causal ABBA cohort={index} route={route} complete_frames={frames} fresh_iterations={args.repeats}",flush=True)
             receipt=dict(index=index,route=route,command=command);report["cohorts"].append(receipt);write_json(args.output/"report.json",report)
             with (args.output/f"stdout-{index}.txt").open("w") as stdout,(args.output/f"stderr-{index}.txt").open("w") as stderr:

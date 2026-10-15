@@ -26,9 +26,11 @@ struct Sampler {
 }
 int main(int argc,char **argv){
     try {
-        const bool projection_experiment=argc==10;
-        const bool causal_experiment=argc==11 || argc==13;
-        const bool upscale_causal_experiment=argc==13;
+        const bool norm_pack=(argc==12 || argc==14) && std::string(argv[argc-1])=="norm";
+        const int base_argc=argc-(norm_pack?1:0);
+        const bool projection_experiment=base_argc==10;
+        const bool causal_experiment=base_argc==11 || base_argc==13;
+        const bool upscale_causal_experiment=base_argc==13;
         const bool hot_causal_experiment=causal_experiment && std::string(argv[9])!="none";
         bool valid_arguments=argc==7 || argc==8 || argc==9;
 #if defined(TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE) && TURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE
@@ -58,9 +60,12 @@ int main(int argc,char **argv){
         std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> causal_stats,upscale_causal_stats;
         if(hot_causal_experiment){
             tc::require(route=="baseline" && (std::string(argv[10])=="ne" || std::string(argv[10])=="cpu"),"full causal-conv compute control required");
-            vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(
+            if(norm_pack)vae.use_experimental_norm_causal_conv(tc::seedvr2::make_experimental_ane_norm_causal_conv(
+                argv[9],std::string(argv[10])=="cpu",cancelled,causal_stats));
+            else vae.use_experimental_causal_conv(tc::seedvr2::make_experimental_ane_causal_conv(
                 argv[9],std::string(argv[10])=="cpu",cancelled,causal_stats));
         }
+        tc::require(!norm_pack || hot_causal_experiment,"norm-pack requires the original hotconv bank");
         if(upscale_causal_experiment){
             tc::require(route=="baseline" && (std::string(argv[12])=="ne" || std::string(argv[12])=="cpu"),"upscale causal-conv compute control required");
             vae.use_experimental_upscale_causal_conv(tc::seedvr2::make_experimental_ane_upscale_causal_conv(
@@ -162,7 +167,8 @@ int main(int argc,char **argv){
 #if defined(TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE) && TURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE
         if(causal_stats)out<<",\"causal_conv_frames\":"<<causal_stats->frames<<",\"causal_conv_coreml_calls\":"<<causal_stats->coreml_calls
             <<",\"causal_conv_backing_hits\":"<<causal_stats->backing_hits<<",\"causal_conv_slot_bytes\":"<<causal_stats->slot_bytes
-            <<",\"causal_conv_boundary_seconds\":"<<causal_stats->boundary_seconds<<",\"causal_conv_load_seconds\":"<<causal_stats->load_seconds;
+            <<",\"causal_conv_boundary_seconds\":"<<causal_stats->boundary_seconds<<",\"causal_conv_load_seconds\":"<<causal_stats->load_seconds
+            <<",\"causal_conv_norm_pack_frames\":"<<causal_stats->norm_pack_frames;
         if(upscale_causal_stats)out<<",\"upscale_causal_conv_layer\":\""<<upscale_causal_stats->layer<<"\",\"upscale_causal_conv_output_channels\":"<<upscale_causal_stats->output_channels
             <<",\"upscale_causal_conv_backend\":\""<<argv[12]<<"\",\"upscale_causal_conv_frames\":"<<upscale_causal_stats->frames
             <<",\"upscale_causal_conv_coreml_calls\":"<<upscale_causal_stats->coreml_calls<<",\"upscale_causal_conv_backing_hits\":"<<upscale_causal_stats->backing_hits

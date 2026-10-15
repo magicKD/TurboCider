@@ -391,6 +391,26 @@ still retain complete-clip state; the 121-frame model limit remains in force.
 Reader/writer 1000-frame tests are not long-video model qualification. The
 existing conservative admission estimate can still reject some 16-GiB tasks;
 the App advice is not proof that those tasks are admitted or runnable.
+The resource-advice candidate also checks the actual imported source count,
+unsupported row-file canvases and the current temporary-volume free-space
+snapshot. It displays the configured scratch quota instead of assuming8 GiB.
+For measured1024-square/64-row video cases, decoder/encoder reference live-file
+peaks are6.5/2.25 GiB; their separate phase lifetimes mean they are not added.
+A lower quota or insufficient free-space snapshot produces a warning, not an
+automatic disk reservation or permission to bypass native admission. Other
+dimensions/row heights show an unmeasured-reference notice. Unknown free space
+stays unknown, and single images do not inherit video-history requirements.
+The App never deletes files, changes output size, truncates frames or enables
+unqualified VAE ANE in response to these notices. Refresh the snapshot before a
+large spilling job; it can become stale. See
+`docs/design/seedvr2-vae-norm-pack-and-resource-advice.md` for scopes and records.
+The independent ordinary App with these notices is
+`dist/seedvr2-resource-advice-20261015/TurboCider.app` (macOS26.2+).
+It passes seven real App requests with unchanged ordinary exports, package
+signing/release/contracts and a complete512/t25 embedded-CLI smoke. Existing
+running Apps are not replaced; quit an older instance before using the new
+bundle against the same default state directory. The experimental fused-norm
+and VAE ANE paths are not enabled in this package.
 Full spatial VAE tiling, reusable history/workspace pools
 and VAE Core ML/ANE convolution remain active work; see
 `docs/design/seedvr2-vae-optimization.md`.

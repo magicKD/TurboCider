@@ -82,9 +82,11 @@ def main():
     parser.add_argument("--causal-conv-control",choices=("ne","cpu"),default="ne")
     parser.add_argument("--upscale-causal-manifest",type=Path)
     parser.add_argument("--upscale-causal-control",choices=("ne","cpu"),default="ne")
+    parser.add_argument("--norm-pack",action="store_true",help="experimental raw-history/full-statistics affine-SiLU packing at hotconv")
     args=parser.parse_args()
     if args.output.exists() or args.frames<1 or (args.frames-1)%4 or not 8<=args.rows<=128 or args.rows%8:
         parser.error("fresh output, complete padded causal prefix and 8-aligned rows required")
+    if args.norm_pack and not args.causal_conv_manifest:parser.error("norm-pack requires the original hotconv bank")
     for name in ("probe","model","native_fixture"):setattr(args,name,getattr(args,name).resolve(strict=True))
     if args.fp32_fixture:args.fp32_fixture=args.fp32_fixture.resolve(strict=True)
     checkpoint=args.model/"vae/seedvr2_ema_vae_fp16.safetensors"
@@ -143,6 +145,7 @@ def main():
         causal_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_ane_causal_conv.mm") if causal or upscale_causal else None,
         upscale_causal_manifest_sha256=sha256(args.upscale_causal_manifest) if upscale_causal else None,
         upscale_causal_backend=args.upscale_causal_control if upscale_causal else "none",
+        norm_pack=args.norm_pack,
         source_sha256=sha256(Path(__file__)),
         projection_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_ane_projection.mm") if projection else None,
         projection_io_source_sha256=sha256(ROOT/"tools/native/seedvr2_vae_upscale_io.hpp") if projection else None,
@@ -162,6 +165,7 @@ def main():
             elif causal or upscale_causal:
                 command.extend(["share" if args.share_upscale_history else "copy",str(args.causal_conv_manifest) if causal else "none",args.causal_conv_control])
                 if upscale_causal:command.extend([str(args.upscale_causal_manifest),args.upscale_causal_control])
+                if args.norm_pack:command.append("norm")
             elif args.share_upscale_history:command.append("share")
             print(f"spatial screen {route} {shape}",flush=True)
             result=subprocess.run(command,capture_output=True,text=True,timeout=600)
@@ -175,6 +179,8 @@ def main():
             if projection:
                 validate_projection_observation(receipt["observation"],args.projection_control,projection,args.frames,pixels.shape[3],pixels.shape[4])
             if causal:validate_causal_observation(receipt["observation"],args.causal_conv_control,causal,args.frames,pixels.shape[3],pixels.shape[4])
+            if causal and receipt["observation"].get("causal_conv_norm_pack_frames",0)!=(args.frames-1 if args.norm_pack else 0):
+                raise ValueError("actual norm-pack frame coverage differs")
             if upscale_causal:validate_upscale_causal_observation(receipt["observation"],args.upscale_causal_control,upscale_causal,args.frames,pixels.shape[3],pixels.shape[4])
             if args.share_upscale_history:
                 value=receipt["observation"];expected=args.frames if args.frames>1 else 0

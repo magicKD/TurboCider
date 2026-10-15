@@ -36,5 +36,14 @@ class CausalCohortGuards(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(ValueError):validate_observation(changed,"dual",25,1024,1024,3,bank,bank)
         with self.assertRaises(ValueError):validate_observation(value,"dual",25,1024,1024,3,bank)
 
+    def test_norm_pack_must_really_process_every_subsequent_frame(self):
+        value=self.value("dual_norm");value.update(upscale_layer="decoder.up_blocks.2.upsamplers.0.conv",upscale_external_slot_bytes=24000000,external_slot_bytes=45626880)
+        for row in value["iterations"]:row.update(upscale_coreml_calls=6144,upscale_causal_frames=24,total_coreml_calls=12288,
+            upscale_causal_boundary_seconds=6.,norm_pack_frames=24)
+        bank=dict(rows=64,cols=64,layer=value["upscale_layer"])
+        validate_observation(value,"dual_norm",25,1024,1024,3,bank,bank)
+        value["iterations"][-1]["norm_pack_frames"]=0
+        with self.assertRaises(ValueError):validate_observation(value,"dual_norm",25,1024,1024,3,bank,bank)
+
 
 if __name__=="__main__":unittest.main()

@@ -23,6 +23,8 @@ struct AccelerationView: View {
     }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "gpu" : "profile") }
     @State private var zImageBucket: Int?
+    @State private var seedvr2TemporaryFreeBytes: UInt64?
+    @State private var seedvr2ResourceRevision = 0
     private var zImageCapacity: String? {
         guard studio.draft.modelID == "z-image-turbo", let zImageBucket else { return nil }
         let imageRows = ((studio.draft.width / 16) * (studio.draft.height / 16) + 31) / 32 * 32
@@ -88,9 +90,32 @@ struct AccelerationView: View {
             }
         }.task(id: discoveryID) { await discover() }
             .task(id: "\(studio.draft.modelID)|\(config.manifest)") { await readZImageBucket() }
+            .task(id: seedvr2ResourceCheckID) { await readSeedVR2ScratchSpace() }
             .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
     }
     private var seedvr2Config: NativeSeedVR2VAEConfig { studio.draft.seedvr2VAE ?? NativeSeedVR2VAEConfig() }
+    private var seedvr2ResourceCheckID: String {
+        "\(studio.draft.modelID)|\(studio.draft.operation)|\(seedvr2Config.spatial)|\(seedvr2Config.encoder_spatial)|\(seedvr2ResourceRevision)"
+    }
+    private var seedvr2Notices: [SeedVR2ResourceAdvice.Notice] {
+        SeedVR2ResourceAdvice.notices(operation: studio.draft.operation, width: studio.draft.width, height: studio.draft.height,
+            sourceFrames: studio.draft.activeAssets.first(where: { $0.mediaKind == "video" })?.frames,
+            configuredFrames: studio.draft.frames, physicalMemory: ProcessInfo.processInfo.physicalMemory,
+            options: seedvr2Config, temporaryFreeBytes: seedvr2TemporaryFreeBytes)
+    }
+    private func readSeedVR2ScratchSpace() async {
+        guard studio.draft.modelID == "seedvr2-3b" else { seedvr2TemporaryFreeBytes = nil; return }
+        let key = seedvr2ResourceCheckID
+        let bytes = await Task.detached(priority: .utility) { () -> UInt64? in
+            // Filesystem queries may block. Never perform this work while
+            // rendering the SwiftUI body or assume a failed query means zero.
+            guard let values = try? FileManager.default.attributesOfFileSystem(forPath: FileManager.default.temporaryDirectory.path),
+                  let free = values[.systemFreeSize] as? NSNumber else { return nil }
+            return free.uint64Value
+        }.value
+        guard !Task.isCancelled, key == seedvr2ResourceCheckID else { return }
+        seedvr2TemporaryFreeBytes = bytes
+    }
     private func updateSeedVR2(_ change: (inout NativeSeedVR2VAEConfig) -> Void) {
         var config = seedvr2Config; change(&config); studio.draft.seedvr2VAE = config; studio.save()
     }
@@ -116,8 +141,13 @@ struct AccelerationView: View {
                 Picker("空间行带高度", selection: Binding(get: { seedvr2Config.spatial_rows }, set: { value in updateSeedVR2 { $0.spatial_rows = value } })) {
                     Text("32 行").tag(32); Text("64 行").tag(64); Text("128 行").tag(128)
                 }.disabled(store.busy).accessibilityIdentifier("seedvr2VAESpatialRows")
-                Text("只调度高分辨率编码 head / 解码阶段，保留全帧统计/完整 attention 与时间降采样。当前仅支持 ≤1024 画布；临时文件最多 8 GiB，视频累计 I/O 会很大。卷积拆分可能改变 FP16 末位，不是硬 RAM 预算或 16 GB 可用性保证。")
+                Text("只调度高分辨率编码 head / 解码阶段，保留全帧统计/完整 attention 与时间降采样。当前仅支持 ≤1024 画布；当前临时文件配额 \(SeedVR2ResourceAdvice.gib(seedvr2Config.spatial_disk_budget_bytes))，视频累计 I/O 会很大。卷积拆分可能改变 FP16 末位，不是硬 RAM 预算或 16 GB 可用性保证。")
                     .font(.caption).foregroundStyle(.orange)
+                HStack {
+                    Text(seedvr2TemporaryFreeBytes.map { "临时卷可用空间快照 \(SeedVR2ResourceAdvice.gib($0))" } ?? "临时卷空间待确认")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("刷新空间") { seedvr2ResourceRevision += 1 }.disabled(store.busy)
+                }
             }
             Picker("视频输入驻留", selection: Binding(get: { seedvr2Config.encoder }, set: { value in updateSeedVR2 { $0.encoder = value } })) {
                 Text("整段导入（原有路径）").tag("buffered")
@@ -162,9 +192,11 @@ struct AccelerationView: View {
             }.disabled(store.busy).accessibilityIdentifier("seedvr2VAECache")
             Text("逐帧导入按原有 5/4 帧分段编码；分块仅限制卷积工作区，不是整套 VAE 的空间 tiling，也不是硬内存上限。输入/输出流式仍保留完整条件/DiT latent；当前源视频上限仍为 121 帧。")
                 .font(.caption).foregroundStyle(.secondary)
-            if studio.draft.frames >= 65 || ProcessInfo.processInfo.physicalMemory <= (UInt64(32) << 30) {
-                Text("较长视频或低内存设备：建议分阶段驻留 + 逐帧导入/导出 + 较小缓存；完整解码可尝试共享空间上采样历史。1024 输出仍可能超过低内存机器容量，可先使用 512；本建议是启发式，不是已验证的设备预算。")
-                    .font(.caption).foregroundStyle(.orange)
+            ForEach(seedvr2Notices) { notice in
+                Text(notice.message).font(.caption).foregroundStyle(.orange)
+                    .accessibilityIdentifier("seedvr2Advice-\(notice.id)")
+            }
+            if !seedvr2Notices.isEmpty || studio.draft.frames >= 65 || ProcessInfo.processInfo.physicalMemory <= (UInt64(32) << 30) {
                 Button("应用省内存建议") {
                     studio.applySeedVR2MemoryAdvice()
                 }.disabled(store.busy).accessibilityIdentifier("seedvr2ApplyMemoryAdvice")
