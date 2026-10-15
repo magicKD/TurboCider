@@ -1,5 +1,11 @@
 # TurboCider 状态文档入口
 
+2026-10-15 [main 合并至 dev：整合与同机性能复核](2026-10-15-main-into-dev.md)：
+保留 SeedVR2 与 main 新功能，完成原生/App 构建及相关回归。M4 Max/64GiB 同参数 ABBA、48 PNG：
+Qwen GPU/冻结混合和 Z GPU 基本持平，Z 冻结混合小幅省时 1.75%，同路图像 RGBA 全一致。
+另用两提示词筛选 Qwen 可选 DiT cache：保守/均衡/快速约 31.12/26.24/23.11s，对同组 off42.63s 省 27%/38%/46%；
+属于有损近似（SSIM约0.992/0.980/0.955–0.966），默认 off 不变。60 PNG 全部完成，无模型下载、安装替换或远端推送。
+
 2026-10-10 [dev-graph 合并至 dev-verify：冲突处理与本机验收](dev-graph-into-dev-verify-2026-10-10.md)：
 16 个冲突文件完成整合，保留现有 streaming、LoRA 和缓存路径；普通/Private 库及 App 编译通过。
 同输入六步编辑默认 GPU 请求 38.41→36.58 s，单样本省时 4.76%；显式 Native GPU 冷请求没有收益。
