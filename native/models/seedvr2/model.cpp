@@ -109,7 +109,63 @@ size_t TensorBank::bytes() const {
     return result;
 }
 
-void DiT::load(const std::filesystem::path &path, mx::Dtype dtype) {
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+void TensorBank::begin_grouped(mx::Dtype dtype){
+    require(tensors_.empty(),"SeedVR2 grouped bank must start empty");
+    compute_dtype_=dtype;linear_recipe_="mlx";
+    if(const char *value=std::getenv("TURBOCIDER_SEEDVR2_DIT_LINEAR_RECIPE"))linear_recipe_=value;
+    require(linear_recipe_=="mlx","block streaming experiment requires original MLX projections");
+}
+std::vector<std::string> TensorBank::adopt_group(WeightGroup group,const std::function<void()> &materialized){
+    require(!group.empty() && bool(materialized),"weight group and owner-thread IO completion guard required");std::vector<std::string> names;
+    for(const auto &[name,value]:group){
+        require(!tensors_.count(name),"duplicate grouped SeedVR2 weight: "+name);names.push_back(name);
+    }
+    // Exactly the original whole-bank conversion, including source-F16 RoPE
+    // ->FP32 and source-BF16 conditioning ->compute dtype. Materialize before
+    // publishing: a failed/cancelled read cannot leave a half-adopted group.
+    for(auto &[name,value]:group){
+        // MLX0.32 Load waits its IO future without propagating Reader errors.
+        // Check the source's explicit error latch on THIS thread, before any
+        // cast/kernel can consume a partially initialized source allocation.
+        materialized();mx::eval(value);materialized();
+        value=mx::astype(value,name.ends_with(".rope.freqs")?mx::float32:compute_dtype_);mx::eval(value);materialized();
+    }
+    materialized();
+    try{tensors_.merge(group);require(group.empty(),"grouped weight merge incomplete");}
+    catch(...){for(const auto &name:names)tensors_.erase(name);throw;}
+    return names;
+}
+void TensorBank::erase_group(const std::vector<std::string> &names){
+    for(const auto &name:names)require(tensors_.count(name),"retiring an unavailable SeedVR2 weight: "+name);
+    for(const auto &name:names)tensors_.erase(name);
+}
+void DiT::retire_weight_group(){
+    if(dynamic_weight_names_.empty())return;
+    // No parameter owner is retired while a lazy consumer or GPU submission
+    // can still read it. Call only after materializing the actual block state.
+    mx::synchronize();weights_.erase_group(dynamic_weight_names_);dynamic_weight_names_.clear();
+    if(weight_group_revalidate_)weight_group_revalidate_();
+}
+void DiT::load_block_streamed(WeightGroupLoader loader,std::function<void()> materialized,std::function<void()> revalidate){
+    require(bool(loader) && bool(materialized) && bool(revalidate) && weights_.bytes()==0 && !weight_group_loader_,"fresh DiT and verified group loader required");
+    try{
+        configure_profile(mx::float16);dtype_=mx::float16;weights_.begin_grouped(dtype_);
+        revalidate();auto globals=loader(-1);
+        for(const auto &[name,value]:globals)
+            require(!name.starts_with("blocks.") || name=="blocks.0.attn.rope.rope.freqs","dynamic parameter in global group");
+        weights_.adopt_group(std::move(globals),materialized);
+        require(stable_fp16_profile() && weights_.at("vid_in.proj.weight").shape()==mx::Shape{kWidth,132} &&
+            weights_.at("positive_conditioning").shape()==mx::Shape{58,5120} &&
+            weights_.at("blocks.0.attn.rope.rope.freqs").shape()==mx::Shape{21},"original stable SeedVR2 globals required");
+        revalidate();weight_group_loader_=std::move(loader);weight_group_revalidate_=std::move(revalidate);
+        weight_group_materialized_=std::move(materialized);
+        streamed_blocks_=0;peak_parameter_bytes_=weights_.bytes();
+    }catch(...){clear();throw;}
+}
+#endif
+
+void DiT::configure_profile(mx::Dtype dtype) {
     require(dtype == mx::bfloat16 || dtype == mx::float16 || dtype == mx::float32,
             "SeedVR2 DiT compute dtype must be BF16, FP16 or FP32");
     rms_recipe_ = "mlx";
@@ -132,7 +188,9 @@ void DiT::load(const std::filesystem::path &path, mx::Dtype dtype) {
     if (const char *value = std::getenv("TURBOCIDER_SEEDVR2_DIT_RESIDUAL_RECIPE")) residual_recipe_ = value;
     require(residual_recipe_ == "native" || residual_recipe_ == "fp32",
             "SeedVR2 DiT residual recipe must be native or fp32");
-    weights_.load(path, dtype);
+}
+void DiT::load(const std::filesystem::path &path, mx::Dtype dtype) {
+    configure_profile(dtype);weights_.load(path, dtype);
     dtype_ = dtype;
     require(weights_.at("vid_in.proj.weight").shape() == mx::Shape{kWidth, 132} &&
             weights_.at("positive_conditioning").shape() == mx::Shape{58, 5120} &&
@@ -438,6 +496,12 @@ Tensor DiT::output(const Tensor &video, const Tensor &time, const mx::Shape &sha
 Tensor DiT::forward(const Tensor &latent, const Tensor &condition, float timestep,
                     const Event &event, std::atomic<bool> &cancelled, const std::filesystem::path &dump,
                     const FFNRoute &ffn) {
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+    require(!forward_active_.test_and_set(),"concurrent SeedVR2 DiT forward is unsupported");
+    struct Unlock{std::atomic_flag &value;~Unlock(){value.clear();}}unlock{forward_active_};
+    require(!weight_group_loader_ || (!ffn && dump.empty()),"block-stream prototype requires GPU-only forward without tensor dumps");
+    try{
+#endif
     checkpoint(cancelled);
     auto state = embed(latent, condition);
     auto time = time_embedding(timestep,dump);
@@ -446,16 +510,39 @@ Tensor DiT::forward(const Tensor &latent, const Tensor &condition, float timeste
     for (int index = 0; index < kLayers; ++index) {
         checkpoint(cancelled);
         if (event) event("seedvr2_dit", index, kLayers);
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+        if(weight_group_loader_){
+            checkpoint(cancelled);
+            require(dynamic_weight_names_.empty(),"prior SeedVR2 block was not retired");
+            auto group=weight_group_loader_(index);const auto prefix="blocks."+std::to_string(index)+".";
+            for(const auto &[name,value]:group)require(name.starts_with(prefix) && name!="blocks.0.attn.rope.rope.freqs",
+                "weight group changes a different block/global parameter");
+            dynamic_weight_names_=weights_.adopt_group(std::move(group),weight_group_materialized_);
+            peak_parameter_bytes_=std::max<uint64_t>(peak_parameter_bytes_,weights_.bytes());
+            require(weights_.at(prefix+"mlp."+(index<10?"vid":"all")+".proj_in_gate.weight").shape()==mx::Shape{6912,kWidth},
+                "original SeedVR2 block geometry required");
+            checkpoint(cancelled);
+        }
+#endif
         state = block(state[0], state[1], time, index, latent.shape(2), latent.shape(3) / 2, latent.shape(4) / 2, ffn,dump);
         mx::eval(state);
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+        if(weight_group_loader_){retire_weight_group();++streamed_blocks_;}
+#endif
         if (!dump.empty() && (index == 0 || index == 1 || index == 9 || index == 10 || index == 31))
             dump_tensors(dump, "block-" + std::to_string(index), {{"video", state[0]}, {"text", state[1]}});
     }
     auto result = output(state[0], time, latent.shape());
     mx::eval(result);
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+    if(weight_group_revalidate_)weight_group_revalidate_();
+#endif
     dump_tensors(dump, "velocity", {{"velocity", result}});
     checkpoint(cancelled);
     if (event) event("seedvr2_dit", kLayers, kLayers);
     return result;
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+    }catch(...){retire_weight_group();throw;}
+#endif
 }
 } // namespace tc::seedvr2

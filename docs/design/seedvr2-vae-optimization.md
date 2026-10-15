@@ -44,6 +44,15 @@ free-space snapshots/unknown observations and measured-case reference sizes;
 it neither truncates video nor relaxes admission. Whole-request block-weight/
 complete-context state scheduling remains an important next residency task.
 
+A subsequent [verified serial block-weight prototype](seedvr2-block-weight-residency.md)
+now preserves every original coefficient and complete32-block velocity/Euler word
+on the real1024/t25 fixture. Its corrected IO-error/cancellation path passes native
+recovery gates. DiT-only active maximum is11.734 ->5.230 GB, with one warm forward
+observation14.772 ->15.475 s (about4.76% slower, not an ABBA speed gate). This is
+compile-isolated, not a public/App memory policy or whole-request peak result;
+combination with VAE scheduling and genuine low-memory/long-video qualification
+remain required.
+
 The subsequent [halo-aligned rectangular tile comparison](seedvr2-vae-halo-aligned-tiles.md)
 tests64x62/64x94 against the already optimized dual-norm route with independent
 complete1024/t25 ABBA cohorts. The62-wide bank reduces external IO pools by13 MB

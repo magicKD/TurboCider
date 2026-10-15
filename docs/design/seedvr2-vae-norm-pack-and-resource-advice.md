@@ -186,7 +186,16 @@ further VAE/model residency and speed improvements, real low-memory hardware,
 whole-VAE/ANE feasibility and complete-context video support beyond121; this
 component/observer/advice work does not complete it.
 
-### Next whole-request residency work, not implemented
+### Whole-request residency plan and isolated block-weight follow-up
+
+The [serial verified block-weight prototype](seedvr2-block-weight-residency.md)
+has since implemented and tested the parameter-loading portion below. Complete
+real1024/t25 DiT words remain exact, with corrected cancellation/read-error
+propagation and a6.50-GB lower DiT-only active maximum at a measured small latency
+cost. It is still offline/compile-isolated: whole-request/session/App integration,
+combined VAE peaks, real low-memory hardware and >121 source frames are not done.
+The original planning arithmetic and full-context constraints below remain
+separate from those newly measured component results.
 
 The request trace makes DiT residency a necessary next target for the original
 low-memory/long-video objective, not a reason to advertise more VAE-local savings

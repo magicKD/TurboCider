@@ -5,6 +5,12 @@
 
 namespace tc::seedvr2 {
 using FFNRoute = std::function<Tensor(int, const Tensor &)>;
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+using WeightGroup = std::unordered_map<std::string,Tensor>;
+// -1 loads global parameters, 0...31 loads one original block. The caller
+// binds a verified held source; no public request or environment selector.
+using WeightGroupLoader = std::function<WeightGroup(int)>;
+#endif
 
 // An unquantized checkpoint bank. The original checkpoint layout is retained;
 // VAE convolution filters are converted once to MLX's channel-last layout.
@@ -21,6 +27,11 @@ class TensorBank {
     const std::string &linear_recipe() const { return linear_recipe_; }
     void clear() { tensors_.clear(); }
     size_t bytes() const;
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+    void begin_grouped(mx::Dtype);
+    std::vector<std::string> adopt_group(WeightGroup,const std::function<void()> &materialized);
+    void erase_group(const std::vector<std::string> &);
+#endif
 };
 
 class DiT {
@@ -42,6 +53,16 @@ class DiT {
     std::string rope_recipe_ = "fp16_angles";
     std::string residual_recipe_ = "fp32";
     std::map<std::array<int, 5>, Layout> layouts_;
+    void configure_profile(mx::Dtype);
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+    WeightGroupLoader weight_group_loader_;
+    std::function<void()> weight_group_revalidate_;
+    std::function<void()> weight_group_materialized_;
+    std::vector<std::string> dynamic_weight_names_;
+    std::atomic_flag forward_active_=ATOMIC_FLAG_INIT;
+    uint64_t streamed_blocks_=0,peak_parameter_bytes_=0;
+    void retire_weight_group();
+#endif
     Layout make_layout(int frames, int height, int width, int text_tokens, bool shifted) const;
     const Layout &layout(int frames, int height, int width, int text_tokens, bool shifted);
     Tensor modulate(const Tensor &, const Tensor &, int layer,
@@ -53,6 +74,11 @@ class DiT {
                                  std::unordered_map<std::string,Tensor> *trace = nullptr) const;
   public:
     void load(const std::filesystem::path &, mx::Dtype = mx::float16);
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+    void load_block_streamed(WeightGroupLoader,std::function<void()> materialized,std::function<void()> revalidate);
+    uint64_t streamed_blocks()const{return streamed_blocks_;}
+    uint64_t peak_parameter_bytes()const{return peak_parameter_bytes_;}
+#endif
     size_t bytes() const { return weights_.bytes(); }
     mx::Dtype dtype() const { return dtype_; }
     const std::string &rms_recipe() const { return rms_recipe_; }
@@ -79,7 +105,12 @@ class DiT {
     Tensor forward(const Tensor &latent, const Tensor &condition, float timestep,
                    const Event &, std::atomic<bool> &, const std::filesystem::path &dump = {},
                    const FFNRoute & = {});
-    void clear() { weights_.clear(); layouts_.clear(); }
+    void clear() {
+#if defined(TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT) && TURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT
+        retire_weight_group();weight_group_loader_={};weight_group_revalidate_={};weight_group_materialized_={};streamed_blocks_=0;peak_parameter_bytes_=0;
+#endif
+        weights_.clear(); layouts_.clear();
+    }
 };
 
 } // namespace tc::seedvr2
