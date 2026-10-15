@@ -15,6 +15,11 @@ from export_seedvr2_ffn import sha256, tree_identity
 
 CHECKPOINT_SHA = "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"
 SCHEMA = "turbocider-seedvr2-vae-conv-probe-v1"
+# A 3x3 valid convolution adds two halo columns. Include extents whose
+# halo-expanded FP16 rows can avoid the observed 66 -> 96-element pitch.
+# These are experimental banks, not a portable performance recommendation.
+FIXED_TILE_EXTENTS = (32, 62, 64, 94, 128, 256)
+CAUSAL_TILE_EXTENTS = FIXED_TILE_EXTENTS[:-1]
 
 
 def temporal_conv2d_weights(value, channels):
@@ -94,8 +99,8 @@ def main():
     parser.add_argument("--rows",type=int,default=128)
     parser.add_argument("--cols",type=int,default=128)
     args = parser.parse_args()
-    if args.channels < 0 or args.rows not in (32,64,128,256) or args.cols not in (32,64,128,256):
-        parser.error("nonnegative prefix (0=all) and fixed 32/64/128/256 spatial sizes required")
+    if args.channels < 0 or args.rows not in FIXED_TILE_EXTENTS or args.cols not in FIXED_TILE_EXTENTS:
+        parser.error("nonnegative prefix (0=all) and fixed 32/62/64/94/128/256 spatial extents required")
     export(args)
 
 

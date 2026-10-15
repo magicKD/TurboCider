@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/coreml"))
 from export_ltx_gemma_mlp import mapped_tensor, read_header, tensor_info
 from export_seedvr2_ffn import sha256, tree_identity
-from export_seedvr2_vae_conv import CHECKPOINT_SHA, SCHEMA, temporal_conv2d_weights
+from export_seedvr2_vae_conv import CHECKPOINT_SHA, SCHEMA, FIXED_TILE_EXTENTS, temporal_conv2d_weights
 from seedvr2_framework_screen import write_json
 from seedvr2_vae_coreml_conv_screen import reference_3d, check_reference, quality
 
@@ -35,7 +35,7 @@ def validate_manifest(manifest):
     out,cin,taps,kh,kw = original
     channels,total,rows,cols,hi,wi = values
     if (not 0<cin<=512 or not 0<channels<=out<=4096 or total!=out or taps not in (1,3) or
-        kh!=kw or kh not in (1,3) or rows not in (32,64,128,256) or cols not in (32,64,128,256) or
+        kh!=kw or kh not in (1,3) or rows not in FIXED_TILE_EXTENTS or cols not in FIXED_TILE_EXTENTS or
         hi!=rows+kh-1 or wi!=cols+kw-1 or manifest.get("input_layout")!="N(T*C)HW" or
         manifest.get("output_layout")!="NOHW" or manifest.get("temporal_taps")!=taps or
         manifest.get("input_channels")!=cin):

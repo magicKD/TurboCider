@@ -103,7 +103,17 @@ int main(int argc,char **argv){
         out<<"],\"status\":\"complete\",\"sampled_process_footprint_peak_bytes\":"<<sampler.peak
             <<",\"external_slot_bytes\":"<<(stats?stats->slot_bytes:0)+(upscale_stats?upscale_stats->slot_bytes:0)
             <<",\"upscale_layer\":\""<<(upscale_stats?upscale_stats->layer:"")<<"\",\"upscale_external_slot_bytes\":"<<(upscale_stats?upscale_stats->slot_bytes:0)
-            <<",\"physical_ane_occupancy_measured\":false,\"qualified\":false"
+            <<",\"physical_ane_occupancy_measured\":false,\"qualified\":false";
+        auto geometry=[&](const char *name,const std::shared_ptr<tc::seedvr2::ExperimentalCausalConvStats> &value){
+            out<<",\""<<name<<"\":";
+            if(!value){out<<"null";return;}
+            out<<"{\"rows\":"<<value->tile_rows<<",\"cols\":"<<value->tile_cols<<",\"input_strides\":[";
+            for(int axis=0;axis<4;++axis){if(axis)out<<',';out<<value->input_strides[axis];}
+            out<<"],\"output_strides\":[";
+            for(int axis=0;axis<4;++axis){if(axis)out<<',';out<<value->output_strides[axis];}out<<"]}";
+        };
+        geometry("hot_geometry",stats);geometry("upscale_geometry",upscale_stats);
+        out
             <<",\"scope\":\"fresh complete decoder per iteration, weights/kernels/cache/model stay warm; host pixel gate included; not App/full request/physical RAM qualification\"}\n";
     }catch(const std::exception &error){std::cerr<<error.what()<<'\n';return 1;}
 }

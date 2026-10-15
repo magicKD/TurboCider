@@ -44,7 +44,7 @@ int main(int argc,char **argv){
             tc::require(stats->layer==layer && stats->output_channels==outputs,"causal runtime changed the selected original layer");
             const auto &weight=bank.at(layer+".weight"),&bias=bank.at(layer+".bias");
             Tensor held(0);std::vector<uint16_t> saved;int cases=0;
-            for(const auto &geometry:std::vector<std::array<int,2>>{{17,19},{65,71},{64,64}}){
+            for(const auto &geometry:std::vector<std::array<int,2>>{{17,19},{65,71},{64,64},{97,101}}){
                 const int h=geometry[0],w=geometry[1];std::vector<Tensor> source;
                 for(int tap=0;tap<3;++tap){
                     const int extra=h==64?0:4,start=extra/2;
@@ -90,7 +90,9 @@ int main(int argc,char **argv){
                 "causal cancellation was not exercised during a real prediction");cancelled=false;
             auto recovered=execute(frame,past,weight,bias);mx::eval(recovered);
             tc::require(stats->frames==frames+1 && stats->coreml_calls==stats->backing_hits,"same-causal-runtime recovery failed");
-            std::cout<<"causal bitwise pack words="<<stats->pack_checked_words<<" consume words="<<stats->consume_checked_words<<'\n';
+            std::cout<<"causal tile="<<stats->tile_rows<<'x'<<stats->tile_cols<<" input_row_stride="<<stats->input_strides[2]
+                <<" output_row_stride="<<stats->output_strides[2]<<" external_slot_bytes="<<stats->slot_bytes
+                <<" bitwise pack words="<<stats->pack_checked_words<<" consume words="<<stats->consume_checked_words<<'\n';
             execute={};bank.clear();held=Tensor(0);frame=Tensor(0);recovered=Tensor(0);past.clear();mx::synchronize();mx::clear_cache();
             tc::seedvr2::VAE vae;vae.load(std::filesystem::path(argv[1])/"vae/seedvr2_ema_vae_fp16.safetensors");
             tc::SeedVR2VAEConfig config;config.history="frames";config.share_upscale_history=true;vae.configure(config);

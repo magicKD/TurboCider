@@ -44,6 +44,14 @@ free-space snapshots/unknown observations and measured-case reference sizes;
 it neither truncates video nor relaxes admission. Whole-request block-weight/
 complete-context state scheduling remains an important next residency task.
 
+The subsequent [halo-aligned rectangular tile comparison](seedvr2-vae-halo-aligned-tiles.md)
+tests64x62/64x94 against the already optimized dual-norm route with independent
+complete1024/t25 ABBA cohorts. The62-wide bank reduces external IO pools by13 MB
+but is0.84% slower;94 reduces prediction counts by31.25% and observes only0.44%
+lower decoder time, with a3-MiB larger pool. Neither reduces the MLX active
+maximum or changes public/App defaults. Layout alignment is a useful measured
+tradeoff, not completion of bounded whole-request residency or longer videos.
+
 ## Streaming decoded output
 
 Keep the exact existing temporal partition and causal histories. At the

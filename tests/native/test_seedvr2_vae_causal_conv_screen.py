@@ -27,6 +27,20 @@ class CausalConvolutionGuards(unittest.TestCase):
         observation={**self.observation(),"causal_conv_backend":"cpu","causal_conv_frames":8,
             "causal_conv_coreml_calls":32,"causal_conv_backing_hits":32}
         validate_causal_observation(observation,"cpu",self.bank(),9,65,71)
+
+    def test_halo_aligned_rectangles_require_exact_halos_and_ragged_counts(self):
+        for rows,cols in ((64,62),(64,94),(62,94)):
+            bank={**self.bank(),"rows":rows,"cols":cols,"input_rows":rows+2,"input_cols":cols+2}
+            validate_causal_bank(bank)
+            up={**bank,"layer":"decoder.up_blocks.2.upsamplers.0.conv","original_shape":[256,256,3,3,3],
+                "output_channels":256,"total_output_channels":256}
+            validate_upscale_causal_bank(up)
+            calls=24*((1024+rows-1)//rows)*((1024+cols-1)//cols)
+            observed={**self.observation(),"causal_conv_coreml_calls":calls,"causal_conv_backing_hits":calls}
+            validate_causal_observation(observed,"ne",bank,25,1024,1024)
+            for change in ({"input_cols":cols},{"cols":63},{"rows":256,"input_rows":258},{"cols":False}):
+                with self.subTest(change=change),self.assertRaises(ValueError):validate_causal_bank({**bank,**change})
+            with self.assertRaises(ValueError):validate_causal_observation(self.observation(),"ne",bank,25,1024,1024)
     def test_no_surface_cpu_pointer_access_in_the_actual_executor(self):
         code=(ROOT/"tools/native/seedvr2_vae_ane_causal_conv.mm").read_text()
         self.assertNotIn(".dataPointer",code)

@@ -9,6 +9,7 @@ struct ExperimentalCausalConvStats {
     uint64_t norm_pack_frames=0;
     uint64_t slot_bytes=0,pack_checked_words=0,consume_checked_words=0;
     int tile_rows=0,tile_cols=0;
+    std::array<uint64_t,4> input_strides{},output_strides{};
     int output_channels=0;
     std::string layer;
     double load_seconds=0,boundary_seconds=0;

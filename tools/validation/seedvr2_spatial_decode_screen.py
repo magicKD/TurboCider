@@ -14,7 +14,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/coreml"))
-from export_seedvr2_vae_conv import CHECKPOINT_SHA
+from export_seedvr2_vae_conv import CHECKPOINT_SHA, CAUSAL_TILE_EXTENTS
 from seedvr2_framework_screen import sha256, write_json
 from seedvr2_vae_coreml_conv_screen import quality
 from export_seedvr2_ffn import tree_identity
@@ -35,7 +35,7 @@ def validate_causal_bank(value):
     validate_conv_manifest(value)
     if (value.get("qualified") is not False or value.get("layer")!="decoder.up_blocks.3.resnets.0.conv1" or
         value.get("original_shape")!=[128,256,3,3,3] or value.get("output_channels")!=128 or
-        value.get("compute_units")!="cpuAndNeuralEngine" or value["rows"] not in (32,64,128) or value["rows"]!=value["cols"]):
+        value.get("compute_units")!="cpuAndNeuralEngine" or value["rows"] not in CAUSAL_TILE_EXTENTS or value["cols"] not in CAUSAL_TILE_EXTENTS):
         raise ValueError("complete original hot-convolution fixed bank required")
 
 
@@ -43,7 +43,7 @@ def validate_upscale_causal_bank(value):
     validate_conv_manifest(value)
     if (value.get("qualified") is not False or value.get("layer")!="decoder.up_blocks.2.upsamplers.0.conv" or
         value.get("original_shape")!=[256,256,3,3,3] or value.get("output_channels")!=256 or
-        value.get("compute_units")!="cpuAndNeuralEngine" or value["rows"] not in (32,64,128) or value["rows"]!=value["cols"]):
+        value.get("compute_units")!="cpuAndNeuralEngine" or value["rows"] not in CAUSAL_TILE_EXTENTS or value["cols"] not in CAUSAL_TILE_EXTENTS):
         raise ValueError("complete original upscale-convolution fixed bank required")
 
 

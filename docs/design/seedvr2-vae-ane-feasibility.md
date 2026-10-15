@@ -36,6 +36,13 @@ decoder ABBA now measures55.682/54.192 s (about2.68% lower latency), with anothe
 pass; single whole-request active maxima are13.015/12.236 GB. This still is not
 balanced full-request speed, full-VAE ANE or low-memory-hardware qualification.
 
+The later [halo-aligned rectangular tile comparison](seedvr2-vae-halo-aligned-tiles.md)
+also executes64x62/64x94 banks. Against the already optimized dual-norm route,
+complete1024/t25 ABBA finds0.84% slower/0.44% lower median latency, respectively,
+with unchanged active maxima. The smaller62-wide external pool and fewer94-wide
+predictions do not establish a new overall App memory/speed profile. Neither
+geometry is promoted to default or a qualified public VAE bank.
+
 Machine: Apple M4 Max, 64 GiB, macOS 26.6.2. Original VAE SHA-256:
 `20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1`.
 Weights remain FP16 without BF16 rounding/quantization. Three temporal taps are

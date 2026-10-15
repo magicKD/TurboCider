@@ -143,7 +143,8 @@ struct CausalRuntime{
                 [spec[@"compute_units"] isEqual:@"cpuAndNeuralEngine"] && [spec[@"output_channels"] isEqual:@(outputs)] &&
                 [spec[@"total_output_channels"] isEqual:@(outputs)],"original full-output causal bank required");
             const int th=[spec[@"rows"] intValue],tw=[spec[@"cols"] intValue];
-            check((th==32 || th==64 || th==128) && tw==th && [spec[@"input_rows"] intValue]==th+2 &&
+            auto fixed_extent=[](int extent){return extent==32 || extent==62 || extent==64 || extent==94 || extent==128;};
+            check(fixed_extent(th) && fixed_extent(tw) && [spec[@"input_rows"] intValue]==th+2 &&
                 [spec[@"input_cols"] intValue]==tw+2 && [spec[@"temporal_taps"] intValue]==3 &&
                 [spec[@"input_channels"] intValue]==256 && [spec[@"compiled"] isKindOfClass:NSDictionary.class] &&
                 [spec[@"compiled"][@"path"] isEqual:@"conv.mlmodelc"],"causal bank geometry/path differs");
@@ -160,6 +161,12 @@ struct CausalRuntime{
                 in.dataType==MLMultiArrayDataTypeFloat16 && out.dataType==MLMultiArrayDataTypeFloat16 &&
                 [in.shape isEqual:slots[0]->input.array.shape] && [out.shape isEqual:slots[0]->output.array.shape],"causal model descriptors differ from backing");
             for(const auto &slot:slots)stats->slot_bytes+=slot->input.bytes()+slot->output.bytes();checkpoint(cancelled);
+            for(int axis=0;axis<4;++axis){
+                stats->input_strides[axis]=slots[0]->input.array.strides[axis].unsignedLongLongValue;
+                stats->output_strides[axis]=slots[0]->output.array.strides[axis].unsignedLongLongValue;
+                check([slots[0]->input.array.strides[axis] isEqual:slots[1]->input.array.strides[axis]] &&
+                    [slots[0]->output.array.strides[axis] isEqual:slots[1]->output.array.strides[axis]],"causal slots have different backing pitches");
+            }
         }
     }
     void witness_pack(Slot &slot,int tile,Geometry p,int columns,const std::array<Tensor,3> &sources){
