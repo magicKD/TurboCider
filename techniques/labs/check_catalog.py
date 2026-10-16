@@ -14,6 +14,9 @@ DEVICE_CASES |= {"coreml:frozen-fp16", "coreml:runtime-fp16", "coreml:hybrid", "
 DEVICE_CASES |= {"metal:counter-stage", "mlx:bf16-ffn-profile"}
 DEVICE_CASES |= {"mlx:attention-replay"}
 DEVICE_CASES |= {"private:pmu"}
+DEVICE_CASES |= {"private:shared-surface"}
+DEVICE_CASES |= {"mlx:external-adoption"}
+DEVICE_CASES |= {"private:qwen-shared-ffn"}
 REFERENCES = {"reference:" + name for name in ("split-ffn", "interval-peak", "model-header", "lab-summary")}
 
 

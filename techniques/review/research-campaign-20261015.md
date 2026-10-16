@@ -172,3 +172,79 @@ step1预设512/1024/2048三个share：完整GPU→hybrid配对中位约0.9855/1.
 完整剩余目标保持：优先actual GPU/ANE backing、stride/alias/owner/完成与更少copy，然后更多层/独立prompt/seed/LoRA、完整block/request质量与时间、cache/load与内存/长时/失败回收；GPU更强kernel/precision/fusion、profiling/PMU/GUI、媒体/VAE/CPU/streaming/cache组合及多维metadata/aliases/version claims/薄AI skill继续。warm组件正结果不是整体完成，也不自动授权产品采用。
 
 本批最终验证：245项techniques标准库测试、21项repository测试通过；techniques-only隔离副本重跑43个CPU cases、109页/1115个本地链接、52个章节catalog与15个显式device selector，无错误。完整仓库可选来源检查核对138文件/31内容hash；来源索引`--check`、48KiB内展开技术页/两source/三code且无省略、约632KiB证据在300000-byte处续读通过。真实NumPy下独立witness对手写math.fsum小矩阵最大差约4.34e−19；CLI的`-I -S --help`不需要可选框架。curator发布JSON与显式原件重建字节一致；源码/原checkpoint/旧记录保留。测试不授予完整请求、物理overlap或剩余roadmap资格。
+
+## 2026-10-16续接：实际Metal/request backing与padding负控
+
+上一turn为progress：用户要求的整理、忽略规则和提交已完成于`c5a5750`，包含隔离验证的缓存/capture排除及回归；不代表研究goal完成。本轮复核roadmap同一SHA `247f7e92e49ae6ba886c6a0dca6fc53b01aa82028a40f258d4f33473121aa242`，重点推进H02/H03及第13–15节完整交付/维护合同，不以toy替代既有真实FFN消费者。
+
+新增[actual backing技术页](../gpu-ane/shared-surface.md)、[官方Metal/IOSurface来源卡](../sources/official/shared-memory.md)、[本机报告](private-shared-20261016.md)和[完整脱敏证据](private-shared-evidence-20261016.json)。官方Markdown与本机SDK26.5相关header范围/内容hash登记在同一sources清单，不镜像Apple正文；private selector/ABI独立逐项检查，不把公共API承诺扩张到`_ANE*`。
+
+原创Metal producer→private同步MIL `2*x+0.25`→Metal consumer `3*y-0.5`在四个新进程执行：C32/W33和C64/W65、seed17/29、8组与24组确认，共120次完整正调用。每次实际request inputArray/outputArray返回的ioSurface与目标ID相同，Metal contents与实际surface base相同；初始/逐call前后/最终均检查，只发布bool、不发布raw ID/地址。完整input/ANE output/FP32 consumer三个逻辑hash/call由独立标准库重建，全部精确一致；poison、尾guard、owned GPU完成、同步返回/unload与释放通过。
+
+W33实际row/plane128bytes，W65实际192bytes，不是紧密66/130，也不推成统一256-byte对齐。每run两个真实GPU负控，共8次：packed-stride读取仍全finite，却有1011/1056、3990–3991/4160错误；上一代实际输出按下一代验证全部元素拒绝、最大误差12。负控不加入正样本或ratio，owner活到所有消费者结束，不做真正UAF。
+
+shared在记录执行边界的external feature copy数为0；copy控制用独立Metal staging和两次CPU copy，8KiB/24KiB及lock/unlock计入相同GPU producer encode→GPU consumer完成边界。四组paired copy/shared诊断约1.0633/1.0105/0.9894/1.0109，后者paired中位与两组中位之比符号不同；未取得稳定性能晋升，更没有optimized GPU-only分母。runtime内部copy仍unknown，串行host窗口不是物理ANE放置/并行；当前小图成功不回填旧Qwen copy-bridge的zero-copy或完整模型资格。
+
+明确记录缺口：失败/取消/quarantine只有保守实现，四进程没有触发；没有OS build/framework binary hash、逐arm峰值、长时热或冷请求资格，不为旧run回填字段。四个owned目录合计约1.1MiB；磁盘观察从约0.6GiB降至约0.3GiB，不据此归因全部变化，也不擅自清旧数据。没有新增权重/大capture或修改参考checkout、产品runtime/default/App；本轮研究不自动commit/push。
+
+下一步仍接真实Qwen而不是扩大toy数字：已只读定位固定MLX0.32.0的`array.cpp` raw-pointer constructor与Metal allocator `make_buffer/release`。构造先尝试no-copy，失败会copy并立即调用caller deleter；`array.data()`注释也不能当GPU alias保证。需实际验证导入buffer/base/lifetime，再按真实二维MIL descriptor GPU pack/cast、private prefix、GPU remainder和restore/join，重新过完整BF16/full-prefix/FP64及强GPU分母，不复制或假装共享已有host桥接。
+
+完整剩余范围不变：真实更多层/独立prompt/seed/LoRA与完整block/request质量/时间，冷启动/常量cache/load/内存/长时/失败取消；更强GPU kernel/precision/fusion、profiling/PMU/streamData/GUI；媒体/VAE/CPU/streaming/cache组合；受控多维metadata、aliases、version claims与薄AI skill。当前绿灯只证明本轮限定合同，目标继续active。
+
+本批验收：257项techniques标准库测试、21项repository测试通过；techniques-only隔离副本运行44个CPU cases、112页/1157个本地链接、53个章节catalog和16个显式device selector，无错误。完整可选来源检查核对141文件/31内容hash，来源索引`--check`通过；新技术页在96000-byte共同预算下展开两source/四code，无省略，341567-byte公开证据在300000-byte处可继续读取。独立curator从四个明确原件重建与发布JSON字节一致；native当前源码syntax检查无警告。原件/源码/模型/旧记录均保留，这些验证不授予Qwen共享路径、稳定性能或剩余roadmap资格。
+
+## 2026-10-16续接：MLX实际adoption、Copy alias与过期结果
+
+上一goal轮为progress：四进程实际request/Metal backing、120次完整消费者和stride/stale负控已改变权威状态，但没有稳定性能或Qwen共享路径资格。本轮复核相同roadmap SHA，继续H02/H03真实接缝前提；保留上一轮所有改动，不自动commit/push。
+
+新[MLX来源卡](../sources/repos/mlx-external-memory.md)固定v0.32.0/`7a1d4f5c...`，选读constructor、Metal allocator、AsStrided/Copy与ops，七个文件含LICENSE的内容hash/范围进入同一sources登记。raw-pointer构造会fallback复制并立即调用deleter，strict make_buffer须release不能普通free；Metal包装为shared/untracked。Copy::eval在此版本直接copy_shared_buffer，source tag只作阅读身份，不声称已安装wheel由它可复现构建。
+
+[实际adoption报告](mlx-adoption-20261016.md)与[完整证据](mlx-adoption-evidence-20261016.json)含一个保留客户端失败、四个完整新进程：padded `[32,33]`/pitch64和完整`[1024,4096]`逻辑FP16 8MiB，seed17/29，两种raw-pointer/strict-buffer模式。导入整块page region后再建view；实际buffer.contents/raw_ptr/base、长度、设备、offset和storage/hazard身份只发布bool。flat parent离开scope后owner仍活着，全部consumer/controls完成、最后view释放后deleter恰好一次。没有真正UAF或未获授权的系统变更。
+
+首轮错误地把same-dtype mx::copy当独立快照，alias/generation0全输出通过后被strict snapshot gate拒绝；原source/binary/报告、退出1和mapping quarantine保留，不称硬件unsupported。更正控制后，same-dtype Copy作为alias阳性，新consumer读取generation1；独立backing由已实际求值的FP16→FP32 materialization建立。
+
+四份完整协议有24个主代际input/consumer全量hash，另8个same-dtype Copy新consumer，共32个完整正向consumer；失败记录另有1个partial完整hash，不混入成功数。8个旧已求值结果与8个materialized snapshot按新generation验证均全元素拒绝、最大误差4；4个padded packed-stride负控有1023/1056错误与496 nonfinite，contiguous case不伪造stride错误。20项负控观察中cached-result re-eval不是新GPU dispatch，计数和性能不混淆。
+
+新版另外采OS26.6.2/build25G83、SDK26.5、clang21.0.0，installed383 headers/三library SHA前后不变，实际MLX0.32.0/architecture applegpu_g16s。独立stdlib verifier利用明确合成周期流式重建完整hash，native仍逐元素写读完整8MiB；不是少行重复来假装真实激活或模型加速。curator只读明确原件、fixed clean源码与installed assets，不导入MLX/候选或跑设备；raw地址/registry ID不公开。完整manifest用Path组件顺序而非字符串顺序核对，不省略headers以让验证通过。
+
+本轮只验证新建未显式compile consumer的正常完成协议，没有ANE调用、optimized GPU-only分母或性能score，没有取消/失败回收、dyld loaded-image attestation、峰值/冷/热/长时资格。不能把上一轮private surface toy、本轮8MiB adoption与旧copy-bridge约1.12×相乘或拼成未跑过的Qwen共享图。五个owned目录约1.2MiB，磁盘约0.3GiB；没有复制权重、删旧数据、改参考checkout或产品runtime/default/App。
+
+下一步实连真实FFN：先在新owned图目录核对原MIL/blob来源与真实2D private port descriptor，再从ready原BF16 GPU input做GPU pack/cast，private paired prefix、完整GPU remainder和GPU restore/join全部计时；full/prefix/独立FP64固定预算及完整BF16 GPU分母不变。需交替真实不同timestep输入抓住compiled graph/旧output复用，不只重复同一输入；常量clone/编译存储先admission，不为低磁盘擅自清数据或降低原实验门槛。
+
+完整目标仍未完成：更多层/独立prompt/seed/LoRA、完整block/request质量/时间、cache/load与内存/长时/失败取消；更强GPU kernel/precision/fusion、profiling/PMU/streamData/GUI；媒体/VAE/CPU/streaming/cache组合；受控多维metadata/aliases/version claims与薄AI skill继续。当前正常adoption证据不替代这些资格，goal保持active。
+
+本批验收：269项techniques标准库测试、21项repository测试通过；techniques-only隔离副本重跑45个CPU cases、114页/1186个本地链接、53个章节catalog与17个显式device selector，无错误。完整可选来源检查核对144文件/31内容hash，来源索引`--check`通过；Copy查询先返回新来源卡，共同160000-byte预算下展开技术页/三source/八code无裁剪或省略，实际正文110580 bytes。curator复核fixed source七文件、installed383 headers/三library及五个原件，重建公开456793-byte JSON字节相同；首轮失败保留原source而不要求与更正后源码相同。当前native syntax检查无警告，默认prepare/help不需要MLX安装或设备。以上不授予compiled callable/真实FFN/全请求或整体roadmap完成资格。
+
+## 2026-10-16续接：真实shared完整FFN、actual join与load边界
+
+上一goal轮为progress：MLX两个导入模式、8MiB合成实际alias/owner与Copy/过期结果已经实测，仍不是完整Qwen共享路径。本轮复核roadmap同一SHA `247f7e92e49ae6ba886c6a0dca6fc53b01aa82028a40f258d4f33473121aa242`，推进真实完整消费者，不用两个toy拼接资格；全部旧改动和原件保留，不自动commit/push。
+
+新增[真实shared FFN报告](qwen-shared-ffn-20261016.md)和[完整证据](qwen-shared-ffn-evidence-20261016.json)，实际读出原二维MIL input/output为`[1,1,1024,4096]` FP16、row8192/plane-batch8388608 bytes，而非channel/sequence小图。原BF16 checkpoint/capture、完整M1024/H4096/F12288、base/no LoRA和冻结paired prefix2048不变。原图48MiB constant blob经严格文件clone到新owned目录、source/MIL/blob hash核对，独立client不链接产品库/ANEForge实现；[Apple文件clone合同](../sources/official/clonefile.md)与设备alias分开。
+
+实际五臂：compiled完整BF16 GPU、相同`_ANEClient`的copy serial/hybrid、shared serial/hybrid。GPU pack从原BF16 buffer写FP16 physical input；shared request实际output surface严格导入MLX、作为compiled join的运行时参数；完整GPU remainder、FP32恢复/相加/BF16 drain都计时。copy控制同入口/图/pack，额外两次FP16 CPU feature copy共16MiB，不和旧e5rt/NumPy桥接的8MiB输入+16MiB host FP32 partial混为相同copy税。
+
+四个成功run为65/165/165/165次，共560个完整调用（500 measured、60 first/warm）。每group相同point，五臂十行位置平衡顺序；三point循环1/19/10、两point19/10和反向10/19，都是同forced-GPU轨迹下重复，不宣称新prompt/seed/layer hold-out。所有112个GPU输出对保存BF16 replica全元素误差0；所有candidate full/prefix和独立full/prefix FP64 sample过固定3%/0.999预算。全输出最大L2约0.002667，full FP64 sample0.006079，prefix full0.004585，prefix FP64 sample0.011051，未降低预算或裁小/重复真实rows。
+
+后两run额外保留264个完整actual-part join见证：独立CPU按实际GPU BF16 tail与实际private FP16 partial做FP32加法和BF16 RNE，全部4194304元素exact mismatch0，hash相等；64个上一实际point输出对下一actual join的CPU负控每次4189812元素拒绝，不冒充新device dispatch或模型无损。早期184个candidate没有该较新字段，不回填。所有run正常完成/实际request-Metal-MLX alias/guard/unload和两份restore deleter后释放通过，没有实际取消/失败注入或物理ANE counter资格。
+
+warm完整GPU约21.6ms。首个三point/10组shared19.345ms、paired GPU/shared1.11718×，copy/shared0.99038×；两point/30组shared18.810ms、1.14900×，copy/shared1.01154×。后两exact-join run shared18.858/18.853ms、GPU/shared1.14575/1.14715×、copy/shared1.01142/1.01097×；后者GPU/shared探索区间[1.14396,1.14766]/[1.14452,1.14958]。长确认约12.7%–13.0%只属于本warm FFN边界，不是生成wall下降15%；同client减少copy约1.1%很小且首轮方向不同，不能把全部GPU收益归因于zero external copy，也不晋升通用profile。serial约26.5–27.0ms仍慢于GPU，host API交叠不是物理placement/overlap。
+
+一次clone/compile admission在约254MiB被原256MiB门槛拒绝，native/device未启动；另一只读prepared/load流程不创建新constant clone、不调用compile selector、不fallback编译，128MiB门槛只用于这个不同操作，并未放宽原门槛。两次load-only selector duration约650.99/32.11ms、compile=null；显式compile的两run约510.83/534.42ms另加load20.51/21.35ms。没有清系统cache，不能把API名字当内部无编译/无setup或请求break-even证明。存储波动保留观察，不把所有空间变化归因本轮，不删旧数据。
+
+独立stdlib curator重核原始BF16 spans/capture/fixture、真实NPY row-pitch native paired-prefix、MIL/blob、per-run source/binary、383 headers/三library与owned终态receipt，重算完整顺序/gates/时钟依赖/ratio，公开不带raw路径/张量/F64向量/地址。它不重跑private输出/FP64数学，不是attestation；oracle和actual join的计算由原采集源码绑定。当前CLI后来补了prepared replay须显式benchmark及prior lineage guard，不为旧run换源码；数学witness/reader在全部数值run保持固定。每run另采NumPy/clang版本、dyld actual-loaded-image、逐arm峰值/冷/长时仍缺，不回填。
+
+下一步优先把收益带到更广真实消费者：只读核对已有capture/client和兼容runtime是否可复用，取得独立prompt/seed、更多层或完整block输入，再做完整request/图像质量与baseline；不为实验自动重建大产品或复制全权重。常量bank/LoRA失效、load/setup和逐arm内存/低内存/长时、失败取消也会否决warm收益。更强GPU kernel/precision/fusion、profiling/PMU/streamData/GUI、媒体/VAE/CPU/streaming/cache组合以及多维metadata/aliases/version claims/薄AI skill的完整范围继续，goal保持active。
+
+本批验收：281项techniques标准库测试、21项repository测试通过；techniques-only隔离副本重跑46个CPU cases、116页/1232个本地链接、53个章节catalog和18个显式device selector，无错误。完整可选来源检查核对147文件/31内容hash，来源索引`--check`通过；real-shared-join查询指向已有完整FFN页，128000-byte共同预算下展开技术页/五source/五core code无裁剪或省略，正文75256 bytes。2225564-byte公开证据在2100000-byte处可续读，完整curator从六份明确原件重建字节相同；native当前源码syntax检查无警告，prepared replay未显式benchmark的拒绝在无MLX/设备的子进程单测。公开capsule保留per-run源码差异/早期缺字段/inspection与storage非执行状态，不授予完整请求、物理ANE或整体roadmap完成资格。
+
+## 2026-10-16归档整理：独立输入完整block与交付拒绝
+
+补齐已有[完整block上下文报告](qwen-block-context-20261016.md)与[公开capsule](qwen-block-context-evidence-20261016.json)的单一登记、章节入口、可选integration说明和离线测试。本次仅整理与验证，未重跑GPU/ANE或继续压缩变体；原始采集源码、数学witness、verifier和capsule内容hash保留，没有为格式化重写已绑定的实验源码。
+
+真实新seed43/不同prompt来自ordinary GPU request的step1/layer0 observer。原始compiled block callable为强分母，staged GPU exact ablation、实际runtime-argument零控、attention/norm与modulation/residual完整边界均保留。一份bulk capture在267MiB admission前置拒绝，一份owned TMPDIR load返回false/NSError nil，另两份完成330次完整block调用与198个actual-part exact join后，分别被raw-pair/实际大小lossless archive reserve拒绝。三份block记录实际9参数/FFN input/reference与timed-loop SHA一致；执行/数值/交付/promotion轴分开，comparisons仍null，没有新的合格倍率。TMPDIR对照不证明因果，候选未回灌20steps请求，也没有VAE decode/图片/物理ANE或完整请求资格。
+
+新增`block-evidence-axes`进入同一catalog，纯CPU合同与只读curator不引入产品/模型依赖。15项新回归包含完整顺序/gate/alias/copy/host依赖/owner与失败晋升反例、便携C++小矩阵对math.fsum、合成archive字节roundtrip/坏header/trailing/解压cap；合成codec通过不回填真实模型archive交付。`.tcbf16z`原始激活归档加入Git及隔离副本排除，公开JSON、源码和小型NPY fixture仍可跟踪，无已跟踪文件被新规则隐藏。
+
+本次整理验证：298项techniques测试中297通过、1项因实际不足256MiB而明确skip；原PMU admission门槛未降低，另加低磁盘必须在source/model/device工作前拒绝的回归。22项repository测试通过；techniques-only隔离副本重跑同一套测试、47个CPU cases、117页/1255本地链接、53张章节卡与18个device selector，无错误。完整可选来源检查核对149文件/31内容hash，来源索引`--check`通过；四个新增Objective-C++客户端syntax检查无警告，两个holdout/block CLI的标准库help通过。磁盘仍约176MiB，没有删除模型、旧实验或系统cache。
+
+完整研究范围仍未完成：先处理受约束的raw持久化与复核，再谈完整请求/画质、更多层/LoRA、冷/内存/长时/失败取消；其余GPU/profiling/媒体与metadata/aliases/version claims/薄AI skill等roadmap范围不由本次整理取得资格。

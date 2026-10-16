@@ -23,3 +23,11 @@ GPU profiling新增[tmc/gputrace源码研究](sources/repos/gputrace-timing-prov
 [ane_pmu_profiler](sources/repos/ane-pmu-provenance.md)的固定tree未找到明确许可，只保留原创源码导读/独立API实验和脱敏结果，不分发上游source/binary/model。[measure_ane_capacity](sources/repos/ane-capacity-pmu.md)有BSD-3-Clause，Copyright (c) 2025 Koan-Sin Tan；本轮也是只读学习与本地编译，没有将App/模型/代码体纳入Wiki。PMU decoder、合成MIL/container writer、native客户端、独立数学witness与verifier为原创实现，格式/selector知识不等于Apple接口稳定或分发授权。
 
 [真实Qwen private-prefix实验](review/qwen-private-ffn-20261016.md)继续只发布原创API集成、稳定公式/切片、独立数学witness与data verifier；原始checkpoint/激活/私有程序binary保持本地。ANEForge/MLX继续遵循其原许可，模型权重许可不由本Wiki改变；公开证据的hash/范围/误差/时间不包含原始tensor或用户会话。
+
+[actual surface实验](gpu-ane/shared-surface.md)的MIL、Metal/native客户端、独立全量witness与curator均为原创，未复制无明确许可的PMU实现。[Apple公共合同](sources/official/shared-memory.md)只作带URL/内容hash的概括，不分发Apple headers或网页正文；公开API条款不被本目录许可覆盖，也不授予私有接口稳定性/发行资格。
+
+[MLX external-memory来源卡](sources/repos/mlx-external-memory.md)按Apple MIT固定源码做原创概括，不复制其实现或分发headers/library。新增native客户端、周期合成配方、完整hash oracle和curator为原创；原始安装库和实验binary保持本地，不以本目录许可覆盖Apple SDK/MLX自身条款。
+
+[真实shared FFN集成](review/qwen-shared-ffn-20261016.md)的ABI guard、Metal pack、完整MLX消费者、actual-part CPU join与data verifier为原创；复用的ANEForge MIL/blob保持来源/内容身份且不公开权重/编译产物。公开只含脱敏指标/hash。[clonefile官方来源](sources/official/clonefile.md)不镜像SDK/网页，SDK header的APSL2.0与Apple文档条款不由Wiki MIT覆盖；文件clone与私有接口没有新增分发/稳定性保证。
+
+[ordinary完整block客户端](review/qwen-block-context-20261016.md)继续复用本仓库observer/调用配方作为显式可选integration；新增CPU oracle、codec与离线反例为原创工具。不分发模型激活、private常量或压缩BF16归档，合成字节fixture测试不作为实际模型交付资格。

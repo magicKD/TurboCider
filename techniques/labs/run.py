@@ -20,6 +20,10 @@ import heterogeneous
 import search_contracts
 import pmu
 import silu_domain
+import shared_backing
+import mlx_adoption
+import real_shared_ffn
+import block_context
 
 CASES = {
     "quant-formats": quantization.formats,
@@ -65,6 +69,10 @@ CASES = {
     "search-qualification": search_contracts.qualification,
     "pmu-provenance": pmu.provenance,
     "silu-domain": silu_domain.domain,
+    "backing-proof": shared_backing.backing_proof,
+    "mlx-adoption-contract": mlx_adoption.adoption_contract,
+    "real-shared-join": real_shared_ffn.join_contract,
+    "block-evidence-axes": block_context.status_contract,
 }
 
 

@@ -38,6 +38,8 @@ vpipe 文档与 WeightSet 实现特别处理非对齐文件offset的读窗口；
 
 首次内容验证 → 持有source FD/generation → metadata/stat guards → request lease → actual receipt。派生 artifact 记录 parent digest、每项变换、覆盖范围、dtype/rounding 和输出内容身份。不要把派生BF16 view叫原始BF16权重，也不把路径相同当来源没变。
 
+[文件clone官方合同](../sources/official/clonefile.md)用于隔离已有常量实验：同卷共享未改blocks不是hard link，也不是GPU feature alias；高层copy可能fallback普通复制。本轮[真实shared FFN](../review/qwen-shared-ffn-20261016.md)用严格clone并核对新inode/hash，仍为编译临时文件/cache留admission。只读prepared/load另设流程，不因存储不足降低新clone门槛，也不把未调用compile selector等同于内部没有编译。
+
 验证缓存命中只允许复用已证实的generation；跨进程/路径替换后要重建证明。source相同但refill地址变化时，可用受验证logical content identity复用小metadata，不可因此持有所有权重或忽略mutable内容变化。
 
 ## 安全与可复现

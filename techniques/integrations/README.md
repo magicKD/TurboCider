@@ -97,3 +97,36 @@ python3 -B techniques/scripts/run_experiment.py --timeout 180 \
 显式numpy/MLX依赖与upstream副本仅属于此可选集成，不是techniques核心必需品。先核对512MiB admission与常量图存储余量；保留失败breaker、owned进程timeout与全样本，不清系统cache/旧实验。raw checkpoint、激活、时间戳/机器路径不发布。
 
 边界是ready原BF16 GPU input→ready完整BF16 GPU output：GPU→host FP16、Model feed/execute/read/cast、GPU remainder、restore/join均计入，CPU验证在边界外。不声明零拷贝/physical overlap；全输出对BF16 replica与独立full/prefix FP64样本分别过固定门槛。API线程重叠不是物理counter。本轮[所有比较与held-out确认](../review/qwen-private-ffn-20261016.md)有局部warm收益，但完整请求/LoRA/内存/冷启动等资格仍缺。
+
+## 真实Qwen实际shared端口与五臂完整消费者
+
+[qwen_shared_ffn.py](qwen_shared_ffn.py)与[独立native](qwen_shared_ffn.mm)、[版本检查ABI](qwen_shared_abi.h)、[完整compute](qwen_shared_compute.h)不链接产品库或导入ANEForge实现；需要已准备的真实fixture/checkpoint/capture、明确成功的旧private-prefix run之MIL/blob，以及已有NumPy/MLX和MLX C++ headers/lib。原BF16 source、native paired-prefix、完整GPU remainder和BF16 output均严格保留；不下载模型、不安装或重建依赖/产品。
+
+默认只准备显式owned资产；`--device`才编译/执行，`--mode inspect`只compile/load读实际port，不推理。第一次新建graph用[严格clone](../sources/official/clonefile.md)，需256MiB free且不fallback普通copy。完整复现示例：
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 300 \
+  --output-dir outputs/my-new-qwen-shared-launch -- .venv/bin/python -B \
+  techniques/integrations/qwen_shared_ffn.py --device --mode benchmark \
+  --fixture "$TC_REAL_FIXTURE" --checkpoint "$TC_QWEN_CHECKPOINT" --capture-root "$TC_FFN_CAPTURE" \
+  --prior-run "$TC_QUALIFIED_PRIVATE_RUN" --mlx-root "$TC_INSTALLED_MLX" \
+  --point layer-0-step-19 --point layer-0-step-10 --repeats 30 --output-dir outputs/my-new-qwen-shared
+```
+
+已有完整验收的本脚本run可显式加`--prepared-run outputs/my-new-qwen-shared`、使用另一个全新output-dir，走只读prepared/load流程：不新建常量clone、不调用compile selector、不fallback编译，128MiB门槛；必须明确`--mode benchmark`，不能隐式把inspect变成模型执行。load仍可有大量内部工作，本轮650.99ms和32.11ms都保留，不叫“免费setup”。
+
+[全部560次](../review/qwen-shared-ffn-20261016.md)包括同client五臂copy/shared、两个实际point反序重复与264个完整actual-part exact join。当前约1.15×是本layer0 warm完整FFN相对compiled GPU的组件观察，不是整请求/全层/LoRA或物理ANE并行资格。原件和per-run源码不改，未执行的存储拒绝也保留；当前CLI额外参数guard单测不为旧run回填源码身份。
+
+## 独立工作负载与完整ordinary block重放
+
+[capture_qwen_holdout.py](capture_qwen_holdout.py)要求seed和prompt均不同于明确的baseline capture，复用同一source-qualified runtime。它仍使用原9张量hook与267MiB admission；本轮在启动native之前拒绝，没有新bulk capture或参考图片。
+
+[qwen_block_shared.py](qwen_block_shared.py)与[小型native客户端](qwen_block_shared.mm)复用显式成功的private constant bank，在ordinary GPU request的step1/layer0 observer内运行五臂完整block。需要已有产品library、原模型、baseline capture和installed MLX headers/lib；不会重建产品、导入ANEForge实现或下载依赖。核心检索/CPU合同不依赖这些资产。
+
+```sh
+.venv/bin/python -B techniques/integrations/qwen_block_shared.py --help
+```
+
+执行必须显式传`--device --native-dir ... --model-root ... --bank-run ... --baseline-capture ... --output-dir outputs/NEW`，输出目录必须全新。默认owned TMPDIR；`--temp-context inherited`是显式上下文对照，不是已证明修复。不同存储模式各自admission和后置128MiB reserve保持不变，不能为让实验通过而降低门槛或删旧数据。
+
+borrowed observer参数/原callable不逃逸，只有owned CPU BF16副本允许导出；受控停在step1/layer0，不进行VAE decode/image export，候选不回灌请求。`--lossless-archive`保留完整BF16字节，生成本地忽略的`.tcbf16z`；仅合成fixture完成独立decode测试，真实模型archive写出本轮被reserve拒绝。[全部失败与部分执行证据](../review/qwen-block-context-20261016.md)不作为合格性能或完整请求结果。

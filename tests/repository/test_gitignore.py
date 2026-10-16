@@ -46,6 +46,11 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/labs/metal/capture.trace.zip"]
         self.assertEqual(self.ignored(paths), set(paths))
 
+    def test_raw_bf16_archives_stay_local_at_any_depth(self):
+        paths = ["ffn-bf16.tcbf16z", "techniques/integrations/ffn-bf16.tcbf16z",
+                 "techniques/review/raw-pair.tcbf16z"]
+        self.assertEqual(self.ignored(paths), set(paths))
+
     def test_curated_sources_and_examples_remain_trackable(self):
         paths = ["techniques/candidates/projects.json", "techniques/labs/catalog.json",
                  "techniques/references/sources.json", "techniques/review/new-validation.json",
@@ -61,6 +66,10 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/review/ane-pmu-evidence-20261016.json",
                  "techniques/review/aneforge-evidence-20261016.json",
                  "techniques/review/qwen-private-ffn-evidence-20261016.json",
+                 "techniques/review/qwen-block-context-evidence-20261016.json",
+                 "techniques/integrations/qwen_block_shared.mm",
+                 "techniques/labs/ffn_cpu_witness.hpp",
+                 "techniques/tests/test_block_context.py",
                  "techniques/labs/ane/pmu_probe.mm",
                  "techniques/labs/ane/qwen_witness.py",
                  "techniques/sources/official/metal-counters.md"]

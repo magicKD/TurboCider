@@ -131,3 +131,17 @@ python3 -B techniques/scripts/run_experiment.py --timeout 120 \
 [完整消费者机制](../gpu-ane/private-ffn-boundary.md)说明为什么serial与hybrid都必须和完整GPU比较。[七个真实source运行](../review/qwen-private-ffn-20261016.md)保留全M/H/F及GPU余下channels，交接/转换/join全部计入；固定2048channels后在step19/10和24-group及pre-arm排空控制中确认局部warm收益，不是只测小matmul。
 
 核心[稳定公式/切片](silu_domain.py)与[独立FP64 witness](ane/qwen_witness.py)在本目录内；[ANEForge真实数据入口](../integrations/README.md)是明确可选upstream integration。它尚不是实际shared IOSurface、全请求或新产品后端默认。
+
+## 11. 实际共享surface：先证明接缝
+
+[shared_surface_probe.py](ane/shared_surface_probe.py)默认只准备原创FP16 affine MIL，`--device`才编译并运行[本地native客户端](ane/shared_surface_probe.mm)。只需标准库/Apple SDK，无产品、upstream checkout、NumPy或MLX依赖；使用新ignored目录和owned进程监督器，见[完整复现](../gpu-ane/shared-surface.md)。
+
+[四个新进程120次完整消费者](../review/private-shared-20261016.md)实际比较request input/output surface身份与Metal contents，全部input/ANE/consumer hash由[独立标准库witness](shared_backing.py)重建。128/192-byte实际pitch不外推；故意按紧密stride读取仍全finite却错误，上一代真实输出也被新generation完整拒绝。shared arm只取得外部feature边界copy数0的资格，runtime内部未知，不是物理ANE/并行、MLX adoption或真实Qwen提速。
+
+后续[MLX adoption实验](../review/mlx-adoption-20261016.md)另取得两个导入模式的实际alias与view/deleter证据，覆盖padded和逻辑8MiB合成范围；same-dtype Copy alias、已求值结果过期和materialized snapshot分开。它没有ANE调用，仍不能与前面的独立小图拼成真实FFN共享路径。
+
+## 12. 真实完整shared FFN五臂，不继承toy资格
+
+[新完整记录](../review/qwen-shared-ffn-20261016.md)实际跑通原始BF16 layer0的GPU→private→MLX完整消费者，port为`[1,1,1024,4096]`而非channel/sequence toy布局。GPU pack、同client copy控制、完整suffix/restore/join均计时；560次full/prefix/FP64门槛与后两轮264个actual-part BF16位级join见证分开标识。
+
+[CPU RNE/合同](real_shared_ffn.py)与[独立curator](../scripts/curate_real_shared_ffn.py)不运行设备，真实[入口](../integrations/README.md)需明确原始资产与依赖。长确认约1.15×是warm FFN replica消费者，不是完整block/request、LoRA或物理ANE资格；文件clone与load selector也不能当内部无copy/无编译证明。

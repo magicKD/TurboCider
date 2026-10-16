@@ -25,6 +25,14 @@ python3 -B techniques/scripts/get_page.py gpu-ane/lora.md --follow-sources --inc
 
 ## 来源索引、实验监督与证据归一化
 
+`curate_block_context.py --root ROOT --native-dir NATIVE --model-root MODEL --bank-run BANK --baseline-capture BASELINE --mlx-root INSTALLED --capture-rejected ID --block-run ID ... --output NEW.json`只读明确原件，复核648项native source、原BF16权重spans、bank MIL/blob、per-run源码/binary、完整MLX assets与终态receipt。分开保留capture admission、load失败和两份完整数值通过但导出失败的协议；重核330次完整block调用和198个exact join，只给诊断绝对耗时，不输出qualified ratio或假称raw可离线重放。见[完整block上下文记录](../review/qwen-block-context-20261016.md)。
+
+`curate_real_shared_ffn.py --root ROOT --fixture FILE --checkpoint FILE --capture-root CAPTURE --prior-run PRIOR --mlx-root INSTALLED --run ID ... --inspection ID --rejected ID --output NEW.json`只读明确原件，标准库复核原BF16 spans、完整capture/fixture、paired native prefix、实际MIL/blob、per-run source/binary、383-header/三library和child退出。重算560次完整五臂的gates/order/host依赖/ratio，核对264个actual-part join hash/计数与64项旧真实输出拒绝；不重新执行private输出或FP64数学，不发布manifest原路径/向量。见[真实shared FFN](../review/qwen-shared-ffn-20261016.md)。inspect零调用和storage admission未执行分别保留，不回填旧source/compile或较新的join资格。
+
+`curate_mlx_adoption.py --root ROOT --mlx-root INSTALLED --upstream-root PINNED --run ID ... --failure ID --output NEW.json`只读明确原件、同一sources登记的固定源码，以及已安装MLX的完整383-header/三library身份；独立重建全部32个完整positive consumer hash、24个GPU input hash、20项负控与首轮错误snapshot假设。见[MLX adoption记录](../review/mlx-adoption-20261016.md)。不导入candidate/MLX、执行设备、下载或改checkout，不将8MiB合成输入或source tag当真实Qwen/可复现wheel构建证明。
+
+`curate_shared_surface.py --root ROOT --run ID ... --output NEW.json`只读明确的source/MIL/binary/native与owned退出receipt；用标准库重建全部input/ANE/consumer逻辑hash，核对实际request/Metal身份bool、padding/stale负控、复制量、串行host时钟与释放顺序。见[actual backing报告](../review/private-shared-20261016.md)。不启动设备、不扫描未知run或报告raw ID/地址；内部copy/物理placement/overlap和Qwen资格保持未知/未取得。
+
 `curate_qwen_private_ffn.py --root ROOT --fixture FILE --checkpoint FILE --capture-root ROOT --upstream-root PINNED --source-root COPY --run discovery:ID --run confirmation:ID --failure ID --output NEW.json`只读指定原件，用标准库复核原始BF16 tensor/capture内容、NPY真实row pitch上的native配对prefix SHA、源码/MIL/blob/shim、完整三arm顺序/gate/host依赖和独立ratio算术。不导入候选/ANE/MLX、不跑设备或重新执行输出tensor；删除公开capsule中的原始文件时间戳，不回填缺失的历史binary字段。见[真实Qwen private FFN报告](../review/qwen-private-ffn-20261016.md)。
 
 `curate_pmu_campaign.py --root ROOT --upstream-root PINNED --capacity-root PINNED_CAPACITY --run ID ... --output NEW.json`只读指定原件，不导入native/candidate builder、抓统一日志或跑设备。对自有合成图用独立标准库math.fsum/FP16生成完整input/output SHA，核对所有generation/布局/时间/失败及source/binary/MIL身份；原工具ACTIVE/exit0和capacity skip保持独立状态。结果见[ANE PMU报告](../review/ane-pmu-20261016.md)，没有取得counter就不给物理时间/频率/吞吐。

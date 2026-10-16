@@ -295,6 +295,7 @@ class StandaloneTests(unittest.TestCase):
                 "labs/DerivedData/Build/temp.o", "labs/CMakeFiles/cmake.check_cache",
                 "labs/metal/raw.gputrace/metadata.json", "labs/metal/raw.trace/data",
                 "labs/metal/raw.gputrace.zip", "labs/metal/raw.trace.zip",
+                "integrations/ffn-bf16.tcbf16z", "review/raw-pair.tcbf16z",
                 "outputs/report.json", "labs/private/session.json",
             )
             portable = ("labs/ane/probe.py", "review/evidence.json", "examples/tiny.npy")

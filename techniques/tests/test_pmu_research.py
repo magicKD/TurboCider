@@ -2,14 +2,17 @@
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 import math
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "labs"))
@@ -84,11 +87,16 @@ class PMUContracts(unittest.TestCase):
         self.assertEqual((magic, dtype, size, offset), (0xDEADBEEF, 1, 32 * 32 * 2, 128))
         self.assertEqual(len(blob), 128 + size)
 
-    def test_help_and_default_prepare_need_no_optional_modules_or_device(self):
+    def test_help_needs_no_optional_modules_or_device(self):
         script = ROOT / "labs/ane/pmu_probe.py"
         result = subprocess.run([sys.executable, "-I", "-S", "-B", str(script), "--help"], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_default_prepare_needs_no_optional_modules_or_device(self):
+        script = ROOT / "labs/ane/pmu_probe.py"
         with tempfile.TemporaryDirectory() as directory:
+            if shutil.disk_usage(directory).free < 256 * 1024**2:
+                self.skipTest("PMU prepare requires 256 MiB free; retain the runtime admission gate")
             target = Path(directory) / "owned"
             result = subprocess.run([sys.executable, "-I", "-S", "-B", str(script), "--output-dir", str(target)],
                                     capture_output=True, text=True, timeout=10)
@@ -99,6 +107,24 @@ class PMUContracts(unittest.TestCase):
             self.assertIsNone(report["native"])
             self.assertFalse((target / "pmu-probe").exists())
             self.assertEqual(report["contract_helper_sha256"], hashlib.sha256((target / "source/pmu.py").read_bytes()).hexdigest())
+
+    def test_low_disk_refuses_before_source_model_or_device_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "owned"
+            usage = shutil.disk_usage(directory)._replace(free=256 * 1024**2 - 1)
+            with patch.object(sys, "argv", ["pmu_probe.py", "--output-dir", str(target)]), \
+                    patch.object(driver.shutil, "disk_usage", return_value=usage), \
+                    patch.object(driver.subprocess, "run") as native, \
+                    patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(driver.main(), 1)
+            report = json.loads((target / "report.json").read_text())
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["errors"], [{"type": "ValueError", "message": "256 MiB disk headroom required; no data deleted"}])
+            self.assertIsNone(report["native"])
+            self.assertFalse((target / "source").exists())
+            self.assertFalse((target / "model").exists())
+            self.assertFalse((target / "pmu-probe").exists())
+            native.assert_not_called()
 
 
 class PMUEvidence(unittest.TestCase):

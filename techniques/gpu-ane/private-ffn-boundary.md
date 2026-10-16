@@ -53,3 +53,31 @@ python3 -B techniques/labs/run.py silu-domain
 本机[完整报告](../review/qwen-private-ffn-20261016.md)保存三档discovery、冻结2048后的step19/10确认、24-group确认与frontend失败；不同process时钟不合并。它不是完整Transformer block、生成请求、LoRA或产品默认资格。
 
 下一步：真实GPU/ANE input/output backing、实际stride/alias与owner见证，减少copy后重测；更广层/prompt/seed/LoRA和完整请求；compile/load复用与内存/长时回归。不能只把 `zero_copy` 字段改成true，也不能相乘toy ANE和这里的收益。
+
+2026-10-16后续[合成actual-backing实验](shared-surface.md)已验证request surface与Metal映射及完整GPU消费者；它是接真实FFN前的一个前提，不回填本页copy-bridge资格。真实二维MIL、MLX adoption和full-source精度/成本仍需重新实测。
+
+## 6. 后续实际shared完整FFN：新证据，不给旧桥接换标签
+
+2026-10-16后续已在[真实五臂实验](../review/qwen-shared-ffn-20261016.md)实连：实际2D MIL port是`[1,1,1024,4096]` FP16，GPU从原BF16 input pack，request output实际surface导入MLX，作为compiled join的runtime参数。完整GPU/copy serial/copy hybrid/shared serial/shared hybrid同source配对，560次调用全部过full/prefix/独立FP64固定门槛。
+
+后两run另有264个完整实际tail/private部分的独立CPU FP32加法＋BF16 RNE位级见证，64项旧实际point输出拒绝观察；不能把位级join正确当整个mixed-precision模型无损。新[纯CPU合同](../labs/real_shared_ffn.py)、[data verifier](../scripts/curate_real_shared_ffn.py)与[离线反例](../tests/test_real_shared_ffn.py)随本目录分发；设备入口属于显式[integration](../integrations/README.md)。
+
+长确认完整GPU约21.6ms、shared-hybrid约18.8–18.9ms，paired约1.146–1.149×；同client copy→shared只有约1.1%观察且首轮三point方向相反。copy控制使用FP16 staging及同一private client，不等于本页旧e5rt/NumPy bridge；不把两批差值全归因于copy。
+
+setup仍能否决：load-only只省掉客户端compile selector，不是内部无编译；实测load650.99ms与32.11ms都保留。新clone/compile与只读复用各自admission，未执行的存储拒绝不是硬件负结果；[文件clone](../sources/official/clonefile.md)也不是设备zero-copy。完整请求/LoRA、更多层/输入、内存/长时/失败取消和physical placement/overlap仍未获得资格。
+
+```sh
+python3 -B techniques/labs/run.py real-shared-join
+```
+
+## 7. 完整ordinary block：执行、数值和交付是不同状态
+
+[独立seed/prompt的后续记录](../review/qwen-block-context-20261016.md)在实际ordinary GPU observer内比较原始compiled block callable、staged GPU、copy hybrid、shared serial和shared hybrid。attention/norm producer、完整FFN、modulation/residual consumer均在计时边界内；staged GPU对原始输出exact，作为分段本身的ablation。它是借用原参数的完整block重放，不是完整请求或未改变内部FFN的直接capture。
+
+两份记录完成330次完整调用和198个exact actual-part join，但最后的原始tensor/无损archive导出都被存储reserve拒绝，因此协议仍failed、comparisons为null，只保留绝对耗时诊断，不授予新倍率。另一份load返回false且NSError为nil，不能凭error code0判定成功，也不能由TMPDIR上下文差异推断因果。
+
+[纯CPU合同](../labs/block_context.py)、[只读curator](../scripts/curate_block_context.py)与[离线回归](../tests/test_block_context.py)分开核对execution/numeric/artifact/promotion轴。小矩阵C++ oracle和合成archive roundtrip测试不替代真实模型raw持久化或请求质量验证。
+
+```sh
+python3 -B techniques/labs/run.py block-evidence-axes
+```

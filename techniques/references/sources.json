@@ -5,6 +5,113 @@
   "meaning": "Local paths are relative to techniques. Integration paths retain original repository-root/sibling anchors for optional provenance only; check with --include-integrations. Core learning and execution require no integration source. Snapshots are inspected content, not latest upstream.",
   "sources": [
     {
+      "id": "qwen-block-context-20261016", "kind": "evidence", "scope": "local", "path": "review/qwen-block-context-20261016.md",
+      "role": "New seed/prompt ordinary-block replay with original callable/staged ablation, candidate load failure and two complete-numerics/export-refused protocols",
+      "source_ids": ["upstream-mlx-adoption", "official-shared-memory"],
+      "evidence": {"production_qualified": false, "whole_request_qualified": false, "qualified_performance_ratios_available": false}
+    },
+    {
+      "id": "qwen-block-context-data-20261016", "kind": "evidence", "scope": "local", "path": "review/qwen-block-context-evidence-20261016.json",
+      "role": "Capture admission refusal, load failure, 330 complete block calls and 198 exact joins; execution/numeric/artifact axes separated without qualified speed ratios",
+      "evidence": {"production_qualified": false, "raw_tensors_available": false, "data_verifier_reexecuted_original_inputs_or_private_outputs": false}
+    },
+    {
+      "id": "qwen-shared-ffn-20261016", "kind": "evidence", "scope": "local", "path": "review/qwen-shared-ffn-20261016.md",
+      "role": "Actual original-BF16 Qwen full five-arm private copy/shared consumers, real 2D port, exact runtime join and load/admission boundaries",
+      "source_ids": ["upstream-aneforge-search", "upstream-mlx-adoption", "official-shared-memory", "official-clonefile"],
+      "evidence": {"production_qualified": false, "whole_request_qualified": false, "physical_overlap_qualified": false}
+    },
+    {
+      "id": "qwen-shared-ffn-data-20261016", "kind": "evidence", "scope": "local", "path": "review/qwen-shared-ffn-evidence-20261016.json",
+      "role": "All 560 complete consumers, 264 exact actual-part joins, 64 old actual-output observations, one nonexecuting inspection and one admission refusal; no raw tensors/paths",
+      "evidence": {"production_qualified": false, "hardware_attestation": false, "raw_private_outputs_reexecuted_by_verifier": false}
+    },
+    {
+      "id": "official-clonefile", "kind": "source", "scope": "local", "path": "sources/official/clonefile.md",
+      "role": "Apple same-volume filesystem cloning, capability and strict client fallback policy; not device feature alias or compiler-storage qualification",
+      "symbols": ["clonefile", "NOFOLLOW", "volumeSupportsFileCloning", "admission"],
+      "official": {
+        "publisher": "Apple Foundation / APFS / SDK",
+        "captured_at": "2026-10-16",
+        "snapshot_identity": "Apple current Foundation Markdown 2026-10-16 and macOS SDK26.5 sys/clonefile.h",
+        "documents": [
+          {"url": "https://developer.apple.com/documentation/foundation/about-apple-file-system.md", "sha256": "91c2fec1bff56d1f78ec8f97a51111200aa74be43c0c4832575087884e7d1562"},
+          {"url": "https://developer.apple.com/documentation/foundation/urlresourcevalues/volumesupportsfilecloning.md", "sha256": "cd9d6d57dcbc2cb58462a03ef11d65849c2a465c9e6717bff58c6d52643fec08"}
+        ],
+        "sdk_files": [{"path": "usr/include/sys/clonefile.h", "sha256": "1efe4ef4241c360905ecc40092245334725a9f1b208be8886ce87e2538b89cbd", "read_ranges": [[31, 58]]}]
+      },
+      "evidence": {"runtime": "original client successfully cloned source-verified 48MiB constants into fresh owned directories with distinct inodes; actual allocated/shared blocks not measured"}
+    },
+    {
+      "id": "mlx-adoption-20261016", "kind": "evidence", "scope": "local", "path": "review/mlx-adoption-20261016.md",
+      "role": "Actual MLX raw-pointer/strict-buffer aliases and view/deleter lifecycle; same-dtype Copy alias versus cached result/materialized snapshot, full 8MiB synthetic source and one retained client failure",
+      "source_ids": ["upstream-mlx-adoption", "official-shared-memory"],
+      "evidence": {"production_qualified": false, "real_qwen": false, "formal_performance_score": false}
+    },
+    {
+      "id": "mlx-adoption-data-20261016", "kind": "evidence", "scope": "local", "path": "review/mlx-adoption-evidence-20261016.json",
+      "role": "Four complete import protocols, 32 full positive consumers, 20 negative observations and retained snapshot-assumption failure with source/383-header/three-library/native/child identities",
+      "evidence": {"production_qualified": false, "hardware_attestation": false, "raw_addresses_or_device_ids_exported": false}
+    },
+    {
+      "id": "upstream-mlx-adoption", "kind": "source", "scope": "local", "path": "sources/repos/mlx-external-memory.md",
+      "role": "MLX raw-pointer fallback, strict make_buffer/release, untracked Metal wrapping, as_strided owner sharing and Copy::eval physical alias semantics",
+      "symbols": ["make_buffer", "Copy::eval", "copy_shared_buffer", "AsStrided::eval", "untracked"],
+      "upstream": {
+        "repository": "ml-explore/mlx", "topic": "external memory adoption, owner lifetime and Copy alias", "commit": "7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247", "tag": "v0.32.0", "captured_at": "2026-10-16", "worktree_dirty": false,
+        "files": [
+          {"path": "mlx/array.cpp", "sha256": "6e1fb0a6b398f7dd95355f7f5a2338addbfc4a8c0f18137252315b2dfa25cb72", "read_ranges": [[78, 115]]},
+          {"path": "mlx/array.h", "sha256": "19b724cb9f31190006610b8d6049e2b2d02f9a008e9ef4e3772fef5e6095786b", "read_ranges": [[60, 100], [340, 387]]},
+          {"path": "mlx/allocator.h", "sha256": "7ef6044508b4e71520c8aa20474356c435c5aa06734bb1d09ee598b6bc3065f0", "read_ranges": [[1, 77]]},
+          {"path": "mlx/backend/metal/allocator.cpp", "sha256": "5f57fbf5206154a8808f6cd29eb53954f05b7bdc1fde9ee7c0d2a64098f0dc8a", "read_ranges": [[1, 52], [188, 240]]},
+          {"path": "mlx/backend/common/common.cpp", "sha256": "aa4301034dca283619d72b411dec04f69703fb908efe516cc5bc0caeff42eb9b", "read_ranges": [[1, 70]]},
+          {"path": "mlx/ops.cpp", "sha256": "725dd3f5021a2f3d5ccf32d91f860a651c036785c77dba9022c8631e165d0a92", "read_ranges": [[262, 324]]},
+          {"path": "LICENSE", "sha256": "ccfab7ccb2ea306f71531c8ca77bb55507606cd90768b1e32b8b52ab5b48cf01", "read_ranges": [[1, 21]]}
+        ]
+      },
+      "license": {"spdx": "MIT", "copyright": "Apple Inc.", "upstream_implementation_embedded": false},
+      "evidence": {"upstream_execution": "installed 0.32.0 native clients: four complete adoption/view/Copy/lifetime protocols plus retained false snapshot assumption; source tag is reading provenance, not wheel build attestation", "production_qualified": false}
+    },
+    {
+      "id": "private-shared-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/private-shared-20261016.md",
+      "role": "Actual Metal/request surface backing equality, four fresh-process exact affine consumers, padded-stride/stale negatives and non-promoted host diagnostics",
+      "source_ids": ["official-shared-memory", "upstream-ane-pmu"],
+      "evidence": {"production_qualified": false, "runtime_internal_copy_behavior": "unknown", "physical_overlap_qualified": false}
+    },
+    {
+      "id": "private-shared-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "review/private-shared-evidence-20261016.json",
+      "role": "All 120 independent full logical tensor hash witnesses, eight actual GPU negative consumers, request/Metal identity booleans and source/binary/child-exit lineage",
+      "evidence": {"production_qualified": false, "raw_addresses_or_surface_ids_exported": false, "hardware_attestation": false}
+    },
+    {
+      "id": "official-shared-memory",
+      "kind": "source",
+      "scope": "local",
+      "path": "sources/official/shared-memory.md",
+      "role": "Public Metal no-copy wrapping, IOSurface identity, CPU lock boundary and independent owner responsibilities; not private ANE guarantees",
+      "symbols": ["makeBuffer", "IOSurfaceGetID", "IOSurfaceLock", "inputArray/outputArray"],
+      "official": {
+        "publisher": "Apple Metal / IOSurface",
+        "captured_at": "2026-10-16",
+        "snapshot_identity": "Apple public Markdown 2026-10-16 and local macOS SDK 26.5 selected headers",
+        "documents": [
+          {"url": "https://developer.apple.com/documentation/metal/mtldevice/makebuffer%28bytesnocopy%3Alength%3Aoptions%3Adeallocator%3A%29.md", "sha256": "200dcc85aec1f505126f4e231bbaa7a31dd240677d6ed88ebaccdfb30111c8b0"},
+          {"url": "https://developer.apple.com/documentation/iosurface/iosurfacegetid%28_%3A%29.md", "sha256": "80a1b9add3f419cf14f60db781c527b51d6ab43aec586f56eebd22d021b590c3"}
+        ],
+        "sdk_files": [
+          {"path": "Metal.framework/Headers/MTLDevice.h", "sha256": "d1ef1bb5bc85faeeec9bc85f49124a453a8cd33b1182b0a71a41ba0dc4ebbb89", "read_ranges": [[680, 700]]},
+          {"path": "IOSurface.framework/Headers/IOSurfaceRef.h", "sha256": "8ee2890f7a5392ac2040c2e0b3d3cb773cdebe3627ad3452881fc7d20a759bd5", "read_ranges": [[176, 235]]}
+        ]
+      },
+      "evidence": {"runtime": "four bounded owned native processes, 120 full logical hash witnesses and external backing matches; internal copy, physical placement/overlap and real model unqualified"}
+    },
+    {
       "id": "qwen-private-ffn-20261016",
       "kind": "evidence",
       "scope": "local",

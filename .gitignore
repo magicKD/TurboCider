@@ -136,6 +136,9 @@ compile_commands.json
 
 # Downloaded model weights and compiled model caches
 *.safetensors
+# Lossless BF16 activation/reference archives from optional research clients.
+# Curated JSON evidence and tiny portable tensor fixtures remain trackable.
+*.tcbf16z
 *.ckpt
 *.pth
 *.onnx

@@ -12,6 +12,9 @@
 - ANE图搜索：[缓存身份、严格门槛与失败缩减](ane/graph-rewrite-search.md) → [ANEForge固定源码](sources/repos/aneforge-rewrite-search.md) → [13组实机比较和负控](review/aneforge-20261016.md)；合成host-fed结果不作为Qwen/handoff资格。
 - ANE profiling：[PMU payload/单位/生命周期合同](profiling/ane-pmu-lab.md)与[81次完整输出的本机记录](review/ane-pmu-20261016.md)；推理通过但counter未取得，保留CLI假阳性、skip与null，不套用上游峰值。
 - 真实FFN分担：[完整GPU分母、精度岛与交接成本](gpu-ane/private-ffn-boundary.md) → [Qwen layer0三档探索和冻结参数确认](review/qwen-private-ffn-20261016.md)；private copy-bridge在所测warm组件约1.08–1.12×，不是全请求/零拷贝或默认资格。
+- 实际backing：[request surface与Metal映射的证据合同](gpu-ane/shared-surface.md) → [四进程120次完整消费者](review/private-shared-20261016.md)；包含128/192-byte padding、finite但错误stride和stale输出负控，不授予内部零拷贝/物理并行或Qwen资格。
+- MLX接缝：[实际adoption、Copy alias、view/owner与过期结果](review/mlx-adoption-20261016.md)；四份完整协议、32个全量消费者、8MiB合成范围与首轮客户端失败分开，不拼接成未运行的Qwen共享路径。
+- 实际真实shared FFN：[五臂完整消费者、560次调用与264个精确join](review/qwen-shared-ffn-20261016.md)；原始BF16 GPU分母、实际二维port、反序point、load/admission均有记录。长确认约1.15×只属于layer0 warm组件，同client去copy约1.1%且首轮方向不同，未晋升产品默认。
 - GPU源码到真实消费者：[MLX/GGML affine、tile与原始BF16控制](review/gpu-affine-20261016.md)，包含量化配方内收益、额外驻留成本与独立确认，不自动晋升产品默认。
 - 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
 - GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
@@ -22,7 +25,7 @@
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
 - 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
-- 动手实现：[实验室](labs/README.md) → [52项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含43个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/真实模型集成另需显式opt-in。
+- 动手实现：[实验室](labs/README.md) → [53项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含46个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/shared surface/MLX adoption/真实模型集成另需显式opt-in。
 
 ## 目录
 
@@ -44,6 +47,8 @@
 | 实现与复现 | [实验室](labs/README.md) · [GPU kernels](labs/gpu.md) · [ANE/W8A8](labs/ane.md) · [量化推导](labs/quantization.md) · [SOP](guides/sop.md) · [KernelWiki/Sana](references/kernelwiki-sana.md) · [Splash W8A8导读](references/splash-w8a8-walkthrough.md) · [扩展验证](review/labs-validation.md) |
 
 ## 阅读约定
+
+完整block的后续[独立seed/prompt记录](review/qwen-block-context-20261016.md)保留load失败、330次完整数值调用与最终存储拒绝；没有合格倍率或完整请求结果。
 
 核心学习路径与必需代码均包含在`techniques/`。标准库样本可以单独复制本目录运行；真实设备样本另需明确列出的 Apple SDK、NumPy/CoreML/MLX 依赖，不需要兄弟仓库。链接到产品`native/`、`tools/`、`docs/`或上游网站的内容只用于可选溯源/生产接入；[integrations](integrations/README.md)明确标为可选，不属于离线核心。默认检查只验证本地资产，`--include-integrations`可追加完整仓库来源核查；[隔离检查](scripts/check_standalone.py)实际验证核心没有暗中导入产品代码。
 
@@ -69,6 +74,8 @@
 `examples/`保留可移植的小型输入，`review/`保留核查摘要；原始报告、编译产物和依赖 overlay 放在根目录已忽略的`outputs/`。若在实验目录内工作，可使用同样已忽略的`build/`、`dist/`、`outputs/`、`results/`、`artifacts/`、`scratch/`或`private/`子目录；对话摘录只保留在这些本地目录中，不纳入提交。
 
 `review/raw/`与`review/local/`也仅用于本地原始测量和机器配置，不纳入提交；经过整理、脱敏的`review/*.json`验证摘要继续跟踪。
+
+原始权重/激活`.safetensors`与无损BF16归档`.tcbf16z`保持本地；压缩不等于脱敏，隔离副本也不复制这些BF16归档。小型可移植`.npy` fixture、源码与公开JSON摘要仍可跟踪。
 
 嵌套Swift的`.build/`、`.swiftpm/`、`DerivedData/`、Xcode结果包、CMake生成文件及实验`.cache/`、`.aneforge_cache/`、`.aneforge-cache/`也保持本地。不要用整个`references/`、JSON或媒体扩展名的宽泛规则屏蔽整理后的来源、验证摘要或测试fixture。
 

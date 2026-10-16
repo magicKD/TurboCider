@@ -3,15 +3,31 @@
   "purpose": "Required code paths are relative to techniques and entirely local. integration_code is optional product traceability, never a core dependency. Every technical chapter maps to executable cases, controls and revisit conditions; no automatic model qualification.",
   "entries": [
     {
+      "chapter": "gpu-ane/shared-surface.md",
+      "cases": ["backing-proof", "private:shared-surface", "mlx-adoption-contract", "mlx:external-adoption"],
+      "code": ["labs/shared_backing.py", "labs/ane/shared_surface_probe.py", "labs/ane/shared_surface_probe.mm", "scripts/curate_shared_surface.py",
+               "labs/mlx_adoption.py", "labs/metal/mlx_adoption_probe.py", "labs/metal/mlx_adoption_probe.mm", "scripts/curate_mlx_adoption.py"],
+      "source_ids": ["official-shared-memory", "upstream-ane-pmu", "upstream-mlx-adoption"],
+      "evidence_ids": ["private-shared-20261016", "private-shared-data-20261016", "mlx-adoption-20261016", "mlx-adoption-data-20261016"],
+      "controls": ["actual request input/output IOSurface IDs match intended mappings and Metal contents before/after all calls; only booleans exported",
+                   "all 120 complete input/ANE/consumer hashes independently reconstructed; padded stride and actual stale-output negatives remain finite but rejected",
+                   "owned GPU completion and synchronous return/unload precede release; shared external-copy count zero does not grant internal-copy/physical-overlap/model qualification",
+                   "actual MLX flat/view/same-dtype Copy aliases, last-view deleter timing, materialized snapshot and stale evaluated-output negatives; 8MiB synthetic is not real Qwen"],
+      "revisit_when": "OS/SDK/private ABI, shape/stride/dtype, actual MLX/model consumer, ownership/generation or asynchronous lifecycle changes"
+    },
+    {
       "chapter": "gpu-ane/private-ffn-boundary.md",
-      "cases": ["silu-domain", "search-qualification"],
-      "code": ["labs/silu_domain.py", "labs/ane/qwen_witness.py", "scripts/curate_qwen_private_ffn.py"],
-      "integration_code": ["techniques/integrations/aneforge_qwen_ffn.py"],
-      "source_ids": ["upstream-aneforge-search", "upstream-mlx-affine"],
-      "evidence_ids": ["qwen-private-ffn-20261016", "qwen-private-ffn-data-20261016"],
+      "cases": ["silu-domain", "search-qualification", "real-shared-join", "block-evidence-axes", "private:qwen-shared-ffn"],
+      "code": ["labs/silu_domain.py", "labs/ane/qwen_witness.py", "scripts/curate_qwen_private_ffn.py", "labs/real_shared_ffn.py", "scripts/curate_real_shared_ffn.py", "labs/block_context.py", "labs/ffn_cpu_witness.hpp", "scripts/curate_block_context.py"],
+      "integration_code": ["techniques/integrations/aneforge_qwen_ffn.py", "techniques/integrations/qwen_shared_ffn.py", "techniques/integrations/qwen_shared_ffn.mm", "techniques/integrations/qwen_shared_abi.h", "techniques/integrations/qwen_shared_compute.h", "techniques/integrations/capture_qwen_holdout.py", "techniques/integrations/qwen_block_shared.py", "techniques/integrations/qwen_block_shared.mm"],
+      "source_ids": ["upstream-aneforge-search", "upstream-mlx-affine", "upstream-mlx-adoption", "official-shared-memory", "official-clonefile"],
+      "evidence_ids": ["qwen-private-ffn-20261016", "qwen-private-ffn-data-20261016", "qwen-shared-ffn-20261016", "qwen-shared-ffn-data-20261016", "qwen-block-context-20261016", "qwen-block-context-data-20261016"],
       "controls": ["complete original BF16 GPU denominator, paired gate/up/down and complete GPU remainder",
                    "all-call full/prefix source and independent FP64 sample gates; conversion/feed/restore/join included",
-                   "three-arm serial/hybrid controls, frozen-share held-out timesteps and 24-group confirmation; host overlap is not physical overlap"],
+                   "three-arm serial/hybrid controls, frozen-share held-out timesteps and 24-group confirmation; host overlap is not physical overlap",
+                   "actual 2D single-channel port, same-client five-arm source/alias/full joins and alternating real timesteps; 264 exact join witnesses without backfilling earlier runs",
+                   "non-executing storage admission, load-without-compile-selector does not imply internal no-compile or free setup",
+                   "ordinary original GPU block callable and staged exact ablation; new seed/prompt; all 330 calls/198 joins retained but failed raw/archive export never earns a qualified ratio"],
       "revisit_when": "source/LoRA, workload/domain, backend/OS/library, residency, actual backing or full-request consumer changes"
     },
     {
