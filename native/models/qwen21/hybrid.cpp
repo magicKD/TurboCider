@@ -7,10 +7,12 @@
 namespace tc::qwen21 {
 HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
                      const std::vector<int> &gpu_full_blocks, bool layer_staged,
-                     int staged_suffix_bits)
+                     int staged_suffix_bits, std::shared_ptr<CiderCache> cider_cache)
     : weights_(weights), ane_(ane), gpu_w8a16_(gpu_w8a16),
       runtime_lora_suffix_(weights.has_runtime_loras()), layer_staged_(layer_staged),
-      staged_suffix_bits_(staged_suffix_bits) {
+      staged_suffix_bits_(staged_suffix_bits),
+      staged_suffix_cider_(bool(cider_cache)), cider_cache_(std::move(cider_cache)) {
+    require(!staged_suffix_cider_ || staged_suffix_bits_ == 8, "DiT W8A8 requires 8-bit suffix weights");
     require(staged_suffix_bits_ == 0 || staged_suffix_bits_ == 4 || staged_suffix_bits_ == 8,
             "Qwen21 staged suffix quantization accepts only 0, 4 or 8 bits");
     require(!layer_staged_ || (!gpu_w8a16_ && !runtime_lora_suffix_ && gpu_full_blocks.empty()),
@@ -78,8 +80,8 @@ HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
         }
     }
     if (staged_suffix_bits_) {
-        suffix_ = mx::compile([bits = staged_suffix_bits_](const std::vector<Tensor> &args) {
-            return std::vector<Tensor>{staged_quantized_suffix_forward(args, bits)};
+        suffix_ = mx::compile([bits = staged_suffix_bits_, cider = staged_suffix_cider_](const std::vector<Tensor> &args) {
+            return std::vector<Tensor>{staged_quantized_suffix_forward(args, bits, cider)};
         });
     } else if (!runtime_lora_suffix_ && gpu_w8a16_) {
         suffix_ = mx::compile([](const std::vector<Tensor> &args) {
@@ -146,10 +148,13 @@ Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
             auto down = mx::contiguous(slice_axis(weights_.at(stem + "out.weight"), 1, width, 12288));
             // Complete the six packed buffers before layer release. Neither
             // the source tensors nor their dense slices survive in this bank.
-            saved.emplace(quantize_staged_suffix(gate_up, down, staged_suffix_bits_));
+            saved.emplace(quantize_staged_suffix(gate_up, down, staged_suffix_bits_, staged_suffix_cider_,
+                                                 "suffix/block" + std::to_string(block), cider_cache_.get()));
             staged_suffix_pack_seconds_ +=
                 std::chrono::duration<double>(Clock::now() - pack_started).count();
         }
+        require(saved->bits == staged_suffix_bits_ && saved->cider_w8a8 == staged_suffix_cider_,
+                "Qwen21 staged suffix cache recipe changed");
         gpu = suffix_(saved->arguments(packed))[0];
     } else if (layer_staged_) {
         auto &saved = staged_suffix_[block];

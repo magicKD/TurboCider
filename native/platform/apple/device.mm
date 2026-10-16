@@ -6,6 +6,12 @@
 #include <vector>
 #include <fstream>
 namespace tc {
+std::filesystem::path qwen21_dit_cache_root() {
+    NSURL *url = [NSFileManager.defaultManager URLForDirectory:NSCachesDirectory
+        inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:nil];
+    require(url != nil, "Cannot locate the user cache directory for DiT W8A8");
+    return std::filesystem::path(url.fileSystemRepresentation) / "TurboCider" / "qwen21-dit-w8a8";
+}
 DeviceInfo device_info() {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     return {device ? std::string(device.name.UTF8String) : "unavailable",

@@ -63,6 +63,44 @@ def qwen21_staged_environment(overrides=None):
 
 class ContractTests(unittest.TestCase):
 
+    def test_qwen21_dit_w8a8_explicit_request_contract(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=40, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged',
+                    qwen21_w8a8=True, qwen21_dit_w8a8=True,
+                    allow_approximation=True, ane_manifest='/verified-at-execution.json')
+        v2 = dict(schema_version=2, model=base['model'], operation=base['operation'],
+                  inputs=[dict(kind='text', role='prompt', text=base['prompt'])],
+                  outputs=[dict(kind='image', path='result.png', width=512, height=512,
+                                frames=1, audio=False)], sampling=dict(seed=42, steps=40),
+                  execution=dict(policy='gpu_ane', residency='component_staged',
+                                 ane_manifest=base['ane_manifest'], allow_approximation=True,
+                                 qwen21_w8a8=True, qwen21_dit_w8a8=True))
+        with qwen21_staged_environment():
+            code, result, error = plan(base)
+            v2_code, v2_result, v2_error = plan(v2)
+            self.assertEqual(v2_code, code, v2_error)
+            if code == 0:
+                self.assertEqual(v2_result['precision'], result['precision'])
+                self.assertTrue(v2_result['qwen21_dit_w8a8'])
+            if qwen21_streaming_device():
+                self.assertEqual(code, 0, error)
+                self.assertTrue(result['qwen21_dit_w8a8'])
+                self.assertIn('w8a8_dit_pc', result['precision'])
+            else:
+                self.assertNotEqual(code, 0)
+            for change in (dict(execution='gpu'), dict(residency='resident'),
+                           dict(qwen21_w8a8=False), dict(steps=19), dict(steps=41),
+                           dict(allow_approximation=False), dict(prompt_enhance=True),
+                           dict(loras=[dict(path='/test/adapter.safetensors', strength=1)]),
+                           dict(qwen21_dit_w8a8='true'), dict(qwen21_dit_w8a8=1)):
+                code, _, error = plan({**base, **change})
+                self.assertNotEqual(code, 0, str(change))
+            code, result, error = plan({**base, 'qwen21_dit_w8a8': False})
+            self.assertEqual(code, 0, error)
+            self.assertFalse(result['qwen21_dit_w8a8'])
+
+
     def test_qwen21_layer_staged_t2i_fits_24gib_without_lowering_other_routes(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
                     width=512, height=512, steps=40, audio=False, frames=1,

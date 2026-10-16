@@ -22,7 +22,8 @@ CATALOG_DOMAIN = "tc-catalog-runtime-v1"
 INSTRUMENTATION_FLAGS = {"-DTURBOCIDER_ENABLE_TEST_HOOKS=1", "-DTURBOCIDER_ENABLE_AUDIT_COUNTERS=1"}
 SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cpp", ".m", ".mm", ".metal", ".inc"}
 BUILD_SCRIPTS = (
-    "tools/native/build.sh", "tools/native/dependencies.sh",
+    "tools/native/build.sh",
+    "tools/native/embed_qwen21_cider_kernels.py", "tools/native/dependencies.sh",
     "tools/native/generate_runtime_build_identity.py",
     "tools/native/generate_bundled_streaming_catalog.py",
     "tools/native/generate_image_workflow_catalog.py",

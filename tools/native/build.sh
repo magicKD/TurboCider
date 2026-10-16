@@ -76,6 +76,7 @@ runtime_build_identity() {
   --experimental-probes "$EXPERIMENTAL_PROBES" "$@" -- "${BUILD_IDENTITY_FLAGS[@]}"
 }
 runtime_build_identity
+"$BUILD_IDENTITY_PYTHON" tools/native/embed_qwen21_cider_kernels.py --output "$BUILD_IDENTITY_DIR/qwen21_cider_kernels_generated.hpp"
 CATALOG_INPUT=(--inventory native/runtime/streaming/bundled_catalog.json)
 if [[ -n "${TURBOCIDER_TEST_BUNDLED_CATALOG:-}" ]]; then
  if [[ "$TEST_HOOKS" != "1" ]]; then
@@ -156,6 +157,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/z_image/gguf.cpp
  native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
+ native/third_party/cider/w8a8_primitive.mm native/models/qwen21/cider_w8a8.cpp
  native/models/qwen21/transformer.cpp
  native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
  native/models/qwen21/native_block.cpp
@@ -198,6 +200,7 @@ for src in "${SOURCES[@]}"; do
  obj="$OUT/${relative//\//_}.o"
  flags=(-x c++)
  if [[ "$src" == *.mm ]]; then flags=(-x objective-c++ -fobjc-arc); fi
+ if [[ "$src" == native/third_party/cider/*.mm ]]; then flags+=(-fno-objc-arc); fi
  "$CXX" "${COMMON[@]}" "${flags[@]}" -fvisibility=default -c "$src" -o "$obj"
  OBJECTS+=("$obj")
 done

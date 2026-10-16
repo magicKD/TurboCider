@@ -105,6 +105,24 @@ int main() {
     assert(qwen21::layer_staged_t2i(qwen_ane, qwen_device));
     assert(qwen21::layer_staged_hybrid_t2i(qwen_ane, qwen_device));
     assert(qwen21::qualified_staged_optimizations(qwen_ane, qwen_device));
+    auto dit_int8 = qwen_ane; dit_int8.audio = false; dit_int8.qwen21_dit_w8a8 = true;
+    for (int steps : {20, 25, 40}) {
+        dit_int8.steps = steps;
+        const auto option = qwen21::staged_optimization_options(dit_int8, qwen_device);
+        assert(option.dit_w8a8 && option.attention_bits == 8 && option.suffix_bits == 8 && option.qk_norm_rope);
+        assert(qwen21::staged_quantized_precision(option).starts_with("w8a8_dit_pc"));
+    }
+    for (auto mutate : std::vector<std::function<void(Request &)>>{
+            [](Request &r) { r.frames = 2; }, [](Request &r) { r.audio = true; },
+            [](Request &r) { r.steps = 19; }, [](Request &r) { r.steps = 41; }}) {
+        auto invalid = dit_int8; mutate(invalid);
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(invalid, qwen_device); }));
+    }
+    for (const char *name : {"TURBOCIDER_QWEN21_STAGED_FAST_DEFAULTS", "TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS", "TURBOCIDER_QWEN21_STAGED_ATTN_BITS"}) {
+        assert(setenv(name, "0", 1) == 0);
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(dit_int8, qwen_device); }));
+        assert(unsetenv(name) == 0);
+    }
     const auto defaults = qwen21::staged_optimization_options(qwen_ane, qwen_device);
     assert(defaults.suffix_bits == 4 && defaults.attention_bits == 4 && defaults.qk_norm_rope);
     assert(qwen21::staged_quantized_precision({0, 0, false}).empty());
@@ -139,6 +157,8 @@ int main() {
             [](Request &r) { r.ane_manifest.clear(); },
             [](Request &r) { r.qwen21_gpu_full_ffn_blocks = {3, 5, 7}; }}) {
         auto request = qwen_ane; mutate(request);
+        auto int8_request = request; int8_request.audio = false; int8_request.qwen21_dit_w8a8 = true;
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(int8_request, qwen_device); }));
         assert(!qwen21::layer_staged_t2i(request, qwen_device));
     }
     for (const char *mode : {"lora_suffix", "lora_gate_up", "lora_fused", "runtime", "runtime_qkv"}) {
@@ -204,6 +224,8 @@ int main() {
             [](Request &r) { r.compile_gpu = true; },
             [](Request &r) { r.vsa = true; }}) {
         auto request = qwen_ane; mutate(request);
+        auto int8_request = request; int8_request.audio = false; int8_request.qwen21_dit_w8a8 = true;
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(int8_request, qwen_device); }));
         assert(!qwen21::qualified_staged_optimizations(request, qwen_device));
         const auto options = qwen21::staged_optimization_options(request, qwen_device);
         assert(options.suffix_bits == 0 && options.attention_bits == 0 && !options.qk_norm_rope);
@@ -351,6 +373,7 @@ int main() {
         assert(!qwen21::layer_staged_t2i(qwen_ane, device));
         assert(!qwen21::layer_staged_hybrid_t2i(qwen_ane, device));
         assert(!qwen21::qualified_staged_optimizations(qwen_ane, device));
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(dit_int8, device); }));
         const auto options = qwen21::staged_optimization_options(qwen_ane, device);
         assert(options.suffix_bits == 0 && options.attention_bits == 0 && !options.qk_norm_rope);
         for (const char *name : {"TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS", "TURBOCIDER_QWEN21_STAGED_ATTN_BITS"}) {

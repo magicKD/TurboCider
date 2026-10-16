@@ -1,4 +1,5 @@
 #pragma once
+#include "../models/qwen21/cider_receipt.hpp"
 #include "common.hpp"
 #include "../core/ane_calibration_report.hpp"
 #include "../core/ane_overflow_report.hpp"
@@ -383,9 +384,11 @@ struct QwenStagedQuantizationMetrics {
     int bits = 0, cached_layers = 0;
     uint64_t cache_bytes = 0;
     double pack_seconds = 0;
+    bool w8a8 = false;
 };
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
+    std::optional<qwen21::CiderCacheReceipt> qwen_dit_w8a8;
     std::string selection, backend, precision, checkpoint;
     std::string source_comparison_profile="z-mlx-compat-affine-v1";
     std::optional<uint64_t> convrot_allocator_cache_bytes;

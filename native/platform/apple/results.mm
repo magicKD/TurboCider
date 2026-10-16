@@ -580,9 +580,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         const auto staged = qwen21::staged_optimization_options(r, device_info());
         if (staged.qk_norm_rope || qwen21::option_enabled(norm_rope))
             [algorithm_approximations addObject:@"qwen21_metal_qk_norm_rope"];
-        if (staged.suffix_bits)
+        if (staged.dit_w8a8) [algorithm_approximations addObject:@"qwen21_dit_w8a8_pc"];
+        if (staged.suffix_bits && !staged.dit_w8a8)
             [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_staged_suffix_w%d", staged.suffix_bits]];
-        if (staged.attention_bits)
+        if (staged.attention_bits && !staged.dit_w8a8)
             [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_staged_attention_w%d", staged.attention_bits]];
     }
     if (encoder_hybrid)
@@ -698,6 +699,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (!precision.empty()) report[@"precision"] = @(precision.c_str());
         for (int block : r.qwen21_gpu_full_ffn_blocks) [blocks addObject:@(block)];
         report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
+        report[@"qwen21_dit_w8a8"] = @(r.qwen21_dit_w8a8);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
         report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
         report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
@@ -2042,10 +2044,24 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"scope": @"managed encoder packed weights, refill slots and gathered embedding; excludes other activations/framework/OS"
         };
     }
+    if (result.qwen_dit_w8a8) {
+        const auto &m = *result.qwen_dit_w8a8;
+        value[@"qwen21_dit_w8a8"] = @{
+            @"enabled": @YES, @"weight_dtype": @"int8", @"activation_dtype": @"int8",
+            @"weight_granularity": @"per_channel", @"activation_granularity": @"per_token",
+            @"scope": @"DiT linear projections, including first step; original ANE prefix retained",
+            @"text_encoder_precision": @"unchanged", @"vae_precision": @"unchanged",
+            @"cache_directory": @(m.directory.c_str()), @"source_sha256": @(m.source_sha256.c_str()),
+            @"recipe": @(m.recipe.c_str()), @"cache_hits": @(m.hits), @"cache_created": @(m.created),
+            @"bytes_read": @(m.bytes_read), @"bytes_written": @(m.bytes_written),
+            @"read_seconds": @(m.read_seconds), @"prepare_seconds": @(m.prepare_seconds)
+        };
+    }
     if (result.qwen_staged_suffix.bits || result.qwen_staged_attention.bits) {
         auto quantization = [](const QwenStagedQuantizationMetrics &m, NSString *activation) {
-            return @{@"bits": @(m.bits), @"group_size": @64, @"mode": @"affine",
-                     @"activation_dtype": activation, @"cached_layers": @(m.cached_layers),
+            return @{@"bits": @(m.bits), @"group_size": @(m.w8a8 ? 0 : 64),
+                     @"mode": m.w8a8 ? @"symmetric_per_channel" : @"affine",
+                     @"activation_dtype": m.w8a8 ? @"int8" : activation, @"io_dtype": activation, @"cached_layers": @(m.cached_layers),
                      @"cache_bytes": @(m.cache_bytes), @"pack_seconds": @(m.pack_seconds),
                      @"scope": @"request_owned_decode_only"};
         };

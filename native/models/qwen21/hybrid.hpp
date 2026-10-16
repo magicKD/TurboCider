@@ -12,8 +12,9 @@ class HybridMLP {
   public:
     HybridMLP(const Weights &, HybridSession &, bool gpu_w8a16 = false,
               const std::vector<int> &gpu_full_blocks = {}, bool layer_staged = false,
-              int staged_suffix_bits = 0);
+              int staged_suffix_bits = 0, std::shared_ptr<CiderCache> cider_cache = {});
     int staged_suffix_bits() const { return staged_suffix_bits_; }
+    bool staged_suffix_cider_w8a8() const { return staged_suffix_cider_; }
     uint64_t staged_suffix_cache_bytes() const {
         uint64_t bytes = 0;
         for (const auto &entry : staged_quantized_suffix_)
@@ -51,6 +52,8 @@ class HybridMLP {
     bool runtime_lora_suffix_ = false;
     bool layer_staged_ = false;
     int staged_suffix_bits_ = 0;
+    bool staged_suffix_cider_ = false;
+    std::shared_ptr<CiderCache> cider_cache_;
     double staged_suffix_pack_seconds_ = 0;
     std::array<std::optional<StagedQuantizedSuffix>, 32> staged_quantized_suffix_;
     // Populate only while visiting each decode layer, after materializing

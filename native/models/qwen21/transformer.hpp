@@ -61,8 +61,10 @@ class Transformer {
     // The caller resolves device/request policy once. Existing environment
     // choices remain in effect unless this effective configuration is applied.
     // Reconfiguration invalidates prefix and compiled state from the old recipe.
-    void configure_staged_optimizations(int attention_bits, bool qk_norm_rope);
+    void configure_staged_optimizations(int attention_bits, bool qk_norm_rope,
+                                         std::shared_ptr<CiderCache> cider_cache = {});
     int staged_attention_bits() const { return staged_attention_bits_; }
+    bool staged_attention_cider_w8a8() const { return staged_attention_cider_; }
     int staged_attention_cached_layers() const {
         int count = 0;
         for (const auto &entry : staged_attention_) count += bool(entry);
@@ -166,10 +168,16 @@ class Transformer {
   private:
     struct KV { Tensor key, value; };
     const Weights &weights_;
+    Tensor project_dit(const Tensor &, const Weights &, const std::string &) const;
+    // Only the eight non-block projections persist for this request. Full
+    // transformer block matrices retain their existing per-layer lifetime.
+    mutable std::unordered_map<std::string, std::vector<Tensor>> cider_dit_small_cache_;
     DiagnosticBlockObserver diagnostic_block_observer_;
     std::function<void(const std::string &)> release_layer_;
     TransformerConfig config_;
     int staged_attention_bits_ = 0;
+    bool staged_attention_cider_ = false;
+    std::shared_ptr<CiderCache> cider_cache_;
     std::vector<std::optional<StagedAttentionWeights>> staged_attention_;
     double staged_attention_pack_seconds_ = 0;
     // Session-owned diagnostic bank; Q/K/V are concatenated once per model

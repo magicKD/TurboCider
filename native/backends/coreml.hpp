@@ -42,6 +42,7 @@ class HybridSession {
     std::vector<std::vector<int>> gpu_channel_indices;
     float output_scale = 1.f;
     bool checkpoint_sha_verified = false;
+    std::string verified_checkpoint_sha256;
     bool lora_identity_verified = false;
     double load_seconds = 0;
     double manifest_validation_seconds = 0;
