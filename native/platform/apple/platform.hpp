@@ -10,6 +10,7 @@ struct DeviceInfo {
     }
 };
 DeviceInfo device_info();
+std::filesystem::path qwen21_dit_cache_root();
 bool z_image_mpp_swiglu_default();
 bool z_image_virtual_norm_default();
 bool z_image_small_shape_metal_default();

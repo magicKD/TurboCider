@@ -1,4 +1,5 @@
 #include "transformer.hpp"
+#include "cider_w8a8.hpp"
 #include "diagnostic_options.hpp"
 #include "metal/qk_norm_rope.hpp"
 #include "metal/qkv_projection.hpp"
@@ -70,15 +71,22 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config,
     require(sum == config.head_dim, "Qwen21 RoPE axes must sum to head dimension");
 }
 
-void Transformer::configure_staged_optimizations(int attention_bits, bool qk_norm_rope) {
+void Transformer::configure_staged_optimizations(int attention_bits, bool qk_norm_rope,
+                                                   std::shared_ptr<CiderCache> cider_cache) {
+    cider_dit_small_cache_.clear();
     require(attention_bits == 0 || attention_bits == 4 || attention_bits == 8,
             "Qwen21 staged attention bits must be 0, 4 or 8");
     require((!attention_bits && !qk_norm_rope) || config_ == TransformerConfig{},
             "Qwen21 staged optimizations require the standard transformer geometry");
     require(!qk_norm_rope || (!metal_qk_rope_ && !fused_qkv_),
             "Qwen21 Q/K norm-RoPE fusion cannot combine with another fused QKV/RoPE kernel");
-    if (attention_bits == staged_attention_bits_ && qk_norm_rope == metal_qk_norm_rope_) return;
+    const bool cider = bool(cider_cache);
+    require(!cider || attention_bits == 8, "DiT W8A8 requires 8-bit attention weights");
+    if (attention_bits == staged_attention_bits_ && qk_norm_rope == metal_qk_norm_rope_ &&
+        cider_cache == cider_cache_) return;
     staged_attention_bits_ = attention_bits;
+    staged_attention_cider_ = cider;
+    cider_cache_ = std::move(cider_cache);
     metal_qk_norm_rope_ = qk_norm_rope;
     reset();
     staged_attention_.resize(attention_bits ? config_.layers : 0);
@@ -92,6 +100,7 @@ void Transformer::clear_db_residuals() {
 }
 
 void Transformer::reset() {
+    cider_dit_small_cache_.clear();
     for (auto &entry : staged_attention_) entry.reset();
     staged_attention_pack_seconds_ = 0;
     prefix_.clear();
@@ -239,6 +248,32 @@ bool Transformer::import_prefix_snapshot(const PrefixSnapshot &snapshot, const T
     return true;
 }
 
+Tensor Transformer::project_dit(const Tensor &input, const Weights &weights, const std::string &name) const {
+    if (!cider_cache_) return linear(input, weights, name);
+    require(!weights.has_runtime_loras(), "DiT W8A8 requires base weights");
+    auto pack = [&]() {
+        const auto &weight = weights.at(name + ".weight");
+        auto bank = cider_cache_->pack(weight, "dit/" + name);
+        return bank;
+    };
+    std::vector<Tensor> temporary;
+    const std::vector<Tensor> *packed = nullptr;
+    if (!name.starts_with("transformer_blocks.")) {
+        auto found = cider_dit_small_cache_.find(name);
+        if (found == cider_dit_small_cache_.end()) {
+            require(cider_dit_small_cache_.size() < 8,
+                    "Cider non-block cache exceeds eight request-local projections");
+            found = cider_dit_small_cache_.emplace(name, pack()).first;
+        }
+        packed = &found->second;
+    } else {
+        temporary = pack();
+        packed = &temporary;
+    }
+    auto output = cider_project(input, *packed, 0);
+    return weights.has(name + ".bias") ? output + weights.at(name + ".bias") : output;
+}
+
 Tensor Transformer::embedding(float timestep, mx::Dtype dtype) const {
     // Reference constructs these constants in NumPy double then casts to MLX
     // float32. Small frequency errors can cross a BF16 rounding boundary.
@@ -251,7 +286,7 @@ Tensor Transformer::embedding(float timestep, mx::Dtype dtype) const {
     auto times = Tensor(std::vector<float>{timestep, 0.f}.data(), {2, 1}, mx::float32);
     auto angles = (times * 1000.f) * frequencies;
     auto input = mx::astype(mx::concatenate({mx::cos(angles), mx::sin(angles)}, -1), dtype);
-    return linear(silu(linear(input, weights_, "time_text_embed.timestep_embedder.linear_1")),
+    return project_dit(silu(project_dit(input, weights_, "time_text_embed.timestep_embedder.linear_1")),
                   weights_, "time_text_embed.timestep_embedder.linear_2");
 }
 
@@ -373,24 +408,24 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (capture_ffn) cached_ffn_.clear();
     require(!split_mlp || !trace, "Qwen21 MLP split trace is not supported");
     auto temb = embedding(timestep, latents.dtype());
-    auto modulation = linear(silu(temb), weights_, "modulation.1");
+    auto modulation = project_dit(silu(temb), weights_, "modulation.1");
     if (trace) { trace->emplace("temb", slice_axis(temb, 0, 0, 1)); trace->emplace("modulation", slice_axis(modulation, 0, 0, 1)); }
     auto mod_target = mx::split(mx::reshape(slice_axis(modulation, 0, 0, 1), {1, 1, 4 * config_.hidden()}), 4, -1);
     auto mods = mod_target;
-    Tensor hidden = linear(latents, weights_, "img_in");
+    Tensor hidden = project_dit(latents, weights_, "img_in");
     const Tensor db_input = hidden;
     int prefix_length = sequence_.prefix_length;
     if (!reuse) {
         auto f = mx::astype(text, mx::float32);
         auto scale = mx::astype(weights_.at("txt_in.text_norm.weight"), mx::float32) + 1.f;
         auto normalized = mx::astype(f * mx::rsqrt(mx::mean(f * f, -1, true) + config_.epsilon) * scale, text.dtype());
-        auto context = linear(gelu(linear(normalized, weights_, "txt_in.in_layer")), weights_, "txt_in.out_layer");
+        auto context = project_dit(gelu(project_dit(normalized, weights_, "txt_in.in_layer")), weights_, "txt_in.out_layer");
         std::vector<Tensor> parts;
         for (const auto &segment : sequence_.segments) {
             if (segment.causal)
                 parts.push_back(slice_axis(context, 1, segment.text_start, segment.text_start + segment.end - segment.start));
             else if (segment.image_index < int(references.size()))
-                parts.push_back(linear(references[segment.image_index].latents, weights_, "img_in"));
+                parts.push_back(project_dit(references[segment.image_index].latents, weights_, "img_in"));
             else parts.push_back(hidden);
         }
         hidden = mx::concatenate(parts, 1);
@@ -478,10 +513,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                             "Qwen21 staged attention requires bias-free projections");
                 saved.emplace(quantize_staged_attention({weights_.at(stem + "to_q.weight"),
                     weights_.at(stem + "to_k.weight"), weights_.at(stem + "to_v.weight"),
-                    weights_.at(stem + "to_out.0.weight")}, staged_attention_bits_));
+                    weights_.at(stem + "to_out.0.weight")}, staged_attention_bits_, staged_attention_cider_,
+                    "attention/block" + std::to_string(i), cider_cache_.get()));
                 staged_attention_pack_seconds_ +=
                     std::chrono::duration<double>(Clock::now() - started).count();
             }
+            require(saved->bits == staged_attention_bits_ && saved->cider_w8a8 == staged_attention_cider_,
+                    "Qwen21 staged attention cache recipe changed");
         }
         const int qkv_rows = hidden.shape(1);
         const auto qkv_plan = project_qkv_ && !trace && plan_qkv_ ?
@@ -512,6 +550,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             const bool profile_segments = profile_prefill_segments_ && !reuse && !split_this && i == 0;
             auto block = [this, i, reuse, prefix_length, split_this, external_qkv, capture_ffn,
                           quantized_attention, attention_bits = staged_attention_bits_,
+                          attention_cider = staged_attention_cider_,
                           target_only_block,
                           reuse_ffn_block,
                           profile_ops, profile_segments,
@@ -551,9 +590,9 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 mark("attention_input_norm", {input});
                 Tensor q(0.f), k(0.f), v(0.f);
                 if (quantized_attention) {
-                    q = staged_attention_project(input, args, 9, attention_bits);
-                    k = staged_attention_project(input, args, 12, attention_bits);
-                    v = heads(staged_attention_project(input, args, 15, attention_bits),
+                    q = staged_attention_project(input, args, 9, attention_bits, attention_cider);
+                    k = staged_attention_project(input, args, 12, attention_bits, attention_cider);
+                    v = heads(staged_attention_project(input, args, 15, attention_bits, attention_cider),
                               config_.heads, config_.head_dim);
                 } else if (external_qkv) {
                     q = args[args.size() - 3];
@@ -566,10 +605,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         cosine, sine, 32);
                     q = all[0]; k = all[1]; v = all[2];
                 } else {
-                    q = linear(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
+                    q = project_dit(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
                                weights, p + ".attn.to_q");
-                    k = linear(input, weights, p + ".attn.to_k");
-                    v = heads(linear(input, weights, p + ".attn.to_v"), config_.heads, config_.head_dim);
+                    k = project_dit(input, weights, p + ".attn.to_k");
+                    v = heads(project_dit(input, weights, p + ".attn.to_v"), config_.heads, config_.head_dim);
                 }
                 mark("qkv_projection", {q, k, v});
                 if (fused_qkv_) {
@@ -662,8 +701,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         mods[gate] = slice_axis(mods[gate], 1, prefix_length, mods[gate].shape(1));
                 }
                 auto projected = quantized_attention
-                    ? staged_attention_project(output, args, 18, attention_bits)
-                    : linear(output, weights, p + ".attn.to_out.0");
+                    ? staged_attention_project(output, args, 18, attention_bits, attention_cider)
+                    : project_dit(output, weights, p + ".attn.to_out.0");
                 mark("attention_output_projection", {projected});
                 hidden = hidden + mx::tanh(mods[1]) * projected;
                 auto after_attention = hidden;
@@ -676,14 +715,14 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     feed = args[9];
                 } else {
                     if (weights.has(p + ".img_mlp.gate_up.weight")) {
-                        auto gate_up = linear(input, weights, p + ".img_mlp.gate_up");
+                        auto gate_up = project_dit(input, weights, p + ".img_mlp.gate_up");
                         const int half = gate_up.shape(-1) / 2;
                         ff = silu(slice_axis(gate_up, -1, 0, half)) *
                              slice_axis(gate_up, -1, half, gate_up.shape(-1));
                     } else {
-                        ff = silu(linear(input, weights, p + ".img_mlp.gate_layer")) * linear(input, weights, p + ".img_mlp.proj");
+                        ff = silu(project_dit(input, weights, p + ".img_mlp.gate_layer")) * project_dit(input, weights, p + ".img_mlp.proj");
                     }
-                    feed = linear(ff, weights, p + ".img_mlp.out");
+                    feed = project_dit(ff, weights, p + ".img_mlp.out");
                 }
                 mark("ffn_gate_up", {ff});
                 hidden = hidden + mx::tanh(mods[3]) * feed;
@@ -692,7 +731,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 if (capture_ffn) return std::vector<Tensor>{hidden, feed};
                 return reuse ? std::vector<Tensor>{hidden} : std::vector<Tensor>{hidden, pk, pv};
             };
-            auto compiled = profile_ops || profile_segments ? BlockFunction(block) : mx::compile(block);
+            // Packing evaluates weights and cannot run while MLX traces. A decode
+            // with cached attention plus external FFN contains no project_dit calls,
+            // so preserve its original compiled block and fusion behavior.
+            const bool cider_packs_in_block = bool(cider_cache_) &&
+                !(quantized_attention && split_this);
+            auto compiled = profile_ops || profile_segments || cider_packs_in_block ? BlockFunction(block) : mx::compile(block);
             function = std::move(compiled);
         }
         std::vector<Tensor> args{hidden, mods[0], mods[1], mods[2], mods[3], cosine, sine};
@@ -855,8 +899,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     }
     if (!reuse && !(prefill_last_target_only_ && !trace))
         hidden = slice_axis(hidden, 1, prefix_length, hidden.shape(1));
-    auto out_scale = mx::reshape(slice_axis(linear(silu(temb), weights_, "norm_out.linear"), 0, 0, 1), {1, 1, config_.hidden()});
-    auto result = linear(layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + out_scale), weights_, "proj_out");
+    auto out_scale = mx::reshape(slice_axis(project_dit(silu(temb), weights_, "norm_out.linear"), 0, 0, 1), {1, 1, config_.hidden()});
+    auto result = project_dit(layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + out_scale), weights_, "proj_out");
     if (cache_prefix && !reuse) {
         prefix_ = std::move(new_prefix);
         cached_text_ = text;

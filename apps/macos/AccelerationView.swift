@@ -131,6 +131,16 @@ struct AccelerationView: View {
                 if !config.manifest.isEmpty { Text(URL(fileURLWithPath: config.manifest).lastPathComponent).font(.caption).textSelection(.enabled) }
                 if let zImageCapacity { Text(zImageCapacity).font(.caption).foregroundStyle(.secondary) }
             }
+            if studio.draft.modelID == "qwen-image-2.1" {
+                Toggle("DiT W8A8＋离线缓存", isOn: $studio.draft.qwen21DiTW8A8)
+                    .disabled(store.busy || (!studio.draft.qualifiedQwen21StagedANECache() && !studio.draft.qwen21DiTW8A8))
+                    .accessibilityIdentifier("qwenDiTW8A8")
+                Text("默认关闭。首次开启需生成约 11 GiB 磁盘缓存，耗时较长；后续自动复用。仅量化 DiT，文本编码器和 VAE 保持原精度。关闭后回到原有 GPU 权重路径；对比时请保持种子、步数和 DiT 缓存档位一致。图像细节可能变化。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let reason = studio.draft.qwen21DiTW8A8Issue() {
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if config.policy == "gpu" {
                 if studio.draft.modelID.hasPrefix("flux2-") {
                     Toggle("编译融合单流计算块", isOn: Binding(get: { config.compileGPU ?? false }, set: { value in update { $0.compileGPU = value } })).disabled(store.busy).accessibilityIdentifier("compileGPU")

@@ -535,6 +535,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool layer_staged = layer_staged_t2i(r, device);
     const bool staged_qualified = qualified_staged_optimizations(r, device);
     const auto staged_options = staged_optimization_options(r, device);
+    std::shared_ptr<CiderCache> cider_cache;
     if (diagnostic_block_observer_)
         require(!warmup && !prepare_only && r.residency == "component_staged" && r.execution == "gpu" &&
                     r.operation == "image.generate" && r.width == 512 && r.height == 512 &&
@@ -1336,6 +1337,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::string(r.qwen21_gpu_w8a16 ? ":w8a16" : ":bf16") +
             (layer_staged ? ":layer-staged" : ":resident") +
             ":suffix-bits=" + std::to_string(staged_options.suffix_bits) +
+            (r.qwen21_dit_w8a8 ? ":dit-w8a8" : ":dit-default") +
             (r.qwen21_gpu_full_ffn_blocks.empty() ? ":full" : ":fallback357");
         // Keep the established 4096-channel path and permit the separately
         // calibrated 6144-channel W8A8 experiment only by explicit manifest.
@@ -1393,11 +1395,17 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                           hybrid_->activation_precision == "fp16") &&
                     hybrid_->output_scale == 1.f,
                 "Qwen21 gpu_ane manifest precision/rows are not a verified 32-block partition");
-        if (!hybrid_mlp_ || hybrid_runtime_options_ != runtime_options) {
+        if (r.qwen21_dit_w8a8) {
+            require(layer_staged && hybrid_->ane_mlp_end == 6144, "DiT W8A8 requires streamed verified ANE execution");
+            dit_source->revalidate_after_drain();
+            cider_cache = std::make_shared<CiderCache>(qwen21_dit_cache_root(),
+                hybrid_->verified_checkpoint_sha256, [&cancelled] { checkpoint(cancelled); });
+        }
+        if (r.qwen21_dit_w8a8 || !hybrid_mlp_ || hybrid_runtime_options_ != runtime_options) {
             hybrid_mlp_.reset();
             hybrid_mlp_ = std::make_unique<HybridMLP>(
                 transformer_, *hybrid_, r.qwen21_gpu_w8a16, r.qwen21_gpu_full_ffn_blocks,
-                layer_staged, staged_options.suffix_bits);
+                layer_staged, staged_options.suffix_bits, cider_cache);
             hybrid_runtime_options_ = runtime_options;
         }
     }
@@ -1522,11 +1530,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (last_target_only)
         result.selection += "; diagnostic final prefill block target-only output";
     if (layer_staged) result.selection += "; BF16 layer-streamed text/DiT + staged VAE";
-    if (layer_staged && hybrid_requested)
+    if (cider_cache) result.selection += "; DiT per-channel W8A8 with checkpoint-bound persistent cache; text/VAE unchanged";
+    if (layer_staged && hybrid_requested && !cider_cache)
         result.selection += staged_options.suffix_bits
             ? "; request-owned affine W" + std::to_string(staged_options.suffix_bits) + " GPU suffix cache"
             : "; request-owned compact BF16 GPU suffix cache";
-    if (staged_options.attention_bits)
+    if (staged_options.attention_bits && !cider_cache)
         result.selection += "; request-owned affine W" + std::to_string(staged_options.attention_bits) +
             " GPU attention weight cache";
     if (db_cache)
@@ -1740,7 +1749,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             checkpoint(cancelled);
         });
         if (staged_qualified)
-            dit.configure_staged_optimizations(staged_options.attention_bits, staged_options.qk_norm_rope);
+            dit.configure_staged_optimizations(staged_options.attention_bits, staged_options.qk_norm_rope, cider_cache);
         const uint64_t snapshot_memory_limit = r.memory_budget_bytes
             ? std::min(physical_bytes, r.memory_budget_bytes) : physical_bytes;
         const uint64_t snapshot_budget = std::min(uint64_t(8) << 30, snapshot_memory_limit / 8);
@@ -2129,10 +2138,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         result.db_cache_steps = dit.db_cached_steps();
         result.qwen_staged_attention = {dit.staged_attention_bits(), dit.staged_attention_cached_layers(),
-            dit.staged_attention_cache_bytes(), dit.staged_attention_pack_seconds()};
+            dit.staged_attention_cache_bytes(), dit.staged_attention_pack_seconds(), bool(cider_cache)};
         if (hybrid_mlp_)
             result.qwen_staged_suffix = {hybrid_mlp_->staged_suffix_bits(), hybrid_mlp_->staged_suffix_cached_layers(),
-                hybrid_mlp_->staged_suffix_cache_bytes(), hybrid_mlp_->staged_suffix_pack_seconds()};
+                hybrid_mlp_->staged_suffix_cache_bytes(), hybrid_mlp_->staged_suffix_pack_seconds(), bool(cider_cache)};
+        if (cider_cache) result.qwen_dit_w8a8 = cider_cache->receipt();
         require(!staged_options.suffix_bits || result.qwen_staged_suffix.cached_layers == 32,
                 "Qwen21 staged suffix cache did not cover all 32 decode layers");
         require(!staged_options.attention_bits || result.qwen_staged_attention.cached_layers == 32,

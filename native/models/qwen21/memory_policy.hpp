@@ -97,9 +97,11 @@ struct StagedOptimizationOptions {
     int suffix_bits = 0;
     int attention_bits = 0;
     bool qk_norm_rope = false;
+    bool dit_w8a8 = false;
 };
 
 inline std::string staged_quantized_precision(const StagedOptimizationOptions &options) {
+    if (options.dit_w8a8) return "w8a8_dit_pc_fp16_compute_bf16_io+w8a8_mlp_prefix_fp16_io";
     if (!options.suffix_bits && !options.attention_bits) return {};
     return std::string("bf16_prefill+") +
         (options.attention_bits ? "w" + std::to_string(options.attention_bits) + "_attention_bf16_io"
@@ -112,6 +114,18 @@ inline StagedOptimizationOptions staged_optimization_options(const Request &r, c
     const char *defaults = std::getenv("TURBOCIDER_QWEN21_STAGED_FAST_DEFAULTS");
     require(binary_option_or_unset(defaults), "Qwen staged fast defaults require 0 or 1");
     const bool qualified = qualified_staged_optimizations(r, device);
+    if (r.qwen21_dit_w8a8) {
+        require(qualified && r.frames == 1 && !r.audio,
+                "DiT W8A8 requires M5 Pro 24 GiB, no LoRA, 512x512/20-40 steps, layer-streamed component_staged, GPU+ANE W8A8 and original MLX text/VAE precision");
+        require(!defaults || option_enabled(defaults),
+                "DiT W8A8 cannot combine with disabled staged defaults");
+        for (const char *name : {"TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS", "TURBOCIDER_QWEN21_STAGED_ATTN_BITS"}) {
+            const char *value = std::getenv(name);
+            require(!value || std::string_view(value) == "8",
+                    "DiT W8A8 cannot combine with a different diagnostic weight precision");
+        }
+        return {8, 8, option_or_default(std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE"), true), true};
+    }
     const bool use_defaults = qualified && (!defaults || option_enabled(defaults));
     auto bits = [qualified, use_defaults](const char *name) {
         const char *value = std::getenv(name);

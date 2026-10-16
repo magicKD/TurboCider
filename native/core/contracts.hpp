@@ -41,6 +41,7 @@ struct Request {
     // Explicit Qwen21-only W8A8 diagnostics in the public CLI contract.
     // The default remains the original 1024-reference BF16 GPU path.
     bool qwen21_w8a8 = false, qwen21_gpu_w8a16 = false;
+    bool qwen21_dit_w8a8 = false;
     // Independent executor identity, separate from GPU/ANE device policy.
     // Explicit experimental opt-in; the existing MLX route remains default.
     std::string qwen21_denoiser_backend = "mlx";

@@ -176,6 +176,26 @@ import ImageIO
                       gpuCacheRequest.qwen21_w8a8 == nil && gpuCacheRequest.hybrid_mlp_mode == nil,
                       "Switching to GPU lost its selected cache or retained ANE flags")
         }
+        try check(!aneDraft.qwen21DiTW8A8 && aneRequest.qwen21_dit_w8a8 == nil &&
+                  NativeRequestV2(legacy: aneRequest).execution.qwen21_dit_w8a8 == nil,
+                  "Inactive DiT extension must stay absent for existing worker protocols")
+        var int8Draft = aneDraft; int8Draft.qwen21DiTW8A8 = true
+        let int8Request = try int8Draft.request(output: output, systemJSON: eligibleHardware)
+        let savedInt8 = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(int8Draft))
+        try check(savedInt8.qwen21DiTW8A8 && int8Request.qwen21_dit_w8a8 == true,
+                  "DiT W8A8 opt-in lost across draft or request persistence")
+        let int8V2 = NativeRequestV2(legacy: int8Request)
+        let int8V2JSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(int8V2)) as! [String: Any]
+        try check((int8V2JSON["execution"] as? [String: Any])?["qwen21_dit_w8a8"] as? Bool == true,
+                  "V2 execution dropped DiT W8A8")
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: int8Request,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.qwen21DiTW8A8, "History dropped DiT W8A8")
+        reuseStudio.selectModel("z-image-turbo")
+        try check(!reuseStudio.draft.qwen21DiTW8A8, "Model change retained DiT W8A8")
+        for hardware in unsupportedHardware {
+            try check(int8Draft.qwen21DiTW8A8Issue(systemJSON: hardware) != nil, "DiT W8A8 hardware gate bypass")
+        }
         let invalidANECacheChanges: [(String, (inout StudioDraft) -> Void)] = [
             ("short schedule", { $0.steps = 19 }), ("long schedule", { $0.steps = 41 }),
             ("resident", { $0.residency = "resident" }), ("canvas", { $0.height = 1024 }),
@@ -194,6 +214,10 @@ import ImageIO
         ]
         for cacheMode in Qwen21DiTCacheMode.allCases where cacheMode != .off {
             for (name, change) in invalidANECacheChanges {
+                var invalidInt8 = int8Draft; change(&invalidInt8)
+                var rejectedInt8 = false
+                do { _ = try invalidInt8.request(output: output, systemJSON: eligibleHardware) } catch { rejectedInt8 = true }
+                try check(rejectedInt8, "DiT W8A8 accepted invalid configuration: \(name)")
                 var invalid = aneDraft; invalid.qwen21DiTCache = cacheMode.rawValue; change(&invalid)
                 try check(!invalid.qualifiedQwen21StagedANECache(systemJSON: eligibleHardware) &&
                           invalid.qwen21DiTCacheIssue(systemJSON: eligibleHardware) != nil,

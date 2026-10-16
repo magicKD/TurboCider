@@ -494,6 +494,7 @@ HybridSession::HybridSession(const std::filesystem::path &file, const std::files
                     std::string([(NSString *)checkpoint_sha UTF8String]),
                 "artifact checkpoint SHA-256 mismatch");
         checkpoint_sha_verified = true;
+        verified_checkpoint_sha256 = std::string([(NSString *)checkpoint_sha UTF8String]);
     }
     const bool indexed_checkpoint = checkpoint.filename().string().ends_with(
         ".safetensors.index.json");
