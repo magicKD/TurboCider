@@ -379,6 +379,11 @@ struct NativePrefillExecutionMetrics {
     double prewarm_seconds=0;
     bool physically_complete=false,preparation_reused=false;
 };
+struct QwenStagedQuantizationMetrics {
+    int bits = 0, cached_layers = 0;
+    uint64_t cache_bytes = 0;
+    double pack_seconds = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::string selection, backend, precision, checkpoint;
@@ -404,6 +409,8 @@ struct RunResult {
     float db_cache_threshold = 0.f;
     int db_cache_steps = 0, db_cache_max_consecutive = 0;
     int db_cache_front_blocks = 8, db_cache_warmup_steps = 8;
+    QwenStagedQuantizationMetrics qwen_staged_suffix, qwen_staged_attention;
+    bool qwen_qk_norm_rope = false;
     bool student_ffn_reuse_enabled=false;
     int student_ffn_requested_layers=0;
     int student_ffn_captured_blocks=0,student_ffn_reused_blocks=0;

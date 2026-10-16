@@ -405,12 +405,25 @@ struct StudioDraft: Codable, Sendable {
         guard [1024, 512].contains(qwen21ReferenceSize) else { return "模型参考编码设置无效，请恢复标准 1024。" }
         return qwen21ReferenceSize == 512 ? qwen21FastReferenceUnavailableReason : nil
     }
-    var qwen21DiTCacheUnavailableReason: String? {
+    func qualifiedQwen21StagedANECache(systemJSON: String? = nil) -> Bool {
+        guard modelID == "qwen-image-2.1", operation == "image.generate",
+              acceleration?.policy == "gpu_ane", acceleration?.qwen21W8A8 == true,
+              acceleration?.manifest.isEmpty == false, !usesRuntimeANE,
+              acceleration?.compileGPU != true, profilePath.isEmpty,
+              width == 512, height == 512, frames == 1, !audio, (20...40).contains(steps),
+              residency == "component_staged", !usesPublicStreaming,
+              activeAssets.isEmpty, activeLoRAs.isEmpty, !promptEnhance,
+              !promptEnhanceEditExperimental, promptEnhancerPath.isEmpty else { return false }
+        return Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON ?? NativeEngine.system())
+    }
+    var qwen21DiTCacheUnavailableReason: String? { qwen21DiTCacheIssue() }
+    func qwen21DiTCacheIssue(systemJSON: String? = nil) -> String? {
         guard modelID == "qwen-image-2.1", ["image.generate", "image.edit"].contains(operation) else { return "DiT 缓存仅支持 Qwen 2.1 生图或图片编辑。" }
         if hasQwen21TurboAdapter { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
         if ![1024, 512].contains(effectiveQwen21ReferenceSize) { return "DiT 缓存支持标准 1024 或快速 512 参考编码。" }
+        if qualifiedQwen21StagedANECache(systemJSON: systemJSON) { return nil }
         if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
-            return "DiT 缓存仅支持纯 GPU，请关闭 ANE 与设备配置。"
+            return "DiT 缓存支持纯 GPU，或 Apple M5 Pro / 24 GiB 的固定量化分区：512×512 文生图、20–40 步、分阶段加载，并关闭参考图、LoRA、提示词增强与设备配置。"
         }
         if !(20...40).contains(steps) { return "DiT 缓存需要 20–40 步；请自行调整采样步数。" }
         if width != 512 || height != 512 { return "DiT 缓存目前仅支持 512×512 画布。" }
@@ -661,7 +674,7 @@ struct StudioDraft: Codable, Sendable {
         }
         try validate(model: model)
     }
-    func validate(model: StudioModel) throws {
+    func validate(model: StudioModel, systemJSON: String? = nil) throws {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         if let issue = runtimeANEIssue { throw NativeFailure(message: issue) }
@@ -788,7 +801,7 @@ struct StudioDraft: Codable, Sendable {
         }
         if let reason = qwen21ReferenceSizeIssue { throw NativeFailure(message: reason + " 可一键恢复标准 1024，其他参数保持不变。") }
         guard Qwen21DiTCacheMode(rawValue: qwen21DiTCache) != nil else { throw NativeFailure(message: "DiT 缓存档位无效，请选择关闭、保守、均衡或快速。") }
-        if qwen21DiTCache != "off", let reason = qwen21DiTCacheUnavailableReason { throw NativeFailure(message: reason) }
+        if qwen21DiTCache != "off", let reason = qwen21DiTCacheIssue(systemJSON: systemJSON) { throw NativeFailure(message: reason) }
         if modelID == "z-image-turbo-gguf" && residency != "resident" {
             throw NativeFailure(message: "GGUF 当前只支持原生 MLX 常驻模式，请将模型驻留改为 resident。")
         }
@@ -825,7 +838,7 @@ struct StudioDraft: Codable, Sendable {
                  random: () -> Int = { Int.random(in: 0...2147483647) }) throws -> NativeRequest {
         let model = StudioModel.catalog().first { $0.id == modelID }
         guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
-        try validate(model: model)
+        try validate(model: model, systemJSON: systemJSON)
         var request = NativeRequest(prompt: prompt, output: output.path)
         request.model = modelID; request.operation = operation
         request.width = width; request.height = height; request.steps = steps
@@ -904,8 +917,9 @@ struct StudioDraft: Codable, Sendable {
                     guard operation == "image.generate", activeAssets.isEmpty,
                           width == 512, height == 512, steps >= 2,
                           residency == "component_staged", activeLoRAs.isEmpty,
-                          !promptEnhance, qwen21DiTCache == "off" else {
-                        throw NativeFailure(message: "Qwen 低内存 ANE 仅支持 512×512 文生图、至少 2 步和分阶段加载；请关闭参考图、LoRA、提示词增强与 DiT 缓存。")
+                          !promptEnhance,
+                          qwen21DiTCache == "off" || qualifiedQwen21StagedANECache(systemJSON: systemJSON) else {
+                        throw NativeFailure(message: "Qwen 低内存 ANE 仅支持 512×512 文生图、至少 2 步和分阶段加载；请关闭参考图、LoRA与提示词增强。DiT 缓存另需 20–40 步并关闭设备配置。")
                     }
                     request.qwen21_w8a8 = true
                     request.hybrid_mlp_mode = "base_fused"

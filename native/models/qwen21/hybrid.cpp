@@ -6,11 +6,25 @@
 
 namespace tc::qwen21 {
 HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
-                     const std::vector<int> &gpu_full_blocks, bool layer_staged)
+                     const std::vector<int> &gpu_full_blocks, bool layer_staged,
+                     int staged_suffix_bits)
     : weights_(weights), ane_(ane), gpu_w8a16_(gpu_w8a16),
-      runtime_lora_suffix_(weights.has_runtime_loras()), layer_staged_(layer_staged) {
+      runtime_lora_suffix_(weights.has_runtime_loras()), layer_staged_(layer_staged),
+      staged_suffix_bits_(staged_suffix_bits) {
+    require(staged_suffix_bits_ == 0 || staged_suffix_bits_ == 4 || staged_suffix_bits_ == 8,
+            "Qwen21 staged suffix quantization accepts only 0, 4 or 8 bits");
     require(!layer_staged_ || (!gpu_w8a16_ && !runtime_lora_suffix_ && gpu_full_blocks.empty()),
-            "Qwen21 layer-staged hybrid requires BF16 GPU suffixes without LoRA/fallbacks");
+            "Qwen21 layer-staged hybrid requires BF16 source weights without LoRA/fallbacks");
+    require(staged_suffix_bits_ == 0 ||
+                (layer_staged_ && !gpu_w8a16_ && !runtime_lora_suffix_ &&
+                 gpu_full_blocks.empty() && ane.hidden == 4096 && ane.mlp_width == 12288 &&
+                 ane.ane_mlp_start == 0 && ane.ane_mlp_end == 6144 && ane.rows == 1024 &&
+                 ane.block_count == 32 && ane.checkpoint_sha_verified &&
+                 ane.tensor_layout == "qwen21" && ane.export_variant == "int8_pc" &&
+                 ane.activation_precision == "int8" && ane.a8_graph == "sq_v1_both" &&
+                 ane.projected_weight_granularity == "per_tensor" &&
+                 ane.mlp_output_kind.empty() && ane.output_scale == 1.f),
+            "Qwen21 staged suffix quantization requires the verified 32-layer 1024-row 6144-channel W8A8 base graph");
     require(!runtime_lora_suffix_ || !gpu_w8a16_,
             "Qwen21 runtime LoRA GPU suffix requires BF16 weights");
     require(!runtime_lora_suffix_ || gpu_full_blocks.empty(),
@@ -63,7 +77,11 @@ HybridMLP::HybridMLP(const Weights &weights, HybridSession &ane, bool gpu_w8a16,
             down_.push_back(std::move(down));
         }
     }
-    if (!runtime_lora_suffix_ && gpu_w8a16_) {
+    if (staged_suffix_bits_) {
+        suffix_ = mx::compile([bits = staged_suffix_bits_](const std::vector<Tensor> &args) {
+            return std::vector<Tensor>{staged_quantized_suffix_forward(args, bits)};
+        });
+    } else if (!runtime_lora_suffix_ && gpu_w8a16_) {
         suffix_ = mx::compile([](const std::vector<Tensor> &args) {
             constexpr int group_size = 64;
             auto projection = mx::quantized_matmul(args[0], args[1], args[2], args[3], true,
@@ -91,6 +109,8 @@ Tensor HybridMLP::operator()(int block, const Tensor &input) {
 Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
     require(block >= 0 && block < 32 && input.shape() == mx::Shape{1, ane_.rows, 4096},
             "Qwen21 hybrid decode shape/block mismatch");
+    require(staged_suffix_bits_ == 0 || input.dtype() == mx::bfloat16,
+            "Qwen21 staged quantized suffix requires BF16 hybrid activations");
     const bool profile_fused = !timing && ane_.mlp_output_kind == "fused_lora" &&
         option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_RUNTIME_LORA_FFN"));
     BridgeTiming profile_timing;
@@ -114,6 +134,23 @@ Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
         auto up = weights_.project_slice(input, stem + "gate_up",
                                          12288 + width, 24576, 0, 4096);
         gpu = weights_.project_slice(silu(gate) * up, stem + "out", 0, 4096, width, 12288);
+    } else if (layer_staged_ && staged_suffix_bits_) {
+        auto &saved = staged_quantized_suffix_[block];
+        if (!saved) {
+            const auto pack_started = Clock::now();
+            const auto stem = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
+            const int width = ane_.ane_mlp_end;
+            const auto &fused = weights_.at(stem + "gate_up.weight");
+            auto gate_up = mx::contiguous(mx::concatenate({slice_axis(fused, 0, width, 12288),
+                slice_axis(fused, 0, 12288 + width, 24576)}, 0));
+            auto down = mx::contiguous(slice_axis(weights_.at(stem + "out.weight"), 1, width, 12288));
+            // Complete the six packed buffers before layer release. Neither
+            // the source tensors nor their dense slices survive in this bank.
+            saved.emplace(quantize_staged_suffix(gate_up, down, staged_suffix_bits_));
+            staged_suffix_pack_seconds_ +=
+                std::chrono::duration<double>(Clock::now() - pack_started).count();
+        }
+        gpu = suffix_(saved->arguments(packed))[0];
     } else if (layer_staged_) {
         auto &saved = staged_suffix_[block];
         if (!saved) {
@@ -138,7 +175,7 @@ Tensor HybridMLP::run(int block, const Tensor &input, BridgeTiming *timing) {
                        down_q_[block], down_scales_[block], down_biases_[block]})[0]
             : suffix_({input, fused_[block], down_[block]})[0];
     }
-    if (gpu_w8a16_) gpu = mx::astype(gpu, input.dtype());
+    if (gpu_w8a16_ || staged_suffix_bits_) gpu = mx::astype(gpu, input.dtype());
     // Dynamic LoRA gate/up must be ready before Core ML may execute SiLU.
     // Submit the independent GPU suffix *after* that barrier so its kernels
     // can overlap the Core ML call instead of being accidentally drained by
