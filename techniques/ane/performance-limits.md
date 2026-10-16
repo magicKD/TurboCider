@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [图合同](coreml-graphs.md) · [校准](../gpu-ane/calibration.md)
 
+补充：[硬件/框架能力地图](capability-atlas.md)、[跨项目异构实现](hybrid-runtime-comparison.md)、[负结果和重开条件](negative-results.md)。本轮[合成压缩实验](experiments-20261016.md)也显示小图可能首选CPU、文件压缩率不等于加速比。
+
 ## 不以TOPS决定迁移
 
 对一个候选算子，先分解：权重读取/转换、输入pack、dispatch/setup、图内计算、片上/片外流量、输出restore、首个consumer等待。ANE的峰值算术、CoreML支持某op、一个micrograph很快，都不足以预测完整FFN或媒体请求。

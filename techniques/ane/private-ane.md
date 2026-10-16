@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [当前后端合同](../../native/backends/README.md)
 
+跨项目学习：[私有runtime层次对照](private-runtime-stack.md)、[动态参数训练](training-dynamic-weights.md)、[delta/LoRA](training-delta-and-lora.md)与[autograd/驻留优化器](training-autograd.md)。这些研究路线不改变下文发行隔离合同。
+
 ## 明确三个状态
 
 1. Public Core ML 是可分发默认后端。

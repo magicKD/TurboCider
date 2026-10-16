@@ -18,6 +18,7 @@ DEVICE_CASES |= {"private:shared-surface"}
 DEVICE_CASES |= {"mlx:external-adoption"}
 DEVICE_CASES |= {"private:qwen-shared-ffn"}
 DEVICE_CASES |= {"media:preprocess"}
+DEVICE_CASES |= {"mlx:engine-mechanisms"}
 REFERENCES = {"reference:" + name for name in ("split-ffn", "interval-peak", "model-header", "lab-summary")}
 
 

@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [存储格式](../memory/storage.md)
 
+补充研究：[LUT4/线性W4/W8与按需解压](weight-compression.md)、[M4 W8A8官方能力与图路径](w8a8-int8.md)、[完整压缩消融](experiments-20261016.md)。本页继续聚焦SmoothQuant/旋转配方，不把低比特存储与硬件算术合并。
+
 ## 先拆开五个概念
 
 | 名称 | 实际含义 | 不能由此推出 |

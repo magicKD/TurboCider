@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGES = {"encoder", "prefill", "decode", "dit", "vae", "pipeline"}
 DESIGNS = {"gpu-dataflow", "owned-graphs", "hybrid-ffn", "packed-streaming", "residency", "composition",
            "parallel-topologies", "consumer-abi", "heterogeneous-planner"}
-STDLIB = set("argparse ast collections concurrent contextlib copy dataclasses datetime errno fractions hashlib importlib inspect io itertools json math os pathlib platform plistlib queue random re resource shutil signal statistics struct subprocess sys sysconfig tempfile threading time types typing unittest urllib zlib".split())
+STDLIB = set("argparse ast collections concurrent contextlib copy dataclasses datetime errno fnmatch fractions hashlib importlib inspect io itertools json math os pathlib platform plistlib queue random re resource shutil signal statistics struct subprocess sys sysconfig tempfile threading time types typing unittest urllib zlib".split())
 OPTIONAL = {"numpy", "coremltools", "mlx"}
 DEVICES = ("metal-gemm", "coreml-frozen", "coreml-runtime", "coreml-hybrid", "shared-int8")
 ISOLATION_IGNORES = (

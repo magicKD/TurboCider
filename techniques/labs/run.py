@@ -25,8 +25,12 @@ import mlx_adoption
 import real_shared_ffn
 import block_context
 import media_stage
+import algorithm_research
+from ane import training_math
 
 CASES = {
+    "ane-training-math": training_math.training_contract,
+    "algorithm-evidence": algorithm_research.algorithm_evidence,
     "quant-formats": quantization.formats,
     "w8a8-reference": quantization.w8a8,
     "w4a8-reference": quantization.w4a8,

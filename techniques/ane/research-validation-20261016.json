@@ -1,0 +1,452 @@
+{
+  "schema": "ane-survey-validation-v1",
+  "recorded_at": "2026-10-16",
+  "status": "complete-for-requested-research-scope",
+  "scope": "Requested ANE research deliverables, source traceability, synthetic component evidence and local/offline validation. Not production, physical integer-MAC, full-request or LLM-training qualification.",
+  "required_deliverables": [
+    {
+      "requirement": "Read the user-referenced Apple Silicon roadmap and deepen existing ANE material",
+      "evidence": [
+        "ane/README.md",
+        "ane/source-audit.md",
+        "ane/coreml-graphs.md",
+        "ane/lifecycle.md",
+        "ane/performance-limits.md",
+        "ane/private-ane.md",
+        "ane/quantization.md",
+        "ane/graph-rewrite-search.md"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    },
+    {
+      "requirement": "Separate implementation reports and a summary/learning guide under techniques/ane",
+      "evidence": [
+        "ane/README.md",
+        "ane/layout-and-lowering.md",
+        "ane/public-coreml-deployment.md",
+        "ane/stable-diffusion.md",
+        "ane/private-runtime-stack.md",
+        "ane/hybrid-runtime-comparison.md"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    },
+    {
+      "requirement": "Research inference and training, including projects beyond the roadmap",
+      "evidence": [
+        "ane/training.md",
+        "ane/training-dynamic-weights.md",
+        "ane/training-delta-and-lora.md",
+        "ane/training-autograd.md",
+        "ane/research-manifest.json"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    },
+    {
+      "requirement": "Explain M4 INT8/W8A8 and low-bit LUT capabilities without conflating storage and compute",
+      "evidence": [
+        "ane/capability-atlas.md",
+        "ane/w8a8-int8.md",
+        "ane/weight-compression.md"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    },
+    {
+      "requirement": "Research profiling tools and distinguish plans, estimates, measurements and unavailable counters",
+      "evidence": [
+        "ane/profiling.md",
+        "ane/negative-results.md",
+        "profiling/ane-pmu-lab.md",
+        "review/ane-pmu-20261016.md"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    },
+    {
+      "requirement": "Preserve learning links, exact source versions and reading/experimental limitations",
+      "evidence": [
+        "ane/source-audit.md",
+        "ane/research-manifest.json",
+        "references/sources.json"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    },
+    {
+      "requirement": "Conduct bounded comparative checks and document success/failure and reproduction",
+      "evidence": [
+        "ane/experiments-20261016.md",
+        "ane/experiments-20261016.json",
+        "labs/ane/compression_survey.py",
+        "labs/ane/training_probe.py",
+        "labs/ane/training_math.py",
+        "labs/ane/survey_evidence.py",
+        "scripts/curate_ane_survey.py",
+        "tests/test_ane_survey.py"
+      ],
+      "audit_result": "present; source/numeric/runtime/physical/production scopes remain separately labelled"
+    }
+  ],
+  "source_files_rechecked": {
+    "files_checked": 37,
+    "all_match": true,
+    "checks": [
+      {
+        "repository": "maderix/ANE",
+        "path": "README.md",
+        "sha256": "c43358ad78af2375301d98cbaea8f682269a4b32ce35fd2176077ba84e01c62f",
+        "match": true
+      },
+      {
+        "repository": "maderix/ANE",
+        "path": "training/training_dynamic/mil_dynamic.h",
+        "sha256": "1a7cf6d9cad226687ce697cf047146713be46f6416e0b9fd20aa685c61820c74",
+        "match": true
+      },
+      {
+        "repository": "maderix/ANE",
+        "path": "training/training_dynamic/io.h",
+        "sha256": "cff672d0f488f2d14529a8f43e38970510071f1d9b4ab63d9e84d5a4c8701ed4",
+        "match": true
+      },
+      {
+        "repository": "maderix/ANE",
+        "path": "training/training_dynamic/train.m",
+        "sha256": "e6b1242519132b8051d3b798c0b80d0284ef00e8688dc2f9389a761cd37c768c",
+        "match": true
+      },
+      {
+        "repository": "maderix/ANE",
+        "path": "ane_int8_bench.m",
+        "sha256": "c852f52706b6e44b7668f8b3f8c07cf000476e7b3ec57b4ee6c6b062b0ef560c",
+        "match": true
+      },
+      {
+        "repository": "vipuldivyanshu92/ANEgpt",
+        "path": "README.md",
+        "sha256": "60de2dfa7f8e94b9adcf20b63774f46e73fa216637020633070d22a3a3005a86",
+        "match": true
+      },
+      {
+        "repository": "mechramc/Orion",
+        "path": "README.md",
+        "sha256": "6c9b867257575490384770d302622d27e7d89a3ddff7dfc7accb577090b2d39c",
+        "match": true
+      },
+      {
+        "repository": "mechramc/Orion",
+        "path": "core/ane_runtime.m",
+        "sha256": "2f61bd09676a89a1def3a334f03b6024368e549084112f7eb2ec192c55ca1168",
+        "match": true
+      },
+      {
+        "repository": "mechramc/Orion",
+        "path": "tests/test_delta_compile.m",
+        "sha256": "6a40c50f27776fa2f6403e34966eaea919b007fe30eda3dfb005081d15838c69",
+        "match": true
+      },
+      {
+        "repository": "mechramc/Orion",
+        "path": "compiler/frontends/lora.c",
+        "sha256": "ac38bdbd8bc8223c838e30ccc1f14f215a4c613b80c9aa0ba11cf58d67b4543b",
+        "match": true
+      },
+      {
+        "repository": "johnmai-dev/ANE-LM",
+        "path": "README.md",
+        "sha256": "14955e339cae96a798fe46387cd7b21e0245c14b97cf2922a25b808957ad0efd",
+        "match": true
+      },
+      {
+        "repository": "johnmai-dev/ANE-LM",
+        "path": "core/ane_runtime.cpp",
+        "sha256": "107036f75ee2bc80d7f20e319e991816213b010c976084c6b7f6bd5c3290ab6d",
+        "match": true
+      },
+      {
+        "repository": "skyfallsin/apple-neural-engine-field-guide",
+        "path": "README.md",
+        "sha256": "cf034162288381fdfe7ae63b3b4c6c004aff909a0db7ceaf52fe27b43e93b73e",
+        "match": true
+      },
+      {
+        "repository": "skyfallsin/apple-neural-engine-field-guide",
+        "path": "tests/README.md",
+        "sha256": "59d547f1d5fa394138687c9f736eba7115098d06a4f562b5f89a44f4d1292fce",
+        "match": true
+      },
+      {
+        "repository": "skyfallsin/apple-neural-engine-field-guide",
+        "path": "results.tsv",
+        "sha256": "fb0879ff407d10c6b5fb717c2317237b48c8166fbba76beb76838a65d93fff03",
+        "match": true
+      },
+      {
+        "repository": "Anemll/anemll",
+        "path": "anemll/ane_converter/llama_converter.py",
+        "sha256": "d5549f6fa67f23c714fba673c7c9c38a7ba55277cc9a354f1d4fa17150458abe",
+        "match": true
+      },
+      {
+        "repository": "Anemll/anemll",
+        "path": "anemll/models/llama_model.py",
+        "sha256": "7b9f7410f144fadde5324c228b460be52faec77a985037f50bd4885575aae8cd",
+        "match": true
+      },
+      {
+        "repository": "Anemll/anemll-bench",
+        "path": "README.md",
+        "sha256": "b3dae83fb922a82a5016289fadba8d506739acf09bcc97e31c27399ad20f0f06",
+        "match": true
+      },
+      {
+        "repository": "Anemll/anemll-bench",
+        "path": "anemll_bench/benchmark.py",
+        "sha256": "200ad64a34dc6ccbfffa3cd8a35bfd15b5accd2f1d96ec1dff25b0f38dd19642",
+        "match": true
+      },
+      {
+        "repository": "Anemll/anemll-bench",
+        "path": "anemll_bench/utils/ane_verification.py",
+        "sha256": "b0ab999c1e544054b246e75e9cc716e51972146ea83d0ef6bdb522646c7b9e65",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-stable-diffusion",
+        "path": "README.md",
+        "sha256": "de70ec36d5406d74c5d3dffdbb8217879d0721e42fd410982df0f04d9fe88de2",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-stable-diffusion",
+        "path": "python_coreml_stable_diffusion/attention.py",
+        "sha256": "e4d1efff43ee445ea42f69ab0774aa70e7ff7e0682f1d87805097239506165c9",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-stable-diffusion",
+        "path": "python_coreml_stable_diffusion/torch2coreml.py",
+        "sha256": "7f5f6f0d253a92d4637ae4269d652ec8d53a53f9648f36662e79de12f9924406",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-stable-diffusion",
+        "path": "swift/StableDiffusion/pipeline/StableDiffusionPipeline.swift",
+        "sha256": "f38c25ad98ef5a4abf2a2628202419c793731522a924fbd9dd13a1872985dee3",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-stable-diffusion",
+        "path": "swift/StableDiffusion/pipeline/ManagedMLModel.swift",
+        "sha256": "50294be55b4bec01796d9a8a4f61c45092482567f708c509de242ee3b45bd3dd",
+        "match": true
+      },
+      {
+        "repository": "apple/coreai-models",
+        "path": "README.md",
+        "sha256": "6b3eb4aed94248554365b3ad628c639b21818126b6e5e4ffc904126424070e3f",
+        "match": true
+      },
+      {
+        "repository": "ggml-org/whisper.cpp",
+        "path": "src/coreml/whisper-encoder.mm",
+        "sha256": "e20bb1eb2128802b3f8d0e4e7f498fd7e3ad175bfed67665edd5e513f03c2347",
+        "match": true
+      },
+      {
+        "repository": "tlkh/asitop",
+        "path": "asitop/utils.py",
+        "sha256": "f690a6361296a12c47deb214d4085dd2042acea43edf80c4b5a68345d2dbfc6b",
+        "match": true
+      },
+      {
+        "repository": "context-labs/mactop",
+        "path": "README.md",
+        "sha256": "79e61be26bdbc478251e45e19fdc79461732d4e81c79e4da5c9be9c404b1fdb8",
+        "match": true
+      },
+      {
+        "repository": "metaspartan/mactop",
+        "path": "README.md",
+        "sha256": "36faa60c280c351e39dffdcdf3c4262143fe560b5ceda32a6376dabc71a7532c",
+        "match": true
+      },
+      {
+        "repository": "argmaxinc/WhisperKit",
+        "path": "README.md",
+        "sha256": "e3de47c9730168755bcb38d5c455d79d01311eba774537ba17c8bc73d4557050",
+        "match": true
+      },
+      {
+        "repository": "hollance/neural-engine",
+        "path": "README.md",
+        "sha256": "694da25d8530b0f801b618d2d15ad038a7a58ba944516db8333b02d13e51908a",
+        "match": true
+      },
+      {
+        "repository": "slavko-at-klincov-it/ANE-Training-iPhone",
+        "path": "README.md",
+        "sha256": "8d7b8eb67182ae4867202b658c8d264d35ce8fdc035d3d214c3240bc0e084977",
+        "match": true
+      },
+      {
+        "repository": "sbryngelson/ANEForge",
+        "path": "aneforge/autograd.py",
+        "sha256": "2137d21419fef265189a6a36b0aff431e272bc6436defc8fd804996935eeef40",
+        "match": true
+      },
+      {
+        "repository": "sbryngelson/ANEForge",
+        "path": "docs/developer/autograd.md",
+        "sha256": "2b7266cd2d86d22371f30a1673fc9a03ff7191ae894dc9bb5d4041daaf5c872f",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-ane-transformers",
+        "path": "ane_transformers/reference/ffn.py",
+        "sha256": "f0d7d1bb7189e3607c069918f656054c875563ffb6c729fd6ac27df32509d7a8",
+        "match": true
+      },
+      {
+        "repository": "apple-aiml-research/ml-ane-transformers",
+        "path": "ane_transformers/reference/layer_norm.py",
+        "sha256": "7a20de6455ce36e354c15a38332ba92b88f88cdf62937d89672f30aee626a19f",
+        "match": true
+      }
+    ]
+  },
+  "new_markdown_reports": 17,
+  "component_evidence": {
+    "valid_compression_runs": 4,
+    "compression_complete_output_calls": 360,
+    "training_mechanism_runs": 3,
+    "training_complete_output_calls": 111,
+    "nonqualifying_client_error_runs_retained": 1,
+    "physical_integer_mac_observed": false,
+    "public_training_matmul_plan_preferred": "CPU",
+    "full_llm_training_run": false,
+    "complete_generation_request_run": false
+  },
+  "checks": {
+    "focused_ane_tests": {
+      "tests": 9,
+      "status": "passed"
+    },
+    "prior_full_suite": {
+      "tests": 381,
+      "skipped": 2,
+      "status": "passed before final reading/link corrections"
+    },
+    "final_full_suite": {
+      "status": "passed",
+      "tests": 383,
+      "skipped": 2,
+      "command": "python3 -B -m unittest discover -s techniques/tests"
+    },
+    "isolation": {
+      "status": "passed",
+      "raw_report_sha256": "14e5667c83d57d46d4b34f5ccc4ae9fe3fe78ff0357446c45c1ace1a498c682a",
+      "product_or_sibling_sources_present": false,
+      "commands": [
+        {
+          "command": "python -E -B -m unittest discover -s techniques/tests",
+          "exit_code": 0,
+          "test_summary": "OK (skipped=2)"
+        },
+        {
+          "command": "python -E -B techniques/scripts/check_wiki.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python -E -B techniques/labs/check_catalog.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python -E -B techniques/scripts/check_standalone.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python -E -B techniques/scripts/check_knowledge.py --strict",
+          "exit_code": 0
+        },
+        {
+          "command": "python -E -B techniques/labs/run.py all",
+          "exit_code": 0
+        }
+      ],
+      "cpu_cases": 50
+    },
+    "wiki": {
+      "pages": 191,
+      "local_links": 3614,
+      "errors": [],
+      "warnings": []
+    },
+    "catalog": {
+      "technical_chapters": 103,
+      "cards": 103,
+      "cpu_cases": 50,
+      "errors": []
+    },
+    "knowledge": {
+      "errors": [],
+      "needs_review": [],
+      "retrieval_grants_qualification": false
+    },
+    "generated_source_and_query_indexes": "passed --check",
+    "diff_whitespace": "git diff --check passed",
+    "intermediate_document_assembly_failure": {
+      "state": "retained in ignored isolation-v2 receipt, fixed before final run",
+      "reason": "validation link was added before target JSON existed; not a numerical or device failure"
+    }
+  },
+  "safety": {
+    "production_defaults_changed": false,
+    "original_models_or_prior_evidence_deleted": false,
+    "system_cache_or_security_settings_changed": false,
+    "upstream_source_distributed": false,
+    "approximate_local_task_footprint_mib": 46,
+    "reference_project_programs_executed_in_this_survey": false,
+    "normal_public_coremltools_and_mlx_dependencies_used": true
+  },
+  "delivered_asset_sha256": {
+    "ane/README.md": "ae2ba5c2c22930ca31c7cbe78d6b869a554813bb0955d25283b0fd75a94e673c",
+    "ane/capability-atlas.md": "1bd8a7a993d2d6c4001b84160c416c105450651edea2386a62c527b372819a1d",
+    "ane/coreml-graphs.md": "72a4e795b92df8d9d506b9036a98aca172d2e6c7b7944c0db7c24cd2a4f1cacc",
+    "ane/experiments-20261016.md": "7042487663e9f076ee4da62ec596ad157036920d265fedf4b9dc4878b37b6226",
+    "ane/graph-rewrite-search.md": "7fd8e617af4c9554eb3b91d105089fcda90966a47ca105318c1ffb281cc49a40",
+    "ane/hybrid-runtime-comparison.md": "d8fe826acb4716b90ee11e3ce9f1ee7544162a09d00ab5f4bee8a481ecf61aaa",
+    "ane/layout-and-lowering.md": "f3ecfbb9f6fa45097c4536e2b319e5f05d25ad8845c6261505f29a778f525e7c",
+    "ane/lifecycle.md": "d48a55b614bad6525fe97f3195f5f6b745eda0d29985627ea0fcd7754f585c62",
+    "ane/negative-results.md": "f51cfc0bb43f869ad0b418751b789305ad6fc4ef7aeacd2a8d7e67d0520bf3d0",
+    "ane/performance-limits.md": "016acc96df9ceaa814d6f2f3a0c97452cbb9adf2a9c10f500a791af2df73cdd3",
+    "ane/private-ane.md": "9a6d66fe44f7af4129f3be9b71194f0b39858598a1a4bfbcc8760208a11c2649",
+    "ane/private-runtime-stack.md": "cefdc3273e66aa460f25c430eb21d783143379bfe9699954db1a4644156d3f22",
+    "ane/profiling.md": "dbd8f6e06de43a92a96fec781c9cab96f6c64bf0c8e26a9db0586d027fccc468",
+    "ane/public-coreml-deployment.md": "5a0d7b9c29784a0233aed2c6be9ff6484dae30c1a165ee178076297d49a08b04",
+    "ane/quantization.md": "9c2aeb4f5ce5836f24a9c14ee20c718dacbd88c25a3a72b7596c2b60d5ec602f",
+    "ane/source-audit.md": "09f630ab9d68aa423a698d27639ce6a388b0ec5d481a3c466981915f59e17914",
+    "ane/stable-diffusion.md": "95ca92b626014dc3d78c2d652a5a2b445bcaa7a629e456fe238f22db37859f45",
+    "ane/training-autograd.md": "1a733f93f9c9bc4e7dfc28f3fd29f9d5e5ff8d1a475434415b1925f321972eff",
+    "ane/training-delta-and-lora.md": "fa89cc6f801554d091a25e03d89b590a1965666f32c864d28fbd52e8bb3180be",
+    "ane/training-dynamic-weights.md": "9b36f9694530f1964a375ed1c15593ab654e667775739811d3b9d4e2e576af92",
+    "ane/training.md": "addafb238c2231106156540f0c414acb5b3c9f2f3ec52da40b9799dc381f6dbc",
+    "ane/w8a8-int8.md": "7835182a1d86422261bdd078dc15501bc70b214bd9c68c525e50f3e76a7ad189",
+    "ane/weight-compression.md": "3c1bcb4d976ef631e572721e2a4bf38c9c8c8e78465a8faf8f401f9d8ca47953",
+    "ane/research-manifest.json": "622329c210e7f82cdda7f6e8610b40d16be2cbe41cb50a2cdae1ea86a9ac9bb5",
+    "ane/experiments-20261016.json": "dfe3b65440fd04f0714a36884392d27fcd71d2e43481394da60186f20fcf03a4",
+    "labs/ane/__init__.py": "172690b87cc4e5e14680351395efc5721e11b44f3db854730ac62fffea8ba71b",
+    "labs/ane/compression_survey.py": "3c1b02d393b24890d78b2989615195a47bf10478c18ad55a6abe40002c02c85f",
+    "labs/ane/research_sources.py": "019c5a4659e7ff348708277b80af6673bc4af7a0dc32eff2e171c7e5c05ba695",
+    "labs/ane/training_probe.py": "e2d119c5500af65cc1ad48e44341240a44be9fbe894f2a31009c329761362c93",
+    "labs/ane/training_math.py": "11860594ec1b490e76a02eabcad4bb003271f5424bc865c6c256bbe61470a7bc",
+    "labs/ane/survey_evidence.py": "edcdc5330aa93c8921f81d5491da22d595945b96083779531dd8ef530376b512",
+    "scripts/curate_ane_survey.py": "65b448503bae37e5a19fdac96c7625e96fef8ae4a167521c873489190ecbc166",
+    "tests/test_ane_survey.py": "6754fb79d57fbe1dff1ef318c95d132a2cf6d8aeea67bba505cfe59b46dd5c1b"
+  },
+  "referenced_roadmap_sha256": "247f7e92e49ae6ba886c6a0dca6fc53b01aa82028a40f258d4f33473121aa242",
+  "limitations": [
+    "No physical ANE/integer-MAC trace or PMU captured by new experiments",
+    "Public manual-backprop matmul plan preferred CPU, not ANE training-speed proof",
+    "No full LLM training/convergence or complete image/video request benchmark",
+    "LUT4 synthetic error gate is not model-quality qualification",
+    "Four original compression protocols did not record MLX default device/stream per run; later fresh-process check is not retrospective attestation"
+  ]
+}

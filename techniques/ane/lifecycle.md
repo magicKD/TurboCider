@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [后台调度](../gpu-ane/scheduling.md)
 
+案例扩展：[ANEMLL stateful KV与阶段部署](public-coreml-deployment.md)、[Apple SD资源管理](stable-diffusion.md)、[训练中的动态权重/delta状态](training.md)。状态驻留、缓存命中与本页的artifact/session所有权仍需分别验收。
+
 ## 七个计时不能混成“ANE启动”
 
 1. 源 `.mlpackage` 导出 / compile。

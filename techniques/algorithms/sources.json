@@ -1,0 +1,808 @@
+{
+  "schema": "algorithm-source-readings-v1",
+  "reviewed_at": "2026-10-16",
+  "network_used_by_curator": false,
+  "project_code_executed_by_curator": false,
+  "scope": "Selected code sections / documentation only, never full repository audit or model reproduction.",
+  "sources": [
+    {
+      "id": "S01",
+      "name": "Sana sol-engine",
+      "repository": "NVlabs/Sana",
+      "level": "S",
+      "read_scope": "控制器、effect组合、token与SAP策略、Metal summary/routing/softmax的关键片段和算法文档；不是所有模型adapter审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "d0c0a4685ab5dc2336d18b7213d85f13def92418",
+      "files": [
+        {
+          "path": "techniques/compose.py",
+          "bytes": 7428,
+          "sha256": "dea51f006da9aaba773b50b5873fb2ee3a5fad03fbae2eb61538203991bf7819",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/compose.py"
+        },
+        {
+          "path": "techniques/methods/teacache.py",
+          "bytes": 10715,
+          "sha256": "4ccd9b471bcc7b5794888db89872e4c68f7346c50424402ee8e9c3f334d068d9",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/methods/teacache.py"
+        },
+        {
+          "path": "techniques/methods/step_cache.py",
+          "bytes": 3523,
+          "sha256": "531ba37d4b5720feda209547c4da9b4bc40037a80b4b39057a310481057d9ffb",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/methods/step_cache.py"
+        },
+        {
+          "path": "techniques/methods/payload_cache.py",
+          "bytes": 10132,
+          "sha256": "a8baf5ee984190cc77d7a1821b8025fb9c1a459e8a57eafe58481ec34cb9e1e2",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/methods/payload_cache.py"
+        },
+        {
+          "path": "techniques/methods/token_prune.py",
+          "bytes": 33042,
+          "sha256": "e851769514ebf124f0692202e5a4ba04e30beb1fdf3496bb7c20eb2b8630a48f",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/methods/token_prune.py"
+        },
+        {
+          "path": "techniques/sparse_attention_policies.py",
+          "bytes": 50689,
+          "sha256": "bd2721878f58117f52fd2783e7163d81897b5174afc47490fce3a5d3904771a7",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/sparse_attention_policies.py"
+        },
+        {
+          "path": "techniques/sparse_backends/sol_attn/mps/preprocess.py",
+          "bytes": 1237,
+          "sha256": "e276140cd4451856669052f68b859231813a705447d690ac86e9f8a0592a1350",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/sparse_backends/sol_attn/mps/preprocess.py"
+        },
+        {
+          "path": "techniques/sparse_backends/sol_attn/mps/metal.py",
+          "bytes": 27103,
+          "sha256": "c401d5a2c8b1d827cc71f4e870153e83f9722eeac3da03847e4cea5219094e89",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/techniques/sparse_backends/sol_attn/mps/metal.py"
+        },
+        {
+          "path": "site_docs/techniques/cache/easycache.md",
+          "bytes": 1730,
+          "sha256": "6f21ba6ea7be0ea3642f1dfbad5fb96f3472e77dd262f5dd6ff01f52f854980f",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/site_docs/techniques/cache/easycache.md"
+        },
+        {
+          "path": "site_docs/techniques/cache/teacache.md",
+          "bytes": 1214,
+          "sha256": "5577a29f88fca687aa35338eead84343f1c49c429540ebb4310b6768f50c5fb2",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/site_docs/techniques/cache/teacache.md"
+        },
+        {
+          "path": "site_docs/techniques/cache/cache_dit.md",
+          "bytes": 1106,
+          "sha256": "11cedc8da8d83c4a62a1ddde9d91afc58d14db6f0544676843509ddb60db3d51",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/site_docs/techniques/cache/cache_dit.md"
+        },
+        {
+          "path": "site_docs/techniques/cache/taylorseer.md",
+          "bytes": 984,
+          "sha256": "b61282aa3660a622d7d153eaec2c66d9fff3f632d6f787f5f69427e4f0ce5974",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/site_docs/techniques/cache/taylorseer.md"
+        },
+        {
+          "path": "site_docs/techniques/sparse/sol_attn.md",
+          "bytes": 4722,
+          "sha256": "12ff5a6fecb4931f5cf88fd8cc717271e8835b4c9ab8ae8b6927b28ae45cb04a",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/site_docs/techniques/sparse/sol_attn.md"
+        },
+        {
+          "path": "site_docs/techniques/sparse/pisa.md",
+          "bytes": 1317,
+          "sha256": "d4f75c148dfc297acc2a90254c40684c2eaab526e0d38d914d03afd0889ec5b6",
+          "url": "https://github.com/NVlabs/Sana/blob/d0c0a4685ab5dc2336d18b7213d85f13def92418/site_docs/techniques/sparse/pisa.md"
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "name": "TeaCache",
+      "repository": "ali-vilab/TeaCache",
+      "level": "S",
+      "read_scope": "FLUX调制信号、累计多项式、首末full、residual主路径。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "7c10efc4702c6b619f47805f7abe4a7a08085aa0",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 13164,
+          "sha256": "be1f25f10b471663690dd00e2263b1300276a11bec8e5c4e8b25bb83794d8cbc",
+          "url": "https://github.com/ali-vilab/TeaCache/blob/7c10efc4702c6b619f47805f7abe4a7a08085aa0/README.md"
+        },
+        {
+          "path": "TeaCache4FLUX/teacache_flux.py",
+          "bytes": 16290,
+          "sha256": "ddf6a8d2a3e1fb7bfbe07772998a7b1bef6bc6462724cc5375764cd61d37d1e9",
+          "url": "https://github.com/ali-vilab/TeaCache/blob/7c10efc4702c6b619f47805f7abe4a7a08085aa0/TeaCache4FLUX/teacache_flux.py"
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "name": "mlx-teacache 与作者研究笔记",
+      "repository": "IonDen/mlx-teacache",
+      "level": "S",
+      "read_scope": "gate完整安全控制与FLUX prelude/body/tail接缝；README的基准更正/支持边界；Qwen混合精度作者笔记前半及配方；另读短日程负结果全文。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "additional_read_urls": [
+        "https://raw.githubusercontent.com/IonDen/mlx-teacache/b56f2882ca237b3b971c976f78804154cbeb1014/docs/papers/why-teacache-does-not-engage-on-short-distilled-schedules.md"
+      ],
+      "commit": "b56f2882ca237b3b971c976f78804154cbeb1014",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 52179,
+          "sha256": "171a4cd5ef3154e0c9a42da670522e9880b6b8bda0ef6aba36dbb4e493e3b028",
+          "url": "https://github.com/IonDen/mlx-teacache/blob/b56f2882ca237b3b971c976f78804154cbeb1014/README.md"
+        },
+        {
+          "path": "src/mlx_teacache/_kernel/gate.py",
+          "bytes": 10333,
+          "sha256": "795af2f3ea03140c4f9cbb6b3032a71fb05773905365c8938f21912314669977",
+          "url": "https://github.com/IonDen/mlx-teacache/blob/b56f2882ca237b3b971c976f78804154cbeb1014/src/mlx_teacache/_kernel/gate.py"
+        },
+        {
+          "path": "src/mlx_teacache/variants/flux1_dev/integration.py",
+          "bytes": 21505,
+          "sha256": "19d010f2de98b1af20461f7414d93e7c891a474435971ae36102d72209baf666",
+          "url": "https://github.com/IonDen/mlx-teacache/blob/b56f2882ca237b3b971c976f78804154cbeb1014/src/mlx_teacache/variants/flux1_dev/integration.py"
+        },
+        {
+          "path": "docs/papers/qwen-image-mixed-precision-on-a-32-gb-mac.md",
+          "bytes": 23601,
+          "sha256": "738c3115f6d4fc0740c7542b2cbdc64ab7a720cde2a0596276984c0ba187e567",
+          "url": "https://github.com/IonDen/mlx-teacache/blob/b56f2882ca237b3b971c976f78804154cbeb1014/docs/papers/qwen-image-mixed-precision-on-a-32-gb-mac.md"
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "name": "EasyCache",
+      "repository": "H-EmbodVis/EasyCache",
+      "level": "S",
+      "read_scope": "README、Wan CFG调用对计数、控制与cache_even/cache_odd主体片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "bfc63232cfae8c77e2dccf9d72b8f2f56bd995b8",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 8667,
+          "sha256": "b3ce34c8a47476f7bfee91d971ff2c7838ef55dd95f71a4631f442f7f7589c8c",
+          "url": "https://github.com/H-EmbodVis/EasyCache/blob/bfc63232cfae8c77e2dccf9d72b8f2f56bd995b8/README.md"
+        },
+        {
+          "path": "EasyCache4Wan2.1/easycache_generate.py",
+          "bytes": 43044,
+          "sha256": "cf8f953ce0cfa647d184fc3249cf7c8a17b6eaddf4893d5362d56606cbfed98c",
+          "url": "https://github.com/H-EmbodVis/EasyCache/blob/bfc63232cfae8c77e2dccf9d72b8f2f56bd995b8/EasyCache4Wan2.1/easycache_generate.py"
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "name": "ParaAttention FirstBlockCache",
+      "repository": "chengzeyi/ParaAttention",
+      "level": "S",
+      "read_scope": "CacheContext、相对L1、CachedTransformerBlocks、两流residual与剩余block边界。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "4de137c5b96416489f06e43e19f2c14a772e28fd",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 15294,
+          "sha256": "ab3ce226987d79bfd83fac8269967ecd87200b71179f2ad0bcf7adc781208a08",
+          "url": "https://github.com/chengzeyi/ParaAttention/blob/4de137c5b96416489f06e43e19f2c14a772e28fd/README.md"
+        },
+        {
+          "path": "src/para_attn/first_block_cache/utils.py",
+          "bytes": 16978,
+          "sha256": "35d0cbb4a3f691249514adf42c93719d4b8728ed1963aadfb0b160f13ef15633",
+          "url": "https://github.com/chengzeyi/ParaAttention/blob/4de137c5b96416489f06e43e19f2c14a772e28fd/src/para_attn/first_block_cache/utils.py"
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "name": "Cache-DiT",
+      "repository": "vipshop/cache-dit",
+      "level": "S",
+      "read_scope": "框架文档、F/M/B forward关键片段、context字段/计数、TaylorSeer导数/anchor；不审计所有adapter或分布式路径。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "089df6b6895a3bc15ebcd3f7546d90ec6eb592e8",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 14103,
+          "sha256": "470f81bdae9fedd777eed9fde6a8ccef895fd190252f7503b6d15d36941c8f30",
+          "url": "https://github.com/vipshop/cache-dit/blob/089df6b6895a3bc15ebcd3f7546d90ec6eb592e8/README.md"
+        },
+        {
+          "path": "src/cache_dit/caching/cache_blocks/pattern_base.py",
+          "bytes": 24788,
+          "sha256": "0a6984bc22e008fc90e544f74d8426c24d06e8a0967e834991561e91d8941eec",
+          "url": "https://github.com/vipshop/cache-dit/blob/089df6b6895a3bc15ebcd3f7546d90ec6eb592e8/src/cache_dit/caching/cache_blocks/pattern_base.py"
+        },
+        {
+          "path": "src/cache_dit/caching/cache_contexts/cache_context.py",
+          "bytes": 12947,
+          "sha256": "0ca64cf7e90b7a44a775f0c93d01c13494ea3b4c60f9cd5a86de67d58d2d356e",
+          "url": "https://github.com/vipshop/cache-dit/blob/089df6b6895a3bc15ebcd3f7546d90ec6eb592e8/src/cache_dit/caching/cache_contexts/cache_context.py"
+        },
+        {
+          "path": "src/cache_dit/caching/cache_contexts/calibrators/taylorseer.py",
+          "bytes": 8678,
+          "sha256": "aea940f9ca199d9c46469ec5994c50023d0ae10272917b0b688050f01c93067e",
+          "url": "https://github.com/vipshop/cache-dit/blob/089df6b6895a3bc15ebcd3f7546d90ec6eb592e8/src/cache_dit/caching/cache_contexts/calibrators/taylorseer.py"
+        }
+      ]
+    },
+    {
+      "id": "S07",
+      "name": "TaylorSeer",
+      "repository": "Shenyi-Z/TaylorSeer",
+      "level": "S",
+      "read_scope": "作者公式、step坐标、差分与预测函数；不运行其CUDA pipeline。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "704ee98c74f7f04da443daa3c0aa2cc7803d86e3",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 9048,
+          "sha256": "ac1cbcdf6dccfd73b87a9cc0968cdcad9f74eddcdc87e3df1793cb45b55ed65b",
+          "url": "https://github.com/Shenyi-Z/TaylorSeer/blob/704ee98c74f7f04da443daa3c0aa2cc7803d86e3/README.md"
+        },
+        {
+          "path": "TaylorSeers-Diffusers/taylorseer_flux/taylorseer_utils/__init__.py",
+          "bytes": 2117,
+          "sha256": "c70f752c876dff5fd59cacb919a037b950848b1a1c58fcba4e527c8c521cd94c",
+          "url": "https://github.com/Shenyi-Z/TaylorSeer/blob/704ee98c74f7f04da443daa3c0aa2cc7803d86e3/TaylorSeers-Diffusers/taylorseer_flux/taylorseer_utils/__init__.py"
+        }
+      ]
+    },
+    {
+      "id": "S08",
+      "name": "stable-diffusion.cpp 缓存移植",
+      "repository": "leejet/stable-diffusion.cpp",
+      "level": "S",
+      "read_scope": "cache modes、EasyCache host控制与条件残差、Taylor状态/配置片段。主仓库ggml/frontend子模块有既有修改；这些选中文件按HEAD取证，不依赖子模块改动。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "2f886889e6e8b78738d6b87f7191f6018557c551",
+      "files": [
+        {
+          "path": "docs/caching.md",
+          "bytes": 4882,
+          "sha256": "cac15780f6fbfc6b71752a3cd7a610a36f51b028f3026696b302bee014edd801",
+          "url": "https://github.com/leejet/stable-diffusion.cpp/blob/2f886889e6e8b78738d6b87f7191f6018557c551/docs/caching.md"
+        },
+        {
+          "path": "src/runtime/easycache.hpp",
+          "bytes": 8644,
+          "sha256": "15a7b63fdd8782619fe50175df55849b5f5070e652decdcfc174ace80d17e128",
+          "url": "https://github.com/leejet/stable-diffusion.cpp/blob/2f886889e6e8b78738d6b87f7191f6018557c551/src/runtime/easycache.hpp"
+        },
+        {
+          "path": "src/runtime/cache_dit.hpp",
+          "bytes": 28749,
+          "sha256": "091b9db74f7a7e186ebd75d332e611ebfa032359fe8aaf040bf97bf7c0e26431",
+          "url": "https://github.com/leejet/stable-diffusion.cpp/blob/2f886889e6e8b78738d6b87f7191f6018557c551/src/runtime/cache_dit.hpp"
+        }
+      ]
+    },
+    {
+      "id": "S09",
+      "name": "VideoSys PAB",
+      "repository": "NUS-HPC-AI-Lab/VideoSys",
+      "level": "S",
+      "read_scope": "三种attention周期、timestep窗口、MLP输出池与清理。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "4cce477878b0683b5c05cd001ce45ac0e2fc3034",
+      "files": [
+        {
+          "path": "videosys/core/pab/pab_mgr.py",
+          "bytes": 8283,
+          "sha256": "3faaee8c4f4776684e3b19ebed48ab2f005d3b3d0ea5063323bfab76c255f41f",
+          "url": "https://github.com/NUS-HPC-AI-Lab/VideoSys/blob/4cce477878b0683b5c05cd001ce45ac0e2fc3034/videosys/core/pab/pab_mgr.py"
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "name": "FasterCache",
+      "repository": "Vchitect/FasterCache",
+      "level": "S",
+      "read_scope": "CogVideoX counter、attention双历史外推、FFT低高频差与CFG恢复的相关片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "02d05ef7edb48bdec01d2b4df6edfe7f472a41b9",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 5572,
+          "sha256": "56dac4a8443a15e326fac2dce3f0a1dc1b89479fee003205c218f5c10ee474e8",
+          "url": "https://github.com/Vchitect/FasterCache/blob/02d05ef7edb48bdec01d2b4df6edfe7f472a41b9/README.md"
+        },
+        {
+          "path": "scripts/cogvideox/fastercache_sample_cogvideox.py",
+          "bytes": 28069,
+          "sha256": "e26c8c66bd31ab2aa79214b464b9b87d5ae254b210fa3d55748d1aa0e8332e0c",
+          "url": "https://github.com/Vchitect/FasterCache/blob/02d05ef7edb48bdec01d2b4df6edfe7f472a41b9/scripts/cogvideox/fastercache_sample_cogvideox.py"
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "name": "ComfyUI-SolAttn-MPS",
+      "repository": "yshenaw/ComfyUI-SolAttn-MPS",
+      "level": "D",
+      "read_scope": "Apple环境、版本/header fallback、kernel机制与作者component/E2E表；Metal算法代码另外由S01核对，本项不宣称独立逐行审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "45071126b0c1ee30b0e6b7103fa9d70924828ba5",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 8068,
+          "sha256": "6e74e83b326f27fc8d7b39025b853e4fbcba4138ea4c9eeb44f53f5a5ad7568a",
+          "url": "https://github.com/yshenaw/ComfyUI-SolAttn-MPS/blob/45071126b0c1ee30b0e6b7103fa9d70924828ba5/README.md"
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "name": "PISA",
+      "repository": "xie-lab-ml/piecewise-sparse-attention",
+      "level": "S",
+      "read_scope": "fused summary、centroid top-k、exact/zero-order/first-order三段forward和wrapper；0th独立kernel未逐行审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "655648df86cafd75042dc32d6b6be78c4ea0eca8",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 3633,
+          "sha256": "77f96933e9c4bee3820b93120f28fc5336fae15eb64be7464dc3159e835ddb28",
+          "url": "https://github.com/xie-lab-ml/piecewise-sparse-attention/blob/655648df86cafd75042dc32d6b6be78c4ea0eca8/README.md"
+        },
+        {
+          "path": "piecewise_attn/kernels/piecewise_sparse_attn_hyd.py",
+          "bytes": 11441,
+          "sha256": "d42b108267220f7623e9c03dd9fb17debb2f34757483feb7f085371479e3a20f",
+          "url": "https://github.com/xie-lab-ml/piecewise-sparse-attention/blob/655648df86cafd75042dc32d6b6be78c4ea0eca8/piecewise_attn/kernels/piecewise_sparse_attn_hyd.py"
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "name": "Sparse VideoGen / SVG2 / SVG-EAR",
+      "repository": "svg-project/Sparse-VideoGen",
+      "level": "S",
+      "read_scope": "Wan attention online sample误差/分支、dynamic-map/kmeans接缝与重排；EAR只读作者README机制，没有完整kernel审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "f89aedaf169ac2ae5b186bda674e53c3dc08c476",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 10942,
+          "sha256": "4b463a07ac0e92f3472260ca8849dbfab2b2c6172154151984706c010b2dc9c1",
+          "url": "https://github.com/svg-project/Sparse-VideoGen/blob/f89aedaf169ac2ae5b186bda674e53c3dc08c476/README.md"
+        },
+        {
+          "path": "svg/models/wan/attention.py",
+          "bytes": 26849,
+          "sha256": "b3899c3f06df58822899ecc4f83335df1adf8f7c2983661295c3ba5182d11c9c",
+          "url": "https://github.com/svg-project/Sparse-VideoGen/blob/f89aedaf169ac2ae5b186bda674e53c3dc08c476/svg/models/wan/attention.py"
+        },
+        {
+          "path": "svg/kmeans_utils.py",
+          "bytes": 82413,
+          "sha256": "7169fd4db968a55c2ffe67bcf19aeebdc3ca0620a9cf18a12c93365a67b07e4d",
+          "url": "https://github.com/svg-project/Sparse-VideoGen/blob/f89aedaf169ac2ae5b186bda674e53c3dc08c476/svg/kmeans_utils.py"
+        },
+        {
+          "path": "svg/kernels/triton/permute.py",
+          "bytes": 9301,
+          "sha256": "183fc04abd9598f65894adc92b598c0c65226849e96d847a941a868a01751f96",
+          "url": "https://github.com/svg-project/Sparse-VideoGen/blob/f89aedaf169ac2ae5b186bda674e53c3dc08c476/svg/kernels/triton/permute.py"
+        }
+      ]
+    },
+    {
+      "id": "S14",
+      "name": "SpargeAttention",
+      "repository": "thu-ml/SpargeAttn",
+      "level": "S",
+      "read_scope": "recommended topk API、map/quant调用链、架构与tile分派、V低精度分支。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "ae5b629ebb41e41f86b3ea2ab5a3283f13ac151a",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 9317,
+          "sha256": "fcf52d2f7181e3b56d24326deebeb303f83cd19bfabf80e8ec67a31514dd5b2d",
+          "url": "https://github.com/thu-ml/SpargeAttn/blob/ae5b629ebb41e41f86b3ea2ab5a3283f13ac151a/README.md"
+        },
+        {
+          "path": "spas_sage_attn/core.py",
+          "bytes": 17191,
+          "sha256": "24656fd6de6952e99bcba78ec56109d9c2075df3675efab80ca7541c32c8d3e7",
+          "url": "https://github.com/thu-ml/SpargeAttn/blob/ae5b629ebb41e41f86b3ea2ab5a3283f13ac151a/spas_sage_attn/core.py"
+        }
+      ]
+    },
+    {
+      "id": "S14a",
+      "name": "SageAttention",
+      "repository": "thu-ml/SageAttention",
+      "level": "S",
+      "read_scope": "per_block_int8 / per_warp_int8、K smoothing接口、scale/log2及layout。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5",
+      "files": [
+        {
+          "path": "sageattention/quant.py",
+          "bytes": 11870,
+          "sha256": "86bf415d4d24793a591c2a056e60f41b4bc579519ac7a875e484a65816940bf7",
+          "url": "https://github.com/thu-ml/SageAttention/blob/d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5/sageattention/quant.py"
+        }
+      ]
+    },
+    {
+      "id": "S15",
+      "name": "FastVideo STA/VSA 与 MLX",
+      "repository": "hao-ai-lab/FastVideo",
+      "level": "S",
+      "read_scope": "STA归档状态、VSA checkpoint/gate/Metal质量限制、MLX窗口切片+sink的完整核心。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "a943220c115228ade5d57b3bab9a6a87fd600a10",
+      "files": [
+        {
+          "path": "docs/attention/sta/index.md",
+          "bytes": 2431,
+          "sha256": "48206775054e1d488ceb5d17b1160d3f7b10c155d885ffe7dc583d24a78930f1",
+          "url": "https://github.com/hao-ai-lab/FastVideo/blob/a943220c115228ade5d57b3bab9a6a87fd600a10/docs/attention/sta/index.md"
+        },
+        {
+          "path": "docs/attention/vsa/index.md",
+          "bytes": 3372,
+          "sha256": "933681827a77fe5643ed12f024f1954e62d5e2593c960228db5d1855bf4d3ae5",
+          "url": "https://github.com/hao-ai-lab/FastVideo/blob/a943220c115228ade5d57b3bab9a6a87fd600a10/docs/attention/vsa/index.md"
+        },
+        {
+          "path": "fastvideo/mlx_runtime/windowed_attention.py",
+          "bytes": 8430,
+          "sha256": "4c19250bc9f6cb95e6a5508d8dc855e5436918ae991ada916085402cd6eaa0b9",
+          "url": "https://github.com/hao-ai-lab/FastVideo/blob/a943220c115228ade5d57b3bab9a6a87fd600a10/fastvideo/mlx_runtime/windowed_attention.py"
+        }
+      ]
+    },
+    {
+      "id": "S16",
+      "name": "ToMeSD",
+      "repository": "dbolya/tomesd",
+      "level": "S",
+      "read_scope": "随机2D二分匹配、MPS gather workaround、scatter mean、unmerge和attn/cross/MLP默认范围。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "27a14a372beecaa85c101fb588631643f379b8ce",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 9135,
+          "sha256": "8851a91e4b5f135ce6881a3a66c551b0bfdb00b246c91dc29c6e2877c10f1b10",
+          "url": "https://github.com/dbolya/tomesd/blob/27a14a372beecaa85c101fb588631643f379b8ce/README.md"
+        },
+        {
+          "path": "tomesd/merge.py",
+          "bytes": 5039,
+          "sha256": "d77f051fe71e09f7dc4482bb83b3d6c6b6c48df682716dd50cfefa2900ca42a3",
+          "url": "https://github.com/dbolya/tomesd/blob/27a14a372beecaa85c101fb588631643f379b8ce/tomesd/merge.py"
+        },
+        {
+          "path": "tomesd/patch.py",
+          "bytes": 10736,
+          "sha256": "578e1f49b37e3a70e69fdbb47e9248b8dc2f81d2cddde63547f8460da6334940",
+          "url": "https://github.com/dbolya/tomesd/blob/27a14a372beecaa85c101fb588631643f379b8ce/tomesd/patch.py"
+        }
+      ]
+    },
+    {
+      "id": "S17",
+      "name": "Nunchaku / SVDQuant",
+      "repository": "nunchaku-ai/nunchaku",
+      "level": "S",
+      "read_scope": "方法说明、SVDQW4A4Linear quantize/forward_quant、低秩投影融合接口与packing配置。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "302e0e97024ebd68688fe890e5df83731edf7b54",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 17394,
+          "sha256": "d8abacaeb29519eb76e6dc6ccc926b4cc81261a8a723d06c5e88bccb245bd56b",
+          "url": "https://github.com/nunchaku-ai/nunchaku/blob/302e0e97024ebd68688fe890e5df83731edf7b54/README.md"
+        },
+        {
+          "path": "nunchaku/models/linear.py",
+          "bytes": 13977,
+          "sha256": "245cc971a635403851fe77986213a59190e244383c2c75741dc0789facf6ed4d",
+          "url": "https://github.com/nunchaku-ai/nunchaku/blob/302e0e97024ebd68688fe890e5df83731edf7b54/nunchaku/models/linear.py"
+        }
+      ]
+    },
+    {
+      "id": "S18",
+      "name": "SmoothQuant",
+      "repository": "mit-han-lab/smoothquant",
+      "level": "S",
+      "read_scope": "scale公式、LN/RMSNorm与多linear共同补偿；LLM实现边界。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "c61476d728e42ae0d8a35e7e78494edcac3237b5",
+      "files": [
+        {
+          "path": "smoothquant/smooth.py",
+          "bytes": 6137,
+          "sha256": "74daf140e0efd00082ec536200aa1d18d7b1ca516b6aa70a3cb96439f4d4e88b",
+          "url": "https://github.com/mit-han-lab/smoothquant/blob/c61476d728e42ae0d8a35e7e78494edcac3237b5/smoothquant/smooth.py"
+        }
+      ]
+    },
+    {
+      "id": "S19",
+      "name": "MLX quantized Metal",
+      "repository": "ml-explore/mlx",
+      "level": "S",
+      "read_scope": "Metal量化dispatch/tile/alignment片段；另读固定commit的Python quantize/QuantizedLinear/QQLinear原始文件，不在此文件hash清单。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "additional_read_urls": [
+        "https://raw.githubusercontent.com/ml-explore/mlx/36969c094354086e15d2a327a9c50feb20b9cf11/python/mlx/nn/layers/quantized.py"
+      ],
+      "commit": "36969c094354086e15d2a327a9c50feb20b9cf11",
+      "files": [
+        {
+          "path": "mlx/backend/metal/quantized.cpp",
+          "bytes": 63145,
+          "sha256": "947e92b5d51134f329698b2497a8315b135a0012994af385ef296adb962b5850",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/quantized.cpp"
+        }
+      ]
+    },
+    {
+      "id": "S20",
+      "name": "mflux",
+      "repository": "filipstrand/mflux",
+      "level": "S",
+      "read_scope": "README第三方MLX cache入口与当前Qwen量化predicate。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 10252,
+          "sha256": "e2f60690bd3f8cc2884154066c74441293cd689782251be658d759b57a424aaf",
+          "url": "https://github.com/filipstrand/mflux/blob/8c00dab2505a96019df9d30bc9c223bf20d733c4/README.md"
+        },
+        {
+          "path": "src/mflux/models/qwen/weights/qwen_weight_definition.py",
+          "bytes": 3018,
+          "sha256": "98d98c251ffff8947299e5a5be5864942671f27770929d5adbf0c367104058b5",
+          "url": "https://github.com/filipstrand/mflux/blob/8c00dab2505a96019df9d30bc9c223bf20d733c4/src/mflux/models/qwen/weights/qwen_weight_definition.py"
+        }
+      ]
+    },
+    {
+      "id": "S21",
+      "name": "Latent Consistency Models",
+      "repository": "luosiallen/latent-consistency-model",
+      "level": "D",
+      "read_scope": "蒸馏/LCM-LoRA/scheduler说明与MPS使用入口，不运行训练或推理。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "a9ad79587cc8bd1e404ccd1a3056a3da969b2f62",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 11528,
+          "sha256": "4f6c6c50743a54951116530f4b23597976c60ca40776ed54b68469eb7dbf691c",
+          "url": "https://github.com/luosiallen/latent-consistency-model/blob/a9ad79587cc8bd1e404ccd1a3056a3da969b2f62/README.md"
+        }
+      ]
+    },
+    {
+      "id": "S22",
+      "name": "LTX-2-MLX",
+      "repository": "dgrauet/ltx-2-mlx",
+      "level": "S",
+      "read_scope": "两阶段角色、TeaCache校准说明/构建、2.5拒绝guard及sampler signal/cached residual片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "91e6f6c9bd621ff2ae31adfee643e113d67d6ae8",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 22574,
+          "sha256": "b548c9f291569ab2bf5e08ec57cd9236e524202ede9cee45c8d4d70f8f0ce8d4",
+          "url": "https://github.com/dgrauet/ltx-2-mlx/blob/91e6f6c9bd621ff2ae31adfee643e113d67d6ae8/README.md"
+        },
+        {
+          "path": "packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/ti2vid_two_stages.py",
+          "bytes": 32569,
+          "sha256": "33dc2ee97ce86c98744ac97e83687b8527dd701a9a497d6f7ff19da4a753dfdc",
+          "url": "https://github.com/dgrauet/ltx-2-mlx/blob/91e6f6c9bd621ff2ae31adfee643e113d67d6ae8/packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/ti2vid_two_stages.py"
+        },
+        {
+          "path": "packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/_base.py",
+          "bytes": 29032,
+          "sha256": "f75f45ec56e8e9a8575f930c441d8c312a11e94f566b427697e346f33745de12",
+          "url": "https://github.com/dgrauet/ltx-2-mlx/blob/91e6f6c9bd621ff2ae31adfee643e113d67d6ae8/packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/_base.py"
+        },
+        {
+          "path": "packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/utils/samplers.py",
+          "bytes": 48121,
+          "sha256": "e9e37d5d3cd88b49a6b7a64a550bddc9d55d12b1bfe49f708e15308098daa30b",
+          "url": "https://github.com/dgrauet/ltx-2-mlx/blob/91e6f6c9bd621ff2ae31adfee643e113d67d6ae8/packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/utils/samplers.py"
+        }
+      ]
+    },
+    {
+      "id": "S23",
+      "name": "TAESD",
+      "repository": "madebyollin/taesd",
+      "level": "S",
+      "read_scope": "模型家族/latent合同/质量限制；Conv/upsample、F16/F32与带全局norm的变体。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "027d3ef404a04a141e60d5ec0fee149c2c8bdd74",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 8896,
+          "sha256": "c6a8bd43338206964dd64a0c5cfccdaf585d3df94907496c2ed8b060b6135f56",
+          "url": "https://github.com/madebyollin/taesd/blob/027d3ef404a04a141e60d5ec0fee149c2c8bdd74/README.md"
+        },
+        {
+          "path": "taesd.py",
+          "bytes": 9564,
+          "sha256": "be3a8485c187d35d7fcf5c596fa800171f7b157c43f1a086e00e25134c7e6abd",
+          "url": "https://github.com/madebyollin/taesd/blob/027d3ef404a04a141e60d5ec0fee149c2c8bdd74/taesd.py"
+        }
+      ]
+    },
+    {
+      "id": "S24",
+      "name": "DeepCache",
+      "repository": "horseee/DeepCache",
+      "level": "S",
+      "read_scope": "U-Net缓存机制说明与helper位置/周期/wrap/unwrap/reset控制。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "1691a3ab22308fe06685e4ff151a9ab175be2dc4",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 17111,
+          "sha256": "2fa09ccfeb1177790d81d3c37648c19dde31317f0ad02aa7b4687bfb21d1ad3f",
+          "url": "https://github.com/horseee/DeepCache/blob/1691a3ab22308fe06685e4ff151a9ab175be2dc4/README.md"
+        },
+        {
+          "path": "DeepCache/extension/deepcache.py",
+          "bytes": 6616,
+          "sha256": "5ffd13c69c6faedaa1f5780d5fcc5a7ecf1e9ed21bcc6cc2a0719b247eb55013",
+          "url": "https://github.com/horseee/DeepCache/blob/1691a3ab22308fe06685e4ff151a9ab175be2dc4/DeepCache/extension/deepcache.py"
+        }
+      ]
+    },
+    {
+      "id": "S25",
+      "name": "Diffusers caching / scheduler",
+      "repository": "huggingface/diffusers",
+      "level": "S",
+      "read_scope": "cache机制与MPS文档入口；Sea indicator/metadata/gate和Mag config/ratio/状态控制片段；不是所有hooks或全部Sea adapter审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "d42ebf9c6e0b46103b74283f5324357a67acaa04",
+      "files": [
+        {
+          "path": "docs/source/en/optimization/cache.md",
+          "bytes": 11922,
+          "sha256": "796232b55d04d91597cdb09ccfe04bd7aa3f1c3d07acfbdd86cc4e06cd44a22d",
+          "url": "https://github.com/huggingface/diffusers/blob/d42ebf9c6e0b46103b74283f5324357a67acaa04/docs/source/en/optimization/cache.md"
+        },
+        {
+          "path": "docs/source/en/api/schedulers/multistep_dpm_solver.md",
+          "bytes": 2141,
+          "sha256": "58fe18f2d5ad87adaa498c8d8ec6c653e6c4779b672f02f1cfec6e2b828307db",
+          "url": "https://github.com/huggingface/diffusers/blob/d42ebf9c6e0b46103b74283f5324357a67acaa04/docs/source/en/api/schedulers/multistep_dpm_solver.md"
+        },
+        {
+          "path": "src/diffusers/hooks/sea_cache.py",
+          "bytes": 46600,
+          "sha256": "7cd048183bc46b93af65f78a72240bfc1b9a4bd95607ba6c0e4dfc9bb3ca3cfd",
+          "url": "https://github.com/huggingface/diffusers/blob/d42ebf9c6e0b46103b74283f5324357a67acaa04/src/diffusers/hooks/sea_cache.py"
+        },
+        {
+          "path": "src/diffusers/hooks/mag_cache.py",
+          "bytes": 18671,
+          "sha256": "2ba374a577a48c51addffa35dff64ca24b319276565a019e86d2cff00b0962ee",
+          "url": "https://github.com/huggingface/diffusers/blob/d42ebf9c6e0b46103b74283f5324357a67acaa04/src/diffusers/hooks/mag_cache.py"
+        }
+      ]
+    },
+    {
+      "id": "S26",
+      "name": "Radial Attention",
+      "repository": "mit-han-lab/radial-attention",
+      "level": "S",
+      "read_scope": "距离band/密度规律、LoRA延长与原长度区分、mask/CSR转换、时空窗口与sink代码片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "72788d4f0a6d202f1ec5f1c98a6e4c8b2e34fdbc",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 9202,
+          "sha256": "3c02b5582705b25bf14f39da896258794827ad07dcb83fd8f6994ba0f61ebdb2",
+          "url": "https://github.com/mit-han-lab/radial-attention/blob/72788d4f0a6d202f1ec5f1c98a6e4c8b2e34fdbc/README.md"
+        },
+        {
+          "path": "radial_attn/attn_mask.py",
+          "bytes": 18735,
+          "sha256": "663dd94c8be0b20d8ab71c56209f0d03514b2fb90d4a2dfdb2cfaf3238b529ee",
+          "url": "https://github.com/mit-han-lab/radial-attention/blob/72788d4f0a6d202f1ec5f1c98a6e4c8b2e34fdbc/radial_attn/attn_mask.py"
+        }
+      ]
+    },
+    {
+      "id": "S27",
+      "name": "Apple Core ML Stable Diffusion",
+      "repository": "apple/ml-stable-diffusion",
+      "level": "D",
+      "read_scope": "官方weight compression/MBP/activation sensitivity说明与后端条件；不重跑转换脚本。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "ea2805dc1945be20561c77e5f6d1d9a5a637cda2",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 59272,
+          "sha256": "de70ec36d5406d74c5d3dffdbb8217879d0721e42fd410982df0f04d9fe88de2",
+          "url": "https://github.com/apple/ml-stable-diffusion/blob/ea2805dc1945be20561c77e5f6d1d9a5a637cda2/README.md"
+        }
+      ]
+    },
+    {
+      "id": "S28",
+      "name": "mlx-taef",
+      "repository": "IonDen/mlx-taef",
+      "level": "D",
+      "read_scope": "纯MLX tiny decoder、latent变体/预览callback、normalization及旧基准修正说明；不审计所有模型源码。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "commit": "cd4340e4190b7964e816a3dcb67fba5bcd27ca2d",
+      "files": [
+        {
+          "path": "README.md",
+          "bytes": 20489,
+          "sha256": "9621d77c9137160e023a023d2b65dd20f8493cbd7657de4cb909c9ec55126720",
+          "url": "https://github.com/IonDen/mlx-taef/blob/cd4340e4190b7964e816a3dcb67fba5bcd27ca2d/README.md"
+        }
+      ]
+    },
+    {
+      "id": "S29",
+      "name": "TurboCider 既有 Apple 正反实验",
+      "repository": "TurboCider",
+      "local_history": true,
+      "level": "D",
+      "read_scope": "历史LTX sparse质量/阶段负结果与Qwen DBCache完整请求报告；本轮只读文档，没有重跑原始媒体基准。",
+      "execution_scope": "既有本地报告，非本轮重跑；仓库公开URL未验证，本项以本地相对路径为权威。",
+      "commit": "614fdf2bc5abf05b050688f8b40dcc65580e1af4",
+      "files": [
+        {
+          "path": "docs/design/ltx-stage2-sparse-results.md",
+          "bytes": 7970,
+          "sha256": "5c11e02fdad0b176a90a651f6078873b6e2b1e5c5b73cf7a842e6e396cbecc77",
+          "url": "../../docs/design/ltx-stage2-sparse-results.md"
+        },
+        {
+          "path": "docs/status/2026-09-30-qwen21-dit-cache.md",
+          "bytes": 15414,
+          "sha256": "bd9a2c4c512afcea872e8fa381834f41e6451071599bca78b9a1829795cc4b1f",
+          "url": "../../docs/status/2026-09-30-qwen21-dit-cache.md"
+        }
+      ]
+    }
+  ]
+}

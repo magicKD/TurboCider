@@ -4,6 +4,10 @@
 
 ## 从这里开始
 
+- 算法级可控有损：[调研与选择指南](algorithms/README.md) → [缓存/预测、稀疏attention、token减少、PTQ/低秩与少步数分篇](algorithms/model-sparsity.md) → [固定源码来源](algorithms/sources.md)与[本轮数学/MLX实验](algorithms/experiments-20261016.md)；作者结果、历史结果、合成组件与完整请求资格分开。
+- ANE完整专题：[研究总入口与项目对照](ane/README.md) → [M4 W8A8 / LUT4能力](ane/capability-atlas.md) → [训练路线](ane/training.md) → [profiling分层](ane/profiling.md) → [本轮360次压缩与111次手写反向输出](ane/experiments-20261016.md)；固定版本来源、官方能力、作者推断和本机实测分开，不更改产品默认。
+- GPU/Metal 系统研究：[专题 README](metal/README.md) → [推理引擎对照](metal/inference-engines.md) / [TensorOps 与 M5](metal/tensorops-and-m5.md) / [profiling](metal/profiling-playbook.md) / [优化 PR](metal/optimization-prs.md)；含固定版本来源与本机组件实测，不作为全模型速度排名。
+- 新增专项研究入口：[GPU + ANE 协同推理专题](gpu_ane/README.md)，按引擎、GPU/ANE机制、项目源码、优化PR和实验边界组织；保留原有`gpu-ane/`作为基础合同层。
 - 媒体交接：[BGRA到GPU输入的完整边界](media/tensor-texture-interop.md) → [vImage/循环/GPU三路实测](review/media-stage-20261016.md)；保留CPU多pass回退、透明源拒绝和更强GPU分母，不冒充完整codec/VAE请求。
 - 多维问题入口：[受控主题索引](queries/README.md)与[别名/版本复查合同](data/README.md)；按stage、backend、symptom等定位机制，标签和精确历史环境匹配都不授予加速资格。
 - 本轮深入研究：[源码研究与实测工作台](review/research-campaign-20261015.md)；跟踪roadmap、参考实现、profiling与Qwen真实工作负载，进行中项目不作为性能资格。
@@ -27,7 +31,7 @@
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
 - 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
-- 动手实现：[实验室](labs/README.md) → [54项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含48个CPU/模拟case、19个显式设备selector（其中7个基础Metal对照入口），公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/shared surface/MLX adoption/真实模型集成另需显式opt-in。
+- 动手实现：[实验室](labs/README.md) → [技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含CPU/模拟case与显式设备selector（包括基础Metal对照和MLX组件实验），公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/shared surface/MLX adoption/真实模型集成另需显式opt-in，精确数量以catalog检查输出为准。
 
 ## 目录
 
@@ -35,10 +39,10 @@
 | --- | --- |
 | 硬件与适配 | [芯片、能力与设备 profile](hardware/apple-silicon.md) |
 | Metal kernel | [性能调优](metal/kernel-tuning.md) · [Attention](metal/attention.md) · [融合与布局](metal/fusion-and-layout.md) · [Command graph](metal/command-graphs.md) |
-| ANE | [Core ML 图与布局](ane/coreml-graphs.md) · [加载 / 缓存 / 失败回收](ane/lifecycle.md) · [量化与旋转](ane/quantization.md) · [SRAM / 性能边界](ane/performance-limits.md) · [Private ANE 边界](ane/private-ane.md) |
+| ANE | [专题总览](ane/README.md) · [能力地图](ane/capability-atlas.md) · [图与布局](ane/coreml-graphs.md) · [生命周期](ane/lifecycle.md) · [LUT与压缩](ane/weight-compression.md) · [W8A8](ane/w8a8-int8.md) · [训练](ane/training.md) · [Profiling](ane/profiling.md) · [性能边界](ane/performance-limits.md) · [Private边界](ane/private-ane.md) |
 | GPU + ANE | [切分选择](gpu-ane/partitioning.md) · [Sequence / hidden轴与带宽争抢](gpu-ane/axes-and-bandwidth.md) · [并行调度](gpu-ane/scheduling.md) · [共享 IO](gpu-ane/shared-memory.md) · [完整 LoRA](gpu-ane/lora.md) · [带宽与校准](gpu-ane/calibration.md) · [20 组案例索引](gpu-ane/experiment-ledger.md) |
 | 内存与存储 | [驻留](memory/residency.md) · [Streaming](memory/streaming.md) · [Packed 格式与 IO](memory/storage.md) |
-| 算法级优化 | [缓存](algorithms/caches.md) · [稀疏 / 重用 / 近似](algorithms/approximations.md) |
+| 算法级优化 | [总览与选择](algorithms/README.md) · [缓存身份](algorithms/caches.md) · [稀疏/模型地图](algorithms/model-sparsity.md) · [分层验收](algorithms/evaluation.md) · [固定来源](algorithms/sources.md) |
 | 媒体链路 | [VAE / 卷积 / tiling](media/vae.md) · [视频音频 IO](media/video-and-audio.md) · [辅助图像超分](media/upscaling.md) |
 | Profiling | [计时、内存、质量](profiling/measurement.md) · [工具与命令](profiling/tools.md) |
 | 实战与来源 | [模型迁移配方](models/recipes.md) · [Splash](references/splash.md) · [vpipe](references/vpipe.md) · [其他项目](references/related-projects.md) · [证据地图](references/evidence-map.md) · [历史对话经验](references/history-lessons.md) |

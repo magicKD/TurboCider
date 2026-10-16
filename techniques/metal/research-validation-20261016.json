@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "date": "2026-10-16",
+  "scope": "Metal survey only. Git baseline plus task-owned overlay, not a claim that concurrent ANE/algorithms/gpu_ane drafts pass.",
+  "production_qualified": false,
+  "baseline_commit": "614fdf2bc5abf05b050688f8b40dcc65580e1af4",
+  "observed_task_file_hashes": [
+    {
+      "path": "labs/metal/engine_probe.py",
+      "sha256": "3a36b57e3bb0bb40944671c61217c16718b3037984bc1e47a7f33cf3e74ad7f2"
+    },
+    {
+      "path": "tests/test_metal_survey.py",
+      "sha256": "8ed5fbd72c0421d8e4bac9d82b02af3661a469ea358aee7104a00b75af17b5a9"
+    },
+    {
+      "path": "labs/catalog.json",
+      "sha256": "003e0c56ea694e7205c67f68cd53325d9d8b2029b19d4814e44e95bd686e9d6f"
+    },
+    {
+      "path": "labs/check_catalog.py",
+      "sha256": "b01aa86925970c88d83110f567c51759f26029eb0cf378dfa7b982e8a0ba4629"
+    },
+    {
+      "path": "references/sources.json",
+      "sha256": "efcfdb477bd836871ed12aca3b03aa4cc13fc26cb7ca95301cb335cbb9d9ca8c"
+    },
+    {
+      "path": "queries/README.md",
+      "sha256": "992b564b1a89bebf3e8919c3cfdecbdda41a2842dbe2b98fc78ddaed1707f986"
+    },
+    {
+      "path": "metal/README.md",
+      "sha256": "6e870604a9c0e171306e40a517d05cef8f643291f1485edd3b747a9f55c896ca"
+    },
+    {
+      "path": "metal/attention-implementations.md",
+      "sha256": "04f251f65b23202db176261c9613958c581f60c78011b48c84ac0e54887392fb"
+    },
+    {
+      "path": "metal/diffusion-and-media.md",
+      "sha256": "f18b8f595c6b3c66432aa5c1f4540703f44530ca239e24cb0fd315d650d5ad8a"
+    },
+    {
+      "path": "metal/empirical-hardware.md",
+      "sha256": "4a6c7c3fd646cecace96cc86afeea55c06aa52cf4b870045023a16628566118a"
+    },
+    {
+      "path": "metal/experiment-evidence-20261016.json",
+      "sha256": "565411e83992d0314a5420866959053eec83166b30a453a875af142fbe8c12a1"
+    },
+    {
+      "path": "metal/experiments-20261016.md",
+      "sha256": "545ebfd57af3b7424547cbc1eab8b2301f3059464e248e436d62b3ffc9cdf55b"
+    },
+    {
+      "path": "metal/gemm-and-quantization.md",
+      "sha256": "54ea899bd8fd401d8b9fd6af3e1fab045203bbf2917771ee48415d31c173daac"
+    },
+    {
+      "path": "metal/inference-engines.md",
+      "sha256": "ec68e6440c77c1818aec839289aa19630d730e801c922d7fa2c3279561630853"
+    },
+    {
+      "path": "metal/optimization-prs.md",
+      "sha256": "bf7ed69582ea74660ecde85a2612cfcac86517e153702c2ff89661f37e2aa422"
+    },
+    {
+      "path": "metal/profiling-playbook.md",
+      "sha256": "c862ea968cb3586b40dfbabf2b17883570f3f4087400bab9a65eebc8231a3acc"
+    },
+    {
+      "path": "metal/research-audit.md",
+      "sha256": "a6f70795b97fc8aed837f7a91373ba3123148bc28e86d8dd474cc1be115a01fa"
+    },
+    {
+      "path": "metal/research-sources.json",
+      "sha256": "6ffef3a86ceacd8dc4e3f3f8fbbffafcea7454de667e99e0741de1dd087c5bfa"
+    },
+    {
+      "path": "metal/tensorops-and-m5.md",
+      "sha256": "c94ec4d18d1ec27d73666ca66c38f7199b19bb4f250d695d3ce4d790a36a52dc"
+    }
+  ],
+  "standard_library_suite": {
+    "total": 357,
+    "passed": 355,
+    "skipped_optional_numpy": 2,
+    "failures": 0,
+    "executions": 2,
+    "environment": "Git baseline plus task overlay; second execution via techniques-only --isolate"
+  },
+  "numpy_task_suite": {
+    "total": 6,
+    "passed": 6,
+    "failures": 0
+  },
+  "checks": {
+    "wiki_local_links": "passed (134 pages in scoped snapshot)",
+    "catalog": "passed (64 chapters/cards)",
+    "standalone_dependency_audit": "passed",
+    "isolated_cpu_case_suite": "passed (48 cases)",
+    "knowledge_strict": "passed",
+    "query_index": "passed",
+    "source_index": "passed",
+    "diff_whitespace": "passed",
+    "TensorOps_query": "returns dedicated technique and source registry"
+  },
+  "device_runs": {
+    "accepted_processes": 2,
+    "seeds": [
+      17,
+      29
+    ],
+    "comparisons": 28,
+    "measured_outputs": 896,
+    "warning_policy": "-W error for accepted runs",
+    "scope": "MLX synthetic resident host-wall component mechanisms; not engine or complete-model ranking; no M5/NAX"
+  },
+  "upstream_verification": {
+    "immutable_files_matched": 27,
+    "immutable_files_total": 27,
+    "pr_diffs_matched": 8,
+    "pr_diffs_total": 8,
+    "readable_markdown_external_links_checked": 33,
+    "remaining_404": 0,
+    "http_403": [
+      "PyTorch MPS environment docs",
+      "ExecuTorch Core ML docs"
+    ],
+    "http_403_note": "Read via web; plain urllib requests blocked. Not a hardware failure."
+  },
+  "concurrent_worktree_observation": {
+    "full_suite": {
+      "total": 357,
+      "failures": 3,
+      "skips": 2
+    },
+    "reason": "Unrelated in-progress ANE/algorithms/gpu_ane draft links, missing cards and undeclared imports; preserved, not rewritten to force a green full-tree result."
+  },
+  "not_tested": [
+    "M5/NAX hardware execution",
+    "full Xcode Instruments/shader counter UI",
+    "cross-engine complete-model latency/quality",
+    "production default routing"
+  ],
+  "raw_runs": "outputs/metal-survey-20261016 (ignored; portable accepted samples are included in experiment-evidence-20261016.json)"
+}

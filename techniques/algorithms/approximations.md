@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [Attention](../metal/attention.md) · [VAE](../media/vae.md)
 
+逐算法机制与开源实现见 [算法目录](README.md)、[模型sparsity地图](model-sparsity.md)与[固定来源](sources.md)；详细实验合同见 [evaluation](evaluation.md)。
+
 ## 先区分“不改语义”和“可接受误差”
 
 改变dtype/reduction、W8A8、DBCache、稀疏attention、少参考分辨率、final-step FFN reuse、独立VAE tiles，都是不同近似。`allow_approximation=true`只代表允许尝试，不代表画质合格，更不代表可以漏步骤或输入。

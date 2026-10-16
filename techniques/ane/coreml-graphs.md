@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [生命周期](lifecycle.md) · [共享 IO](../gpu-ane/shared-memory.md)
 
+深入阅读：[ANE专题目录](README.md)、[Apple Transformer布局/lowering](layout-and-lowering.md)、[ANEMLL状态与公共部署](public-coreml-deployment.md)。版本能力和实际放置分别见[能力地图](capability-atlas.md)与[本轮压缩/计算计划对照](experiments-20261016.md)。
+
 ## 先选图合同，不先选 computeUnits
 
 | 路线 | 权重在哪里 | 优点 | 主要代价 |

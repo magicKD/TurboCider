@@ -2,6 +2,8 @@
 
 [总目录](../README.md) · [测量](../profiling/measurement.md)
 
+算法扩展：[总览](README.md) → [TeaCache](teacache.md) / [EasyCache](easycache.md) / [FBCache与DBCache](block-caches.md) / [TaylorSeer](taylorseer.md) / [PAB](pab.md) / [DeepCache](deepcache.md) / [FasterCache](fastercache.md) / [Sea与Mag](spectral-magnitude-cache.md)。本页继续负责身份、失效和生命周期，不将近似缓存变成精确缓存。
+
 ## 六种 cache 不可混称
 
 | 缓存 | 保存什么 | 典型失效 / 代价 |

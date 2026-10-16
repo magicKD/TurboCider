@@ -20,6 +20,8 @@
 
 ## 按主题学习
 
+新增算法研究配套：[source审计、0阶块补偿/外推反例与显式MLX探针](algorithm-research.md)。`algorithm-evidence`是机制witness，不是所列论文的完整实现；[分篇报告](../algorithms/README.md)将来源阅读、合成组件与完整媒体资格分开。
+
 | 主题 | 可运行实验 | 深入说明 |
 | --- | --- | --- |
 | Q4/Q8物理格式、range、RNE | `quant-formats` / `precision-boundaries` | [量化实现](quantization.md) |

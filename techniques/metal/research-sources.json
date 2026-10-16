@@ -1,0 +1,475 @@
+{
+  "schema": 1,
+  "reviewed": "2026-10-16",
+  "scope": "Selected primary-source code/document/PR reading. No complete-engine audit or universal engine ranking; no third-party source copied.",
+  "repositories": [
+    {
+      "repository": "ml-explore/mlx",
+      "commit": "36969c094354086e15d2a327a9c50feb20b9cf11",
+      "files": [
+        {
+          "path": "mlx/backend/metal/device.cpp",
+          "sha256": "06baa8da50a38fd06187840e3905bd739d3dfa35d33f51f3d892d574d858c2fa",
+          "review_scope": "is_nax_available OS/build/architecture guard",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/device.cpp"
+        },
+        {
+          "path": "mlx/backend/metal/matmul.cpp",
+          "sha256": "d516953ee089f185722f59ce6f11e6ab6e0e285d37fbd7a612f89813bf51bf2a",
+          "review_scope": "selected split-K/NAX/dtype dispatch",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/matmul.cpp"
+        },
+        {
+          "path": "mlx/backend/metal/quantized.cpp",
+          "sha256": "947e92b5d51134f329698b2497a8315b135a0012994af385ef296adb962b5850",
+          "review_scope": "selected QMV/QMM/stride/metadata dispatch",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/quantized.cpp"
+        },
+        {
+          "path": "mlx/backend/metal/kernels/quantized_nax.h",
+          "sha256": "1af9bdcee1bf2e199f9846d4b7817ca6f1d4dc2286c654d6eef144c5b7aba2b9",
+          "review_scope": "selected affine packing helpers; new PR reviewed separately",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/kernels/quantized_nax.h"
+        },
+        {
+          "path": "mlx/backend/metal/scaled_dot_product_attention.cpp",
+          "sha256": "2bf90044647830e24c826ed35797d1cabca83d9270a00161eea5ad419b639a14",
+          "review_scope": "selected full/vector/NAX/stride and use_fallback guards",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/scaled_dot_product_attention.cpp"
+        },
+        {
+          "path": "mlx/backend/metal/fence.cpp",
+          "sha256": "ba89eeace1b8746bd363d9f21f60db60aa8a6c84e01fef99ce1f1de4480b6000",
+          "review_scope": "Fence wait/update and encoder boundaries",
+          "url": "https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/fence.cpp"
+        }
+      ]
+    },
+    {
+      "repository": "ggml-org/llama.cpp",
+      "commit": "64e9bceb2c3a856efed96feda784a50947049feb",
+      "files": [
+        {
+          "path": "ggml/src/ggml-metal/ggml-metal-device.m",
+          "sha256": "cbc0008bfca774a850bb4dec2a12f70cb4f59f8206386cbacfe09a56a38cdb71",
+          "review_scope": "L186-192,439-529,1115-1210: capability, tensor compile probe and fallback",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/64e9bceb2c3a856efed96feda784a50947049feb/ggml/src/ggml-metal/ggml-metal-device.m"
+        },
+        {
+          "path": "ggml/src/ggml-metal/ggml-metal-ops.cpp",
+          "sha256": "112fb4c0e10b7e9026ded62baabd9388ff0b21ae73e8dea7183d46cbd6c9b729",
+          "review_scope": "selected node dispatch and graph fusion routing",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/64e9bceb2c3a856efed96feda784a50947049feb/ggml/src/ggml-metal/ggml-metal-ops.cpp"
+        }
+      ]
+    },
+    {
+      "repository": "philipturner/metal-flash-attention",
+      "commit": "8671cddc38f19a6eadb804dee6a3ca2954b8bf32",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "a20e5b7aeb1a9370aa7d72c1bbe61948b79518eb189fd421827b90657d707cef",
+          "review_scope": "single-head, JIT, register/spill design; historical results not reproduced",
+          "url": "https://github.com/philipturner/metal-flash-attention/blob/8671cddc38f19a6eadb804dee6a3ca2954b8bf32/README.md"
+        },
+        {
+          "path": "Sources/FlashAttention/Attention/AttentionKernel/AttentionKernel+Softmax.swift",
+          "sha256": "042c7b7d80fbaf9d0a069126a3241beacb4ef55ec0e0b0fe22d74bc7a8a8267f",
+          "review_scope": "L1-155 scale and partial-edge source generation",
+          "url": "https://github.com/philipturner/metal-flash-attention/blob/8671cddc38f19a6eadb804dee6a3ca2954b8bf32/Sources/FlashAttention/Attention/AttentionKernel/AttentionKernel+Softmax.swift"
+        }
+      ]
+    },
+    {
+      "repository": "liuliu/ccv",
+      "commit": "66dc16a3a3b688adfa6dc1d19eeeb3071beeb701",
+      "files": [
+        {
+          "path": "lib/nnc/mfa/kernels/NAInt8MatMulSmallMDescriptor.cpp",
+          "sha256": "ab5b791f7a4591f694520046a8de18dd7953dfeea75f8f839a90edcbdaf66dc6",
+          "review_scope": "L1-150 descriptor, splitK, scratch and cache",
+          "url": "https://github.com/liuliu/ccv/blob/66dc16a3a3b688adfa6dc1d19eeeb3071beeb701/lib/nnc/mfa/kernels/NAInt8MatMulSmallMDescriptor.cpp"
+        },
+        {
+          "path": "lib/nnc/mfa/kernels/NAAttentionKernel.cpp",
+          "sha256": "934d7c56e1f811a5c61ceed32f26c4134c1d301e0e33ceb06327a6b1c6de67ae",
+          "review_scope": "L1-130 setup/compilation fallback/TG memory/grid and selected generation symbols",
+          "url": "https://github.com/liuliu/ccv/blob/66dc16a3a3b688adfa6dc1d19eeeb3071beeb701/lib/nnc/mfa/kernels/NAAttentionKernel.cpp"
+        }
+      ]
+    },
+    {
+      "repository": "filipstrand/mflux",
+      "commit": "8c00dab2505a96019df9d30bc9c223bf20d733c4",
+      "files": [
+        {
+          "path": "src/mflux/models/qwen21/model/qwen21_transformer/qwen21_transformer.py",
+          "sha256": "ed3eb6229247960517f874152c05a68d69436c0799a84ee4f8ff3bc4ccde5714",
+          "review_scope": "L1-125 denoise compile, geometry and model call chain",
+          "url": "https://github.com/filipstrand/mflux/blob/8c00dab2505a96019df9d30bc9c223bf20d733c4/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_transformer.py"
+        },
+        {
+          "path": "src/mflux/models/qwen21/model/qwen21_transformer/qwen21_attention.py",
+          "sha256": "47a492802dd20ba99ee2762e74372b3d957ec4368d395169f369bb65386d49bd",
+          "review_scope": "full attention class: segmented causal/full and RoPE",
+          "url": "https://github.com/filipstrand/mflux/blob/8c00dab2505a96019df9d30bc9c223bf20d733c4/src/mflux/models/qwen21/model/qwen21_transformer/qwen21_attention.py"
+        }
+      ]
+    },
+    {
+      "repository": "leejet/stable-diffusion.cpp",
+      "commit": "2f886889e6e8b78738d6b87f7191f6018557c551",
+      "files": [
+        {
+          "path": "src/core/backend_fit.cpp",
+          "sha256": "adf96db43a5fa79383dbed7328326f42277ebba78277ed22e56c76669a336c45",
+          "review_scope": "L1-100 component/device/plan types and selected resident/staging budget blocks",
+          "url": "https://github.com/leejet/stable-diffusion.cpp/blob/2f886889e6e8b78738d6b87f7191f6018557c551/src/core/backend_fit.cpp"
+        }
+      ]
+    },
+    {
+      "repository": "tinygrad/tinygrad",
+      "commit": "3d057f05df532deca7661bfb2400c6564f96a04a",
+      "files": [
+        {
+          "path": "tinygrad/runtime/ops_metal.py",
+          "sha256": "6cb10ec5da1e6e7f7e26e01ac19196a9fe926c7e966538eb244ddc7ec1ee8617",
+          "review_scope": "L1-160 private MTLCompiler, ICB/fence/residency",
+          "url": "https://github.com/tinygrad/tinygrad/blob/3d057f05df532deca7661bfb2400c6564f96a04a/tinygrad/runtime/ops_metal.py"
+        }
+      ]
+    },
+    {
+      "repository": "yshenaw/ComfyUI-SolAttn-MPS",
+      "commit": "45071126b0c1ee30b0e6b7103fa9d70924828ba5",
+      "files": [
+        {
+          "path": "_metal_tiled_fwd.py",
+          "sha256": "2a258ebfdbcba28cd0d054ea552c0d140ccb16e1348c1b673b4d3f14ad7f8b10",
+          "review_scope": "L1-110 summary/tile accumulation and selected routing symbols",
+          "url": "https://github.com/yshenaw/ComfyUI-SolAttn-MPS/blob/45071126b0c1ee30b0e6b7103fa9d70924828ba5/_metal_tiled_fwd.py"
+        }
+      ]
+    },
+    {
+      "repository": "alibaba/MNN",
+      "commit": "dbf9ba61b08106a3b43426e295d1a29cb41cc8fe",
+      "files": [
+        {
+          "path": "source/backend/metal/MetalMatMul.mm",
+          "sha256": "8b591a81a401fce095b53ac14fd1e1cb3767356561dd77d7764c20608d899af4",
+          "review_scope": "constructor/onResize/onEncode selected blocks",
+          "url": "https://github.com/alibaba/MNN/blob/dbf9ba61b08106a3b43426e295d1a29cb41cc8fe/source/backend/metal/MetalMatMul.mm"
+        },
+        {
+          "path": "source/backend/metal/shader/MetalMatMul.metal",
+          "sha256": "248f637f6495676b0bdaa7ffbf066a46529bdedb66aa34bcb903d3d6c81f5f51",
+          "review_scope": "full 37-line stride/bias/scalar implementation",
+          "url": "https://github.com/alibaba/MNN/blob/dbf9ba61b08106a3b43426e295d1a29cb41cc8fe/source/backend/metal/shader/MetalMatMul.metal"
+        }
+      ]
+    },
+    {
+      "repository": "Tencent/ncnn",
+      "commit": "c15904bb8918187ec100f1ebe708942af83b84be",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "c2c82d74af40c50b29e59e6ef8102a34b0bfd5776100feda76797b3328c1f20f",
+          "review_scope": "D only: CPU/Vulkan/platform declaration, not whole-engine audit",
+          "url": "https://github.com/Tencent/ncnn/blob/c15904bb8918187ec100f1ebe708942af83b84be/README.md"
+        }
+      ]
+    },
+    {
+      "repository": "mlc-ai/mlc-llm",
+      "commit": "8978ea9aec626d64096aaa92fbc89bda2e3ea802",
+      "files": [
+        {
+          "path": "python/mlc_llm/compiler_pass/dispatch_kv_cache_creation.py",
+          "sha256": "f47970382ba229ddb32ef999274bef6d5f2e797da3bba5e65bc231f09c851422",
+          "review_scope": "selected FlashInfer CUDA filter/fallback and TIR cache",
+          "url": "https://github.com/mlc-ai/mlc-llm/blob/8978ea9aec626d64096aaa92fbc89bda2e3ea802/python/mlc_llm/compiler_pass/dispatch_kv_cache_creation.py"
+        },
+        {
+          "path": "python/mlc_llm/support/auto_target.py",
+          "sha256": "faae5b72ee729d4c3e2311fd1b7943850d9ebe0aaefb6a5fdac24ea76d97c685",
+          "review_scope": "L1-80 target detection; Metal build hooks navigation",
+          "url": "https://github.com/mlc-ai/mlc-llm/blob/8978ea9aec626d64096aaa92fbc89bda2e3ea802/python/mlc_llm/support/auto_target.py"
+        }
+      ]
+    },
+    {
+      "repository": "pytorch/pytorch",
+      "commit": "eb429a042a8f30a486e86eedaf140d1de53aa05b",
+      "files": [
+        {
+          "path": "aten/src/ATen/native/mps/operations/Attention.mm",
+          "sha256": "4bc02319170e84a602c64cdffb3549ba0c62603873328ee9bbfd81d4a505e0a9",
+          "review_scope": "selected graph/cache symbols; L790-865 vector/prefill/MPP/fallback/strides",
+          "url": "https://github.com/pytorch/pytorch/blob/eb429a042a8f30a486e86eedaf140d1de53aa05b/aten/src/ATen/native/mps/operations/Attention.mm"
+        }
+      ]
+    },
+    {
+      "repository": "huggingface/candle",
+      "commit": "12bb5d1f6350f4ea9827d9086f213feec1f0af6a",
+      "files": [
+        {
+          "path": "candle-core/src/metal_backend/mod.rs",
+          "sha256": "5c9aa5725671efcd48b672303c686f51d7c45efe44812b52ac00ec16408615a4",
+          "review_scope": "L1729-1792 matmul dtype/layout/call_mlx_gemm and selected storage blocks",
+          "url": "https://github.com/huggingface/candle/blob/12bb5d1f6350f4ea9827d9086f213feec1f0af6a/candle-core/src/metal_backend/mod.rs"
+        }
+      ]
+    },
+    {
+      "repository": "ggml-org/whisper.cpp",
+      "commit": "0c7be696371069e0baa2515ed7aa08d5a5473aa6",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "43451813ec96b5ea286c6d676f467bdffb053224c110c257ce3d67d911e774e7",
+          "review_scope": "D only: Metal/Core ML/ANE encoder documentation",
+          "url": "https://github.com/ggml-org/whisper.cpp/blob/0c7be696371069e0baa2515ed7aa08d5a5473aa6/README.md"
+        }
+      ]
+    },
+    {
+      "repository": "ml-explore/mlx-lm",
+      "commit": "93e6d4a6447b3080861985947f0820e76fcb957d",
+      "files": [
+        {
+          "path": "mlx_lm/generate.py",
+          "sha256": "9d46803799f99d6fc7c35fff2d4357c79b1a25ae98cc63efeaaebeb50a7b5f33",
+          "review_scope": "selected prefill/prompt-cache/KV quantization controls",
+          "url": "https://github.com/ml-explore/mlx-lm/blob/93e6d4a6447b3080861985947f0820e76fcb957d/mlx_lm/generate.py"
+        }
+      ]
+    },
+    {
+      "repository": "philipturner/metal-benchmarks",
+      "commit": "dc2adc640a1588246f4471d415aa6873cb6e3499",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "2c3d37fb29173af69284a93e7e293f18473b791aeb652e0eca476b5e3b828419",
+          "review_scope": "D only: first 210 lines historical M1/M2 architecture measurements, scope and outdated future predictions",
+          "url": "https://github.com/philipturner/metal-benchmarks/blob/dc2adc640a1588246f4471d415aa6873cb6e3499/README.md"
+        }
+      ]
+    }
+  ],
+  "pull_requests": [
+    {
+      "repository": "ml-explore/mlx",
+      "number": 4682,
+      "state": "open",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/ml-explore/mlx/pull/4682",
+      "diff_url": "https://github.com/ml-explore/mlx/pull/4682.diff",
+      "diff_sha256": "8bbe3621aea13aea315f8998f9e8592b36bc7ce85ce0bb3a68adcc4505ee66b8",
+      "review_scope": "quantized_nax loader, rows16, split-K and dispatcher; selected diff blocks",
+      "merge_commit_sha": null,
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "ml-explore/mlx",
+      "number": 4684,
+      "state": "merged",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/ml-explore/mlx/pull/4684",
+      "diff_url": "https://github.com/ml-explore/mlx/pull/4684.diff",
+      "diff_sha256": "db53abb244456cc40d4540fdb11d6c388d3f31b0fb32b3405ab97dcfb6cc2d7f",
+      "review_scope": "full small quantized.cpp guard diff",
+      "merge_commit_sha": "588553ca95515420386990c8fc36d585a2288d65",
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "ml-explore/mlx",
+      "number": 4476,
+      "state": "closed-unmerged",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/ml-explore/mlx/pull/4476",
+      "diff_url": "https://github.com/ml-explore/mlx/pull/4476.diff",
+      "diff_sha256": "4fe5f489be985f3594619a8338d70cdfaede10803dff623bccae8628acf13678",
+      "review_scope": "dispatcher window and added tests; not a mainline capability",
+      "merge_commit_sha": null,
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "ml-explore/mlx",
+      "number": 4594,
+      "state": "merged",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/ml-explore/mlx/pull/4594",
+      "diff_url": "https://github.com/ml-explore/mlx/pull/4594.diff",
+      "diff_sha256": "120ad994b23bddfca220e9df1223006f6badfdcff5c5c6c667d1241e5ea20e8d",
+      "review_scope": "selected gated-delta operation-derived cooperative tensor types",
+      "merge_commit_sha": "91c83d19bf022d7bc3e906582435f69fdc77ec63",
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "ml-explore/mlx",
+      "number": 4689,
+      "state": "merged",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/ml-explore/mlx/pull/4689",
+      "diff_url": "https://github.com/ml-explore/mlx/pull/4689.diff",
+      "diff_sha256": "f67935bff389bb61ce3e86c3cc3e7ee366b4ee0d57ab0ecbc7e58a8d7daba7ed",
+      "review_scope": "full encoder/fence wait diff",
+      "merge_commit_sha": "36969c094354086e15d2a327a9c50feb20b9cf11",
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "ggml-org/llama.cpp",
+      "number": 28439,
+      "state": "open",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28439",
+      "diff_url": "https://github.com/ggml-org/llama.cpp/pull/28439.diff",
+      "diff_sha256": "9a39fdb367347d55bbffff1727ec35f67a0af7a440e7ecdd2e27afaea6a8e78d",
+      "review_scope": "host/kernel/tuning/tests selected blocks and full tuning design additions",
+      "merge_commit_sha": null,
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "pytorch/pytorch",
+      "number": 198564,
+      "state": "open",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/pytorch/pytorch/pull/198564",
+      "diff_url": "https://github.com/pytorch/pytorch/pull/198564.diff",
+      "diff_sha256": "3cb06b8b72e690a659f1790eb9cdd06bfb8a4a28f92d9138100d8cc73c06dcbc",
+      "review_scope": "attention backend selection/wrapper/placeholder LSE selected blocks",
+      "merge_commit_sha": null,
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    },
+    {
+      "repository": "pytorch/pytorch",
+      "number": 189019,
+      "state": "open",
+      "verified_on": "2026-10-16",
+      "url": "https://github.com/pytorch/pytorch/pull/189019",
+      "diff_url": "https://github.com/pytorch/pytorch/pull/189019.diff",
+      "diff_sha256": "8333f983c16c0c4e4e57190f77992990a0309ba92f075e4cd78cb5c6ff10c998",
+      "review_scope": "selected allocator pinning, CPU fallback and RNG capture guards; not full 118KB audit",
+      "merge_commit_sha": null,
+      "locally_benchmarked": false,
+      "state_source": "Public GitHub PR page / merged-or-closed event, not merely closed search state"
+    }
+  ],
+  "documents": [
+    {
+      "publisher": "Apple",
+      "title": "MPP programming guide",
+      "url": "https://developer.apple.com/download/files/Metal-Performance-Primitives-Programming-Guide.pdf",
+      "review_scope": "tensor_ops operations; device-direct and tile tuning §2; not a measured NAX result",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "Apple",
+      "title": "M5 / A19 TensorOps Tech Talk",
+      "url": "https://developer.apple.com/videos/play/tech-talks/111432/",
+      "review_scope": "M1-M5 portability; 26.1/26.3/26.4 increments; GPU Neural Accelerators vs ANE",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "Apple",
+      "title": "WWDC26 TensorOps",
+      "url": "https://developer.apple.com/videos/play/wwdc2026/330/",
+      "review_scope": "cooperative-input/multi-plane quantization learning entry; API needs installed-SDK recheck",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "Apple",
+      "title": "Discover Metal 4",
+      "url": "https://developer.apple.com/videos/play/wwdc2025/205/",
+      "review_scope": "command allocator, argument tables, residency; execution layer vs TensorOps",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "Apple ML Research",
+      "title": "Exploring LLMs with MLX and M5",
+      "url": "https://machinelearning.apple.com/research/exploring-llms-mlx-m5",
+      "review_scope": "author measurements not reproduced; GPU NAX not ANE",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "MLX",
+      "title": "Metal debugger",
+      "url": "https://ml-explore.github.io/mlx/build/html/dev/metal_debugger.html",
+      "review_scope": "capture setup and evaluation boundary",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "MLX",
+      "title": "Compilation",
+      "url": "https://ml-explore.github.io/mlx/build/html/usage/compile.html",
+      "review_scope": "lazy compilation/fusion/specialization, not command-buffer replay",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "PyTorch",
+      "title": "MPS environment variables",
+      "url": "https://docs.pytorch.org/docs/stable/mps_environment_variables.html",
+      "review_scope": "profiler/signposts/fast math/prefer Metal/fallback/allocator controls",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "MLC-LLM",
+      "title": "Model compilation",
+      "url": "https://llm.mlc.ai/docs/compilation/compile_models.html",
+      "review_scope": "target/model library/weight separation, Metal deployment",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "ExecuTorch",
+      "title": "Core ML backend",
+      "url": "https://docs.pytorch.org/executorch/stable/backends-coreml.html",
+      "review_scope": "D only: graph delegate vs custom Metal kernel",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    },
+    {
+      "publisher": "ONNX Runtime",
+      "title": "CoreML Execution Provider",
+      "url": "https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html",
+      "review_scope": "D only: execution provider and compute-unit selection",
+      "observed": "2026-10-16",
+      "mutable_document": true
+    }
+  ],
+  "verification": {
+    "date": "2026-10-16",
+    "immutable_file_raw_downloads": 27,
+    "immutable_file_sha256_matches": 27,
+    "pr_diff_downloads_and_sha256_matches": 8,
+    "document_http_checks": "canonical MPP PDF and 8 other pages returned 200; PyTorch/ExecuTorch urllib returned 403 but were read through web sources",
+    "not_verified": "future availability, all-engine numerical coverage, M5/NAX hardware performance or production qualification"
+  },
+  "limitations": [
+    "GitHub pull-details REST endpoint was rate-limited; used public pages and diffs.",
+    "PR diffs are identified by content SHA256, not fabricated head/base commits.",
+    "M4 Max measured; no M5/NAX or PyTorch/Candle/MNN/MLC full-model benchmark.",
+    "External sources are linked and hashed; not mirrored for offline source auditing."
+  ]
+}

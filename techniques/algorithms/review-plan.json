@@ -1,0 +1,418 @@
+{
+  "sources": [
+    {
+      "id": "S01",
+      "name": "Sana sol-engine",
+      "checkout": "sana",
+      "repository": "NVlabs/Sana",
+      "files": [
+        "techniques/compose.py",
+        "techniques/methods/teacache.py",
+        "techniques/methods/step_cache.py",
+        "techniques/methods/payload_cache.py",
+        "techniques/methods/token_prune.py",
+        "techniques/sparse_attention_policies.py",
+        "techniques/sparse_backends/sol_attn/mps/preprocess.py",
+        "techniques/sparse_backends/sol_attn/mps/metal.py",
+        "site_docs/techniques/cache/easycache.md",
+        "site_docs/techniques/cache/teacache.md",
+        "site_docs/techniques/cache/cache_dit.md",
+        "site_docs/techniques/cache/taylorseer.md",
+        "site_docs/techniques/sparse/sol_attn.md",
+        "site_docs/techniques/sparse/pisa.md"
+      ],
+      "level": "S",
+      "read_scope": "控制器、effect组合、token与SAP策略、Metal summary/routing/softmax的关键片段和算法文档；不是所有模型adapter审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S02",
+      "name": "TeaCache",
+      "checkout": "teacache",
+      "repository": "ali-vilab/TeaCache",
+      "files": [
+        "README.md",
+        "TeaCache4FLUX/teacache_flux.py"
+      ],
+      "level": "S",
+      "read_scope": "FLUX调制信号、累计多项式、首末full、residual主路径。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S03",
+      "name": "mlx-teacache 与作者研究笔记",
+      "checkout": "mlx-teacache",
+      "repository": "IonDen/mlx-teacache",
+      "files": [
+        "README.md",
+        "src/mlx_teacache/_kernel/gate.py",
+        "src/mlx_teacache/variants/flux1_dev/integration.py",
+        "docs/papers/qwen-image-mixed-precision-on-a-32-gb-mac.md"
+      ],
+      "level": "S",
+      "read_scope": "gate完整安全控制与FLUX prelude/body/tail接缝；README的基准更正/支持边界；Qwen混合精度作者笔记前半及配方；另读短日程负结果全文。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "additional_read_urls": [
+        "https://raw.githubusercontent.com/IonDen/mlx-teacache/b56f2882ca237b3b971c976f78804154cbeb1014/docs/papers/why-teacache-does-not-engage-on-short-distilled-schedules.md"
+      ]
+    },
+    {
+      "id": "S04",
+      "name": "EasyCache",
+      "checkout": "easycache",
+      "repository": "H-EmbodVis/EasyCache",
+      "files": [
+        "README.md",
+        "EasyCache4Wan2.1/easycache_generate.py"
+      ],
+      "level": "S",
+      "read_scope": "README、Wan CFG调用对计数、控制与cache_even/cache_odd主体片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S05",
+      "name": "ParaAttention FirstBlockCache",
+      "checkout": "para-attention",
+      "repository": "chengzeyi/ParaAttention",
+      "files": [
+        "README.md",
+        "src/para_attn/first_block_cache/utils.py"
+      ],
+      "level": "S",
+      "read_scope": "CacheContext、相对L1、CachedTransformerBlocks、两流residual与剩余block边界。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S06",
+      "name": "Cache-DiT",
+      "checkout": "cache-dit",
+      "repository": "vipshop/cache-dit",
+      "files": [
+        "README.md",
+        "src/cache_dit/caching/cache_blocks/pattern_base.py",
+        "src/cache_dit/caching/cache_contexts/cache_context.py",
+        "src/cache_dit/caching/cache_contexts/calibrators/taylorseer.py"
+      ],
+      "level": "S",
+      "read_scope": "框架文档、F/M/B forward关键片段、context字段/计数、TaylorSeer导数/anchor；不审计所有adapter或分布式路径。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S07",
+      "name": "TaylorSeer",
+      "checkout": "taylorseer",
+      "repository": "Shenyi-Z/TaylorSeer",
+      "files": [
+        "README.md",
+        "TaylorSeers-Diffusers/taylorseer_flux/taylorseer_utils/__init__.py"
+      ],
+      "level": "S",
+      "read_scope": "作者公式、step坐标、差分与预测函数；不运行其CUDA pipeline。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S08",
+      "name": "stable-diffusion.cpp 缓存移植",
+      "checkout": "sdcpp",
+      "repository": "leejet/stable-diffusion.cpp",
+      "files": [
+        "docs/caching.md",
+        "src/runtime/easycache.hpp",
+        "src/runtime/cache_dit.hpp"
+      ],
+      "level": "S",
+      "read_scope": "cache modes、EasyCache host控制与条件残差、Taylor状态/配置片段。主仓库ggml/frontend子模块有既有修改；这些选中文件按HEAD取证，不依赖子模块改动。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S09",
+      "name": "VideoSys PAB",
+      "checkout": "videosys",
+      "repository": "NUS-HPC-AI-Lab/VideoSys",
+      "files": [
+        "videosys/core/pab/pab_mgr.py"
+      ],
+      "level": "S",
+      "read_scope": "三种attention周期、timestep窗口、MLP输出池与清理。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S10",
+      "name": "FasterCache",
+      "checkout": "fastercache",
+      "repository": "Vchitect/FasterCache",
+      "files": [
+        "README.md",
+        "scripts/cogvideox/fastercache_sample_cogvideox.py"
+      ],
+      "level": "S",
+      "read_scope": "CogVideoX counter、attention双历史外推、FFT低高频差与CFG恢复的相关片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S11",
+      "name": "ComfyUI-SolAttn-MPS",
+      "checkout": "solmps",
+      "repository": "yshenaw/ComfyUI-SolAttn-MPS",
+      "files": [
+        "README.md"
+      ],
+      "level": "D",
+      "read_scope": "Apple环境、版本/header fallback、kernel机制与作者component/E2E表；Metal算法代码另外由S01核对，本项不宣称独立逐行审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S12",
+      "name": "PISA",
+      "checkout": "pisa",
+      "repository": "xie-lab-ml/piecewise-sparse-attention",
+      "files": [
+        "README.md",
+        "piecewise_attn/kernels/piecewise_sparse_attn_hyd.py"
+      ],
+      "level": "S",
+      "read_scope": "fused summary、centroid top-k、exact/zero-order/first-order三段forward和wrapper；0th独立kernel未逐行审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S13",
+      "name": "Sparse VideoGen / SVG2 / SVG-EAR",
+      "checkout": "svg",
+      "repository": "svg-project/Sparse-VideoGen",
+      "files": [
+        "README.md",
+        "svg/models/wan/attention.py",
+        "svg/kmeans_utils.py",
+        "svg/kernels/triton/permute.py"
+      ],
+      "level": "S",
+      "read_scope": "Wan attention online sample误差/分支、dynamic-map/kmeans接缝与重排；EAR只读作者README机制，没有完整kernel审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S14",
+      "name": "SpargeAttention",
+      "checkout": "spargeattn",
+      "repository": "thu-ml/SpargeAttn",
+      "files": [
+        "README.md",
+        "spas_sage_attn/core.py"
+      ],
+      "level": "S",
+      "read_scope": "recommended topk API、map/quant调用链、架构与tile分派、V低精度分支。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S14a",
+      "name": "SageAttention",
+      "checkout": "sageattention",
+      "repository": "thu-ml/SageAttention",
+      "files": [
+        "sageattention/quant.py"
+      ],
+      "level": "S",
+      "read_scope": "per_block_int8 / per_warp_int8、K smoothing接口、scale/log2及layout。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S15",
+      "name": "FastVideo STA/VSA 与 MLX",
+      "checkout": "fastvideo",
+      "repository": "hao-ai-lab/FastVideo",
+      "files": [
+        "docs/attention/sta/index.md",
+        "docs/attention/vsa/index.md",
+        "fastvideo/mlx_runtime/windowed_attention.py"
+      ],
+      "level": "S",
+      "read_scope": "STA归档状态、VSA checkpoint/gate/Metal质量限制、MLX窗口切片+sink的完整核心。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S16",
+      "name": "ToMeSD",
+      "checkout": "tomesd",
+      "repository": "dbolya/tomesd",
+      "files": [
+        "README.md",
+        "tomesd/merge.py",
+        "tomesd/patch.py"
+      ],
+      "level": "S",
+      "read_scope": "随机2D二分匹配、MPS gather workaround、scatter mean、unmerge和attn/cross/MLP默认范围。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S17",
+      "name": "Nunchaku / SVDQuant",
+      "checkout": "nunchaku",
+      "repository": "nunchaku-ai/nunchaku",
+      "files": [
+        "README.md",
+        "nunchaku/models/linear.py"
+      ],
+      "level": "S",
+      "read_scope": "方法说明、SVDQW4A4Linear quantize/forward_quant、低秩投影融合接口与packing配置。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S18",
+      "name": "SmoothQuant",
+      "checkout": "smoothquant",
+      "repository": "mit-han-lab/smoothquant",
+      "files": [
+        "smoothquant/smooth.py"
+      ],
+      "level": "S",
+      "read_scope": "scale公式、LN/RMSNorm与多linear共同补偿；LLM实现边界。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S19",
+      "name": "MLX quantized Metal",
+      "checkout": "mlx",
+      "repository": "ml-explore/mlx",
+      "files": [
+        "mlx/backend/metal/quantized.cpp"
+      ],
+      "level": "S",
+      "read_scope": "Metal量化dispatch/tile/alignment片段；另读固定commit的Python quantize/QuantizedLinear/QQLinear原始文件，不在此文件hash清单。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。",
+      "additional_read_urls": [
+        "https://raw.githubusercontent.com/ml-explore/mlx/36969c094354086e15d2a327a9c50feb20b9cf11/python/mlx/nn/layers/quantized.py"
+      ]
+    },
+    {
+      "id": "S20",
+      "name": "mflux",
+      "checkout": "mflux",
+      "repository": "filipstrand/mflux",
+      "files": [
+        "README.md",
+        "src/mflux/models/qwen/weights/qwen_weight_definition.py"
+      ],
+      "level": "S",
+      "read_scope": "README第三方MLX cache入口与当前Qwen量化predicate。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S21",
+      "name": "Latent Consistency Models",
+      "checkout": "lcm",
+      "repository": "luosiallen/latent-consistency-model",
+      "files": [
+        "README.md"
+      ],
+      "level": "D",
+      "read_scope": "蒸馏/LCM-LoRA/scheduler说明与MPS使用入口，不运行训练或推理。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S22",
+      "name": "LTX-2-MLX",
+      "checkout": "ltxmlx",
+      "repository": "dgrauet/ltx-2-mlx",
+      "files": [
+        "README.md",
+        "packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/ti2vid_two_stages.py",
+        "packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/_base.py",
+        "packages/ltx-pipelines-mlx/src/ltx_pipelines_mlx/utils/samplers.py"
+      ],
+      "level": "S",
+      "read_scope": "两阶段角色、TeaCache校准说明/构建、2.5拒绝guard及sampler signal/cached residual片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S23",
+      "name": "TAESD",
+      "checkout": "taesd",
+      "repository": "madebyollin/taesd",
+      "files": [
+        "README.md",
+        "taesd.py"
+      ],
+      "level": "S",
+      "read_scope": "模型家族/latent合同/质量限制；Conv/upsample、F16/F32与带全局norm的变体。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S24",
+      "name": "DeepCache",
+      "checkout": "deepcache",
+      "repository": "horseee/DeepCache",
+      "files": [
+        "README.md",
+        "DeepCache/extension/deepcache.py"
+      ],
+      "level": "S",
+      "read_scope": "U-Net缓存机制说明与helper位置/周期/wrap/unwrap/reset控制。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S25",
+      "name": "Diffusers caching / scheduler",
+      "checkout": "diffusers",
+      "repository": "huggingface/diffusers",
+      "files": [
+        "docs/source/en/optimization/cache.md",
+        "docs/source/en/api/schedulers/multistep_dpm_solver.md",
+        "src/diffusers/hooks/sea_cache.py",
+        "src/diffusers/hooks/mag_cache.py"
+      ],
+      "level": "S",
+      "read_scope": "cache机制与MPS文档入口；Sea indicator/metadata/gate和Mag config/ratio/状态控制片段；不是所有hooks或全部Sea adapter审计。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S26",
+      "name": "Radial Attention",
+      "checkout": "radial",
+      "repository": "mit-han-lab/radial-attention",
+      "files": [
+        "README.md",
+        "radial_attn/attn_mask.py"
+      ],
+      "level": "S",
+      "read_scope": "距离band/密度规律、LoRA延长与原长度区分、mask/CSR转换、时空窗口与sink代码片段。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S27",
+      "name": "Apple Core ML Stable Diffusion",
+      "checkout": "apple-sd",
+      "repository": "apple/ml-stable-diffusion",
+      "files": [
+        "README.md"
+      ],
+      "level": "D",
+      "read_scope": "官方weight compression/MBP/activation sensitivity说明与后端条件；不重跑转换脚本。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S28",
+      "name": "mlx-taef",
+      "checkout": "mlx-taef",
+      "repository": "IonDen/mlx-taef",
+      "files": [
+        "README.md"
+      ],
+      "level": "D",
+      "read_scope": "纯MLX tiny decoder、latent变体/预览callback、normalization及旧基准修正说明；不审计所有模型源码。",
+      "execution_scope": "仅阅读；未安装/运行上游模型或基准。作者性能数字仅作来源报告。"
+    },
+    {
+      "id": "S29",
+      "name": "TurboCider 既有 Apple 正反实验",
+      "checkout": "turbocider",
+      "repository": "TurboCider",
+      "local_history": true,
+      "files": [
+        "docs/design/ltx-stage2-sparse-results.md",
+        "docs/status/2026-09-30-qwen21-dit-cache.md"
+      ],
+      "level": "D",
+      "read_scope": "历史LTX sparse质量/阶段负结果与Qwen DBCache完整请求报告；本轮只读文档，没有重跑原始媒体基准。",
+      "execution_scope": "既有本地报告，非本轮重跑；仓库公开URL未验证，本项以本地相对路径为权威。"
+    }
+  ]
+}

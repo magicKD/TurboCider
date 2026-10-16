@@ -5,6 +5,83 @@
   "meaning": "Local paths are relative to techniques. Integration paths retain original repository-root/sibling anchors for optional provenance only; check with --include-integrations. Core learning and execution require no integration source. Snapshots are inspected content, not latest upstream.",
   "sources": [
     {
+      "id": "algorithm-source-ledger",
+      "scope": "local",
+      "path": "algorithms/sources.json",
+      "role": "30 fixed algorithm source readings; selected sections and SHA-256, not whole-project runtime qualification",
+      "evidence": {"runtime": "source-reviewed only; no upstream model reproduction"},
+      "symbols": ["algorithm-source-readings-v1", "NVlabs/Sana", "read_scope"]
+    },
+    {
+      "id": "algorithm-campaign-data-20261016",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "algorithms/experiments-20261016.json",
+      "role": "CPU math and two-seed synthetic MLX attention components; no model/media qualification",
+      "evidence": {"runtime": "synthetic-device-component only; request unqualified"}
+    },
+    {
+      "id": "ane-survey-index",
+      "kind": "source",
+      "scope": "local",
+      "path": "ane/README.md",
+      "role": "ANE研究总览：能力、推理、训练、profiling及来源导航",
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "facets": {
+        "stage": [],
+        "operator": [],
+        "backend": [
+          "coreml",
+          "private-ane"
+        ],
+        "device": [
+          "ane"
+        ],
+        "symptom": [
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "evidence": {
+        "upstream_execution": "selected source/document research; exact scope in ane/research-manifest.json",
+        "production_qualified": false
+      }
+    },
+    {
+      "id": "ane-survey-source-audit",
+      "kind": "source",
+      "scope": "local",
+      "path": "ane/research-manifest.json",
+      "role": "2026-10-16 ANE fixed-source audit: 18 repositories / 37 explicitly selected files, aliases, official SDK and acquisition failures",
+      "code": [
+        "labs/ane/research_sources.py"
+      ],
+      "evidence": {
+        "upstream_code_redistributed": false,
+        "production_qualified": false
+      }
+    },
+    {
+      "id": "ane-survey-data",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "ane/experiments-20261016.json",
+      "role": "All synthetic ANE survey timing/numerical samples and per-run source hashes; plans predicted, no integer MAC or model-quality qualification",
+      "evidence": {
+        "production_qualified": false,
+        "raw_model_weights_distributed": false
+      }
+    },
+    {
       "id": "official-vimage-stage", "kind": "source", "scope": "local", "path": "sources/official/vimage-stage.md",
       "role": "Public vImage channel dropping, BGRA-compatible out-of-place discrete geometry and actual rowBytes; SDK reading identity, not underlying Accelerate implementation",
       "symbols": ["vImageConvert_BGRA8888toRGB888", "vImageRotate90_ARGB8888", "rowBytes"],
@@ -1806,6 +1883,20 @@
         "def precision_islands"
       ],
       "role": "independent local gpu_ane-inspired topology/ABI/planner samples"
+    }
+    ,
+    {
+      "id": "metal-research-index",
+      "scope": "local",
+      "path": "metal/research-sources.json",
+      "role": "2026-10-16 GPU engine / TensorOps / profiling / optimization PR primary-source index; 16 projects and per-file content hashes"
+    },
+    {
+      "id": "metal-mechanism-evidence",
+      "kind": "evidence",
+      "scope": "local",
+      "path": "metal/experiment-evidence-20261016.json",
+      "role": "two-seed synthetic resident MLX compilation, packed-vs-decoded and SDPA measurements; not complete engine/model/NAX qualification"
     }
   ]
 }

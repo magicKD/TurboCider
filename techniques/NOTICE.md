@@ -35,3 +35,5 @@ GPU profiling新增[tmc/gputrace源码研究](sources/repos/gputrace-timing-prov
 [KernelWiki检索来源](sources/repos/kernelwiki-retrieval.md)固定MIT源码，Copyright (c) 2026 hanlab；本轮只读规则/查询/词表/版本检查器并独立实现本地合同，没有复制上游函数体、数据库、skill或CUDA资产，也未运行上游脚本。schema/主题词表不授予Apple API或硬件兼容资格。
 
 [vImage来源](sources/official/vimage-stage.md)只概括Apple SDK选段，不分发headers/framework或宣称底层Accelerate开源。像素地址/PNG witness、公开API客户端、完整MLX阶段、curator与反例均为原创；实际链接的PE decoder/common来自本仓库MIT源码，产品配方重写注明来源。原图片/像素不发布，文件/alpha拒绝不当成完整媒体质量资格。
+
+[ANE专题研究](ane/source-audit.md)补充Apple官方、maderix、ANEgpt、Orion、ANE-LM、Field Guide、ANEMLL、ANEForge等固定版本的原创综合，逐文件范围/哈希在[manifest](ane/research-manifest.json)。新增压缩/手写反向API客户端、标量Lloyd示例、数学witness和数据验证器均为原创，不分发上游runtime、Apple headers、博客正文、模型或编译产物。根许可提示不代替逐文件授权；私有API、训练和设备状态能力仍需独立验证，不由Wiki的MIT许可授予。

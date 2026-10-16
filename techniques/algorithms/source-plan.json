@@ -1,0 +1,25 @@
+{
+  "projects": [
+    {"id":"teacache","repository":"ali-vilab/TeaCache","patterns":["^README.md$","^TeaCache4FLUX/.*\\.py$","^TeaCache4Wan2.1/.*\\.py$"]},
+    {"id":"easycache","repository":"H-EmbodVis/EasyCache","patterns":["^README.md$","^EasyCache4Wan2.1/.*\\.py$"]},
+    {"id":"taylorseer","repository":"Shenyi-Z/TaylorSeer","patterns":["^README.md$","TaylorSeers-Diffusers/.*(cache|taylor).*\\.py$"]},
+    {"id":"cache-dit","repository":"vipshop/cache-dit","patterns":["^README.md$","src/cache_dit/caching/.*(dbcache|taylorseer|cache_context|cache_config|cache_manager|pattern_base).*\\.py$","docs/.*(DBCACHE|CACHE_API).*\\.md$"]},
+    {"id":"para-attention","repository":"chengzeyi/ParaAttention","patterns":["^README.md$","^src/para_attn/first_block_cache/.*\\.py$"]},
+    {"id":"mlx-teacache","repository":"IonDen/mlx-teacache","patterns":["^README.md$","^src/.*(gate|cache|flux1|core|predict|wrapper).*\\.py$","^docs/.*(tradeoff|qwen|schnell).*\\.md$"]},
+    {"id":"pisa","repository":"xie-lab-ml/piecewise-sparse-attention","patterns":["^README.md$",".*(pisa|piecewise|attention|route|select).*\\.py$"]},
+    {"id":"spargeattn","repository":"thu-ml/SpargeAttn","patterns":["^README.md$","^spas_sage_attn/(core|utils|__init__)\\.py$","^Triton_SpargeAttn/triton_kernel_example.py$"]},
+    {"id":"svg","repository":"svg-project/Sparse-VideoGen","patterns":["^README.md$","^svg/models/wan/attention.py$","^svg/kmeans_utils.py$","^svg/kernels/triton/permute.py$","^svg/kernels/ops/attention_ops_wan_dyn_blk.py$"]},
+    {"id":"tomesd","repository":"dbolya/tomesd","patterns":["^README.md$","^tomesd/(merge|patch)\\.py$"]},
+    {"id":"deepcache","repository":"horseee/DeepCache","patterns":["^README.md$","^DeepCache/.*\\.py$"]},
+    {"id":"nunchaku","repository":"nunchaku-ai/nunchaku","patterns":["^README.md$","^docs/.*(svd|quant|overview).*\\.(md|rst)$","^nunchaku/models/linear\\.py$"]},
+    {"id":"sageattention","repository":"thu-ml/SageAttention","patterns":["^README.md$","^sageattention/(core|quant)\\.py$"]},
+    {"id":"lcm","repository":"luosiallen/latent-consistency-model","patterns":["^README.md$"]},
+    {"id":"taesd","repository":"madebyollin/taesd","patterns":["^README.md$","^taesd\\.py$"]},
+    {"id":"videosys","repository":"NUS-HPC-AI-Lab/VideoSys","patterns":["^README.md$","^videosys/core/pab/.*\\.py$"]},
+    {"id":"fastercache","repository":"Vchitect/FasterCache","patterns":["^README.md$","^scripts/cogvideox/fastercache_sample_cogvideox.py$"]},
+    {"id":"diffusers","repository":"huggingface/diffusers","patterns":["^docs/source/en/optimization/cache.md$","^docs/source/en/optimization/cache_dit.md$","^docs/source/en/api/schedulers/multistep_dpm_solver.md$","^src/diffusers/hooks/(pyramid_attention_broadcast|taylorseer_cache|sea_cache|mag_cache|first_block_cache)\\.py$"]},
+    {"id":"radial","repository":"mit-han-lab/radial-attention","patterns":["^README.md$",".*(mask|radial).*\\.py$"]},
+    {"id":"apple-sd","repository":"apple/ml-stable-diffusion","patterns":["^README.md$"]},
+    {"id":"mlx-taef","repository":"IonDen/mlx-taef","patterns":["^README.md$"]}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "gpu-ane-survey-validation-v1",
+  "date": "2026-10-16",
+  "scope": "GPU/ANE survey deliverables and observed current-worktree/isolation checks; no claim of authorship over concurrent Metal/ANE/algorithm edits",
+  "deliverables": {"markdown_pages_including_readme": 15, "source_registry_repositories": 16, "source_files_content_hash_and_read_range_checked": 24, "pr_patch_hashes_checked": 6, "primary_web_and_pdf_records": 8},
+  "content_bindings": {
+    "sources.json": "6b7230dad69b865689492663cdf8ea8a97c6873b34374b757ac45e31c5439bb2",
+    "experiment-evidence.json": "7a76f21e0a03a37ca78a8e8031d6bd4244b87c122577e0e95156746787afbd97",
+    "guarded_run.py": "e81ef5c422fab4e9d3720fd99c09eb0cc1cdd375b8abe8d4104efb25965e47fa",
+    "curate_experiments.py": "1b49d1d1720975591c6284c2792fb6b95b5cc99b7ec4427637ac28d0142d442d",
+    "../tests/test_gpu_ane_survey.py": "e05baab4abcc64489055c4d60314e7680ee6749e6aca86f4e78c72ed66f6cf02"
+  },
+  "focused_standard_library_tests": {"total": 8, "passed": 8, "failed": 0, "skipped": 0},
+  "techniques_only_snapshot_tests": {"total": 383, "passed": 381, "failed": 0, "skipped_optional_dependencies": 2, "product_or_sibling_sources_present": false},
+  "offline_checks": {"wiki_links": "passed, 191 pages at snapshot", "catalog": "passed", "knowledge_strict": "passed", "cpu_laboratory": "passed, 50 cases", "diff_whitespace": "passed"},
+  "new_device_experiments": {"successful_processes": 4, "gpu_measured_outputs": 896, "coreml_compression_outputs_including_warmup": 130, "preflight_samples_per_process": 5, "all_preflight_percent": 0, "retained_nonexecuting_preflight_failure": 1},
+  "unproven": ["all upstream engines executed", "M5 hardware path tested locally", "physical GPU/ANE overlap", "physical integer MAC attribution", "complete request speed or model quality", "long-run thermal/power or low-memory qualification", "runtime-internal zero-copy", "production backend adoption"],
+  "production_qualified": false
+}

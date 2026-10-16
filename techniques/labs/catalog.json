@@ -4,6 +4,2016 @@
   "purpose": "Required code paths are relative to techniques and entirely local. integration_code is optional product traceability, never a core dependency. Every technical chapter maps to executable cases, controls and revisit conditions; no automatic model qualification.",
   "entries": [
     {
+      "chapter": "algorithms/sol-attention.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/sampling-and-distillation.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate",
+          "requires-training"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/sana-sol-engine.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/structured-sparsity.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/svg.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/easycache.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/low-rank-quantization.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "quantization",
+          "gemm"
+        ],
+        "backend": [
+          "mlx",
+          "metal",
+          "coreml"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16",
+          "q4",
+          "q8"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/sources.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu"
+        ],
+        "symptom": [
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/fastercache.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/tiny-autoencoders.md",
+      "facets": {
+        "stage": [
+          "vae"
+        ],
+        "operator": [
+          "conv",
+          "layout"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate",
+          "requires-training"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/taylorseer.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/model-sparsity.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/quantized-attention.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "quantization",
+          "gemm"
+        ],
+        "backend": [
+          "mlx",
+          "metal",
+          "coreml"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16",
+          "q4",
+          "q8"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/teacache.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/token-reduction.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/block-caches.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/deepcache.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/piecewise-attention.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "attention",
+          "sampling"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/pab.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/quantization.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "quantization",
+          "gemm"
+        ],
+        "backend": [
+          "mlx",
+          "metal",
+          "coreml"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16",
+          "q4",
+          "q8"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/spectral-magnitude-cache.md",
+      "facets": {
+        "stage": [
+          "dit"
+        ],
+        "operator": [
+          "sampling",
+          "attention"
+        ],
+        "backend": [
+          "mlx",
+          "metal"
+        ],
+        "device": [
+          "gpu"
+        ],
+        "symptom": [
+          "stale-cache",
+          "precision-loss"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "bf16"
+        ],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/experiments-20261016.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu"
+        ],
+        "symptom": [
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "evidence_ids": [
+        "algorithm-campaign-data-20261016"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "algorithms/evaluation.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu"
+        ],
+        "symptom": [
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "request",
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "code": [
+        "labs/algorithm_research.py",
+        "algorithms/source_probe.py"
+      ],
+      "cases": [
+        "algorithm-evidence"
+      ],
+      "source_ids": [
+        "algorithm-source-ledger"
+      ],
+      "controls": [
+        "Source-reviewed report and supporting CPU math/evidence-contract exercise only; NOT a full local implementation/reproduction of the named method",
+        "All-exact/constant-key/tail/mass and high-variance/turning-point negative witnesses stay distinct from model/media quality or speed qualification",
+        "Fixed commit/file digest provenance and explicit opt-in device probes; no upstream code or GPU work in default tests"
+      ],
+      "revisit_when": "upstream source/adapter, Apple backend/OS/shape, calibration, quality budget or actual model consumer changes"
+    },
+    {
+      "chapter": "ane/capability-atlas.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "measurement",
+          "straggler"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "bucket-selection",
+        "pmu-provenance"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/pmu.py",
+        "labs/ane/compute_plan.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "CPU bucket/counter缺失合同，不能推定硬件型号能力",
+        "API/计划/实际执行证据分开，缺失字段保持unknown"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/experiments-20261016.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "quantization"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "ane-training-math"
+      ],
+      "code": [
+        "labs/ane/compression_survey.py",
+        "labs/ane/training_probe.py",
+        "labs/ane/training_math.py",
+        "labs/ane/survey_evidence.py",
+        "scripts/curate_ane_survey.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "每个first/warm/timed全输出与同trial输入身份，失败arm拒绝倍率",
+        "CPU首选计划不冒充ANE执行；LUT宽松合成gate不授予质量"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/hybrid-runtime-comparison.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "swiglu"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "straggler",
+          "memory-bound"
+        ],
+        "semantics": [
+          "numerically-equivalent"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "segmented-ffn",
+        "parallel-branches"
+      ],
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/contracts.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "gate/up成对、down partial相加与一次bias/residual",
+        "完整GPU分母及serial/hybrid/prepare/join，不从host交叠推物理并行"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/layout-and-lowering.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "layout"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "wrong-layout",
+          "precision-loss"
+        ],
+        "semantics": [
+          "numerically-equivalent"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "consumer-strides",
+        "precision-boundaries"
+      ],
+      "code": [
+        "labs/heterogeneous.py",
+        "labs/quantization.py",
+        "labs/ane/compression_survey.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "逻辑shape、实际stride和consumer索引必须一致",
+        "FP16范围、mask和非线性位置不因Conv或layout改写丢失"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/negative-results.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "search-qualification",
+        "silu-domain"
+      ],
+      "code": [
+        "labs/search_contracts.py",
+        "labs/silu_domain.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "失败first/warm输出不能藏在成功timed样本之后",
+        "负结果绑定source/domain/version，不把局部限制升级硬件定律"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/private-runtime-stack.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "compile-bound",
+          "lifetime"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "startup-amortization",
+        "slot-ownership"
+      ],
+      "code": [
+        "labs/systems.py",
+        "labs/search_contracts.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "compile/load/first/warm与外部IO边界分开",
+        "借用view、slot owner、错误/取消drain不得以标签或同步返回替代"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/profiling.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "profiling-scopes",
+        "pmu-provenance"
+      ],
+      "code": [
+        "labs/media.py",
+        "labs/pmu.py",
+        "labs/ane/compute_plan.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "measured/derived/predicted与clock domain不混用",
+        "无PMU payload或未进入采集分支不能记成0活动"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/public-coreml-deployment.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "attention"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "compile-bound",
+          "stale-cache"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "stage-llm",
+        "stage-encoder"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/ane/compute_plan.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "encoder/prefill/decode/stateful KV各自的shape与生命周期",
+        "Core ML computeUnits允许CPU；阶段串行不等于跨设备同时工作"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/source-audit.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "stale-cache",
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "search-qualification"
+      ],
+      "code": [
+        "labs/search_contracts.py",
+        "labs/ane/research_sources.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "下载、选段阅读、作者报告和本机执行分别登记",
+        "结构相同权重不同不继承数值资格，alias不算独立佐证"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/stable-diffusion.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "attention"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "wrong-layout",
+          "compile-bound"
+        ],
+        "semantics": [
+          "numerically-equivalent"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "online-attention",
+        "startup-amortization"
+      ],
+      "code": [
+        "labs/operators.py",
+        "labs/systems.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "query chunk仍访问完整K/V，tail与mask不遗漏",
+        "阶段load/unload和完整输出完成计入，不借旧SD配置倍率"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/training-autograd.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "gemm"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "precision-loss",
+          "lifetime"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "ane-training-math",
+        "precision-boundaries"
+      ],
+      "code": [
+        "labs/ane/training_math.py",
+        "labs/quantization.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "有限差分梯度与Adam epsilon缩放反例，不当作上游autograd执行",
+        "host FP32、device optimizer和resident state的finite/precision资格独立"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/training-delta-and-lora.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "gemm"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "stale-cache",
+          "lifetime"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "ane-training-math",
+        "cache-identity"
+      ],
+      "code": [
+        "labs/ane/training_math.py",
+        "labs/caches.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "参数generation变化且fresh reference一致，不能只数compile次数",
+        "delta私有产物和LoRA输入不同；先drain、再更新、失败整代无效"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/training-dynamic-weights.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "gemm"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "compile-bound",
+          "precision-loss"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "ane-training-math"
+      ],
+      "code": [
+        "labs/ane/training_math.py",
+        "labs/ane/training_probe.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "dX/dW转置与loss归一化的独立数学，runtime参数更新确实生效",
+        "免编译不等于免staging，CPU dW/Adam与ANE反向分工单列"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/training.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "gemm"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "precision-loss",
+          "measurement"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "ane-training-math"
+      ],
+      "code": [
+        "labs/ane/training_math.py",
+        "labs/ane/training_probe.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "每次forward/dX/dW全输出与独立FP64 reference，参数每步更新",
+        "loss下降/类名/computeUnits不构成ANE物理训练证明"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/w8a8-int8.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "quantization"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "precision-loss",
+          "memory-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [
+          "fp16",
+          "q8",
+          "w8a8"
+        ],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "w8a8-reference",
+        "precision-boundaries"
+      ],
+      "code": [
+        "labs/quantization.py",
+        "labs/ane/compression_survey.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "同源权重、独立校准/确认种子、全部输出与饱和检查",
+        "W8存储、runtime INT8、Q/DQ与物理整数MAC分别取证"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
+      "chapter": "ane/weight-compression.md",
+      "facets": {
+        "stage": [],
+        "operator": [
+          "quantization"
+        ],
+        "backend": [
+          "coreml",
+          "private-ane",
+          "cpu-reference"
+        ],
+        "device": [
+          "cpu",
+          "ane"
+        ],
+        "symptom": [
+          "precision-loss",
+          "memory-bound"
+        ],
+        "semantics": [
+          "approximate"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "quant-formats",
+        "w4a8-reference"
+      ],
+      "code": [
+        "labs/quantization.py",
+        "labs/ane/compression_survey.py"
+      ],
+      "source_ids": [
+        "ane-survey-source-audit"
+      ],
+      "evidence_ids": [
+        "ane-survey-data"
+      ],
+      "controls": [
+        "LUT/linear/GGUF packing不混用，码本和scale开销另计",
+        "package小不推导驻留/物理流量/速度；宽松合成gate不是质量资格"
+      ],
+      "revisit_when": "new SoC/OS/SDK/source or compiler entry, checkpoint/LoRA/input domain, shape/layout/precision, state ownership or actual consumer; rerun matching controls, no inherited hardware qualification"
+    },
+    {
       "chapter": "media/tensor-texture-interop.md",
       "facets": {"stage": ["io", "pipeline"], "operator": ["layout"], "backend": ["accelerate", "mlx", "metal"], "device": ["cpu", "gpu"], "symptom": ["wrong-layout", "memory-bound", "launch-bound"], "semantics": ["bitwise", "numerically-equivalent"], "representation": ["packed", "pixelbuffer", "fp32"], "boundary": ["cpu-gpu", "producer-consumer"], "api": ["public", "reference-only"]},
       "cases": ["media-stage-contract", "media:preprocess"],
@@ -1003,6 +3013,570 @@
         "complete consumer/deadline/quality gates vs names or nominal throughput"
       ],
       "revisit_when": "new model graph, workload, source/LoRA, precision, device or serving contract"
+    }
+    ,
+    {
+      "chapter": "metal/inference-engines.md",
+      "facets": {
+        "stage": [
+          "pipeline",
+          "prefill",
+          "decode"
+        ],
+        "operator": [
+          "gemm",
+          "attention",
+          "scheduling"
+        ],
+        "backend": [
+          "mlx",
+          "metal",
+          "mpsgraph"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "stage-llm",
+        "stage-decode",
+        "mlx:engine-mechanisms"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/metal/engine_probe.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "prefill/decode semantics and all measured outputs",
+        "engine brands or backend labels do not qualify a kernel"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/tensorops-and-m5.md",
+      "facets": {
+        "stage": [
+          "ffn",
+          "prefill"
+        ],
+        "operator": [
+          "gemm",
+          "quantization"
+        ],
+        "backend": [
+          "metal",
+          "mlx"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "metal:gemm",
+        "precision-boundaries"
+      ],
+      "code": [
+        "labs/metal/run.py",
+        "labs/metal/kernels.metal",
+        "labs/quantization.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "old SIMD matrix control and CPU precision boundaries; NOT NAX validation",
+        "SDK/API/guard/actual dispatch/performance remain independent"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/profiling-playbook.md",
+      "facets": {
+        "stage": [
+          "pipeline"
+        ],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "metal",
+          "mlx",
+          "mpsgraph"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "profiling-scopes",
+        "metal:counter-stage"
+      ],
+      "code": [
+        "labs/media.py",
+        "labs/metal/run.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "host wall vs device counter/calibration",
+        "collector overhead and unsupported counters remain explicit"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/gemm-and-quantization.md",
+      "facets": {
+        "stage": [
+          "ffn",
+          "prefill",
+          "decode"
+        ],
+        "operator": [
+          "gemm",
+          "gemv",
+          "quantization"
+        ],
+        "backend": [
+          "metal",
+          "mlx"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "quant-formats",
+        "mlx:engine-mechanisms"
+      ],
+      "code": [
+        "labs/quantization.py",
+        "labs/metal/engine_probe.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "same encoded weights and independent CPU unpack/dot",
+        "resident decode adds memory and is not original-model quality qualification"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/attention-implementations.md",
+      "facets": {
+        "stage": [
+          "prefill",
+          "decode",
+          "dit"
+        ],
+        "operator": [
+          "attention"
+        ],
+        "backend": [
+          "metal",
+          "mlx",
+          "mpsgraph"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "online-attention",
+        "mlx:engine-mechanisms"
+      ],
+      "code": [
+        "labs/operators.py",
+        "labs/metal/engine_probe.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "dense/online CPU masks and full-output FP64 synthetic SDPA",
+        "approximate sparse and empty-row semantics not covered by maskless probe"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/diffusion-and-media.md",
+      "facets": {
+        "stage": [
+          "dit",
+          "vae",
+          "io"
+        ],
+        "operator": [
+          "attention",
+          "conv",
+          "layout"
+        ],
+        "backend": [
+          "metal",
+          "mlx"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "stage-dit",
+        "stage-vae",
+        "media-stage-contract"
+      ],
+      "code": [
+        "labs/model_stages.py",
+        "labs/media_stage.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "conditioning/mask topology and VAE/format consumer boundaries",
+        "model graph/cache work not replaced by isolated GEMM timing"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/empirical-hardware.md",
+      "facets": {
+        "stage": [
+          "ffn",
+          "pipeline"
+        ],
+        "operator": [
+          "gemm",
+          "layout"
+        ],
+        "backend": [
+          "metal"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "metal:vector",
+        "metal:gemm"
+      ],
+      "code": [
+        "labs/metal/run.py",
+        "labs/metal/kernels.metal"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "tail vector/old SIMD matrix controls; not M5 measurement",
+        "historical microarchitecture assumptions do not become current hardware guarantees"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/optimization-prs.md",
+      "facets": {
+        "stage": [
+          "pipeline"
+        ],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "cpu-reference",
+          "metal"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "search-qualification",
+        "owned-command-graph"
+      ],
+      "code": [
+        "labs/search_contracts.py",
+        "labs/contracts.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "candidate qualification vs paper/PR/source existence",
+        "replay owner/shape/source guards; not execution of upstream PRs"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/experiments-20261016.md",
+      "facets": {
+        "stage": [
+          "prefill",
+          "decode",
+          "ffn"
+        ],
+        "operator": [
+          "gemm",
+          "attention",
+          "norm"
+        ],
+        "backend": [
+          "mlx"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "mlx:engine-mechanisms"
+      ],
+      "code": [
+        "labs/metal/engine_probe.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "two-seed all-output FP64 and ABBA accounting",
+        "BLAS-warning predecessor excluded; nibble/nonfinite/group negative controls"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
+    },
+    {
+      "chapter": "metal/research-audit.md",
+      "facets": {
+        "stage": [
+          "pipeline"
+        ],
+        "operator": [
+          "scheduling"
+        ],
+        "backend": [
+          "cpu-reference",
+          "mlx"
+        ],
+        "device": [
+          "cpu",
+          "gpu"
+        ],
+        "symptom": [
+          "measurement",
+          "precision-loss",
+          "launch-bound"
+        ],
+        "semantics": [
+          "contract-only"
+        ],
+        "representation": [],
+        "boundary": [
+          "producer-consumer"
+        ],
+        "api": [
+          "public",
+          "reference-only"
+        ]
+      },
+      "cases": [
+        "search-qualification"
+      ],
+      "code": [
+        "labs/search_contracts.py",
+        "labs/metal/engine_probe.py"
+      ],
+      "source_ids": [
+        "metal-research-index"
+      ],
+      "evidence_ids": [
+        "metal-mechanism-evidence"
+      ],
+      "controls": [
+        "source/reading/runtime/production evidence are independent",
+        "no global engine ranking, no unrun NAX qualification"
+      ],
+      "revisit_when": "new SoC/OS/SDK/binary/source, shape/layout/precision, PR revision/status or actual model consumer"
     }
   ]
 }
