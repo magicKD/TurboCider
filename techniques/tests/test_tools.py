@@ -296,6 +296,7 @@ class StandaloneTests(unittest.TestCase):
                 "labs/metal/raw.gputrace/metadata.json", "labs/metal/raw.trace/data",
                 "labs/metal/raw.gputrace.zip", "labs/metal/raw.trace.zip",
                 "integrations/ffn-bf16.tcbf16z", "review/raw-pair.tcbf16z",
+                "ffn-input.safetensors", "review/ffn-reference.safetensors",
                 "outputs/report.json", "labs/private/session.json",
             )
             portable = ("labs/ane/probe.py", "review/evidence.json", "examples/tiny.npy")
@@ -315,7 +316,7 @@ class StandaloneTests(unittest.TestCase):
             with patch.object(standalone, "audit", return_value={"errors": []}), \
                     patch.object(standalone.subprocess, "run", side_effect=child) as run:
                 self.assertEqual(standalone.isolate(root)["errors"], [])
-                self.assertEqual(run.call_count, 5)
+                self.assertEqual(run.call_count, 6)
 
     def copy_wiki(self, directory):
         target = Path(directory) / "techniques"

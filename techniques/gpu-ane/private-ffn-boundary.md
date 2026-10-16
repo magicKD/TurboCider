@@ -64,6 +64,8 @@ python3 -B techniques/labs/run.py silu-domain
 
 长确认完整GPU约21.6ms、shared-hybrid约18.8–18.9ms，paired约1.146–1.149×；同client copy→shared只有约1.1%观察且首轮三point方向相反。copy控制使用FP16 staging及同一private client，不等于本页旧e5rt/NumPy bridge；不把两批差值全归因于copy。
 
+这里约1.15×的分母是完整纯GPU，不是在既有GPU/ANE方案上再提升15%。本批是独立实验客户端，未与现有产品GPU/ANE后端做严格同配置A/B；旧e5rt/NumPy与新client的跨批倍率也不能直接相除归因。采用前仍需产品基线和完整请求对照。
+
 setup仍能否决：load-only只省掉客户端compile selector，不是内部无编译；实测load650.99ms与32.11ms都保留。新clone/compile与只读复用各自admission，未执行的存储拒绝不是硬件负结果；[文件clone](../sources/official/clonefile.md)也不是设备zero-copy。完整请求/LoRA、更多层/输入、内存/长时/失败取消和physical placement/overlap仍未获得资格。
 
 ```sh
@@ -77,6 +79,8 @@ python3 -B techniques/labs/run.py real-shared-join
 两份记录完成330次完整调用和198个exact actual-part join，但最后的原始tensor/无损archive导出都被存储reserve拒绝，因此协议仍failed、comparisons为null，只保留绝对耗时诊断，不授予新倍率。另一份load返回false且NSError为nil，不能凭error code0判定成功，也不能由TMPDIR上下文差异推断因果。
 
 [纯CPU合同](../labs/block_context.py)、[只读curator](../scripts/curate_block_context.py)与[离线回归](../tests/test_block_context.py)分开核对execution/numeric/artifact/promotion轴。小矩阵C++ oracle和合成archive roundtrip测试不替代真实模型raw持久化或请求质量验证。
+
+后续成功raw-pair检查器[block_success.py](../labs/block_success.py)和[专门反例测试](../tests/test_block_success.py)与上述失败协议独立维护；CPU-only FP64复核工具及归档缺口见[可选集成](../integrations/README.md#完整block的raw-pair复核工具)。保留的FFN input/reference不是全部九个block参数或实际private输出，不构成完整block离线重放。
 
 ```sh
 python3 -B techniques/labs/run.py block-evidence-axes

@@ -33,6 +33,8 @@
 
 ## 面向工程师/AI的使用方式
 
+2026-10-16新增[固定版本源码复核](../sources/repos/kernelwiki-retrieval.md)，只读六个query/schema/alias/version/许可文件，不运行上游。现有catalog叠加受控主题词表、单跳别名、历史内容/环境复查与[生成索引](../queries/README.md)，没有复制另一份页面清单；[查询合同](../data/README.md)明确source/evidence不得继承章节资格。
+
 从模型事实生成capability/spec → 选择技术卡 → 结构检查/配置 → 运行smallreference/negativecontrols → 对真实source做性能/质量纵切 → 添加状态与迁移说明。不要让agent只凭某个backend推荐表堆配置，也不要因旧试验失利就剪掉整个研究分支。
 
 来源与文件SHA见 [sources.json](sources.json)；现有TurboCider模型库、sourcelease、memoryledger和产品路由仍是唯一生产合同，这个实验室不接管它们。

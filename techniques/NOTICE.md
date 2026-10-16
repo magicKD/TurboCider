@@ -31,3 +31,7 @@ GPU profiling新增[tmc/gputrace源码研究](sources/repos/gputrace-timing-prov
 [真实shared FFN集成](review/qwen-shared-ffn-20261016.md)的ABI guard、Metal pack、完整MLX消费者、actual-part CPU join与data verifier为原创；复用的ANEForge MIL/blob保持来源/内容身份且不公开权重/编译产物。公开只含脱敏指标/hash。[clonefile官方来源](sources/official/clonefile.md)不镜像SDK/网页，SDK header的APSL2.0与Apple文档条款不由Wiki MIT覆盖；文件clone与私有接口没有新增分发/稳定性保证。
 
 [ordinary完整block客户端](review/qwen-block-context-20261016.md)继续复用本仓库observer/调用配方作为显式可选integration；新增CPU oracle、codec与离线反例为原创工具。不分发模型激活、private常量或压缩BF16归档，合成字节fixture测试不作为实际模型交付资格。
+
+[KernelWiki检索来源](sources/repos/kernelwiki-retrieval.md)固定MIT源码，Copyright (c) 2026 hanlab；本轮只读规则/查询/词表/版本检查器并独立实现本地合同，没有复制上游函数体、数据库、skill或CUDA资产，也未运行上游脚本。schema/主题词表不授予Apple API或硬件兼容资格。
+
+[vImage来源](sources/official/vimage-stage.md)只概括Apple SDK选段，不分发headers/framework或宣称底层Accelerate开源。像素地址/PNG witness、公开API客户端、完整MLX阶段、curator与反例均为原创；实际链接的PE decoder/common来自本仓库MIT源码，产品配方重写注明来源。原图片/像素不发布，文件/alpha拒绝不当成完整媒体质量资格。

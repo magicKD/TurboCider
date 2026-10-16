@@ -1,0 +1,41 @@
+{
+  "schema": "tc-retrieval-vocabulary-v1",
+  "meaning": "Curated documentation topics, never hardware applicability, dtype compatibility or performance qualification. Empty facets are unclassified, not universal.",
+  "dimensions": {
+    "stage": ["encoder", "prefill", "decode", "dit", "ffn", "vae", "io", "pipeline"],
+    "operator": ["gemm", "gemv", "attention", "norm", "rope", "swiglu", "conv", "quantization", "layout", "sampling", "codec", "scheduling"],
+    "backend": ["metal", "mlx", "mpsgraph", "coreml", "coreai", "private-ane", "accelerate", "videotoolbox", "cpu-reference"],
+    "device": ["cpu", "gpu", "ane", "media-engine"],
+    "symptom": ["memory-bound", "launch-bound", "compile-bound", "wrong-layout", "precision-loss", "straggler", "lifetime", "stale-cache", "measurement", "graph-interruption", "storage-pressure"],
+    "semantics": ["bitwise", "numerically-equivalent", "approximate", "requires-training", "contract-only"],
+    "representation": ["bf16", "fp16", "fp32", "fp8", "q4", "q8", "w8a8", "gguf", "mlx-affine", "iosurface", "pixelbuffer", "packed"],
+    "boundary": ["cpu-gpu", "gpu-ane", "weight-runtime", "tensor-pixelbuffer", "producer-consumer", "request"],
+    "api": ["public", "private", "reference-only"]
+  },
+  "aliases": {
+    "stage": {"ffn": ["前馈网络"], "dit": ["扩散变换器"], "encoder": ["编码器"], "vae": ["变分自编码器"]},
+    "operator": {"gemm": ["矩阵乘法"], "attention": ["注意力", "sdpa"], "swiglu": ["swi-glu"]},
+    "backend": {"coreml": ["Core ML"], "private-ane": ["私有ANE"], "cpu-reference": ["CPU参考"]},
+    "device": {"gpu": ["图形处理器"], "ane": ["Neural Engine", "神经网络引擎"]},
+    "symptom": {"memory-bound": ["带宽受限"], "launch-bound": ["提交开销"], "wrong-layout": ["布局错误"], "stale-cache": ["过期缓存"]},
+    "semantics": {"numerically-equivalent": ["数值等价"], "approximate": ["近似"], "contract-only": ["仅合同"]},
+    "representation": {"bf16": ["bfloat16"], "fp16": ["float16"], "fp32": ["float32"]},
+    "boundary": {"gpu-ane": ["GPU→ANE"], "cpu-gpu": ["CPU→GPU"]},
+    "api": {"public": ["公开"], "private": ["私有"]}
+  },
+  "keywords": {
+    "ffn": ["前馈网络", "feed forward network", "feed-forward network"],
+    "attention": ["注意力", "scaled dot product attention", "sdpa"],
+    "coreml": ["Core ML"],
+    "iosurface": ["IO Surface"],
+    "lora": ["低秩适配"],
+    "bf16": ["bfloat16"],
+    "fp16": ["float16"],
+    "fp32": ["float32"],
+    "ane": ["Neural Engine", "神经网络引擎"],
+    "nax": ["GPU Neural Accelerators"],
+    "gguf": [],
+    "q8": [],
+    "fp8": []
+  }
+}

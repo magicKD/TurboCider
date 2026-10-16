@@ -52,7 +52,7 @@ python3 -B techniques/labs/run.py w8a8-reference --options '{"rows":7,"hidden":3
 python3 -B -m unittest discover -s techniques/tests -v
 ```
 
-47个case共享少量参考函数，但各自有不同的baseline/candidate/negative control；不是给所有章节重复挂同一FFN toy。`search-qualification`演示[缓存身份与严格gate](../ane/graph-rewrite-search.md)，`pmu-provenance`演示[counter缺失/未知与生命周期合同](../profiling/ane-pmu-lab.md)，`silu-domain`与`real-shared-join`演示[稳定公式、配对切片与实际join舍入](../gpu-ane/private-ffn-boundary.md)，`block-evidence-axes`区分[执行、数值与交付失败](../review/qwen-block-context-20261016.md)，均不导入或调用私有后端。`--options`只接受该case真实函数参数，CPU矩阵实验有规模上限；大shape转实际设备probe或修改受控实验，不暗示CPU上限是硬件限制。
+48个case共享少量参考函数，但各自有不同的baseline/candidate/negative control；不是给所有章节重复挂同一FFN toy。`search-qualification`演示[缓存身份与严格gate](../ane/graph-rewrite-search.md)，`pmu-provenance`演示[counter缺失/未知与生命周期合同](../profiling/ane-pmu-lab.md)，`silu-domain`与`real-shared-join`演示[稳定公式、配对切片与实际join舍入](../gpu-ane/private-ffn-boundary.md)，`block-evidence-axes`区分[执行、数值与交付失败](../review/qwen-block-context-20261016.md)，`media-stage-contract`演示[像素方向与byte-level交接](../media/tensor-texture-interop.md)，均不导入或调用私有后端。`--options`只接受该case真实函数参数，CPU矩阵实验有规模上限；大shape转实际设备probe或修改受控实验，不暗示CPU上限是硬件限制。
 
 ## 小型真实设备实验
 

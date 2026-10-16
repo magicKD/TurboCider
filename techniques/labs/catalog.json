@@ -1,9 +1,26 @@
 {
   "schema_version": 2,
+  "retrieval_schema_version": 1,
   "purpose": "Required code paths are relative to techniques and entirely local. integration_code is optional product traceability, never a core dependency. Every technical chapter maps to executable cases, controls and revisit conditions; no automatic model qualification.",
   "entries": [
     {
+      "chapter": "media/tensor-texture-interop.md",
+      "facets": {"stage": ["io", "pipeline"], "operator": ["layout"], "backend": ["accelerate", "mlx", "metal"], "device": ["cpu", "gpu"], "symptom": ["wrong-layout", "memory-bound", "launch-bound"], "semantics": ["bitwise", "numerically-equivalent"], "representation": ["packed", "pixelbuffer", "fp32"], "boundary": ["cpu-gpu", "producer-consumer"], "api": ["public", "reference-only"]},
+      "cases": ["media-stage-contract", "media:preprocess"],
+      "code": ["labs/media_stage.py", "scripts/curate_media_stage.py"],
+      "integration_code": ["techniques/integrations/media_stage_probe.py", "techniques/integrations/media_stage_probe.mm"],
+      "source_ids": ["official-vimage-stage"],
+      "evidence_ids": ["media-stage-20261016", "media-stage-data-20261016"],
+      "controls": ["all eight orientations and padded actual PNG/synthetic source bytes independently reconstructed by forward scatter",
+                   "whole CPU/import/normalization/layout/GPU-ready boundary; complete FP64 and byte recovery gates on first/warm/measured calls",
+                   "actual finite wrong-stride/channel GPU negatives and cached old-output observations remain distinct",
+                   "source opacity refusal and CoreGraphics build failure retained, never hardware unsupported or quality passed",
+                   "vImage geometry is out-of-place; scratch/lifetime/import bytes counted separately from physical traffic; no VAE/codec/request qualification"],
+      "revisit_when": "actual CVPixelBuffer/texture source and lifetime, resize/color/alpha/PTS, inter-frame pipeline, memory/cold/long/cancel or OS/SDK/MLX changes"
+    },
+    {
       "chapter": "gpu-ane/shared-surface.md",
+      "facets": {"stage":["ffn"],"operator":["layout"],"backend":["metal","mlx","private-ane"],"device":["gpu","ane"],"symptom":["wrong-layout","lifetime","stale-cache"],"semantics":["bitwise","numerically-equivalent"],"representation":["fp16","bf16","iosurface"],"boundary":["gpu-ane","producer-consumer"],"api":["public","private"]},
       "cases": ["backing-proof", "private:shared-surface", "mlx-adoption-contract", "mlx:external-adoption"],
       "code": ["labs/shared_backing.py", "labs/ane/shared_surface_probe.py", "labs/ane/shared_surface_probe.mm", "scripts/curate_shared_surface.py",
                "labs/mlx_adoption.py", "labs/metal/mlx_adoption_probe.py", "labs/metal/mlx_adoption_probe.mm", "scripts/curate_mlx_adoption.py"],
@@ -17,9 +34,10 @@
     },
     {
       "chapter": "gpu-ane/private-ffn-boundary.md",
+      "facets": {"stage":["dit","ffn"],"operator":["swiglu","gemm"],"backend":["mlx","metal","private-ane"],"device":["gpu","ane"],"symptom":["precision-loss","straggler","storage-pressure"],"semantics":["approximate"],"representation":["bf16","fp16","iosurface"],"boundary":["gpu-ane","producer-consumer"],"api":["private","public"]},
       "cases": ["silu-domain", "search-qualification", "real-shared-join", "block-evidence-axes", "private:qwen-shared-ffn"],
-      "code": ["labs/silu_domain.py", "labs/ane/qwen_witness.py", "scripts/curate_qwen_private_ffn.py", "labs/real_shared_ffn.py", "scripts/curate_real_shared_ffn.py", "labs/block_context.py", "labs/ffn_cpu_witness.hpp", "scripts/curate_block_context.py"],
-      "integration_code": ["techniques/integrations/aneforge_qwen_ffn.py", "techniques/integrations/qwen_shared_ffn.py", "techniques/integrations/qwen_shared_ffn.mm", "techniques/integrations/qwen_shared_abi.h", "techniques/integrations/qwen_shared_compute.h", "techniques/integrations/capture_qwen_holdout.py", "techniques/integrations/qwen_block_shared.py", "techniques/integrations/qwen_block_shared.mm"],
+      "code": ["labs/silu_domain.py", "labs/ane/qwen_witness.py", "scripts/curate_qwen_private_ffn.py", "labs/real_shared_ffn.py", "scripts/curate_real_shared_ffn.py", "labs/block_context.py", "labs/block_success.py", "labs/ffn_cpu_witness.hpp", "scripts/curate_block_context.py"],
+      "integration_code": ["techniques/integrations/aneforge_qwen_ffn.py", "techniques/integrations/qwen_shared_ffn.py", "techniques/integrations/qwen_shared_ffn.mm", "techniques/integrations/qwen_shared_abi.h", "techniques/integrations/qwen_shared_compute.h", "techniques/integrations/capture_qwen_holdout.py", "techniques/integrations/qwen_block_shared.py", "techniques/integrations/qwen_block_shared.mm", "techniques/integrations/qwen_block_raw_reference.py"],
       "source_ids": ["upstream-aneforge-search", "upstream-mlx-affine", "upstream-mlx-adoption", "official-shared-memory", "official-clonefile"],
       "evidence_ids": ["qwen-private-ffn-20261016", "qwen-private-ffn-data-20261016", "qwen-shared-ffn-20261016", "qwen-shared-ffn-data-20261016", "qwen-block-context-20261016", "qwen-block-context-data-20261016"],
       "controls": ["complete original BF16 GPU denominator, paired gate/up/down and complete GPU remainder",
@@ -32,6 +50,7 @@
     },
     {
       "chapter": "profiling/ane-pmu-lab.md",
+      "facets": {"stage":[],"operator":["scheduling"],"backend":["private-ane"],"device":["ane","cpu"],"symptom":["measurement"],"semantics":["contract-only"],"representation":["fp16","iosurface"],"boundary":["producer-consumer"],"api":["private"]},
       "cases": ["pmu-provenance", "private:pmu"],
       "code": ["labs/pmu.py", "labs/ane/pmu_probe.py", "labs/ane/pmu_probe.mm", "scripts/curate_pmu_campaign.py"],
       "controls": ["missing object, empty/zeroed/unknown payload and successful inference remain distinct",
@@ -43,6 +62,7 @@
     },
     {
       "chapter": "ane/graph-rewrite-search.md",
+      "facets": {"stage":["ffn"],"operator":["swiglu","gemm","quantization"],"backend":["private-ane","mlx"],"device":["ane","gpu"],"symptom":["graph-interruption","compile-bound","stale-cache","precision-loss"],"semantics":["numerically-equivalent","approximate"],"representation":["fp16","bf16","w8a8"],"boundary":["gpu-ane","weight-runtime"],"api":["private"]},
       "cases": ["search-qualification"],
       "code": ["labs/search_contracts.py", "labs/ane/precision_oracle.py", "scripts/curate_aneforge_campaign.py"],
       "controls": ["same structure with changed frozen weights cannot inherit numerical qualification",
@@ -55,6 +75,7 @@
     },
     {
       "chapter": "hardware/apple-silicon.md",
+      "facets": {"stage":[],"operator":["scheduling"],"backend":["metal","coreml","private-ane"],"device":["cpu","gpu","ane"],"symptom":["straggler","memory-bound"],"semantics":["contract-only"],"representation":[],"boundary":["request"],"api":["public","private"]},
       "cases": [
         "bucket-selection",
         "metal:vector"
@@ -74,6 +95,7 @@
     },
     {
       "chapter": "metal/kernel-tuning.md",
+      "facets": {"stage":["prefill","decode","dit","ffn"],"operator":["gemm","gemv","layout","quantization"],"backend":["metal","mlx"],"device":["gpu"],"symptom":["memory-bound","launch-bound","wrong-layout"],"semantics":["numerically-equivalent"],"representation":["bf16","fp16","fp32","q4","q8","mlx-affine","packed"],"boundary":["producer-consumer"],"api":["public"]},
       "evidence_ids": ["gpu-affine-20261016", "gpu-affine-data-20261016"],
       "source_ids": ["upstream-mlx-affine", "upstream-ggml-metal"],
       "cases": [
@@ -99,6 +121,7 @@
     },
     {
       "chapter": "metal/attention.md",
+      "facets": {"stage":["encoder","prefill","decode","dit"],"operator":["attention","norm","rope"],"backend":["metal","mlx"],"device":["gpu"],"symptom":["memory-bound","precision-loss","wrong-layout"],"semantics":["numerically-equivalent","approximate"],"representation":["bf16","fp16","fp32"],"boundary":["producer-consumer"],"api":["public"]},
       "source_ids": ["upstream-mlx-sdpa"],
       "evidence_ids": ["qwen-attention-20261016", "qwen-attention-data-20261016"],
       "cases": [
@@ -124,6 +147,7 @@
     },
     {
       "chapter": "metal/fusion-and-layout.md",
+      "facets": {"stage":["encoder","dit","ffn","vae"],"operator":["norm","rope","swiglu","layout"],"backend":["metal","mlx"],"device":["gpu"],"symptom":["memory-bound","launch-bound","wrong-layout","precision-loss"],"semantics":["numerically-equivalent"],"representation":["fp16","fp32","packed"],"boundary":["producer-consumer"],"api":["public"]},
       "cases": [
         "norm-rope",
         "precision-boundaries",
@@ -143,6 +167,7 @@
     },
     {
       "chapter": "metal/command-graphs.md",
+      "facets": {"stage":["pipeline"],"operator":["scheduling"],"backend":["metal","mlx"],"device":["gpu","ane"],"symptom":["launch-bound","lifetime"],"semantics":["contract-only"],"representation":[],"boundary":["producer-consumer","gpu-ane"],"api":["public","private"]},
       "cases": [
         "metal:graph",
         "slot-ownership"
@@ -162,6 +187,7 @@
     },
     {
       "chapter": "ane/coreml-graphs.md",
+      "facets": {"stage":["ffn"],"operator":["swiglu","conv","layout"],"backend":["coreml"],"device":["ane","gpu"],"symptom":["graph-interruption","wrong-layout","compile-bound"],"semantics":["numerically-equivalent","approximate"],"representation":["fp16","w8a8"],"boundary":["gpu-ane","weight-runtime"],"api":["public"]},
       "evidence_ids": ["qwen-ffn-tiling-20261015", "qwen-ffn-tiling-data-20261015"],
       "source_ids": [
         "upstream-ccv-coreml",
@@ -193,6 +219,7 @@
     },
     {
       "chapter": "ane/lifecycle.md",
+      "facets": {"stage":["pipeline"],"operator":["scheduling"],"backend":["coreml"],"device":["ane","cpu"],"symptom":["compile-bound","stale-cache","lifetime"],"semantics":["contract-only"],"representation":[],"boundary":["weight-runtime","request"],"api":["public"]},
       "cases": [
         "startup-amortization",
         "coreml:frozen-fp16",
@@ -210,6 +237,7 @@
     },
     {
       "chapter": "ane/quantization.md",
+      "facets": {"stage":["ffn"],"operator":["quantization","gemm"],"backend":["coreml","private-ane"],"device":["ane","gpu"],"symptom":["precision-loss","wrong-layout"],"semantics":["approximate"],"representation":["q4","q8","fp16","w8a8","gguf","packed"],"boundary":["gpu-ane","weight-runtime"],"api":["public","private"]},
       "cases": [
         "w8a8-reference",
         "w4a8-reference",
@@ -230,6 +258,7 @@
     },
     {
       "chapter": "ane/performance-limits.md",
+      "facets": {"stage":["ffn"],"operator":["gemm","scheduling"],"backend":["coreml","private-ane"],"device":["ane","gpu"],"symptom":["memory-bound","straggler","launch-bound"],"semantics":["contract-only"],"representation":["fp16"],"boundary":["gpu-ane","producer-consumer"],"api":["public","private"]},
       "cases": [
         "startup-amortization",
         "bucket-selection",
@@ -249,6 +278,7 @@
     },
     {
       "chapter": "ane/private-ane.md",
+      "facets": {"stage":["pipeline"],"operator":["scheduling"],"backend":["coreml","private-ane"],"device":["ane","gpu"],"symptom":["lifetime"],"semantics":["contract-only"],"representation":[],"boundary":["gpu-ane","request"],"api":["public","private"]},
       "cases": [
         "slot-ownership",
         "native:public-w8"
@@ -268,6 +298,7 @@
     },
     {
       "chapter": "gpu-ane/partitioning.md",
+      "facets": {"stage":["ffn"],"operator":["swiglu","gemm"],"backend":["cpu-reference","mlx","coreml"],"device":["cpu","gpu","ane"],"symptom":["straggler","precision-loss"],"semantics":["numerically-equivalent"],"representation":["fp16","fp32"],"boundary":["gpu-ane","producer-consumer"],"api":["public","reference-only"]},
       "cases": [
         "partition-axes",
         "reference:split-ffn",
@@ -288,6 +319,7 @@
     },
     {
       "chapter": "gpu-ane/axes-and-bandwidth.md",
+      "facets": {"stage":["ffn","prefill","dit"],"operator":["gemm","swiglu","attention","norm"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["memory-bound","wrong-layout","precision-loss"],"semantics":["numerically-equivalent"],"representation":[],"boundary":["gpu-ane","producer-consumer"],"api":["reference-only"]},
       "cases": [
         "partition-axes",
         "share-calibration",
@@ -306,6 +338,7 @@
     },
     {
       "chapter": "gpu-ane/shared-memory.md",
+      "facets": {"stage":["pipeline"],"operator":["layout","scheduling"],"backend":["coreml","metal"],"device":["gpu","ane"],"symptom":["wrong-layout","lifetime"],"semantics":["contract-only"],"representation":["iosurface","pixelbuffer","fp16"],"boundary":["gpu-ane","producer-consumer"],"api":["public"]},
       "cases": [
         "slot-ownership",
         "native:public-w8"
@@ -325,6 +358,7 @@
     },
     {
       "chapter": "gpu-ane/scheduling.md",
+      "facets": {"stage":["pipeline","ffn"],"operator":["scheduling"],"backend":["mlx","metal","coreml","private-ane"],"device":["cpu","gpu","ane"],"symptom":["straggler","lifetime","memory-bound"],"semantics":["contract-only"],"representation":[],"boundary":["gpu-ane","producer-consumer"],"api":["public","private"]},
       "cases": [
         "overlap-dag",
         "bucket-selection",
@@ -344,6 +378,7 @@
     },
     {
       "chapter": "gpu-ane/lora.md",
+      "facets": {"stage":["ffn"],"operator":["gemm","swiglu"],"backend":["cpu-reference","mlx","coreml"],"device":["cpu","gpu","ane"],"symptom":["precision-loss","wrong-layout"],"semantics":["numerically-equivalent"],"representation":["fp16","fp32"],"boundary":["gpu-ane","producer-consumer"],"api":["public","reference-only"]},
       "cases": [
         "reference:split-ffn"
       ],
@@ -361,6 +396,7 @@
     },
     {
       "chapter": "gpu-ane/calibration.md",
+      "facets": {"stage":["ffn"],"operator":["scheduling"],"backend":["cpu-reference","coreml","mlx"],"device":["gpu","ane"],"symptom":["straggler","memory-bound","measurement"],"semantics":["contract-only"],"representation":[],"boundary":["gpu-ane","request"],"api":["public","reference-only"]},
       "cases": [
         "share-calibration",
         "hybrid-policy",
@@ -381,6 +417,7 @@
     },
     {
       "chapter": "gpu-ane/experiment-ledger.md",
+      "facets": {"stage":["dit","ffn","vae","pipeline"],"operator":["scheduling"],"backend":["mlx","coreml","private-ane","metal"],"device":["gpu","ane"],"symptom":["straggler","memory-bound","stale-cache","measurement"],"semantics":["contract-only"],"representation":[],"boundary":["request","gpu-ane"],"api":["public","private"]},
       "cases": [
         "profiling-scopes",
         "share-calibration"
@@ -398,6 +435,7 @@
     },
     {
       "chapter": "memory/residency.md",
+      "facets": {"stage":["encoder","dit","vae","io","pipeline"],"operator":["scheduling"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["memory-bound","lifetime"],"semantics":["contract-only"],"representation":[],"boundary":["weight-runtime","request"],"api":["reference-only"]},
       "cases": [
         "reference:interval-peak",
         "slot-ownership"
@@ -414,6 +452,7 @@
     },
     {
       "chapter": "memory/streaming.md",
+      "facets": {"stage":["dit","ffn"],"operator":["scheduling","layout"],"backend":["cpu-reference","metal","mlx"],"device":["cpu","gpu"],"symptom":["memory-bound","lifetime","storage-pressure"],"semantics":["bitwise","numerically-equivalent"],"representation":["packed","fp16","bf16"],"boundary":["weight-runtime","cpu-gpu"],"api":["public","reference-only"]},
       "cases": [
         "bounded-io",
         "slot-ownership"
@@ -432,6 +471,7 @@
     },
     {
       "chapter": "memory/storage.md",
+      "facets": {"stage":["pipeline"],"operator":["quantization","layout"],"backend":["metal","mlx","cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["wrong-layout","stale-cache","storage-pressure"],"semantics":["bitwise","numerically-equivalent"],"representation":["q4","q8","gguf","mlx-affine","packed","bf16","fp16"],"boundary":["weight-runtime"],"api":["public","reference-only"]},
       "evidence_ids": ["gpu-affine-20261016"],
       "source_ids": ["upstream-mlx-affine", "upstream-ggml-metal"],
       "cases": [
@@ -452,6 +492,7 @@
     },
     {
       "chapter": "algorithms/caches.md",
+      "facets": {"stage":["encoder","prefill","decode","dit"],"operator":["attention","scheduling"],"backend":["mlx","metal","coreml","cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["stale-cache","memory-bound","compile-bound"],"semantics":["bitwise","approximate"],"representation":["packed"],"boundary":["weight-runtime","producer-consumer"],"api":["public","reference-only"]},
       "cases": [
         "cache-identity",
         "residual-reuse"
@@ -467,6 +508,7 @@
     },
     {
       "chapter": "algorithms/approximations.md",
+      "facets": {"stage":["dit","vae"],"operator":["attention","quantization"],"backend":["cpu-reference"],"device":["cpu","gpu"],"symptom":["precision-loss"],"semantics":["approximate","requires-training"],"representation":[],"boundary":["request","producer-consumer"],"api":["reference-only"]},
       "cases": [
         "token-merge",
         "residual-reuse",
@@ -486,6 +528,7 @@
     },
     {
       "chapter": "media/vae.md",
+      "facets": {"stage":["vae"],"operator":["conv","norm"],"backend":["metal","mlx"],"device":["gpu"],"symptom":["memory-bound","precision-loss","wrong-layout"],"semantics":["numerically-equivalent","approximate"],"representation":["fp16","fp32"],"boundary":["producer-consumer"],"api":["public"]},
       "cases": [
         "causal-halo",
         "global-stat-tiles",
@@ -503,6 +546,7 @@
     },
     {
       "chapter": "media/video-and-audio.md",
+      "facets": {"stage":["io","pipeline"],"operator":["codec","scheduling"],"backend":["videotoolbox","cpu-reference"],"device":["cpu","gpu","media-engine"],"symptom":["memory-bound","lifetime"],"semantics":["bitwise","contract-only"],"representation":["pixelbuffer"],"boundary":["tensor-pixelbuffer","request"],"api":["public","reference-only"]},
       "cases": [
         "media-backpressure",
         "profiling-scopes"
@@ -518,6 +562,7 @@
     },
     {
       "chapter": "media/upscaling.md",
+      "facets": {"stage":["io","pipeline"],"operator":["conv"],"backend":["coreml"],"device":["gpu","ane"],"symptom":["memory-bound","compile-bound"],"semantics":["approximate"],"representation":["pixelbuffer","fp16"],"boundary":["tensor-pixelbuffer","request"],"api":["public"]},
       "cases": [
         "upscale-tiles",
         "media-backpressure"
@@ -537,6 +582,7 @@
     },
     {
       "chapter": "profiling/measurement.md",
+      "facets": {"stage":["pipeline"],"operator":["scheduling"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["measurement"],"semantics":["contract-only"],"representation":[],"boundary":["request","producer-consumer"],"api":["reference-only"]},
       "cases": [
         "profiling-scopes",
         "reference:lab-summary"
@@ -553,6 +599,7 @@
     },
     {
       "chapter": "profiling/timestamp-calibration.md",
+      "facets": {"stage":[],"operator":["scheduling"],"backend":["metal"],"device":["cpu","gpu"],"symptom":["measurement"],"semantics":["contract-only"],"representation":[],"boundary":["producer-consumer"],"api":["public"]},
       "source_ids": ["official-metal-counters"],
       "evidence_ids": ["gpu-clock-and-qwen-20261016", "gpu-clock-data-20261016"],
       "cases": ["metal:counter-stage", "metal:gemm", "metal:graph"],
@@ -562,6 +609,7 @@
     },
     {
       "chapter": "profiling/mlx-boundaries.md",
+      "facets": {"stage":["dit","ffn"],"operator":["swiglu","gemm"],"backend":["mlx","metal"],"device":["gpu"],"symptom":["measurement","launch-bound"],"semantics":["contract-only"],"representation":["bf16","fp16"],"boundary":["producer-consumer"],"api":["public"]},
       "source_ids": ["upstream-mlx-affine", "official-metal-counters"],
       "evidence_ids": ["gpu-clock-and-qwen-20261016", "qwen-bf16-profile-data-20261016"],
       "cases": ["mlx:bf16-ffn-profile"],
@@ -571,6 +619,7 @@
     },
     {
       "chapter": "profiling/trace-normalization.md",
+      "facets": {"stage":[],"operator":["scheduling"],"backend":["metal","cpu-reference"],"device":["gpu","cpu"],"symptom":["measurement"],"semantics":["contract-only"],"representation":[],"boundary":["producer-consumer"],"api":["public","reference-only"]},
       "source_ids": ["upstream-gputrace", "official-metal-counters"],
       "evidence_ids": ["gpu-profiling-20261016", "gpu-profiling-data-20261016"],
       "cases": ["reference:lab-summary", "metal:gemm"],
@@ -580,6 +629,7 @@
     },
     {
       "chapter": "profiling/gpu-timeline-and-counters.md",
+      "facets": {"stage":[],"operator":["gemm","scheduling"],"backend":["metal"],"device":["gpu","cpu"],"symptom":["measurement"],"semantics":["contract-only"],"representation":["fp32"],"boundary":["producer-consumer"],"api":["public"]},
       "source_ids": ["official-metal-counters", "upstream-gputrace", "upstream-mlx-affine"],
       "evidence_ids": ["gpu-profiling-20261016", "gpu-profiling-data-20261016"],
       "cases": ["metal:gemm", "metal:vector", "metal:graph"],
@@ -589,6 +639,7 @@
     },
     {
       "chapter": "profiling/tools.md",
+      "facets": {"stage":["pipeline"],"operator":["scheduling"],"backend":["metal","mlx","coreml","private-ane"],"device":["cpu","gpu","ane"],"symptom":["measurement"],"semantics":["contract-only"],"representation":[],"boundary":["request"],"api":["public","private"]},
       "evidence_ids": ["qwen-ffn-tiling-20261015", "gpu-profiling-20261016"],
       "source_ids": ["upstream-coreml-plan", "upstream-anemll-profile", "upstream-gputrace", "official-metal-counters"],
       "cases": [
@@ -614,6 +665,7 @@
     },
     {
       "chapter": "models/recipes.md",
+      "facets": {"stage":["encoder","dit","ffn","vae","pipeline"],"operator":["attention","swiglu","conv"],"backend":["metal","mlx","coreml","private-ane"],"device":["gpu","ane"],"symptom":["precision-loss","memory-bound","wrong-layout"],"semantics":["numerically-equivalent","approximate"],"representation":["bf16","fp16","q4","gguf"],"boundary":["request","gpu-ane"],"api":["public","private"]},
       "cases": [
         "reference:model-header",
         "technique-composition",
@@ -632,6 +684,7 @@
     },
     {
       "chapter": "designs/gpu-dataflow.md",
+      "facets": {"stage":["prefill","decode","dit","ffn"],"operator":["gemm","gemv","attention","norm","rope","layout"],"backend":["metal","mlx"],"device":["gpu"],"symptom":["memory-bound","launch-bound","wrong-layout"],"semantics":["numerically-equivalent"],"representation":["fp16","fp32","q4","q8","packed"],"boundary":["producer-consumer"],"api":["public"]},
       "cases": [
         "metal:gemm",
         "metal:attention",
@@ -650,6 +703,7 @@
     },
     {
       "chapter": "designs/owned-graphs.md",
+      "facets": {"stage":["pipeline"],"operator":["scheduling"],"backend":["metal","cpu-reference"],"device":["gpu","cpu"],"symptom":["launch-bound","lifetime"],"semantics":["contract-only"],"representation":[],"boundary":["producer-consumer"],"api":["public","reference-only"]},
       "cases": [
         "owned-command-graph",
         "metal:graph",
@@ -667,6 +721,7 @@
     },
     {
       "chapter": "designs/hybrid-ffn.md",
+      "facets": {"stage":["ffn"],"operator":["gemm","swiglu","scheduling"],"backend":["coreml","mlx","cpu-reference"],"device":["gpu","ane","cpu"],"symptom":["straggler","lifetime","wrong-layout"],"semantics":["numerically-equivalent"],"representation":["fp16","fp32"],"boundary":["gpu-ane","producer-consumer"],"api":["public","reference-only"]},
       "cases": [
         "dual-bank-handoff",
         "hybrid-policy",
@@ -688,6 +743,7 @@
     },
     {
       "chapter": "designs/packed-streaming.md",
+      "facets": {"stage":["pipeline"],"operator":["layout","scheduling"],"backend":["metal","cpu-reference"],"device":["cpu","gpu"],"symptom":["wrong-layout","lifetime","memory-bound"],"semantics":["bitwise","numerically-equivalent"],"representation":["packed","fp16","bf16"],"boundary":["weight-runtime","cpu-gpu"],"api":["public","reference-only"]},
       "cases": [
         "packed-weight-store",
         "bounded-io",
@@ -706,6 +762,7 @@
     },
     {
       "chapter": "designs/residency-and-phases.md",
+      "facets": {"stage":["encoder","dit","vae","io","pipeline"],"operator":["scheduling"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["memory-bound","lifetime"],"semantics":["contract-only"],"representation":[],"boundary":["weight-runtime","request"],"api":["reference-only"]},
       "cases": [
         "residency-policy",
         "reference:interval-peak",
@@ -724,6 +781,7 @@
     },
     {
       "chapter": "designs/technique-composition.md",
+      "facets": {"stage":["dit","pipeline"],"operator":["scheduling"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["lifetime","stale-cache","precision-loss"],"semantics":["contract-only"],"representation":[],"boundary":["producer-consumer","request"],"api":["reference-only"]},
       "cases": [
         "technique-composition",
         "residual-reuse",
@@ -741,6 +799,7 @@
     },
     {
       "chapter": "models/stage-map.md",
+      "facets": {"stage":["encoder","prefill","decode","dit","vae","io","pipeline"],"operator":["scheduling"],"backend":["cpu-reference"],"device":["cpu","gpu","ane","media-engine"],"symptom":["memory-bound","straggler"],"semantics":["contract-only"],"representation":[],"boundary":["request"],"api":["reference-only"]},
       "cases": [
         "stage-encoder",
         "stage-llm",
@@ -759,6 +818,7 @@
     },
     {
       "chapter": "models/encoders.md",
+      "facets": {"stage":["encoder"],"operator":["attention","gemm","norm"],"backend":["cpu-reference","metal","coreml"],"device":["cpu","gpu","ane"],"symptom":["stale-cache","compile-bound"],"semantics":["numerically-equivalent"],"representation":["fp16"],"boundary":["producer-consumer","request"],"api":["public","reference-only"]},
       "cases": [
         "stage-encoder",
         "cache-identity",
@@ -777,6 +837,7 @@
     },
     {
       "chapter": "models/llm-prefill.md",
+      "facets": {"stage":["prefill","ffn"],"operator":["attention","gemm","rope","swiglu"],"backend":["cpu-reference","metal"],"device":["cpu","gpu","ane"],"symptom":["memory-bound","wrong-layout"],"semantics":["numerically-equivalent"],"representation":[],"boundary":["producer-consumer","gpu-ane"],"api":["public","reference-only"]},
       "cases": [
         "stage-llm",
         "online-attention",
@@ -795,6 +856,7 @@
     },
     {
       "chapter": "models/llm-decode.md",
+      "facets": {"stage":["decode"],"operator":["gemv","attention","sampling","quantization"],"backend":["cpu-reference","metal"],"device":["cpu","gpu","ane"],"symptom":["memory-bound","launch-bound","precision-loss"],"semantics":["numerically-equivalent","approximate"],"representation":["q4","q8","packed"],"boundary":["producer-consumer","request"],"api":["public","reference-only"]},
       "cases": [
         "stage-decode",
         "stage-llm",
@@ -812,6 +874,7 @@
     },
     {
       "chapter": "models/dit.md",
+      "facets": {"stage":["dit","ffn"],"operator":["attention","gemm","norm","rope","swiglu"],"backend":["cpu-reference","metal","mlx"],"device":["cpu","gpu","ane"],"symptom":["stale-cache","launch-bound","precision-loss"],"semantics":["numerically-equivalent","approximate"],"representation":["bf16","fp16"],"boundary":["producer-consumer","gpu-ane"],"api":["public","reference-only"]},
       "cases": [
         "stage-dit",
         "residual-reuse",
@@ -830,6 +893,7 @@
     },
     {
       "chapter": "models/vae-and-media.md",
+      "facets": {"stage":["vae","io"],"operator":["conv","norm","codec"],"backend":["cpu-reference"],"device":["cpu","gpu","media-engine"],"symptom":["memory-bound","wrong-layout","precision-loss"],"semantics":["numerically-equivalent"],"representation":[],"boundary":["tensor-pixelbuffer","producer-consumer"],"api":["reference-only"]},
       "cases": [
         "stage-vae",
         "causal-halo",
@@ -849,6 +913,7 @@
     },
     {
       "chapter": "models/pipeline.md",
+      "facets": {"stage":["encoder","dit","vae","io","pipeline"],"operator":["scheduling","codec"],"backend":["cpu-reference"],"device":["cpu","gpu","ane","media-engine"],"symptom":["memory-bound","compile-bound","measurement"],"semantics":["contract-only"],"representation":[],"boundary":["request"],"api":["reference-only"]},
       "cases": [
         "startup-amortization",
         "profiling-scopes",
@@ -868,6 +933,7 @@
     },
     {
       "chapter": "designs/parallel-topologies.md",
+      "facets": {"stage":["prefill","dit","ffn"],"operator":["gemm","swiglu","attention","scheduling"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["straggler","wrong-layout"],"semantics":["numerically-equivalent"],"representation":[],"boundary":["gpu-ane","producer-consumer"],"api":["reference-only"]},
       "cases": [
         "parallel-branches",
         "attention-head-shards",
@@ -885,6 +951,7 @@
     },
     {
       "chapter": "designs/consumer-abi.md",
+      "facets": {"stage":["ffn","pipeline"],"operator":["layout","scheduling"],"backend":["coreml","metal","cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["wrong-layout","lifetime"],"semantics":["bitwise","contract-only"],"representation":["iosurface","packed"],"boundary":["gpu-ane","producer-consumer"],"api":["public","reference-only"]},
       "cases": [
         "consumer-strides",
         "segmented-ffn",
@@ -903,6 +970,7 @@
     },
     {
       "chapter": "designs/heterogeneous-planner.md",
+      "facets": {"stage":["ffn","pipeline"],"operator":["scheduling","quantization"],"backend":["cpu-reference"],"device":["cpu","gpu","ane"],"symptom":["straggler","precision-loss","memory-bound"],"semantics":["contract-only","approximate"],"representation":["fp16","fp32"],"boundary":["gpu-ane","producer-consumer"],"api":["reference-only"]},
       "cases": [
         "optional-devices",
         "precision-islands",
@@ -920,6 +988,7 @@
     },
     {
       "chapter": "models/hybrid-selection.md",
+      "facets": {"stage":["encoder","prefill","decode","dit","ffn","vae","pipeline"],"operator":["attention","swiglu","conv","scheduling"],"backend":["cpu-reference","metal","coreml"],"device":["cpu","gpu","ane"],"symptom":["straggler","wrong-layout","precision-loss"],"semantics":["contract-only"],"representation":[],"boundary":["gpu-ane","request"],"api":["public","reference-only"]},
       "cases": [
         "parallel-branches",
         "attention-head-shards",

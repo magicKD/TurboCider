@@ -4,6 +4,8 @@
 
 ## 从这里开始
 
+- 媒体交接：[BGRA到GPU输入的完整边界](media/tensor-texture-interop.md) → [vImage/循环/GPU三路实测](review/media-stage-20261016.md)；保留CPU多pass回退、透明源拒绝和更强GPU分母，不冒充完整codec/VAE请求。
+- 多维问题入口：[受控主题索引](queries/README.md)与[别名/版本复查合同](data/README.md)；按stage、backend、symptom等定位机制，标签和精确历史环境匹配都不授予加速资格。
 - 本轮深入研究：[源码研究与实测工作台](review/research-campaign-20261015.md)；跟踪roadmap、参考实现、profiling与Qwen真实工作负载，进行中项目不作为性能资格。
 - 固定版本取证：[自动生成的来源索引](sources/README.md) → [真实Qwen FFN与并发负结果](review/qwen-ffn-tiling-20261015.md)；来源、数值、性能与物理归因分开。
 - GPU profiling纵向链：[公共counter与capture实验](profiling/gpu-timeline-and-counters.md) → [来源安全的trace归一化](profiling/trace-normalization.md) → [本机全部对照](review/gpu-profiling-20261016.md)，包含无Xcode时的真实能力和parser负结果。
@@ -14,7 +16,7 @@
 - 真实FFN分担：[完整GPU分母、精度岛与交接成本](gpu-ane/private-ffn-boundary.md) → [Qwen layer0三档探索和冻结参数确认](review/qwen-private-ffn-20261016.md)；private copy-bridge在所测warm组件约1.08–1.12×，不是全请求/零拷贝或默认资格。
 - 实际backing：[request surface与Metal映射的证据合同](gpu-ane/shared-surface.md) → [四进程120次完整消费者](review/private-shared-20261016.md)；包含128/192-byte padding、finite但错误stride和stale输出负控，不授予内部零拷贝/物理并行或Qwen资格。
 - MLX接缝：[实际adoption、Copy alias、view/owner与过期结果](review/mlx-adoption-20261016.md)；四份完整协议、32个全量消费者、8MiB合成范围与首轮客户端失败分开，不拼接成未运行的Qwen共享路径。
-- 实际真实shared FFN：[五臂完整消费者、560次调用与264个精确join](review/qwen-shared-ffn-20261016.md)；原始BF16 GPU分母、实际二维port、反序point、load/admission均有记录。长确认约1.15×只属于layer0 warm组件，同client去copy约1.1%且首轮方向不同，未晋升产品默认。
+- 实际真实shared FFN：[五臂完整消费者、560次调用与264个精确join](review/qwen-shared-ffn-20261016.md)；原始BF16 GPU分母、实际二维port、反序point、load/admission均有记录。长确认约1.15×是相对纯GPU的layer0 warm组件收益，不是原有GPU/ANE上再快15%；同client去copy约1.1%且首轮方向不同，尚未与既有产品GPU/ANE后端严格A/B，未晋升产品默认。
 - GPU源码到真实消费者：[MLX/GGML affine、tile与原始BF16控制](review/gpu-affine-20261016.md)，包含量化配方内收益、额外驻留成本与独立确认，不自动晋升产品默认。
 - 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
 - GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
@@ -25,7 +27,7 @@
 - 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
 - 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
 - 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
-- 动手实现：[实验室](labs/README.md) → [53项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含46个CPU/模拟case、7个真实Metal对照入口、公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/shared surface/MLX adoption/真实模型集成另需显式opt-in。
+- 动手实现：[实验室](labs/README.md) → [54项技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含48个CPU/模拟case、19个显式设备selector（其中7个基础Metal对照入口），公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/shared surface/MLX adoption/真实模型集成另需显式opt-in。
 
 ## 目录
 
@@ -49,6 +51,8 @@
 ## 阅读约定
 
 完整block的后续[独立seed/prompt记录](review/qwen-block-context-20261016.md)保留load失败、330次完整数值调用与最终存储拒绝；没有合格倍率或完整请求结果。
+
+此后两个新进程已完成raw pair持久化和独立CPU FP64抽样复核，但正式成功证据尚未完成curator/脱敏capsule登记；见[可选工具及当前边界](integrations/README.md#完整block的raw-pair复核工具)。新增离线测试不把旧失败改成成功，也不授予完整请求或产品资格。
 
 核心学习路径与必需代码均包含在`techniques/`。标准库样本可以单独复制本目录运行；真实设备样本另需明确列出的 Apple SDK、NumPy/CoreML/MLX 依赖，不需要兄弟仓库。链接到产品`native/`、`tools/`、`docs/`或上游网站的内容只用于可选溯源/生产接入；[integrations](integrations/README.md)明确标为可选，不属于离线核心。默认检查只验证本地资产，`--include-integrations`可追加完整仓库来源核查；[隔离检查](scripts/check_standalone.py)实际验证核心没有暗中导入产品代码。
 
@@ -75,7 +79,7 @@
 
 `review/raw/`与`review/local/`也仅用于本地原始测量和机器配置，不纳入提交；经过整理、脱敏的`review/*.json`验证摘要继续跟踪。
 
-原始权重/激活`.safetensors`与无损BF16归档`.tcbf16z`保持本地；压缩不等于脱敏，隔离副本也不复制这些BF16归档。小型可移植`.npy` fixture、源码与公开JSON摘要仍可跟踪。
+原始权重/激活`.safetensors`与无损BF16归档`.tcbf16z`保持本地；压缩不等于脱敏，隔离副本同样排除这两类文件。小型可移植`.npy` fixture、源码与公开JSON摘要仍可跟踪。
 
 嵌套Swift的`.build/`、`.swiftpm/`、`DerivedData/`、Xcode结果包、CMake生成文件及实验`.cache/`、`.aneforge_cache/`、`.aneforge-cache/`也保持本地。不要用整个`references/`、JSON或媒体扩展名的宽泛规则屏蔽整理后的来源、验证摘要或测试fixture。
 

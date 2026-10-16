@@ -4,17 +4,28 @@ Keep labs/catalog.json as the chapter inventory. Only scope=local source entries
 are registered; product paths and upstream checkouts are never opened. Section
 labels describe documentation, not device placement or hardware qualification.
 """
+import hashlib
 import json
 from pathlib import Path
 import re
 
+from retrieval_contracts import FACETS, claim_rows, context, facets, iso_day, keyword_groups, review, vocabulary
+
 ROOT = Path(__file__).resolve().parents[1]
-FIELDS = ("section",)
+FIELDS = ("section", *FACETS)
 IDENTITY = re.compile(r"[a-z][a-z0-9-]{2,127}")
 
 
 def read_json(path):
-    value = json.loads(path.read_text(encoding="utf-8"))
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key in " + path.name + ": " + key)
+            result[key] = value
+        return result
+
+    value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
     if not isinstance(value, dict):
         raise ValueError("expected an object in " + path.name)
     return value
@@ -53,10 +64,30 @@ def records(document, key):
     return values
 
 
+def binding_changes(root, bindings, nodes, digests):
+    changed = []
+    for identity, expected in bindings.items():
+        if identity not in digests:
+            value = hashlib.sha256()
+            with local_file(root, nodes[identity]["path"]).open("rb") as stream:
+                for part in iter(lambda: stream.read(1 << 20), b""):
+                    value.update(part)
+            digests[identity] = value.hexdigest()
+        if expected != digests[identity]:
+            changed.append(identity)
+    return sorted(changed)
+
+
 def load(root=ROOT):
     root = Path(root).resolve()
-    cards = records(read_json(local_file(root, "labs/catalog.json")), "entries")
+    catalog = read_json(local_file(root, "labs/catalog.json"))
+    cards = records(catalog, "entries")
     sources = records(read_json(local_file(root, "references/sources.json")), "sources")
+    schema_version = catalog.get("retrieval_schema_version")
+    if schema_version is not None and (type(schema_version) is not int or schema_version != 1):
+        raise ValueError("unknown retrieval schema version")
+    schema = vocabulary(read_json(local_file(root, "data/vocabulary.json"))) if schema_version else {
+        "dimensions": {key: [] for key in FACETS}, "aliases": {key: {} for key in FACETS}, "keywords": {}}
     nodes = []
     for card in cards:
         relative = card.get("chapter")
@@ -73,6 +104,8 @@ def load(root=ROOT):
         if not isinstance(card.get("revisit_when"), str) or not card["revisit_when"].strip():
             raise ValueError("missing revisit condition: " + relative)
         node["revisit_when"] = card["revisit_when"]
+        node.update(facets(card.get("facets"), schema, required=bool(schema_version)))
+        node["topic_metadata_declared"] = "facets" in card
         for code in node["code"]:
             local_file(root, code)
         nodes.append(node)
@@ -91,9 +124,11 @@ def load(root=ROOT):
             raise ValueError("unknown registered source/evidence kind: " + identity)
         nodes.append({"id": kind + "-" + identity, "kind": kind, "path": source["path"],
                       "title": heading, "section": [Path(source["path"]).parts[0]],
+                      **facets(source.get("facets"), schema, required="facets" in source),
+                      "topic_metadata_declared": "facets" in source,
                       "symbols": string_list(source.get("symbols", []), "symbols"),
                       **{key: source[key] for key in ("upstream", "official", "license", "evidence") if key in source},
-                      "code": [],
+                      "code": string_list(source.get("code", []), "source code"),
                       "sources": ["source-" + value for value in string_list(source.get("source_ids", []), "source_ids")],
                       "evidence_pages": []})
     by_id, by_path = {}, {}
@@ -106,8 +141,10 @@ def load(root=ROOT):
         by_id[identity] = node
         by_path[node["path"]] = identity
     for node in nodes:
+        for code in node["code"]:
+            local_file(root, code)
         inferred = [by_path[code] for code in node["code"]
-                    if code in by_path and by_id[by_path[code]]["kind"] == "source"]
+                    if code in by_path and by_id[by_path[code]]["kind"] == "source" and by_path[code] != node["id"]]
         node["sources"] = list(dict.fromkeys([*node["sources"], *inferred]))
         for source in node["sources"]:
             if source not in by_id or by_id[source]["kind"] != "source":
@@ -115,28 +152,54 @@ def load(root=ROOT):
         for evidence in node["evidence_pages"]:
             if evidence not in by_id or by_id[evidence]["kind"] != "evidence":
                 raise ValueError("unresolved local evidence page: " + evidence)
-    vocabulary = {"kind": ["technique", "source", "evidence"],
-                  "section": sorted({section for node in nodes for section in node["section"]})}
+    claims = claim_rows(read_json(local_file(root, "data/version-claims.json")), by_id) if schema_version else {}
+    digests = {}
+    for claim in claims.values():
+        claim["changed_bindings"] = binding_changes(root, claim["bindings"], by_id, digests)
+    for node in nodes:
+        node["version_claim_ids"] = [key for key, claim in claims.items() if node["id"] in claim["applies_to"]]
+    values = {"kind": ["technique", "source", "evidence"], **schema["dimensions"],
+              "section": sorted({section for node in nodes for section in node["section"]})}
     return {"root": root, "nodes": sorted(nodes, key=lambda item: item["id"]),
-            "by_id": by_id, "by_path": by_path, "vocabulary": vocabulary}
+            "by_id": by_id, "by_path": by_path, "vocabulary": values, "aliases": schema["aliases"],
+            "keyword_aliases": schema["keywords"], "claims": claims,
+            "metadata_coverage": {"registered_pages": len(nodes), "topic_classified_pages": sum(n["topic_metadata_declared"] for n in nodes),
+                                  "unclassified_by_field": {field: sum(not node[field] for node in nodes) for field in FACETS}}}
 
 
-def query(index, text="", filters=None, limit=10):
+def present(index, node, observed=None, as_of=None):
+    reviews = []
+    digests = {}
+    for identity in node["version_claim_ids"]:
+        claim = dict(index["claims"][identity])
+        claim["changed_bindings"] = binding_changes(index["root"], claim["bindings"], index["by_id"], digests)
+        reviews.append(review(claim, observed, as_of))
+    return {**node, "version_review": reviews,
+            "retrieval_grants_qualification": False}
+
+
+def query(index, text="", filters=None, limit=10, observed=None, as_of=None):
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("limit must be 1..100")
     if not isinstance(text, str) or (filters is not None and not isinstance(filters, dict)):
         raise ValueError("query text and filter object required")
+    context({} if observed is None else observed)
+    if as_of is not None:
+        iso_day(as_of)
     normalized = {}
     for field, values in (filters or {}).items():
         if not isinstance(field, str) or field not in FIELDS + ("kind",):
             raise ValueError("unknown query dimension: " + str(field))
         choices = {value.casefold(): value for value in index["vocabulary"][field]}
+        choices.update(index["aliases"].get(field, {}))
         normalized[field] = []
         for value in string_list(values, field):
             if value.casefold() not in choices:
                 raise ValueError("unknown " + field + ": " + value + "; choose " + ", ".join(choices))
             normalized[field].append(choices[value.casefold()])
-    tokens = [value.casefold() for value in re.findall(r"[\w-]+", text, re.UNICODE)]
+        if len(normalized[field]) != len(set(normalized[field])):
+            raise ValueError("duplicate canonical filter via aliases: " + field)
+    groups = keyword_groups(text, index["keyword_aliases"])
     output = []
     for node in index["nodes"]:
         if any(not set(values) <= ({node["kind"]} if field == "kind" else set(node[field]))
@@ -144,26 +207,32 @@ def query(index, text="", filters=None, limit=10):
             continue
         heading = node["title"].casefold()
         metadata = " ".join([node["id"], *node["section"], *node.get("cases", []),
-                             *node.get("controls", []), *node.get("symbols", [])]).casefold()
-        body = local_file(index["root"], node["path"]).read_text(encoding="utf-8").casefold() if tokens else ""
-        score = sum((10 if token in heading else 0) + (5 if token in metadata else 0)
-                    + (1 if token in body else 0) for token in tokens)
-        if tokens and not score:
+                             *node.get("controls", []), *node.get("symbols", []),
+                             *(value for field in FACETS for value in node[field])]).casefold()
+        body = local_file(index["root"], node["path"]).read_text(encoding="utf-8").casefold() if groups else ""
+        score = sum(max((10 if token in heading else 0) + (5 if token in metadata else 0)
+                        + (1 if token in body else 0) for token in group["variants"]) for group in groups)
+        if groups and not score:
             continue
         output.append((score, node))
     output.sort(key=lambda item: (-item[0], item[1]["id"]))
     return {"query": text, "filters": normalized, "total_matches": len(output),
-            "results": [dict(node) for _, node in output[:limit]],
-            "scope": "catalog/local-source keyword retrieval; section is a document category, not device or performance evidence"}
+            "keyword_expansions": groups, "metadata_coverage": index["metadata_coverage"],
+            "results": [present(index, node, observed, as_of) for _, node in output[:limit]],
+            "retrieval_grants_qualification": False,
+            "scope": "curated topic filters/one-hop aliases and recorded version-review hints, NOT applicability, compatibility, device or performance qualification"}
 
 
-def get_page(index, lookup, follow_sources=False, include_code=False, maximum_bytes=24000, follow_evidence=False, offset_bytes=0):
+def get_page(index, lookup, follow_sources=False, include_code=False, maximum_bytes=24000, follow_evidence=False, offset_bytes=0, observed=None, as_of=None):
     if type(maximum_bytes) is not int or not 256 <= maximum_bytes <= 256000:
         raise ValueError("maximum bytes must be 256..256000")
     if type(offset_bytes) is not int or offset_bytes < 0:
         raise ValueError("byte offset must be a nonnegative integer")
     if not isinstance(lookup, str):
         raise ValueError("a registered page ID or path is required")
+    context({} if observed is None else observed)
+    if as_of is not None:
+        iso_day(as_of)
     identity = lookup if lookup in index["by_id"] else index["by_path"].get(lookup)
     if identity is None:
         raise ValueError("unknown registered page: " + lookup)
@@ -173,6 +242,7 @@ def get_page(index, lookup, follow_sources=False, include_code=False, maximum_by
         wanted += [index["by_id"][source] for source in node["sources"]]
     if follow_evidence:
         wanted += [index["by_id"][evidence] for evidence in node["evidence_pages"]]
+    wanted = list({item["id"]: item for item in wanted}.values())
     remaining, pages, code, omitted_pages, omitted_code = maximum_bytes, [], [], [], []
 
     def expand(relative, offset=0):
@@ -203,7 +273,7 @@ def get_page(index, lookup, follow_sources=False, include_code=False, maximum_by
             omitted_pages.append(item["id"])
         else:
             pages.append({**expand(item["path"], offset_bytes if item["id"] == identity else 0),
-                          "id": item["id"], "metadata": item})
+                          "id": item["id"], "metadata": present(index, item, observed, as_of)})
     expanded = {item["path"] for item in pages}
     if include_code:
         for relative in node["code"]:

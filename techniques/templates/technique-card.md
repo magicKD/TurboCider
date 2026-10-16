@@ -4,6 +4,8 @@
 
 ## 摘要
 
+在既有`labs/catalog.json`卡片中填写所有`facets`字段，受控值见[查询合同](../data/README.md)；未知填空数组，不用主题标签代替适用环境/receipt。source/evidence独立登记，版本敏感结论绑定已有ID、固定内容hash和精确历史环境，不写未经证明的兼容版本范围。
+
 名称 / 优化对象 / 适用拓扑 / 预期节省的工作：待填写。
 
 状态分别填写：文献启发、CPUreference、模拟、actualdevice、realblock、realrequest、产品资格；不要只写一个“已验证”。来源URL/revision/具体文件、作者/许可证、当前实现是否独立重写：待填写。

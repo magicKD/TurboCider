@@ -130,3 +130,37 @@ python3 -B techniques/scripts/run_experiment.py --timeout 300 \
 执行必须显式传`--device --native-dir ... --model-root ... --bank-run ... --baseline-capture ... --output-dir outputs/NEW`，输出目录必须全新。默认owned TMPDIR；`--temp-context inherited`是显式上下文对照，不是已证明修复。不同存储模式各自admission和后置128MiB reserve保持不变，不能为让实验通过而降低门槛或删旧数据。
 
 borrowed observer参数/原callable不逃逸，只有owned CPU BF16副本允许导出；受控停在step1/layer0，不进行VAE decode/image export，候选不回灌请求。`--lossless-archive`保留完整BF16字节，生成本地忽略的`.tcbf16z`；仅合成fixture完成独立decode测试，真实模型archive写出本轮被reserve拒绝。[全部失败与部分执行证据](../review/qwen-block-context-20261016.md)不作为合格性能或完整请求结果。
+
+## 完整block的raw-pair复核工具
+
+[block_success.py](../labs/block_success.py)是纯标准库成功协议检查器，和冻结的失败合同分开；检查完整BF16 header/payload/hash、五臂调用顺序、全block/FFN/prefix数值门槛、实际join、host依赖和正常owner释放，并独立重算固定配对倍率。它不执行模型或私有接口，不能将旧的存储失败记录改成成功。[离线回归](../tests/test_block_success.py)使用完整8MiB合成BF16输入与明确标注的合成成功metadata，不冒充新设备证据。
+
+[qwen_block_raw_reference.py](qwen_block_raw_reference.py)是显式CPU-only NumPy工具：从调用方提供的原BF16 checkpoint和已保存的FFN input/reference，复用冻结数学witness，重新计算4个真实row×4个输出column、完整K/F的FP64参考。只检查GPU FFN reference；不重执行private输出、完整block或请求，不导出raw向量。
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 300 \
+  --output-dir outputs/my-new-block-reference-launch -- .venv/bin/python -B \
+  techniques/integrations/qwen_block_raw_reference.py --checkpoint "$TC_QWEN_CHECKPOINT" \
+  --bank-run "$TC_PRIVATE_BANK_RUN" --run "$TC_BLOCK_RAW_RUN" \
+  --output-dir outputs/my-new-block-reference
+```
+
+需要已有NumPy、明确的原始BF16模型/常量bank与成功raw-pair目录；可重复传`--run`，不安装或下载依赖。输出目录必须全新，保留128MiB reserve加1MiB metadata预算。原始`.safetensors`和报告中的本机信息只留ignored `outputs/`。
+
+当前两个新进程已完成raw pair持久化与该独立FP64抽样复核；成功证据的专用curator/脱敏capsule和最终版本登记仍未完成。本次整理不补造归档、不晋升产品或整请求。历史失败capsule、采集源码和数学witness的SHA继续保持原样。FFN约1.15×的基线是完整纯GPU；同client copy→shared约1.1%，不是既有产品GPU/ANE后端又获得15%增益。
+
+## 公开vImage与GPU媒体阶段
+
+[media_stage_probe.py](media_stage_probe.py)默认仅准备，[native客户端](media_stage_probe.mm)在显式`--device`时编译。只链接已有MLX与公开Accelerate/ImageIO/CoreGraphics，并从当前产品source编译PE decoder/common utility；不重建或替换产品runtime，不加载模型/ANE，不安装依赖。
+
+```sh
+python3 -B techniques/scripts/run_experiment.py --timeout 360 \
+  --output-dir outputs/my-new-media-stage-launch -- .venv/bin/python -B \
+  techniques/integrations/media_stage_probe.py --device --source-png "$TC_OPAQUE_PNG" \
+  --native-manifest "$TC_NATIVE_SOURCE_MANIFEST" --mlx-root "$TC_INSTALLED_MLX" \
+  --seed 29 --repeats 30 --output-dir outputs/my-new-media-stage
+```
+
+必须显式提供已有有界opaque RGB/RGBA8 PNG、source-matched manifest和installed MLX。该小客户端140MiB admission与后置128MiB reserve独立记账，不改变原模型/capture门槛；不删除旧数据或清系统cache。`--rejected-source FILE`只用于明确检查应拒绝的nonopaque source，不能将接受的图片伪记成失败。
+
+三个arm包含完整prepared padded BGRA→ready contiguous normalized FP32 GPU输入；实际PNG样本和513×257控制均过8方向/两generation，完整source/RGB/F64/host-guard与finite-but-wrong负控保留。它不是实际视频sample、色彩转换、resize、VAE、encode/flush或帧流水并行。[全部2208次与原失败](../review/media-stage-20261016.md)说明为什么CPU函数更快仍可能输给GPU图。原PNG/像素只留本地，公开capsule仅保留脱敏hash/指标。

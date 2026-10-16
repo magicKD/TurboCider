@@ -5,6 +5,52 @@
   "meaning": "Local paths are relative to techniques. Integration paths retain original repository-root/sibling anchors for optional provenance only; check with --include-integrations. Core learning and execution require no integration source. Snapshots are inspected content, not latest upstream.",
   "sources": [
     {
+      "id": "official-vimage-stage", "kind": "source", "scope": "local", "path": "sources/official/vimage-stage.md",
+      "role": "Public vImage channel dropping, BGRA-compatible out-of-place discrete geometry and actual rowBytes; SDK reading identity, not underlying Accelerate implementation",
+      "symbols": ["vImageConvert_BGRA8888toRGB888", "vImageRotate90_ARGB8888", "rowBytes"],
+      "code": ["labs/media_stage.py", "scripts/curate_media_stage.py"],
+      "facets": {"stage": ["io"], "operator": ["layout"], "backend": ["accelerate"], "device": ["cpu"], "symptom": ["wrong-layout"], "semantics": ["bitwise"], "representation": ["packed", "pixelbuffer"], "boundary": ["producer-consumer"], "api": ["public"]},
+      "official": {
+        "publisher": "Apple Accelerate / vImage SDK", "captured_at": "2026-10-16",
+        "snapshot_identity": "macOS SDK26.5 Conversion.h/Geometry.h selected ranges; hashes describe this reading, not old-run framework attestation",
+        "sdk_files": [
+          {"path": "Accelerate.framework/Versions/A/Frameworks/vImage.framework/Versions/A/Headers/Conversion.h", "sha256": "ff900ea846be505dcf41b35913053b23968c2e194bd9b8e3f95e030e750e5010", "read_ranges": [[3250, 3298]]},
+          {"path": "Accelerate.framework/Versions/A/Frameworks/vImage.framework/Versions/A/Headers/Geometry.h", "sha256": "0458041e6d84764f83679523e8183fdfed03cbf9e13caa4b35ce9c1a0b95881d", "read_ranges": [[20, 75], [360, 447]]}
+        ]
+      },
+      "evidence": {"runtime": "two complete public vImage/MLX clients, 2208 stage calls and real-source/orientation/finite negatives; no codec/VAE/request/physical overlap qualification"}
+    },
+    {
+      "id": "media-stage-20261016", "kind": "evidence", "scope": "local", "path": "review/media-stage-20261016.md",
+      "role": "Public CPU vImage versus source-bound loop and stronger compiled GPU complete handoff; per-trial oracle minimum is not a deployable policy",
+      "source_ids": ["official-vimage-stage"], "evidence": {"production_qualified": false, "whole_request_qualified": false, "physical_overlap_qualified": false}
+    },
+    {
+      "id": "media-stage-data-20261016", "kind": "evidence", "scope": "local", "path": "review/media-stage-evidence-20261016.json",
+      "role": "All 2208 complete stage calls, 64 new GPU negative evaluations, 32 cached observations, source opacity refusals and original link failure",
+      "evidence": {"production_qualified": false, "gpu_fp32_outputs_reexecuted_by_verifier": false, "raw_pixels_or_paths_exported": false}
+    },
+    {
+      "id": "upstream-kernelwiki-retrieval", "kind": "source", "scope": "local", "path": "sources/repos/kernelwiki-retrieval.md",
+      "role": "Fixed KernelWiki one-hop aliases, topic filtering and offline version-review registry; no imported CUDA/SKU aliases or upstream execution",
+      "code": ["scripts/retrieval_contracts.py", "scripts/knowledge.py", "scripts/check_knowledge.py", "scripts/generate_query_index.py", "tests/test_retrieval_contracts.py"],
+      "symbols": ["load_alias_expansions", "score_keyword_match", "check_version_freshness"],
+      "facets": {"stage": [], "operator": [], "backend": [], "device": [], "symptom": ["stale-cache", "measurement"], "semantics": ["contract-only"], "representation": [], "boundary": [], "api": ["reference-only"]},
+      "upstream": {
+        "repository": "mit-han-lab/KernelWiki", "topic": "retrieval and offline version-review contracts", "commit": "b6b4301f15e8ce6955a56776690643ce5db369e6", "captured_at": "2026-10-16", "tracked_worktree_dirty": false,
+        "files": [
+          {"path": "scripts/query.py", "sha256": "53b9d1d479db0618f4620f6c3f4d21364d8ea9602956f9a70ba4602c9aaf818f", "read_ranges": [[1, 386]]},
+          {"path": "scripts/check_version_freshness.py", "sha256": "a1f131b0d2d31b8b5997cad2d7681f8833f35f650a3c781c1b9fe3680ddc3ba7", "read_ranges": [[1, 307]]},
+          {"path": "references/schema.md", "sha256": "8bfebc768b376a2df93f86379617363b53ebb3b1d3ae59f2050a0fe88cb476f4", "read_ranges": [[1, 205]]},
+          {"path": "data/aliases.yaml", "sha256": "750e49094dbec69687cc2b025a758deca6094b8718eef3e820167875c8347897", "read_ranges": [[1, 125]]},
+          {"path": "data/version-claims.yaml", "sha256": "57d43f2bffc30d78af29a69210869b14bbe2792898d3bfe4c5b83f3d373547c9", "read_ranges": [[1, 47]]},
+          {"path": "LICENSE", "sha256": "84aab57158a914f448b38d8be29dd842b634a08c192d844f416a256beed4ae94", "read_ranges": [[1, 21]]}
+        ]
+      },
+      "license": {"spdx": "MIT", "copyright": "2026 hanlab", "upstream_implementation_embedded": false},
+      "evidence": {"upstream_execution": "not-run; six pinned files read; local independent stdlib retrieval/contracts tested separately", "production_qualified": false}
+    },
+    {
       "id": "qwen-block-context-20261016", "kind": "evidence", "scope": "local", "path": "review/qwen-block-context-20261016.md",
       "role": "New seed/prompt ordinary-block replay with original callable/staged ablation, candidate load failure and two complete-numerics/export-refused protocols",
       "source_ids": ["upstream-mlx-adoption", "official-shared-memory"],

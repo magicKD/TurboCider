@@ -48,7 +48,8 @@ class GitignoreTests(unittest.TestCase):
 
     def test_raw_bf16_archives_stay_local_at_any_depth(self):
         paths = ["ffn-bf16.tcbf16z", "techniques/integrations/ffn-bf16.tcbf16z",
-                 "techniques/review/raw-pair.tcbf16z"]
+                 "techniques/review/raw-pair.tcbf16z", "ffn-input.safetensors",
+                 "techniques/review/ffn-reference.safetensors"]
         self.assertEqual(self.ignored(paths), set(paths))
 
     def test_curated_sources_and_examples_remain_trackable(self):
@@ -72,7 +73,13 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/tests/test_block_context.py",
                  "techniques/labs/ane/pmu_probe.mm",
                  "techniques/labs/ane/qwen_witness.py",
-                 "techniques/sources/official/metal-counters.md"]
+                 "techniques/sources/official/metal-counters.md",
+                 "techniques/data/vocabulary.json", "techniques/data/version-claims.json",
+                 "techniques/queries/README.md", "techniques/labs/block_success.py",
+                 "techniques/integrations/qwen_block_raw_reference.py",
+                 "techniques/tests/test_block_success.py",
+                 "techniques/review/media-stage-evidence-20261016.json",
+                 "techniques/integrations/media_stage_probe.mm"]
         self.assertEqual(self.ignored(paths), set())
 
 

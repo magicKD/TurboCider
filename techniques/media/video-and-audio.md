@@ -4,6 +4,8 @@
 
 ## 为什么是优化的一部分
 
+[公开vImage/MLX阶段实测](tensor-texture-interop.md)补充prepared BGRA到模型输入的完整交接与8方向/alpha/stride反例；不是本页真实codec/CFR/完整EOF合同已经完成的新证据。
+
 全clip RGB、FP32 normalization、VAE输出、planar U8、codec queue若并存，可能比权重大。减少DiT时间后，导入、resize、decode、encode和mux的比例也会上升。媒体阶段不能从“完整生成”时间里悄悄删掉。
 
 ## Source streaming

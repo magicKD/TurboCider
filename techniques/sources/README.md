@@ -15,6 +15,7 @@
 | [apple/coremltools](repos/coremltools-compute-plan.md) | `a207b1a3452eafe02f2d870f486287834af2c82d` | installed coremltools 8.3.0; this Python file has the same SHA as the checkout, not a claim of whole-package equivalence |
 | [ggml-org/llama.cpp](repos/ggml-metal-layouts.md) | `64e9bceb2c3a856efed96feda784a50947049feb` | two dequantizer excerpts executed via public MLX JIT; whole backend/engine not run |
 | [tmc/gputrace](repos/gputrace-timing-provenance.md) | `3d7d32e66605ba994fb0765bf9f287682bd7ccc7` | isolated CLI built; internal/timing and internal/trace tests passed; stats/timing ran on 10 owned captures; no replay/GUI qualification |
+| [mit-han-lab/KernelWiki · retrieval and offline version-review contracts](repos/kernelwiki-retrieval.md) | `b6b4301f15e8ce6955a56776690643ce5db369e6` | not-run; six pinned files read; local independent stdlib retrieval/contracts tested separately |
 | [ml-explore/mlx · external memory adoption, owner lifetime and Copy alias](repos/mlx-external-memory.md) | `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247` | installed 0.32.0 native clients: four complete adoption/view/Copy/lifetime protocols plus retained false snapshot assumption; source tag is reading provenance, not wheel build attestation |
 | [ml-explore/mlx · affine](repos/mlx-affine-dispatch.md) | `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247` | installed MLX 0.32.0 APIs executed; binary hashes recorded, not a reproducible-build equivalence claim |
 | [ml-explore/mlx · SDPA](repos/mlx-sdpa-dispatch.md) | `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247` | installed MLX 0.32.0 APIs and actual-input replay benchmark executed; not source-built backend or physical dispatch qualification |
@@ -27,6 +28,7 @@
 | [Apple Foundation / APFS / SDK](official/clonefile.md) | Apple current Foundation Markdown 2026-10-16 and macOS SDK26.5 sys/clonefile.h | original client successfully cloned source-verified 48MiB constants into fresh owned directories with distinct inodes; actual allocated/shared blocks not measured |
 | [Apple Metal public APIs](official/metal-counters.md) | macOS SDK 26.5 headers; docs read 2026-10-16 | owned capture and stage samples; new same-run clock brackets/windows validated on this configuration, not cross-device or MLX kernel qualification |
 | [Apple Metal / IOSurface](official/shared-memory.md) | Apple public Markdown 2026-10-16 and local macOS SDK 26.5 selected headers | four bounded owned native processes, 120 full logical hash witnesses and external backing matches; internal copy, physical placement/overlap and real model unqualified |
+| [Apple Accelerate / vImage SDK](official/vimage-stage.md) | macOS SDK26.5 Conversion.h/Geometry.h selected ranges; hashes describe this reading, not old-run framework attestation | two complete public vImage/MLX clients, 2208 stage calls and real-source/orientation/finite negatives; no codec/VAE/request/physical overlap qualification |
 
 源码存在、局部数值通过、消费者性能通过与真实请求通过是独立状态。原创MIL实验验证一个机制，不等于验收整个上游项目。各文件SHA、阅读范围和许可边界在来源卡与登记中保留。
 

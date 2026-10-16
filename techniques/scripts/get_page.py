@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 from knowledge import ROOT, get_page, load
+from retrieval_contracts import iso_day
 
 
 def main():
@@ -18,10 +19,14 @@ def main():
     parser.add_argument("--include-code", action="store_true")
     parser.add_argument("--max-bytes", type=int, default=24000)
     parser.add_argument("--offset-bytes", type=int, default=0, help="continue the primary asset at its returned next_byte_offset")
+    parser.add_argument("--context", default="{}", help="exact recorded environment JSON; never probes the machine")
+    parser.add_argument("--as-of", help="review date YYYY-MM-DD")
     args = parser.parse_args()
     try:
+        if args.as_of is not None:
+            iso_day(args.as_of)
         value = get_page(load(args.root), args.lookup, args.follow_sources, args.include_code,
-                         args.max_bytes, args.follow_evidence, args.offset_bytes)
+                         args.max_bytes, args.follow_evidence, args.offset_bytes, json.loads(args.context), args.as_of)
     except (ValueError, KeyError, OSError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2

@@ -13,7 +13,11 @@
       "entry_url": "https://github.com/mit-han-lab/KernelWiki",
       "checkout": "KernelWiki",
       "decision": "candidate",
-      "reading_status": "not-reviewed-this-campaign"
+      "reading_status": "selected-retrieval-schema-alias-and-version-review-source-inspected-20261016",
+      "source_ids": ["upstream-kernelwiki-retrieval"],
+      "decision_scope": "knowledge-engineering contracts, not CUDA kernels or upstream execution",
+      "source_variants": [{"commit": "b6b4301f15e8ce6955a56776690643ce5db369e6"}],
+      "execution_status": "upstream not run; independent local stdlib query/filter/version-review implementation"
     },
     {
       "id": "R02",

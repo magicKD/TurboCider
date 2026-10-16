@@ -24,6 +24,7 @@ import shared_backing
 import mlx_adoption
 import real_shared_ffn
 import block_context
+import media_stage
 
 CASES = {
     "quant-formats": quantization.formats,
@@ -73,6 +74,7 @@ CASES = {
     "mlx-adoption-contract": mlx_adoption.adoption_contract,
     "real-shared-join": real_shared_ffn.join_contract,
     "block-evidence-axes": block_context.status_contract,
+    "media-stage-contract": media_stage.stage_contract,
 }
 
 

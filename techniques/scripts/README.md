@@ -15,7 +15,9 @@ python3 -B techniques/scripts/get_page.py gpu-ane/lora.md --follow-sources --inc
 
 直接读取现有`labs/catalog.json`与`references/sources.json`，不依赖尚未建立的词表或第二份章节清单。当前覆盖catalog章节与`scope=local`来源；不扫描整个工作区、不读取产品源码或兄弟checkout，也不执行被查询的代码。章节ID从相对路径生成，例如`technique-gpu-ane-lora`；重命名章节会改变ID。
 
-关键词支持中文原文与英文，不做语义别名扩展；多词按OR匹配，再按标题、case/controls/symbols、正文命中加权排序，ID用于稳定排序。`--type technique|source|evidence`与`--section`只过滤文档类别，重复过滤值按AND处理，不代表该页通过了设备/性能资格。当前没有stage/device/backend等精细元数据，未知过滤项拒绝，不猜测标签。
+关键词支持中文/英文与受控单跳别名；同一canonical组只计最高variant分数，多组按OR匹配，ID用于稳定排序。`--type technique|source|evidence`、`--section`以及stage/operator/backend/device/symptom/semantics/representation/boundary/api主题filter均支持；重复filter及跨维度按AND处理，未知值拒绝。主题标签不代表适用性、格式兼容或设备/性能资格，source/evidence不继承章节标签。具体边界、覆盖缺口和例子见[查询合同](../data/README.md)与[生成索引](../queries/README.md)。
+
+`--context '{"mlx":"..."}' --as-of YYYY-MM-DD`只评估已登记历史声明的复查提示，不探测当前机器或查询最新release。源码/证据hash变化、给定环境改变、日期窗口过期均显示needs-review；完全匹配也只有recorded-context-only，不自动qualified。`check_knowledge.py --strict`做同一离线检查；`generate_query_index.py --check`拒绝生成索引漂移。所有结果仍只读，不触发实验。
 
 展开只接受登记的ID或相对路径，拒绝绝对路径、越界路径与外部symlink。正文和可选来源/代码共用字节预算；`truncated`、`omitted_pages`、`omitted_code`明确披露裁剪与省略，不默默丢失来源。JSON结构和元数据不计入正文预算。默认输出JSON，查询另有`--compact`。
 
@@ -24,6 +26,8 @@ python3 -B techniques/scripts/get_page.py gpu-ane/lora.md --follow-sources --inc
 较大的证据JSON可用返回的`next_byte_offset`继续：`--offset-bytes N`只作用于主资产，来源/代码仍从头按共同预算展开。分页保留UTF-8字符边界；不接受负offset、越文件尾或字符中间位置，不因报告过大而默默丢弃后面的失败/确认样本。
 
 ## 来源索引、实验监督与证据归一化
+
+`curate_media_stage.py --root ROOT --source-png FILE --rejected-source FILE --native-manifest MANIFEST --mlx-root INSTALLED --run ID ... --build-failure ID --output NEW.json`只读明确原件，复核648项native source、五个产品配方文件、per-run source/binary/config、完整MLX assets和终态receipt。独立PNG解码/forward-scatter重建所有source/generation/orientation完整hash；核对2208次stage gate/order/host依赖，保留64个新GPU负控求值、32个cached观察、alpha拒绝与原CoreGraphics链接失败。重算固定arm配对；旧per-trial oracle min保留但不能当部署策略。见[媒体阶段报告](../review/media-stage-20261016.md)。不重新执行GPU FP32输出、触发设备或发布原图片/路径。
 
 `curate_block_context.py --root ROOT --native-dir NATIVE --model-root MODEL --bank-run BANK --baseline-capture BASELINE --mlx-root INSTALLED --capture-rejected ID --block-run ID ... --output NEW.json`只读明确原件，复核648项native source、原BF16权重spans、bank MIL/blob、per-run源码/binary、完整MLX assets与终态receipt。分开保留capture admission、load失败和两份完整数值通过但导出失败的协议；重核330次完整block调用和198个exact join，只给诊断绝对耗时，不输出qualified ratio或假称raw可离线重放。见[完整block上下文记录](../review/qwen-block-context-20261016.md)。
 
