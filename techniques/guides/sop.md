@@ -1,6 +1,11 @@
 # Apple Silicon模型优化SOP：工程师与AI共用
 
-[总目录](../README.md) · [实验室](../labs/README.md) · [技术卡](../templates/technique-card.md) · [新模型清单](../templates/new-model-checklist.md)
+<!-- knowledge
+id: technique-guides-sop
+type: guide
+-->
+
+[总目录](../README.md) · [实验室](../examples/README.md) · [技术卡](../templates/technique-card.md) · [新模型清单](../templates/new-model-checklist.md)
 
 目标不是找到最多开关，而是对一个真实模型形成可复用、能解释、可迭代的优化路线。探索空间保持开放；严格的是输入/来源/有限性/所有权/证据，不是某种优化永远不得尝试。
 
@@ -8,12 +13,7 @@
 
 收集而不改写：checkpoint/index/tensor table、原始loader/tokenizer/resize/scheduler、operation、H/F/heads/actualrows/frames、baseline命令与媒体、实际binary/library/source身份、SoC/RAM/OS/SDK。
 
-```sh
-python3 -B techniques/labs/inspect_model.py "$TC_SHARD" --block-prefix blocks. --output outputs/new-model-header.json
-python3 -B techniques/labs/run.py technique-composition
-```
-
-header-only inspector没有验证payload SHA；实际source/weights仍走已有SourceLease。列出未知项，不按文件名猜dtype、按canvas猜rows或默认认为支持编辑/音频。
+列出未知项，不按文件名猜 dtype、按 canvas 猜 rows 或默认认为支持编辑/音频；模型来源与权重完整性应在实际接入任务中确认，不由知识库笔记背书。
 
 输出：一张事实表、一个完整GPU可运行请求、明确的精度与质量基线。
 
@@ -41,7 +41,7 @@ header-only inspector没有验证payload SHA；实际source/weights仍走已有S
 
 写明source/geometry/layout、输入输出dtype、weight encoding、LoRA顺序、callback phase、读写seams、owner/lastconsumer、cold/hot成本和内存。标记CPU参考、模拟、实际设备、真实模型四种证据等级。
 
-用 [catalog](../labs/catalog.json) 找case/代码，以技术卡补实际新模型参数；教学H/F或某机型share只是起点。先用CPUoracle与negativecontrol抓pitch、尾部、bias次数、rotation/scale等错误。
+通过方法和案例检索找到实现思路，以技术卡补实际新模型参数；教学 H/F 或某机型 share 只是起点。自己的最小实验应能发现 pitch、尾部、bias 次数、rotation/scale 等错误。
 
 ## P4 · GPU/ANE实现纵切
 
@@ -69,7 +69,7 @@ fixednumericgate、finite、source/shape、原参数witness、holdoutprompt/seed
 
 ## P8 · 沉淀与交付
 
-每张技术卡补具体代码入口、便携命令、小型report身份、测试/skip、成功范围、失败原因与`revisit_when`。适合产品的接CLI/API/App actualreceipt与设备门控；仅实验的保留清晰入口，不改默认。
+技术卡只沉淀机制、关键源码、适用前提、失败教训和迁移条件；实验原件与过程日志留在任务工作目录，不带回知识库。产品采用另行完成工程验收，不能从笔记或旧案例推导当前通过。
 
 工程师/AI在离开前核对：陌生人能否按手册复现机制、看懂限制、知道如何替换模型和设计下一次实验？如果还要找某条历史聊天才知道关键guard，就把通用经验补入对应卡片。
 

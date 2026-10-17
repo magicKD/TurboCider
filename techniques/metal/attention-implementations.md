@@ -1,10 +1,48 @@
 # Attention 实现对照：MFA、MLX、GGML、PyTorch MPS 与 SolAttn
 
+<!-- knowledge
+id: technique-metal-attention-implementations
+type: implementation
+stage: prefill, decode, dit
+operator: attention
+backend: metal, mlx, mpsgraph
+device: cpu, gpu
+symptom: measurement, precision-loss, launch-bound
+semantics: contract-only
+boundary: producer-consumer
+api: public, reference-only
+-->
+
 [GPU 导航](README.md) · [数学/质量合同](attention.md) · [PR](optimization-prs.md)
 
-核查：2026-10-16；已读范围见[来源清单](research-sources.json)。下面是机制比较，不是跨项目跑分。
+核查：2026-10-16；已读范围见[来源清单](sources.md#research-sources)。下面是机制比较，不是跨项目跑分。
+
+## 怎样借鉴：从 online softmax 到完整 consumer
+
+2026-10-17 方法整理。先保持 dense attention 的需求与 mask 语义，学习减少 score 写回和复用 KV；稀疏/近似另开质量类别。
+
+online softmax 的核心不是简单“分块算 softmax”。对一行，已有最大值 `m`、指数和 `l`、未归一化输出 `u`；下一 tile 的 scores 为 `s`，更新：
+
+```text
+m_new = max(m, max(s))
+alpha = exp(m - m_new)
+p = exp(s - m_new)
+l_new = alpha*l + sum(p)
+u_new = alpha*u + p @ V_tile
+最终输出 = u / l
+```
+
+旧累加必须随新最大值一起重标定；不能分别归一化每个 tile 后直接相加。这是有效行的数学说明：初始空状态、全 mask 行和极端值需显式分支/约定，避免把 `-inf - -inf` 当正常计算；浮点舍入按实现验证。
+
+推荐源码链：[MFA softmax 生成器](https://github.com/philipturner/metal-flash-attention/blob/8671cddc38f19a6eadb804dee6a3ca2954b8bf32/Sources/FlashAttention/Attention/AttentionKernel/AttentionKernel+Softmax.swift)理解重标定 → [MLX host selector](https://github.com/ml-explore/mlx/blob/64ea011cb65f14d9ce2737e60db9a4ae91ed7441/mlx/backend/metal/scaled_dot_product_attention.cpp)理解 vector/full/fallback → [实际 dispatch 观测](case-studies/mlx-attention-routes-and-wide-gemv-observed.md)验证所走路线。prefill 多 Q 行可摊薄 KV 加载；decode 则应比较 vector/split 路线，而非强用同一 tile。
+
+迁移的最小闭环：相同 Q/K/V、scale、mask、GQA 和输出 layout，比较 native dense 与候选；再接完整 projection/attention consumer，计入 cast/contiguous/输出重排。覆盖非方 causal、全空行、strided view、D/tail、长短 KV 与极值，最后才判断收益。下文与 [labs online-attention](../examples/reference/operators.py)可作为学习起点。
+
+2026-10-17后续：[原始PyTorch2.14.1分流/布局/mask-cache失败](case-studies/pytorch-mps-sdpa-dispatch-and-layout.md)已执行vector/prefill/graph适用的完整控制，[真实Qwen/profiler](case-studies/pytorch-mps-profiler-and-real-attention.md)补240个原BF16激活输出与CB/符号清单反证。下表保留首轮读本，不以新组件证据授权整引擎或物理NAX资格。
 
 ## 共同问题：不把整个 score 写进内存
+
+2026-10-17进一步实测：[MLX0.32.3完整GQA guard与score精度](case-studies/mlx-sdpa-gqa-fallback-and-score-precision.md)。Q≤8还受Q×GQA≤32限制；本例7/8走GPU未融合typed图，precise softmax不恢复已经低精度存储的QK差异。原生拒绝、逐阶段CPU参考和完整模型精度岛分开，不能把本例归为vector shader错误或所有attention的硬件规律。
 
 普通 `softmax(QKᵀ)*V` 会生成 `B*H*Lq*Lk` score。online softmax 用每行 running max、归一化和与未归一化 output，在遍历 KV tile 时修正旧累加，最后除以总和；避免完整 score 的全局驻留。这在实数数学上与 dense 相同，浮点求和/舍入顺序不同。
 
@@ -39,12 +77,8 @@ MLX [#4476](optimization-prs.md)提议在 causal D256 的一段短 prefill 范�
 4. **Dq/Dv、GQA 与 tail**：读 host guards，不能假设所有 D 都受支持；zero padding 必须保持原 scale 与 mask，并把裁剪/转换计入消费者。
 5. **softmax 精度与范围**：输入、QK/PV accumulator、exponent/denominator 精度分开；随机温和输入通过不替代高幅值/长 KV/全空行控制。
 
-本库已有[两个真实 seed 的 Qwen 对照和空行反例](../review/qwen-attention-20261016.md)，并保留 FP64 row witness 范围，不宣称整个生成质量已通过。新 [组件实验](experiments-20261016.md)只使用 maskless FP16、GQA1，并做全输出 CPU FP64；它不覆盖 causal、empty-row 或 quantized KV。
+本库已有[两个真实 seed 的 Qwen 对照和空行反例](case-studies/qwen-attention-replay-and-empty-row.md)，并保留 FP64 row witness 范围，不宣称整个生成质量已通过。新 [组件实验](../MAINTENANCE.md)只使用 maskless FP16、GQA1，并做全输出 CPU FP64；它不覆盖 causal、empty-row 或 quantized KV。
 
 ## 建议的三臂评价
 
 先比较 dense-native 与 dense-custom，评价 kernel/dataflow；再比较 sparse-custom，单列近似程度、routing/summary 成本、误差与视频质量。加入 all-exact 控制证明 sparse wrapper 本身正确；晚层/晚 step、长短序列、多 seed、LoRA 与真实输出恢复均通过后，才讨论模型采用。不要把降低分辨率、裁 token 或少 steps 算作同语义 Metal 加速。
-
-## 可执行学习控制（不替代上游验证）
-
-本页实现参考：[labs/operators.py](../labs/operators.py)、[labs/metal/engine_probe.py](../labs/metal/engine_probe.py)；case：`online-attention`、`mlx:engine-mechanisms`。CPU/旧 Metal 控制只验证对应数学与合同；`mlx:engine-mechanisms` 对应[显式组件 CLI](experiments-20261016.md)，不是自动启动 GPU 的普通单元测试，也不证明全部上游引擎或 PR 已运行。设备、source、shape、精度或消费者改变后重新验证。

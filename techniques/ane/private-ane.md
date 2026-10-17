@@ -1,5 +1,18 @@
 # Public Core ML 与 Private ANE：复用边界
 
+<!-- knowledge
+id: technique-ane-private-ane
+type: method
+stage: pipeline
+operator: scheduling
+backend: coreml, private-ane
+device: ane, gpu
+symptom: lifetime
+semantics: contract-only
+boundary: gpu-ane, request
+api: public, private
+-->
+
 [总目录](../README.md) · [当前后端合同](../../native/backends/README.md)
 
 跨项目学习：[私有runtime层次对照](private-runtime-stack.md)、[动态参数训练](training-dynamic-weights.md)、[delta/LoRA](training-delta-and-lora.md)与[autograd/驻留优化器](training-autograd.md)。这些研究路线不改变下文发行隔离合同。
@@ -33,7 +46,7 @@ Public 同步 prediction worker 和 Private 真实 device event 的时序语义�
 
 ## 研究环境的安全默认
 
-新增[ANEForge源码与图搜索](graph-rewrite-search.md)已有[本机同步e5rt探针与失败缩减](../review/aneforge-20261016.md)。它保持为显式可选integration：没有修改产品后端，mask0x4不自动当成物理trace；结构winner cache也不代替checkpoint/LoRA精度资格。
+新增[ANEForge源码与图搜索](graph-rewrite-search.md)已有[本机同步e5rt探针与失败缩减](case-studies/graph-rewrite-search-cost.md)。它保持为显式可选integration：没有修改产品后端，mask0x4不自动当成物理trace；结构winner cache也不代替checkpoint/LoRA精度资格。
 
 显式 opt-in、独立新 build/output 目录、有界 banks/slots/pipelines、超时 quarantine、严格 source recipe。保留失败记录；不改用户权重、系统 wired/swap、电源策略、用户服务；不因实验需要清理原模型腾空间。
 
@@ -41,11 +54,7 @@ Public 同步 prediction worker 和 Private 真实 device event 的时序语义�
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/systems.py)；[实验步骤与边界](../labs/ane.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py slot-ownership
-```
+可读实现：[参考代码](../examples/reference/systems.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：public binary private-class isolation；timeout/quarantine lifetime。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

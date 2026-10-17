@@ -1,8 +1,13 @@
 # gputrace：时间来源比漂亮时间线更重要
 
-[来源索引](../README.md) · [归一化合同](../../profiling/trace-normalization.md) · [本机证据](../../review/gpu-profiling-20261016.md)
+<!-- knowledge
+id: source-upstream-gputrace
+type: source
+-->
 
-固定读本为[tmc/gputrace](https://github.com/tmc/gputrace/tree/3d7d32e66605ba994fb0765bf9f287682bd7ccc7)，MIT，Copyright 2024–2026 Travis Cline。SHA与阅读范围登记在[sources.json](../../references/sources.json)。已有checkout只读；构建使用任务隔离副本、独立Go module/build cache与`GOTOOLCHAIN=local`，不安装全局CLI或App。
+[来源索引](../README.md) · [归一化合同](../../profiling/trace-normalization.md) · [本机证据](../../metal/case-studies/capture-counters-and-failure-boundaries.md)
+
+固定读本为[tmc/gputrace](https://github.com/tmc/gputrace/tree/3d7d32e66605ba994fb0765bf9f287682bd7ccc7)，MIT，Copyright 2024–2026 Travis Cline。SHA与阅读范围登记在[sources.json](../README.md)。已有checkout只读；构建使用任务隔离副本、独立Go module/build cache与`GOTOOLCHAIN=local`，不安装全局CLI或App。
 
 ## 按入口追到真正来源
 
@@ -19,8 +24,8 @@
 
 Go 1.26.5 / darwin arm64下，固定源码CLI构建成功，`internal/timing`与`internal/trace`两个package测试通过；非verbose日志不能证明所有fixture或counter测试都运行，也不是全项目验收。
 
-实际只运行了`stats --json`、`timing --json - --table=false`及版本读取。三份原创native capture中解析出的dispatch数量为1、1、16，与受控程序一致；所有timing来源仍是synthetic。MLX捕获还展示了空数据成功退出、库函数名膨胀与边界同步差异，见[完整实验](../../review/gpu-profiling-20261016.md)。
+实际只运行了`stats --json`、`timing --json - --table=false`及版本读取。三份原创native capture中解析出的dispatch数量为1、1、16，与受控程序一致；所有timing来源仍是synthetic。MLX捕获还展示了空数据成功退出、库函数名膨胀与边界同步差异，见[完整实验](../../metal/case-studies/capture-counters-and-failure-boundaries.md)。
 
 未运行`xcode-profile`、replay、`clear-buffers`、GUI或权限修改。`timeline`和`FromGPUTrace`默认会建立shader source mapper并扫描内建路径，故这轮也没有直接调用；未来需先有显式受限路径策略。普通离线解析与Xcode自动化是不同权限边界。
 
-可复用实现是[严格只读adapter](../../scripts/normalize_gputrace.py)，不是复制整个profiler。固定版本变更、capture格式改变、取得真实streamData或经校验时钟映射后，应重新审读并扩大证据，不沿用当前资格。
+可复用实现是严格只读adapter，不是复制整个profiler。固定版本变更、capture格式改变、取得真实streamData或经校验时钟映射后，应重新审读并扩大证据，不沿用当前资格。

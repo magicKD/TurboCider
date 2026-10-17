@@ -1,5 +1,19 @@
 # 模型配方：从相似拓扑迁移，而非照搬开关
 
+<!-- knowledge
+id: technique-models-recipes
+type: guide
+stage: encoder, dit, ffn, vae, pipeline
+operator: attention, swiglu, conv
+backend: metal, mlx, coreml, private-ane
+device: gpu, ane
+symptom: precision-loss, memory-bound, wrong-layout
+semantics: numerically-equivalent, approximate
+representation: bf16, fp16, q4, gguf
+boundary: request, gpu-ane
+api: public, private
+-->
+
 先按[模型阶段地图](stage-map.md)和[本地设计](../designs/README.md)理解算法与可运行样本；本篇的具体模型/产品源码路径是额外接入线索，不是离线学习前置条件。
 
 [总目录](../README.md) · [新模型纵切](../guides/new-model.md)
@@ -70,11 +84,7 @@ Swift/CoreML加载、overlap tiles/reflectpadding/feather、alpha与orientation�
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/inspect_model.py)；[实验步骤与边界](../labs/README.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py technique-composition
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：actual source dtype/table vs names；model capabilities/topology vs copied profile。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

@@ -1,5 +1,18 @@
 # W8A8：M4 整数计算能力与具体图路径不是一回事
 
+<!-- knowledge
+id: technique-ane-w8a8-int8
+type: method
+operator: quantization
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: precision-loss, memory-bound
+semantics: approximate
+representation: fp16, q8, w8a8
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [能力地图](capability-atlas.md) · [本机实验](experiments-20261016.md)
 
 ## 官方结论与逆向观察如何同时成立
@@ -16,7 +29,11 @@
 | 静态校准 W8A8 | representative activation → scale；输入/中间 Q/DQ + W8 | 给 compiler 形成整数区域的机会；观察分割、Q/DQ 融合、饱和和质量 |
 | runtime codes/scales | CPU/GPU 动态生成 codes、scale，图内解码或低比特接口 | 降 staging/接口流量；包含 pack/rotation/restore 才能评价完整收益 |
 
-公共 API 的实际示例是本轮 [compression_survey.py](../labs/ane/compression_survey.py)：先 `linear_quantize_activations`，再 `linear_quantize_weights`，保存转换后算子计数并编译。8.3.0 已有非 experimental API；不照抄已弃用的 experimental 名称。校准输入与确认输入种子分离，但这些合成数据不替代模型校准集。
+公共 API 的实际示例是本轮 compression_survey.py：先 `linear_quantize_activations`，再 `linear_quantize_weights`，保存转换后算子计数并编译。8.3.0 已有非 experimental API；不照抄已弃用的 experimental 名称。校准输入与确认输入种子分离，但这些合成数据不替代模型校准集。
+
+2026-10-17的[校准调用链深读](calibration-order-and-qdq-patterns.md)进一步验证固定8.3内部仍复用experimental目录的helper：历史range被最后样本覆盖，公共group参数未转发，临时观测CPU_ONLY；自动pattern不含本例matmul，API成功后可能没有任何activation Q/DQ。旧survey的原始输出/时间不覆盖，也不能把“给了四个校准样本”自动解释为完整合并历史极值。新证据中的union是显式局部控制，不是对旧实验回填修复。
+
+[后续版本核查](coreml-versioned-calibration-and-ownership.md)区分9.0/main：9.0已转发group但尚未累计range；main源函数修正range，未据此运行新模型。9.0/main还有SDK26 build条件下的Python INT8输入branch，这只是输入admission，不是旧wheel、内部W8A8 lowering或整数MAC资格；main原生owner/GIL改动亦未成为已发布9.0的保证。
 
 ccv 的 runtime i8 图、Splash 的 normalized W8A8 和本库 Public shared W8A8，承担的是不同的接口、量化 basis 和数据寿命；即使都含 INT8，也不能合并为一种实现，见 [异构对照](hybrid-runtime-comparison.md)与 [既有量化数学](quantization.md)。
 
@@ -33,12 +50,3 @@ ccv 的 runtime i8 图、Splash 的 normalized W8A8 和本库 Public shared W8A8
 同时保留 CPU_ONLY、CPU_AND_NE 的计算计划和实测；小图可能首选 CPU。正式性能不启用 profiler；诊断另采计划/trace。整数 MAC 没有独立证据时保留 `integer_mac_observed=false`，仍可以诚实报告“该 W8A8 图的完整接口更快/更慢”。
 
 本轮大 Conv 链两种子只观察到约 1.1× 的 FP16→W8A8 热边界变化，小图反而慢；这与 M4 有整数能力并不矛盾，因为图规模、分区、IO 和固定开销不同。具体数值、误差、计划及局限全部见 [实验报告](experiments-20261016.md)。
-
-## 本地学习入口与复查
-
-- [quantization.py](../labs/quantization.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [ane/compression_survey.py](../labs/ane/compression_survey.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py w8a8-reference`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

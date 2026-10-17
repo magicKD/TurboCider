@@ -1,8 +1,13 @@
 # Apple公共Metal counter与capture：先核查能力和时钟
 
-[来源索引](../README.md) · [实验步骤](../../profiling/gpu-timeline-and-counters.md) · [本机结果](../../review/gpu-profiling-20261016.md)
+<!-- knowledge
+id: source-official-metal-counters
+type: source
+-->
 
-2026-10-16读取Apple公开文档与本机macOS SDK 26.5 headers；这是官方API来源，不是开源仓库或完整Xcode资格。SDK文件SHA登记在[sources.json](../../references/sources.json)，不分发Apple headers。
+[来源索引](../README.md) · [实验步骤](../../profiling/gpu-timeline-and-counters.md) · [本机结果](../../metal/case-studies/capture-counters-and-failure-boundaries.md)
+
+2026-10-16读取Apple公开文档与本机macOS SDK 26.5 headers；这是官方API来源，不是开源仓库或完整Xcode资格。SDK文件SHA登记在[sources.json](../README.md)，不分发Apple headers。
 
 ## 已核查的合同
 
@@ -21,4 +26,4 @@
 
 M4 Max / macOS 26.6.2仅通过公共counter API枚举到timestamp集合；stage boundary支持、dispatch boundary不支持。小型真实计算取得有效stage timestamp；未测到occupancy、带宽或ALU利用率，不以FLOPs/逻辑字节推导替代。
 
-CLT环境的`xctrace list templates`退出72，但公共programmatic `.gputrace`与stage counter仍可运行。没有完整Xcode不能直接推出所有Metal profiling入口不可用。原创客户端在[labs/metal/bench.mm](../../labs/metal/bench.mm)，不控制其他App、不改变developer directory、SIP、TCC或电源配置。
+CLT环境的`xctrace list templates`退出72，但公共programmatic `.gputrace`与stage counter仍可运行。没有完整Xcode不能直接推出所有Metal profiling入口不可用。原创客户端在labs/metal/bench.mm，不控制其他App、不改变developer directory、SIP、TCC或电源配置。

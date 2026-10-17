@@ -1,5 +1,21 @@
 # ANE Profiling：工具分层、指标来源与可重放 SOP
 
+<!-- knowledge
+id: technique-ane-profiling
+type: method
+operator: scheduling
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: measurement
+semantics: contract-only
+boundary: producer-consumer
+api: reference-only
+-->
+
+[Core AI原Swift组件实测](coreai-profiling-reset-and-backpressure.md)在明确依赖适配器下验证end后异步统计、reset后旧写入、缺测/零值与noncopyable所有权；816事件/216完整consumer数组，不是Core AI模型、物理ANE时间或Instruments trace。
+
+[Core AI Swift profiler源码纵切](coreai-blocked-attention-and-runtime-gates.md#5-swift引擎与profiling对象和时间分别取证)补充host Mach span、显式end/析构、异步StatsStorage与缺失category默认0的边界；仅固定源码阅读，不是本机Core AI/ANE计时，需沿实际strategy确认token分母。
+
 [ANE 目录](README.md) · [通用测量](../profiling/measurement.md) · [本轮实验](experiments-20261016.md)
 
 ## 每个工具实际回答什么
@@ -8,8 +24,12 @@
 | --- | --- | --- | --- |
 | Xcode Core ML performance report / Instruments Core ML | load/prediction、模型瓶颈、运行时活动；配合 Neural Engine instrument | 官方诊断；具体可见轨道与 OS/Xcode 有关，不是完整公开 ANE 指令级 profiler | 本机只有 CLT，`xcrun --find xctrace` 失败，未采 trace |
 | MLComputePlan / MLModelStructure | 哪些 op 可/首选哪个设备、相对成本、结构 | **计划/估计**，不等于真实逐 op latency 或持续 occupancy | 原创客户端已跑；小/大图的计划分配不同 |
+| ORT session profile / ExecuTorch Core ML SDK profiler | 前者记录软件EP kernel边界；后者按模型窗口×plan cost生成op区间 | 软件派发、计划估计、物理时间三者分开；preferred设备与ns格式不是硬件trace | [ORT实际分区/回退](onnxruntime-coreml-partitions-and-cache.md)；[ET估计公式源码/CPU控制](executorch-coreml-aot-and-estimates.md)，未跑完整ET |
 | anemll-profile | 合并 plan、编译日志、非 ANE 岛、预测计时，导 JSON | measured/derived/predicted 必须拆开；默认边界惩罚为启发式 | 固定源码已审，原工具有清 cache/全局日志副作用，未原样执行 |
 | anemll-bench | 模型 warmup/预测时间、单/双模型对照 | weight bytes/time 是**有效权重吞吐**，不是硬件 DRAM counter | 本轮深读计时/带宽/helper，未下载模型运行 |
+| Orion core profiler / CLI bench | caller eval/total wall、decode样本、调用方FLOPs和RSS；CLI阶段统计 | utilization为软件span比、TFLOPS派生；cap4096忽略后续decode，CLI forward/backward是固定40/60估计 | [原native profiler12个注入控制与CLI源码](orion-rewrites-and-profiler-metric-provenance.md)，非实测模型/ANE；zero/inf、未喂分母、当前RSS与peak分开 |
+| Apple ANE Transformers原test/rough_timeit | ALL与CPU_AND_GPU许可下的完整predict host wall | 13次call含字典/NumPy准备，10×sanity常量不等于测得物理ANE/现代设备保证；低于时只log | [源码及原图数值验证](apple-transformer-norm-and-position.md)，未运行其benchmark；本批小图均CPU首选，无速度资格 |
+| whisper.cpp阶段timer / WhisperKit timings与signpost | encoder/cross、mel/decoder/KV与循环/流水分母 | `t_encode_us`含mel准备和cross投影；Kit loops/fullPipeline不是去重输出token吞吐，host异步span不是物理ANE时间 | [固定源码与选定原声明验证](speech-stages-profiling-and-failure-boundaries.md)，未跑ASR性能；零/unknown保留inf/nan |
 | ane_pmu_profiler / measure_ane_capacity | 私有 stats、DMA/stall/cycle 等研究线索 | 私有 ABI、缺失/单位/聚合/生命周期须验证 | 已有81次完整数值调用；当前所测路径未取得 PMU |
 | powermetrics / asitop | 系统功耗、频率/热状态等采样上下文 | 粗粒度、系统级；权限/字段随版本变；不是逐 op 归因 | 本轮未提权运行 |
 | mactop | IOReport/SMC 等系统上下文、ANE/DRAM 历史 | 有些指标是计数、有些是估算，须逐字段辨别 | 旧入口已迁移；本轮 README 核对，不运行控制功能 |
@@ -34,7 +54,7 @@
 
 [ane_pmu_profiler](https://github.com/freedomtan/ane_pmu_profiler/tree/20080a945096eb5932490b024120b513ae5427e2)的确提供 stats/loader/编译路径研究入口；具体 ref 以 [原始来源卡](../sources/repos/ane-pmu-provenance.md)为准。不能仅按 README 的寄存器名字相信每项单位。
 
-本库 [81次 PMU 实验](../review/ane-pmu-20261016.md)中推理输出全部通过，但 mask2/15 路径没有 stats object，后期自有 stats buffer 为零；capacity CLI 某路径根本未进入 PMU。故保持 unavailable/null，而非“0 stall”“达到峰值”或“M4 不支持 PMU”。原 CLI 缺模型仍 exit0 的假阳性也保留。
+本库 [81次 PMU 实验](case-studies/pmu-payload-and-missing-counters.md)中推理输出全部通过，但 mask2/15 路径没有 stats object，后期自有 stats buffer 为零；capacity CLI 某路径根本未进入 PMU。故保持 unavailable/null，而非“0 stall”“达到峰值”或“M4 不支持 PMU”。原 CLI 缺模型仍 exit0 的假阳性也保留。
 
 只有 scope、per-request/累计、有效位宽、reset/overflow、采样单位、core 聚合和 elapsed 都匹配后，才可计算 bytes/s、GHz、occupancy 或能量。完整合同见 [PMU lab](../profiling/ane-pmu-lab.md)。没有权限/数据时不关闭 SIP/AMFI，不为完成图表编造 counter。
 
@@ -46,6 +66,20 @@
 
 能耗需说明 rail/package/system、采样周期、idle/background 和积分区间。用1000ms采样归因一个100µs kernel不成立；可重复长循环以积分平均，并与无 profiler 的正式计时分开。whole-package energy 不能直接叫 ANE 芯片能量。
 
+## 值得复用的profiling输出格式
+
+先确定字段的含义，再做漂亮的时间线；建议每条记录至少带上下面的信息。字段名为本页建议，不是要求上游工具已经采用同一JSON schema。
+
+| 信息 | 最小内容 | 用途 |
+| --- | --- | --- |
+| 身份 | source/model/weight/input generation、SoC/OS/SDK、shape/dtype | 防止不同图、参数或任务混成配对样本 |
+| scope与完成 | request或prediction或op；begin/end及ready边界 | 区分host提交、实际完成和下游可读 |
+| 时间与来源 | 时钟域、单位、wall/plan-estimate/counter/derived | 防止把相对cost或parent窗口当逐kernel时间 |
+| availability与覆盖 | valid/missing/unsupported、成功/失败次数、未知项 | 缺失保留null/unknown，不补0或只报成功前缀 |
+| 正确性与成本 | 完整consumer数值gate、prepare/restore、baseline、峰值内存 | 避免“图快、整条请求慢”或错误结果更快 |
+
+先用[MLComputePlan与官方Instruments方法](https://developer.apple.com/videos/play/wwdc2024/10161/)定位候选图岛，再做独立无profiler对照。现有项目中可借鉴[anemll-profile的机器可读诊断](../sources/repos/anemll-profile-safety.md)，但需保留其启发式与副作用边界；[Core AI原Swift实验](coreai-profiling-reset-and-backpressure.md)则说明统计写入可见/reset协议也需要独立验收。
+
 ## 可重放的诊断顺序
 
 1. 无 profiler 建立同语义强 GPU 和候选，检查每次输出；记录 compile/load/first/warm、实际准备与输出完成。
@@ -55,12 +89,3 @@
 5. 需要微架构解释才探索 PMU；先已知工作量/流量缩放与生命周期控制，数据缺失时仍可依赖严格 wall-time 优化。
 
 所有时序标时钟域；Python perf_counter、GPU timestamp、外部采样的 ns 不自动可叠加。host call/window 相交可以说明依赖机会，物理并发需另外证据。默认只操作自有合成模型，不订阅/发布全局私有日志或用户输入。
-
-## 本地学习入口与复查
-
-- [media.py](../labs/media.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [pmu.py](../labs/pmu.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py profiling-scopes`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

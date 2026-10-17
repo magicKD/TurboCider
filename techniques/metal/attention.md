@@ -1,6 +1,20 @@
 # Attention：强 dense 基线，再谈规则稀疏
 
-[总目录](../README.md) · [近似门禁](../algorithms/approximations.md)
+<!-- knowledge
+id: technique-metal-attention
+type: method
+stage: encoder, prefill, decode, dit
+operator: attention, norm, rope
+backend: metal, mlx
+device: gpu
+symptom: memory-bound, precision-loss, wrong-layout
+semantics: numerically-equivalent, approximate
+representation: bf16, fp16, fp32
+boundary: producer-consumer
+api: public
+-->
+
+[总目录](../README.md) · [近似门禁](../algorithms/methods/approximations.md)
 
 ## 优先级
 
@@ -19,7 +33,7 @@ output = o / l
 
 ## 参考 prefix 与 GQA
 
-Qwen 编辑的首步包含 text/reference/target；后续 prefix KV 命中后只更新目标部分。每层必须有自己的 K/V，不能错误共享一份 bank。Prefix 是否可重用还受 timestep/position/adapter 语义影响，参见 [缓存](../algorithms/caches.md)。
+Qwen 编辑的首步包含 text/reference/target；后续 prefix KV 命中后只更新目标部分。每层必须有自己的 K/V，不能错误共享一份 bank。Prefix 是否可重用还受 timestep/position/adapter 语义影响，参见 [缓存](../algorithms/methods/caches.md)。
 
 Encoder GQA 应避免不必要复制 KV heads；但必须确认 backend 支持的 layout 和 mask，不能只从理论 GQA heads 比例推速度。实现与整请求对照见 [compiled GQA](../../docs/status/local512-encoder-compiled-gqa-2026-10-09.md)。
 
@@ -53,7 +67,7 @@ Encoder GQA 应避免不必要复制 KV heads；但必须确认 backend 支持�
 
 特别的反例：当前binary的全false mask行未满足本轮零输出约定；常量V=1时，D64/K29返回29/32，K32返回1。有限sentinel、tail与归一化是解释方向，不是已定位的硬件故障。需要zero语义的调用方应明确实现/验证safe-key与置零等机制，不能假设所有路径自然返回0；本轮未修改产品默认。
 
-完整[实验/失败/不确定性](../review/qwen-attention-20261016.md)与[逐样本证据](../review/qwen-attention-evidence-20261016.json)。复现入口是[attention_bench.py](../labs/metal/attention_bench.py)、[CPU独立数学](../labs/metal/attention_math.py)、[只读原始BF16 reader](../labs/metal/attention_source.py)与[empty-row探针](../labs/metal/attention_empty_probe.py)。
+完整[实验/失败/不确定性](case-studies/qwen-attention-replay-and-empty-row.md)与。复现入口是attention_bench.py、CPU独立数学、只读原始BF16 reader与empty-row探针。
 
 ## 最小验收
 
@@ -61,11 +75,7 @@ Encoder GQA 应避免不必要复制 KV heads；但必须确认 backend 支持�
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/operators.py)；[实验步骤与边界](../labs/gpu.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py online-attention
-```
+可读实现：[参考代码](../examples/reference/operators.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：dense/online exact masks；structured sparse error and empty-mask CPU control。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

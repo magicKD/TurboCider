@@ -1,8 +1,36 @@
 # 融合与布局：少读写，但保留数值配方
 
+<!-- knowledge
+id: technique-metal-fusion-and-layout
+type: method
+stage: encoder, dit, ffn, vae
+operator: norm, rope, swiglu, layout
+backend: metal, mlx
+device: gpu
+symptom: memory-bound, launch-bound, wrong-layout, precision-loss
+semantics: numerically-equivalent
+representation: fp16, fp32, packed
+boundary: producer-consumer
+api: public
+-->
+
 [总目录](../README.md) · [GPU/ANE LoRA](../gpu-ane/lora.md)
 
+## 怎样借鉴：沿 producer→consumer 找可消除的中间量
+
+2026-10-17 方法整理。融合首先是一项数据流改造：若两段间的 tensor 没有其他消费者，可尝试在同一 kernel 内保留局部值，减少中间写回/再读取与 launch。不要先以“kernel 数越少越好”设目标；更大的寄存器/TG 占用、重复计算或新的重排可能抵消收益。
+
+以 `norm → RoPE → attention` 为例：先列出 norm 的统计轴、epsilon、position、Q/K head mapping 与输出物理 strides，再决定融合 norm+RoPE；让 attention 直接消费该布局，比融合后又 `contiguous` 一次更值得检查。参考[本地 Q/K 实现](../../native/models/qwen21/metal/qk_norm_rope.hpp)与[独立数学控制](../examples/reference/operators.py)，不要把只适合该模型的 head/position 规则当通用 API。
+
+可照搬的验证步骤：先比 separate/fused 的**完整边界输出**，再接真实下游；加入非零 offset、非紧凑 pitch、错误 position、LoRA 更新和明确 rounding 见证。计时保留需要的 cast/copy/layout 转换，并同时记录 scratch/峰值。只移走读回或把准备移到窗外，不算融合收益。
+
+跨项目的两个反例尤其有用：[Candle packed view/copy](case-studies/candle-packed-views-and-copy.md)说明逻辑 contiguous/copy 不自动保证正确 origin 或独立 storage；[MLC 原图 stage 观察](case-studies/mlc-ffn-stage-observation-and-precision.md)说明中间值逐位相同也不保证同步/flush 成本不变。学布局与融合时，应一起学习这些否决条件。
+
 ## 最值得先测的边界
+
+先检查消费者是否真的需要所有输出。若某些行在后续图中完全无人使用，可把需求向上游传播，避免“先算完整 tensor，最后才丢弃”。例如最后一层 attention/KV 已完成后，末层 FFN/head 有机会只计算所需位置；较早层仍用于建立后续 K/V 的 hidden 不能提前裁掉。参考 [GGML 输出需求案例](case-studies/llama-pretrained-output-demand.md)。
+
+迁移时先画出依赖/输出集合，再比较完整请求，而不是按裁掉行数估算倍率。更小 M 会改变选核与浮点顺序；逐 token 评分可能确实需要所有 logits，DiT 也通常需要全部 image tokens。需求裁剪不是删除 prompt、降低分辨率或近似 attention。
 
 | 候选 | 消除的成本 | 必须保留 |
 | --- | --- | --- |
@@ -47,11 +75,7 @@ API 背景见 [MLX custom extensions](https://ml-explore.github.io/mlx/build/htm
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/operators.py)；[实验步骤与边界](../labs/gpu.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py norm-rope
-```
+可读实现：[参考代码](../examples/reference/operators.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：separate/fused complete boundary；wrong positions and explicit rounding witness。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

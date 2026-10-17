@@ -1,6 +1,20 @@
 # BGRA到GPU模型输入：公开CPU库、融合布局与完整交接成本
 
-[总目录](../README.md) · [媒体IO](video-and-audio.md) · [vImage来源](../sources/official/vimage-stage.md) · [全部实测](../review/media-stage-20261016.md)
+<!-- knowledge
+id: technique-media-tensor-texture-interop
+type: method
+stage: io, pipeline
+operator: layout
+backend: accelerate, mlx, metal
+device: cpu, gpu
+symptom: wrong-layout, memory-bound, launch-bound
+semantics: bitwise, numerically-equivalent
+representation: packed, pixelbuffer, fp32
+boundary: cpu-gpu, producer-consumer
+api: public, reference-only
+-->
+
+[总目录](../README.md) · [媒体IO](video-and-audio.md) · [vImage来源](../sources/official/vimage-stage.md) · [全部实测](case-studies/bgra-to-model-input-cost.md)
 
 本页先完成**已准备BGRA字节buffer→归一化GPU tensor**这一段，不宣称已完成CVMetalTextureCache、真实VideoToolbox解码或无copy纹理链路。独立客户端复用实际PE PNG decoder，但视频decode、resize、VAE和最终encode/flush都不在本次分母内。
 
@@ -30,7 +44,7 @@ BGRA alpha按固定控制序列变化，证明这里只移除alpha而不混背�
 
 vImage在prepared-buffer路径中通常减轻逐像素循环，却可能增加geometry pass和scratch。当前非原地geometry需要ping-pong两份BGRA缓冲，再convert到紧密RGB；多反射的小矩形案例反而慢于原循环。若下游本来就在GPU，上传较大BGRA后直接完成通道选择、方向、归一化和布局，仍可能比“更快的CPU + RGB import”更快。
 
-[本机30组确认](../review/media-stage-20261016.md)中，真实512×512文件输入的vImage相对循环paired约1.35–1.73×，但融合GPU配方又比vImage完整交接快约1.07–1.24×。这只是该ready-input阶段的warm观察，不能乘上VAE/FFN收益，更不能当模型生成速度提升。
+[本机30组确认](case-studies/bgra-to-model-input-cost.md)中，真实512×512文件输入的vImage相对循环paired约1.35–1.73×，但融合GPU配方又比vImage完整交接快约1.07–1.24×。这只是该ready-input阶段的warm观察，不能乘上VAE/FFN收益，更不能当模型生成速度提升。
 
 ## 4. 真正接回CVPixelBuffer时要补什么
 
@@ -40,10 +54,6 @@ vImage在prepared-buffer路径中通常减轻逐像素循环，却可能增加ge
 
 ## 实现与复核
 
-核心[PNG/方向/记录合同](../labs/media_stage.py)、[独立只读curator](../scripts/curate_media_stage.py)与[离线反例](../tests/test_media_stage.py)自包含；[设备integration](../integrations/README.md)显式需要产品source/Apple SDK与installed MLX。PNG reference只支持有界非交错RGB/RGBA8且必须opaque，拒绝压缩尾流、坏CRC、透明输入和未知关键chunk，不冒充所有图片格式decoder。
-
-```sh
-python3 -B techniques/labs/run.py media-stage-contract
-```
+核心PNG/方向/记录合同、与离线反例自包含；[设备integration](../examples/README.md)显式需要产品source/Apple SDK与installed MLX。PNG reference只支持有界非交错RGB/RGBA8且必须opaque，拒绝压缩尾流、坏CRC、透明输入和未知关键chunk，不冒充所有图片格式decoder。
 
 重开条件：真实CVPixelBuffer/texture ownership、不同尺寸/方向/resize、alpha/color recipe、CPU-only consumer、异步帧流水、OS/SDK/MLX或低内存/长时条件改变。先有完整GPU控制与下游gate，再考虑产品采用。

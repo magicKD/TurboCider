@@ -1,6 +1,20 @@
 # GPU attention、融合与提交：减少中间数据和等待
 
-[专题导航](README.md) · [硬件/API](hardware-and-tensorops.md) · [实验](experiments.md)
+<!-- knowledge
+id: technique-gpu-ane-gpu-attention-runtime
+type: method
+stage: encoder, prefill, decode, dit
+operator: attention, norm, rope
+backend: metal, mlx
+device: gpu
+symptom: memory-bound, precision-loss, wrong-layout
+semantics: numerically-equivalent, approximate
+representation: bf16, fp16, fp32
+boundary: producer-consumer
+api: public
+-->
+
+[专题导航](README.md) · [硬件/API](hardware-and-tensorops.md) · [实验](../MAINTENANCE.md)
 
 读本：[独立 MFA `8671cdd…`](https://github.com/philipturner/metal-flash-attention/tree/8671cddc38f19a6eadb804dee6a3ca2954b8bf32) README 1–130；[MLX `scaled_dot_product_attention.cpp`](https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/scaled_dot_product_attention.cpp) 396–502；[WWDC26 TensorOps](https://developer.apple.com/videos/play/wwdc2026/330/)。下述 online-softmax 方程是算法说明，不是复制某个 shader。
 
@@ -52,6 +66,6 @@ Metal 4 的 command allocator、argument table、residency 与 command 提交复
 
 ## 复现与反例
 
-本轮实验包含 Q1/K4096/D64、Q512/K512/D64、Q192/K257/D80 三组 no-mask attention，使用独立 CPU FP64 reference；不覆盖 causal、GQA、all-masked row 或长视频。详见 [实验页](experiments.md)。既有 [真实 Qwen attention 负结果](../review/qwen-attention-20261016.md)保留更强模型消费者，不能被 toy 正结果覆盖。
+本轮实验包含 Q1/K4096/D64、Q512/K512/D64、Q192/K257/D80 三组 no-mask attention，使用独立 CPU FP64 reference；不覆盖 causal、GQA、all-masked row 或长视频。详见 [实验页](../MAINTENANCE.md)。既有 [真实 Qwen attention 负结果](../metal/case-studies/qwen-attention-replay-and-empty-row.md)保留更强模型消费者，不能被 toy 正结果覆盖。
 
 建议增加 causal/noncausal、ragged K、GQA、任意 stride、mask 全空/极值、非有限输入和 head-D tail。每个优化都保留成熟 dense fallback；若变成近似，另设质量预算，不把少 token/少 steps 当等语义提速。

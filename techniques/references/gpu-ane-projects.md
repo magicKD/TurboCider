@@ -1,17 +1,22 @@
 # gpu_ane 专项：mac_local_ai、mac_transformer 与图像生成路径
 
+<!-- knowledge
+id: technique-references-gpu-ane-projects
+type: method
+-->
+
 [总目录](../README.md) · [拓扑设计](../designs/parallel-topologies.md) · [消费者ABI](../designs/consumer-abi.md) · [模型选择指引](../models/hybrid-selection.md)
 
-本轮对本地`../gpu_ane`进行只读源码核查，不运行其模型、编译Private API、不下载权重，也不修改参考仓库。下列HEAD仅标识本地checkout，不声称上游最新；精确文件SHA和dirty状态见[机器阅读账本](gpu-ane-sources.json)。核心设计与独立demo已经移入本目录，不要求原checkout存在。
+本轮对本地`../gpu_ane`进行只读源码核查，不运行其模型、编译Private API、不下载权重，也不修改参考仓库。下列HEAD仅标识本地checkout，不声称上游最新；精确文件SHA和dirty状态见机器阅读账本。核心设计与独立demo已经移入本目录，不要求原checkout存在。
 
 ## 项目分工与阅读到的实现
 
 | 项目 / 本地HEAD | 实际检查的核心 | 已吸收的机制 / 本地代码 |
 | --- | --- | --- |
-| mac_local_ai `a2113ff` | HeteroMem报告、FLUX2_ANE、Flux2ANEBridge、MetalResourceHazard、GDN精度岛脚本 | producer stride、paired segments、resource identity、持久binding/outputs、precision lifetime；[heterogeneous.py](../labs/heterogeneous.py) |
-| mac_transformer `9f322e1` | planner/workloads、architecture、native CoreML bindings/worker/join接缝 | exact channel MLP、可选GPU/ANE/CPU、p95 critical path、parallel vs sequential拓扑；[planner与拓扑样本](../labs/heterogeneous.py) |
+| mac_local_ai `a2113ff` | HeteroMem报告、FLUX2_ANE、Flux2ANEBridge、MetalResourceHazard、GDN精度岛脚本 | producer stride、paired segments、resource identity、持久binding/outputs、precision lifetime；[heterogeneous.py](../examples/reference/heterogeneous.py) |
+| mac_transformer `9f322e1` | planner/workloads、architecture、native CoreML bindings/worker/join接缝 | exact channel MLP、可选GPU/ANE/CPU、p95 critical path、parallel vs sequential拓扑；[planner与拓扑样本](../examples/reference/heterogeneous.py) |
 | flux2-engine `98aa6f1` | architecture、hybrid_ops的packed slices与async调用、backend/artifact组织 | GPU attention+ANE fused MLP、GPU MLP complement、persistent service、bucket/backing gate；[选择指引](../models/hybrid-selection.md) |
-| mflux `051ba9f` | FLUX.2 single_transformer_block / parallel_self_attention | joint QKV+MLP projection、分支concat再Wo、共同modulation与residual；[parallel-branches](../labs/heterogeneous.py) |
+| mflux `051ba9f` | FLUX.2 single_transformer_block / parallel_self_attention | joint QKV+MLP projection、分支concat再Wo、共同modulation与residual；[parallel-branches](../examples/reference/heterogeneous.py) |
 
 mac_local_ai与flux2-engine存在用户原有tracked修改，已保留；账本以**实际读取的工作树文件SHA**为准，不能把HEAD当成所有文件内容相同的证明。mac_transformer和mflux本轮检查时tracked worktree干净。
 
@@ -39,14 +44,4 @@ hybrid_ops只取GPU需要的QKV输出行，保留packed Q4 weight/scales/group�
 
 ## 技术点与本地演示
 
-```sh
-python3 -B techniques/labs/run.py parallel-branches
-python3 -B techniques/labs/run.py attention-head-shards
-python3 -B techniques/labs/run.py consumer-strides
-python3 -B techniques/labs/run.py segmented-ffn
-python3 -B techniques/labs/run.py optional-devices
-python3 -B techniques/labs/run.py resource-hazards
-python3 -B techniques/labs/run.py precision-islands
-```
-
-[tests](../tests/test_heterogeneous.py)检验错误拓扑、漏head、默认布局误读、gate/up错配、CPU/ANE straggler、别名写、更多overlap无wall收益和参数已舍入的精度岛下界。CPU样本的零误差只证明小型代数/索引，不是SDK接受任意stride、实际物理ANE overlap或整模型性能资格。
+tests检验错误拓扑、漏head、默认布局误读、gate/up错配、CPU/ANE straggler、别名写、更多overlap无wall收益和参数已舍入的精度岛下界。CPU样本的零误差只证明小型代数/索引，不是SDK接受任意stride、实际物理ANE overlap或整模型性能资格。

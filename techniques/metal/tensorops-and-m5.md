@@ -1,8 +1,29 @@
 # TensorOps、M5/NAX 与 Metal 4：能力分层与迁移路径
 
+<!-- knowledge
+id: technique-metal-tensorops-and-m5
+type: method
+stage: ffn, prefill
+operator: gemm, quantization
+backend: metal, mlx
+device: cpu, gpu
+symptom: measurement, precision-loss, launch-bound
+semantics: contract-only
+boundary: producer-consumer
+api: public, reference-only
+-->
+
 [GPU 导航](README.md) · [量化 GEMM](gemm-and-quantization.md) · [PR 账本](optimization-prs.md)
 
 核查：2026-10-16；本机 M4 Max，**没有 M5/NAX 实测**。本页按官方 API、固定上游源码和待运行实验分层，不用芯片营销名推断 kernel 路径。
+
+## 当前结论与学习重点（2026-10-17 整理）
+
+最值得借鉴的是**能力保护与数据流设计**：先用成熟矩阵核作基线，再判断 cooperative fragment 能否消除某次暂存；TensorOps 与 Metal 4 提交层分开改，保留旧核 fallback。API 可编译、pipeline 可创建、GPU 输出正确、完整消费者更快，是四个不同阶段，不能用其中一个代替其余三个。
+
+学习接口时，应核对实际 runtime MSL 的 view/const 类型与 element-validity 方法，不能机械照抄不同 SDK 的示例。当前本库可移植性探针仅验证到编译/创建，未完成正式 GPU 数值与性能对照，因此不能据此推荐加速路径；过程细节保留在[归档入口](../MAINTENANCE.md)，不作为本页教学步骤。
+
+独立完成的 [Metal 4 counter heap 实验](case-studies/metal4-counter-heaps-and-time-domains.md)只提供执行/计时与生命周期的学习材料，不证明 TensorOps/NAX 已运行，也不代表已迁移 MLX。
 
 ## 五个名字各指什么
 
@@ -49,18 +70,14 @@ operand/storage、compute 与 accumulator 三者分开。FP32 输入启用 TF32 
 3. **ccv NA kernel**：`NAInt8MatMulSmallMDescriptor.cpp` → kernel；该 descriptor 按 shape 决定 split-K 和 scratch，并管理 binary archive。`NA*` 命名本身不等于 ANE。
 4. **SDK 演进适配**：MLX [#4594](optimization-prs.md)将 gated-delta 的 cooperative 类型推导改用 operation helper。它是兼容性修复，不应宣传为已测加速倍率。
 
-固定读本和文件 SHA 见 [来源清单](research-sources.json)。本轮未重建这些 M5 kernel，未移植上游 shader。
+固定读本和文件 SHA 见 [来源清单](sources.md#research-sources)。本轮未重建这些 M5 kernel，未移植上游 shader。
 
 ## Metal 4 执行 API：与 TensorOps 分开做实验
 
 command allocator、argument table、residency 与新 command buffer 是提交/资源管理层；TensorOps 是 shader 运算层。可以先保持数学 kernel，单独测 host 编码/提交、复用和内存；再保持提交层，单独比较矩阵核。两项一起改变会失去归因。官方入口：[Discover Metal 4](https://developer.apple.com/videos/play/wwdc2025/205/)，参数/可用性以实际 SDK 声明复核，不将这里的学习入口作为最低系统版本变更授权。
 
-## 建议的迁移实验（未运行）
+## 建议的迁移实验（矩阵未完成，以下四臂未运行）
 
 同一份 packed W 做四臂：现有成熟 kernel、tile 内 decode+SIMD matrix、cooperative decode+TensorOps、合法原生量化 TensorOps。先验证同一 source 语义，再扫 M1/16/64/256/1024、N/K tail、物理 stride、不同 group/dtype。另测准备/repack、首调用、scratch、resident 峰值与完整 FFN/block；有 NAX 的 GPU 上用匹配旧核作控制。
 
 否决条件：只在预准备好的岛里快、使用不同权重、提升有效精度预算后才通过、非有限/尾部错误、完整请求慢、无有界 cache/lifetime。保留旧核 fallback，不为了“跑通新 API”删除 guard。
-
-## 可执行学习控制（不替代上游验证）
-
-本页实现参考：[labs/metal/run.py](../labs/metal/run.py)、[labs/metal/kernels.metal](../labs/metal/kernels.metal)、[labs/quantization.py](../labs/quantization.py)；case：`metal:gemm`、`precision-boundaries`。CPU/旧 Metal 控制只验证对应数学与合同；`mlx:engine-mechanisms` 对应[显式组件 CLI](experiments-20261016.md)，不是自动启动 GPU 的普通单元测试，也不证明全部上游引擎或 PR 已运行。设备、source、shape、精度或消费者改变后重新验证。

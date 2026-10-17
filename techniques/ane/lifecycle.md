@@ -1,5 +1,18 @@
 # Core ML 生命周期：准备、缓存、快照与失败回收
 
+<!-- knowledge
+id: technique-ane-lifecycle
+type: method
+stage: pipeline
+operator: scheduling
+backend: coreml
+device: ane, cpu
+symptom: compile-bound, stale-cache, lifetime
+semantics: contract-only
+boundary: weight-runtime, request
+api: public
+-->
+
 [总目录](../README.md) · [后台调度](../gpu-ane/scheduling.md)
 
 案例扩展：[ANEMLL stateful KV与阶段部署](public-coreml-deployment.md)、[Apple SD资源管理](stable-diffusion.md)、[训练中的动态权重/delta状态](training.md)。状态驻留、缓存命中与本页的artifact/session所有权仍需分别验收。
@@ -28,6 +41,12 @@ Core ML 可延迟读 compiled 目录。如果逐文件校验后又按用户路�
 
 这里“私有快照”是进程独占目录，不是 Private ANE API。目录锁、owner/device/inode 与 no-follow/descriptor-relative 清理保护归属；崩溃残留只按明确身份回收，不能扫描临时根目录后猜测哪些可以删。也不承诺 Core ML 的系统缓存完全不落盘。
 
+## 可复用的session/slot设计
+
+将“可共享的不可变资产”“可复用的模型/session”“每请求可变state”和“每代IO slot”分开管理。一个slot至少经历prepared→in-flight→ready→consumer-complete→reusable；异步API返回或生产端完成，不自动跳到reusable。
+
+迁移时记录实际返回backing、逻辑shape/物理stride和generation，并让owner覆盖最后读者。stateful路径还要分清zero reset与checkpoint restore；恢复时同步model外position/mask及optimizer状态。具体可学习[输出backing/代际实验](output-backing-and-stride-ownership.md)、[MLState提交点](stateful-multifunction-and-retry.md)和[Core AI取消/背压](coreai-profiling-reset-and-backpressure.md)。这些是不同边界的证据，不能拼成未经验证的零拷贝并行流水。
+
 ## 资源释放的正确顺序
 
 ```text
@@ -41,6 +60,8 @@ Core ML 可延迟读 compiled 目录。如果逐文件校验后又按用户路�
 
 ## Session 跨请求复用
 
+[动态shape/hint实测](dynamic-shapes-hints-and-failure-boundaries.md)进一步区分固定三owner、单range owner、per-owner seen shape与persistent compiled-path缓存；enum首次预测SIGTRAP不回填成功时间。相同hint的late plan与instrumented framework interval仍不构成物理ANE、无observer或真实请求性能资格。
+
 保留 graph/backing 可以摊销 load；保留全模型所有层可能压缩 VAE 工作集。依据 phase/预算选择 stage-scoped bank，而不是“能常驻就全常驻”。调度元数据可单独缓存，不能为了 EMA/history 保留数 GB surfaces。
 
 适配器切换、shape/bucket 改变、source generation、精度、memory pressure、取消/失败都要重新判定可复用部分。`base→A→B→base` 是检查错误捕获和 stale scratch 的高价值序列。
@@ -53,11 +74,7 @@ Core ML 可延迟读 compiled 目录。如果逐文件校验后又按用户路�
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/ane/bench.py)；[实验步骤与边界](../labs/ane.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py startup-amortization
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：convert/compile/load/first/hot；one-shot vs repeated requests。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

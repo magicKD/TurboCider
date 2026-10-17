@@ -1,8 +1,13 @@
 # MLX外部内存：尝试导入、共享view与copy的物理区别
 
-[来源索引](../README.md) · [共享backing机制](../../gpu-ane/shared-surface.md) · [本机adoption证据](../../review/mlx-adoption-20261016.md)
+<!-- knowledge
+id: source-upstream-mlx-adoption
+type: source
+-->
 
-固定读取`ml-explore/mlx@7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247`（v0.32.0），MIT、Copyright Apple Inc.；文件内容SHA和选定阅读范围在[同一来源登记](../../references/sources.json)。参考checkout只读，不分发其实现；以下是原创概括。
+[来源索引](../README.md) · [共享backing机制](../../gpu-ane/shared-surface.md) · [本机adoption证据](../../metal/case-studies/external-memory-adoption-and-fresh-views.md)
+
+固定读取`ml-explore/mlx@7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247`（v0.32.0），MIT、Copyright Apple Inc.；文件内容SHA和选定阅读范围在[同一来源登记](../README.md)。参考checkout只读，不分发其实现；以下是原创概括。
 
 本机执行另绑定已安装0.32.0的383个headers和libmlx/libjaccl/metallib内容hash、OS build/SDK/compiler，以及实际buffer/设备相等bool。**同版本号不是wheel由此tag构建的证明**；source-inspected和installed-behavior-measured保持独立。
 

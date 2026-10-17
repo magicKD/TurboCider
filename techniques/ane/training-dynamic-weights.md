@@ -1,5 +1,17 @@
 # 动态参数训练：把权重变成输入，编译成本与权重流量交换
 
+<!-- knowledge
+id: technique-ane-training-dynamic-weights
+type: method
+operator: gemm
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: compile-bound, precision-loss
+semantics: contract-only
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [训练总览](training.md) · [生命周期](lifecycle.md)
 
 固定源码：[maderix/ANE@d91c9845](https://github.com/maderix/ANE/tree/d91c9845c0784dec7753048954fc6d0e8411fe29)，重点 [mil_dynamic.h](https://github.com/maderix/ANE/blob/d91c9845c0784dec7753048954fc6d0e8411fe29/training/training_dynamic/mil_dynamic.h)、[io.h](https://github.com/maderix/ANE/blob/d91c9845c0784dec7753048954fc6d0e8411fe29/training/training_dynamic/io.h)、[train.m](https://github.com/maderix/ANE/blob/d91c9845c0784dec7753048954fc6d0e8411fe29/training/training_dynamic/train.m)。本轮阅读选定范围，未运行其训练脚本/下载数据。
@@ -34,15 +46,6 @@ CPU 处理 loss、若干 norm/residual、dW、Adam；dW 的 `cblas_sgemm` 通过
 
 ## 5. 最小可复现实验
 
-[training_probe.py](../labs/ane/training_probe.py)不依赖上述 checkout，用公共 Core ML 同 shape 的 matmul输入复用 forward/dX/dW，保留 host SGD 与 FP64 oracle。它没有采用 packed-single-input 的 private ABI，且计划 CPU，因此仅验证动态参数训练的代数/更新机制，不能替此源码的私有图取得设备资格。
+training_probe.py不依赖上述 checkout，用公共 Core ML 同 shape 的 matmul输入复用 forward/dX/dW，保留 host SGD 与 FP64 oracle。它没有采用 packed-single-input 的 private ABI，且计划 CPU，因此仅验证动态参数训练的代数/更新机制，不能替此源码的私有图取得设备资格。
 
 采用前还需尾部 pitch、极值、underflow/overflow、异步 dW 的 owner、checkpoint/resume 和 generation 故障对照。约119次 compile 的历史观察不应写进产品定律；动态图的主要价值是减少必要工作，而非规避安全保护。
-
-## 本地学习入口与复查
-
-- [ane/training_math.py](../labs/ane/training_math.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [ane/training_probe.py](../labs/ane/training_probe.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py ane-training-math`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

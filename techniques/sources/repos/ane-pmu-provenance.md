@@ -1,8 +1,13 @@
 # ane_pmu_profiler：先验 payload，再解释寄存器
 
-[来源目录](../README.md) · [PMU 实验合同](../../profiling/ane-pmu-lab.md) · [全部本机证据](../../review/ane-pmu-20261016.md) · [关联 capacity 实现](ane-capacity-pmu.md)
+<!-- knowledge
+id: source-upstream-ane-pmu
+type: source
+-->
 
-固定 `freedomtan/ane_pmu_profiler@20080a945096eb5932490b024120b513ae5427e2`，2026-10-16，原 tracked worktree 干净；不声称最新版本。README316行、`dump_ane_pmu.m`1162行、`coreai_loader.m`496行、header138行与技术报告836行均已读；另读小型 compiler/ODIE C pipeline、headers、Swift bridge、Makefile和entitlements。SHA/范围见[唯一登记](../../references/sources.json)。
+[来源目录](../README.md) · [PMU 实验合同](../../profiling/ane-pmu-lab.md) · [全部本机证据](../../ane/case-studies/pmu-payload-and-missing-counters.md) · [关联 capacity 实现](ane-capacity-pmu.md)
+
+固定 `freedomtan/ane_pmu_profiler@20080a945096eb5932490b024120b513ae5427e2`，2026-10-16，原 tracked worktree 干净；不声称最新版本。README316行、`dump_ane_pmu.m`1162行、`coreai_loader.m`496行、header138行与技术报告836行均已读；另读小型 compiler/ODIE C pipeline、headers、Swift bridge、Makefile和entitlements。SHA/范围见[唯一登记](../README.md)。
 
 ## 可学习的接口与实际风险
 
@@ -26,7 +31,7 @@
 
 本机只读 selector metadata 显示 `initWithRequestPerformanceBuffer:statsBufferSize:` 的参数是 `^^v` / `^I`，不能把任意 IOSurface base pointer 当它的参数强转。`driverMaskForANEFMask:` 在当前 framework 中的真实只读返回为0→0、2→4、15→15；mask 翻译成功仍不代表有 counter payload。
 
-实际执行：只读原源码编译到 ignored 输出；help、missing-model、一个自有小 conv MIL，以及仅普通 `get-task-allow` 的独立 debug-signature 控制均运行。valid MIL 能执行，但两种签名都报告没有 stats object，原 CLI仍返回0。原创客户端另外对 affine/conv、mask0/2/15、较大 workload、compile-profiling 选项及重复进程作控制：81次完整输出通过，未取得 PMU payload，详见[报告](../../review/ane-pmu-20261016.md)。这是本路径未复现，不是宣称 M4 不具备 PMU。
+实际执行：只读原源码编译到 ignored 输出；help、missing-model、一个自有小 conv MIL，以及仅普通 `get-task-allow` 的独立 debug-signature 控制均运行。valid MIL 能执行，但两种签名都报告没有 stats object，原 CLI仍返回0。原创客户端另外对 affine/conv、mask0/2/15、较大 workload、compile-profiling 选项及重复进程作控制：81次完整输出通过，未取得 PMU payload，详见[报告](../../ane/case-studies/pmu-payload-and-missing-counters.md)。这是本路径未复现，不是宣称 M4 不具备 PMU。
 
 许可边界：该固定 tree 未找到 LICENSE/COPYING 授权文件，所读源文件也未见对应许可声明。本轮只读研究和本地构建，不将其代码、模型或二进制打包进 Wiki；本地客户端/decoder/oracle为原创。关联 capacity 项目的 BSD-3-Clause 许可不能倒推覆盖本仓库或 Apple 私有接口。
 

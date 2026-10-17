@@ -1,8 +1,24 @@
 # ANE性能边界：SRAM、图粒度与共享带宽
 
+<!-- knowledge
+id: technique-ane-performance-limits
+type: method
+stage: ffn
+operator: gemm, scheduling
+backend: coreml, private-ane
+device: ane, gpu
+symptom: memory-bound, straggler, launch-bound
+semantics: contract-only
+representation: fp16
+boundary: gpu-ane, producer-consumer
+api: public, private
+-->
+
 [总目录](../README.md) · [图合同](coreml-graphs.md) · [校准](../gpu-ane/calibration.md)
 
 补充：[硬件/框架能力地图](capability-atlas.md)、[跨项目异构实现](hybrid-runtime-comparison.md)、[负结果和重开条件](negative-results.md)。本轮[合成压缩实验](experiments-20261016.md)也显示小图可能首选CPU、文件压缩率不等于加速比。
+
+后续[GPU-resident完整FFN五臂](resident-ffn-layout-and-gpu-baselines.md)将pack/restore计入并加入原生MPS与MLX对照；large计划首选ANE仍有92输出超原数值门槛，不能只用诊断wall排名。
 
 ## 不以TOPS决定迁移
 
@@ -40,11 +56,7 @@ W8/A8可减少surface或图内流量，normalizedcode/scales也可能改变graph
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/systems.py)；[实验步骤与边界](../labs/ane.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py startup-amortization
-```
+可读实现：[参考代码](../examples/reference/systems.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：fixed overhead vs useful rows；complete independent spans vs exposed wait。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

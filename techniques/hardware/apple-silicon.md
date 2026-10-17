@@ -1,5 +1,17 @@
 # Apple Silicon：按能力与证据适配，不按型号猜测
 
+<!-- knowledge
+id: technique-hardware-apple-silicon
+type: method
+operator: scheduling
+backend: metal, coreml, private-ane
+device: cpu, gpu, ane
+symptom: straggler, memory-bound
+semantics: contract-only
+boundary: request
+api: public, private
+-->
+
 [总目录](../README.md) · [校准](../gpu-ane/calibration.md)
 
 ## 三个容易混淆的计算资源
@@ -44,11 +56,7 @@ Apple 的 M5 Pro/Max 公告分别列出了 GPU Neural Accelerators 与 Neural En
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/systems.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py bucket-selection
-```
+可读实现：[参考代码](../examples/reference/systems.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：actual rows vs canvas-only bucket；actual Metal device vs assumed profile。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

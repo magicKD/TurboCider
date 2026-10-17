@@ -1,5 +1,17 @@
 # Apple Stable Diffusion：attention 表达、压缩与阶段生命周期
 
+<!-- knowledge
+id: technique-ane-stable-diffusion
+type: method
+operator: attention
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: wrong-layout, compile-bound
+semantics: numerically-equivalent
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [布局](layout-and-lowering.md) · [pipeline](../models/pipeline.md)
 
 固定读本：[ml-stable-diffusion@ea2805dc](https://github.com/apple-aiml-research/ml-stable-diffusion/tree/ea2805dc1945be20561c77e5f6d1d9a5a637cda2)。重点读 [attention.py](https://github.com/apple-aiml-research/ml-stable-diffusion/blob/ea2805dc1945be20561c77e5f6d1d9a5a637cda2/python_coreml_stable_diffusion/attention.py)、[转换器](https://github.com/apple-aiml-research/ml-stable-diffusion/blob/ea2805dc1945be20561c77e5f6d1d9a5a637cda2/python_coreml_stable_diffusion/torch2coreml.py)、[Swift pipeline](https://github.com/apple-aiml-research/ml-stable-diffusion/blob/ea2805dc1945be20561c77e5f6d1d9a5a637cda2/swift/StableDiffusion/pipeline/StableDiffusionPipeline.swift)和 [ManagedMLModel](https://github.com/apple-aiml-research/ml-stable-diffusion/blob/ea2805dc1945be20561c77e5f6d1d9a5a637cda2/swift/StableDiffusion/pipeline/ManagedMLModel.swift)。本轮源码研究，不重跑 SD 全模型。
@@ -35,12 +47,3 @@ query chunk 的数学前提是：每个 query 块仍访问完整、正确 masked
 建议实验：完整 GPU → 相同模型的 Core ML → 单阶段 offload → 合法 hybrid；每臂保持同一步数、CFG、token、权重、seed、尺寸和输出完成边界。单独比较 first/warm、reduceMemory、UNet chunk、attention 表达、LUT，而不是一次打开全部开关后归因给 ANE。
 
 对 VAE/视频还要保留 causal history、halo、全局 norm、色彩和最终媒体写出。小 Conv 图的胜利不授予完整 VAE 或视频请求资格，见 [既有阶段指南](../models/vae-and-media.md)。
-
-## 本地学习入口与复查
-
-- [operators.py](../labs/operators.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [systems.py](../labs/systems.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py online-attention`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

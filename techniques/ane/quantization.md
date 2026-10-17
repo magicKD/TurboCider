@@ -1,5 +1,19 @@
 # 量化、SmoothQuant、Hadamard 与 ConvRot
 
+<!-- knowledge
+id: technique-ane-quantization
+type: method
+stage: ffn
+operator: quantization, gemm
+backend: coreml, private-ane
+device: ane, gpu
+symptom: precision-loss, wrong-layout
+semantics: approximate
+representation: q4, q8, fp16, w8a8, gguf, packed
+boundary: gpu-ane, weight-runtime
+api: public, private
+-->
+
 [总目录](../README.md) · [存储格式](../memory/storage.md)
 
 补充研究：[LUT4/线性W4/W8与按需解压](weight-compression.md)、[M4 W8A8官方能力与图路径](w8a8-int8.md)、[完整压缩消融](experiments-20261016.md)。本页继续聚焦SmoothQuant/旋转配方，不把低比特存储与硬件算术合并。
@@ -53,11 +67,7 @@ Public W8 的共享 GPU staging 与完整 FFN 结构见 [实现记录](../../doc
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/quantization.py)；[实验步骤与边界](../labs/ane.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py w8a8-reference
-```
+可读实现：[参考代码](../examples/reference/quantization.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：integer dot vs DQ and source error；holdout alpha sweep and source pitch。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

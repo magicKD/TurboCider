@@ -1,8 +1,13 @@
 # ccv：图内K分块、surface缓存与output backing
 
-[来源目录](../README.md) · [综合图合同](../../ane/coreml-graphs.md) · [本地实验](../../labs/ane/tiling_bench.py)
+<!-- knowledge
+id: source-upstream-ccv-coreml
+type: source
+-->
 
-来源：`liuliu/ccv@66dc16a3a3b688adfa6dc1d19eeeb3071beeb701`；`lib/nnc/mfa/ccv_nnc_mfa_ane_rowwise_coreml.mm`，阅读1–210、630–705、1030–1245行。文件SHA-256为`626a83d608a80b5428a62ab74b8c5506726718ca78a25dd74bc803e0183884b4`，工作树干净，2026-10-15。具体范围和许可也登记在[清单](../../references/sources.json)。
+[来源目录](../README.md) · [综合图合同](../../ane/coreml-graphs.md) · 本地实验
+
+来源：`liuliu/ccv@66dc16a3a3b688adfa6dc1d19eeeb3071beeb701`；`lib/nnc/mfa/ccv_nnc_mfa_ane_rowwise_coreml.mm`，阅读1–210、630–705、1030–1245行。文件SHA-256为`626a83d608a80b5428a62ab74b8c5506726718ca78a25dd74bc803e0183884b4`，工作树干净，2026-10-15。具体范围和许可也登记在[清单](../README.md)。
 
 ## 源码事实：阈值是候选，不是硬件定律
 
@@ -22,7 +27,7 @@
 
 ## 本地吸收与证据边界
 
-[tiling_graphs.py](../../labs/ane/tiling_graphs.py)是原创公共MIL实验：配对fused gate/up、图内K/N分块、平衡求和、完整down；不是上述INT8 emitter的复制或逐行移植。FP16实验不能替上游W8A8或共享surface取得资格。
+tiling_graphs.py是原创公共MIL实验：配对fused gate/up、图内K/N分块、平衡求和、完整down；不是上述INT8 emitter的复制或逐行移植。FP16实验不能替上游W8A8或共享surface取得资格。
 
 错误对照：把SiLU移到每个K partial再相加会改变函数；把每个K tile变成一次host prediction会改变调度粒度。后者需要另测，不能把图内tiling收益直接迁移给它。
 

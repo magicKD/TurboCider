@@ -1,41 +1,32 @@
-# 固定版本来源卡：源码事实与本地结果分开
+# 固定版本来源与源码阅读
 
-[总目录](../README.md) · [图与布局](../ane/coreml-graphs.md) · [研究工作台](../review/research-campaign-20261015.md)
+[知识库](../README.md) · [怎样读来源](../references/evidence-map.md)
 
-本页由`scripts/generate_source_index.py`从既有`references/sources.json`生成；章节通过catalog的`source_ids`复用同一登记。没有第二份手工章节清单。核心学习代码仍在`labs/`，来源卡不镜像整个上游仓库。
+按主题找固定 revision、关键文件与阅读重点；不附机器清单、文件 hash 或实验数据，不声称是最新版本。
 
-| 来源 | 固定commit | 阅读/运行证据 |
-| --- | --- | --- |
-| [freedomtan/measure_ane_capacity](repos/ane-capacity-pmu.md) | `2d3809ba2a3654db71d6790574c9b0247d5b4493` | bounded original FP16 CLI ran with owned TMPDIR/package; serialization succeeded but no ANE bundle, PMU branch skipped; no upstream numerical or hardware-rate qualification |
-| [freedomtan/ane_pmu_profiler](repos/ane-pmu-provenance.md) | `20080a945096eb5932490b024120b513ae5427e2` | local native CLI built; help, missing-model and owned-conv controls executed, including ordinary debug-signature control; no PMU payload reproduced |
-| [apple-aiml-research/ml-ane-transformers](repos/apple-ane-transformers-ffn.md) | `590eb35913622cdef217ebc5329047aab389ac98` | not-run |
-| [sbryngelson/ANEForge](repos/aneforge-rewrite-search.md) | `896c4943c5ebf811c0e815f8d1381fd1e157fa7d` | isolated shim, 13 bounded probes and seven real-source layer0 full-consumer serial/hybrid runs executed; whole-request/LoRA/zero-copy/PMU/upstream-corpus qualification not obtained |
-| [Anemll/anemll-profile](repos/anemll-profile-safety.md) | `bf8528105a0e61fda2c80d2c9b19615ecab9b7fa` | not-run-unmodified; safety hold |
-| [liuliu/ccv](repos/ccv-coreml-rowwise.md) | `66dc16a3a3b688adfa6dc1d19eeeb3071beeb701` | not-run |
-| [apple/coremltools](repos/coremltools-compute-plan.md) | `a207b1a3452eafe02f2d870f486287834af2c82d` | installed coremltools 8.3.0; this Python file has the same SHA as the checkout, not a claim of whole-package equivalence |
-| [ggml-org/llama.cpp](repos/ggml-metal-layouts.md) | `64e9bceb2c3a856efed96feda784a50947049feb` | two dequantizer excerpts executed via public MLX JIT; whole backend/engine not run |
-| [tmc/gputrace](repos/gputrace-timing-provenance.md) | `3d7d32e66605ba994fb0765bf9f287682bd7ccc7` | isolated CLI built; internal/timing and internal/trace tests passed; stats/timing ran on 10 owned captures; no replay/GUI qualification |
-| [mit-han-lab/KernelWiki · retrieval and offline version-review contracts](repos/kernelwiki-retrieval.md) | `b6b4301f15e8ce6955a56776690643ce5db369e6` | not-run; six pinned files read; local independent stdlib retrieval/contracts tested separately |
-| [ml-explore/mlx · external memory adoption, owner lifetime and Copy alias](repos/mlx-external-memory.md) | `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247` | installed 0.32.0 native clients: four complete adoption/view/Copy/lifetime protocols plus retained false snapshot assumption; source tag is reading provenance, not wheel build attestation |
-| [ml-explore/mlx · affine](repos/mlx-affine-dispatch.md) | `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247` | installed MLX 0.32.0 APIs executed; binary hashes recorded, not a reproducible-build equivalence claim |
-| [ml-explore/mlx · SDPA](repos/mlx-sdpa-dispatch.md) | `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247` | installed MLX 0.32.0 APIs and actual-input replay benchmark executed; not source-built backend or physical dispatch qualification |
-| [tgo-app-dev/vpipe](repos/vpipe-runtime-tiling.md) | `c2989a76841888e4d8d208fad4f476c487710962` | not-run |
+- [Metal / GPU](../metal/sources.md)
+- [ANE / Core ML](../ane/sources.md)
+- [GPU+ANE 协同](../gpu_ane/sources.md)
+- [算法与论文](../algorithms/sources.md)
 
-## 官方API与SDK来源
+## 专题解读
 
-| 来源 | 固定读取身份 | 本地证据边界 |
-| --- | --- | --- |
-| [Apple Foundation / APFS / SDK](official/clonefile.md) | Apple current Foundation Markdown 2026-10-16 and macOS SDK26.5 sys/clonefile.h | original client successfully cloned source-verified 48MiB constants into fresh owned directories with distinct inodes; actual allocated/shared blocks not measured |
-| [Apple Metal public APIs](official/metal-counters.md) | macOS SDK 26.5 headers; docs read 2026-10-16 | owned capture and stage samples; new same-run clock brackets/windows validated on this configuration, not cross-device or MLX kernel qualification |
-| [Apple Metal / IOSurface](official/shared-memory.md) | Apple public Markdown 2026-10-16 and local macOS SDK 26.5 selected headers | four bounded owned native processes, 120 full logical hash witnesses and external backing matches; internal copy, physical placement/overlap and real model unqualified |
-| [Apple Accelerate / vImage SDK](official/vimage-stage.md) | macOS SDK26.5 Conversion.h/Geometry.h selected ranges; hashes describe this reading, not old-run framework attestation | two complete public vImage/MLX clients, 2208 stage calls and real-source/orientation/finite negatives; no codec/VAE/request/physical overlap qualification |
-
-源码存在、局部数值通过、消费者性能通过与真实请求通过是独立状态。原创MIL实验验证一个机制，不等于验收整个上游项目。各文件SHA、阅读范围和许可边界在来源卡与登记中保留。
-
-```sh
-python3 -B techniques/scripts/query.py 'K tiling' --type source --limit 3
-python3 -B techniques/scripts/get_page.py ane/coreml-graphs.md --follow-sources --max-bytes 32000
-python3 -B techniques/scripts/generate_source_index.py --check
-```
-
-来源卡是原创概括，不分发上游大段正文或代码。各项目及其第三方组件继续遵循原许可，不能用本目录许可覆盖。commit和文件SHA是实际阅读身份，活动网页仅供补充导航。
+- [Apple文件clone：隔离常量资产，不当作设备零拷贝](official/clonefile.md)
+- [Apple公共Metal counter与capture：先核查能力和时钟](official/metal-counters.md)
+- [Apple Metal 4 counter heap、反馈与资源生命周期来源](official/metal4-counter-heaps.md)
+- [Apple Metal与IOSurface：外部共享内存合同](official/shared-memory.md)
+- [Accelerate/vImage：像素排列、方向与非原地缓冲合同](official/vimage-stage.md)
+- [measure_ane_capacity：序列化、fallback 与 PMU 计分](repos/ane-capacity-pmu.md)
+- [ane_pmu_profiler：先验 payload，再解释寄存器](repos/ane-pmu-provenance.md)
+- [ANEForge：结构搜索、精度预算和 e5rt 边界](repos/aneforge-rewrite-search.md)
+- [anemll-profile：先审运行副作用，再读性能数字](repos/anemll-profile-safety.md)
+- [Apple ANE Transformers：迁移布局，不替换模型数学](repos/apple-ane-transformers-ffn.md)
+- [ccv：图内K分块、surface缓存与output backing](repos/ccv-coreml-rowwise.md)
+- [coremltools：计算计划不是硬件逐算子计时](repos/coremltools-compute-plan.md)
+- [GGML Metal：块布局、实际摘录执行与tensor政策](repos/ggml-metal-layouts.md)
+- [gputrace：时间来源比漂亮时间线更重要](repos/gputrace-timing-provenance.md)
+- [KernelWiki检索与版本复查：借合同，不搬硬件别名](repos/kernelwiki-retrieval.md)
+- [MLX affine：dispatch、metadata精度与原始模型基线](repos/mlx-affine-dispatch.md)
+- [MLX外部内存：尝试导入、共享view与copy的物理区别](repos/mlx-external-memory.md)
+- [MLX SDPA：guard、stride、mask与输出布局](repos/mlx-sdpa-dispatch.md)
+- [vpipe：图内K/N tiling与runtime权重布局](repos/vpipe-runtime-tiling.md)

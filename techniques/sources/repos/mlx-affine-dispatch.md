@@ -1,8 +1,13 @@
 # MLX affine：dispatch、metadata精度与原始模型基线
 
-[来源索引](../README.md) · [调优机制](../../metal/kernel-tuning.md) · [独立实验驱动](../../labs/metal/quantized_bench.py)
+<!-- knowledge
+id: source-upstream-mlx-affine
+type: source
+-->
 
-固定读取两份源码：`ml-explore/mlx@7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247`（tag v0.32.0）和`36969c094354086e15d2a327a9c50feb20b9cf11`。所读`.cpp/.h`范围、完整SHA见[同一来源登记](../../references/sources.json)。旧checkout只读；为tag另外建立小型sparse checkout，不fetch/reset旧树。许可证MIT，Apple版权保留；原创SG实验不是MLX内核的复制。
+[来源索引](../README.md) · [调优机制](../../metal/kernel-tuning.md) · 独立实验驱动
+
+固定读取两份源码：`ml-explore/mlx@7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247`（tag v0.32.0）和`36969c094354086e15d2a327a9c50feb20b9cf11`。所读`.cpp/.h`范围、固定版本入口见[同一来源登记](../README.md)。旧checkout只读；为tag另外建立小型sparse checkout，不fetch/reset旧树。许可证MIT，Apple版权保留；原创SG实验不是MLX内核的复制。
 
 实际执行的是已安装MLX0.32.0，报告记录core/dylib/metallib SHA。**版本号相同不是wheel与tag的可复现构建证明**；不把较新源码里的heuristic反填给旧二进制，也不将网页版本冒充运行版本。
 
@@ -24,7 +29,7 @@ v0.32.0的Q4 decoder用类型U保存`scale/16`；另一个固定版本先转floa
 
 ## 真正可迁移的是数据流与验证合同
 
-[原创核](../../labs/metal/affine_gemm.metal)比较BM32/64、连续K加载、16-byte row skew；X/Q/S/B都使用实际stride。完整FFN保留fused gate/up、SiLU、down和输出guard，未把scalar教学核当强基线。
+[原创核](../../examples/metal/affine_gemm.metal)比较BM32/64、连续K加载、16-byte row skew；X/Q/S/B都使用实际stride。完整FFN保留fused gate/up、SiLU、down和输出guard，未把scalar教学核当强基线。
 
 连续加载和padding是可测试假设，不是自动收益。本轮改变这两项没有让原创核战胜MLX，不能从源码直觉虚构bank-stall或DRAM counter。更大的M tile改善了此原型，却仍不如现有强路径；需另用实际counter/指令与编译器证据解释。
 
@@ -36,6 +41,6 @@ v0.32.0的Q4 decoder用类型U保存`scale/16`；另一个固定版本先转floa
 
 ## Capture边界补充（2026-10-16）
 
-同一release额外检查`metal.cpp`的start/stop capture、`eval.cpp`的finalize/synchronize、`device.cpp`的`CommandEncoder::synchronize`及`transforms.cpp`的同步eval；文件SHA/范围沿用同一[sources.json](../../references/sources.json)登记。
+同一release额外检查`metal.cpp`的start/stop capture、`eval.cpp`的finalize/synchronize、`device.cpp`的`CommandEncoder::synchronize`及`transforms.cpp`的同步eval；固定源码入口沿用同一[sources.json](../README.md)登记。
 
-output event完成与capture边界的encoder end/commit/wait不是可以随意互换的证据。本机“仅停止前同步”控制改变了可解析结构，但parser仍未确认dispatch覆盖；不把它改写为`mx.eval`不等待输出，或声称wheel与该源码构建等价。详见[实际capture对照](../../review/gpu-profiling-20261016.md)。
+output event完成与capture边界的encoder end/commit/wait不是可以随意互换的证据。本机“仅停止前同步”控制改变了可解析结构，但parser仍未确认dispatch覆盖；不把它改写为`mx.eval`不等待输出，或声称wheel与该源码构建等价。详见[实际capture对照](../../metal/case-studies/capture-counters-and-failure-boundaries.md)。

@@ -1,5 +1,17 @@
 # GPU + ANE：vpipe、ccv、Splash 与真实消费者的方案对照
 
+<!-- knowledge
+id: technique-ane-hybrid-runtime-comparison
+type: method
+operator: swiglu
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: straggler, memory-bound
+semantics: numerically-equivalent
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [切分代数](../gpu-ane/partitioning.md) · [共享 IO](../gpu-ane/shared-surface.md)
 
 ## 先区分四种“用了两个设备”
@@ -7,6 +19,20 @@
 encoder→denoiser 是阶段串行；GPU prefill→ANE decode 是按阶段切换；同一 FFN 按 row/intermediate 分担才可能同时完成同一次计算；多请求 batching 又是另一种吞吐优化。代码中开两个 worker、两个 host span 相交、两设备真的同时计算，证据强度不同。
 
 对 SwiGLU 的 intermediate 分担，gate/up 必须成对切，down 取对应列，最终 partial 相加；bias/residual 只加一次。普通 attention→FFN 依赖链不能因为有两个设备就改成并行。更完整的本地数学/反例在 [split_ffn_reference](../examples/split_ffn_reference.py)。
+
+## 可借鉴的最小设计：合法分担一个完整SwiGLU
+
+约定`X[M,H]`、gate/up权重`Wg/Wu[H,F]`、down权重`Wd[F,H]`。按intermediate索引集合分为两部分时，每个设备计算：
+
+`Pi = (SiLU(X·Wg_i + bg_i) ⊙ (X·Wu_i + bu_i)) · Wd_i`
+
+最后`Y=P0+P1+bd+residual`。gate/up必须配对、down选择对应行，down bias和residual只加一次。它不同于将Linear的输入K拆开后分别做SiLU；后者通常破坏原函数。可运行数学与负控在[split_ffn_reference](../examples/split_ffn_reference.py)。
+
+迁移时先实现同图serial控制，再实现并发与join，并同时保留完整强GPU基线。候选的完整时间模型是：
+
+`T = exposed_prepare + max(T_gpu_concurrent, T_ane_concurrent) + exposed_restore_join`
+
+这里两支时间必须来自并发条件下的实际完成边界，不是isolated benchmark。数据格式、buffer owner、失败回退和带宽竞争都进入方案；晚chunk失败后用原输入重做完整结果，不能拼入未验证partial。实现阅读顺序可沿[vpipe参数/worker/consumer](vpipe-callchain-and-failure.md)或[公共backing与真实GPU交接](public-pixel-buffer-gpu-handoff.md)，再回到[五臂完整FFN](resident-ffn-layout-and-gpu-baselines.md)判断是否值得采用。
 
 ## 实现方案比较
 
@@ -19,7 +45,7 @@ encoder→denoiser 是阶段串行；GPU prefill→ANE decode 是按阶段切换
 | 本库 public 路线 | frozen/runtime FP16/W8，公共 Core ML worker | 公共 IO、staging、完整 GPU fallback | 生命周期、artifact/recipe、参数身份 | 允许 CPU fallback；plan 非物理 trace |
 | 本库 private research | MIL + `_ANEClient`/e5rt；copy 或实际共享 surface | 同步 private evaluate + GPU suffix/join | 匹配强 GPU 分母与真实 backing 见证 | 私有兼容性、冷启动/驻留、完整请求尚未资格 |
 
-固定来源与代码位置：[vpipe emitter](https://github.com/tgo-app-dev/vpipe/blob/c2989a76841888e4d8d208fad4f476c487710962/apple-silicon/coreml/ane-emitter.cc)、[ccv rowwise](https://github.com/liuliu/ccv/blob/66dc16a3a3b688adfa6dc1d19eeeb3071beeb701/lib/nnc/mfa/ccv_nnc_mfa_ane_rowwise_coreml.mm)；历史 Splash 为本地 `liang2kl/splash@80827e1c` 分支，与路线图当前 `incoai/splash` 入口不能不经版本核对就合并。其 [AneFfn/Measurement/Calibration/Handoff 导读](../references/splash-w8a8-walkthrough.md)与 [来源登记](../references/sources.json)保留逐文件身份。Draw Things 社区入口：[draw-things-community](https://github.com/drawthingsai/draw-things-community)，本轮只作为上层学习导航，未审核整条应用调用链。
+固定来源与代码位置：[vpipe emitter](https://github.com/tgo-app-dev/vpipe/blob/c2989a76841888e4d8d208fad4f476c487710962/apple-silicon/coreml/ane-emitter.cc)、[ccv rowwise](https://github.com/liuliu/ccv/blob/66dc16a3a3b688adfa6dc1d19eeeb3071beeb701/lib/nnc/mfa/ccv_nnc_mfa_ane_rowwise_coreml.mm)；历史 Splash 为本地 `liang2kl/splash@80827e1c` 分支，与路线图当前 `incoai/splash` 入口不能不经版本核对就合并。其 [AneFfn/Measurement/Calibration/Handoff 导读](../references/splash-w8a8-walkthrough.md)与 [来源登记](../sources/README.md)保留逐文件身份。Draw Things 社区入口：[draw-things-community](https://github.com/drawthingsai/draw-things-community)，本轮只作为上层学习导航，未审核整条应用调用链。
 
 ## 三个不应直接照抄的实现细节
 
@@ -37,17 +63,8 @@ Splash 的 sign RNG、rotation、scale/offset 与本库配方不完全相同；�
 
 ## 本库已有实测怎样帮助选择
 
-[公共真实 Qwen FFN tiling](../review/qwen-ffn-tiling-20261015.md)保留“某些表达数值失败、另一些能运行但完整消费者更慢”的负结果。[private shared FFN 五臂](../review/qwen-shared-ffn-20261016.md)在 M4 Max、layer0、M1024/H4096/F12288、固定 share2048 的 warm 完整组件里，长确认约1.146–1.149×完整原 BF16 GPU；同 client 的 copy→shared 仅约1.1%，首轮甚至方向相反。
+[公共真实 Qwen FFN tiling](../gpu_ane/case-studies/qwen-ffn-tiling-and-concurrent-cost.md)保留“某些表达数值失败、另一些能运行但完整消费者更慢”的负结果。[private shared FFN 五臂](../gpu_ane/case-studies/qwen-shared-ffn-consumer-cost.md)在 M4 Max、layer0、M1024/H4096/F12288、固定 share2048 的 warm 完整组件里，长确认约1.146–1.149×完整原 BF16 GPU；同 client 的 copy→shared 仅约1.1%，首轮甚至方向相反。
 
 这说明主要收益不能全部归给“零拷贝”。serial 方案也不应当作提速分母；它在该实验慢于完整 GPU。上述是历史已记录组件证据，本轮未重新执行；没有完整图像/视频请求、LoRA、冷启动/峰值内存或物理重叠资格。
 
 实践优先级：先合法切分 → 匹配数值 → serial/candidate/GPU 对照 → concurrent 完整 consumer → 真实 request；最后才基于 profiler 调 share/tiling。不要以“让 ANE 满载”为独立优化目标。
-
-## 本地学习入口与复查
-
-- [heterogeneous.py](../labs/heterogeneous.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [contracts.py](../labs/contracts.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py segmented-ffn`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

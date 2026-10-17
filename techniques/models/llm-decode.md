@@ -1,6 +1,20 @@
 # LLM decode：权重 / KV 带宽、小 M 与精确验证
 
-[阶段地图](stage-map.md) · [本地概率与 KV 样本](../labs/model_stages.py) · [GPU 数据流](../designs/gpu-dataflow.md)
+<!-- knowledge
+id: technique-models-llm-decode
+type: guide
+stage: decode
+operator: gemv, attention, sampling, quantization
+backend: cpu-reference, metal
+device: cpu, gpu, ane
+symptom: memory-bound, launch-bound, precision-loss
+semantics: numerically-equivalent, approximate
+representation: q4, q8, packed
+boundary: producer-consumer, request
+api: public, reference-only
+-->
+
+[阶段地图](stage-map.md) · 本地概率与 KV 样本 · [GPU 数据流](../designs/gpu-dataflow.md)
 
 ## 与 prefill 分开优化
 
@@ -26,18 +40,11 @@ rejection_mass = 1 - sum(accepted)
 final_i = accepted_i + rejection_mass * normalized(max(p_i-q_i,0)) = p_i
 ```
 
-[speculative_distribution](../labs/model_stages.py)直接积分全部离散分支验证这个恒等式，并覆盖 p=q、draft 零支持和不合法概率。它给出可学习的核心机制，**不是已经实现的完整 speculative engine**。
+speculative_distribution直接积分全部离散分支验证这个恒等式，并覆盖 p=q、draft 零支持和不合法概率。它给出可学习的核心机制，**不是已经实现的完整 speculative engine**。
 
 多 token 实现还需要 target 在正确前缀条件下并行验证、首拒绝处截断、丢弃被拒绝 token 的 KV、处理 bonus token，并保持 sampler/penalty/temperature 对应分布与独立随机流。Greedy verify 是另一种确定性合同。无条件接受 draft 会把输出分布换成 q；只实现 proposal 没有 rejection 修正不是同分布加速。
 
 ## 验证与适用范围
-
-```sh
-python3 -B techniques/labs/run.py stage-decode
-python3 -B techniques/labs/run.py stage-llm
-python3 -B techniques/labs/run.py quant-formats
-python3 -B techniques/labs/run.py owned-command-graph
-```
 
 分别测 time-to-first-token、steady-state inter-token latency、tokens/s、长上下文峰值、排队 latency、采样质量。Draft acceptance 率必须配上 draft/verify/KV rollback 成本；不是接受率越高就一定更快。扩散模型没有同一个 causal token 分布合同，不能直接拿 speculative token 方法替代 denoising steps。
 

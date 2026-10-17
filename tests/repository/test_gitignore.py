@@ -52,35 +52,29 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/review/ffn-reference.safetensors"]
         self.assertEqual(self.ignored(paths), set(paths))
 
-    def test_curated_sources_and_examples_remain_trackable(self):
-        paths = ["techniques/candidates/projects.json", "techniques/labs/catalog.json",
-                 "techniques/references/sources.json", "techniques/review/new-validation.json",
-                 "techniques/examples/paired-runs.json", "techniques/integrations/mfa_gemm_bench.swift",
-                 "examples/requests/new-request.json", "tests/fixtures/database.json",
-                 "profiles/apple-device.example.json", "assets/example.png", ".env.example",
+    def test_knowledge_notes_and_small_examples_remain_trackable(self):
+        paths = ["techniques/README.md", "techniques/MAINTENANCE.md",
                  "techniques/sources/repos/mlx-affine-dispatch.md",
-                 "techniques/assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal",
-                 "techniques/labs/metal/mlx_capture_probe.py",
-                 "techniques/examples/profiling-summary.json", "tests/fixtures/tiny.npy",
-                 "techniques/review/gpu-clock-evidence-20261016.json",
-                 "techniques/review/qwen-attention-evidence-20261016.json",
-                 "techniques/review/ane-pmu-evidence-20261016.json",
-                 "techniques/review/aneforge-evidence-20261016.json",
-                 "techniques/review/qwen-private-ffn-evidence-20261016.json",
-                 "techniques/review/qwen-block-context-evidence-20261016.json",
-                 "techniques/integrations/qwen_block_shared.mm",
-                 "techniques/labs/ffn_cpu_witness.hpp",
-                 "techniques/tests/test_block_context.py",
-                 "techniques/labs/ane/pmu_probe.mm",
-                 "techniques/labs/ane/qwen_witness.py",
-                 "techniques/sources/official/metal-counters.md",
-                 "techniques/data/vocabulary.json", "techniques/data/version-claims.json",
-                 "techniques/queries/README.md", "techniques/labs/block_success.py",
-                 "techniques/integrations/qwen_block_raw_reference.py",
-                 "techniques/tests/test_block_success.py",
-                 "techniques/review/media-stage-evidence-20261016.json",
-                 "techniques/integrations/media_stage_probe.mm"]
+                 "techniques/metal/sources.md", "techniques/queries/README.md",
+                 "techniques/templates/technique-card.md", "techniques/scripts/knowledge.py",
+                 "techniques/examples/split_ffn_reference.py",
+                 "techniques/examples/reference/contracts.py",
+                 "techniques/examples/metal/kernels.metal",
+                 "examples/requests/new-request.json", "tests/fixtures/database.json",
+                 "profiles/apple-device.example.json", "assets/example.png", ".env.example"]
         self.assertEqual(self.ignored(paths), set())
+
+    def test_all_knowledge_json_and_experiment_packages_stay_local(self):
+        paths = ["techniques/new.json", "techniques/candidates/projects.json",
+                 "techniques/labs/catalog.json", "techniques/references/sources.json",
+                 "techniques/data/vocabulary.json", "techniques/data/publication-transforms.json",
+                 "techniques/metal/evidence/results/curated-evidence.json",
+                 "techniques/examples/paired-runs.json", "techniques/case-studies/data.jsonl",
+                 "techniques/arrays/saved.npy", "techniques/arrays/saved.npz",
+                 "techniques/review/history.md", "techniques/metal/archive/receipt.txt",
+                 "techniques/labs/new_probe.py", "techniques/integrations/client.mm",
+                 "techniques/tests/test_saved_evidence.py"]
+        self.assertEqual(self.ignored(paths), set(paths))
 
 
 if __name__ == "__main__":

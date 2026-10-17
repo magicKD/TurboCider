@@ -1,5 +1,10 @@
 # 从瓶颈到可交付优化
 
+<!-- knowledge
+id: technique-guides-optimization-workflow
+type: guide
+-->
+
 [总目录](../README.md) · [实验模板](../templates/experiment.md)
 
 ## 一条完整的证据链

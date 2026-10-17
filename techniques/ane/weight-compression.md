@@ -1,6 +1,20 @@
 # 权重压缩：LUT4、线性 INT4/INT8 与按需解压
 
+<!-- knowledge
+id: technique-ane-weight-compression
+type: method
+operator: quantization
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: precision-loss, memory-bound
+semantics: approximate
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [W8A8](w8a8-int8.md) · [旋转与校准](quantization.md)
+
+后续[真实LUT打包/联合压缩/resident对照](lut-packing-joint-compression-and-resident-cost.md)补齐了本页概览以外的完整案例：实际uint4/uint6 payload、shared palette和decoded-weight控制；460份完整输出含184个原精度失败。LUT4 package缩至约1/4但本例损失约9.8%，自动LUT6只对33值合成权重无损且仍慢于固定GPU，不把压缩率或名义位宽写成通用加速。
 
 ## 4-bit 不只一种编码
 
@@ -22,6 +36,15 @@
 
 执行是否受权重带宽限制同样关键。小 graph 常由调用/转换成本支配；更多 LUT、Q/DQ 或重新 staging 可抵消收益。模型 package 体积也不是 ANE SRAM、进程峰值或实际 DRAM 字节。
 
+## 怎样选择一个可迁移的压缩方案
+
+- **先建立三条数值基线**：同一浮点checkpoint、从压缩资产实际解码出的权重、后端实际输出。第一条对第二条隔离压缩损失，第二条对第三条隔离执行/接口误差，不能把二者混成一个cosine。
+- **先找敏感层，再选mixed-bit**：将embedding、lm-head、norm/bias与主要Conv/Linear分别处理；在实际输入/任务上选择bit和group，而非统一最低bit。
+- **把格式当ABI保存**：bit width、group axis/size、palette dtype、scale/zero point、vector维度和packing都进入recipe/cache身份。GGUF/MLX量化不能只换文件后缀就成为Core ML LUT。
+- **用同一消费者比较运行成本**：冷启动、热prediction、解码/重排、驻留副本和峰值内存分别报告。若运行前完全展开成FP16，应据实际驻留与访问评估，不按包大小推运行收益。
+
+可照着读的配置入口是[ANEMLL转换器](https://github.com/Anemll/anemll/blob/f4ad26d061dc2e426faa19f81c367343bdeb9f0d/anemll/ane_converter/llama_converter.py)的分组件/grouped-channel配置，以及[Apple SD mixed-bit](stable-diffusion.md)。实际bitstream、联合压缩和decoded-weight对照见[完整LUT研究](lut-packing-joint-compression-and-resident-cost.md)。这些方法可迁移，原文某个bit数或压缩率不能自动迁移为新模型质量。
+
 ## 三种实现路线
 
 1. **转换后 PTQ**：`ct.optimize.coreml.palettize_weights` / `linear_quantize_weights`。不训练，易做逐层 mixed-bit；对同源 FP 模型校验质量。适合先建立部署基线。
@@ -36,11 +59,4 @@ ANEMLL 的 [转换器](https://github.com/Anemll/anemll/blob/f4ad26d061dc2e426fa
 
 实际模型应先比较同一 checkpoint 的 FP、fake/decompressed quant 和后端输出，再评估完整生成/识别质量；敏感层保留高精度或更高 bit。冻结 graph、group axis、scale dtype、calibration、LoRA 和输入域，才能比较精度/内存/延迟的 Pareto 取舍。
 
-## 本地学习入口与复查
-
-- [quantization.py](../labs/quantization.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [ane/compression_survey.py](../labs/ane/compression_survey.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py quant-formats`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。
+[后续W8/A8解压控制](calibration-order-and-qdq-patterns.md#6-decompress_weights不等于移除a8或恢复原checkpoint)实际验证：`decompress_weights`只将weight constexpr materialize为const，保留activation Q/DQ，也不恢复量化前已经丢掉的权重信息。该批未执行LUT组合图，不能将其W8结果直接冒充LUT硬件/质量验收。

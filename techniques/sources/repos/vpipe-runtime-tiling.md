@@ -1,8 +1,13 @@
 # vpipe：图内K/N tiling与runtime权重布局
 
-[来源目录](../README.md) · [既有vpipe导读](../../references/vpipe.md) · [本地图实验](../../labs/ane/tiling_graphs.py)
+<!-- knowledge
+id: source-upstream-vpipe-emitter
+type: source
+-->
 
-固定来源：`tgo-app-dev/vpipe@c2989a76841888e4d8d208fad4f476c487710962`，工作树干净，2026-10-15。`apple-silicon/coreml/ane-emitter.h`全文、`.cc`的115–150、235–365、415–448行；逐文件SHA和阅读范围见[同一来源清单](../../references/sources.json)。
+[来源目录](../README.md) · [既有vpipe导读](../../references/vpipe.md) · 本地图实验
+
+固定来源：`tgo-app-dev/vpipe@c2989a76841888e4d8d208fad4f476c487710962`，工作树干净，2026-10-15。`apple-silicon/coreml/ane-emitter.h`全文、`.cc`的115–150、235–365、415–448行；逐文件SHA和阅读范围见[同一来源清单](../README.md)。
 
 ## 可迁移机制
 
@@ -22,7 +27,7 @@ header明确说明直接写`.mlmodelc`所依赖的MIL、83-byte header、weight 
 
 同一source数组、相同gate/up顺序与down消费者，分别测frozen/runtime、monolithic/tiled、serial/concurrent；compile/load/first/warm与输入准备/restore/join分开。性能探索缓存不能继承不同checkpoint或LoRA的数值资格。
 
-本轮上游执行：`not-run`。原创MIL实验的结果在[研究工作台](../../review/research-campaign-20261015.md)，不能写成“vpipe在此机达到某TOPS”。新的OS、不同layout/tile或原生shared IO是重开条件。
+本轮上游执行：`not-run`。原创MIL实验的结果在[研究工作台](../../MAINTENANCE.md)，不能写成“vpipe在此机达到某TOPS”。新的OS、不同layout/tile或原生shared IO是重开条件。
 
 许可：根LICENSE为Apache-2.0，Copyright 2026 T-Go LLC；第三方另见THIRD_PARTY_LICENSES.md。本页不分发其代码资产。
 

@@ -1,8 +1,13 @@
 # Apple Metal与IOSurface：外部共享内存合同
 
-[来源索引](../README.md) · [实际backing技术页](../../gpu-ane/shared-surface.md) · [本机验证](../../review/private-shared-20261016.md)
+<!-- knowledge
+id: source-official-shared-memory
+type: source
+-->
 
-2026-10-16读取Apple官方文档Markdown与本机SDK26.5 headers；原始内容不镜像到Wiki，URL、内容SHA与SDK相对路径登记于[sources.json](../../references/sources.json)。公共API知识不覆盖私有`_ANE*` ABI，也不是对所有芯片/图的性能保证。
+[来源索引](../README.md) · [实际backing技术页](../../gpu-ane/shared-surface.md) · [本机验证](../../gpu_ane/case-studies/surface-strides-and-stale-output.md)
+
+2026-10-16读取Apple官方文档Markdown与本机SDK26.5 headers；原始内容不镜像到Wiki，URL、内容SHA与SDK相对路径登记于[sources.json](../README.md)。公共API知识不覆盖私有`_ANE*` ABI，也不是对所有芯片/图的性能保证。
 
 ## 已核查的公共合同
 

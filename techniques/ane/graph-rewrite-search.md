@@ -1,10 +1,26 @@
 # ANE 图搜索：缓存身份、严格门槛与失败缩减
 
-[总目录](../README.md) · [ANEForge 源码卡](../sources/repos/aneforge-rewrite-search.md) · [本机全部记录](../review/aneforge-20261016.md) · [本地合同代码](../labs/search_contracts.py)
+<!-- knowledge
+id: technique-ane-graph-rewrite-search
+type: method
+stage: ffn
+operator: swiglu, gemm, quantization
+backend: private-ane, mlx
+device: ane, gpu
+symptom: graph-interruption, compile-bound, stale-cache, precision-loss
+semantics: numerically-equivalent, approximate
+representation: fp16, bf16, w8a8
+boundary: gpu-ane, weight-runtime
+api: private
+-->
+
+[总目录](../README.md) · [ANEForge 源码卡](../sources/repos/aneforge-rewrite-search.md) · [本机全部记录](case-studies/graph-rewrite-search-cost.md) · 本地合同代码
 
 适用：研究同一算子的不同图表达、常量精度或合法切分；不把自动搜索直接接入产品路由。语义：重写通常只是实数代数等价，有限精度、函数近似与编译 lowering 仍须独立验证。
 
 新增训练方向：[ANEForge VJP、device optimizer与resident state](training-autograd.md)单独记录；推理图搜索的数值/缓存资格不自动延伸到梯度与optimizer。
+
+另一个原编译器反例见[Orion cast相消与字段来源](orion-rewrites-and-profiler-metric-provenance.md)：原C pass实际删除FP32→FP16/INT32→FP32的中间round/trunc，公开完整消费者出现8份原目标失败。它与[LoRA scalar文本舍入](orion-lora-inputs-and-scalar-serialization.md)分别说明IR、序列化artifact与实际feed须各有独立资格；不是所有少op的图都语义等价。
 
 ## 1. 搜索提示、编译资产和数值资格分开
 
@@ -17,15 +33,11 @@
 
 本地 `identities` 是原创应用合同示范，不模拟上游 hash。实际调用上游后发现：相同结构/不同 W 的图 key 相同，但 MIL+weights 编译 key 不同；cache hit 直接 build，不重新 measure。两件事并不矛盾。即便新权重得到正确的新 binary，旧 winner 的精度/速度也没有自动重验。
 
-```sh
-python3 -B techniques/labs/run.py search-qualification
-```
-
 此 CPU case 不导入 ANEForge、NumPy、MLX，不联网或执行设备。
 
 ## 2. 接受逻辑应 fail closed，而不是“总能返回一个 model”
 
-冻结原图与[独立完整 FP64 oracle](../labs/ane/precision_oracle.py)，先确认 baseline 的数学误差，再评价候选。所有 first/warmup/timed 输出都须 finite、ABI 一致并过固定门槛；失败 arm 不当作任何 speedup 的分子或分母。
+冻结原图与独立完整 FP64 oracle，先确认 baseline 的数学误差，再评价候选。所有 first/warmup/timed 输出都须 finite、ABI 一致并过固定门槛；失败 arm 不当作任何 speedup 的分子或分母。
 
 上游 `tune_precision(target_error=...)` 的 mock 负控中，所有候选 error 都是0.2、预算0.001，仍返回 model，并在 reason 写明没有满足预算。调用方必须解析与复核数值结果，不能仅判断 API 没抛异常。没有独立 reference 时也不能偷偷沿用“FP32 通过”的标签。
 
@@ -39,7 +51,7 @@ python3 -B techniques/labs/run.py search-qualification
 
 exp 形式只在本轮输入分布和 shape 通过；较大负值可能令 FP16 exp 溢出。迁移到真实激活、不同精度、量化、LoRA 或其他层前必须重验范围/极值，不能把这条局部变换列为全局无损替代。reduce-sum→ones-matmul 在本轮 cancellation 图两端均 exact，并未证实普遍提高精度或稳定提速。
 
-后续[真实Qwen分担](../gpu-ane/private-ffn-boundary.md)使用`exp(-abs(g))`和select的稳定形式，并保留所有full/prefix数值门槛；[本机确认](../review/qwen-private-ffn-20261016.md)只给指定warm完整FFN消费者的观察，不将它改挂为上文原toy图已获得全局domain或产品资格。
+后续[真实Qwen分担](../gpu-ane/private-ffn-boundary.md)使用`exp(-abs(g))`和select的稳定形式，并保留所有full/prefix数值门槛；[本机确认](../gpu_ane/case-studies/qwen-private-ffn-copy-bridge.md)只给指定warm完整FFN消费者的观察，不将它改挂为上文原toy图已获得全局domain或产品资格。
 
 ## 4. 研究 probe 的最小能力地图
 
@@ -54,6 +66,6 @@ exp 形式只在本轮输入分布和 shape 通过；较大负值可能令 FP16 
 
 ## 实现参考与实验
 
-核心是[CPU 身份与严格 gate](../labs/search_contracts.py)、[独立 oracle](../labs/ane/precision_oracle.py)、[离线反例测试](../tests/test_aneforge_research.py)、[只读 data verifier](../scripts/curate_aneforge_campaign.py)。真实 upstream 执行是明确可选的[integration](../integrations/README.md)，不属于核心依赖，也不由查询/CPU all 自动触发。
+核心是CPU 身份与严格 gate、独立 oracle、离线反例测试、只读 data verifier。真实 upstream 执行是明确可选的[integration](../examples/README.md)，不属于核心依赖，也不由查询/CPU all 自动触发。
 
 重开条件：新 OS/SDK/ANEForge ref、编译器/权重内容、输入范围/shape/布局、mask、LoRA、actual backing 或消费者边界改变。失败/取消先停止该候选，保留 receipt；不能为继续搜索关闭 breaker、安全保护或清理系统缓存。

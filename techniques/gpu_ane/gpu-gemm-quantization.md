@@ -1,6 +1,19 @@
 # GPU GEMM / GEMV：量化、tile、dispatch 与 source layout
 
-[专题导航](README.md) · [引擎地图](inference-engines.md) · [优化 PR](optimization-prs.md) · [本机实验](experiments.md)
+<!-- knowledge
+id: technique-gpu-ane-gpu-gemm-quantization
+type: method
+stage: ffn, prefill, decode
+operator: gemm, gemv, quantization
+backend: metal, mlx
+device: cpu, gpu
+symptom: measurement, precision-loss, launch-bound
+semantics: contract-only
+boundary: producer-consumer
+api: public, reference-only
+-->
+
+[专题导航](README.md) · [引擎地图](inference-engines.md) · [优化 PR](optimization-prs.md) · [本机实验](../MAINTENANCE.md)
 
 核心读本：MLX `36969c094354086e15d2a327a9c50feb20b9cf11` 的 [`quantized.cpp`](https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/quantized.cpp) 56–136、1056–1225；GGML `64e9bce…` 的 [`ggml-metal-ops.cpp`](https://github.com/ggml-org/llama.cpp/blob/64e9bceb2c3a856efed96feda784a50947049feb/ggml/src/ggml-metal/ggml-metal-ops.cpp) 2390–2555。这是所读路径，不代表完整 kernel 审计。
 
@@ -40,6 +53,12 @@ MLX `ensure_row_contiguous[_matrix]` 可能插入 copy 并保留 temporary 到�
 
 冻结权重语义与 seed，扫 M=1/16/256/1024、N/K tail、group 和 dtype；增加非连续输入、偏移对齐、零/极值、部分 quant group 负控。分别报告准备、kernel、完整 FFN、peak/resident bytes 和请求。
 
-本轮 [GPU 小实验](experiments.md)比较编译融合、packed-vs-predecoded 和 SDPA；预展开并未稳定胜过 packed，是该 1024×1024 warm 边界的观察，不是 dense GEMM 普遍无用。更强的真实 [Qwen GPU FFN 研究](../review/gpu-affine-20261016.md)单列，不把两组倍率拼接。
+本轮 [GPU 小实验](../MAINTENANCE.md)比较编译融合、packed-vs-predecoded 和 SDPA；预展开并未稳定胜过 packed，是该 1024×1024 warm 边界的观察，不是 dense GEMM 普遍无用。更强的真实 [Qwen GPU FFN 研究](../metal/case-studies/affine-ffn-cost-and-resident-tradeoff.md)单列，不把两组倍率拼接。
 
 重开条件：新 NAX kernel、SDK、quant format、M 分布或驻留预算变化；GPU 提速后也要重测 hybrid 的最优 share，不能相乘加速比。
+
+第十三轮另读[GGML few-row MMA](case-studies/ggml-fewrow-mma-and-reuse.md)：选定Oct7 ref在既有mul_mv_ext之前增加2–16行的SIMD-group矩阵路线，格式阈值、K step和decode复用均单列；不是M5 TensorOps专属。[原始residual回归与负对照](case-studies/ggml-residual-identity-regression.md)已在M4运行，但没有性能A/B或模型分母，不能把PR作者倍率当本机结果。
+
+第十四轮另有[同图融合开关计时](case-studies/ggml-matched-fusion-timing.md)，不是MMA对legacy MV的比较：两进程使用相同packed weights和非dyadic F32输入，保留N=1漂移及短pilot，再作反序长块确认。小图N=8局部有收益，大矩阵多数接近持平；不把49,152次host同步调用当device timestamp或完整FFN/模型分母。
+
+第十七轮进一步读[MLX #4682最终组合源码](case-studies/mlx-nax-mid-m-and-prefetch.md)：route helper为真仍可能split=1；新16-row schedule和split重路由分开，unaligned offset在split入口先copy，full K仍是原row pitch。packed权重解码到FP16/BF16再进float累加的MPP，并非直接INT4矩阵乘；两个原始CPU策略函数3430点已执行，M5 kernel和模型倍率仍未在本机验证。

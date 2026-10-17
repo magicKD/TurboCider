@@ -1,6 +1,19 @@
 # Sequence / hidden / FFN维度怎么切，切完怎么合
 
-[总目录](../README.md) · [基本切分代数](partitioning.md) · [可运行实现](../labs/partition_axes.py) · [带宽校准](calibration.md)
+<!-- knowledge
+id: technique-gpu-ane-axes-and-bandwidth
+type: method
+stage: ffn, prefill, dit
+operator: gemm, swiglu, attention, norm
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: memory-bound, wrong-layout, precision-loss
+semantics: numerically-equivalent
+boundary: gpu-ane, producer-consumer
+api: reference-only
+-->
+
+[总目录](../README.md) · [基本切分代数](partitioning.md) · 可运行实现 · [带宽校准](calibration.md)
 
 ## 先给轴明确命名
 
@@ -18,10 +31,6 @@
 当前`HybridFfn/PartitionAxis`显式支持rows和intermediatechannels；H输入/输出与KV sequence在这里是**数学/设计参考**，不是声称当前Executor已有这些backend模式。可以继续探索，但需扩展graph、通信、precision/owner和真实consumer验收。
 
 ## 运行一个全轴对照
-
-```sh
-python3 -B techniques/labs/run.py partition-axes
-```
 
 实现同时验证H输入先归约、H输出concat、M-row FFN与KV全局softmax；并给三个错误control：sum局部非线性、各outputshard独立RMS、平均localattention。这样不只是背一个“按hidden切分”的名词。
 

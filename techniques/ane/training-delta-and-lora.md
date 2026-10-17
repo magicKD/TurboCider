@@ -1,8 +1,22 @@
 # Delta 权重重载与 LoRA-as-input：Orion 的两条免重编译路线
 
+<!-- knowledge
+id: technique-ane-training-delta-and-lora
+type: method
+operator: gemm
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: stale-cache, lifetime
+semantics: contract-only
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [训练](training.md) · [动态参数](training-dynamic-weights.md)
 
 固定 [Orion@4dcc1c2a](https://github.com/mechramc/Orion/tree/4dcc1c2a626c9ee1f35576bd0b290d489db17d08)，阅读 [ane_runtime.m](https://github.com/mechramc/Orion/blob/4dcc1c2a626c9ee1f35576bd0b290d489db17d08/core/ane_runtime.m)、[delta tests](https://github.com/mechramc/Orion/blob/4dcc1c2a626c9ee1f35576bd0b290d489db17d08/tests/test_delta_compile.m)、[LoRA frontend](https://github.com/mechramc/Orion/blob/4dcc1c2a626c9ee1f35576bd0b290d489db17d08/compiler/frontends/lora.c)的选定范围。本轮未执行原 runtime；不是对全仓库的正确性/安全认证。
+
+后续[原frontend/原MIL与public LoRA消费者](orion-lora-inputs-and-scalar-serialization.md)已实际执行，但仍没有执行本页private reload/patch。新批次核对A/B轴、完整swap/错误caller及`%g`发射scalar的反例，另将[cast重写与profiler来源](orion-rewrites-and-profiler-metric-provenance.md)单列；不将公开小图或人工计时控制写成原LoRA训练/私有接口资格。
 
 ## 1. 两种 delta 操作应分开
 
@@ -36,12 +50,3 @@
 应共同测试 `base→A→B→base`，并用不同 adapter 的独立期望输出防 stale；另做取消、更新中失败、并发 session 和 cache 失效。切换速度、训练 update 速度、前向热调用和完整模型质量分别报告。
 
 注意 Orion README 保留了“INT8 都先解成 FP16”的泛化表述，而官方 M4 W8A8 文档支持更窄、更准确的结论；已在 [INT8 专题](w8a8-int8.md)纠正，不能因其 runtime 代码有价值就接受全部硬件解释。
-
-## 本地学习入口与复查
-
-- [ane/training_math.py](../labs/ane/training_math.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [caches.py](../labs/caches.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py ane-training-math`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

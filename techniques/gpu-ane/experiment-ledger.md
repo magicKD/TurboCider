@@ -1,5 +1,18 @@
 # GPU/ANE与系统优化案例账本
 
+<!-- knowledge
+id: technique-gpu-ane-experiment-ledger
+type: method
+stage: dit, ffn, vae, pipeline
+operator: scheduling
+backend: mlx, coreml, private-ane, metal
+device: gpu, ane
+symptom: straggler, memory-bound, stale-cache, measurement
+semantics: contract-only
+boundary: request, gpu-ane
+api: public, private
+-->
+
 [总目录](../README.md) · [证据地图](../references/evidence-map.md)
 
 这是“遇到类似问题先读哪份证据”的比较索引，不是可横向排名的benchmark表。每行使用其来源自己的构建、输入和分母；本轮没有重跑这些设备实验。
@@ -33,11 +46,7 @@
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/media.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py profiling-scopes
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：operator vs request scope；paired inputs and failed evidence retained。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

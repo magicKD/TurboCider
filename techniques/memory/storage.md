@@ -1,5 +1,19 @@
 # Packed 格式、来源身份、mmap 与 pread
 
+<!-- knowledge
+id: technique-memory-storage
+type: method
+stage: pipeline
+operator: quantization, layout
+backend: metal, mlx, cpu-reference
+device: cpu, gpu, ane
+symptom: wrong-layout, stale-cache, storage-pressure
+semantics: bitwise, numerically-equivalent
+representation: q4, q8, gguf, mlx-affine, packed, bf16, fp16
+boundary: weight-runtime
+api: public, reference-only
+-->
+
 [总目录](../README.md) · [ANE 量化](../ane/quantization.md)
 
 ## 格式不是只有 bit 数
@@ -30,15 +44,15 @@ vpipe 文档与 WeightSet 实现特别处理非对齐文件offset的读窗口；
 
 拼接 fused matrix 后释放消费掉的源 tensor；read-once 不加入长期 cache；stream_into 不额外先建全 tensor 再 memcpy。mmap后又保存converted copy会两份都占住。只保留后缀时 w1/w3 可连续行读，w2需按列打包，时间与磁盘都算入 setup。
 
-[本轮真实FFN数据](../review/gpu-affine-20261016.md)提供了一个具体反例：288 MiB原始16-bit权重，affine Q8/Q4及metadata分别153/81 MiB；若保留packed再缓存FP16展开，就变成441/369 MiB。cache相对packed快一点，并不表示相对原始dense更快或更省RAM。这里都是逻辑权重量，不是实测request峰值；原生bank/租约/eviction与IO仍需完整请求确认。
+[本轮真实FFN数据](../metal/case-studies/affine-ffn-cost-and-resident-tradeoff.md)提供了一个具体反例：288 MiB原始16-bit权重，affine Q8/Q4及metadata分别153/81 MiB；若保留packed再缓存FP16展开，就变成441/369 MiB。cache相对packed快一点，并不表示相对原始dense更快或更省RAM。这里都是逻辑权重量，不是实测request峰值；原生bank/租约/eviction与IO仍需完整请求确认。
 
-[GGML源码与GPU摘录](../sources/repos/ggml-metal-layouts.md)和[CPU格式oracle](../labs/quantization.py)还展示：两个Q8_0 blocks与MLX affine Q8 group64/FP16 metadata恰好都是68 bytes，却不能raw reinterpret；Q4_0前16/后16的nibble顺序也不是相邻交错。字节数、逻辑shape和路径相同都不能代替encoding/source证明。
+[GGML源码与GPU摘录](../sources/repos/ggml-metal-layouts.md)和[CPU格式oracle](../examples/reference/quantization.py)还展示：两个Q8_0 blocks与MLX affine Q8 group64/FP16 metadata恰好都是68 bytes，却不能raw reinterpret；Q4_0前16/后16的nibble顺序也不是相邻交错。字节数、逻辑shape和路径相同都不能代替encoding/source证明。
 
 ## 来源验证与复用
 
 首次内容验证 → 持有source FD/generation → metadata/stat guards → request lease → actual receipt。派生 artifact 记录 parent digest、每项变换、覆盖范围、dtype/rounding 和输出内容身份。不要把派生BF16 view叫原始BF16权重，也不把路径相同当来源没变。
 
-[文件clone官方合同](../sources/official/clonefile.md)用于隔离已有常量实验：同卷共享未改blocks不是hard link，也不是GPU feature alias；高层copy可能fallback普通复制。本轮[真实shared FFN](../review/qwen-shared-ffn-20261016.md)用严格clone并核对新inode/hash，仍为编译临时文件/cache留admission。只读prepared/load另设流程，不因存储不足降低新clone门槛，也不把未调用compile selector等同于内部没有编译。
+[文件clone官方合同](../sources/official/clonefile.md)用于隔离已有常量实验：同卷共享未改blocks不是hard link，也不是GPU feature alias；高层copy可能fallback普通复制。本轮[真实shared FFN](../gpu_ane/case-studies/qwen-shared-ffn-consumer-cost.md)用严格clone并核对新inode/hash，仍为编译临时文件/cache留admission。只读prepared/load另设流程，不因存储不足降低新clone门槛，也不把未调用compile selector等同于内部没有编译。
 
 验证缓存命中只允许复用已证实的generation；跨进程/路径替换后要重建证明。source相同但refill地址变化时，可用受验证logical content identity复用小metadata，不可因此持有所有权重或忽略mutable内容变化。
 
@@ -48,11 +62,7 @@ vpipe 文档与 WeightSet 实现特别处理非对齐文件offset的读窗口；
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/quantization.py)；[实验步骤与边界](../labs/memory-io.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py quant-formats
-```
+可读实现：[参考代码](../examples/reference/quantization.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：full pitch vs local pitch；metadata bounds/offsets and positional FD cursor。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

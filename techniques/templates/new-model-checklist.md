@@ -1,5 +1,10 @@
 # 新模型加速与交付清单
 
+<!-- knowledge
+id: technique-templates-new-model-checklist
+type: guide
+-->
+
 [总目录](../README.md) · [实施顺序](../guides/new-model.md)
 
 逐项附证据，只有实际满足才打勾；不适用也要写原因。

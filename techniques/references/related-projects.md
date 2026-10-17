@@ -1,5 +1,10 @@
 # 其他参考项目与可迁移技巧
 
+<!-- knowledge
+id: technique-references-related-projects
+type: method
+-->
+
 外部项目的可复用机制已落为[本地设计样本](../designs/README.md)、[GPU/ANE 方案](../designs/hybrid-ffn.md)与[分阶段地图](../models/stage-map.md)。以下版本/文件是可选溯源，不需要为了理解方案打开其他仓库。
 
 [总目录](../README.md) · [证据地图](evidence-map.md)

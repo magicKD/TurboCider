@@ -1,6 +1,19 @@
 # Owned command graph：少提交，但不丢掉资源所有权
 
-[设计目录](README.md) · [本地 CPU 实现](../labs/contracts.py) · [真实 Metal 实现](../labs/metal/bench.mm)
+<!-- knowledge
+id: technique-designs-owned-graphs
+type: method
+stage: pipeline
+operator: scheduling
+backend: metal, cpu-reference
+device: gpu, cpu
+symptom: launch-bound, lifetime
+semantics: contract-only
+boundary: producer-consumer
+api: public, reference-only
+-->
+
+[设计目录](README.md) · [本地 CPU 实现](../examples/reference/contracts.py) · 真实 Metal 实现
 
 ## 从 Splash 吸收的核心
 
@@ -20,7 +33,7 @@ Ordered graph 保存 dispatch 顺序、pipeline、geometry、buffer bindings 和
 
 每个 view 至少需要：allocation identity、allocation bytes、offset、shape、physical pitch、dtype、access mode；验证最大访问位置不越界。逻辑 shape 一样不代表可互换的物理布局。同一 command buffer 中的可见性还取决于 encoder、资源 hazard tracking 和所用 API；跨 queue/设备不能依赖列表顺序，要建立实际 event/fence 边。
 
-减少 submit 节约的是 host/driver 固定开销，不是把依赖关系消掉。[bench.mm](../labs/metal/bench.mm)的 `graph`对比每 dispatch 独立提交和一个 command buffer；`overlap`检查两个 GPU queue 的实际时间区间，不能冒充 GPU/ANE 并行。
+减少 submit 节约的是 host/driver 固定开销，不是把依赖关系消掉。bench.mm的 `graph`对比每 dispatch 独立提交和一个 command buffer；`overlap`检查两个 GPU queue 的实际时间区间，不能冒充 GPU/ANE 并行。
 
 ## 失败路径是设计的一部分
 
@@ -32,12 +45,6 @@ Ordered graph 保存 dispatch 顺序、pipeline、geometry、buffer bindings 和
 
 ## 运行、反例与复用
 
-```sh
-python3 -B techniques/labs/run.py owned-command-graph
-python3 -B techniques/labs/metal/run.py graph
-python3 -B techniques/labs/run.py slot-ownership
-```
-
 反例测试覆盖参数提交后被改写、graph 拷贝、重复 submit、重复完成、超时仍保活、异常后清理。适合小 kernel 较多的 QK norm/RoPE、FFN epilogue、LoRA projection 链；不适合为了合并而制造巨型无限驻留 graph。新 alias、deferred join、queue、batch、取消策略或 precision 都需要重新验收。
 
-这是 Splash owned-payload 机制的独立教学重述，未链接或复制 Splash runtime。原项目文件和 revision 只作 [可选溯源](../references/absorbed-designs.json)。
+这是 Splash owned-payload 机制的独立教学重述，未链接或复制 Splash runtime。原项目文件和 revision 只作 [可选溯源](README.md)。

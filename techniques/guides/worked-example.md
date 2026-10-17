@@ -1,5 +1,10 @@
 # 桌面演练：给一个新SwiGLU图像模型接入GPU/ANE
 
+<!-- knowledge
+id: technique-guides-worked-example
+type: guide
+-->
+
 [总目录](../README.md) · [新模型指南](new-model.md) · [检查清单](../templates/new-model-checklist.md)
 
 这是接入设计的完整走查，不是一个已实现/测快的新模型profile。假设只有一个新模型的权重/API，依照本页应能决定改哪里、先测什么、何时拒绝候选；可运行部分是本wiki的CPU代数和预算工具。

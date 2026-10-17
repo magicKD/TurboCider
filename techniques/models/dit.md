@@ -1,6 +1,20 @@
 # DiT：重复步的计算、布局、缓存和混合 FFN
 
-[阶段地图](stage-map.md) · [本地 AdaLN / KV / CFG 样本](../labs/model_stages.py) · [GPU/ANE 样本](../designs/hybrid-ffn.md)
+<!-- knowledge
+id: technique-models-dit
+type: guide
+stage: dit, ffn
+operator: attention, gemm, norm, rope, swiglu
+backend: cpu-reference, metal, mlx
+device: cpu, gpu, ane
+symptom: stale-cache, launch-bound, precision-loss
+semantics: numerically-equivalent, approximate
+representation: bf16, fp16
+boundary: producer-consumer, gpu-ane
+api: public, reference-only
+-->
+
+[阶段地图](stage-map.md) · 本地 AdaLN / KV / CFG 样本 · [GPU/ANE 样本](../designs/hybrid-ffn.md)
 
 ## 先确认架构和重复边界
 
@@ -32,17 +46,10 @@ CFG 两分支最终 prediction 可 batch 或分别算；这会改变实际 M 和
 
 量化按 layer/timestep/granularity 搜索，保留敏感层 high precision；calibration 覆盖多个 prompt、step、latent幅值、参考图和 adapter，holdout 不参与阈值搜索。Residual replay/多项式预测、省某些 block、token merge、sparse attention 都需要严格的 off/full control 和误差预算。少 step 或换 sampler/分辨率是工作负载变化，不列为同语义倍率。
 
-[caches.py](../labs/caches.py)提供真实可读 residual 状态、失败 reset、token mass merge；[policies.py](../labs/policies.py)检查组合冲突。它们不声称完整复现所有缓存论文或授予真实模型质量资格。
+[caches.py](../examples/reference/caches.py)提供真实可读 residual 状态、失败 reset、token mass merge；[policies.py](../examples/reference/policies.py)检查组合冲突。它们不声称完整复现所有缓存论文或授予真实模型质量资格。
 
 ## 内存路径和实测命令
 
 若 weights 放不下，保留固定 resident subset，余下 bounded pread/typed refill，不用循环 LRU；scratch、conditioning、跨步 latent 和 VAE reserve 都入账。热每步省时若被 SSD 读、driver waits 或过度编译吃掉，应如实保留负结果。
-
-```sh
-python3 -B techniques/labs/run.py stage-dit
-python3 -B techniques/labs/run.py residual-reuse
-python3 -B techniques/labs/run.py token-merge
-python3 -B techniques/labs/run.py residency-policy
-```
 
 验收包括完整 seed/prompt/reference/LoRA 纵切、首中末 step、full request、temporal consistency、cache reset 与失败回退；不是最终 tensor finite 即合格。新 topology、step schedule、precision、shape、source 或模型版本改变后重开实验。

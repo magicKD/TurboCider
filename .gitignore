@@ -121,8 +121,15 @@ compile_commands.json
 /docs/design/validation/raw/
 /docs/design/validation/*.raw.json
 
-# Technique labs: local builds, raw runs, scratch work and private session exports.
-# Keep examples/, catalog.json and curated review/ evidence tracked.
+# techniques is a lightweight knowledge base, not an experiment archive.
+# Data must stay outside it even if described as curated or historical.
+/techniques/**/*.json
+/techniques/**/*.jsonl
+/techniques/**/*.ndjson
+/techniques/**/*.json.gz
+/techniques/**/*.jsonl.gz
+/techniques/**/*.npy
+/techniques/**/*.npz
 /techniques/**/build/
 /techniques/**/dist/
 /techniques/**/outputs/
@@ -130,9 +137,18 @@ compile_commands.json
 /techniques/**/artifacts/
 /techniques/**/scratch/
 /techniques/**/private/
-# Uncurated measurements and machine-local review data; keep review/*.json tracked.
-/techniques/review/raw/
-/techniques/review/local/
+/techniques/**/raw/
+/techniques/**/intermediate/
+/techniques/**/check-results/
+/techniques/**/evidence/
+/techniques/**/records/
+/techniques/**/archive/
+/techniques/labs/
+/techniques/integrations/
+/techniques/tests/
+/techniques/data/
+/techniques/candidates/
+/techniques/review/
 
 # Downloaded model weights and compiled model caches
 *.safetensors

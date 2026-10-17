@@ -1,10 +1,24 @@
 # 实际共享 backing：证明外部交接，不泛称系统零拷贝
 
-[总目录](../README.md) · [共享内存合同](shared-memory.md) · [完整FFN边界](private-ffn-boundary.md) · [本机全部记录](../review/private-shared-20261016.md)
+<!-- knowledge
+id: technique-gpu-ane-shared-surface
+type: method
+stage: ffn
+operator: layout
+backend: metal, mlx, private-ane
+device: gpu, ane
+symptom: wrong-layout, lifetime, stale-cache
+semantics: bitwise, numerically-equivalent
+representation: fp16, bf16, iosurface
+boundary: gpu-ane, producer-consumer
+api: public, private
+-->
+
+[总目录](../README.md) · [共享内存合同](shared-memory.md) · [完整FFN边界](private-ffn-boundary.md) · [本机全部记录](../gpu_ane/case-studies/surface-strides-and-stale-output.md)
 
 ## 1. 要解决的接缝
 
-GPU→host数组→private模型→host数组→GPU即使处于统一内存，也有显式feature copy。[真实Qwen copy-bridge](../review/qwen-private-ffn-20261016.md)已把这些成本计入，但没有证明shared backing。本页先用原创有界图建立可以迁移的**外部接口证据**，不以小图代替完整FFN。
+GPU→host数组→private模型→host数组→GPU即使处于统一内存，也有显式feature copy。[真实Qwen copy-bridge](../gpu_ane/case-studies/qwen-private-ffn-copy-bridge.md)已把这些成本计入，但没有证明shared backing。本页先用原创有界图建立可以迁移的**外部接口证据**，不以小图代替完整FFN。
 
 [官方API/SDK来源](../sources/official/shared-memory.md)说明Metal no-copy包装的页对齐、单VM region和生命周期要求；private `_ANE*` 则另做运行时selector/ABI检查。两者是不同稳定性等级，不能把公共Metal合同扩张为Apple对私有ANE入口的保证。
 
@@ -35,11 +49,11 @@ GPU→host数组→private模型→host数组→GPU即使处于统一内存，�
 
 shared与copy均测**GPU producer encode→GPU consumer完成**，编译/load、pipeline prepare、poison和验证在外。copy arm GPU先写独立shared Metal buffer，再CPU copy到input surface，evaluate后CPU copy到另一Metal buffer供同一consumer；两次copy及lock/unlock计入wall。两arm同generation，顺序交替；保留first1/warmup2/全部measured8或24组。
 
-小图copy量只有8KiB/24KiB，移除copy不保证主导延迟：两次Metal提交/完成和private调用仍存在。[全部实测](../review/private-shared-20261016.md)没有稳定性能晋升，也没测optimized GPU-only分母，所以不能写“GPU+ANE快了多少”。host事件只表示同步边界，不是GPU/ANE硬件时钟。
+小图copy量只有8KiB/24KiB，移除copy不保证主导延迟：两次Metal提交/完成和private调用仍存在。[全部实测](../gpu_ane/case-studies/surface-strides-and-stale-output.md)没有稳定性能晋升，也没测optimized GPU-only分母，所以不能写“GPU+ANE快了多少”。host事件只表示同步边界，不是GPU/ANE硬件时钟。
 
 ## 5. MLX实际adoption与generation：Copy不等于快照
 
-[固定源码导读](../sources/repos/mlx-external-memory.md)与[四份完整协议/首轮失败](../review/mlx-adoption-20261016.md)继续验证MLX端。两个seed下，raw-pointer constructor和strict `make_buffer`均实际采用整块owned region；padded view与8MiB FP16逻辑输入、完整新consumer、尾guard、view存活和最后deleter得到独立全量见证。8MiB case明确是合成geometry，不是Qwen激活或FFN性能。
+[固定源码导读](../sources/repos/mlx-external-memory.md)与[四份完整协议/首轮失败](../metal/case-studies/external-memory-adoption-and-fresh-views.md)继续验证MLX端。两个seed下，raw-pointer constructor和strict `make_buffer`均实际采用整块owned region；padded view与8MiB FP16逻辑输入、完整新consumer、尾guard、view存活和最后deleter得到独立全量见证。8MiB case明确是合成geometry，不是Qwen激活或FFN性能。
 
 这里有两个容易混淆的状态：`mx::copy`在固定0.32.0实现仍`copy_shared_buffer`，新consumer可看到外部新generation；已求值的旧consumer不会自动失效。另以实际不同backing的FP16→FP32 materialization建立快照控制；读取它仍得到旧值。不能用“新array对象”“copy名字”或“又调用eval”替代独立物化和generation检查。
 
@@ -47,28 +61,12 @@ shared与copy均测**GPU producer encode→GPU consumer完成**，编译/load、
 
 ## 实现、复现与下一步
 
-[CPU合同/独立全量witness](../labs/shared_backing.py)、[原创native客户端](../labs/ane/shared_surface_probe.mm)、[显式CLI](../labs/ane/shared_surface_probe.py)、[只读curator](../scripts/curate_shared_surface.py)、[离线反例](../tests/test_shared_backing.py)均在本目录，无产品/兄弟源码依赖。默认仅准备合成MIL，`--device`才实际执行；不联网、安装、下载模型、申请PMU或降低系统保护。
-
-```sh
-python3 -B techniques/labs/run.py backing-proof
-python3 -B techniques/scripts/run_experiment.py --timeout 180 \
-  --output-dir outputs/my-new-shared-launch -- python3 -B \
-  techniques/labs/ane/shared_surface_probe.py --device --channels 32 --width 33 \
-  --seed 17 --output-dir outputs/my-new-shared
-```
+CPU合同/独立全量witness、原创native客户端、显式CLI、、离线反例均在本目录，无产品/兄弟源码依赖。默认仅准备合成MIL，`--device`才实际执行；不联网、安装、下载模型、申请PMU或降低系统保护。
 
 接真实Qwen仍须重新读取真实二维MIL的physical映射，GPU pack/cast、restore/join都计入完整BF16 FFN边界。这里的`_ANEClient`与此前e5rt入口不同，须重新过full/prefix source与独立FP64门槛，不能直接继承约1.12×的copy-bridge结果。更多层/LoRA/请求质量、冷启动/内存/长时、失败/取消和物理overlap继续独立验证。
 
-上述MLX合成adoption已在2026-10-16实际验证；它本身不能把两个独立probe拼成“完整Qwen已shared”。后续[真实FFN实验](../review/qwen-shared-ffn-20261016.md)另对实际二维port、GPU pack、private prefix、MLX restore/join完成了完整source/alias/数值验证，两种证据保持独立。合成[probe](../labs/metal/mlx_adoption_probe.py)默认仅准备源码，显式设备复现需要已有MLX C++ headers/lib assets：
+上述MLX合成adoption已在2026-10-16实际验证；它本身不能把两个独立probe拼成“完整Qwen已shared”。后续[真实FFN实验](../gpu_ane/case-studies/qwen-shared-ffn-consumer-cost.md)另对实际二维port、GPU pack、private prefix、MLX restore/join完成了完整source/alias/数值验证，两种证据保持独立。合成probe默认仅准备源码，显式设备复现需要已有MLX C++ headers/lib assets：
 
-```sh
-python3 -B techniques/labs/run.py mlx-adoption-contract
-python3 -B techniques/scripts/run_experiment.py --timeout 180 \
-  --output-dir outputs/my-new-adoption-launch -- python3 -B \
-  techniques/labs/metal/mlx_adoption_probe.py --device --mlx-root "$TC_INSTALLED_MLX" \
-  --case port --seed 17 --output-dir outputs/my-new-adoption
-```
-
-新[独立witness](../labs/mlx_adoption.py)/[native](../labs/metal/mlx_adoption_probe.mm)/[curator](../scripts/curate_mlx_adoption.py)/[反例测试](../tests/test_mlx_adoption.py)均随本目录分发，不安装或重建MLX。
+新独立witness/native//反例测试均随本目录分发，不安装或重建MLX。
 
 重开条件：OS/SDK/private ABI、shape/dtype/stride、owner/generation、实际MLX或模型消费者改变。当前资格只属于上述有界合成接缝，不是产品默认。

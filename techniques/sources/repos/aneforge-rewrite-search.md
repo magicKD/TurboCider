@@ -1,8 +1,13 @@
 # ANEForge：结构搜索、精度预算和 e5rt 边界
 
-[来源目录](../README.md) · [机制与负控](../../ane/graph-rewrite-search.md) · [本机实验](../../review/aneforge-20261016.md)
+<!-- knowledge
+id: source-upstream-aneforge-search
+type: source
+-->
 
-固定读本：`sbryngelson/ANEForge@896c4943c5ebf811c0e815f8d1381fd1e157fa7d`，2026-10-16，tracked worktree 干净，不声称最新版本。逐文件 SHA 与阅读范围在[唯一来源登记](../../references/sources.json)。上游 README、AGENTS、SECURITY、LICENSE、NOTICE 已读；核心重点是 `_optimize.py` 全文725行、`_runtime.py` 全文280行，以及 graph、MIL emitter、rewrite、target 与 native shim 的选定范围。没有把未读的全部 bridge/async/模型加载器当作已审计。
+[来源目录](../README.md) · [机制与负控](../../ane/graph-rewrite-search.md) · [本机实验](../../ane/case-studies/graph-rewrite-search-cost.md)
+
+固定读本：`sbryngelson/ANEForge@896c4943c5ebf811c0e815f8d1381fd1e157fa7d`，2026-10-16，tracked worktree 干净，不声称最新版本。逐文件 SHA 与阅读范围在[唯一来源登记](../README.md)。上游 README、AGENTS、SECURITY、LICENSE、NOTICE 已读；核心重点是 `_optimize.py` 全文725行、`_runtime.py` 全文280行，以及 graph、MIL emitter、rewrite、target 与 native shim 的选定范围。没有把未读的全部 bridge/async/模型加载器当作已审计。
 
 ## 三条实际调用链
 
@@ -38,9 +43,9 @@ shim 动态载入系统 Espresso 私有符号；默认请求 device mask `0x4`�
 
 ## 实际执行与边界
 
-原 checkout 保持只读，复制到 ignored 任务目录后构建小 shim；58个上游文件在运行后与原树逐项比较，关键 per-run 文件还做前后 hash。没有安装包/下载模型/修改系统安全设置。13组真实同步设备实验、1个成功 CPU contract 与1个 frontend 参数错误全部见[证据](../../review/aneforge-evidence-20261016.json)。CPU cache/precision 的控制流测试使用显式 mock，不伪装成硬件结果。
+原 checkout 保持只读，复制到 ignored 任务目录后构建小 shim；58个上游文件在运行后与原树逐项比较，关键 per-run 文件还做前后 hash。没有安装包/下载模型/修改系统安全设置。13组真实同步设备实验、1个成功 CPU contract 与1个 frontend 参数错误全部见。CPU cache/precision 的控制流测试使用显式 mock，不伪装成硬件结果。
 
-后续已将stable exp(-abs)与配对channel分担用于[真实Qwen layer0完整FFN消费者](../../review/qwen-private-ffn-20261016.md)，并与完整原BF16 GPU及同图serial比较，冻结share后做step19/10和24-group确认。这是copy-based API桥接的warm组件观察；不把小图约3×迁移到Qwen，不授予完整请求、LoRA、shared backing、物理overlap或全上游engine资格。
+后续已将stable exp(-abs)与配对channel分担用于[真实Qwen layer0完整FFN消费者](../../gpu_ane/case-studies/qwen-private-ffn-copy-bridge.md)，并与完整原BF16 GPU及同图serial比较，冻结share后做step19/10和24-group确认。这是copy-based API桥接的warm组件观察；不把小图约3×迁移到Qwen，不授予完整请求、LoRA、shared backing、物理overlap或全上游engine资格。
 
 许可：MIT，Copyright (c) 2026 Spencer H. Bryngelson；上游 NOTICE 明确不授予 Apple 私有接口权利。这里只分发原创 API 客户端、独立合同/oracle 与脱敏报告；上游源码/shim binary/系统 framework 均不打包进核心 Wiki。
 

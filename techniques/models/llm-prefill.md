@@ -1,6 +1,19 @@
 # LLM prefill：大矩阵、全局因果边界和 FFN 并行
 
-[阶段地图](stage-map.md) · [本地 GQA/KV 实现](../labs/model_stages.py) · [Hybrid FFN](../designs/hybrid-ffn.md)
+<!-- knowledge
+id: technique-models-llm-prefill
+type: guide
+stage: prefill, ffn
+operator: attention, gemm, rope, swiglu
+backend: cpu-reference, metal
+device: cpu, gpu, ane
+symptom: memory-bound, wrong-layout
+semantics: numerically-equivalent
+boundary: producer-consumer, gpu-ane
+api: public, reference-only
+-->
+
+[阶段地图](stage-map.md) · 本地 GQA/KV 实现 · [Hybrid FFN](../designs/hybrid-ffn.md)
 
 ## 工作量与主要接缝
 
@@ -31,12 +44,5 @@ Chunking 降低单次 activation/score 临时峰值，但保留全部历史时�
 ## 内存与验收
 
 连续 KV 的逻辑字节近似 `2×layers×batch×T×KV_heads×head_dim×bytes_per_element`，再加 scale/页表/对齐。Paged KV 主要减少分配碎片和支持共享，不自动让相同 token 的 KV 字节消失。KV quant 是近似，独立做长上下文/任务误差门禁。
-
-```sh
-python3 -B techniques/labs/run.py stage-llm
-python3 -B techniques/labs/run.py online-attention
-python3 -B techniques/labs/run.py partition-axes
-python3 -B techniques/labs/run.py dual-bank-handoff
-```
 
 必测 chunk=1、非整除尾、长短混 batch、非零全局位置、source/adapter 切换、head 映射、finite、失败 cache 不变和 decode 连续性。重新探索条件：新 attention mask、rope、KV format、chunk/bucket、LoRA、device 或 graph。

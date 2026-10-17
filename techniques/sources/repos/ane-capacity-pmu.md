@@ -1,8 +1,13 @@
 # measure_ane_capacity：序列化、fallback 与 PMU 计分
 
-[来源目录](../README.md) · [原 PMU 工具](ane-pmu-provenance.md) · [实验合同](../../profiling/ane-pmu-lab.md) · [本机报告](../../review/ane-pmu-20261016.md)
+<!-- knowledge
+id: source-upstream-ane-capacity
+type: source
+-->
 
-补充来源：`freedomtan/measure_ane_capacity@2d3809ba2a3654db71d6790574c9b0247d5b4493`，2026-10-16新建 sparse checkout，未改变既有参考项目。完整读取 `measure_ane_pmu.m`723行，另读 README1–170、App bridge 的选定 PMU段、interpretation guide1–80、Makefile和LICENSE；不宣称运行整个 App、FP8/INT8或审计全部仓库。逐文件 SHA 与范围在[来源登记](../../references/sources.json)。
+[来源目录](../README.md) · [原 PMU 工具](ane-pmu-provenance.md) · [实验合同](../../profiling/ane-pmu-lab.md) · [本机报告](../../ane/case-studies/pmu-payload-and-missing-counters.md)
+
+补充来源：`freedomtan/measure_ane_capacity@2d3809ba2a3654db71d6790574c9b0247d5b4493`，2026-10-16新建 sparse checkout，未改变既有参考项目。完整读取 `measure_ane_pmu.m`723行，另读 README1–170、App bridge 的选定 PMU段、interpretation guide1–80、Makefile和LICENSE；不宣称运行整个 App、FP8/INT8或审计全部仓库。逐文件 SHA 与范围在[来源登记](../README.md)。
 
 ## 数据流中值得学的部分
 

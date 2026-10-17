@@ -1,6 +1,19 @@
 # VAE / 媒体阶段：激活峰值、全局统计和采样相位
 
-[阶段地图](stage-map.md) · [本地相位 / Welford 样本](../labs/model_stages.py) · [halo / causal taps](../labs/operators.py)
+<!-- knowledge
+id: technique-models-vae-and-media
+type: guide
+stage: vae, io
+operator: conv, norm, codec
+backend: cpu-reference
+device: cpu, gpu, media-engine
+symptom: memory-bound, wrong-layout, precision-loss
+semantics: numerically-equivalent
+boundary: tensor-pixelbuffer, producer-consumer
+api: reference-only
+-->
+
+[阶段地图](stage-map.md) · 本地相位 / Welford 样本 · [halo / causal taps](../examples/reference/operators.py)
 
 ## 小权重不等于小内存
 
@@ -18,7 +31,7 @@ VAE decode 将低分辨率 latent 扩成巨大 C/T/H/W activation；中间 activ
 
 ## 视频时间历史
 
-Causal Conv3d 的 chunk 需要保留上一 chunk 的真实时间 taps 和 phase；首帧 replicate/fold 只在图定义的初始位置成立，后续不能每块重新当首帧。[causal-halo](../labs/operators.py)展示初始折叠和缺 halo 的反例；[media.py](../labs/media.py)演示 bounded frame queue、顺序和 checksum。
+Causal Conv3d 的 chunk 需要保留上一 chunk 的真实时间 taps 和 phase；首帧 replicate/fold 只在图定义的初始位置成立，后续不能每块重新当首帧。[causal-halo](../examples/reference/operators.py)展示初始折叠和缺 halo 的反例；media.py演示 bounded frame queue、顺序和 checksum。
 
 流式 encode/decode 要让 queue 有上界、writer 错误反向传播、取消 drain，在保留最后一个 reader 前不复用 frame。Rational FPS、音视频对齐、颜色/alpha、最终文件写完也属于完整请求成功边界。
 
@@ -27,12 +40,5 @@ Causal Conv3d 的 chunk 需要保留上一 chunk 的真实时间 taps 和 phase�
 稳定 shape 的 conv/activation 子图是候选，不是“所有 conv 都必然快”。切图前列出输入输出 layout、norm 统计如何进入、padding、halo、cast、shared backing；测 pack→prediction→restore→后续 consumer 的总边界，包含重叠 halo 的重复算量和多次 prediction 的固定税。仅 compile/load 成功不证明物理 ANE 或性能收益。
 
 FP16/BF16 变化、局部 norm、独立 feather tile、temporal reset 或缩小 decode 都是单独的质量方案。对 seam、慢速运动、长视频首尾、极端像素幅值、alpha/range 比较，不只检查每张 tile finite。
-
-```sh
-python3 -B techniques/labs/run.py stage-vae
-python3 -B techniques/labs/run.py global-stat-tiles
-python3 -B techniques/labs/run.py causal-halo
-python3 -B techniques/labs/run.py media-backpressure
-```
 
 迁移到真实二维/三维图时重建完整 receptive field、norm groups、skip/upsample phase 和 memory ledger；新的 stride、kernel、tile、temporal chunk、精度、Core ML graph 或媒体格式都要重新验收。更多原理见 [VAE 专章](../media/vae.md)。

@@ -1,8 +1,13 @@
 # KernelWiki检索与版本复查：借合同，不搬硬件别名
 
-[总目录](../../README.md) · [源码索引](../README.md) · [本地查询合同](../../data/README.md) · [既有组织导读](../../references/kernelwiki-sana.md)
+<!-- knowledge
+id: source-upstream-kernelwiki-retrieval
+type: source
+-->
 
-2026-10-16只读复核`mit-han-lab/KernelWiki`固定commit `b6b4301f15e8ce6955a56776690643ce5db369e6`，不是当前远端版本声明。六个文件的完整SHA/阅读范围登记在[同一来源清单](../../references/sources.json)，未fetch/reset或修改参考checkout，也未运行上游脚本/安装依赖。许可为MIT，Copyright (c) 2026 hanlab；本地代码独立实现，没有复制其函数体、YAML数据库、skill或CUDA资产。
+[总目录](../../README.md) · [源码索引](../README.md) · [本地查询合同](../../guides/knowledge-base.md) · [既有组织导读](../../references/kernelwiki-sana.md)
+
+2026-10-16只读复核`mit-han-lab/KernelWiki`固定commit `b6b4301f15e8ce6955a56776690643ce5db369e6`，不是当前远端版本声明。六个文件的固定版本与阅读范围登记在[同一来源清单](../README.md)，未fetch/reset或修改参考checkout，也未运行上游脚本/安装依赖。许可为MIT，Copyright (c) 2026 hanlab；本地代码独立实现，没有复制其函数体、YAML数据库、skill或CUDA资产。
 
 ## 实际读到的机制
 
@@ -13,8 +18,8 @@
 
 上游入口：[query](https://github.com/mit-han-lab/KernelWiki/blob/b6b4301f15e8ce6955a56776690643ce5db369e6/scripts/query.py)、[schema](https://github.com/mit-han-lab/KernelWiki/blob/b6b4301f15e8ce6955a56776690643ce5db369e6/references/schema.md)、[freshness checker](https://github.com/mit-han-lab/KernelWiki/blob/b6b4301f15e8ce6955a56776690643ce5db369e6/scripts/check_version_freshness.py)。链接供出处核查，离线核心不需要上游checkout。
 
-## 迁移到Apple Silicon知识库
+## 本库只借知识组织与阅读检索
 
-继续使用`labs/catalog.json`和`references/sources.json`作为页面登记，新增`data/vocabulary.json`只存受控词表/单跳别名，`data/version-claims.json`只存绑定已有ID的复查声明。由同一登记生成`queries/README.md`，不另造第二张章节清单。
+本库采用 Markdown 原生索引：标题、稳定 ID、类型、少量主题标签和来源链接都在笔记本身。关键词单跳别名位于轻量查询代码中；不保存 JSON catalog、版本 hash 账本、实验原件或复算工具。索引是页面的自动视图，不是另一份手工登记。
 
-查询标签只描述内容主题；空列表为未分类，不能作“所有设备通用”。原始evidence保留自身来源/失败状态，不从关联章节继承已验证标签。exact context匹配仅显示recorded-context-only；缺上下文、超龄、源码/证据hash变化或环境不同都可见，永不授予runtime/质量/性能资格。完整实现与反例见[查询合同](../../data/README.md)。
+标签只描述主题，空标签表示未分类。固定版本和适用前提写进笔记，历史观察保留失败范围；检索命中不授予兼容性、设备、质量或性能资格。工程师和 AI 从方法、源码与案例形成新假设，而不是读取一套验证证书。使用方式见[查询指南](../../guides/knowledge-base.md)。

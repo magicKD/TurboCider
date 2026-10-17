@@ -1,6 +1,11 @@
 # vpipe：低内存不是一个kernel，而是协作合同
 
-不用原仓库也可学习：[packed / typed refill 设计](../designs/packed-streaming.md)、[阶段与驻留设计](../designs/residency-and-phases.md)和[独立实现](../labs/contracts.py)包含核心算法、状态与反例。下列外部文件及产品接缝仅用于可选溯源。
+<!-- knowledge
+id: technique-references-vpipe
+type: method
+-->
+
+不用原仓库也可学习：[packed / typed refill 设计](../designs/packed-streaming.md)、[阶段与驻留设计](../designs/residency-and-phases.md)和[独立实现](../examples/reference/contracts.py)包含核心算法、状态与反例。下列外部文件及产品接缝仅用于可选溯源。
 
 [总目录](../README.md) · [Streaming](../memory/streaming.md)
 

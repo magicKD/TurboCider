@@ -1,6 +1,19 @@
 # GPU/ANE 并行拓扑：同为 Transformer，合法边界却不同
 
-[设计目录](README.md) · [按模型选择](../models/hybrid-selection.md) · [本地实现](../labs/heterogeneous.py)
+<!-- knowledge
+id: technique-designs-parallel-topologies
+type: method
+stage: prefill, dit, ffn
+operator: gemm, swiglu, attention, scheduling
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: straggler, wrong-layout
+semantics: numerically-equivalent
+boundary: gpu-ane, producer-consumer
+api: reference-only
+-->
+
+[设计目录](README.md) · [按模型选择](../models/hybrid-selection.md) · [本地实现](../examples/reference/heterogeneous.py)
 
 本篇吸收mac_transformer的topology/workload建模、mac_local_ai与flux2-engine的实际分工，并对照mflux的FLUX.2 single block源码。来源与文件SHA见[专项阅读记录](../references/gpu-ane-projects.md)。不要求安装或打开任何原仓库。
 
@@ -50,12 +63,5 @@ ANE不能容纳全部F时，可把MLP再按F切成ANE prefix和GPU complement。
 本地`attention-head-shards`含三个head及不均匀hidden输出，完整对照与漏一个head但shape仍正确的反例。它是MHA数学样本，不是新ANE SDPA后端；ANE全attention仍需[完整放置门禁](heterogeneous-planner.md)。
 
 ## 运行与重新探索
-
-```sh
-python3 -B techniques/labs/run.py parallel-branches
-python3 -B techniques/labs/run.py attention-head-shards
-python3 -B techniques/labs/run.py partition-axes
-python3 -B techniques/labs/run.py dual-bank-handoff
-```
 
 新模型先从事实图标记边，再枚举拓扑；phase、bias、adapter、nonlinearity、mask、position、source或consumer变化后重审代数与lifetime。上述公式只是完整边界的分解；实际pack、precision、队列与争抢必须测量，不把原项目某台机器的倍率作为本库新结果。

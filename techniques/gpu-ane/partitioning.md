@@ -1,5 +1,19 @@
 # GPU / ANE 切分：从合法代数找到并行窗口
 
+<!-- knowledge
+id: technique-gpu-ane-partitioning
+type: method
+stage: ffn
+operator: swiglu, gemm
+backend: cpu-reference, mlx, coreml
+device: cpu, gpu, ane
+symptom: straggler, precision-loss
+semantics: numerically-equivalent
+representation: fp16, fp32
+boundary: gpu-ane, producer-consumer
+api: public, reference-only
+-->
+
 [总目录](../README.md) · [CPU 参考演示](../examples/split_ffn_reference.py)
 
 **M / F / H输入 / H输出 / Q / K-V sequence轴的区别、合法merge与UMA争抢**见 [维度与带宽专章](axes-and-bandwidth.md)，并有可运行negativecontrols；不把所有“hidden切分”混称为同一种FFN分工。
@@ -60,11 +74,7 @@ frozen、runtime row、Private/Public channel 有不同合同。当前 Public W8
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../examples/split_ffn_reference.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py overlap-dag
-```
+可读实现：[参考代码](../examples/split_ffn_reference.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：full/channel/row algebra；full GPU vs real GPU suffix/CoreML prefix。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

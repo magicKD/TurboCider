@@ -1,5 +1,10 @@
 # 可复用实验记录模板
 
+<!-- knowledge
+id: technique-templates-experiment
+type: guide
+-->
+
 [总目录](../README.md) · [测量规则](../profiling/measurement.md)
 
 复制到新的任务记录目录，填实际事实；`unknown`不是0，未测不是pass。原始日志/媒体/模型放ignored产物目录，仅提交便携摘要和工具。

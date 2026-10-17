@@ -1,5 +1,18 @@
 # 调度：让有用工作重叠，而不是让等待换位置
 
+<!-- knowledge
+id: technique-gpu-ane-scheduling
+type: method
+stage: pipeline, ffn
+operator: scheduling
+backend: mlx, metal, coreml, private-ane
+device: cpu, gpu, ane
+symptom: straggler, lifetime, memory-bound
+semantics: contract-only
+boundary: gpu-ane, producer-consumer
+api: public, private
+-->
+
 [总目录](../README.md) · [校准](calibration.md)
 
 ## MLX lazy 执行的先后关系
@@ -49,11 +62,7 @@ Qwen 编辑：首步参考/文本/目标长序列可能适合 channel split；pr
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/systems.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py overlap-dag
-```
+可读实现：[参考代码](../examples/reference/systems.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：legal vs missing dependency；serial/two GPU queues and measured timestamp intersection。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

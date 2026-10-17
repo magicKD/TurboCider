@@ -1,8 +1,13 @@
 # Splash W8A8实现导读：划分、分段、overlap与固定开销
 
-完整的本地替代阅读路线：[混合 FFN 设计](../designs/hybrid-ffn.md) → [切分 / LoRA 可执行实现](../examples/split_ffn_reference.py) → [W8A8 数学](../labs/quantization.py) → [双 bank / owner 实现](../labs/contracts.py)。下列原项目接缝是历史检查注记，不要求 checkout；本地原生 INT8 入口隔离单 matmul ABI，完整产品 FFN 夹具另在[可选 integrations](../integrations/README.md)。
+<!-- knowledge
+id: technique-references-splash-w8a8-walkthrough
+type: method
+-->
 
-[总目录](../README.md) · [Splash概览](splash.md) · [量化实验](../labs/quantization.md)
+完整的本地替代阅读路线：[混合 FFN 设计](../designs/hybrid-ffn.md) → [切分 / LoRA 可执行实现](../examples/split_ffn_reference.py) → [W8A8 数学](../examples/reference/quantization.py) → [双 bank / owner 实现](../examples/reference/contracts.py)。下列原项目接缝是历史检查注记，不要求 checkout；本地原生 INT8 入口隔离单 matmul ABI，完整产品 FFN 夹具另在[可选 integrations](../examples/README.md)。
+
+[总目录](../README.md) · [Splash概览](splash.md) · [量化实验](../examples/README.md)
 
 来源是本地只读`../references/splash-ffn`、HEAD `80827e1c3593f7d10c266394e4d4381321b73ad0`。本轮读取AneFfn.cpp、Measurement、Calibration、Handoff真实文件；源码里的特定机器/系统观察仍是作者记录，不提升为本库所有芯片事实或新测量。关键文件hash在`sources.json`。
 
@@ -18,7 +23,7 @@ GPU从原packed planes准备codes/scales，输入与gate/up权重采用匹配的
 
 特别注意：该Splash代码使用固定`std::mt19937`生成signs，TurboCider的Sylvester配方使用显式unsigned64mixing。seed数字相同仍可能不同；移植要逐个sign、basis方向、normalizedscale、FP16round和常量blob核对，不靠“都叫Hadamard”。
 
-可以运行 [CPU normalized W8A8](../labs/quantization.py)理解比例因子，再看 [Public实际shared IO](../labs/ane/shared_w8.py)。CPUreference不代替原源码的细粒度FP16lowering。
+可以运行 [CPU normalized W8A8](../examples/reference/quantization.py)理解比例因子，再看 Public实际shared IO。CPUreference不代替原源码的细粒度FP16lowering。
 
 ## 3. 两套W staging与ready/done
 

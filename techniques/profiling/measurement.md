@@ -1,5 +1,18 @@
 # 计时、内存与质量：让比较可解释
 
+<!-- knowledge
+id: technique-profiling-measurement
+type: guide
+stage: pipeline
+operator: scheduling
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: measurement
+semantics: contract-only
+boundary: request, producer-consumer
+api: reference-only
+-->
+
 [总目录](../README.md) · [实验模板](../templates/experiment.md)
 
 ## 同时记录的时间轴
@@ -47,7 +60,7 @@ MLX active/cache/peak、external surfaces、native ledger、RSS、physical footp
 
 先shape/finite/source，再component/trajectory，最后decoded媒体与人工whole/detail/temporal审阅。PNG bytes不等于decodedRGB；RGB忽略alpha的工具不能冒称RGBA完整。lossy codec后差异不直接归因模型。
 
-原始报告append-only或保留原件，摘要绑定report/binary/input hashes；源码后来变化不重标旧结果。失败gate保留，`allow_approximation`或肉眼近似不能覆写它。更多见 [近似验收](../algorithms/approximations.md)。
+原始报告append-only或保留原件，摘要绑定report/binary/input hashes；源码后来变化不重标旧结果。失败gate保留，`allow_approximation`或肉眼近似不能覆写它。更多见 [近似验收](../algorithms/methods/approximations.md)。
 
 ## 功率、能耗与持续负载
 
@@ -61,11 +74,7 @@ MLX active/cache/peak、external surfaces、native ledger、RSS、physical footp
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/media.py)；[实验步骤与边界](../labs/profiling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py profiling-scopes
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：interval union vs sum of nested spans；power vs total energy and matched input pairs。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

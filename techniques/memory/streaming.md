@@ -1,5 +1,19 @@
 # 权重 streaming、typed slots 与 pinned subset
 
+<!-- knowledge
+id: technique-memory-streaming
+type: method
+stage: dit, ffn
+operator: scheduling, layout
+backend: cpu-reference, metal, mlx
+device: cpu, gpu
+symptom: memory-bound, lifetime, storage-pressure
+semantics: bitwise, numerically-equivalent
+representation: packed, fp16, bf16
+boundary: weight-runtime, cpu-gpu
+api: public, reference-only
+-->
+
 [总目录](../README.md) · [vpipe](../references/vpipe.md) · [存储](storage.md)
 
 ## 把不可控换页变成显式生命周期
@@ -57,11 +71,7 @@ BF16/F16 虽同宽但位语义不同；U32 packed words 不可当浮点 cast。F
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/systems.py)；[实验步骤与边界](../labs/memory-io.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py bounded-io
-```
+可读实现：[参考代码](../examples/reference/systems.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：serial vs bounded one-future checksum；short read and late generation errors。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

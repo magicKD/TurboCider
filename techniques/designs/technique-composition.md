@@ -1,6 +1,19 @@
 # 技术组合不是叠开关：capability、effect 与逐阶段 schedule
 
-[设计目录](README.md) · [本地 checker](../labs/policies.py) · [模型阶段](../models/stage-map.md)
+<!-- knowledge
+id: technique-designs-technique-composition
+type: method
+stage: dit, pipeline
+operator: scheduling
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: lifetime, stale-cache, precision-loss
+semantics: contract-only
+boundary: producer-consumer, request
+api: reference-only
+-->
+
+[设计目录](README.md) · [本地 checker](../examples/reference/policies.py) · [模型阶段](../models/stage-map.md)
 
 ## 从 Sana 吸收的分层
 
@@ -24,12 +37,6 @@ Model adapter 申报可用接缝：attention、FFN、block loop、step loop、co
 
 ## 本地实现如何嵌入新模型
 
-先写 adapter 的精确操作边界与 capability 表，再把技术变为纯配置/策略。通过 `compose`才建立执行 plan；执行时记录有效 schedule、source、step count、precision、cache hit 与 fallback。Cache 的实际 reset/异常路径由 [caches.py](../labs/caches.py)展示，候选 share 的内存准入与拒绝外推由 [select_share](../labs/policies.py)展示。
+先写 adapter 的精确操作边界与 capability 表，再把技术变为纯配置/策略。通过 `compose`才建立执行 plan；执行时记录有效 schedule、source、step count、precision、cache hit 与 fallback。Cache 的实际 reset/异常路径由 [caches.py](../examples/reference/caches.py)展示，候选 share 的内存准入与拒绝外推由 [select_share](../examples/reference/policies.py)展示。
 
-```sh
-python3 -B techniques/labs/run.py technique-composition
-python3 -B techniques/labs/run.py residual-reuse
-python3 -B techniques/labs/run.py share-calibration
-```
-
-正反例包括 capability 缺失、两个 precision owner、同 phase 隐藏依赖、互斥 schedule 和 off identity。重新探索条件：新 stage、hook、layout、量化策略、approximation 组合或搜索 horizon。设计来源与独立实现边界见 [吸收账本](../references/absorbed-designs.json)。
+正反例包括 capability 缺失、两个 precision owner、同 phase 隐藏依赖、互斥 schedule 和 off identity。重新探索条件：新 stage、hook、layout、量化策略、approximation 组合或搜索 horizon。设计来源与独立实现边界见 [吸收账本](README.md)。

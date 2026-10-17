@@ -1,17 +1,24 @@
 # MLX真实FFN profiling：output-ready与分阶段drain不是一个程序
 
-[原始BF16控制](../review/gpu-affine-20261016.md) · [clock校准](timestamp-calibration.md) · [本机结果](../review/gpu-clock-and-qwen-20261016.md) · [全部样本](../review/qwen-bf16-profiling-evidence-20261016.json)
+<!-- knowledge
+id: technique-profiling-mlx-boundaries
+type: guide
+stage: dit, ffn
+operator: swiglu, gemm
+backend: mlx, metal
+device: gpu
+symptom: measurement, launch-bound
+semantics: contract-only
+representation: bf16, fp16
+boundary: producer-consumer
+api: public
+-->
+
+[原始BF16控制](../metal/case-studies/affine-ffn-cost-and-resident-tradeoff.md) · [clock校准](timestamp-calibration.md) · [本机结果](../metal/case-studies/clock-calibration-and-qwen-profiling.md) · 全部样本
 
 ## 从真实source进入，不拿教学shape替代
 
-[qwen_ffn_profile.py](../labs/metal/qwen_ffn_profile.py)读取明确的原始checkpoint与已有强制GPU capture，复用[BF16有界reader](../labs/metal/real_bf16_source.py)检查选定tensor SHA、capture receipt/activation SHA和FP16 fixture的转换关系。实际是完整Qwen layer0，M1024/H4096/F12288，step1/10/19原始activation；没有重复小样本行、量化替代原权重或下载模型。
-
-```sh
-.venv/bin/python -B techniques/labs/metal/qwen_ffn_profile.py \
-  --fixture "$TC_FFN_FIXTURE" --source-checkpoint "$TC_QWEN_CHECKPOINT" \
-  --capture-root "$TC_CAPTURE_ROOT" --point layer-0-step-10 \
-  --output-dir outputs/my-new-qwen-host-profile
-```
+qwen_ffn_profile.py读取明确的原始checkpoint与已有强制GPU capture，复用BF16有界reader检查选定tensor SHA、capture receipt/activation SHA和FP16 fixture的转换关系。实际是完整Qwen layer0，M1024/H4096/F12288，step1/10/19原始activation；没有重复小样本行、量化替代原权重或下载模型。
 
 保持`[1,M,H]` BF16消费者与base无LoRA身份；只在ignored目录保存源码快照和JSON，不保存另一份权重/activation、不改产品默认。独立CPU FP64抽样和完整BF16 replica比较放在计时之外。Replica不是完整请求oracle，3%局部门槛不授予图像/LoRA质量。
 
@@ -28,7 +35,9 @@
 
 ## 人与Agent共用入口
 
-[curate_qwen_profile.py](../scripts/curate_qwen_profile.py)只读明确报告，独立检查完整trial集合、来源/数值、host clock、阶段顺序及边界，再分别输出描述性median；失败case和staged时间不获得speedup。
+后续第二十三轮补[完整MLX Qwen的公开CB SDK窗口](../metal/case-studies/mlx-command-buffer-windows-and-queue-scope.md)及[原benchmark helper/stream完成控制](../metal/case-studies/mlx-benchmark-evaluation-and-stream-completion.md)。这些是新scope下的真实CB时间，不能回填本页历史staged程序或旧gputrace的null；当前类级覆盖、callback扰动和全设备/逐kernel未知继续分开。
+
+curate_qwen_profile.py只读明确报告，独立检查完整trial集合、来源/数值、host clock、阶段顺序及边界，再分别输出描述性median；失败case和staged时间不获得speedup。
 
 ```sh
 python3 -B techniques/scripts/host_trace.py "$TC_PROFILE_REPORT" \
@@ -38,11 +47,5 @@ python3 -B techniques/scripts/host_trace.py "$TC_PROFILE_REPORT" \
 trace exporter要求明确point与diagnostic trial，输出CPU-host-only lane和µs单位，不补GPU/ANE时间。未启动GUI viewer。源码、数值、profile布局或精度改变时需要新记录；后续应关联真实attention、更多层、LoRA和完整请求，而不是用这个局部profile覆盖所有模型。
 
 只拿到本wiki也能从公开capsule离线重建一个诊断，不需要模型、原始输出或MLX安装：
-
-```sh
-python3 -I -S -B techniques/scripts/host_trace.py \
-  techniques/review/qwen-bf16-profiling-evidence-20261016.json \
-  --run qwen-bf16-host-profile-v2 --point layer-0-step-10 --trial 0
-```
 
 capsule必须显式选择run，不跨进程合并clock。输入capsule的SHA实际重算；原raw报告SHA只是curator登记的lineage，另标`declared_source_hash_not_recomputed=true`，不冒充已持有完整原文件。

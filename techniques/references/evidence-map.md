@@ -1,56 +1,32 @@
-# 证据地图与更新规则
+# 来源与案例阅读地图
 
-这是可选的产品/原项目证据地图，不是自包含学习依赖。[吸收账本](absorbed-designs.json)记录本地设计、代码、测试和出处对应关系；[设计目录](../designs/README.md)与[阶段地图](../models/stage-map.md)可直接离线阅读。
+<!-- knowledge
+id: technique-references-evidence-map
+type: method
+-->
 
-[总目录](../README.md) · [案例比较](../gpu-ane/experiment-ledger.md) · [机器来源清单](sources.json)
+[总目录](../README.md) · [固定版本来源](../sources/README.md) · [设计样本](../designs/README.md) · [历史经验](history-lessons.md)
 
-## 本轮核查范围
+本目录是知识库，不分发实验数据、验证回执或机器清单。这里说明怎样理解不同材料，不将阅读记录当成当前运行资格。
 
-基于2026-10-15干净的TurboCider `ad8100f` 开始，读取根/native/backend入口、GPU/ANE/streaming/quantized设计、近期状态和机器JSON，再对照关键执行/ownership/调度/量化/IO源码。历史以Git日志和具体diff、项目相关Codex会话检索交叉定位；不是穷尽阅读所有模型文件/所有个人聊天，也不是重跑全部历史实验。
+## 区分五种认识
 
-本次新增仅为知识库/辅助脚本/测试及根README导航，没有修改推理默认或模型数学。原有设计、实验记录和失败回执不重写；产生的新验证在 [本轮记录](../review/validation.md)。
+1. **源码事实**：固定 revision 的实现、guard、数据流与 API 合同。
+2. **作者报告**：作者在特定硬件和任务下的结果，不等于本机复现。
+3. **历史观察**：案例中记录的局部数值、速度或失败；原始实验包不随库提供。
+4. **独立推导**：代数、流量或成本模型，有明确前提，不是实测。
+5. **待验证假设**：值得下一次尝试的解释，不能改写成已证明原因。
 
-## 来源优先级
+比较范围不同时并列说明，不拼成排名，不把组件倍率乘成整模型倍率。
 
-1. 当前真实代码/API/actual result证明实现与执行合同。
-2. 与具体binary/source/input绑定的小型机器记录和原始样本证明测量；链接到ignored本地产物不等于他人clone后拥有它。
-3. 同阶段状态文档解释决定/失败/边界。
-4. 设计文档只说明计划；若后来记录已否决，不能继续当当前推荐。
-5. 历史聊天用于发现问题/出处，必须回到代码/记录核查；聊天里“仍在跑”不能证明今天还有liveprocess。
+## 按学习目标定位
 
-## 重要入口
+| 目标 | 入口 |
+| --- | --- |
+| GPU 数据流、选核和低比特消费 | [Metal 方法](../metal/README.md) · [Metal 来源](../metal/sources.md) |
+| ANE 图、生命周期和训练接缝 | [ANE 方法](../ane/README.md) · [ANE 来源](../ane/sources.md) |
+| 跨设备切分与消费者 ABI | [协同方法](../gpu_ane/README.md) · [协同来源](../gpu_ane/sources.md) |
+| 缓存、稀疏、预测与质量取舍 | [算法地图](../algorithms/README.md) · [算法来源](../algorithms/sources.md) |
+| 把机制迁移到新模型 | [阶段地图](../models/stage-map.md) · [实现样本](../examples/README.md) |
 
-| 主题 | 权威实现 | 观测 / 边界 |
-| --- | --- | --- |
-| 模型/后端当前决策 | [registry](../../native/models/registry.cpp)、[backend说明](../../native/backends/README.md) | [acceleration](../../docs/status/acceleration.md)、[10/15合并](../../docs/status/2026-10-15-main-into-dev.md) |
-| FFN/LoRA/owner | [HybridFfn](../../native/backends/ane_ffn.hpp)、[ExecutorABI](../../native/backends/ane_runtime.hpp) | [jointA/B](../../docs/status/local512-qwen-joint-ab-2026-10-09.md)、[downrank](../../docs/status/local512-split-down-ranks-2026-10-08.md) |
-| 调度与校准 | [RowScheduler](../../native/backends/ane_scheduler.hpp)、[costmodel](../../native/backends/ane_cost_model.hpp)、[integratedtrial](../../native/backends/ane_channel_calibration.cpp) | [nativeauto](../../docs/status/native-channel-auto-integration-2026-10-05.md)、[prefetch反例](../../docs/status/private-ane-prefetch-2026-10-03.md) |
-| CoreML/Public/Private | [coreml](../../native/backends/coreml.mm)、[PublicW8](../../native/backends/ane_public_w8.mm)、[PrivateW8](../../native/backends/private/ane_w8_executor.mm) | [PublicW8实际边界](../../docs/status/public-w8-shared-ffn-2026-10-07.md) |
-| 独立nativegraph | [backend](../../native/backends/metal_graph/backend.hpp)、[QwenDiT](../../native/models/qwen21/native_denoiser.cpp) | [SGMMAE2E负结果](../../docs/status/2026-10-08-native-lora-sgmma-e2e.md) |
-| streaming/IO | [context](../../native/runtime/streaming/context.hpp)、[readahead](../../native/runtime/streaming/read_ahead_worker.hpp)、[SourceLease](../../native/runtime/streaming/source_lease.hpp) | [streaming目录](../../docs/design/streaming/README.md)、[量化/vpipe对照](../../docs/design/quantized-streaming-vpipe-comparison.md) |
-| exact/approx缓存 | [conditioncache](../../native/models/qwen21/conditioning_cache.hpp) | [DBCache](../../docs/status/2026-09-30-qwen21-dit-cache.md)、[prefixhistory](../../docs/status/qwen21-resident-prefix-kv-2026-09-26.md) |
-| VAE/媒体 | [SeedVR2VAE](../../native/models/seedvr2/vae.cpp)、[reader](../../native/media/rgb_video_reader.mm) | [VAE全景](../../docs/design/seedvr2-vae-optimization.md)、[blockIO错误](../../docs/design/seedvr2-block-weight-residency.md) |
-| 正确测量 | [sampler](../../tools/native/process_tree_sampler.py)、[verifier](../../tools/native/verify_process_tree_samples.py) | [mergeJSON](../../docs/design/validation/main-dev-merge-performance-20261015.json)、[SeedVR2JSON](../../docs/design/validation/seedvr2-comfy-benchmark-current-20261015.json)、[shareJSON](../../docs/design/validation/local512-qwen-prefill-shares-20261010.json) |
-
-## Git历史中本轮检查的接缝
-
-`git show <commit> -- <path>`可定位真实变更，而非从commit标题猜实现：
-
-- `1056615`：bounded GGUF read-ahead / CPU decode，读取worker的实际RAII/error/cancel合同。
-- `e140a01`：SeedVR2 norm/SiLU/halo pack与phase-history，保留initial-frame FP32配方及compile-isolated范围。
-- `c085b7d`：verified serial block-weight prototype，结合现有文档核对reader错误锁存与真实组件边界。
-- `4cda62f`：合并后的匹配性能与cache tradeoff，核对机器JSON原始warm samples及qualification字段。
-
-源码变更、机器回执和产品部署是三件事；本轮没有将这些旧构建重标为当前ad8100f新测量。
-
-## 外部checkout
-
-Splash、带ANE的splash-ffn、vpipe、mac_transformer、flux2-engine、ANEresearch、SolAttn/SmoothQuant在来源清单中以optional记录。Splash与vpipe关键已读文件另存SHA256，防止head相同但worktree内容不同；vpipe本地有未跟踪models目录，不读取或修改权重。清单不是这些项目的完整源码快照。
-
-外部缺失时手册仍可读、CPU工具仍可运行；校验器warning提示未能复核来源，不误报已验证。网上API链接只作补充，未离线镜像、未自动校验HTTP或anchor。
-
-## 更新一条技巧时
-
-补适用场景/代数/layout/成本/失败/命令/资格，链接真实文件和新回执；改`sources.json`相关字面符号与需要的snapshot，而不移动旧benchmark身份。对比scope不相同就并列说明，不覆盖历史数字。运行链接/CPU测试，再按 [coverage](../review/coverage.md)人工复查。
-
-实现扩展新增 [逐技术章节catalog](../labs/catalog.json)、[实验室源代码](../labs/README.md)、[KernelWiki/Sana设计对照](kernelwiki-sana.md)和 [Splash W8细读](splash-w8a8-walkthrough.md)。来源清单现在也检查新增独立代码的关键符号；外部snapshot仍是本轮读到的内容，不自动宣称上游最新。
+产品当前行为应回到实际产品代码和配置确认，不能从旧笔记推导已部署。需要新实验证据时，在独立任务和本地工作目录中取得，而不是把全套输出重新塞回知识库。

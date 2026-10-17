@@ -1,5 +1,10 @@
 # 历史对话里应沉淀的工程经验
 
+<!-- knowledge
+id: technique-references-history-lessons
+type: method
+-->
+
 [总目录](../README.md) · [来源层级](evidence-map.md)
 
 ## 怎样使用聊天历史而不把它当权威
@@ -38,4 +43,4 @@ Session开始日期不一定是段落事件日期，长会话可能跨多周。�
 - 采activation、全层导出、compiled cache各自可占大量磁盘；先估量空间、验证capture覆盖/位置/hash，新artifact不覆盖旧记录。表观删除大小与实际free变化不相等，跨项目共享cache不能猜归属。
 - “相同seed”的rotation并不一定相同：本轮读Splash的PRNG与TurboCider明确mixing recipe后，已经在 [实现导读](splash-w8a8-walkthrough.md)写出逐sign/常量核对要求。
 
-本轮自己的真实接口坑（Pythonint8bridge、NumPy/foreignframeworkFPflags、私有TMPDIR隔离）见 [扩展验证](../review/labs-validation.md)，均有可运行复现入口，不据一次失败封闭其他表达/新SDK的探索。
+本轮自己的真实接口坑（Pythonint8bridge、NumPy/foreignframeworkFPflags、私有TMPDIR隔离）见 [扩展验证](../MAINTENANCE.md)，均有可运行复现入口，不据一次失败封闭其他表达/新SDK的探索。

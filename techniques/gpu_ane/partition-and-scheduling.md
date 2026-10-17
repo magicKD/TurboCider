@@ -1,8 +1,22 @@
 # 异构切分：先证明图合法，再寻找关键路径收益
 
-[专题导航](README.md) · [共享交接](memory-and-handoff.md) · [vpipe](vpipe-runtime-weights.md)
+<!-- knowledge
+id: technique-gpu-ane-partition-and-scheduling
+type: method
+stage: ffn
+operator: swiglu, gemm
+backend: cpu-reference, mlx, coreml
+device: cpu, gpu, ane
+symptom: straggler, precision-loss
+semantics: numerically-equivalent
+representation: fp16, fp32
+boundary: gpu-ane, producer-consumer
+api: public, reference-only
+-->
 
-本页是代数推导与运行时设计综合，不把线程同时运行当成物理 GPU/ANE 同时执行。参考实现和来源见 [项目案例](hybrid-projects-and-stages.md) 与 [固定来源](sources-and-coverage.md)。
+[专题导航](README.md) · [共享交接](memory-and-handoff.md) · [vpipe](case-studies/vpipe-runtime-weights.md)
+
+本页是代数推导与运行时设计综合，不把线程同时运行当成物理 GPU/ANE 同时执行。参考实现和来源见 [项目案例](hybrid-projects-and-stages.md) 与 [固定来源](../MAINTENANCE.md)。
 
 ## 六种不同的“协同”
 
@@ -59,17 +73,14 @@ T_hybrid = exposed_prepare
 4. 扫少量合法 share、tile、bucket；先固定候选，再做 ABBA/反序和未用于调参的输入确认。
 5. 与真实 unsplit GPU A/B；完整请求若不盈利则保留 GPU，即便 ANE isolated TOPS 很高。
 
-vpipe 还区分 `kSplit/kProbe/kGpu`：probe 保留 split 点但不做 staging，用于识别 mid-block drain 的固定损失。这比只根据 GPU/ANE rows/ms 调 share 更完整，见 [源码走查](vpipe-runtime-weights.md)。
+vpipe 还区分 `kSplit/kProbe/kGpu`：probe 保留 split 点但不做 staging，用于识别 mid-block drain 的固定损失。这比只根据 GPU/ANE rows/ms 调 share 更完整，见 [源码走查](case-studies/vpipe-runtime-weights.md)。
 
 ## 最小复现与否决
-
-```sh
-python3 -B techniques/labs/run.py parallel-branches
-python3 -B techniques/labs/run.py segmented-ffn
-python3 -B techniques/labs/run.py optional-devices
-python3 techniques/examples/split_ffn_reference.py
-```
 
 这些是 CPU 数学/调度演示，不是设备 benchmark。负控包括 gate/up 错配、down 漏片、bias 重复、sequential 假并行、CPU 分支晚到、LoRA 缺支。设备实验另外检查真实输出、完成事件和 [内存所有权](memory-and-handoff.md)。
 
 重开条件：GPU 基线变化、激活 token 分布变化、checkpoint/LoRA 改变、图 tile/SDK/SoC 更新。历史失败不代表该拓扑永远无效。
+
+第十五轮的[Splash paired-channel实例](case-studies/splash-w8a8-prefill-and-layout.md)保持gate/up同一F片、down原物理pitch与单次residual；[校准/退役/实际重跑](case-studies/splash-handoff-calibration-and-replay.md)还加入concurrent slowdown项、相邻unit minimax、KV容量约束与chunk suffix。live breaker不是完整请求的持续成对A/B，强行放行event也不是成功或drain；这些是源码与CPU合同，不是本机异构提速证明。
+
+第十六轮补[提交前容量预算](case-studies/splash-command-capacity-and-watchdog.md)：此ref每signal拆出一个CB，全部创建后才commit；64层每层一signal需65个，默认64容量不够。当前队列512并拒绝512及以上signal。8层fault suite不覆盖64层边界，host链接和CPU容量见证也不是设备挂起/恢复实测。

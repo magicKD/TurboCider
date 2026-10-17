@@ -1,8 +1,13 @@
 # Apple文件clone：隔离常量资产，不当作设备零拷贝
 
-[来源索引](../README.md) · [真实共享FFN](../../review/qwen-shared-ffn-20261016.md) · [存储合同](../../memory/storage.md)
+<!-- knowledge
+id: source-official-clonefile
+type: source
+-->
 
-2026-10-16读取Apple现行Foundation文档和本机SDK26.5的`sys/clonefile.h`；URL、内容SHA和选定范围在[sources.json](../../references/sources.json)。不是镜像Apple headers/文档，也不把其许可变成Wiki MIT。SDK header带APSL2.0声明，本目录只作原创概括/调用。
+[来源索引](../README.md) · [真实共享FFN](../../gpu_ane/case-studies/qwen-shared-ffn-consumer-cost.md) · [存储合同](../../memory/storage.md)
+
+2026-10-16读取Apple现行Foundation文档和本机SDK26.5的`sys/clonefile.h`；URL、内容SHA和选定范围在[sources.json](../README.md)。不是镜像Apple headers/文档，也不把其许可变成Wiki MIT。SDK header带APSL2.0声明，本目录只作原创概括/调用。
 
 ## 公共合同与本轮策略
 

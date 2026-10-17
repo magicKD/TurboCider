@@ -1,8 +1,13 @@
 # GGML Metal：块布局、实际摘录执行与tensor政策
 
+<!-- knowledge
+id: source-upstream-ggml-metal
+type: source
+-->
+
 [来源索引](../README.md) · [存储合同](../../memory/storage.md) · [MLX对照](mlx-affine-dispatch.md)
 
-来源：`ggml-org/llama.cpp@64e9bceb2c3a856efed96feda784a50947049feb`，工作树只读。读取`ggml-common.h`中Q4_0/Q8_0定义，Metal dequantizer、mul_mm的所选路径和device capability/policy段；逐文件SHA与准确范围见[来源登记](../../references/sources.json)。未运行整个llama.cpp或GGML backend benchmark。
+来源：`ggml-org/llama.cpp@64e9bceb2c3a856efed96feda784a50947049feb`，工作树只读。读取`ggml-common.h`中Q4_0/Q8_0定义，Metal dequantizer、mul_mm的所选路径和device capability/policy段；逐文件SHA与准确范围见[来源登记](../README.md)。未运行整个llama.cpp或GGML backend benchmark。
 
 ## 大小相等不是格式相等
 
@@ -12,13 +17,13 @@
 | GGML Q8_0 | 32元素；half d + 32个signed int8 | 负数不能按unsigned affine code解释 |
 | MLX affine Q8 group64/FP16 meta | uint32 codes，共64 bytes；另有half scale/bias，共4 bytes | 虽与两个Q8_0块同为68 bytes，但group、metadata位置与数学不同 |
 
-CPU[独立decoder与错误对照](../../labs/quantization.py)覆盖错误nibble交错、signed extremes、非有限scale、错误块大小；不因为普通Q4_0通过，就说Q4_K/IQ/FP8等格式兼容。
+CPU[独立decoder与错误对照](../../examples/reference/quantization.py)覆盖错误nibble交错、signed extremes、非有限scale、错误块大小；不因为普通Q4_0通过，就说Q4_K/IQ/FP8等格式兼容。
 
 ## 实际执行了什么上游实现
 
-保留MIT许可与版权后，摘取了`dequantize_q4_0`与`dequantize_q8_0`两个**未改函数体**：[dequantizers.metal](../../assets/source-excerpts/ggml-dequant-64e9bce/dequantizers.metal)。[PROVENANCE](../../assets/source-excerpts/ggml-dequant-64e9bce/PROVENANCE.json)记录原文件SHA、line ranges与包装差异；[原许可](../../assets/source-excerpts/ggml-dequant-64e9bce/LICENSE)随资产分发。
+保留MIT许可与版权后，摘取了`dequantize_q4_0`与`dequantize_q8_0`两个**未改函数体**：dequantizers.metal。PROVENANCE记录原文件SHA、line ranges与包装差异；原许可随资产分发。
 
-[小型GPU客户端](../../labs/metal/ggml_dequant_probe.py)提供相同18/34-byte block structs，以float4x4实例化原函数，safe math，经公共MLX JIT在本机实际执行。正常Q4 nibble与Q8 signed控制和CPU参考一致；tiny subnormal scale的Q4存在差异，完整向量和绝对误差保留。
+小型GPU客户端提供相同18/34-byte block structs，以float4x4实例化原函数，safe math，经公共MLX JIT在本机实际执行。正常Q4 nibble与Q8 signed控制和CPU参考一致；tiny subnormal scale的Q4存在差异，完整向量和绝对误差保留。
 
 这是所选函数/模板实例/编译选项的实测，不是完整GGML kernel、半精度输出实例或默认编译选项的全覆盖，也不是模型速度结论。不能把诊断客户端return0当作“所有数值比较通过”：它表示采集完成，case.equal显式区分匹配与反例。
 

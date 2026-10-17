@@ -1,8 +1,13 @@
 # MLX SDPA：guard、stride、mask与输出布局
 
-[来源索引](../README.md) · [attention技术卡](../../metal/attention.md) · [本机完整对照](../../review/qwen-attention-20261016.md)
+<!-- knowledge
+id: source-upstream-mlx-sdpa
+type: source
+-->
 
-固定源码[ml-explore/mlx v0.32.0](https://github.com/ml-explore/mlx/tree/7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247)，commit `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247`；MIT、Apple版权。SHA与选读范围保留在[同一登记](../../references/sources.json)。执行的是已安装0.32.0，其binary/dylib/metallib hashes在证据中；没有从源码重建MLX，也不把相同版本号当构建等价证明。
+[来源索引](../README.md) · [attention技术卡](../../metal/attention.md) · [本机完整对照](../../metal/case-studies/qwen-attention-replay-and-empty-row.md)
+
+固定源码[ml-explore/mlx v0.32.0](https://github.com/ml-explore/mlx/tree/7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247)，commit `7a1d4f5c12ac82f4b4d0a6e71538d89ca0605247`；MIT、Apple版权。SHA与选读范围保留在[同一登记](../README.md)。执行的是已安装0.32.0，其binary/dylib/metallib hashes在证据中；没有从源码重建MLX，也不把相同版本号当构建等价证明。
 
 ## 先读入口guard，不假设fast名字一定fused
 
@@ -28,6 +33,6 @@ API的[公开说明](https://ml-explore.github.io/mlx/build/html/python/_autosum
 
 ## 已运行的边界
 
-7个synthetic tail/mask/head_dim/GQA controls，两个真实seed的prefill/steady三候选，共21个比较含2个noop；另有常量V诊断。真实QKV来自actual GPU block arguments的原配方重放，完整block/prefix过控制，但不是未改变compiled kernel内部的直接抓取。详见[全部证据](../../review/qwen-attention-evidence-20261016.json)。
+7个synthetic tail/mask/head_dim/GQA controls，两个真实seed的prefill/steady三候选，共21个比较含2个noop；另有常量V诊断。真实QKV来自actual GPU block arguments的原配方重放，完整block/prefix过控制，但不是未改变compiled kernel内部的直接抓取。详见。
 
 没有移植上游shader、运行全部上游测试或授予全请求资格。新版本/architecture、不同D/Q/K/GQA、mask空行/类型、stride、LoRA或完整consumer改变时重新审读与测量。

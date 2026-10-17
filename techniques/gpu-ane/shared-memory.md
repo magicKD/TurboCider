@@ -1,5 +1,19 @@
 # 共享 IO：零拷贝、同步与所有权是三件事
 
+<!-- knowledge
+id: technique-gpu-ane-shared-memory
+type: method
+stage: pipeline
+operator: layout, scheduling
+backend: coreml, metal
+device: gpu, ane
+symptom: wrong-layout, lifetime
+semantics: contract-only
+representation: iosurface, pixelbuffer, fp16
+boundary: gpu-ane, producer-consumer
+api: public
+-->
+
 [总目录](../README.md) · [生命周期](../ane/lifecycle.md)
 
 ## “零拷贝”的准确边界
@@ -50,11 +64,7 @@ poison output 检查漏写；非连续 stride；first/last tail；source 同地�
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/systems.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py slot-ownership
-```
+可读实现：[参考代码](../examples/reference/systems.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：wrong generation and live-reader overwrite；actual IOSurface/MLMultiArray shared IO。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

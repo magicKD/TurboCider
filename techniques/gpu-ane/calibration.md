@@ -1,5 +1,18 @@
 # 带宽耦合、share 搜索与性能校准
 
+<!-- knowledge
+id: technique-gpu-ane-calibration
+type: method
+stage: ffn
+operator: scheduling
+backend: cpu-reference, coreml, mlx
+device: gpu, ane
+symptom: straggler, memory-bound, measurement
+semantics: contract-only
+boundary: gpu-ane, request
+api: public, reference-only
+-->
+
 [总目录](../README.md) · [测量口径](../profiling/measurement.md)
 
 ## 基本成本模型
@@ -52,11 +65,7 @@ alone 时间只能作起点：共享内存、GPU W/A staging、CPU 工作会让 
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/policies.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py share-calibration
-```
+可读实现：[参考代码](../examples/reference/policies.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：memory-admitted measured-range proposal；new actual candidate execution vs optimized GPU。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

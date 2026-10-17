@@ -1,10 +1,23 @@
 # 整体模型加速：先保语义，再消除阶段瓶颈
 
-[阶段地图](stage-map.md) · [驻留设计](../designs/residency-and-phases.md) · [本地测量样本](../labs/media.py)
+<!-- knowledge
+id: technique-models-pipeline
+type: guide
+stage: encoder, dit, vae, io, pipeline
+operator: scheduling, codec
+backend: cpu-reference
+device: cpu, gpu, ane, media-engine
+symptom: memory-bound, compile-bound, measurement
+semantics: contract-only
+boundary: request
+api: reference-only
+-->
+
+[阶段地图](stage-map.md) · [驻留设计](../designs/residency-and-phases.md) · 本地测量样本
 
 ## 分阶段计账，不把重叠时间加两遍
 
-Cold 请求包括 source 验证、权重映射/安装、graph compile/load、first prediction；warm 还可能有 encoder、denoising、VAE、upscale、编码/写盘。Span 嵌套时不能直接相加；并发阶段应看区间并集和关键路径。[profiling-scopes](../labs/media.py)给出 union 与错误求和对照，[compare_runs](../scripts/compare_runs.py)拒绝非匹配输入/失败样本的伪倍率。
+Cold 请求包括 source 验证、权重映射/安装、graph compile/load、first prediction；warm 还可能有 encoder、denoising、VAE、upscale、编码/写盘。Span 嵌套时不能直接相加；并发阶段应看区间并集和关键路径。profiling-scopes给出 union 与错误求和对照，compare_runs拒绝非匹配输入/失败样本的伪倍率。
 
 假设串行 wall time 的 DiT 占 70%，其余占 30%，即便 DiT 无限快整体也不超过 `1/0.3≈3.33x`；这个是假设性的 Amdahl 下界提醒，不是本项目成绩。优化后必须重新定位 floor，encoder/媒体/VAE 可能成为新主导。并发的真实图要按关键路径算，不能套串行占比公式。
 
@@ -31,12 +44,5 @@ Cold 请求包括 source 验证、权重映射/安装、graph compile/load、fir
 | DiT steps -> latent | seed/noise、steps、sampler/CFG、source/LoRA、cache policy | 中间误差、最终 latent、整图/视频质量 |
 | VAE -> frames | latent scaling、norm/halo/phase、range、alpha、FPS | seam/时间连续、峰值、所有帧实际完成 |
 | Writer -> 成品 | codec/尺寸/帧数/音轨/文件范围 | flush/close 成功、可解码、取消不发布半成品 |
-
-```sh
-python3 -B techniques/labs/run.py startup-amortization
-python3 -B techniques/labs/run.py profiling-scopes
-python3 -B techniques/labs/run.py media-backpressure
-python3 -B techniques/scripts/interval_peak.py techniques/examples/memory-plan.json
-```
 
 小型样本用于证明机制，不代替真实模型上下文、低 RAM 实机、artifact size、driver/service footprint、功率和任务质量。重新探索条件是瓶颈、phase graph、硬件、shape、source 或质量预算改变；每次都保留失败和 fallback 证据。

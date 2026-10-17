@@ -1,6 +1,20 @@
 # 消费者驱动张量 ABI：stride、segments、resource identity
 
-[设计目录](README.md) · [本地地址 / 分段样本](../labs/heterogeneous.py) · [来源阅读](../references/gpu-ane-projects.md)
+<!-- knowledge
+id: technique-designs-consumer-abi
+type: method
+stage: ffn, pipeline
+operator: layout, scheduling
+backend: coreml, metal, cpu-reference
+device: cpu, gpu, ane
+symptom: wrong-layout, lifetime
+semantics: bitwise, contract-only
+representation: iosurface, packed
+boundary: gpu-ane, producer-consumer
+api: public, reference-only
+-->
+
+[设计目录](README.md) · [本地地址 / 分段样本](../examples/reference/heterogeneous.py) · [来源阅读](../references/gpu-ane-projects.md)
 
 ## 优化对象是图边，不只是 operator -> device
 
@@ -40,11 +54,4 @@ Bridge可缓存MLMultiArray wrapper、feature provider与prediction options，�
 
 flux2-engine的复用输出使同engine请求串行；需要并发请求时加独立slots或独立engine，计全部驻留内存，不把同一output数组给两个在途预测。`DualBank`与`Slot`提供本地generation/reader模型；actual consumer完成后才能归还slot。
 
-```sh
-python3 -B techniques/labs/run.py consumer-strides
-python3 -B techniques/labs/run.py segmented-ffn
-python3 -B techniques/labs/run.py resource-hazards
-python3 -B techniques/labs/run.py slot-ownership
-```
-
-新shape、stride、padding、consumer、quant group、alias或backing策略改变时重验完整边界和数值。来源内容已提炼到本篇，不需要原checkout；[Public native样本](../labs/ane/native_shared_io.mm)另给真实2D shared IO/pitch与实际output处理，不冒充本篇4D SEOP的硬件性能试验。
+新shape、stride、padding、consumer、quant group、alias或backing策略改变时重验完整边界和数值。来源内容已提炼到本篇，不需要原checkout；Public native样本另给真实2D shared IO/pitch与实际output处理，不冒充本篇4D SEOP的硬件性能试验。

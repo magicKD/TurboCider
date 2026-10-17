@@ -1,5 +1,10 @@
 # 症状 → 证据 → 可能的解决方案
 
+<!-- knowledge
+id: technique-guides-troubleshooting
+type: guide
+-->
+
 [总目录](../README.md) · [先确认计时口径](../profiling/measurement.md)
 
 以下是排查顺序，不是看到症状就直接改默认。先保留失败输入/日志和构建身份，再选单个变量实验。

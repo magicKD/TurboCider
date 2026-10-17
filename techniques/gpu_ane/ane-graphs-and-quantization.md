@@ -1,6 +1,20 @@
 # ANE：图表达、尺寸敏感性与量化的真实含义
 
-[专题导航](README.md) · [私有路径](ane-private-and-search.md) · [ccv](ccv-rowwise-iosurface.md) · [实验](experiments.md)
+<!-- knowledge
+id: technique-gpu-ane-ane-graphs-and-quantization
+type: method
+stage: ffn
+operator: swiglu, conv, layout
+backend: coreml
+device: ane, gpu
+symptom: graph-interruption, wrong-layout, compile-bound
+semantics: numerically-equivalent, approximate
+representation: fp16, w8a8
+boundary: gpu-ane, weight-runtime
+api: public
+-->
+
+[专题导航](README.md) · [私有路径](ane-private-and-search.md) · [ccv](case-studies/ccv-rowwise-iosurface.md) · [实验](../MAINTENANCE.md)
 
 一手入口：[Apple ANE Transformers 文章](https://machinelearning.apple.com/research/neural-engine-transformers)、[其固定 FFN 实现](https://github.com/apple-aiml-research/ml-ane-transformers/blob/590eb35913622cdef217ebc5329047aab389ac98/ane_transformers/reference/ffn.py)、[Core ML 量化性能指南](https://apple.github.io/coremltools/docs-guides/source/opt-quantization-perf.html)。图执行行为随硬件、OS、deployment target 和 converter 变化，不把历史经验当永久硬件限制。
 
@@ -49,13 +63,8 @@ Core ML 官方页明确区分 CPU/GPU/ANE 的建议：ANE 的 activation quantiz
 
 ## 本机观察与可运行入口
 
-[本轮压缩实验](experiments.md)比较相同固定小图的 FP16/W8/LUT4/W8A8，并保留 compiled MLX 的 host→GPU→host 控制。小图 preferred CPU，较大图需要另测；不能从 CPU+NE 选项给结果贴上“ANE 速度”。LUT4 即使实验门槛允许，也可能误差很大，必须展示数值，不能只报 `component-pass`。
+[本轮压缩实验](../MAINTENANCE.md)比较相同固定小图的 FP16/W8/LUT4/W8A8，并保留 compiled MLX 的 host→GPU→host 控制。小图 preferred CPU，较大图需要另测；不能从 CPU+NE 选项给结果贴上“ANE 速度”。LUT4 即使实验门槛允许，也可能误差很大，必须展示数值，不能只报 `component-pass`。
 
 既有可选入口：
-
-```sh
-python3 -B techniques/labs/run.py startup-amortization
-python3 -B techniques/labs/run.py consumer-strides
-```
 
 以上为 CPU 演示。实际公共图脚本与本轮命令见实验页，显式 opt-in，保留编译失败、数值拒绝和 GPU-only fallback。更换 OS/SDK/图表达后可以重开负结果，但不可删除旧记录。

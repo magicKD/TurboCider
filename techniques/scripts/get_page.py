@@ -1,36 +1,32 @@
 #!/usr/bin/env python3
-"""Expand a registered local page and optional source/code assets, never execute."""
+"""Read a knowledge page with bounded optional source/example expansion."""
 import argparse
 import json
 from pathlib import Path
 import sys
-
 from knowledge import ROOT, get_page, load
-from retrieval_contracts import iso_day
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("lookup", help="stable ID or registered relative page path")
+    parser.add_argument("lookup", help="stable ID, alias or relative Markdown page")
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--follow-sources", action="store_true")
-    parser.add_argument("--follow-evidence", "--include-negative-results", action="store_true",
-                        help="expand registered local evidence, including failures; never execute")
     parser.add_argument("--include-code", action="store_true")
     parser.add_argument("--max-bytes", type=int, default=24000)
-    parser.add_argument("--offset-bytes", type=int, default=0, help="continue the primary asset at its returned next_byte_offset")
-    parser.add_argument("--context", default="{}", help="exact recorded environment JSON; never probes the machine")
-    parser.add_argument("--as-of", help="review date YYYY-MM-DD")
+    parser.add_argument("--offset-bytes", type=int, default=0)
+    parser.add_argument("--follow-evidence", "--include-negative-results", action="store_true",
+                        help="legacy flag: experiment payloads are no longer included")
     args = parser.parse_args()
     try:
-        if args.as_of is not None:
-            iso_day(args.as_of)
-        value = get_page(load(args.root), args.lookup, args.follow_sources, args.include_code,
-                         args.max_bytes, args.follow_evidence, args.offset_bytes, json.loads(args.context), args.as_of)
-    except (ValueError, KeyError, OSError) as error:
+        result = get_page(load(args.root), args.lookup, args.follow_sources, args.include_code,
+                          args.max_bytes, args.offset_bytes)
+        if args.follow_evidence:
+            result["warnings"] = ["Experiment payloads are not distributed. Negative findings remain in case-study notes."]
+    except (ValueError, OSError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2
-    print(json.dumps(value, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

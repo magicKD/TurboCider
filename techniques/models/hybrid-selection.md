@@ -1,6 +1,19 @@
 # 新模型 GPU/ANE 方案选择：按图结构而不是模型名套配方
 
-[阶段地图](stage-map.md) · [拓扑设计](../designs/parallel-topologies.md) · [本地可选设备样本](../labs/heterogeneous.py)
+<!-- knowledge
+id: technique-models-hybrid-selection
+type: guide
+stage: encoder, prefill, decode, dit, ffn, vae, pipeline
+operator: attention, swiglu, conv, scheduling
+backend: cpu-reference, metal, coreml
+device: cpu, gpu, ane
+symptom: straggler, wrong-layout, precision-loss
+semantics: contract-only
+boundary: gpu-ane, request
+api: public, reference-only
+-->
+
+[阶段地图](stage-map.md) · [拓扑设计](../designs/parallel-topologies.md) · [本地可选设备样本](../examples/reference/heterogeneous.py)
 
 ## 先填写这张事实表
 
@@ -28,17 +41,7 @@ CPU只参与完整成本确实改善的projection/FFN分片；控制逻辑/采�
 
 ## 本目录内的小实验路线
 
-```sh
-python3 -B techniques/labs/run.py parallel-branches
-python3 -B techniques/labs/run.py attention-head-shards
-python3 -B techniques/labs/run.py segmented-ffn
-python3 -B techniques/labs/run.py consumer-strides
-python3 -B techniques/labs/run.py optional-devices
-python3 -B techniques/labs/run.py resource-hazards
-python3 -B techniques/labs/run.py precision-islands
-```
-
-这些按技术点独立运行，含数学正确控制与错误反例。它们不加载mac_local_ai/mac_transformer/flux2-engine/mflux，不执行Private ANE或下载真实权重。实际GPU/CoreML练习接[设备实验室](../labs/README.md)；全模型接入还需source/adapter、真实activation、完整stage/request和质量/低RAM验证。
+这些按技术点独立运行，含数学正确控制与错误反例。它们不加载mac_local_ai/mac_transformer/flux2-engine/mflux，不执行Private ANE或下载真实权重。实际GPU/CoreML练习接[设备实验室](../examples/README.md)；全模型接入还需source/adapter、真实activation、完整stage/request和质量/低RAM验证。
 
 ## 从结论回到证据
 

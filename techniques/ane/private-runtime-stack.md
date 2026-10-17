@@ -1,5 +1,17 @@
 # 私有 ANE 运行时：MIL、_ANEClient、e5rt 与模型引擎
 
+<!-- knowledge
+id: technique-ane-private-runtime-stack
+type: implementation
+operator: scheduling
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: compile-bound, lifetime
+semantics: contract-only
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [现有隔离合同](private-ane.md) · [图搜索](graph-rewrite-search.md)
 
 ## 三个层次，不能统称“绕过 Core ML”
@@ -20,7 +32,7 @@
 
 ## ANEForge：e5rt、内容寻址和图语义
 
-固定 [ANEForge@896c4943](https://github.com/sbryngelson/ANEForge/tree/896c4943c5ebf811c0e815f8d1381fd1e157fa7d)的已读链是 `graph → _compile → MIL/blob → E5RT → ane_e5rt_dispatch.mm`。本库已有 [源码卡](../sources/repos/aneforge-rewrite-search.md)及 [13组推理实验](../review/aneforge-20261016.md)。
+固定 [ANEForge@896c4943](https://github.com/sbryngelson/ANEForge/tree/896c4943c5ebf811c0e815f8d1381fd1e157fa7d)的已读链是 `graph → _compile → MIL/blob → E5RT → ane_e5rt_dispatch.mm`。本库已有 [源码卡](../sources/repos/aneforge-rewrite-search.md)及 [13组推理实验](case-studies/graph-rewrite-search-cost.md)。
 
 它的结构性能缓存不包含具体权重值，编译目录则绑定 MIL/blob；二者不能当同一资格。默认 Model 调用包含输入转 FP16/copy、同步 execute 和输出 FP32 新数组，`Program` 的借用 view 则复用内部内存；比较时必须冻结边界。
 
@@ -43,12 +55,3 @@
 ## 采用前的统一门槛
 
 有界源码/图/shape、private opt-in、独立 output/cache、逐次完成与数值检查、真实 stride/owner、timeout quarantine、明确 fallback 标签。不要关闭 SIP/AMFI、申请未知 entitlement、清系统缓存或执行上游 README 的安装/清理脚本来“得到更好成绩”。本轮未做这些变更。
-
-## 本地学习入口与复查
-
-- [systems.py](../labs/systems.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [search_contracts.py](../labs/search_contracts.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py startup-amortization`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。

@@ -1,6 +1,20 @@
 # 异构规划：可选设备、first-consumer deadline、尾延迟与精度岛
 
-[设计目录](README.md) · [本地planner / 精度岛](../labs/heterogeneous.py) · [按模型选择](../models/hybrid-selection.md)
+<!-- knowledge
+id: technique-designs-heterogeneous-planner
+type: method
+stage: ffn, pipeline
+operator: scheduling, quantization
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: straggler, precision-loss, memory-bound
+semantics: contract-only, approximate
+representation: fp16, fp32
+boundary: gpu-ane, producer-consumer
+api: reference-only
+-->
+
+[设计目录](README.md) · [本地planner / 精度岛](../examples/reference/heterogeneous.py) · [按模型选择](../models/hybrid-selection.md)
 
 ## 设备必须允许缺席
 
@@ -17,7 +31,7 @@ mac_local_ai与mac_transformer都把GPU、ANE、CPU分片视作可选策略，�
 3. profile可按有效FLOPs和权重/activation流量构建roofline，但UMA并发争抢需额外共同采样，不能把离散设备带宽相加。
 4. 仅在测过的范围提出share，不将large M的slope外推decode；quant group/channel quantum与实际graph一致。
 5. 最优估算需要新的实际candidate trial、finite/parity与独立warm windows。低噪声小收益也不自动成为默认。
-6. 运行中以有界窗口做[profit breaker](../labs/contracts.py)，关闭后完整GPU回退，变更identity后显式重新资格。
+6. 运行中以有界窗口做[profit breaker](../examples/reference/contracts.py)，关闭后完整GPU回退，变更identity后显式重新资格。
 
 ## 小块、artifact数量和持久服务
 
@@ -38,12 +52,5 @@ mac_local_ai的GDN探索按组保留高精度投影、norm、状态参数与递�
 本地`precision-islands`是标量递推`state=a*state+b`：比较全低精度、只升state但参数已被舍入、参数+state完整FP32岛。它说明FP32累加不能找回已舍入的a，及state每次低精度写回的累积代价；**不是GDN算子实现或真实质量结论**。
 
 真实精度岛要算额外shadow weights、状态、cast、selected group packing、consumer projection和完整holdout质量；若只替换某个中间capture而不计重算成本，只是oracle，不是可交付加速。将已观察的失败保留为当前recipe边界，而非禁止其他group/layer/bitwidth探索。
-
-```sh
-python3 -B techniques/labs/run.py optional-devices
-python3 -B techniques/labs/run.py precision-islands
-python3 -B techniques/labs/run.py share-calibration
-python3 -B techniques/labs/run.py hybrid-policy
-```
 
 重开条件：rows/shape、source、quant、QoS、热/内存状态、artifact打包、consumer、group选择或device改变。原项目版本与源码指纹见[阅读记录](../references/gpu-ane-projects.md)，本篇已包含理解planner所需的主要方法。

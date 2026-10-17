@@ -1,6 +1,20 @@
 # Encoder：一次性 conditioning 与可证明的缓存
 
-[阶段地图](stage-map.md) · [本地实现](../labs/model_stages.py) · [cache identity](../labs/caches.py)
+<!-- knowledge
+id: technique-models-encoders
+type: guide
+stage: encoder
+operator: attention, gemm, norm
+backend: cpu-reference, metal, coreml
+device: cpu, gpu, ane
+symptom: stale-cache, compile-bound
+semantics: numerically-equivalent
+representation: fp16
+boundary: producer-consumer, request
+api: public, reference-only
+-->
+
+[阶段地图](stage-map.md) · 本地实现 · [cache identity](../examples/reference/caches.py)
 
 ## 先按实际图分类，不按名字分类
 
@@ -29,11 +43,5 @@ Text encoder 可以是双向注意力，也可以是因果 LLM 或带特定 pool
 量化要覆盖短/长文本、特殊 token、多语种、参考图、不同 encoder 输出取层；比较下游生成质量而不只 embeddings cosine。若保留敏感 norm/first/last layers 为高精度，需把实际层策略进入 cache identity。降低输入尺寸/裁 token 是不同语义预算，不能记成纯工程加速。
 
 ## 验证与迁移
-
-```sh
-python3 -B techniques/labs/run.py stage-encoder
-python3 -B techniques/labs/run.py cache-identity
-python3 -B techniques/labs/run.py norm-rope
-```
 
 测试 padding mask、变化 suffix、source/adapter/preprocess 变动、cache reset、batch 中长度不齐与 pooling。测量 tokenization→最终 conditioning 完成，再测完整请求；释放 encoder weights 时仍保活下游借用的 conditioning。重新探索：新 encoder mask/架构、取层、输入 modality、bucket、quant 或 adapter。

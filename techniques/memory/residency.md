@@ -1,6 +1,19 @@
 # 驻留策略与真实阶段峰值
 
-[总目录](../README.md) · [阶段预算演示](../examples/memory-plan.json)
+<!-- knowledge
+id: technique-memory-residency
+type: method
+stage: encoder, dit, vae, io, pipeline
+operator: scheduling
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: memory-bound, lifetime
+semantics: contract-only
+boundary: weight-runtime, request
+api: reference-only
+-->
+
+[总目录](../README.md) · 阶段预算演示
 
 ## 预算先按 lifetime，而不是 checkpoint 总大小
 
@@ -52,11 +65,7 @@ SeedVR2 释放/共享 upscale causal history 后，decoder 的高水位会移动
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../scripts/interval_peak.py)；[实验步骤与边界](../labs/memory-io.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py slot-ownership
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：alias-backed phase intervals；live readers vs apparent lexical release。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

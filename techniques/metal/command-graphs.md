@@ -1,6 +1,29 @@
 # Command graph、资源存活与完成证据
 
+<!-- knowledge
+id: technique-metal-command-graphs
+type: method
+stage: pipeline
+operator: scheduling
+backend: metal, mlx
+device: gpu, ane
+symptom: launch-bound, lifetime
+semantics: contract-only
+boundary: producer-consumer, gpu-ane
+api: public, private
+-->
+
 [总目录](../README.md) · [Splash 对照](../references/splash.md)
+
+## 怎样借鉴：先证明瓶颈在提交层
+
+2026-10-17 方法整理。若短算子之间有明显 host 编码/提交间隙，先保持原数学 kernel，对比逐次提交与受控批量提交；若 GPU 本来就持续执行长 GEMM，graph/replay 不能直接提高该 GEMM 的算术吞吐。第一步通常是[稳定 block 编译](mlx-compile-cache-and-state.md)，独立 native graph 则适合确实需要更细资源/事件控制的场景。
+
+建议按成本逐层推进：固定 block 的 graph 编译 → 合并不必要的 eval/同步与提交 → 为稳定拓扑研究 replay/ICB → 有明确需求后再迁移 [Metal 4 执行 API](tensorops-and-m5.md)。这是采用顺序建议，不要求框架内部恰好按这个顺序实现。源码可从 [tinygrad Metal runtime](https://github.com/tinygrad/tinygrad/blob/3d057f05df532deca7661bfb2400c6564f96a04a/tinygrad/runtime/ops_metal.py)追到 ICB/资源绑定；它的未文档化 compiler service 与公共执行 API 应分开评估。
+
+每一步固定同一输入、输出和 kernel，分别量准备/首用、host 编码、提交到完成、完整请求与峰值，并测试新输入/新权重、地址复用、取消和 timeout。不要给不支持拓扑变化的 replay 喂新 shape；不要用 GPU 时间下降掩盖 host 准备增长。
+
+两个已经取证的边界可直接借鉴：[默认 stream 同步不等待 foreign stream](case-studies/mlx-benchmark-evaluation-and-stream-completion.md)；[Metal 4 end recording 不等于完成/allocator 可 reset](case-studies/metal4-counter-heaps-and-time-domains.md)。因此“少同步”应建立在正确依赖和 completion 证据上，不是删除所有等待。
 
 ## 什么时候值得用独立 native graph
 
@@ -43,11 +66,7 @@ GPU first-start 到 last-end 包含同 graph 内的空隙，不是所有 kernels
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/metal/bench.mm)；[实验步骤与边界](../labs/gpu.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py slot-ownership
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：per-dispatch vs one command buffer；late completion and overwrite refusal。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

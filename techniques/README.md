@@ -1,103 +1,46 @@
-# Apple Silicon 图像 / 视频生成优化百科
+# Apple Silicon 模型优化知识库
 
-面向新模型接入、已有模型提速和性能回退诊断的工程手册。重点是 **Metal GPU、ANE，以及二者在统一内存上的协同**，不是开关大全或硬件峰值排名。产品溯源基线：TurboCider `ad8100f`；自包含扩展基于 `193b356`，2026-10-15；不改变产品默认、请求协议、权重或发行资格。
+<!-- knowledge
+id: technique-readme
+type: navigation
+-->
 
-## 从这里开始
+为工程师和 AI 保存可迁移的优化认识：**解决什么问题、为什么有效、怎样实现、付出什么代价、如何验证**。重点是 Metal GPU、ANE、统一内存与图像/视频模型，也包含可迁移的 LLM 和语音实现参考。
 
-- 算法级可控有损：[调研与选择指南](algorithms/README.md) → [缓存/预测、稀疏attention、token减少、PTQ/低秩与少步数分篇](algorithms/model-sparsity.md) → [固定源码来源](algorithms/sources.md)与[本轮数学/MLX实验](algorithms/experiments-20261016.md)；作者结果、历史结果、合成组件与完整请求资格分开。
-- ANE完整专题：[研究总入口与项目对照](ane/README.md) → [M4 W8A8 / LUT4能力](ane/capability-atlas.md) → [训练路线](ane/training.md) → [profiling分层](ane/profiling.md) → [本轮360次压缩与111次手写反向输出](ane/experiments-20261016.md)；固定版本来源、官方能力、作者推断和本机实测分开，不更改产品默认。
-- GPU/Metal 系统研究：[专题 README](metal/README.md) → [推理引擎对照](metal/inference-engines.md) / [TensorOps 与 M5](metal/tensorops-and-m5.md) / [profiling](metal/profiling-playbook.md) / [优化 PR](metal/optimization-prs.md)；含固定版本来源与本机组件实测，不作为全模型速度排名。
-- 新增专项研究入口：[GPU + ANE 协同推理专题](gpu_ane/README.md)，按引擎、GPU/ANE机制、项目源码、优化PR和实验边界组织；保留原有`gpu-ane/`作为基础合同层。
-- 媒体交接：[BGRA到GPU输入的完整边界](media/tensor-texture-interop.md) → [vImage/循环/GPU三路实测](review/media-stage-20261016.md)；保留CPU多pass回退、透明源拒绝和更强GPU分母，不冒充完整codec/VAE请求。
-- 多维问题入口：[受控主题索引](queries/README.md)与[别名/版本复查合同](data/README.md)；按stage、backend、symptom等定位机制，标签和精确历史环境匹配都不授予加速资格。
-- 本轮深入研究：[源码研究与实测工作台](review/research-campaign-20261015.md)；跟踪roadmap、参考实现、profiling与Qwen真实工作负载，进行中项目不作为性能资格。
-- 固定版本取证：[自动生成的来源索引](sources/README.md) → [真实Qwen FFN与并发负结果](review/qwen-ffn-tiling-20261015.md)；来源、数值、性能与物理归因分开。
-- GPU profiling纵向链：[公共counter与capture实验](profiling/gpu-timeline-and-counters.md) → [来源安全的trace归一化](profiling/trace-normalization.md) → [本机全部对照](review/gpu-profiling-20261016.md)，包含无Xcode时的真实能力和parser负结果。
-- 进一步实测：[timestamp校准](profiling/timestamp-calibration.md)与[真实Qwen BF16 host profiling](profiling/mlx-boundaries.md)；保留采集器负控，避免把单位校准、阶段drain和原程序性能混成一种资格。
-- Attention纵切：[原始block输入的有界重放、三候选与独立seed](review/qwen-attention-20261016.md)，包括stride见证、noop、empty-row拒绝与全部负结果；并未晋升产品默认。
-- ANE图搜索：[缓存身份、严格门槛与失败缩减](ane/graph-rewrite-search.md) → [ANEForge固定源码](sources/repos/aneforge-rewrite-search.md) → [13组实机比较和负控](review/aneforge-20261016.md)；合成host-fed结果不作为Qwen/handoff资格。
-- ANE profiling：[PMU payload/单位/生命周期合同](profiling/ane-pmu-lab.md)与[81次完整输出的本机记录](review/ane-pmu-20261016.md)；推理通过但counter未取得，保留CLI假阳性、skip与null，不套用上游峰值。
-- 真实FFN分担：[完整GPU分母、精度岛与交接成本](gpu-ane/private-ffn-boundary.md) → [Qwen layer0三档探索和冻结参数确认](review/qwen-private-ffn-20261016.md)；private copy-bridge在所测warm组件约1.08–1.12×，不是全请求/零拷贝或默认资格。
-- 实际backing：[request surface与Metal映射的证据合同](gpu-ane/shared-surface.md) → [四进程120次完整消费者](review/private-shared-20261016.md)；包含128/192-byte padding、finite但错误stride和stale输出负控，不授予内部零拷贝/物理并行或Qwen资格。
-- MLX接缝：[实际adoption、Copy alias、view/owner与过期结果](review/mlx-adoption-20261016.md)；四份完整协议、32个全量消费者、8MiB合成范围与首轮客户端失败分开，不拼接成未运行的Qwen共享路径。
-- 实际真实shared FFN：[五臂完整消费者、560次调用与264个精确join](review/qwen-shared-ffn-20261016.md)；原始BF16 GPU分母、实际二维port、反序point、load/admission均有记录。长确认约1.15×是相对纯GPU的layer0 warm组件收益，不是原有GPU/ANE上再快15%；同client去copy约1.1%且首轮方向不同，尚未与既有产品GPU/ANE后端严格A/B，未晋升产品默认。
-- GPU源码到真实消费者：[MLX/GGML affine、tile与原始BF16控制](review/gpu-affine-20261016.md)，包含量化配方内收益、额外驻留成本与独立确认，不自动晋升产品默认。
-- 按模型部件选方案：[阶段地图](models/stage-map.md) → [encoder](models/encoders.md) / [LLM prefill](models/llm-prefill.md) / [decode](models/llm-decode.md) / [DiT](models/dit.md) / [VAE](models/vae-and-media.md) → [整体 pipeline](models/pipeline.md)。
-- GPU/ANE方案选择：[mac_local_ai / mac_transformer / flux2-engine / mflux源码提炼](references/gpu-ane-projects.md) → [并行拓扑分类](designs/parallel-topologies.md) → [消费者ABI](designs/consumer-abi.md) → [异构planner](designs/heterogeneous-planner.md) → [按模型选择](models/hybrid-selection.md)。
-- 吸收外部实现：[设计样本](designs/README.md)包含 GPU 数据流、owned graph、GPU/ANE FFN、packed streaming、驻留与技术组合；核心设计和参考代码均在本目录，不必打开原项目。
-- 新项目：[完整SOP](guides/sop.md) → [新模型接入](guides/new-model.md) → [完整走查示例](guides/worked-example.md) → [验收清单](templates/new-model-checklist.md)。
-- 已有瓶颈：[故障 / 症状索引](guides/troubleshooting.md) → [测量口径](profiling/measurement.md) → [现有工具](profiling/tools.md)。
-- GPU/ANE 专题：[切分代数](gpu-ane/partitioning.md) → [交接和所有权](gpu-ane/shared-memory.md) → [调度](gpu-ane/scheduling.md) → [校准](gpu-ane/calibration.md)。
-- 内存不足：[驻留与阶段峰值](memory/residency.md) → [权重 streaming](memory/streaming.md) → [VAE](media/vae.md)。
-- 实验复用：[模型配方](models/recipes.md)、[实验模板](templates/experiment.md)、[辅助脚本](scripts/README.md)。
-- 离线检索：[关键词查询与有界来源展开](scripts/README.md#querypy--get_pagepy)，直接使用现有catalog和本地来源清单，不运行实验。
-- 动手实现：[实验室](labs/README.md) → [技术章节的代码/case映射](labs/catalog.json) → [技术实现卡](templates/technique-card.md)。含CPU/模拟case与显式设备selector（包括基础Metal对照和MLX组件实验），公共CoreML/MLX混合与独立原生INT8共享IO；私有PMU/shared surface/MLX adoption/真实模型集成另需显式opt-in，精确数量以catalog检查输出为准。
+这里不是产品开关清单，也不是逐轮实验工作目录。阅读笔记可以在尚未本机验证时收录，但必须区分来源事实、推导、假设和实测；收录不代表产品采用。
 
-## 目录
+## 按问题开始
 
-| 分类 | 手册 |
-| --- | --- |
-| 硬件与适配 | [芯片、能力与设备 profile](hardware/apple-silicon.md) |
-| Metal kernel | [性能调优](metal/kernel-tuning.md) · [Attention](metal/attention.md) · [融合与布局](metal/fusion-and-layout.md) · [Command graph](metal/command-graphs.md) |
-| ANE | [专题总览](ane/README.md) · [能力地图](ane/capability-atlas.md) · [图与布局](ane/coreml-graphs.md) · [生命周期](ane/lifecycle.md) · [LUT与压缩](ane/weight-compression.md) · [W8A8](ane/w8a8-int8.md) · [训练](ane/training.md) · [Profiling](ane/profiling.md) · [性能边界](ane/performance-limits.md) · [Private边界](ane/private-ane.md) |
-| GPU + ANE | [切分选择](gpu-ane/partitioning.md) · [Sequence / hidden轴与带宽争抢](gpu-ane/axes-and-bandwidth.md) · [并行调度](gpu-ane/scheduling.md) · [共享 IO](gpu-ane/shared-memory.md) · [完整 LoRA](gpu-ane/lora.md) · [带宽与校准](gpu-ane/calibration.md) · [20 组案例索引](gpu-ane/experiment-ledger.md) |
-| 内存与存储 | [驻留](memory/residency.md) · [Streaming](memory/streaming.md) · [Packed 格式与 IO](memory/storage.md) |
-| 算法级优化 | [总览与选择](algorithms/README.md) · [缓存身份](algorithms/caches.md) · [稀疏/模型地图](algorithms/model-sparsity.md) · [分层验收](algorithms/evaluation.md) · [固定来源](algorithms/sources.md) |
-| 媒体链路 | [VAE / 卷积 / tiling](media/vae.md) · [视频音频 IO](media/video-and-audio.md) · [辅助图像超分](media/upscaling.md) |
-| Profiling | [计时、内存、质量](profiling/measurement.md) · [工具与命令](profiling/tools.md) |
-| 实战与来源 | [模型迁移配方](models/recipes.md) · [Splash](references/splash.md) · [vpipe](references/vpipe.md) · [其他项目](references/related-projects.md) · [证据地图](references/evidence-map.md) · [历史对话经验](references/history-lessons.md) |
-| 按阶段加速 | [完整地图](models/stage-map.md) · [Encoder](models/encoders.md) · [Prefill](models/llm-prefill.md) · [Decode](models/llm-decode.md) · [DiT](models/dit.md) · [VAE/媒体](models/vae-and-media.md) · [Pipeline](models/pipeline.md) |
-| GPU/ANE专项 | [项目对照与源码范围](references/gpu-ane-projects.md) · [按模型选并行](models/hybrid-selection.md) · [拓扑](designs/parallel-topologies.md) · [布局/segments/identity](designs/consumer-abi.md) · [可选三设备与精度岛](designs/heterogeneous-planner.md) |
-| 自包含设计 | [设计样本](designs/README.md) · [吸收账本](references/absorbed-designs.json) · [署名与实现边界](NOTICE.md) |
-| 维护 | [当前自包含验收](review/self-contained-validation.md) · [覆盖审计](review/coverage.md) · [上一轮设备验证](review/labs-validation.md) · [首版历史验证](review/validation.md) |
-| 实现与复现 | [实验室](labs/README.md) · [GPU kernels](labs/gpu.md) · [ANE/W8A8](labs/ane.md) · [量化推导](labs/quantization.md) · [SOP](guides/sop.md) · [KernelWiki/Sana](references/kernelwiki-sana.md) · [Splash W8A8导读](references/splash-w8a8-walkthrough.md) · [扩展验证](review/labs-validation.md) |
+| 当前问题 | 先读的方法 | 再看什么 |
+| --- | --- | --- |
+| 不知道模型慢在哪里 | [优化工作流](guides/optimization-workflow.md) · [测量](profiling/measurement.md) | [症状排查](guides/troubleshooting.md) · [工具](profiling/tools.md) |
+| GEMM / FFN / 单 token 慢 | [GEMM/GEMV 与量化数据流](metal/gemm-and-quantization.md) | [GPU 方法导航](metal/README.md) · [实现案例](metal/case-studies/README.md) |
+| attention 或 KV 成本高 | [Attention 实现](metal/attention-implementations.md) | [Prefill](models/llm-prefill.md) · [Decode](models/llm-decode.md) |
+| 小算子、复制或提交过多 | [融合与布局](metal/fusion-and-layout.md) · [Command graph](metal/command-graphs.md) | [编译与状态](metal/mlx-compile-cache-and-state.md) |
+| 想利用 ANE 或 GPU+ANE | [ANE 方法导航](ane/README.md) · [协同优化方法](gpu_ane/README.md) | [切分代数](gpu-ane/partitioning.md) · [共享交接](gpu_ane/memory-and-handoff.md) |
+| 多步生成计算重复 | [算法方法地图](algorithms/methods/README.md) | [实现技巧](algorithms/implementation-patterns.md) · [质量与评测](algorithms/evaluation.md) |
+| 内存不足或 I/O 太慢 | [驻留](memory/residency.md) · [Streaming](memory/streaming.md) | [存储格式](memory/storage.md) · [VAE](media/vae.md) |
+| 接入新模型或迁移实现 | [阶段地图](models/stage-map.md) · [新模型接入](guides/new-model.md) | [设计样本](designs/README.md) · [完整走查](guides/worked-example.md) |
 
-## 阅读约定
+## 怎样阅读和检索
 
-完整block的后续[独立seed/prompt记录](review/qwen-block-context-20261016.md)保留load失败、330次完整数值调用与最终存储拒绝；没有合格倍率或完整请求结果。
-
-此后两个新进程已完成raw pair持久化和独立CPU FP64抽样复核，但正式成功证据尚未完成curator/脱敏capsule登记；见[可选工具及当前边界](integrations/README.md#完整block的raw-pair复核工具)。新增离线测试不把旧失败改成成功，也不授予完整请求或产品资格。
-
-核心学习路径与必需代码均包含在`techniques/`。标准库样本可以单独复制本目录运行；真实设备样本另需明确列出的 Apple SDK、NumPy/CoreML/MLX 依赖，不需要兄弟仓库。链接到产品`native/`、`tools/`、`docs/`或上游网站的内容只用于可选溯源/生产接入；[integrations](integrations/README.md)明确标为可选，不属于离线核心。默认检查只验证本地资产，`--include-integrations`可追加完整仓库来源核查；[隔离检查](scripts/check_standalone.py)实际验证核心没有暗中导入产品代码。
-
-每个技巧回答：什么时候用、为什么成立、怎样实现、如何测、哪些情况不适用。标签含义：
-
-- **实现**：当前代码中存在，不代表当前设备 / 工作负载已经验收。
-- **实测**：绑定具体构建、机器、输入和测量边界的观察；跨机器不继承资格。
-- **负结果**：保留失败条件与`revisit_when`；布局、SDK、芯片、source、bucket、qualitybudget或消费者变化后可重新探索，不证明该方向普遍不可能。
-- **设计 / 建议**：后续实验或迁移方法，不是可直接调用的生产 API。
-
-收益只和同一实验内的匹配基线比较。历史数字是解释机制的案例，当前产品能力以 [acceleration](../docs/status/acceleration.md)、[使用参考](../docs/public/USAGE.md)、实际 `plan` 与执行 receipt 为准。旧文档中“private 只在 experimental”“9B 无 ANE”等结论不能覆盖后来的代码；本手册按来源日期与适用范围区分。
-
-## 不可破坏的底线
-
-1. 先建立优化后的 GPU 基线，再评价 ANE；少步数、裁剪 token、换参考尺寸不属于同语义加速。
-2. 统一内存 ≠ 零交接成本；compute units ≠ 物理 ANE 驻留证明；host wait ≠ device time。
-3. checkpoint、LoRA、布局、shape、精度、source generation、owner、completion 都是计算合同的一部分。
-4. 近似许可不替代质量验证；组件快不替代完整请求快；预算 hint 不替代实际低内存机器验收。
-5. 失败 / 取消先 drain，再释放或重用；半个输出绝不发布。工具不删除原始模型、实验记录或系统缓存。
-
-## 维护与快速检查
-
-`examples/`保留可移植的小型输入，`review/`保留核查摘要；原始报告、编译产物和依赖 overlay 放在根目录已忽略的`outputs/`。若在实验目录内工作，可使用同样已忽略的`build/`、`dist/`、`outputs/`、`results/`、`artifacts/`、`scratch/`或`private/`子目录；对话摘录只保留在这些本地目录中，不纳入提交。
-
-`review/raw/`与`review/local/`也仅用于本地原始测量和机器配置，不纳入提交；经过整理、脱敏的`review/*.json`验证摘要继续跟踪。
-
-原始权重/激活`.safetensors`与无损BF16归档`.tcbf16z`保持本地；压缩不等于脱敏，隔离副本同样排除这两类文件。小型可移植`.npy` fixture、源码与公开JSON摘要仍可跟踪。
-
-嵌套Swift的`.build/`、`.swiftpm/`、`DerivedData/`、Xcode结果包、CMake生成文件及实验`.cache/`、`.aneforge_cache/`、`.aneforge-cache/`也保持本地。不要用整个`references/`、JSON或媒体扩展名的宽泛规则屏蔽整理后的来源、验证摘要或测试fixture。
-
-从仓库根目录执行（只需 Python 标准库）：
+日常顺序是 **方法 → 实现思路 → 案例/反例 → 固定来源**。这里不分发实验 JSON、验证回执或复算环境；案例数字只保留为有范围的历史观察。完整约定见[使用指南](guides/knowledge-base.md)和 [AGENTS.md](AGENTS.md)。
 
 ```sh
-python3 techniques/scripts/check_wiki.py
-python3 -m unittest discover -s techniques/tests -v
-python3 techniques/scripts/compare_runs.py techniques/examples/paired-runs.json
-python3 techniques/scripts/interval_peak.py techniques/examples/memory-plan.json
-python3 techniques/examples/split_ffn_reference.py
-python3 -B techniques/labs/run.py all
-python3 -B techniques/labs/check_catalog.py
-python3 -B techniques/scripts/check_standalone.py --isolate
+python3 -B techniques/scripts/query.py DeepCache --intent learn --limit 3 --compact
+python3 -B techniques/scripts/query.py small-M --intent implement --limit 3 --compact
+python3 -B techniques/scripts/query.py MLX --intent sources --limit 3 --compact
+python3 -B techniques/scripts/get_page.py gpu_ane/memory-and-handoff.md --follow-sources
 ```
 
-`examples/`是合成CPU演示；`labs/`明确区分参考数学/模拟与真实Metal/CoreML执行，小型设备结果不等于新模型加速。真实模型工具、依赖和风险见 [工具手册](profiling/tools.md)。不复制大型模型代码或产物；第三方核心思想先在[本地设计](designs/README.md)中展开，原始出处仅供追溯。
+检索直接读取 Markdown 标题、链接和短主题注释，不依赖 JSON catalog，不运行模型或设备。[主题索引](queries/README.md)提供阅读导航，[小型代码](examples/README.md)帮助理解数学与数据流。
+
+## 内容地图
+
+- 方法与设计：[Metal](metal/README.md)、[ANE](ane/README.md)、[GPU+ANE](gpu_ane/README.md)、[算法](algorithms/README.md)、[设计样本](designs/README.md)、[硬件](hardware/apple-silicon.md)。
+- 模型与媒体：[阶段地图](models/stage-map.md)、[迁移配方](models/recipes.md)、[GPU/ANE 选型](models/hybrid-selection.md)、[VAE](media/vae.md)、[视频音频](media/video-and-audio.md)、[超分](media/upscaling.md)、[纹理交接](media/tensor-texture-interop.md)。
+- 案例与反例：[GPU 案例](metal/case-studies/README.md)、[ANE 案例](ane/case-studies/README.md)、[协同案例](gpu_ane/case-studies/README.md)、[算法案例](algorithms/case-studies/README.md)、[媒体案例](media/case-studies/README.md)、[早期协同案例摘要](gpu-ane/experiment-ledger.md)。
+- 使用与贡献：[工程指南](guides/README.md)、[技术卡](templates/technique-card.md)、[实验设计模板](templates/experiment.md)、[工具](scripts/README.md)。
+- 来源与边界：[固定版本读本](sources/README.md)、[参考项目](references/related-projects.md)、[怎样读来源](references/evidence-map.md)、[历史经验](references/history-lessons.md)、[KernelWiki 导读](references/kernelwiki-sana.md)、[署名与许可](NOTICE.md)、[维护规则](MAINTENANCE.md)。
+
+`gpu-ane/`保留基础代数、ABI 和早期设计；`gpu_ane/`按问题组织跨引擎方法与案例，引用前者而不重复维护通用原理。实验资产已移到本地备份，不属于知识库或普通分支推送。

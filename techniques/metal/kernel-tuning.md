@@ -1,5 +1,19 @@
 # Metal kernel 调优：先边界，再 tile
 
+<!-- knowledge
+id: technique-metal-kernel-tuning
+type: method
+stage: prefill, decode, dit, ffn
+operator: gemm, gemv, layout, quantization
+backend: metal, mlx
+device: gpu
+symptom: memory-bound, launch-bound, wrong-layout
+semantics: numerically-equivalent
+representation: bf16, fp16, fp32, q4, q8, mlx-affine, packed
+boundary: producer-consumer
+api: public
+-->
+
 [总目录](../README.md) · [布局与融合](fusion-and-layout.md) · [Attention](attention.md)
 
 ## 适用场景
@@ -22,6 +36,14 @@ Profiler 已确认某个 GEMM、norm、activation、pack 或转换算子在关�
 6. 正式结果测完整 consumer，包括 padding、转换和同步；同时保留纯 GPU timestamp 用于归因。
 
 Apple 的 Metal 指南强调资源使用、threadgroup 和调度约束；可参考 [Optimize Metal Performance](https://developer.apple.com/videos/play/wwdc2020/10632/)。这些原则不是某个固定 tile 的通用最优证明。
+
+## 自动调参与 cache：先算回本，再保存候选
+
+适用场景是相同图/shape 有足够重复调用，且成熟启发式仍有改进空间。先界定合法 tile、SIMD groups、向量化、padding 与 scratch 预算，再搜索；候选计时只是筛选分数，入选后仍需独立完整输出与未采集配对验证。不要从缩小 dispatch grid 的分数线性外推完整消费者收益。
+
+准备成本为 `C`、每次完整消费者净节省为 `Δt>0` 时，估算回本次数为 `ceil(C/Δt)`；差值非正则没有有限回本。把搜索、编译、PSO 首用、cache 验证/失效和实际请求长度算入，不能只报告最热一次 replay。参考 [BEAM 搜索与回本案例](case-studies/tinygrad-beam-search-and-amortization.md)。
+
+缓存可保存调优参数，不应盲目保存旧 shape 的 dispatch grid。key 至少需覆盖实际影响候选的设备/构建、kernel/精度、shape/layout；改变 shape 后重新计算完整 grid，并验证 grow/tail。正控是 exact/fresh 结果一致，负控是跨 shape 误用旧配置应拒绝或重建，而不是因少算更快。参考 [MNN 调优 cache 覆盖案例](case-studies/mnn-persisted-tuning-and-grid-coverage.md)。
 
 ## SIMD-group / MPP 不是盲目替换
 
@@ -54,17 +76,13 @@ CPU oracle + 独立索引 witness；tail/stride/极值；非有限强失败；�
 
 [MLX固定版本源码](../sources/repos/mlx-affine-dispatch.md)与[GGML布局/摘录执行](../sources/repos/ggml-metal-layouts.md)提供dispatch、scale dtype、物理pitch与矩阵数据流的阅读链。位宽相同不是格式相同；uint32 codes也不是整数MAC资格。
 
-[原创BM32/64核](../labs/metal/affine_gemm.metal)使用float decode→FP16 tile→FP32 accumulator，并显式读取X/Q/S/B的实际strides。连续K加载与16-byte skew是可枚举假设，不是性能保证。小tail/stride控制后，测了[真实Qwen完整FFN](../review/gpu-affine-20261016.md)：BM64比本原型BM32好，但这些配置仍慢于MLX，不能以击败scalar教学核作为晋升标准。
+[原创BM32/64核](../examples/metal/affine_gemm.metal)使用float decode→FP16 tile→FP32 accumulator，并显式读取X/Q/S/B的实际strides。连续K加载与16-byte skew是可枚举假设，不是性能保证。小tail/stride控制后，测了[真实Qwen完整FFN](case-studies/affine-ffn-cost-and-resident-tradeoff.md)：BM64比本原型BM32好，但这些配置仍慢于MLX，不能以击败scalar教学核作为晋升标准。
 
 同encoded Q8内驻留展开约快4.7%，但增加288 MiB逻辑cache；与原始BF16消费者比较基本持平。必须区分格式内实现收益和原始模型收益。后者显式使用原始checkpoint/capture，包含输入cast与输出restore，不拿ready FP16岛替代原始ABI。
 
 实际wheel的binary hashes、源码snapshots、所有样本和独立step19确认均在证据中；没有bank/DRAM counter，不用推断假装实测。更多GPU kernel、compile policy、shape与真trace仍可带原控制重试。
 
-可读实现：[参考代码](../labs/metal/kernels.metal)；[实验步骤与边界](../labs/gpu.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/metal/run.py vector
-```
+可读实现：[参考代码](../examples/metal/kernels.metal)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：scalar/vector4 including tail；scalar/SG8 CPU double witness。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

@@ -1,6 +1,11 @@
 # anemll-profile：先审运行副作用，再读性能数字
 
-[来源目录](../README.md) · [公共计算计划探针](../../labs/ane/compute_plan.py) · [测量口径](../../profiling/measurement.md)
+<!-- knowledge
+id: source-upstream-anemll-profile
+type: source
+-->
+
+[来源目录](../README.md) · 公共计算计划探针 · [测量口径](../../profiling/measurement.md)
 
 来源：`Anemll/anemll-profile@bf8528105a0e61fda2c80d2c9b19615ecab9b7fa`，`anemll_profile.m`阅读1–150、170–460、1050–1270行；SHA-256 `fcf70badf2acbd5857952b6c91f9024fed810a803a7b1a252dcdade2015830aa`，工作树干净，2026-10-15。根许可MIT，Copyright 2026 Anemll。
 
@@ -10,7 +15,7 @@
 
 后面的prediction helper只对第一次调用检查NSError，后续timed calls传error:nil；dummy MLMultiArray未在已读构造路径明确写入确定性数值。因此不能把其time字段直接当作“相同有效输入的成功预测”。
 
-不通过重定向HOME或关闭系统保护绕开这些问题。本轮只执行[自己的公共MLComputePlan客户端](../../labs/ane/compute_plan.py)和确定性实际FFN；上游原工具保持`not-run-unmodified / safety-hold`，未修改参考checkout。
+不通过重定向HOME或关闭系统保护绕开这些问题。本轮只执行自己的公共MLComputePlan客户端和确定性实际FFN；上游原工具保持`not-run-unmodified / safety-hold`，未修改参考checkout。
 
 ## JSON适配必须拆开三类证据
 

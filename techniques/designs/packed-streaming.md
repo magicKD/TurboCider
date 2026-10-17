@@ -1,6 +1,20 @@
 # 不可变权重与 typed refill：格式、消费者、owner 一起设计
 
-[设计目录](README.md) · [本地实现](../labs/contracts.py) · [实际 pread 对照](../labs/systems.py)
+<!-- knowledge
+id: technique-designs-packed-streaming
+type: method
+stage: pipeline
+operator: layout, scheduling
+backend: metal, cpu-reference
+device: cpu, gpu
+symptom: wrong-layout, lifetime, memory-bound
+semantics: bitwise, numerically-equivalent
+representation: packed, fp16, bf16
+boundary: weight-runtime, cpu-gpu
+api: public, reference-only
+-->
+
+[设计目录](README.md) · [本地实现](../examples/reference/contracts.py) · [实际 pread 对照](../examples/reference/systems.py)
 
 ## 两种路线及适用条件
 
@@ -23,13 +37,13 @@ Backing 是不可变 bytes；view 自己保住完整 backing，而不是只保�
           -> 执行消费者 -> last-reader completion -> 回收整个 backing
 ```
 
-Packed Q4/GGUF 等 formats 还要绑定 group size、bit order、scales、zeros、full physical row stride 和消费者的转置方式。局部 slice 的宽度不能替换母矩阵 pitch。[quantization.py](../labs/quantization.py)提供具体错误对照，不把 TCLAB01 冒充原项目文件格式。
+Packed Q4/GGUF 等 formats 还要绑定 group size、bit order、scales、zeros、full physical row stride 和消费者的转置方式。局部 slice 的宽度不能替换母矩阵 pitch。[quantization.py](../examples/reference/quantization.py)提供具体错误对照，不把 TCLAB01 冒充原项目文件格式。
 
 ## Typed refill 不能只看字节宽度
 
 本地 `typed_refill`显式区分：`ready`（完整 payload）、`unservable`（该转换不支持，可走独立慢路径）、`failed`（短读/数值转换失败，绝不能发布半个结果）。F16→BF16 是浮点解码和 RNE 重新编码；虽然同为 16bit，直接 reinterpret 是错的。已经是 BF16 的 scale 也不能再做一次 F16 转换。
 
-真实 FD 读取用 [read_exact](../labs/systems.py)：`pread`携带显式 offset，循环处理短读和 EINTR，EOF 抛错；`dup(fd)`仍共享普通 seek cursor，所以换一个 duplicated FD 不等于隔离 `read()`位置。一个 future 的 bounded read-ahead 在取结果时重新抛出 producer 异常，不以 `wait()`结束冒充数据有效。
+真实 FD 读取用 [read_exact](../examples/reference/systems.py)：`pread`携带显式 offset，循环处理短读和 EINTR，EOF 抛错；`dup(fd)`仍共享普通 seek cursor，所以换一个 duplicated FD 不等于隔离 `read()`位置。一个 future 的 bounded read-ahead 在取结果时重新抛出 producer 异常，不以 `wait()`结束冒充数据有效。
 
 ## 有界预读的算法
 
@@ -37,10 +51,4 @@ Packed Q4/GGUF 等 formats 还要绑定 group size、bit order、scales、zeros�
 
 IO 较慢时 lookahead 可能隐藏部分等待，但两个设备同时读写同一统一内存也会争抢。必须比较相同缓存状态的完整 layer/request，不把“prefetch hit”直接换成收益。
 
-```sh
-python3 -B techniques/labs/run.py packed-weight-store
-python3 -B techniques/labs/run.py quant-formats
-python3 -B techniques/labs/run.py bounded-io
-```
-
-测试覆盖损坏 header、overlap、越界、不同 dtype、short payload、只读 view 和 owner 保活。重新探索条件：新格式、offset 对齐、source encoding、consumer pitch、buffer pool、SSD/内存条件。设计来源见 [吸收账本](../references/absorbed-designs.json)，不需要其 checkout。
+测试覆盖损坏 header、overlap、越界、不同 dtype、short payload、只读 view 和 owner 保活。重新探索条件：新格式、offset 对齐、source encoding、consumer pitch、buffer pool、SSD/内存条件。设计来源见 [吸收账本](README.md)，不需要其 checkout。

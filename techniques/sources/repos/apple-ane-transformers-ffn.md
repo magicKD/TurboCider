@@ -1,5 +1,10 @@
 # Apple ANE Transformers：迁移布局，不替换模型数学
 
+<!-- knowledge
+id: source-upstream-ane-transformers-ffn
+type: source
+-->
+
 [来源目录](../README.md) · [图合同](../../ane/coreml-graphs.md) · [阶段地图](../../models/stage-map.md)
 
 来源：`apple-aiml-research/ml-ane-transformers@590eb35913622cdef217ebc5329047aab389ac98`，`ane_transformers/reference/ffn.py`全文；SHA-256 `f0d7d1bb7189e3607c069918f656054c875563ffb6c729fd6ac27df32509d7a8`，工作树干净，2026-10-15。

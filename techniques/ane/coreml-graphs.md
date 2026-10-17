@@ -1,5 +1,19 @@
 # ANE / Core ML：图、shape 与布局
 
+<!-- knowledge
+id: technique-ane-coreml-graphs
+type: method
+stage: ffn
+operator: swiglu, conv, layout
+backend: coreml
+device: ane, gpu
+symptom: graph-interruption, wrong-layout, compile-bound
+semantics: numerically-equivalent, approximate
+representation: fp16, w8a8
+boundary: gpu-ane, weight-runtime
+api: public
+-->
+
 [总目录](../README.md) · [生命周期](lifecycle.md) · [共享 IO](../gpu-ane/shared-memory.md)
 
 深入阅读：[ANE专题目录](README.md)、[Apple Transformer布局/lowering](layout-and-lowering.md)、[ANEMLL状态与公共部署](public-coreml-deployment.md)。版本能力和实际放置分别见[能力地图](capability-atlas.md)与[本轮压缩/计算计划对照](experiments-20261016.md)。
@@ -58,17 +72,13 @@ BF16 和 FP16 同为 16 bit，但指数范围不同。把 BF16 FFN 简单转 FP1
 
 [ccv来源卡](../sources/repos/ccv-coreml-rowwise.md)给出K拆分与surface政策；[vpipe来源卡](../sources/repos/vpipe-runtime-tiling.md)区分图内分块和host多次调用。核心代数是先完成每个投影的K归约，再做SiLU；N切分须保持gate/up配对以及down对应列。不要将非线性移进K partial，也不要重复bias/residual。
 
-新的[图构造](../labs/ane/tiling_graphs.py)与[完整消费者驱动](../labs/ane/tiling_bench.py)提供frozen/runtime、2D row-major/4D channel-major、sigmoid/exp、GPU-only/CoreML/serial/hybrid对照。4D matmul的`[1,1,C,M]`不是旧frozen Conv图的`[1,C,1,M]`，不能只改shape不改pitch。K求和改变舍入，属于需数值验证的等价变换，不声称bitwise。
+新的图构造与完整消费者驱动提供frozen/runtime、2D row-major/4D channel-major、sigmoid/exp、GPU-only/CoreML/serial/hybrid对照。4D matmul的`[1,1,C,M]`不是旧frozen Conv图的`[1,C,1,M]`，不能只改shape不改pitch。K求和改变舍入，属于需数值验证的等价变换，不声称bitwise。
 
-首次[真实Qwen FFN实验](../review/qwen-ffn-tiling-20261015.md)使用完整1024×4096×12288与真实layer/timestep输入。CPU_AND_NE sigmoid路径被固定抽样门槛拒绝；同bundle CPU_ONLY对照后来满足门槛，不能将负结果泛化为所有CoreML图。exp通过组件数值，但完整CoreML消费者和半宽hybrid仍慢于compiled fused GPU。相同切分的并发相对串行有约1.16×收益，也不能据此替换更快的全GPU分母。
+首次[真实Qwen FFN实验](../gpu_ane/case-studies/qwen-ffn-tiling-and-concurrent-cost.md)使用完整1024×4096×12288与真实layer/timestep输入。CPU_AND_NE sigmoid路径被固定抽样门槛拒绝；同bundle CPU_ONLY对照后来满足门槛，不能将负结果泛化为所有CoreML图。exp通过组件数值，但完整CoreML消费者和半宽hybrid仍慢于compiled fused GPU。相同切分的并发相对串行有约1.16×收益，也不能据此替换更快的全GPU分母。
 
 这些是FP16/Python bridge/resident-weight结果，不是原生shared IO、W8A8或LoRA结论。具体失败、全部样本与重开条件在证据中；优化图的最终目标是完整消费者/请求，而非提高计划中的ANE op占比。
 
-可读实现：[参考代码](../labs/ane/bench.py)；[实验步骤与边界](../labs/ane.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-.venv/bin/python -B techniques/labs/ane/bench.py --kind frozen-fp16
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：frozen/runtime inputs；real native INT8 IO rather than Python cast。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

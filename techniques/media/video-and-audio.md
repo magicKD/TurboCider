@@ -1,5 +1,19 @@
 # 媒体 IO：完整帧、backpressure 与端到端时间
 
+<!-- knowledge
+id: technique-media-video-and-audio
+type: method
+stage: io, pipeline
+operator: codec, scheduling
+backend: videotoolbox, cpu-reference
+device: cpu, gpu, media-engine
+symptom: memory-bound, lifetime
+semantics: bitwise, contract-only
+representation: pixelbuffer
+boundary: tensor-pixelbuffer, request
+api: public, reference-only
+-->
+
 [总目录](../README.md) · [VAE](vae.md)
 
 ## 为什么是优化的一部分
@@ -42,11 +56,7 @@ LTX/H3的音频有自己的latent、VAE/vocoder、sample rate/BWE和mux边界；
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/media.py)；[实验步骤与边界](../labs/media.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py media-backpressure
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：buffered vs bounded full RGBA checksum；rational FPS and nested spans。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

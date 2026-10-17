@@ -1,10 +1,46 @@
 # GEMM/GEMV 与低比特 GPU 数据流：相同位宽不代表相同方案
 
-[GPU 导航](README.md) · [kernel 调优](kernel-tuning.md) · [TensorOps](tensorops-and-m5.md) · [实验](experiments-20261016.md)
+<!-- knowledge
+id: technique-metal-gemm-and-quantization
+type: method
+stage: ffn, prefill, decode
+operator: gemm, gemv, quantization
+backend: metal, mlx
+device: cpu, gpu
+symptom: measurement, precision-loss, launch-bound
+semantics: contract-only
+boundary: producer-consumer
+api: public, reference-only
+-->
 
-核查：2026-10-16。本文综合 MLX/GGML/MFA/MNN/Candle 的已读实现；源码与范围见[来源清单](research-sources.json)。不复制第三方 kernel，不按文件大小推算实际提速。
+[GPU 导航](README.md) · [kernel 调优](kernel-tuning.md) · [TensorOps](tensorops-and-m5.md) · [实验](../MAINTENANCE.md)
+
+核查：2026-10-16。本文综合 MLX/GGML/MFA/MNN/Candle 的已读实现；源码与范围见[来源清单](sources.md#research-sources)。不复制第三方 kernel，不按文件大小推算实际提速。
+
+## 方法卡：小 M 时复用权重，大 M 时复用 tile
+
+- **机制**：让一次加载的权重服务多个输入向量，或在 tile 内解码后复用；减少流量/无效计算，而非仅降低存储位宽。
+- **何时考虑**：实际 M 很小、权重流量或 packed decode 成本突出；先记录 M/N/K、stride、dtype 和驻留条件。
+- **代价/反例**：更多寄存器、scratch、reduction 或 dense materialization 可能抵消收益；量化更小不保证更快。
+- **实现参考**：[small-M wide GEMV](case-studies/mlx-small-m-wide-gemv-and-head-attribution.md)包含固定 selector/guard；这是实现机制，不是已取得 wide 开关性能收益。
+- **最小验证**：同输入/输出需求比较成熟 baseline 与一个可控候选，覆盖 M 阈值、尾部和布局，计入完整消费者成本。
+
+先用这张卡形成假设，再读下文成本模型和具体证据；不能把固定 MLX 配置域当成所有后端的硬件定律。
+
+## 怎样借鉴：先写成本假设，再选实现
+
+2026-10-17 方法整理。建议按以下顺序做设计判断，后面的源码与实验分别提供机制和反例：
+
+1. **先区分小 M 与大 M。** 记录实际 matmul 的 M/N/K，而非只记请求 batch。小 M 从成熟 GEMV/多向量复用开始；大 M 从成熟 tiled GEMM 开始。[MLX host selector](https://github.com/ml-explore/mlx/blob/64ea011cb65f14d9ce2737e60db9a4ae91ed7441/mlx/backend/metal/matmul.cpp)应与[对应 GEMV](https://github.com/ml-explore/mlx/blob/64ea011cb65f14d9ce2737e60db9a4ae91ed7441/mlx/backend/metal/kernels/gemv.h)连读。
+2. **先估数量级，不把估算当实测。** 下文的理想 W 流量和 `2MNK` 只能帮助提出 bandwidth/compute 假设；packed metadata、重复读取、tail 与提交都可能主导。再用[profiling](profiling-playbook.md)与同 shape 对照检验。
+3. **只在并行不足时试 split-K。** 先看输出 tile 网格是否足够，再对比不拆/拆 K 的完整输出；将 partial scratch、归并和不同求和顺序纳入，不能只计主 GEMM。
+4. **量化解码放在哪里，按完整边界决定。** 阅读 [MLX quantized selector](https://github.com/ml-explore/mlx/blob/36969c094354086e15d2a327a9c50feb20b9cf11/mlx/backend/metal/quantized.cpp)，对照下文五条路线。常驻展开只适合用额外内存换重复收益的场景；逐次展开必须算 dense 写回和第二次读取。
+
+两个可复用的决策公式：若每次完整消费者节省 `Δt>0`，额外准备成本为 `C`，估算回本调用数为 `ceil(C/Δt)`；若 `Δt≤0` 则无有限回本。常驻展开的逻辑额外存储先按 `N*K*dense_bytes` 估计，再另测实际 allocator/进程峰值。两者是规划模型，不是已观测收益，搜索成本的真实案例见 [BEAM 回本](case-studies/tinygrad-beam-search-and-amortization.md)。
 
 ## 从 M 决定问题类型
+
+新增[MLX dense small-M wide GEMV](case-studies/mlx-small-m-wide-gemv-and-head-attribution.md)：M2..15多向量复用权重、≤5向量/register tile、vocab宽网格与alignment guard；真实Qwen固定hidden的全词表head控制同时展示为何shape相关不等于GEMV因果。不是本机wide开关性能A/B，也不是packed量化或M5/NAX资格。
 
 令 `Y[M,N] = X[M,K] W[N,K]^T`，dense 乘加工作量按 `2MNK` FLOPs 计。若 W 每元素 b bits，仅一次读 W 的理想流量约 `NK*b/8`，还未包含 scale/zero、X/Y、重复加载、scratch 与 cache miss。M 增大可提高同一权重被多行复用的机会；这是算术强度模型，不是实测带宽/峰值。
 
@@ -46,14 +82,10 @@ MPP 的 dense device-direct 建议与这个 packed 案例应一起学习：避�
 
 ## 已有更强反例
 
-[真实 Qwen FFN 报告](../review/gpu-affine-20261016.md)中，Q8 同配方 resident decode 只快约 4.7%，额外增加 288 MiB；相对原始 BF16 GPU 图则基本持平。原创 SIMD-group 核比教学 scalar 好，不代表比成熟 MLX 好。新合成 M 扫描补充了更小权重/更多 M 的机制观察，但不覆盖真实图。
+[真实 Qwen FFN 报告](case-studies/affine-ffn-cost-and-resident-tradeoff.md)中，Q8 同配方 resident decode 只快约 4.7%，额外增加 288 MiB；相对原始 BF16 GPU 图则基本持平。原创 SIMD-group 核比教学 scalar 好，不代表比成熟 MLX 好。新合成 M 扫描补充了更小权重/更多 M 的机制观察，但不覆盖真实图。
 
 必须区分三个比较：同 packed 格式的实现质量、量化相对原模型的性能/质量，以及整个请求的内存/延迟 Pareto。只报告其中最容易取胜的一层，会得到误导性的采用结论。
 
 ## 最小实验合同
 
 固定 code order、group、scale/bias dtype、signedness、source 权重、物理 pitch；验证 group 边界、全零/极值/subnormal、M/N/K 尾部、非连续 view。CPU 独立 decoder 与 FP64 dot 负责见证；finite 不等于正确。全输出通过再量 ABBA，分别列准备、热态、resident logical bytes、实际 footprint、完整消费者和取消 drain。
-
-## 可执行学习控制（不替代上游验证）
-
-本页实现参考：[labs/quantization.py](../labs/quantization.py)、[labs/metal/engine_probe.py](../labs/metal/engine_probe.py)；case：`quant-formats`、`mlx:engine-mechanisms`。CPU/旧 Metal 控制只验证对应数学与合同；`mlx:engine-mechanisms` 对应[显式组件 CLI](experiments-20261016.md)，不是自动启动 GPU 的普通单元测试，也不证明全部上游引擎或 PR 已运行。设备、source、shape、精度或消费者改变后重新验证。

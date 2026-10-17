@@ -1,5 +1,19 @@
 # 辅助图像超分：tiles、alpha与模型预加载
 
+<!-- knowledge
+id: technique-media-upscaling
+type: method
+stage: io, pipeline
+operator: conv
+backend: coreml
+device: gpu, ane
+symptom: memory-bound, compile-bound
+semantics: approximate
+representation: pixelbuffer, fp16
+boundary: tensor-pixelbuffer, request
+api: public
+-->
+
 [总目录](../README.md) · [模型配方](../models/recipes.md)
 
 除SeedVR2之外，TurboCider还有Real-ESRGAN x2/x4的Swift/CoreML路径。它能提供一些通用的图像素材处理优化，但不应与完整SeedVR2时序VAE混用资格。
@@ -24,15 +38,11 @@ rectangular/edge/smalltile、alpha、rotation、x2/x4真实scale、tile接缝、
 
 权威入口：[公开超分合同](../../docs/public/IMAGE_UPSCALING.md)、[历史设备对照](../../docs/status/dev-verify-upscaling-2026-09-28.md)。这些是项目现有实现与经验，不是本轮新跑的性能测试。
 
-独立 [overlap/halo/feather参考](../labs/upscaling.py) 用toy callback比较wholeframe与tiled，并将local-reflect crop作为明确近似对照。实际 [ImageUpscaler.swift](../../apps/macos/ImageUpscaler.swift) 还处理premultipliedRGBA：alpha>0才unpremultiply RGB，alpha单独resize后重组；tile padding/feather与learnedmodel receptivefield需实际quality验证，不能沿用toy的exact结论。
+独立 overlap/halo/feather参考 用toy callback比较wholeframe与tiled，并将local-reflect crop作为明确近似对照。实际 [ImageUpscaler.swift](../../apps/macos/ImageUpscaler.swift) 还处理premultipliedRGBA：alpha>0才unpremultiply RGB，alpha单独resize后重组；tile padding/feather与learnedmodel receptivefield需实际quality验证，不能沿用toy的exact结论。
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/upscaling.py)；[实验步骤与边界](../labs/media.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py upscale-tiles
-```
+可读实现：参考代码；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：whole-frame vs overlap/halo/feather callback；local-reflect approximation and alpha preservation。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

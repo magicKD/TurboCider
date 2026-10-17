@@ -1,5 +1,19 @@
 # LoRA：共享图不能漏掉激活修正
 
+<!-- knowledge
+id: technique-gpu-ane-lora
+type: method
+stage: ffn
+operator: gemm, swiglu
+backend: cpu-reference, mlx, coreml
+device: cpu, gpu, ane
+symptom: precision-loss, wrong-layout
+semantics: numerically-equivalent
+representation: fp16, fp32
+boundary: gpu-ane, producer-consumer
+api: public, reference-only
+-->
+
 [总目录](../README.md) · [切分代数](partitioning.md)
 
 ## 完整数学顺序
@@ -48,11 +62,7 @@ adapter-bound frozen artifact 必须绑定实际 adapter 内容、role、strengt
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../examples/split_ffn_reference.py)；[实验步骤与边界](../labs/scheduling.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-.venv/bin/python -B techniques/labs/ane/bench.py --kind frozen-fp16
-```
+可读实现：[参考代码](../examples/split_ffn_reference.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：corrected hidden and one down B；native base/A/base and late-failure recovery。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

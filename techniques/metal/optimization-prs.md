@@ -1,10 +1,36 @@
 # 优化 PR 阅读账本：状态、patch、收益条件与反例
 
-[GPU 导航](README.md) · [diff 哈希清单](research-sources.json) · [TensorOps](tensorops-and-m5.md)
+<!-- knowledge
+id: technique-metal-optimization-prs
+type: method
+stage: pipeline
+operator: scheduling
+backend: cpu-reference, metal
+device: cpu, gpu
+symptom: measurement, precision-loss, launch-bound
+semantics: contract-only
+boundary: producer-consumer
+api: public, reference-only
+-->
+
+[GPU 导航](README.md) · [diff 哈希清单](sources.md#research-sources) · [TensorOps](tensorops-and-m5.md)
 
 核查时点：2026-10-16。本轮读了下列 8 个 PR 的 patch/关键区段，并核对页面或 GitHub search 状态。GitHub REST pull 详情接口本轮返回 rate-limit 403，改用公开 PR 页面与 `.diff`；不虚构 API 取得的 merge SHA。diff SHA256 固定本次阅读内容，PR 活动分支可以继续修改。
 
 `closed` 不等于 `merged`；`open` patch 不等于主线、wheel 或产品已有。性能数字若来自作者，只能称“作者报告”；本轮未在 M5 复现这些 patch。
+
+## 如何把 PR 读成可迁移的方法
+
+2026-10-17 学习整理，**不刷新下表 2026-10-16 的历史状态**。活动 PR 可能继续修改；采用前按文末维护规则重新核对。建议先按问题选读：矩阵并行/预取看 #4682，dispatch guard 看 #4684/#4476，tile/tail 与 SKU 看 #28439，提交/资源正确性看 #4689/#189019，SDK 类型适配看 #4594。
+
+每份 patch 用同一张阅读清单：
+
+1. **瓶颈与准入：** 改的是 host selector、kernel 数据流、编译还是提交？哪些 shape/dtype/设备受影响，旧路径何时保留？
+2. **机制与账单：** 少了哪些读写/等待，多了哪些寄存器、scratch、reduction、padding 或准备？沿调用点→helper→shader→consumer 追踪。
+3. **证据与反例：** 测试是否强制覆盖新候选，是否含阈值两侧、tail/stride、错误输入与完整输出？作者结果与本机复现分列。
+4. **迁移试验：** 保持同 source/权重/输出需求，只移植一个机制；用成熟基线测 cold/warm、完整消费者和峰值。没有匹配测试前只记“值得试”，不记“已加速”。
+
+相关读本：[服务层 PR](serving-optimization-prs.md)、[编译/提交 PR](compiler-optimization-prs.md)；本页链接负责定位 patch，固定 diff/hash 的身份以[来源清单](sources.md#research-sources)为准，不能只依赖活动页面的当前标题。
 
 | PR | 本轮状态 | patch 的实质 | 可迁移学习点 |
 | --- | --- | --- | --- |
@@ -44,7 +70,3 @@ PyTorch MetalGraph patch 对 capture 绑定的 buffer 做 pin，避免地址被 
 ## 维护规则
 
 重访 PR 时比较 diff hash、head/base、状态、merge 内容和后续 revert/fix；不要只改表中状态。重跑合法输入、负控和完整消费者后才改变采用结论。上游数字、主线存在、本机验证、产品资格分成四个字段；这份阅读账本不向产品下发任何开关。
-
-## 可执行学习控制（不替代上游验证）
-
-本页实现参考：[labs/search_contracts.py](../labs/search_contracts.py)、[labs/contracts.py](../labs/contracts.py)；case：`search-qualification`、`owned-command-graph`。CPU/旧 Metal 控制只验证对应数学与合同；`mlx:engine-mechanisms` 对应[显式组件 CLI](experiments-20261016.md)，不是自动启动 GPU 的普通单元测试，也不证明全部上游引擎或 PR 已运行。设备、source、shape、精度或消费者改变后重新验证。

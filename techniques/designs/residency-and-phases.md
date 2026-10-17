@@ -1,12 +1,25 @@
 # 低内存协作：阶段预算、固定子集和防抖反馈
 
-[设计目录](README.md) · [本地策略](../labs/contracts.py) · [区间预算工具](../scripts/interval_peak.py)
+<!-- knowledge
+id: technique-designs-residency-and-phases
+type: method
+stage: encoder, dit, vae, io, pipeline
+operator: scheduling
+backend: cpu-reference
+device: cpu, gpu, ane
+symptom: memory-bound, lifetime
+semantics: contract-only
+boundary: weight-runtime, request
+api: reference-only
+-->
+
+[设计目录](README.md) · [本地策略](../examples/reference/contracts.py) · 区间预算工具
 
 ## 从 vpipe 吸收的关键区分
 
 内存优化不是只算压缩权重大小。计划应先让 encoder/DiT/VAE/媒体消费者全部 declare，再统一 decide。否则先初始化的模型可能把后续激活或输出所需空间当自己的可增长余量。一个 allocation 的 alias 只计一次；跨阶段存活取区间并集，不把同一 latent 的不同名字当两份，也不能提前释放仍被异步消费者借用的 backing。
 
-本地 [memory-plan.json](../examples/memory-plan.json)与 `interval_peak.py`实现了 phase 区间、alias backing 和 target 预算；[slot state machine](../labs/systems.py)补充实际完成前不可复用的约束。预算是声明下界，不是 OS RSS/phys_footprint 的承诺。
+本地 与 `interval_peak.py`实现了 phase 区间、alias backing 和 target 预算；[slot state machine](../examples/reference/systems.py)补充实际完成前不可复用的约束。预算是声明下界，不是 OS RSS/phys_footprint 的承诺。
 
 ## 为什么循环扫描不宜用 LRU
 
@@ -30,10 +43,4 @@ ANE program、IOSurface、双 W bank、GPU partial、dequant scratch、VAE activ
 
 对每个 phase 记录：fixed weights、resident subset、streaming slots、activations、跨阶段 payload、library/service unknown、safety reserve。声明、决策、真实分配、峰值采样、真实 release 是不同证据，不能互相替代。
 
-```sh
-python3 -B techniques/labs/run.py residency-policy
-python3 -B techniques/scripts/interval_peak.py techniques/examples/memory-plan.json
-python3 -B techniques/labs/run.py slot-ownership
-```
-
-反例：LRU 循环 thrash、reserve 重复扣除、admit 导致 evict、evict 后立即长回、只凭 available/filecache 推断驻留。新 RAM、phase overlap、实际低内存设备、block bytes、编译数量或输出队列改变后重新验收。出处见 [吸收账本](../references/absorbed-designs.json)。
+反例：LRU 循环 thrash、reserve 重复扣除、admit 导致 evict、evict 后立即长回、只凭 available/filecache 推断驻留。新 RAM、phase overlap、实际低内存设备、block bytes、编译数量或输出队列改变后重新验收。出处见 [吸收账本](README.md)。

@@ -1,14 +1,17 @@
 # KernelWiki与Sana：借组织方式与通用接缝，不照搬后端
 
-已吸收到本目录的实现方案：[技术组合与 schedule](../designs/technique-composition.md)、[GPU 数据流](../designs/gpu-dataflow.md)、[DiT 分阶段方案](../models/dit.md)，配套[本地 policies](../labs/policies.py)与[量化实现](../labs/quantization.py)。下面的源码路径和网页用于出处核查，不是核心学习依赖。
+<!-- knowledge
+id: technique-references-kernelwiki-sana
+type: method
+-->
 
-[总目录](../README.md) · [实验室](../labs/README.md) · [技术卡](../templates/technique-card.md)
+已吸收到本目录的实现方案：[技术组合与 schedule](../designs/technique-composition.md)、[GPU 数据流](../designs/gpu-dataflow.md)、[DiT 分阶段方案](../models/dit.md)，配套[本地 policies](../examples/reference/policies.py)与[量化实现](../examples/reference/quantization.py)。下面的源码路径和网页用于出处核查，不是核心学习依赖。
+
+[总目录](../README.md) · [实验室](../examples/README.md) · [技术卡](../templates/technique-card.md)
 
 ## KernelWiki的启发
 
-2026-10-15直接检查 [KernelWiki](https://github.com/mit-han-lab/KernelWiki) 和 [schema](https://github.com/mit-han-lab/KernelWiki/blob/master/references/schema.md)。其组织把可搜索的优化笔记、原始实现出处、适用硬件/shape、验证证据、复现状态和失败/尝试分开；不是只存一个长README。
-
-本库采用同样有用的区分：章节→技术卡→具体代码/case→controls→证据等级→重开条件。`labs/catalog.json`是轻量映射，不声称兼容KernelWiki数据库/schema，也没有复制其skill或CUDA实现。
+本库借鉴“方法、实现、案例、来源”分层，页面用短 Markdown 元数据直接检索，不维护 JSON catalog 或复算证据链；不声称兼容 KernelWiki 数据库/schema，也没有复制其 skill 或 CUDA 实现。
 
 ## Sana sol-engine的本地真实参考
 
@@ -27,14 +30,14 @@
 
 ## 已经落地的对应实现
 
-[policies.py](../labs/policies.py)是独立的小型effect/capability checker；[caches.py](../labs/caches.py)实现可读residual replay与tokenmass merge；[quantization.py](../labs/quantization.py)实现Q4/Q8物理格式、W8A8与SmoothQuant；[Metal](../labs/metal/kernels.metal)提供真实kernel对照。
+[policies.py](../examples/reference/policies.py)是独立的小型effect/capability checker；[caches.py](../examples/reference/caches.py)实现可读residual replay与tokenmass merge；[quantization.py](../examples/reference/quantization.py)实现Q4/Q8物理格式、W8A8与SmoothQuant；[Metal](../examples/metal/kernels.metal)提供真实kernel对照。
 
 这些不是声称完整复现TeaCache/PAB/TaylorSeer/PISA/ToMeSD各论文。它们暴露核心接缝，便于再扩展完整策略、frame/stage布局、补偿项、离线校准和模型质量测试；给定搜索horizon的结构无冲突也不代表所有动态schedule都已证明。
 
 ## 面向工程师/AI的使用方式
 
-2026-10-16新增[固定版本源码复核](../sources/repos/kernelwiki-retrieval.md)，只读六个query/schema/alias/version/许可文件，不运行上游。现有catalog叠加受控主题词表、单跳别名、历史内容/环境复查与[生成索引](../queries/README.md)，没有复制另一份页面清单；[查询合同](../data/README.md)明确source/evidence不得继承章节资格。
+固定版本的[KernelWiki 阅读笔记](../sources/repos/kernelwiki-retrieval.md)说明检索、schema 和别名的设计启发。当前索引直接来自 Markdown，保留少量别名和按阅读目的排序，不登记实验/验收状态；[使用指南](../guides/knowledge-base.md)解释其边界。
 
 从模型事实生成capability/spec → 选择技术卡 → 结构检查/配置 → 运行smallreference/negativecontrols → 对真实source做性能/质量纵切 → 添加状态与迁移说明。不要让agent只凭某个backend推荐表堆配置，也不要因旧试验失利就剪掉整个研究分支。
 
-来源与文件SHA见 [sources.json](sources.json)；现有TurboCider模型库、sourcelease、memoryledger和产品路由仍是唯一生产合同，这个实验室不接管它们。
+固定读本见[来源索引](../sources/README.md)。现有 TurboCider 模型库、source lease、memory ledger 和产品路由仍决定实际行为；知识库不接管它们，也不提供历史实验环境。

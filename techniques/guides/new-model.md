@@ -1,5 +1,10 @@
 # 用本手册加速一个新模型
 
+<!-- knowledge
+id: technique-guides-new-model
+type: guide
+-->
+
 [总目录](../README.md) · [逐项清单](../templates/new-model-checklist.md)
 
 这是一条实施路线，不是声明任意模型可自动使用 ANE。推荐先复制接口合同与测试形状，不复制 Qwen/Z 的专用开关。
@@ -61,4 +66,4 @@
 
 给可用候选一个准确的 request/plan/actual label；回退时改为真实 GPU label。不要写“ANE加速”却实际全 GPU。公开/私有构建隔离、manifest 来源与 shape、软件/芯片 allowlist 一并接入。
 
-交付物：便携请求、构建身份、命令、原始报告路径和小型摘要、质量样本清单、已知失败、默认选择理由、下次排障入口。按 [覆盖审计](../review/coverage.md) 反查一次：陌生工程师能否不读历史聊天就重做这条纵切？
+交付物：便携请求、构建身份、命令、原始报告路径和小型摘要、质量样本清单、已知失败、默认选择理由、下次排障入口。按 [覆盖审计](../MAINTENANCE.md) 反查一次：陌生工程师能否不读历史聊天就重做这条纵切？

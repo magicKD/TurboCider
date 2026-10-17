@@ -1,5 +1,19 @@
 # VAE、因果卷积、全局统计与空间 tiling
 
+<!-- knowledge
+id: technique-media-vae
+type: method
+stage: vae
+operator: conv, norm
+backend: metal, mlx
+device: gpu
+symptom: memory-bound, precision-loss, wrong-layout
+semantics: numerically-equivalent, approximate
+representation: fp16, fp32
+boundary: producer-consumer
+api: public
+-->
+
 [总目录](../README.md) · [视频 IO](video-and-audio.md)
 
 ## 先保住原始精度与因果语义
@@ -51,11 +65,7 @@ GPU/ANE合作可切output channels：双方读相同输入/taps，各算完整�
 
 ## 实现参考与实验
 
-可读实现：[参考代码](../labs/operators.py)；[实验步骤与边界](../labs/media.md)；[本项全部 case / controls](../labs/catalog.json)。
-
-```sh
-python3 -B techniques/labs/run.py causal-halo
-```
+可读实现：[参考代码](../examples/reference/operators.py)；[实验步骤与边界](../examples/README.md)；本项全部 case / controls。
 
 本项控制：full context vs lost halo/local norm；initial fold vs subsequent temporal taps。CPU参考/模拟与实际设备入口分开标记；设备环境和更多变体见实验步骤。
 

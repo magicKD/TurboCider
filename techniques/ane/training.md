@@ -1,5 +1,17 @@
 # ANE 训练路线：反向传播是计算图，参数更新才是关键接缝
 
+<!-- knowledge
+id: technique-ane-training
+type: method
+operator: gemm
+backend: coreml, private-ane, cpu-reference
+device: cpu, ane
+symptom: precision-loss, measurement
+semantics: contract-only
+boundary: producer-consumer
+api: reference-only
+-->
+
 [ANE 目录](README.md) · [动态权重](training-dynamic-weights.md) · [delta/LoRA](training-delta-and-lora.md) · [autograd](training-autograd.md)
 
 ## 先回答“能不能训练”
@@ -19,6 +31,15 @@ Apple SDK26.5 明确限制 MLCompute `.ane` 仅推理；Core ML 的 on-device up
 | ANEForge graph autograd | trainable inputs；VJP 编成图 | 可 ANE fwd/dX/dW；host 或 device optimizer | 自动求导、trainable Conv 分解、resident state | 图膨胀、FP16 moments、alias、overflow、长期收敛 |
 
 这些是方案对照，不是同一模型/机器的速度排名。maderix 当前动态训练代码共用一组 kernel；Orion 的常量每层程序与 ANEgpt 的具体版本有不同数量，不能把“每层 dispatch 数”当“总 compile 数”。
+
+## 如何把这些方案迁移成一个可验证的小trainer
+
+1. **固定算法，而不只固定模型名**：明确loss归一化、batch/accumulation、master/gradient/moment dtype、scale/clip、epsilon和更新步数，先有相同数学的CPU/GPU参考。
+2. **只改变参数交付方式**：对同一组W，分别考察常量/重载、runtime输入、resident状态。记录compile/load与每步权重流量，不能把图不重编译当成更新免费。
+3. **逐步验收完整数据流**：forward→dX/dW→optimizer delta→W/m/v/t；每步都核对参数generation。norm或激活的VJP还要与实际前向配方一致。
+4. **最后才比较K步与真实任务**：起始参数/optimizer状态一致，恢复测试包含全部moments与step；计入梯度往返和同步后再比较step/s，并验证训练质量。
+
+实现上可分别学习[ANEForge原Autograd/optimizer](training-autograd.md)和[Orion参数/LoRA输入](orion-lora-inputs-and-scalar-serialization.md)。本库已有[匹配K步窗口](matched-training-windows.md)、[RMS前向/VJP反例](rmsnorm-epsilon-floor-and-backward-contract.md)、[Adam完整状态与恢复](adam-moments-loss-scaling-and-checkpoint.md)可直接转成迁移回归；它们不是完整模型训练或长期收敛证明。
 
 ## 数学最小核心
 
@@ -42,15 +63,10 @@ Apple SDK26.5 明确限制 MLCompute `.ane` 仅推理；Core ML 的 on-device up
 
 ## 本轮实际验证了什么
 
-[原创 training_probe](../labs/ane/training_probe.py)将 forward/dX/dW 复用一个 runtime-input matmul，host FP32 SGD，12次更新及37次完整输出均以独立 FP64 数学检查；另有纯 CPU 对照。**计算计划首选 CPU**，所以它验证不重编译的手写反向、参数 generation 和 loss scaling 学习机制，不宣称取得 ANE 训练速度或通用 Core ML trainer。见 [全部结果](experiments-20261016.md)。
+原创 training_probe将 forward/dX/dW 复用一个 runtime-input matmul，host FP32 SGD，12次更新及37次完整输出均以独立 FP64 数学检查；另有纯 CPU 对照。**计算计划首选 CPU**，所以它验证不重编译的手写反向、参数 generation 和 loss scaling 学习机制，不宣称取得 ANE 训练速度或通用 Core ML trainer。见 [全部结果](experiments-20261016.md)。
 
 下一步若评估私有训练，应先小 MLP/LoRA，建立相同 MLX GPU trainer 和相同 dtype/optimizer 基线，再逐项考察 dynamic weights、device optimizer、resident state。整模型训练、低功耗或长期收敛不属于本轮已实测范围。
 
-## 本地学习入口与复查
+后续深化已经增加[固定ANEForge的线性SGD三模式实验](resident-training-lab.md)，它不是上面的公共CPU首选matmul，也没有获得完整MLP/LoRA、MLX trainer、公平速度或长期质量资格。原理、实际参数代际和硬件证据继续分别记录。
 
-- [ane/training_math.py](../labs/ane/training_math.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-- [ane/training_probe.py](../labs/ane/training_probe.py)：原创CPU合同/显式实验客户端，不是上游完整实现。
-
-CPU入口：`python3 -B techniques/labs/run.py ane-training-math`。只运行参考数学/合同，不自动触发Core ML、私有API或网络；实际设备命令与证据边界见[实验报告](experiments-20261016.md)。
-
-SoC/OS/SDK、源码/编译入口、权重/LoRA、输入域/shape/layout/精度或实际消费者改变时重开；不继承旧数值、性能或物理设备资格。
+再后[Adam非线性VJP、moments与完整恢复](adam-moments-loss-scaling-and-checkpoint.md)实际运行48个原Trainer进程：246次显式step含72恢复续步，保留32个source局部更新与64个scaled梯度absolute拒绝；不能把S256的局部更新通过当整步合格。推导`eps_eff=eps/(S*sqrt(1−b2^t))`，同owner完整W/m/v/t恢复24次复现，错误恢复48次不复现。小型tanh模型仍没有训练速度、真实任务收敛、overflow原子恢复或跨进程checkpoint资格。
