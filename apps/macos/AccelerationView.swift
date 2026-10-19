@@ -137,6 +137,14 @@ struct AccelerationView: View {
                     .accessibilityIdentifier("qwenDiTW8A8")
                 Text("默认关闭。首次开启需生成约 11 GiB 磁盘缓存，耗时较长；后续自动复用。仅量化 DiT，文本编码器和 VAE 保持原精度。关闭后回到原有 GPU 权重路径；对比时请保持种子、步数和 DiT 缓存档位一致。图像细节可能变化。")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("SmoothQuant＋ConvRot（DiT 保真选项）", isOn: $studio.draft.qwen21DiTSmoothQuantConvRot)
+                    .disabled(store.busy || (studio.draft.qwen21DiTSmoothQuantConvRotIssue() != nil && !studio.draft.qwen21DiTSmoothQuantConvRot))
+                    .accessibilityIdentifier("qwenDiTSmoothQuantConvRot")
+                Text("默认关闭，继续使用当前 W8A8。开启后使用独立约 11 GiB 缓存；三个样本更接近浮点参考，但可能更慢。对比时只切换此项，保持 W8A8、ANE、种子、步数和 DiT 缓存档位一致。文本编码器与 VAE 不变。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let reason = studio.draft.qwen21DiTSmoothQuantConvRotIssue() {
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                }
                 if let reason = studio.draft.qwen21DiTW8A8Issue() {
                     Text(reason).font(.caption).foregroundStyle(.secondary)
                 }
