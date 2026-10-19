@@ -1,5 +1,13 @@
 #include "pipeline.hpp"
 #include "diagnostic_options.hpp"
+#include "runtime_prefix_snapshot.hpp"
+#include "runtime_function_options.hpp"
+#include "runtime_private_qkv.hpp"
+#include "runtime_private_qkv_options.hpp"
+#include "convrot_weights.hpp"
+#include "metal/base_dual_swiglu.hpp"
+#include "compiled_complement.hpp"
+#include <limits>
 #include "viggle_adapter.hpp"
 #include "conditioning.hpp"
 #include "encoder_attention.hpp"
@@ -7,6 +15,7 @@
 #include "native_encoder.hpp"
 #include "native_prefill.hpp"
 #include "transformer.hpp"
+#include "async_step_pair.hpp"
 #include "vae.hpp"
 #include "scheduler.hpp"
 #include "runtime_activation.hpp"
@@ -97,8 +106,7 @@ std::string read_utf8_file(const std::filesystem::path &path) {
 }
 }
 Session::Session(const std::filesystem::path &root) : root_(root) {
-    transformer_source_=component_source(root,"diffusion_models/qwen_image_2.1_bf16.safetensors",
-        "diffusion_models/qwen-image-2.1-Q4_K_M.gguf");
+    transformer_source_=transformer_checkpoint_source(root);
     encoder_source_=component_source(root,"text_encoders/qwen3vl_8b_bf16.safetensors",
         "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf");
     for (const char *relative : {"vae/qwen_image_2.1_vae_bf16.safetensors", "processor/tokenizer.json"})
@@ -136,6 +144,9 @@ double Session::prewarm_native_prefill(const std::filesystem::path& cache) {
 void Session::set_diagnostic_prefill_observer(DiagnosticPrefillObserver observer) {
     diagnostic_prefill_observer_=std::move(observer);
 }
+void Session::set_diagnostic_async_step_observer(DiagnosticAsyncStepObserver observer) {
+    diagnostic_async_step_observer_=std::move(observer);
+}
 void Session::set_diagnostic_block_observer(DiagnosticBlockObserver observer) {
     diagnostic_block_observer_ = std::move(observer);
 }
@@ -148,11 +159,22 @@ LoadResult Session::load(const Event &event, std::atomic<bool> &cancelled) {
         return {0,mx::get_active_memory()}; // actual stages own bounded lazy source setup
     }
     if(transformer_gguf_)transformer_gguf_->bank->check_unchanged();
+    const bool convrot=convrot_checkpoint(transformer_source_);
+    const bool packed_convrot=convrot && configured_convrot_packed();
+    if(convrot && transformer_.bytes())
+        require((transformer_.at("transformer_blocks.0.img_mlp.gate_up.weight").dtype()==mx::uint32)==packed_convrot,
+            "ConvRot packing recipe changed while weights/prefix owners are resident; unload before switching");
     if (!transformer_.bytes()) {
         emit(event, "load_qwen21_transformer", 0, 1);
         if(transformer_source_.extension()==".gguf")
             transformer_gguf_=load_gguf_component(transformer_source_,transformer_,false,event,cancelled);
         else transformer_.load_file(transformer_source_);
+        if(packed_convrot) {
+            emit(event,"pack_qwen21_convrot_f32",0,1);
+            require(transformer_.pack_convrot_q8(128,mx::float32)>0,
+                "ConvRot source must contain original signed I8 matrices and F32 row scale metadata");
+            emit(event,"pack_qwen21_convrot_f32",1,1);
+        }
         transformer_.materialize();
         emit(event, "load_qwen21_transformer", 1, 1);
     }
@@ -202,11 +224,11 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
     const bool bind=!r.loras.empty() && (active_lora_identity_!=identity || !transformer_.bytes());
     if(active_lora_identity_!=identity) {
         if(runtime_ffn_)runtime_ffn_->drain();
-        hybrid_mlp_.reset();clear_prefix_cache();clear_prefix_snapshot();fused_qkv_weights_.clear();transformer_.clear();
+        hybrid_mlp_.reset();clear_prefix_cache();clear_prefix_snapshot();fused_qkv_weights_.clear();corrected_qkv_weights_.clear();transformer_.clear();
         active_lora_identity_.clear();lora_applied_projections_=0;
     }
     if(!fused_qkv && transformer_.has("transformer_blocks.0.attn.qkv_packed.weight")) {
-        hybrid_mlp_.reset();clear_prefix_cache();clear_prefix_snapshot();fused_qkv_weights_.clear();transformer_.clear();
+        hybrid_mlp_.reset();clear_prefix_cache();clear_prefix_snapshot();fused_qkv_weights_.clear();corrected_qkv_weights_.clear();transformer_.clear();
     }
     if(bind && pinned_student)require(sha256_file(r.loras[0].path)==adapter->sha256,
         "Viggle v0.2.1 r128/r256 LoRA hash does not match the pinned adapter");
@@ -231,6 +253,7 @@ void Session::unload() {
     encoder_runtime_.reset(); encoder_runtime_identity_.clear();
     encoder_weights_.reset();encoder_weight_identity_.clear();encoder_weight_loads_=0;
     encoder_tokenizer_.reset();
+    standalone_tokenizer_cache_ = false;
     encoder_gguf_.reset();
     require(!native_quarantined_, "native_qwen_process_quarantined: restart the process");
     native_session_.reset();
@@ -239,9 +262,13 @@ void Session::unload() {
     native_prefill_.reset();
     runtime_ffn_.reset(); runtime_manifest_.clear();
     runtime_qkv_.reset(); qkv_manifest_.clear();
+    runtime_private_qkv_.reset();
+    runtime_gpu_dual_={};
+    runtime_compiled_complement_fn_={};
+    runtime_compiled_complement_={};
     clear_prefix_cache();
     clear_prefix_snapshot();
-    fused_qkv_weights_.clear();
+    fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
     hybrid_mlp_.reset();
     hybrid_.reset();
     hybrid_source_identity_.reset();
@@ -263,7 +290,38 @@ RunResult Session::generate(const Request &request, const Event &event, std::ato
 }
 RunResult Session::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                        bool warmup, bool prepare_only) try {
+    validate_checkpoint_recipe(requested,transformer_source_);
+    require(!turbo_checkpoint(transformer_source_) || !bf16_streaming_enabled(),
+        "Qwen21 Turbo excludes the separate base BF16 streaming executor");
+    const bool corrected_qkv=configured_corrected_qkv_request(requested);
+    const bool lora_swiglu=configured_lora_swiglu_request(requested);
+    const bool async_step_pair=configured_async_step_pair_request(requested);
+    require(!diagnostic_async_step_observer_||async_step_pair,"async submit observer requires the bounded async request");
+    const bool corrected_qkv_direct=corrected_qkv&&option_enabled(std::getenv("TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT"));
+    std::optional<QwenCorrectedQkvMetrics> corrected_qkv_metrics;
+    if((!corrected_qkv||corrected_qkv_direct) && !corrected_qkv_weights_.empty()) {
+        clear_prefix_cache();mx::synchronize();corrected_qkv_weights_.clear();
+    }
+    if(corrected_qkv||lora_swiglu||async_step_pair)require(!warmup&&!prepare_only&&!memory_context_&&!diagnostic_block_observer_&&!diagnostic_prefill_observer_ &&
+        transformer_source_.extension()==".safetensors"&&encoder_source_.extension()==".safetensors"&&
+        !native_encoder_requested()&&native_encoder_ane_cache().empty()&&encoder_runtime::diagnostic_manifest().empty(),
+        "corrected QKV requires a full unconstrained request with original BF16 components and ordinary encoder");
+    const bool tokenizer_reuse = configured_tokenizer_reuse_request(requested);
+    if (tokenizer_reuse)
+        require(transformer_source_.extension() == ".safetensors" && encoder_source_.extension() == ".safetensors",
+                "Qwen21 standalone tokenizer reuse requires original BF16 components");
+    const bool student_five_step = configured_student_five_step_request(requested);
+    if (student_five_step)
+        require(transformer_source_.extension() == ".safetensors" && encoder_source_.extension() == ".safetensors",
+                "Qwen21 student five-step sampler requires original BF16 model components");
+    const bool fp16_vae_decode = configured_fp16_vae_decode_request(requested);
+    const bool fused_vae_norm = configured_fused_vae_norm_request(requested);
+    if (fp16_vae_decode || fused_vae_norm)
+        require(transformer_source_.extension() == ".safetensors" && encoder_source_.extension() == ".safetensors",
+                "Qwen21 VAE FP16 pilot requires original BF16 model components");
     if(bf16_streaming_enabled()) {
+        require(!student_five_step, "Qwen21 student five-step sampler excludes the separate BF16 streaming executor");
+        require(!fp16_vae_decode && !fused_vae_norm, "Qwen21 VAE optimization pilots exclude the separate BF16 streaming executor");
         const char* prefill=std::getenv("TURBOCIDER_QWEN21_NATIVE_PREFILL_ANE_CACHE");
         require(!native_denoiser_requested(requested) && !native_encoder_requested() &&
             native_encoder_ane_cache().empty() && encoder_runtime::diagnostic_manifest().empty() &&
@@ -275,6 +333,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     auto start = Clock::now();
     ScopedWiredResidency wired_residency;
     Request r = requested;
+    const bool turbo=turbo_checkpoint(transformer_source_);
+    const bool convrot_transformer=convrot_checkpoint(transformer_source_);
+    r.model_variant=turbo ? "qwen-image-2.1-turbo" : "qwen-image-2.1";
     const auto& encoder_manifest=encoder_runtime::diagnostic_manifest();
     const bool encoder_runtime_requested=!encoder_manifest.empty();
     const bool metal_encoder_requested=native_encoder_requested();
@@ -330,6 +391,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(r.model == "qwen-image-2.1", "Qwen21 session received another model id");
     const std::string original_prompt = r.prompt;
     const bool runtime_requested = r.hybrid_mlp_mode == "runtime";
+    const bool runtime_cache_requested=configured_runtime_conservative_cache_request(r);
+    const auto runtime_functions=configured_runtime_function_request(r);
+    const auto private_qkv_option=std::getenv("TURBOCIDER_QWEN21_PRIVATE_QKV");
+    require(binary_option_or_unset(private_qkv_option),"Qwen Private QKV requires0 or1");
+    const bool private_qkv_requested=option_enabled(private_qkv_option);
+    const bool private_qkv_prefetch_requested=configured_private_qkv_prefetch_request(r);
+    const bool gpu_dual_requested=configured_gpu_dual_swiglu_request(r);
+    const bool compiled_complement_requested=configured_compiled_complement_request(r);
+    if(private_qkv_prefetch_requested)require(ane::configured_fixed_program(),"QKV lookahead requires fixed-program policy");
+    if(private_qkv_requested)require(!warmup&&!prepare_only&&!memory_context_&&private_qkv_joint_request(r),
+        "Private QKV/FFN joint pilot requires unconstrained resident512 base40 approximate runtime generation/editing");
+    else runtime_private_qkv_.reset();
     require(binary_option_or_unset(std::getenv("TURBOCIDER_QWEN21_LORA_BF16_AB")),"Qwen joint BF16 A/B requires0 or1");
     const bool joint_ab=joint_bf16_lora_ab(r);
     const auto ffn_phase=runtime_ffn_phase(std::getenv("TURBOCIDER_QWEN21_RUNTIME_FFN_PHASE"));
@@ -369,7 +442,16 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const char *encoder_weights_flag=std::getenv("TURBOCIDER_QWEN21_ENCODER_RETAIN_WEIGHTS");
     require(binary_option_or_unset(encoder_weights_flag),"Qwen encoder weight retention requires 0 or 1");
     const bool gguf_transformer=transformer_source_.extension()==".gguf";
+    const bool packed_transformer=gguf_transformer || convrot_transformer;
     const bool gguf_encoder=encoder_source_.extension()==".gguf";
+    if(!runtime_functions.empty()) {
+        require(!packed_transformer && !gguf_encoder &&
+            transformer_source_.filename()=="qwen_image_2.1_bf16.safetensors" &&
+            encoder_source_.filename()=="qwen3vl_8b_bf16.safetensors",
+            "Qwen function family requires the original BF16 transformer and encoder leaves");
+        require(!std::getenv("TURBOCIDER_PRIVATE_ANE_S1_PROFILE") || !*std::getenv("TURBOCIDER_PRIVATE_ANE_S1_PROFILE"),
+            "Qwen function family has no S1 composition qualification");
+    }
     const bool fast_encoder_default=gguf_fast_defaults_enabled() && gguf_fast_encoder_request(r,gguf_encoder,gguf_transformer);
     const bool retain_encoder_weights=option_or_default(encoder_weights_flag,fast_encoder_default);
     const char *shared_down_flag=std::getenv("TURBOCIDER_QWEN21_GGUF_SHARED_DOWN");
@@ -389,10 +471,28 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     require(!native_dit || (!gguf_transformer && !gguf_encoder && !retain_encoder_weights),"native DiT requires original BF16 sources without retained MLX encoder weights");
     const bool compile_encoder_gpu=compiled_encoder_gpu(r,fast_encoder_default);
     const bool encoder_prefill=option_or_default(std::getenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU"),fast_encoder_default);
+    const bool retained_tokenizer = encoder_prefill || tokenizer_reuse;
+    if (tokenizer_reuse) standalone_tokenizer_cache_ = true;
+    else if (encoder_prefill) standalone_tokenizer_cache_ = false;
+    else if (standalone_tokenizer_cache_) {
+        encoder_tokenizer_.reset(); standalone_tokenizer_cache_ = false;
+    }
+    std::optional<QwenTokenizerReuseMetrics> tokenizer_metrics;
+    if (tokenizer_reuse) {
+        // A prior fused-prefill request may already own a processor parsed
+        // under that route's different size policy. Bound adopted owners too.
+        if (encoder_tokenizer_) encoder_tokenizer_->require_source_limit(uint64_t(16)<<20);
+        tokenizer_metrics.emplace();tokenizer_metrics->reused = bool(encoder_tokenizer_);
+    }
+    auto check_tokenizer = [&] {
+        if (!retained_tokenizer || !encoder_tokenizer_) return;
+        const auto check_start = Clock::now(); encoder_tokenizer_->check_unchanged();
+        if (tokenizer_metrics) tokenizer_metrics->validation_seconds += seconds(check_start);
+    };
     require(!(metal_encoder_requested || encoder_runtime_requested || !encoder_capture_path.empty()) ||
         (r.encoder_ane_manifest.empty() && !encoder_prefill && !compile_encoder_gpu && !retain_encoder_weights),
         "native/diagnostic encoder routes conflict with shared runtime, fused prefill or weight retention");
-    if(encoder_prefill && encoder_tokenizer_)encoder_tokenizer_->check_unchanged();
+    check_tokenizer();
     if(retain_encoder_weights)
         require(r.residency=="resident" && r.width==512 && r.height==512 && !r.prompt_enhance &&
             !r.memory_constrained.enabled && !r.streaming.active() && !r.memory_budget_bytes,
@@ -455,8 +555,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     const bool fused_lora_ane = qwen21::fused_lora_ane(r);
     const auto *student_adapter = r.loras.empty() ? nullptr : viggle_v021_adapter(
         std::filesystem::path(r.loras[0].path).filename().string());
-    const bool student_schedule = !r.loras.empty() &&
-        (student_adapter || fused_lora_ane || runtime_requested);
+    const bool ordinary_runtime_lora=configured_base_schedule_runtime_lora_request(r);
+    if(ordinary_runtime_lora)require(!packed_transformer && !gguf_encoder &&
+        encoder_source_.filename()=="qwen3vl_8b_bf16.safetensors",
+        "base-schedule runtime LoRA currently requires original BF16 transformer/encoder sources");
+    const bool student_schedule = student_lora_schedule(r,fused_lora_ane,ordinary_runtime_lora);
     const bool fused_qkv = option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC"));
     const bool lora_fp16 = option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"));
     const char *tiled_prefill_flag = std::getenv("TURBOCIDER_QWEN21_TILED_PREFILL_W8A8_DIAGNOSTIC");
@@ -494,26 +597,63 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // original prefill path. Target-only first-step kernels can round slightly
     // differently from full prefill, particularly with BF16 runtime LoRA.
     const bool snapshot_enabled = !snapshot_option || option_enabled(snapshot_option);
-    // Reuse only the ordinary GPU editing path. Keep experimental routing,
-    // altered reference geometry and approximation caches out of this bank.
+    const char *runtime_snapshot_option=std::getenv("TURBOCIDER_QWEN21_RUNTIME_PREFIX_SNAPSHOT");
+    require(binary_option_or_unset(runtime_snapshot_option),"Qwen runtime prefix snapshot requires0 or1");
+    const bool runtime_snapshot_requested=option_enabled(runtime_snapshot_option) && r.operation=="image.edit";
+    const bool runtime_text_snapshot_requested=configured_runtime_text_prefix_snapshot_request(r);
+    const auto runtime_text_qkv_step0=configured_runtime_text_qkv_step0(r);
+    const auto runtime_edit_qkv_step0=configured_runtime_edit_qkv_step0(r);
+    const auto runtime_prefix_qkv_step0=r.operation=="image.edit"?runtime_edit_qkv_step0:runtime_text_qkv_step0;
+    require(runtime_text_qkv_step0!=RuntimeTextQkvStep0::Gpu || (runtime_text_snapshot_requested && private_qkv_requested),
+        "text-prefix GPU first-step policy requires the explicit joint Private QKV route");
+    require(runtime_edit_qkv_step0!=RuntimeTextQkvStep0::Gpu ||
+        (runtime_snapshot_requested && private_qkv_requested && !packed_transformer && !gguf_encoder &&
+         transformer_source_.filename()=="qwen_image_2.1_bf16.safetensors" &&
+         encoder_source_.filename()=="qwen3vl_8b_bf16.safetensors" && ane::configured_fixed_program() &&
+         ane::configured_backend().preferred==ane::BackendPreference::Private),
+        "edit-prefix GPU first-step policy requires original BF16 base40 fixed Private QKV/FFN");
+    if(runtime_snapshot_requested) {
+        require(snapshot_enabled && runtime_prefix_snapshot_request(r) && !gguf_transformer && !gguf_encoder &&
+            ffn_phase==RuntimeFfnPhase::All && prefill_gpu_layers.empty(),
+            "runtime prefix snapshot requires explicit resident512 base40 Private W8 FFN editing without other phase/encoding recipes");
+    }
+    if(runtime_text_snapshot_requested) {
+        require(snapshot_enabled && !gguf_transformer && !gguf_encoder &&
+            ffn_phase==RuntimeFfnPhase::All && prefill_gpu_layers.empty() &&
+            ane::configured_backend().preferred==ane::BackendPreference::Private && ane::configured_fixed_program(),
+            "runtime text prefix snapshot requires fixed-program Private W8 without other phase/encoding recipes");
+    }
+    const bool snapshot_with_runtime=runtime_snapshot_requested || runtime_text_snapshot_requested;
+    const bool snapshot_with_db_cache = db_prefix_snapshot_request(r, db_options,
+        option_enabled(snapshot_option));
+    const bool snapshot_with_student = student_prefix_snapshot_request(r,
+        option_enabled(snapshot_option)) && !db_cache && !student_ffn_reuse &&
+        ((!bf16_operand_ranks && !b_epilogue) || joint_ab);
+    const bool snapshot_with_corrected_qkv = corrected_qkv_direct && snapshot_with_student &&
+        option_enabled(std::getenv("TURBOCIDER_QWEN21_CORRECTED_QKV_PREFIX"));
+    // Prefix arithmetic stays ordinary GPU. The narrowly selected frozen
+    // decode composition installs its ANE callback only after step zero.
     const bool snapshot_route = snapshot_enabled && !resident_prefix && !native_dit && !native_prefill_requested &&
-        !hybrid_requested && !runtime_requested && !qkv_requested &&
-        !fused_qkv && !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE")) &&
+        (!hybrid_requested || snapshot_with_db_cache) && (!runtime_requested || snapshot_with_runtime) && !qkv_requested &&
+        !fused_qkv && (!corrected_qkv || snapshot_with_corrected_qkv) && !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE")) &&
         !option_enabled(std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE")) &&
         (!std::getenv("TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION") ||
          std::string_view(std::getenv("TURBOCIDER_QWEN21_REF_LOCAL_ATTENTION")) == "0") &&
         !tiled_prefill && !tiled_prefix_reuse && !prefix_target_only &&
         !last_target_only && !reuse_final_ffn && !hybrid_reuse_ffn &&
-        !hybrid_reuse_last16 && !half_reuse_ffn && !student_ffn_reuse && !bf16_operand_ranks && !b_epilogue && !db_cache &&
+        !hybrid_reuse_last16 && !half_reuse_ffn && !student_ffn_reuse &&
+        (!bf16_operand_ranks || snapshot_with_student) && (!b_epilogue || snapshot_with_student) &&
+        (!db_cache || snapshot_with_db_cache || runtime_cache_requested) &&
         !option_enabled(std::getenv("TURBOCIDER_QWEN21_VIGGLE_LORA_FP16")) &&
         !option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_BLOCKS")) &&
         !option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_GPU_OPS")) &&
         !option_enabled(std::getenv("TURBOCIDER_QWEN21_PROFILE_PREFILL_SEGMENTS")) &&
-        !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
-        r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3 &&
-        r.qwen21_reference_size == 1024 && r.width == 512 && r.height == 512 &&
+        (!r.qwen21_w8a8 || snapshot_with_db_cache) && !r.qwen21_gpu_w8a16 &&
+        ((r.operation == "image.edit" && !r.inputs.empty() && r.inputs.size() <= 3) || runtime_text_snapshot_requested) &&
+        (r.qwen21_reference_size == 1024 || snapshot_with_student) && r.width == 512 && r.height == 512 &&
         r.steps >= 2 && !r.prompt_enhance && r.dump.empty() &&
         (r.residency == "resident" || r.residency == "component_staged");
+    if(runtime_text_snapshot_requested)require(snapshot_route,"runtime text prefix snapshot conflicts with another graph/cache/profile route");
     if (!snapshot_route) clear_prefix_snapshot();
     // Preparation does not enter the sampling block. Still honor a newly
     // lowered cache budget before loading any weights for prepare(false).
@@ -528,19 +668,25 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     // it before changing the bank when a resident request toggles the flag.
     if (!fused_qkv && !fused_qkv_weights_.empty()) {
         clear_prefix_cache();
-        fused_qkv_weights_.clear();
+        fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
     }
     auto plan = make_plan(r);
     const auto device = device_info();
     const bool layer_staged = layer_staged_t2i(r, device);
-    if (diagnostic_block_observer_)
-        require(!warmup && !prepare_only && r.residency == "component_staged" && r.execution == "gpu" &&
+    if (diagnostic_block_observer_) {
+        const bool original_base = r.residency == "component_staged" && r.execution == "gpu" &&
                     r.operation == "image.generate" && r.width == 512 && r.height == 512 &&
                     r.steps == 20 && r.inputs.empty() && r.loras.empty() && !r.prompt_enhance &&
-                    !r.allow_approximation && !runtime_requested && !qkv_requested &&
-                    !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && !db_cache &&
+                    !r.allow_approximation;
+        require(!warmup && !prepare_only && !memory_context_ &&
+                    (original_base || (base_block_observer_request(r) && !gguf_transformer && !gguf_encoder) || student_block_observer_request(r)) &&
+                    !runtime_requested && !qkv_requested && !fused_qkv &&
+                    !native_prefill_requested && !metal_encoder_requested && !encoder_runtime_requested &&
+                    !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && !db_cache && !student_ffn_reuse &&
+                    !reuse_final_ffn && !half_reuse_ffn && !hybrid_reuse_ffn && !hybrid_reuse_last16 &&
                     r.dump.empty() && r.noise_path.empty(),
-                "Qwen block observer requires component-staged 512px BaseOnly ordinary GPU generation");
+                "Qwen block observer requires ordinary 512px BaseOnly staged20 generation/resident40 generation or standard-reference editing, or pinned student GPU diagnostics; no other executor/cache diagnostics");
+    }
     require(!layer_staged || (!fused_qkv && !db_cache && !reuse_final_ffn &&
                 !half_reuse_ffn && !hybrid_reuse_ffn && !hybrid_reuse_last16),
             "Qwen21 layer-staged T2I does not support diagnostic QKV/FFN caches");
@@ -604,7 +750,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (r.residency == "component_staged") {
             hybrid_mlp_.reset();
             clear_prefix_cache();
-            fused_qkv_weights_.clear();
+            fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
             transformer_.clear(); vae_.clear(); mx::clear_cache();
         }
         Weights pe_weights;
@@ -695,8 +841,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if(compile_encoder_gpu)encoder_identity+=":compiled-gpu-blocks-v3-canonical-native-gqa";
     if(encoder_prefill) {
         encoder_identity+=":fused-prefill-v1";
-        if(encoder_tokenizer_)encoder_identity+=":tokenizer="+encoder_tokenizer_->identity();
     }
+    if (tokenizer_reuse) encoder_identity += ":verified-cpu-tokenizer-v1";
+    if (retained_tokenizer && encoder_tokenizer_) encoder_identity += ":tokenizer="+encoder_tokenizer_->identity();
     if(encoder_runtime_identity_!=encoder_identity) {encoder_runtime_.reset();encoder_runtime_identity_.clear();}
     // Source generations invalidate text, visual, latent and prefix caches together.
     std::vector<streaming::SourceFileIdentity> encoder_files{
@@ -760,7 +907,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (r.residency == "component_staged") {
             hybrid_mlp_.reset();
             clear_prefix_cache();
-            fused_qkv_weights_.clear();
+            fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
             transformer_.clear(); vae_.clear(); mx::clear_cache();
         }
         std::unique_ptr<Weights> request_encoder_weights;
@@ -784,14 +931,20 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         encoder_weight_metrics.source_bytes=weights.bytes();
         std::unique_ptr<Tokenizer> request_tokenizer;
         const Tokenizer *tokenizer=nullptr;
-        if(encoder_prefill) {
-            prefill_metrics->tokenizer_reused=bool(encoder_tokenizer_);
+        if(retained_tokenizer) {
+            if (prefill_metrics) prefill_metrics->tokenizer_reused=bool(encoder_tokenizer_);
             if(!encoder_tokenizer_) {
-                encoder_tokenizer_=std::make_unique<VerifiedEncoderTokenizer>(root_/"processor",cancelled);
+                const auto tokenizer_start=Clock::now();
+                encoder_tokenizer_=std::make_unique<VerifiedEncoderTokenizer>(root_/"processor",cancelled,
+                    tokenizer_reuse ? uint64_t(16)<<20 : std::numeric_limits<uint64_t>::max());
+                if (tokenizer_metrics) {
+                    tokenizer_metrics->constructed_this_request=true;
+                    tokenizer_metrics->construction_seconds=seconds(tokenizer_start);
+                }
                 encoder_identity+=":tokenizer="+encoder_tokenizer_->identity();conditioning_cache_.select_encoder(encoder_identity);
             }
-            encoder_tokenizer_->check_unchanged();tokenizer=&encoder_tokenizer_->tokenizer();
-            prefill_metrics->processor_sha256=encoder_tokenizer_->sha256();
+            check_tokenizer();tokenizer=&encoder_tokenizer_->tokenizer();
+            if (prefill_metrics) prefill_metrics->processor_sha256=encoder_tokenizer_->sha256();
             for(const auto &key:weights.sorted_keys()) {
                 if(key.ends_with(".self_attn.qkv_proj.weight"))++prefill_metrics->qkv_fused_layers;
                 if(key.ends_with(".self_attn.qk_proj.weight"))++prefill_metrics->qk_fused_layers;
@@ -802,7 +955,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             else request_tokenizer=std::make_unique<Tokenizer>(root_/"processor");
             tokenizer=request_tokenizer.get();
         }
+        const auto tokenization_start=Clock::now();
         auto tokens = tokenizer->raw_bounded(reference_prompt_template(r.prompt, images.size()), Tokenizer::qwen21_limit);
+        if (tokenizer_metrics) {
+            tokenizer_metrics->tokenized_this_request=true;
+            tokenizer_metrics->tokenization_seconds=seconds(tokenization_start);
+        }
         std::vector<VisualReference> refs;
         VisionConfig vision_config;
         vision_config.efficient_attention = encoder_attention::default_enabled();
@@ -944,7 +1102,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         if(request_encoder_gguf)request_encoder_gguf->bank->check_unchanged();
         if(encoder_gguf_)encoder_gguf_->bank->check_unchanged();
-        if(encoder_prefill)encoder_tokenizer_->check_unchanged();
+        check_tokenizer();
         slots = assembled.image_slots;
         if (r.inputs.empty()) { conditioning_cache_.text = text; conditioning_cache_.prompt = r.prompt; }
         if(metal_encoder_requested) {
@@ -1089,7 +1247,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             hybrid_mlp_.reset();
             clear_prefix_cache();
             clear_prefix_snapshot();
-            fused_qkv_weights_.clear();
+            fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
             transformer_.clear();
             active_lora_identity_.clear();
             lora_applied_projections_ = 0;
@@ -1100,7 +1258,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (!fused_qkv && transformer_.has("transformer_blocks.0.attn.qkv_packed.weight")) {
             hybrid_mlp_.reset();
             clear_prefix_cache();
-            fused_qkv_weights_.clear();
+            fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
             transformer_.clear();
         }
         const bool pinned_student = student_adapter && !fused_lora_ane && (!runtime_requested || staged);
@@ -1117,7 +1275,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             emit(event, "load_qwen21_transformer", 0, 1);
             streaming::SourceFileIdentity source;
             source.logical_id = "qwen21_dit";
-            source.path = root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors";
+            source.path = transformer_source_;
             dit_source = streaming::SourceLease::capture({source});
             // Header-only setup. MLX reads each layer from the held descriptor
             // when that layer is evaluated; no full DiT materialization here.
@@ -1172,12 +1330,51 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         mx::clear_cache();
     }
+    if(corrected_qkv_direct) {
+        require(corrected_qkv_weights_.empty(),"direct QKV cannot retain an extra packed bank");
+        for(int layer=0;layer<32;++layer)for(const char *projection:{"q","k","v"}) {
+            const auto p="transformer_blocks."+std::to_string(layer)+".attn.to_"+projection;
+            const auto &base=transformer_.at(p+".weight");
+            require(base.shape()==mx::Shape{4096,4096}&&base.dtype()==mx::bfloat16&&base.flags().row_contiguous&&
+                !transformer_.has(p+".bias")&&!transformer_.quantized(p)&&!transformer_.convrot(p)&&!transformer_.nvfp4(p),
+                "direct QKV needs original contiguous BF16 source matrices");
+        }
+        corrected_qkv_metrics.emplace(); // zero owned weight bytes and no pack
+    } else if(corrected_qkv) {
+        QwenCorrectedQkvMetrics metrics;metrics.bank_reused=!corrected_qkv_weights_.empty();
+        if(corrected_qkv_weights_.empty()) {
+            const auto pack_start=Clock::now();const uint64_t bytes=uint64_t(32)*3*4096*4096*2;
+            require(mx::get_active_memory()+bytes+(uint64_t(8)<<30)<device_info().physical_memory,
+                "corrected QKV bank lacks an 8GiB physical-memory reserve");
+            corrected_qkv_weights_.reserve(32);emit(event,"qwen21_corrected_qkv_pack",0,32);
+            for(int layer=0;layer<32;++layer){checkpoint(cancelled);std::vector<Tensor> bases;
+                for(const char *projection:{"q","k","v"}) {
+                    const auto p="transformer_blocks."+std::to_string(layer)+".attn.to_"+projection;
+                    const auto &base=transformer_.at(p+".weight");
+                    require(base.shape()==mx::Shape{4096,4096}&&base.dtype()==mx::bfloat16&&!transformer_.has(p+".bias")&&
+                        !transformer_.quantized(p)&&!transformer_.convrot(p)&&!transformer_.nvfp4(p),"original unbiased BF16 QKV base required");
+                    bases.push_back(base);
+                }
+                auto packed=mx::contiguous(mx::concatenate(bases,0));mx::eval(packed);
+                for(int i=0;i<3;++i)require(mx::all(mx::equal(mx::view(slice_axis(packed,0,i*4096,(i+1)*4096),mx::uint16),
+                    mx::view(bases[i],mx::uint16))).item<bool>(),"QKV bank changed original source bits");
+                corrected_qkv_weights_.push_back(std::move(packed));emit(event,"qwen21_corrected_qkv_pack",layer+1,32);
+            }
+            metrics.pack_seconds=seconds(pack_start);
+        }
+        require(corrected_qkv_weights_.size()==32,"complete corrected QKV bank required");
+        for(const auto &base:corrected_qkv_weights_)metrics.bank_bytes+=base.nbytes();
+        require(metrics.bank_bytes==(uint64_t(3)<<30),"corrected QKV bank must be exactly 3GiB");
+        corrected_qkv_metrics=metrics;
+    }
     auto hybrid_start = Clock::now();
     if (runtime_requested) {
         auto manifest = early_runtime ? early_manifest : std::filesystem::canonical(r.ane_manifest);
         const std::string identity=runtime_ffn_identity(manifest)+
             (bf16_operand_ranks?":bf16-operands-f32-ranks-v1":"")+(b_epilogue?":bf16-b-fused-epilogue-v1":"")+ffn_phase_identity;
         const bool native_channel_auto = ane::private_channel_count(12288) < 0;
+        require(!convrot_transformer || !native_channel_auto,
+            "ConvRot initial runtime uses an explicitly fixed aligned channel count, not dense BF16 calibration");
         const int request_rows = (r.height / 16) * (r.width / 16);
         const std::string request_identity = identity + (ane::configured_request_rows() ?
             ":bucket=" + std::to_string(ane::private_request_bucket(request_rows)) : "") + (native_channel_auto ?
@@ -1199,7 +1396,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             if(native_channel_auto) {
                 emit(event,"calibrate_native_ane_channels",0,1);
                 calibration.emplace();
-                calibration->model_sha256=sha256_file(root_/"diffusion_models/qwen_image_2.1_bf16.safetensors");
+                calibration->model_sha256=sha256_file(transformer_source_);
                 calibration->adapter_identity=r.loras.empty()?std::string{}:active_lora_identity_;
                 calibration->encoding="dense-bf16-fused-gate-up";
                 calibration->rows=(r.height/16)*(r.width/16);
@@ -1266,16 +1463,65 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             }
             runtime_ffn_ = std::make_unique<ane::HybridFfn>(manifest, 4096, 12288, budget, cancelled,
                                                          !r.loras.empty(), std::move(prepared),
-                ane::HybridFfn::scheduler_source_identity(
-                    root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors"),calibration?&*calibration:nullptr,
+                ane::HybridFfn::scheduler_source_identity(transformer_source_),calibration?&*calibration:nullptr,
                     std::nullopt,std::nullopt,std::nullopt,request_rows);
             runtime_manifest_ = request_identity;
             if(native_channel_auto)emit(event,"calibrate_native_ane_channels",1,1);
         }
-        ane::smoothquant::bind_request(*runtime_ffn_,r,
-            root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",active_lora_identity_,4096);
+        ane::smoothquant::bind_request(*runtime_ffn_,r,transformer_source_,active_lora_identity_,4096);
     }
     if (runtime_requested)runtime_ffn_->set_gpu_layers(prefill_gpu_layers);
+    if(private_qkv_requested) {
+        const bool fixed_failure=runtime_ffn_->sticky_fixed_program_failure();
+        require(!gguf_transformer&&!gguf_encoder&&(fixed_failure || (runtime_ffn_->available()&&private_qkv_joint_ffn(runtime_ffn_->metrics())))&&
+            ffn_phase==RuntimeFfnPhase::All&&!diagnostic_block_observer_&&!diagnostic_prefill_observer_&&!encoder_runtime_requested,
+            "joint Private QKV requires the healthy fixed Hadamard W8/F32 FFN recipe, no forced GPU layers or other diagnostics");
+        const auto shape=ane::runtime_template_shape(r.ane_manifest);
+        require(runtime_function_descriptor(shape,runtime_functions)&&!ane::configured_request_rows(),
+            "joint Private QKV requires the fixed original-base FFN descriptor matching its explicit function maximum");
+        require(fixed_failure || runtime_ffn_->metrics().runtime_weight_function_rows==runtime_functions,
+            "joint Private QKV cannot compose with a different loaded FFN function family");
+        if(fixed_failure) {
+            const auto reason="fixed FFN disabled; complete GPU request: "+runtime_ffn_->reason();
+            if(!runtime_private_qkv_)runtime_private_qkv_=std::make_unique<RuntimePrivateQkv>(reason);
+            else runtime_private_qkv_->disable(reason);
+        } else {
+            const auto other=runtime_ffn_->metrics().runtime_weight_estimated_bytes;
+            if(!runtime_private_qkv_)runtime_private_qkv_=std::make_unique<RuntimePrivateQkv>(
+                runtime_ane_budget(device_info().physical_memory,mx::get_active_memory(),other),cancelled);
+            require(!runtime_private_qkv_->available()||
+                other+runtime_private_qkv_->metrics().estimated_bytes<=(uint64_t(2)<<30),"joint Private graphs exceed shared2GiB allowance");
+        }
+        if(private_qkv_prefetch_requested && runtime_ffn_->available()) {
+            const char *chunks=std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS");
+            require(runtime_ffn_->supports_after_submit() && chunks && std::string_view(chunks)=="1",
+                "QKV lookahead requires fixed1 untimed channel FFN and actual submission fence");
+        }
+        runtime_private_qkv_->begin_request(ane::HybridFfn::scheduler_source_identity(transformer_source_),private_qkv_prefetch_requested);
+        if(gpu_dual_requested) {
+            require(!warmup&&!prepare_only&&!memory_context_,"GPU dual SwiGLU requires an actual unconstrained complete request");
+            const auto chunks=std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS");
+            if(runtime_ffn_->available())require(runtime_ffn_->channel_split()&&runtime_ffn_->ane_channels()==6144&&
+                runtime_ffn_->gpu_channels()==6144&&runtime_ffn_->fp32_channel_join()&&runtime_ffn_->supports_after_submit()&&chunks&&std::string_view(chunks)=="1",
+                "GPU dual SwiGLU requires healthy fixed6144/F32 untimed channel execution");
+            else runtime_gpu_dual_.fail("GPU dual FFN backend is not available");
+            runtime_gpu_dual_.bind(ane::HybridFfn::scheduler_source_identity(transformer_source_));
+        }
+        if(compiled_complement_requested) {
+            const auto chunks=std::getenv("TURBOCIDER_RUNTIME_ANE_CHUNKS");
+            require(runtime_ffn_->available() && runtime_ffn_->channel_split() && runtime_ffn_->ane_channels()==6144 &&
+                runtime_ffn_->gpu_channels()==6144 && runtime_ffn_->fp32_channel_join() &&
+                runtime_ffn_->supports_after_submit() && chunks && std::string_view(chunks)=="1",
+                "compiled complement requires healthy fixed6144/F32 untimed channel execution");
+            runtime_compiled_complement_.bind(ane::HybridFfn::scheduler_source_identity(transformer_source_));
+            if(!runtime_compiled_complement_fn_ && runtime_compiled_complement_.available()) {
+                runtime_compiled_complement_fn_=mx::compile([this](const std::vector<Tensor>&a) {
+                    ++runtime_compiled_complement_.traces;
+                    return compiled_complement::body(a);
+                });
+            }
+        }
+    }
     if (qkv_requested) {
         for (int block = 0; block < 32; ++block) {
             const auto stem = "transformer_blocks." + std::to_string(block) + ".attn.to_";
@@ -1317,7 +1563,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             hybrid_ = std::make_unique<HybridSession>(
                 manifest, root_, graph_rows,
                 event, cancelled, 1,
-                root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",
+                transformer_source_,
                 std::vector<LoRAAsset>{}, graph_rows, 32);
             hybrid_source_identity_.reset();
             if (layer_staged) {
@@ -1329,6 +1575,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         require(!layer_staged || hybrid_->ane_mlp_end == 6144,
                 "Qwen21 M5 Pro 24 GiB layer streaming requires the qualified 6144-channel ANE partition");
+        if (frozen_conservative_cache_request(r))
+            require(!transformer_gguf_ && !encoder_gguf_ && hybrid_->ane_mlp_end == 6144,
+                    "Qwen21 conservative frozen cache requires original BF16 components and the verified 6144-channel partition");
         const std::string runtime_options =
             (r.qwen21_w8a8 ? "w8a8" : "fp16") +
             std::string(r.qwen21_gpu_w8a16 ? ":w8a16" : ":bf16") +
@@ -1398,6 +1647,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
     }
     RunResult result;
+    if(private_qkv_requested) {result.qwen_gpu_dual_swiglu.emplace();result.qwen_gpu_dual_swiglu->requested=gpu_dual_requested;}
+    if(compiled_complement_requested)result.qwen_compiled_complement.emplace();
+    if(runtime_cache_requested)result.qwen_runtime_conservative_cache.emplace();
+    if(snapshot_with_runtime)result.qwen_runtime_prefix_snapshot.emplace();
+    result.qwen_corrected_qkv=corrected_qkv_metrics;
+    if(lora_swiglu)result.qwen_lora_swiglu.emplace();
     result.encoder_hybrid=encoder_runtime_metrics;
     if(metal_encoder_requested && edit_hit)native_encoder_metrics=NativeEncoderExecutionMetrics{
         .precision=std::string(native_encoder_vision_bf16()?"vision-bf16-gemm-fp32-state+language-bf16":"vision-fp32+language-bf16")+
@@ -1423,6 +1678,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.selection = resident_prefix
         ? "gpu: native Qwen Image 2.1 with experimental resident prefix KV cache"
         : "gpu: native Qwen Image 2.1 with request-owned prefix KV cache";
+    if(corrected_qkv)result.selection+="; experimental corrected-QKV decode-only with online r128 A/B; prefill unchanged";
+    if(lora_swiglu)result.selection+="; experimental typed LoRA B/SwiGLU decode fusion; online independent F32 A ranks, native base GEMM and complete down-LoRA unchanged";
+    if(async_step_pair)result.selection+="; experimental bounded async step pairs; every latent finite mask retained and validated before completed progress/VAE";
+    if(diagnostic_async_step_observer_)result.selection+="; diagnostic async submit observer, timings are not performance evidence";
     result.db_cache_enabled = db_cache;
     result.db_cache_threshold = db_cache ? db_threshold : 0.f;
     result.db_cache_max_consecutive = db_cache ? db_max_consecutive : 0;
@@ -1437,7 +1696,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         else if (!student_adapter)
             result.selection += "; experimental runtime LoRA with Viggle six-step schedule; adapter quality unqualified";
         else
-            result.selection += "; Viggle v0.2.1 " + std::string(student_adapter->rank) + " runtime LoRA; six-step student schedule";
+            result.selection += "; Viggle v0.2.1 " + std::string(student_adapter->rank) + " runtime LoRA; " +
+                (student_five_step ? "experimental authored five-step student sampler; distinct quality tier" :
+                                     "six-step student schedule");
     }
     const char *norm_rope = std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE");
     if (fused_qkv)
@@ -1524,8 +1785,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.backend = runtime_ffn_->backend_label();
         result.precision = runtime_ffn_->precision_label();
         result.selection = runtime_ffn_->selection_label();
-        if (!r.loras.empty()) result.selection += student_adapter
-            ? "; six-step Viggle student schedule"
+        if (!r.loras.empty()) result.selection += ordinary_runtime_lora
+            ? "; ordinary runtime LoRA with base Euler schedule"
+            : student_adapter ? "; six-step Viggle student schedule"
             : "; six-step student schedule; alternate adapter quality unqualified";
         if (staged) result.selection += "; diagnostic phase-scoped runtime session";
     }
@@ -1586,6 +1848,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         result.selection += "; experimental fused Metal Q/K norm-RoPE";
     result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
     result.checkpoint = transformer_source_.filename().string();
+    if(turbo)result.selection+="; "+std::string(turbo_sampler_identity)+"; original Turbo checkpoint, not base/student schedule";
+    if(convrot_transformer) {
+        result.precision="int8_convrot_dit+bf16_text+bf16_vae";
+        result.selection+=configured_convrot_packed()?
+            "; original ConvRot codes packed Q8/g128 with F32 coefficient storage; no persistent dense W bank":
+            "; original raw ConvRot I8/F32-row-scale GPU reference";
+    }
     if(gguf_transformer || gguf_encoder) {
         result.backend="mlx_cpp_metal_qwen21_gguf";
         result.precision=std::string(gguf_transformer ? "q4_k_m_dit" : "bf16_dit")+"+"+
@@ -1610,12 +1879,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::optional<Transformer::PrefixSnapshot> pending_snapshot;
     std::string pending_snapshot_runtime;
     if (!prepare_only) {
-        ane::calibration::ScopedCapture calibration_capture(r,
-            root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors",active_lora_identity_);
+        ane::calibration::ScopedCapture calibration_capture(r,transformer_source_,active_lora_identity_);
+        require(!async_step_pair||!calibration_capture.enabled(),"bounded async steps exclude calibration capture");
         if (layer_staged && hybrid_requested && hybrid_->ane_mlp_end == 6144)
             wired_residency.activate(6ull << 30);
-        auto schedule = student_schedule ? viggle_v021_sigmas(r.width, r.height) :
-                                          sigmas(r.width, r.height, r.steps);
+        auto schedule = turbo ? turbo_sigmas(r.width,r.height,r.steps) :
+            student_schedule ? viggle_v021_sigmas(r.width, r.height, r.steps) : sigmas(r.width, r.height, r.steps);
         mx::eval(schedule);
         auto latents = mx::astype(mx::random::normal({1, r.height / 16 * (r.width / 16), 64},
             mx::float32, mx::random::key(r.seed)), gguf_transformer ? mx::float16 : mx::bfloat16);
@@ -1683,17 +1952,27 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             mx::get_active_memory() < physical_bytes - std::min(physical_bytes, prefix_bytes + (uint64_t(8) << 30));
         if (!retain_prefix) clear_prefix_cache();
         const float first_sigma = schedule.data<float>()[0];
-        const std::string prefix_runtime = std::to_string(r.steps) + ":" +
+    const std::string prefix_runtime = std::to_string(r.steps) + ":" +
+            (turbo ? std::string(turbo_sampler_identity) : student_schedule ? std::string(viggle_v021_sampler_identity(r.steps)) : "base-euler-terminal-stretch-v1") + ":" +
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
             active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") +
             (bf16_operand_ranks ? ":bf16-operands-f32-ranks-v1:" : ":") +
             (b_epilogue ? "bf16-b-fused-epilogue-v1:" : "") +
+            (lora_swiglu ? "native-base-paired-b-swiglu-b16-v1:" : "") +
+            (async_step_pair ? "bounded-async-step-pair-v1:" : "") +
+            (private_qkv_prefetch_requested ? "private-qkv-onehop-lookahead-v1:" : "") +
+            (gpu_dual_requested ? "gpu-dual-swiglu-register-m32n64-target1024-v1:" : "") +
+            (compiled_complement_requested ? "gpu-compiled-complement-explicit-w-target1024-v1:" : "") +
+            (runtime_cache_requested ? "runtime-conservative-cache-f8w8-onehop-retire-v1:" : "") +
+            (private_qkv_requested ? "joint-private-qkv-w8-h128-m512-v1:"+
+                runtime_private_qkv_->metrics().program_key+":"+std::to_string(runtime_private_qkv_->available())+":" : "") +
             (student_ffn_reuse ? "student-final-ffn-reuse-v1-layers="+std::to_string(student_reuse_layers)+":" : "") +
             (hybrid_requested ? hybrid_manifest_ + hybrid_runtime_options_ :
              runtime_requested ? runtime_manifest_ + ":s1:" + runtime_ffn_->metrics().runtime_weight_s1_digest +
                 ":available:" + std::to_string(runtime_ffn_->available()) :
              qkv_requested ? qkv_manifest_ : "gpu") + ":" +
             (fused_qkv ? "fused-qkv" : "ordinary-qkv") + ":" +
+            (corrected_qkv_direct ? "corrected-qkv-v3-original-buffers:" : corrected_qkv ? "corrected-qkv-packed:" : "") +
             (norm_rope ? std::string(norm_rope) : "") + ":" +
             (std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE") ?
                 std::getenv("TURBOCIDER_QWEN21_METAL_QK_ROPE") : "") + ":" +
@@ -1711,10 +1990,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (cached_prefix_runtime_ != prefix_runtime || cached_prefix_sigma_ != first_sigma ||
              !cached_prefix_transformer_->prefix_matches(text, r.height / 16, r.width / 16, references)))
             clear_prefix_cache();
-        const bool prefix_hit = retain_prefix && bool(cached_prefix_transformer_);
+        const bool prefix_hit = retain_prefix && cached_prefix_transformer_ &&
+            cached_prefix_transformer_->prefix_matches(text, r.height / 16, r.width / 16, references);
         std::unique_ptr<Transformer> request_dit;
         if (!retain_prefix) request_dit = std::make_unique<Transformer>(
-            transformer_, TransformerConfig{}, fused_qkv ? &fused_qkv_weights_ : nullptr);
+            transformer_, TransformerConfig{}, fused_qkv ? &fused_qkv_weights_ : nullptr,
+            corrected_qkv&&!corrected_qkv_direct?&corrected_qkv_weights_:nullptr,corrected_qkv_direct,lora_swiglu);
         else if (!cached_prefix_transformer_)
             cached_prefix_transformer_ = std::make_unique<Transformer>(
                 transformer_, TransformerConfig{}, fused_qkv ? &fused_qkv_weights_ : nullptr);
@@ -1728,20 +2009,75 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         const uint64_t snapshot_memory_limit = r.memory_budget_bytes
             ? std::min(physical_bytes, r.memory_budget_bytes) : physical_bytes;
         const uint64_t snapshot_budget = std::min(uint64_t(8) << 30, snapshot_memory_limit / 8);
-        const bool snapshot_allowed = snapshot_route && prefix_bytes <= snapshot_budget;
-        const auto checkpoint_path = root_ / "diffusion_models/qwen_image_2.1_bf16.safetensors";
+        const bool runtime_snapshot_healthy=(!gpu_dual_requested || runtime_gpu_dual_.available()) &&
+            (!compiled_complement_requested || runtime_compiled_complement_.available()) &&
+            (!private_qkv_requested || (runtime_private_qkv_->available()&&!runtime_private_qkv_->metrics().failed)) &&
+            (!snapshot_with_runtime || (runtime_ffn_ && runtime_ffn_->available() && runtime_prefix_snapshot_healthy(runtime_ffn_->metrics()) &&
+                (!runtime_text_snapshot_requested || runtime_text_prefix_snapshot_healthy(runtime_ffn_->metrics()))));
+        if(snapshot_with_runtime && runtime_snapshot_healthy) {
+            const auto shape=ane::runtime_template_shape(r.ane_manifest);
+            require(runtime_function_descriptor(shape,runtime_functions) && !ane::configured_request_rows(),
+                "runtime prefix snapshot requires the fixed original-base descriptor matching the actual family maximum");
+            require(runtime_functions.empty() || runtime_ffn_->metrics().runtime_weight_function_rows==runtime_functions,
+                "runtime prefix cannot reuse a different loaded function family");
+        }
+        const bool snapshot_allowed = snapshot_route && prefix_bytes <= snapshot_budget && runtime_snapshot_healthy;
+        const auto checkpoint_path = transformer_source_;
         const std::string snapshot_runtime = snapshot_allowed ? prefix_runtime + ":" +
+            (snapshot_with_db_cache ? "conservative-prefix-snapshot-v1:" : "") +
+            (snapshot_with_student ? "pinned-student-prefix-snapshot-v1:" : "") +
+            (snapshot_with_corrected_qkv ? "direct-qkv-prefix-composition-v1:" : "") +
+            (snapshot_with_runtime ? (turbo ? std::string(runtime_text_snapshot_requested?
+                "turbo-private-w8-text-prefix-v1:":"turbo-private-w8-prefix-v1:") : std::string(runtime_text_snapshot_requested?
+                (runtime_text_qkv_step0==RuntimeTextQkvStep0::Gpu?"base-private-w8-text-prefix-gpu-qkv-step0-v1:":"base-private-w8-text-prefix-v1:"):
+                runtime_edit_qkv_recipe(runtime_edit_qkv_step0)))+
+                ane::HybridFfn::scheduler_source_identity(checkpoint_path)+":" : "") +
             std::to_string(std::filesystem::file_size(checkpoint_path)) + ":" +
             std::to_string(static_cast<long long>(
                 std::filesystem::last_write_time(checkpoint_path).time_since_epoch().count())) : "";
+        const std::string runtime_prefix_recipe=snapshot_allowed&&snapshot_with_runtime ? snapshot_runtime : "";
         if (!snapshot_allowed || cached_snapshot_runtime_ != snapshot_runtime)
             clear_prefix_snapshot();
         const bool snapshot_hit = cached_prefix_snapshot_ &&
             dit.import_prefix_snapshot(*cached_prefix_snapshot_, text,
-                                       r.height / 16, r.width / 16, references);
+                                       r.height / 16, r.width / 16, references,snapshot_with_corrected_qkv,lora_swiglu&&snapshot_allowed,
+                                       runtime_prefix_recipe);
         if (!snapshot_hit) clear_prefix_snapshot();
-        if (snapshot_allowed)
-            result.selection += snapshot_hit ? "; edit prefix KV snapshot hit" : "; edit prefix KV snapshot miss";
+        if (snapshot_allowed) {
+            if(runtime_text_snapshot_requested)result.selection+=snapshot_hit?"; runtime text prefix KV snapshot hit":"; runtime text prefix KV snapshot miss";
+            else result.selection += snapshot_hit ? "; edit prefix KV snapshot hit" : "; edit prefix KV snapshot miss";
+        }
+        if(snapshot_allowed && runtime_text_qkv_step0==RuntimeTextQkvStep0::Gpu)
+            result.selection+="; runtime text prefix preserves first-step GPU QKV";
+        if(snapshot_allowed && runtime_edit_qkv_step0==RuntimeTextQkvStep0::Gpu)
+            result.selection+="; runtime edit prefix preserves first-step GPU QKV";
+        if (snapshot_allowed && snapshot_with_db_cache)
+            result.selection += "; experimental conservative cache with immutable prefix snapshot";
+        if (snapshot_allowed && snapshot_with_student)
+            result.selection += student_five_step
+                ? "; experimental pinned five-step student with immutable prefix snapshot"
+                : "; experimental pinned six-step student with immutable prefix snapshot";
+        if (result.qwen_corrected_qkv) {
+            result.qwen_corrected_qkv->prefix_snapshot_enabled=snapshot_allowed&&snapshot_with_corrected_qkv;
+            result.qwen_corrected_qkv->prefix_snapshot_hit=snapshot_hit;
+            result.qwen_corrected_qkv->prefix_snapshot_bytes=snapshot_hit?cached_prefix_snapshot_->bytes:0;
+        }
+        if (snapshot_allowed && snapshot_with_corrected_qkv)
+            result.selection += "; experimental direct QKV with immutable prefix snapshot; first-step target decode on hit";
+        if(result.qwen_lora_swiglu){
+            result.qwen_lora_swiglu->prefix_snapshot_enabled=snapshot_allowed;
+            result.qwen_lora_swiglu->prefix_snapshot_hit=snapshot_hit;
+        }
+        if(snapshot_allowed&&lora_swiglu)result.selection+="; experimental typed LoRA SwiGLU with immutable prefix snapshot";
+        if(result.qwen_runtime_prefix_snapshot) {
+            auto &m=*result.qwen_runtime_prefix_snapshot;
+            m.admitted=snapshot_allowed;m.hit=snapshot_hit;
+            m.bytes=snapshot_hit?cached_prefix_snapshot_->bytes:0;
+            m.recipe_sha256=snapshot_allowed?memory_sha256_hex(snapshot_runtime):"";
+            m.decline_reason=snapshot_allowed?"":!snapshot_route?"conflicting snapshot route":
+                !runtime_snapshot_healthy?"runtime backend/recipe is not healthy fixed W8":"prefix bank exceeds memory budget";
+            if(snapshot_allowed)result.selection+="; experimental base runtime arithmetic immutable prefix snapshot";
+        }
         dit.configure_db_cache(db_cache, db_threshold, r.steps, db_max_consecutive,
                                db_options.front_blocks, db_options.warmup_steps);
         result.selection += retain_prefix ?
@@ -1782,12 +2118,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             std::vector<RuntimeFunction> runtime_lora_channel_gpu;
             std::vector<RuntimeFunction> runtime_lora_input_ranks;
             std::vector<RuntimeFunction> runtime_lora_down_gpu_ranks,runtime_lora_down_split_add;
+            int runtime_qkv_sampler_step=0;
             ane::HybridFfn::SourceScope runtime_sources_scope(runtime_requested ? runtime_ffn_.get() : nullptr);
+            struct PrivateQkvDrain {RuntimePrivateQkv *p;~PrivateQkvDrain()noexcept{try{if(p)p->drain();}catch(...) {}}} private_qkv_drain{
+                private_qkv_requested?runtime_private_qkv_.get():nullptr};
             if (runtime_requested) {
                 for (int block = 0; block < 32; ++block) {
                     const auto p = "transformer_blocks." + std::to_string(block) + ".img_mlp.";
-                    if(gguf_transformer) {
-                        runtime_packed_sources.push_back(gguf_ffn_sources(transformer_,p));
+                    if(packed_transformer) {
+                        runtime_packed_sources.push_back(convrot_transformer?convrot_ffn_sources(transformer_,p):gguf_ffn_sources(transformer_,p));
                         runtime_packed_gpu.push_back(runtime_ffn::full(transformer_,p));
                     } else {
                         auto gu = mx::split(transformer_.at(p + "gate_up.weight"), 2, 0);
@@ -1840,7 +2179,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 });
                 dit.set_stage_mlp([&](int block, int rows) {
                     checkpoint(cancelled);
-                    if(gguf_transformer)runtime_ffn_->stage_weights(block,rows,runtime_packed_sources.at(block));
+                    if(packed_transformer)runtime_ffn_->stage_weights(block,rows,runtime_packed_sources.at(block));
                     else runtime_ffn_->stage(block, rows, runtime_weights.at(block));
                 });
                 auto run_ffn = [&](int block, const Tensor &input, const char *phase) {
@@ -1872,6 +2211,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                         ++result.shared_lora_ranks->prepared_sets;
                     }
                     bool shared_correction = false, shared_gpu = false, used_fallback = false;
+                    bool used_gpu_dual=false;
+                    bool used_compiled_complement=false;
                     ane::HybridFfn::Adapter adapter{
                         [&](const Tensor &x) {
                             auto gu = runtime_lora_gate_up.at(block)({x});
@@ -1898,7 +2239,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     }
                     auto output = runtime_ffn_->run(block, input, [&](const Tensor &x) {
                         used_fallback = true;
-                        if(gguf_transformer)return runtime_packed_gpu.at(block)({x})[0];
+                        if(packed_transformer)return runtime_packed_gpu.at(block)({x})[0];
                         if (transformer_.has_runtime_loras()) return runtime_lora_gpu.at(block)({x})[0];
                         return runtime_gpu({x, transformer_.at(p + "gate_up.weight"),
                                               transformer_.at(p + "out.weight")})[0];
@@ -1911,18 +2252,90 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                             shared_gpu = block_shared;
                             return std::make_pair(result[0],result[1]);
                         }
+                        auto ordinary_gpu=[&] {
                         auto g=transformer_.project_slice(x,p+"gate_up",first,first+count,0,4096,false);
                         auto u=transformer_.project_slice(x,p+"gate_up",12288+first,12288+first+count,0,4096,false);
                         auto hidden=silu(g)*u;
                         auto base=runtime_ffn_->fp32_channel_join() ? transformer_.project_base_slice_fp32(hidden,p+"out",0,4096,first,first+count) :
                             transformer_.project_base_slice(hidden,p+"out",0,4096,first,first+count,false);
                         return std::make_pair(base,hidden);
+                        };
+                        if(compiled_complement_requested && x.shape(1)==1024 && runtime_compiled_complement_.available()) {
+                            auto &m=*result.qwen_compiled_complement;++m.attempts;
+                            try {
+                                require(first==0 && count==6144 && !transformer_.quantized(p+"gate_up") && !transformer_.convrot(p+"gate_up") &&
+                                    !transformer_.quantized(p+"out") && !transformer_.convrot(p+"out"),
+                                    "compiled complement needs original dense BF16 sources");
+                                const std::vector<Tensor> args{x,transformer_.at(p+"gate_up.weight"),transformer_.at(p+"out.weight")};
+                                compiled_complement::admit(args);
+                                auto values=runtime_compiled_complement_fn_(args);
+                                auto base=values.at(0),hidden=values.at(1);
+                                if(!runtime_compiled_complement_.validated) {
+                                    const auto started=Clock::now();++runtime_compiled_complement_.validation_calls;
+                                    auto reference=ordinary_gpu();mx::eval({base,hidden,reference.first,reference.second});checkpoint(cancelled);
+                                    auto same_hidden=mx::all(mx::view(mx::contiguous(hidden),mx::uint16)==mx::view(mx::contiguous(reference.second),mx::uint16));
+                                    auto same_partial=mx::all(mx::view(mx::contiguous(base),mx::uint32)==mx::view(mx::contiguous(reference.first),mx::uint32));
+                                    const bool exact=same_hidden.item<bool>() && same_partial.item<bool>() &&
+                                        mx::all(mx::isfinite(hidden)).item<bool>() && mx::all(mx::isfinite(base)).item<bool>();
+                                    runtime_compiled_complement_.validation_seconds+=seconds(started);
+                                    if(!exact){runtime_compiled_complement_.fail("compiled complement actual hidden/F32 partial bit validation failed");++m.fallback_blocks;return reference;}
+                                    runtime_compiled_complement_.accept();
+                                }
+                                used_compiled_complement=true;return std::make_pair(base,hidden);
+                            } catch(const std::exception&e) {
+                                if(cancelled.load())throw;
+                                runtime_compiled_complement_.fail(e.what());++m.fallback_blocks;return ordinary_gpu();
+                            }
+                        }
+                        if(!gpu_dual_requested||x.shape(1)!=1024||!runtime_gpu_dual_.available())return ordinary_gpu();
+                        auto &m=*result.qwen_gpu_dual_swiglu;++m.attempts;
+                        try {
+                            require(first==0&&count==6144&&!transformer_.quantized(p+"gate_up")&&!transformer_.convrot(p+"gate_up")&&
+                                !transformer_.quantized(p+"out")&&!transformer_.convrot(p+"out"),"GPU dual needs original dense BF16 channel sources");
+                            auto hidden=metal::prepare_base_dual_swiglu(x,transformer_.at(p+"gate_up.weight"),first,count,false,32,64);
+                            auto base=transformer_.project_base_slice_fp32(hidden,p+"out",0,4096,first,first+count);
+                            if(!runtime_gpu_dual_.validated) {
+                                const auto started=Clock::now();++runtime_gpu_dual_.validation_calls;
+                                auto reference=ordinary_gpu();mx::eval({base,hidden,reference.first,reference.second});checkpoint(cancelled);
+                                auto same_hidden=mx::all(mx::view(mx::contiguous(hidden),mx::uint16)==mx::view(mx::contiguous(reference.second),mx::uint16));
+                                auto same_partial=mx::all(mx::view(mx::contiguous(base),mx::uint32)==mx::view(mx::contiguous(reference.first),mx::uint32));
+                                const bool exact=same_hidden.item<bool>()&&same_partial.item<bool>()&&
+                                    mx::all(mx::isfinite(hidden)).item<bool>()&&mx::all(mx::isfinite(base)).item<bool>();
+                                runtime_gpu_dual_.validation_seconds+=seconds(started);
+                                if(!exact){runtime_gpu_dual_.fail("GPU dual actual model hidden/F32 partial bit validation failed");++m.fallback_blocks;return reference;}
+                                runtime_gpu_dual_.accept();
+                            }
+                            used_gpu_dual=true;return std::make_pair(base,hidden);
+                        } catch(const std::exception&e) {
+                            if(cancelled.load())throw;
+                            runtime_gpu_dual_.fail(e.what());++m.fallback_blocks;return ordinary_gpu();
+                        }
                     },[&](int next) {
-                        if(gguf_transformer)return next<32 ? runtime_packed_sources.at(next) : std::vector<ane::FfnWeight>{};
+                        if(packed_transformer)return next<32 ? runtime_packed_sources.at(next) : std::vector<ane::FfnWeight>{};
                         std::vector<ane::FfnWeight> sources;
                         if(next<32)for(const auto &weight:runtime_weights.at(next))sources.push_back({weight,std::nullopt,std::nullopt});
                         return sources;
-                    });
+                    },private_qkv_prefetch_requested?ane::HybridFfn::AfterSubmit([&]{
+                        const auto next=qkv_lookahead_target(block,runtime_qkv_sampler_step,input.shape(1),runtime_prefix_qkv_step0,
+                            snapshot_with_runtime&&snapshot_hit);
+                        if(next.permitted && runtime_private_qkv_->eligible(next.rows)){
+                            const auto prefix="transformer_blocks."+std::to_string(next.layer)+".attn.to_";
+                            (void)runtime_private_qkv_->prefetch(next.layer,next.rows,{transformer_.at(prefix+"q.weight"),
+                                transformer_.at(prefix+"k.weight"),transformer_.at(prefix+"v.weight")});
+                        }
+                    }):ane::HybridFfn::AfterSubmit{});
+                    if(result.qwen_gpu_dual_swiglu) {
+                        auto &m=*result.qwen_gpu_dual_swiglu;
+                        if(used_gpu_dual&&!used_fallback)++m.completed_blocks;
+                        else ++m.ordinary_blocks;
+                        if(gpu_dual_requested&&used_fallback){runtime_gpu_dual_.fail("GPU dual enclosing FFN fell back");++m.fallback_blocks;}
+                    }
+                    if(result.qwen_compiled_complement) {
+                        auto &m=*result.qwen_compiled_complement;
+                        if(used_compiled_complement&&!used_fallback)++m.completed_blocks;
+                        else ++m.ordinary_blocks;
+                        if(used_fallback){runtime_compiled_complement_.fail("compiled complement enclosing FFN fell back");++m.fallback_blocks;}
+                    }
                     if (shared_correction && shared_gpu && !used_fallback) {
                         ++result.shared_lora_ranks->completed_hybrid_blocks;
                         result.shared_lora_ranks->completed_adapter_rank_arrays += shared_inputs.size()-1;
@@ -1969,6 +2382,44 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 });
                 // QKV callbacks are cleared before gpu_qkv leaves this scope.
             }
+            if(private_qkv_requested) {
+                dit.set_joint_runtime_qkv_mlp(true,runtime_cache_requested);
+                if(runtime_cache_requested)dit.set_runtime_cache_skip([&] {
+                    checkpoint(cancelled);
+                    auto &m=*result.qwen_runtime_conservative_cache;++m.skip_callbacks;
+                    m.skipped_steps.push_back(runtime_qkv_sampler_step);
+                    // Layer7 may already have staged layer8 before the proxy
+                    // could decide to skip8...31. Retire that actual producer,
+                    // then stage next-step layer0 in the SAME bounded bank.
+                    if(!runtime_private_qkv_->available())return;
+                    const auto before=runtime_private_qkv_->prefetch_metrics();
+                    runtime_private_qkv_->drain();
+                    const auto after=runtime_private_qkv_->prefetch_metrics();
+                    m.discarded_futures+=after.discards-before.discards;
+                    if(!runtime_private_qkv_->available())return;
+                    const auto next=qkv_lookahead_target(31,runtime_qkv_sampler_step,1024,runtime_prefix_qkv_step0,
+                        snapshot_with_runtime&&snapshot_hit);
+                    require(next.permitted && next.layer==0,"runtime cache skip must precede a real full next sampler step");
+                    const auto p="transformer_blocks.0.attn.to_";
+                    if(runtime_private_qkv_->prefetch(0,1024,{transformer_.at(std::string(p)+"q.weight"),
+                        transformer_.at(std::string(p)+"k.weight"),transformer_.at(std::string(p)+"v.weight")}))++m.restaged_step_heads;
+                });
+                gpu_qkv=mx::compile(RuntimeFunction([](const auto &a){return std::vector<Tensor>{mx::concatenate({
+                    mx::matmul(a[0],mx::transpose(a[1])),mx::matmul(a[0],mx::transpose(a[2])),
+                    mx::matmul(a[0],mx::transpose(a[3]))},-1)};}));
+                dit.set_plan_qkv([&](int,int rows){checkpoint(cancelled);
+                    if(runtime_ffn_->sticky_fixed_program_failure())runtime_private_qkv_->disable(
+                        "fixed FFN disabled: "+runtime_ffn_->reason());
+                    const bool permitted=runtime_text_qkv_permitted(runtime_prefix_qkv_step0,snapshot_with_runtime&&snapshot_hit,runtime_qkv_sampler_step);
+                    return runtime_private_qkv_->plan(rows,permitted)?Transformer::QKVPlan::Hybrid:Transformer::QKVPlan::Gpu;});
+                dit.set_observe_qkv([](int,int,double){}); // untimed fixed policy; no intrusive block probes
+                dit.set_stage_qkv([&](int block,int rows){checkpoint(cancelled);const auto p="transformer_blocks."+std::to_string(block)+".attn.to_";
+                    require(!transformer_.has(p+"q.bias")&&!transformer_.has(p+"k.bias")&&!transformer_.has(p+"v.bias"),"Private QKV needs unbiased original projections");
+                    runtime_private_qkv_->stage(block,rows,{transformer_.at(p+"q.weight"),transformer_.at(p+"k.weight"),transformer_.at(p+"v.weight")});});
+                dit.set_project_qkv([&](int block,const Tensor &x){const auto p="transformer_blocks."+std::to_string(block)+".attn.to_";
+                    return runtime_private_qkv_->run(block,x,[&](const Tensor &input){return gpu_qkv({input,
+                        transformer_.at(p+"q.weight"),transformer_.at(p+"k.weight"),transformer_.at(p+"v.weight")})[0];},cancelled);});
+            }
             if (tiled_prefill)
                 dit.set_prefill_mlp([this, &cancelled, last_target_only](int block, const Tensor &input) {
                     checkpoint(cancelled);
@@ -1980,9 +2431,15 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                     tiled_prefix_reuse && retain_prefix && !prefix_target_only);
             // The App records the first denoise event as the progress/time
             // origin. Emit it before sampling so step one is not subtracted.
+            // Declared after the request Transformer: cancel/host exceptions
+            // drain retained roots before its functions/weights can be freed.
+            std::optional<AsyncStepPair> async_steps;
+            if(async_step_pair){require(!result.qwen_ffn_phases,"bounded async steps exclude phase profiling");async_steps.emplace(r.steps);}
             emit(event, "denoise", 0, r.steps);
             for (int step = 0; step < r.steps; ++step) {
                 checkpoint(cancelled);
+                runtime_qkv_sampler_step=step;
+                if(async_steps)async_steps->note_next_graph();
                 calibration_capture.step(step);
                 // Only the uncached first step uses this candidate. Subsequent
                 // steps retain the existing GPU/KV recipe, including cache-off.
@@ -2042,9 +2499,19 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                          true, nullptr, references);
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
                 const auto graph_seconds = profile_steps ? seconds(step_started) : 0.;
-                mx::eval(latents);
-                if (layer_staged) dit_source->revalidate_after_drain();
-                require(mx::all(mx::isfinite(latents)).item<bool>(), "nonfinite Qwen21 latent");
+                if(async_steps){
+                    async_steps->submit(step,latents);
+                    if(diagnostic_async_step_observer_)diagnostic_async_step_observer_(step+1,async_steps->pending(),async_steps->any_not_ready());
+                    checkpoint(cancelled);
+                    if(async_steps->full()||step==r.steps-1){
+                        const auto completed=async_steps->drain();
+                        for(int done:completed){checkpoint(cancelled);emit(event,"denoise",done+1,r.steps);}
+                    }
+                } else {
+                    mx::eval(latents);
+                    if (layer_staged) dit_source->revalidate_after_drain();
+                    require(mx::all(mx::isfinite(latents)).item<bool>(), "nonfinite Qwen21 latent");
+                }
                 const double step_seconds=result.qwen_ffn_phases || profile_steps ? seconds(step_started) : 0.;
                 if(result.qwen_ffn_phases) {
                     const auto after=runtime_requested ? runtime_ffn_->metrics() : HybridMetrics{};
@@ -2079,7 +2546,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                               << ",\"hybrid\":" << (hybrid_requested ? "true" : "false")
                               << "}" << std::endl;
                 }
-                emit(event, "denoise", step + 1, r.steps);
+                if(!async_steps)emit(event, "denoise", step + 1, r.steps);
+            }
+            if(async_steps){
+                require(async_steps->complete()&&async_steps->peak_pending()<=2,"bounded async steps did not complete all state/mask dependencies");
+                result.qwen_async_step_pair=QwenAsyncStepPairMetrics{
+                    async_steps->submitted(),async_steps->checked(),async_steps->accepted(),async_steps->batches(),async_steps->evaluation_calls(),
+                    async_steps->peak_pending(),async_steps->peak_logical_bytes(),async_steps->host_ahead_observations(),true,bool(diagnostic_async_step_observer_)};
             }
             calibration_capture.finish();
             if(native_prefill_requested || diagnostic_prefill_observer_)dit.set_prefill_mlp({});
@@ -2101,6 +2574,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 dit.set_plan_qkv({}); dit.set_observe_qkv({});
                 runtime_qkv_->drain();
             }
+            if(private_qkv_requested) {
+                dit.set_stage_qkv({});dit.set_project_qkv({});dit.set_plan_qkv({});dit.set_observe_qkv({});
+                dit.set_runtime_cache_skip({});
+                dit.set_joint_runtime_qkv_mlp(false);runtime_private_qkv_->drain();
+            }
             if (retain_prefix) {
                 cached_prefix_runtime_ = prefix_runtime;
                 cached_prefix_sigma_ = first_sigma;
@@ -2112,6 +2590,30 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             dit.clear_step_cache(); // request-owned activation bank released before VAE
         }
         result.db_cache_steps = dit.db_cached_steps();
+        if(runtime_cache_requested) {
+            const auto &m=*result.qwen_runtime_conservative_cache;
+            const auto saved=runtime_conservative_saved_blocks(result.db_cache_steps);
+            require(m.skip_callbacks==uint64_t(result.db_cache_steps) &&
+                m.discarded_futures==m.skip_callbacks && m.restaged_step_heads==m.skip_callbacks,
+                "runtime conservative cache did not retire/restage every skipped boundary");
+            require(result.qwen_ffn_phases && result.qwen_ffn_phases->prefill.completed_channel_blocks+
+                result.qwen_ffn_phases->decode.completed_channel_blocks==uint64_t(1280-saved),
+                "runtime conservative cache actual FFN coverage differs from full minus skipped middle blocks");
+        }
+        if(corrected_qkv) {
+            require(result.qwen_corrected_qkv.has_value()&&dit.corrected_qkv_decode_blocks()==uint64_t(r.steps-(snapshot_hit?0:1))*32,
+                "corrected QKV did not complete every requested decode step and all 32 layers");
+            result.qwen_corrected_qkv->completed_decode_blocks=dit.corrected_qkv_decode_blocks();
+            result.qwen_corrected_qkv->completed_sampler_steps=r.steps;
+            result.qwen_corrected_qkv->completed_prefill_steps=snapshot_hit?0:1;
+        }
+        if(lora_swiglu){
+            require(result.qwen_lora_swiglu.has_value()&&dit.lora_swiglu_decode_blocks()==uint64_t(r.steps-(snapshot_hit?0:1))*32,
+                "typed LoRA SwiGLU did not complete all actual decode steps and all 32 layers");
+            result.qwen_lora_swiglu->completed_decode_blocks=dit.lora_swiglu_decode_blocks();
+            result.qwen_lora_swiglu->completed_sampler_steps=r.steps;
+            result.qwen_lora_swiglu->completed_prefill_steps=snapshot_hit?0:1;
+        }
         result.timings.denoise = seconds(dit_start); result.actual_steps = r.steps;
         if(transformer_gguf_)transformer_gguf_->bank->check_unchanged();
         if (r.qwen21_w8a8) {
@@ -2138,11 +2640,31 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         dump("qwen21_latents", latents);
         if (snapshot_allowed && !snapshot_hit &&
+            (!gpu_dual_requested||runtime_gpu_dual_.healthy()) &&
+            (!compiled_complement_requested||runtime_compiled_complement_.healthy()) &&
+            (!snapshot_with_runtime || (runtime_ffn_->available() && runtime_prefix_snapshot_healthy(runtime_ffn_->metrics()))) &&
+            (!private_qkv_requested || runtime_private_qkv_->available()) &&
             mx::get_active_memory() < snapshot_memory_limit -
                 std::min(snapshot_memory_limit, prefix_bytes + (uint64_t(8) << 30))) {
             checkpoint(cancelled);
-            pending_snapshot = dit.export_prefix_snapshot(snapshot_budget);
-            if (pending_snapshot) pending_snapshot_runtime = snapshot_runtime;
+            // All target consumers have completed and ANE coverage was
+            // checked above. Drop the decode callback before exporting ONLY
+            // the prefix produced by its selected prefill arithmetic. Runtime
+            // callbacks were cleared/drained above; retain the snapshot guard.
+            if (snapshot_with_db_cache && hybrid_requested)
+                dit.set_decode_mlp({});
+            // Residuals belong to THIS sample, never the next request. Keep
+            // export's existing no-live-callback/no-DB runtime_recipe guard:
+            // counters are already copied, so disable and clear DB first.
+            if(runtime_cache_requested)dit.configure_db_cache(false);
+            pending_snapshot = dit.export_prefix_snapshot(snapshot_budget, snapshot_with_db_cache,snapshot_with_corrected_qkv,lora_swiglu,
+                                                          runtime_prefix_recipe);
+            if (pending_snapshot && result.qwen_corrected_qkv)
+                result.qwen_corrected_qkv->prefix_snapshot_bytes=pending_snapshot->bytes;
+            if (pending_snapshot) {
+                pending_snapshot_runtime = snapshot_runtime;
+                if(result.qwen_runtime_prefix_snapshot)result.qwen_runtime_prefix_snapshot->bytes=pending_snapshot->bytes;
+            }
         }
         if (r.residency == "component_staged") {
             // Compiled block functions and prefix tensors can retain weights
@@ -2155,7 +2677,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 result.hybrid->runtime_weight_session_released = true;
             }
             hybrid_mlp_.reset(); clear_prefix_cache();
-            fused_qkv_weights_.clear(); transformer_.clear();
+            fused_qkv_weights_.clear();corrected_qkv_weights_.clear(); transformer_.clear();
             mx::synchronize(); mx::clear_cache();
             wired_residency.reset();
         }
@@ -2170,9 +2692,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             vae_.materialize();
             emit(event, "load_qwen21_vae", 1, 1);
         }
-        VAE decoder(vae_);
+        VAE decoder(vae_, fp16_vae_decode ? VAE::DecodeConvolution::FP16WithFP32State :
+                                          VAE::DecodeConvolution::Original, fused_vae_norm);
         auto spatial = mx::transpose(mx::reshape(latents, {1, r.height / 16, r.width / 16, 64}), {0, 3, 1, 2});
-        auto pixels = mx::transpose(decoder.decode(spatial, event, cancelled), {0, 2, 3, 1});
+        auto decoded = decoder.decode_checked(spatial, event, cancelled);
+        auto pixels = mx::transpose(decoded.pixels, {0, 2, 3, 1});
         mx::eval(pixels);
         require(mx::all(mx::isfinite(pixels)).item<bool>(), "nonfinite Qwen21 pixels");
         if (conditioning_source) {
@@ -2181,7 +2705,20 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         dump("qwen21_pixels", pixels);
         result.timings.decode = seconds(decode_start);
+        if (decoded.fp16_nonfinite_fallback)
+            result.selection += "; VAE FP16 output nonfinite; complete original-precision convolution fallback executed; retry included in request timing";
+        if (fp16_vae_decode && !decoded.fp16_nonfinite_fallback) {
+            result.selection += "; experimental VAE decoder FP16 convolution operands/output with FP32 state, bias, normalization and attention; reference encoder unchanged";
+            result.precision += "+vae_fp16_conv_fp32_state";
+        }
+        if (fused_vae_norm) {
+            result.selection += "; experimental VAE FP32 fused channel L2 norm/SiLU with NHWC convolution input; reference encoder unchanged";
+            result.precision += "+vae_fp32_fused_norm_silu_nhwc";
+        }
         if (!warmup) {
+            // Do not publish a PNG before detecting a processor generation
+            // change during denoising. End-of-request revalidation still runs.
+            if (tokenizer_reuse) check_tokenizer();
             checkpoint(cancelled);
             emit(event, "export", 0, 1); save_rgba_png(pixels, r.output); emit(event, "export", 1, 1);
         }
@@ -2193,6 +2730,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             result.backend=runtime_ffn_->backend_label(true);
             result.precision="q4_k_m_dit+"+std::string(gguf_encoder ? "q4_k_m_text" : "bf16_text")+"+bf16_vae+runtime_w8a8_ffn_fp16_io";
             result.selection+="; mixed-K affine source GPU/ANE intermediate-channel FFN with complete packed GPU fallback";
+        }
+        if(convrot_transformer) {
+            result.precision="int8_convrot_dit+bf16_text+bf16_vae+runtime_convrot_w8a8_ffn_bf16_io";
+            result.selection+="; explicit Comfy-H256 runtime source views, complete packed GPU fallback, approximate ANE carriers";
         }
         // prepare(false) has no denoising phase. Keep its established weight
         // preparation semantics, but release optional Core ML resources too.
@@ -2206,20 +2747,57 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (!runtime_qkv_->available())
             result.selection += "; GPU fallback: " + result.qkv->failure_reason;
     }
+    if(private_qkv_requested) {
+        result.qwen_private_qkv=runtime_private_qkv_->metrics();
+        result.qwen_private_qkv_prefetch=runtime_private_qkv_->prefetch_metrics();
+        result.selection+="; explicit fixed512-row Private W8 QKV + runtime FFN; prefill QKV stays GPU";
+        if(private_qkv_prefetch_requested)result.selection+="; experimental one-hop QKV weight lookahead after FFN submissions";
+        auto &g=*result.qwen_gpu_dual_swiglu;
+        g.enabled=gpu_dual_requested&&runtime_gpu_dual_.healthy();g.validation_passed=runtime_gpu_dual_.validated;
+        g.disabled=runtime_gpu_dual_.disabled;g.validation_calls=runtime_gpu_dual_.validation_calls;
+        g.validation_seconds=runtime_gpu_dual_.validation_seconds;g.failure_reason=runtime_gpu_dual_.failure_reason;
+        if(gpu_dual_requested)result.selection+="; experimental GPU dual SwiGLU register m32n64 target1024";
+        if(!runtime_private_qkv_->available())result.selection+="; complete GPU QKV fallback: "+runtime_private_qkv_->metrics().failure_reason;
+    }
+    if(result.qwen_compiled_complement) {
+        auto &m=*result.qwen_compiled_complement;
+        m.enabled=runtime_compiled_complement_.healthy();m.validation_passed=runtime_compiled_complement_.validated;
+        m.disabled=runtime_compiled_complement_.disabled;m.validation_calls=runtime_compiled_complement_.validation_calls;
+        m.trace_count=runtime_compiled_complement_.traces;m.validation_seconds=runtime_compiled_complement_.validation_seconds;
+        m.failure_reason=runtime_compiled_complement_.failure_reason;
+        result.selection+="; experimental shared compiled GPU complement with explicit runtime W";
+    }
+    if(runtime_cache_requested)result.selection+="; explicit approximate runtime conservative cache with retired one-hop futures";
     if (!prepare_only && r.residency == "component_staged") {
         hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
-        clear_prefix_cache(); fused_qkv_weights_.clear();
+        clear_prefix_cache(); fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
         transformer_.clear(); vae_.clear();
         mx::synchronize(); mx::clear_cache();
     }
     // Publish reusable values only after a successful request. Do not add a
     // cancellation throw after PNG export: publication already completed.
+    if(snapshot_with_runtime && ((gpu_dual_requested&&!runtime_gpu_dual_.healthy()) ||
+            (compiled_complement_requested&&!runtime_compiled_complement_.healthy()) || !runtime_ffn_ || !runtime_ffn_->available() ||
+            !runtime_prefix_snapshot_healthy(runtime_ffn_->metrics()) || (private_qkv_requested&&!runtime_private_qkv_->available()))) {
+        clear_prefix_snapshot();pending_snapshot.reset();
+        result.qwen_runtime_prefix_snapshot->decline_reason="runtime recipe failed or changed during request";
+    }
     if (cancelled.load()) clear_prefix_snapshot();
     else if (pending_snapshot) {
         cached_prefix_snapshot_ = std::move(pending_snapshot);
         cached_snapshot_runtime_ = std::move(pending_snapshot_runtime);
+        if(result.qwen_runtime_prefix_snapshot)result.qwen_runtime_prefix_snapshot->published=true;
     }
-    if(encoder_prefill)encoder_tokenizer_->check_unchanged();
+    check_tokenizer();
+    if (tokenizer_metrics) {
+        tokenizer_metrics->retained=bool(encoder_tokenizer_);
+        if (encoder_tokenizer_) {
+            tokenizer_metrics->processor_sha256=encoder_tokenizer_->sha256();
+            tokenizer_metrics->processor_source_bytes=encoder_tokenizer_->source_bytes();
+        }
+        result.qwen_tokenizer_reuse=std::move(tokenizer_metrics);
+        result.selection += "; verified CPU tokenizer cache retained; encoder arithmetic unchanged";
+    }
     result.timings.wall = seconds(start);
     result.active_bytes = mx::get_active_memory(); result.peak_bytes = mx::get_peak_memory();
     return result;
@@ -2228,6 +2806,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     encoder_weights_.reset();encoder_weight_identity_.clear();
     encoder_gguf_.reset();
     encoder_tokenizer_.reset();
+    standalone_tokenizer_cache_ = false;
     if (native_session_) {
         if (native_session_->abort(std::chrono::seconds(1), "native Qwen request failed"))
             native_session_.reset();
@@ -2235,10 +2814,12 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     }
     if (runtime_ffn_) runtime_ffn_->drain();
     if (runtime_qkv_) runtime_qkv_->drain();
+    if (runtime_private_qkv_) runtime_private_qkv_->drain();
     try { mx::synchronize(); } catch (...) {}
     clear_prefix_cache();
     clear_prefix_snapshot();
-    fused_qkv_weights_.clear();
+    runtime_private_qkv_.reset();
+    fused_qkv_weights_.clear();corrected_qkv_weights_.clear();
     hybrid_mlp_.reset(); hybrid_.reset(); hybrid_source_identity_.reset(); hybrid_manifest_.clear(); hybrid_runtime_options_.clear();
     if (transformer_.has("transformer_blocks.0.attn.qkv_packed.weight"))
         transformer_.clear(); // A cancelled pack may have replaced only some layers.

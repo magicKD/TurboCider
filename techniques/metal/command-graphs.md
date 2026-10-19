@@ -25,6 +25,14 @@ api: public, private
 
 两个已经取证的边界可直接借鉴：[默认 stream 同步不等待 foreign stream](case-studies/mlx-benchmark-evaluation-and-stream-completion.md)；[Metal 4 end recording 不等于完成/allocator 可 reset](case-studies/metal4-counter-heaps-and-time-domains.md)。因此“少同步”应建立在正确依赖和 completion 证据上，不是删除所有等待。
 
+## 有界异步：把每步验证也纳入依赖
+
+逐步同步改成有界异步时，保留原求值与精度边界，让每一步的状态和独立 finite mask 一起进入 request-owned pending 集合；不能只检查最后一步，因为较早的 Inf 可能在后续变为有限值。drain 必须等待所有实际依赖、检查全部 mask，之后才发布完成进度，奇数尾步也不能遗漏。取消/异常退出同样保住这些 owner，直到已提交工作得到完成证据；没有设备故障实验就不承诺任意 hang/error 可恢复。
+
+验证至少包括普通/融合算子对照、先非有限后恢复、取消时仍有 pending、无提前进度/导出、同 Session 重试和恢复原策略。队列容量限定的是 retained step 数，latent＋mask 的逻辑字节不是整个图或 driver 的内存预算。策略改变若影响编译 recipe 或 prefix 语义，应使对应 bank 重新 prime。
+
+“下一步构图时先前结果尚未 host-ready”只是 host-ahead 观察，不证明物理重叠，更不自动证明加速。[本地 Qwen512 双步实验](../../docs/status/qwen512-async-step-pair-2026-10-18.md)在保持原始数组和图像一致后仍只有微弱整请求变化，未采用为默认。可迁移的教训是先测同一完成边界的净收益；长 GEMM 主导时，减少少量 host 等待未必值得更复杂的生命周期。
+
 ## 什么时候值得用独立 native graph
 
 需要精确控制实际 buffers、dispatch batching、跨 GPU/ANE ready/done events、可取消的 bounded segments 或完整 storage liveness 时。若只是减少 MLX 小算子调度，先试 compiled block；独立 graph 同时意味着维护完整算子、dtype、scheduler 和模型 parity。

@@ -56,6 +56,16 @@ LayerNorm 样本的 affine 表达是先加其内部 bias 再乘 weight；迁移�
 
 `reshape` 在数学层只重解释索引；`transpose` 是否被编译器消除、是否物化以及 producer/consumer 是否能沿用，必须分别测。不要继承某个项目注释中的“所有 transpose 免费”。
 
+固定正交旋转的因式分解也要按实际lowering验收。H512可写为H16⊗H32，
+但两级Conv/MatMul增加中间值和布局，常量/乘加更少不保证更快；flatten两个
+独立尾轴有时能避免显式transpose，却会改变batched MatMul的shape。应先证明
+serialized有限精度系数乘积、符号/轴与原矩阵一致，再用signed impulse、small/
+wide和全数组oracle检查中间舍入/编译近似。small模式更准不等于全domain更准，
+global L2也可能掩盖逐点误差。小shape编译拒绝不能外推真实shape不可用；compile
+失败与成功预测的时间必须分列。一个本机负例及消费者边界见
+[Qwen H512诊断](../../docs/status/qwen-base512-h512-factorization-2026-10-19.md)，
+它没有改变主runtime，也不排除其它融合图或硬件上的收益。
+
 ## 实验配方
 
 固定权重与输入，构造 2D matmul、BC1S Conv 和仅布局变换三臂；先以 CPU FP64 检查完整输出，再测 compile、load、first、warm、pack/restore 和首个真实 consumer。至少覆盖一组不整除 token 数和 mask。

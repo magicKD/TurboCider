@@ -35,6 +35,14 @@ Model adapter 申报可用接缝：attention、FFN、block loop、step loop、co
 
 有损组合要测 full baseline、A、B、A+B 四组：量化误差可能放大 residual-reuse 误差，token merge 也可能改变缓存阈值。给定结构无冲突，不等于有限值、质量、资源 lifetime 或性能已通过。
 
+### 例：少步采样与等价 kernel 的组合
+
+把六步/五步采样与原始/融合 kernel 组成四组时，等价工作只在同一采样档内成立：分别检查原始输入、最终潜变量和完整输出；跨采样档只共享匹配输入，另评画质取舍。即使每个档内 kernel 输出逐位一致，也不能推导五步与六步等价，更不能把历史两项加速比例相乘。组合收益应从同轮完整请求直接计算，并固定 prefix/cache、encoder、VAE 和导出边界。
+
+准入与执行也要分开：为复用旧 shape/source 检查而构造的局部请求副本，不得改变实际 sampler。逻辑覆盖应按真实 schedule 计算，例如首步 prefill、余步 decode 时为 `(actual_steps - 1) * layers`，不能沿用旧档的固定计数。开关和步数必须在每次请求显式恢复，缓存 identity 应包含 sampler recipe；迁移到新步数、shape 或有状态组合时，重新验证换档失效、同 seed 恢复与新增 owner 成本。结构兼容和覆盖计数本身不证明物理 kernel 数量或性能资格。
+
+前缀命中还可能改变首步的阶段：若首步也成为target-only decode，应按 `(actual_steps - actual_prefill_steps) * layers`核对覆盖，实际prefill可以为0。采样更新次数不能简单从decode计数加1推算。encoder conditioning、reference encoding和DiT K/V可能是不同cache；操作切换可以保留其中一种、淘汰另一种。应分别根据源码owner/key和实际回执冻结命中预期，而不是要求所有cache同步hit/miss。[Qwen direct与前缀组合](../../docs/status/qwen512-qkv-prefix-composition-2026-10-18.md)给出此类边界及强前缀基线的有限案例，不代表其他schedule可直接扩大准入。
+
 ## 本地实现如何嵌入新模型
 
 先写 adapter 的精确操作边界与 capability 表，再把技术变为纯配置/策略。通过 `compose`才建立执行 plan；执行时记录有效 schedule、source、step count、precision、cache hit 与 fallback。Cache 的实际 reset/异常路径由 [caches.py](../examples/reference/caches.py)展示，候选 share 的内存准入与拒绝外推由 [select_share](../examples/reference/policies.py)展示。

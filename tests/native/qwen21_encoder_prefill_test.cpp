@@ -67,6 +67,10 @@ int main(int argc,char **argv){try{
     const auto folder=std::filesystem::canonical(argv[1]);
     require(folder.filename().string().starts_with("tc-qwen-prefill-"),"refusing to mutate non-owned processor fixture");
     qwen21::VerifiedEncoderTokenizer tokenizer(folder,cancel);require(tokenizer.tokenizer().raw("abcabc").ids==std::vector<int>{5,5},"held-fd tokenizer differs");
+    require(tokenizer.source_bytes()==std::filesystem::file_size(folder/"tokenizer.json"),"processor byte count differs");
+    tokenizer.require_source_limit(tokenizer.source_bytes());
+    rejects([&]{tokenizer.require_source_limit(tokenizer.source_bytes()-1);});
+    rejects([&]{qwen21::VerifiedEncoderTokenizer too_small(folder,cancel,1);});
     tokenizer.check_unchanged();const int fd=::open((folder/"tokenizer.json").c_str(),O_WRONLY|O_CLOEXEC);require(fd>=0,"owned tokenizer open failed");
     const int status=::ftruncate(fd,0);::close(fd);require(status==0,"owned tokenizer truncate failed");rejects([&]{tokenizer.check_unchanged();});
     std::cout<<"PASS encoder GPU prefill: "<<cases<<" actual Metal typed RMS/NeoX/GQA and packed field/projection cases; geometry/epsilon/tokenizer-generation negatives\n";

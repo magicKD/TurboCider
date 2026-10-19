@@ -10,6 +10,7 @@ export PATH := $(CURDIR)/.venv/bin:$(CURDIR)/.deps/bin:$(PATH)
 COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-playground
 .PHONY: test-qwen21-runtime-activation
+.PHONY: test-qwen21-runtime-host
 .PHONY: test-base-benchmark
 help:
 	@echo 'TurboCider — native multimodal inference system'
@@ -36,6 +37,7 @@ help:
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
 	@echo 'make test-ltx-streaming-lifecycle-faults MODEL=/path OUTPUT=/path  Require a test-hook build and unsafe-cleanup matrix'
 	@echo 'make test-qwen21                 Run focused Qwen21 native/App contract checks (no inference)'
+	@echo 'make test-qwen21-runtime-host    Verify fixed-program/QKV/format/prefix/profiling contracts (no inference)'
 	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
 	@echo 'make test-acceleration-contract   Check optional routes, benchmark reports and host math (no inference)'
 	@echo 'make test-quantized-host          Verify GGUF decoding, W8A8 math and quantized request contracts'
@@ -234,6 +236,7 @@ test-base-benchmark:
 	@"$(PYTHON)" -B tests/native/test_ltx_full_config_screen.py
 	@"$(PYTHON)" -B tests/native/test_ltx_full_config_evidence.py
 test-acceleration-contract: test-runtime-ane-host
+	@$(MAKE) test-qwen21-runtime-host
 	@"$(PYTHON)" -B tests/native/test_ane_placement.py
 	@"$(PYTHON)" -B tests/native/test_runtime_ane_model_screen.py
 	@"$(PYTHON)" -B tests/native/test_runtime_ane_memory.py
@@ -245,6 +248,10 @@ test-runtime-ane-host:
 		test_private_ane.PrivateAneHostTests test_private_ane.PrivateAneDescriptorTests \
 		test_ane_calibration test_ane_smoothquant test_ane_a8_single_pass test_async_lora_preflight
 	@"$(PYTHON)" -B tests/native/test_runtime_worker_contract.py
+# Explicit CPU-only integration suite; native GPU lifecycle and real checkpoint
+# windows stay separate. No opt-in device flags are enabled by this target.
+test-qwen21-runtime-host:
+	@PYTHONPATH=tests/native "$(PYTHON)" -B tests/native/runtime_ane_integration_suite.py
 # These tiny CPU fixtures link the selected native library; they never load
 # checkpoints or submit Metal/ANE work. Override TURBOCIDER_TEST_NATIVE_DIR
 # for an isolated build, and use the repository MLX dependency environment.

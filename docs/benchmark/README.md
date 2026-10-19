@@ -2,6 +2,11 @@
 
 主报告：[图像与视频性能评测](PERFORMANCE_REPORT.md)。
 
+2026-10-19更新：[当前最快已测配置](CURRENT_FASTEST_CONFIGS.md)。集中记录各模型
+的Public/Private/GPU、尺寸/步数、热命中与fresh边界、LoRA/近似档，以及已清理
+须重建的产物；Qwen Base完整40步文生图研究基线约28.7–28.8s为Private runtime。
+本次仅整理已有证据，不重跑、不将受负载污染的观察晋升为正式速度资格。
+
 2026-10-15补入[SeedVR2与ComfyUI完整超分对照](SEEDVR2_COMFYUI.md)：
 图像256→512／512→1024为**4.81×／4.43×**，完整25帧视频为
 **3.46×／3.48×**（原生GPU，非ANE收益）。每路6个warm，采用各任务

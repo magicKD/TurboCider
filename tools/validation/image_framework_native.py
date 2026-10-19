@@ -6,7 +6,7 @@ import time
 from flux9_bf16_framework_screen import write_json
 
 
-def generate_requests(library, model_id, model_path, requests, output, route):
+def generate_requests(library, model_id, model_path, requests, output, route, *, before_request=None):
     lib = C.CDLL(str(library))
     lib.tc_string_free.argtypes = [C.c_void_p]
     lib.tc_engine_create_model.argtypes = [C.c_char_p, C.c_char_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p)]
@@ -26,6 +26,10 @@ def generate_requests(library, model_id, model_path, requests, output, route):
     report = dict(engine=route, constructor_seconds=time.perf_counter() - start, runs=[])
     try:
         for index, request in enumerate(requests):
+            # Experiment configuration is outside the observed request wall.
+            # Ordinary callers retain exactly the existing lifecycle.
+            if before_request is not None:
+                before_request(index, request)
             write_json(output / f"request-{index}.json", request)
             result, error = C.c_void_p(), C.c_void_p()
             start = time.perf_counter()

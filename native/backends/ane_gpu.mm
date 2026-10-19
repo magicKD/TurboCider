@@ -405,7 +405,7 @@ size_t Surface::cache_capacity_bytes() const {
 void Surface::retain_cache_claim(std::shared_ptr<WeightCodeCacheClaim> claim) { impl_->cache_claim=std::move(claim); }
 size_t Surface::pitch() const { return IOSurfaceGetBytesPerRow(impl_->surface); }
 uint32_t Surface::rows() const { return row_count_ ? row_count_ : impl_->rows; }
-uint32_t Surface::columns() const { return impl_->columns; }
+uint32_t Surface::columns() const { return column_count_ ? column_count_ : impl_->columns; }
 Element Surface::element() const { return impl_->element; }
 void *Surface::data() const { return static_cast<char *>(IOSurfaceGetBaseAddress(impl_->surface)) + size_t(row_begin_) * pitch(); }
 void *Surface::native_iosurface() const { return impl_->surface; }
@@ -426,6 +426,12 @@ SurfaceBufferLease Surface::metal_buffer_lease() const {
 Surface Surface::slice_rows(uint32_t begin, uint32_t count) const {
     require(count && begin <= rows() && count <= rows() - begin, "ANE GPU surface slice extent invalid");
     Surface view = *this; view.row_begin_ += begin; view.row_count_ = count; return view;
+}
+Surface Surface::leading_columns(uint32_t count) const {
+    require(count && count<=columns(),"ANE GPU leading-column extent invalid");
+    Surface view=*this;
+    if(count!=columns())view.column_count_=count;
+    return view;
 }
 
 struct Transfer::Impl {

@@ -151,6 +151,8 @@ Sample run_cycle(int variant, const std::filesystem::path &adapter) {
     auto second = host_values(decode);
     require(transformer.cached_layers() == size_t(layers),
             "tiny decode lost its prefix layer bank");
+    require(transformer.block_graph_builds() == 0 && transformer.block_graph_traces() == 0,
+            "ordinary Transformer unexpectedly enabled graph diagnostic counters");
     require(prefill.shape() == mx::Shape{1, 4, channels} &&
                 decode.shape() == prefill.shape(), "tiny output geometry changed");
     return {std::move(first), std::move(second), weights.bytes()};
@@ -189,6 +191,38 @@ void run_snapshot_cycle(int variant, const std::filesystem::path &adapter, size_
         require(snapshot.has_value(), "completed tiny prefill did not export a snapshot");
         require(!source.export_prefix_snapshot(snapshot->bytes - 1),
                 "snapshot exceeded its byte budget");
+        if(variant==0) {
+            const std::string recipe="explicit-runtime-arithmetic-fixture-v1";
+            auto tagged=source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max(),false,false,false,recipe);
+            require(tagged && tagged->runtime_recipe==recipe,"explicit runtime snapshot lost its recipe");
+            qwen21::Transformer receiver(weights,config());
+            require(!receiver.import_prefix_snapshot(*tagged,text,2,2,references) && receiver.cached_layers()==0,
+                    "ordinary GPU imported runtime-tagged K/V");
+            require(!receiver.import_prefix_snapshot(*tagged,text,2,2,references,false,false,"different") && receiver.cached_layers()==0,
+                    "wrong runtime recipe imported K/V or mutated the receiver");
+            require(!receiver.import_prefix_snapshot(*snapshot,text,2,2,references,false,false,recipe),
+                    "runtime route imported an untagged GPU bank");
+            require(receiver.import_prefix_snapshot(*tagged,text,2,2,references,false,false,recipe),
+                    "matching explicit runtime recipe rejected complete K/V");
+            require(host_values(receiver.forward(latents,text,1.f,2,2,true,nullptr,references))==first,
+                    "recipe metadata altered a same-prefix GPU fixture");
+            auto other_noise=mx::astype(mx::random::normal({1,4,channels},mx::float32,mx::random::key(5900)),mx::bfloat16);
+            qwen21::Transformer independent(weights,config());
+            (void)host_values(independent.forward(other_noise,text,.375f,2,2,true,nullptr,{}));
+            auto independent_prefix=independent.export_prefix_snapshot(std::numeric_limits<uint64_t>::max(),false,false,false,recipe);
+            require(independent_prefix && independent_prefix->references.empty() && independent_prefix->prefix_length==text.shape(1),
+                "text-only snapshot geometry or ownership differs");
+            for(size_t layer=0;layer<tagged->keys.size();++layer)
+                require(host_values(independent_prefix->keys[layer])==host_values(tagged->keys[layer]) &&
+                        host_values(independent_prefix->values[layer])==host_values(tagged->values[layer]),
+                    "text-prefix K/V changed with target noise or target timestep");
+            require(!receiver.import_prefix_snapshot(*tagged,mx::copy(text),2,2,{},false,false,recipe),
+                "same-shaped different text identity imported stale K/V");
+            source.set_decode_mlp([](int,const Tensor &x){return x;});
+            require(!source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max(),false,false,false,recipe),
+                    "runtime tag bypassed a live callback ownership guard");
+            source.set_decode_mlp({});
+        }
         for (const auto *bank : {&snapshot->keys, &snapshot->values})
             for (const auto &value : *bank)
                 require(value.is_available() && !value.has_primitive() &&
@@ -256,6 +290,102 @@ void run_snapshot_cycle(int variant, const std::filesystem::path &adapter, size_
                                                   true, nullptr, references));
         require(actual == expected, "prefix snapshot reused target noise from an earlier seed");
     }
+}
+
+void run_db_snapshot_composition() {
+    constexpr int depth = 10, steps = 40;
+    Weights weights;
+    bind_new_weights(weights, depth);
+    weights.materialize();
+    auto text = mx::reshape(matrix(4, context, 6401), {1, 4, context});
+    auto latents = mx::reshape(matrix(4, channels, 6402), {1, 4, channels});
+    std::vector<qwen21::ReferenceLatents> references{
+        {mx::reshape(matrix(4, channels, 6403), {1, 4, channels}), {2, 2, 1}},
+    };
+    mx::eval(text, latents, references[0].latents);
+    qwen21::Transformer source(weights, config(depth));
+    source.configure_db_cache(true, .15f, steps, 1);
+    for (int step = 0; step < steps; ++step) {
+        source.set_db_cache_step(step);
+        if (step == 1)
+            source.set_decode_mlp([](int, const Tensor &input) { return mx::zeros_like(input); });
+        (void)host_values(source.forward(latents, text, .5f, 2, 2, true, nullptr, references));
+    }
+    require(source.db_cached_steps() > 0, "snapshot source did not populate temporal residuals");
+    require(!source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max()),
+            "DBCache snapshot composition became implicit");
+    require(!source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max(), true),
+            "snapshot bypassed a live decode callback guard");
+    source.set_decode_mlp({});
+    auto snapshot = source.export_prefix_snapshot(std::numeric_limits<uint64_t>::max(), true);
+    require(snapshot.has_value(), "explicit DB/snapshot composition did not export static K/V");
+    qwen21::Transformer restored(weights, config(depth));
+    require(restored.import_prefix_snapshot(*snapshot, text, 2, 2, references),
+            "fresh request rejected DB-independent prefix snapshot");
+    // Two new noise identities and new request-local DB configurations must
+    // match fresh full-prefill oracles, including skip decisions at every step.
+    for (int seed = 0; seed < 2; ++seed) {
+        auto noise = mx::reshape(matrix(4, channels, 6500 + seed), {1, 4, channels});
+        mx::eval(noise);
+        qwen21::Transformer oracle(weights, config(depth));
+        oracle.configure_db_cache(true, .15f, steps, 1);
+        restored.configure_db_cache(true, .15f, steps, 1);
+        require(restored.db_cached_steps() == 0, "new request inherited temporal skip count");
+        for (int step = 0; step < steps; ++step) {
+            oracle.set_db_cache_step(step);
+            restored.set_db_cache_step(step);
+            const auto expected = host_values(oracle.forward(noise, text, .5f, 2, 2, true, nullptr, references));
+            const auto actual = host_values(restored.forward(noise, text, .5f, 2, 2, true, nullptr, references));
+            require(actual == expected, "prefix snapshot imported an old target/residual at step " + std::to_string(step));
+            require(restored.db_cached_steps() == oracle.db_cached_steps(),
+                    "snapshot hit changed request-local DB skip policy");
+        }
+        require(restored.db_cached_steps() > 0, "restored request performed no temporal reuse");
+    }
+    restored.configure_db_cache(false);
+    qwen21::Transformer ordinary(weights, config(depth));
+    require(host_values(restored.forward(latents, text, .5f, 2, 2, true, nullptr, references)) ==
+            host_values(ordinary.forward(latents, text, .5f, 2, 2, true, nullptr, references)),
+            "turning DB off retained target residual from a previous request");
+}
+
+void run_graph_reuse_regression(const std::filesystem::path &adapter) {
+    Weights weights;
+    bind_variant(weights, 1, adapter);
+    auto text = mx::reshape(matrix(4, context, 7100), {1, 4, context});
+    auto next_text = mx::reshape(matrix(4, context, 7101), {1, 4, context});
+    auto noise = mx::reshape(matrix(4, channels, 7102), {1, 4, channels});
+    std::vector<qwen21::ReferenceLatents> refs{
+        {mx::reshape(matrix(4, channels, 7103), {1, 4, channels}), {2, 2, 1}},
+    };
+    mx::eval(text, next_text, noise, refs[0].latents);
+    qwen21::Transformer retained(weights, config());
+    retained.enable_graph_counters();
+    (void)host_values(retained.forward(noise, text, 1.f, 2, 2, true, nullptr, refs));
+    (void)host_values(retained.forward(noise, text, .5f, 2, 2, true, nullptr, refs));
+    const auto builds = retained.block_graph_builds(), traces = retained.block_graph_traces();
+    require(builds > 0 && traces > 0, "graph instrumentation did not observe actual block tracing");
+    retained.reset();
+    require(retained.cached_layers() == 0 && retained.graph_geometry_matches(next_text, 2, 2, refs),
+            "graph reset lost geometry or retained prefix values");
+    qwen21::Transformer fresh(weights, config());
+    for (float sigma : {1.f, .5f}) {
+        const auto expected = host_values(fresh.forward(noise, next_text, sigma, 2, 2, true, nullptr, refs));
+        const auto actual = host_values(retained.forward(noise, next_text, sigma, 2, 2, true, nullptr, refs));
+        require(actual == expected, "retained graph captured previous text/input values");
+    }
+    require(retained.block_graph_builds() == builds && retained.block_graph_traces() == traces,
+            "same-geometry fresh conditions retraced retained blocks");
+    retained.reset();
+    auto longer_text = mx::reshape(matrix(5, context, 7104), {1, 5, context});
+    mx::eval(longer_text);
+    require(!retained.graph_geometry_matches(longer_text, 2, 2, refs), "changed geometry reported graph hit");
+    qwen21::Transformer longer_oracle(weights, config());
+    require(host_values(retained.forward(noise, longer_text, 1.f, 2, 2, true, nullptr, refs)) ==
+            host_values(longer_oracle.forward(noise, longer_text, 1.f, 2, 2, true, nullptr, refs)),
+            "geometry change reused an invalid block graph");
+    require(retained.block_graph_builds() > builds && retained.block_graph_traces() > traces,
+            "geometry change failed to rebuild/retrace");
 }
 
 void run_db_cache_regression(const std::filesystem::path &adapter) {
@@ -463,6 +593,87 @@ void run_db_cache_reference_shapes(const std::filesystem::path &adapter) {
         }
     }
 }
+void run_joint_qkv_mlp_regression() {
+    Weights weights;bind_new_weights(weights);
+    auto latents=mx::astype(mx::random::normal({1,4,channels},mx::float32,mx::random::key(8700)),mx::bfloat16);
+    auto text=mx::astype(mx::random::normal({1,4,context},mx::float32,mx::random::key(8701)),mx::bfloat16);
+    mx::eval(latents,text);
+    auto qkv=mx::compile([](const std::vector<Tensor>&a){return std::vector<Tensor>{mx::concatenate({
+        mx::matmul(a[0],mx::transpose(a[1])),mx::matmul(a[0],mx::transpose(a[2])),
+        mx::matmul(a[0],mx::transpose(a[3]))},-1)};});
+    auto mlp=mx::compile([](const std::vector<Tensor>&a){
+        auto pair=mx::matmul(a[0],mx::transpose(a[1]));
+        auto feed=silu(slice_axis(pair,-1,0,ffn))*slice_axis(pair,-1,ffn,2*ffn);
+        return std::vector<Tensor>{mx::matmul(feed,mx::transpose(a[2]))};});
+    for(int refs=0;refs<=2;++refs)for(bool external_prefill:{false,true}){
+        std::vector<qwen21::ReferenceLatents> references;
+        for(int i=0;i<refs;++i)references.push_back({mx::copy(latents),{2,2,i+1}});
+        qwen21::Transformer original(weights,config());
+        const auto first=host_values(original.forward(latents,text,1.f,2,2,true,nullptr,references));
+        const auto second=host_values(original.forward(latents,text,.5f,2,2,true,nullptr,references));
+        qwen21::Transformer candidate(weights,config());
+        int stages=0,projections=0,feeds=0;
+        candidate.set_stage_qkv([&](int,int){++stages;});
+        candidate.set_project_qkv([&](int layer,const Tensor&x){
+            ++projections;const auto p="transformer_blocks."+std::to_string(layer)+".attn.to_";
+            auto y=qkv({x,weights.at(p+"q.weight"),weights.at(p+"k.weight"),weights.at(p+"v.weight")})[0];
+            mx::eval(y);return y;});
+        candidate.set_plan_qkv([&](int,int rows){return external_prefill||rows==4?
+            qwen21::Transformer::QKVPlan::Hybrid:qwen21::Transformer::QKVPlan::Gpu;});
+        candidate.set_observe_qkv([](int,int,double){});
+        auto feed=[&](int layer,const Tensor&x){++feeds;const auto p="transformer_blocks."+std::to_string(layer)+".img_mlp.";
+            auto y=mlp({x,weights.at(p+"gate_up.weight"),weights.at(p+"out.weight")})[0];mx::eval(y);return y;};
+        candidate.set_prefill_mlp(feed);candidate.set_decode_mlp(feed);
+        candidate.set_plan_mlp([](int,int){return qwen21::Transformer::MLPPlan::SplitUntimed;});
+        candidate.set_observe_mlp([](int,int,double){});
+        bool rejected=false;try{(void)candidate.forward(latents,text,1.f,2,2,true,nullptr,references);}
+            catch(const std::exception&){rejected=true;}
+        require(rejected&&stages==0&&feeds==0,"joint callbacks bypassed default guard or submitted work before consent");
+        candidate.set_joint_runtime_qkv_mlp(true);
+        auto check=[&](const auto&actual,const auto&expected){
+            require(actual.size()==expected.size(),"joint callback output geometry changed");
+            double error=0,energy=0;for(size_t i=0;i<actual.size();++i){error+=std::pow(actual[i]-expected[i],2);energy+=std::pow(expected[i],2);}
+            require(std::sqrt(error/std::max(energy,1e-30))<.01,"GPU-only joint callback algebra disagrees with ordinary block");};
+        check(host_values(candidate.forward(latents,text,1.f,2,2,true,nullptr,references)),first);
+        check(host_values(candidate.forward(latents,text,.5f,2,2,true,nullptr,references)),second);
+        require(feeds==2*layers&&projections==(external_prefill?2:1)*layers&&stages==projections,
+            "joint callback variant/prefill/decode counts changed");
+        require(!candidate.export_prefix_snapshot(UINT64_MAX),"joint callback exported a live-owned prefix");
+        candidate.set_project_qkv({});candidate.set_stage_qkv({});candidate.set_plan_qkv({});candidate.set_observe_qkv({});
+        candidate.set_prefill_mlp({});candidate.set_decode_mlp({});candidate.set_plan_mlp({});candidate.set_observe_mlp({});
+        require(!candidate.export_prefix_snapshot(UINT64_MAX),"joint consent bypassed prefix ownership guard");
+        candidate.set_joint_runtime_qkv_mlp(false);
+        require(bool(candidate.export_prefix_snapshot(UINT64_MAX)),"drained joint GPU fixture cannot export independent K/V");
+    }
+    {
+        // A primed text prefix models an imported compact bank. Exercise
+        // decode slot1 (GPU QKV + split FFN), then slot3 (external QKV +
+        // split FFN) at the SAME target shape; plan changes must not reuse
+        // a stale compiled-block route or omit successful consumers.
+        qwen21::Transformer original(weights,config()),candidate(weights,config());
+        (void)host_values(original.forward(latents,text,1.f,2,2,true));
+        (void)host_values(candidate.forward(latents,text,1.f,2,2,true));
+        int step=0,stages=0,projections=0,feeds=0;
+        candidate.set_joint_runtime_qkv_mlp(true);
+        candidate.set_plan_qkv([&](int,int){return step==0?qwen21::Transformer::QKVPlan::Gpu:qwen21::Transformer::QKVPlan::Hybrid;});
+        candidate.set_stage_qkv([&](int,int){++stages;});candidate.set_observe_qkv([](int,int,double){});
+        candidate.set_project_qkv([&](int layer,const Tensor &x){++projections;const auto p="transformer_blocks."+std::to_string(layer)+".attn.to_";
+            auto y=qkv({x,weights.at(p+"q.weight"),weights.at(p+"k.weight"),weights.at(p+"v.weight")})[0];mx::eval(y);return y;});
+        candidate.set_decode_mlp([&](int layer,const Tensor &x){++feeds;const auto p="transformer_blocks."+std::to_string(layer)+".img_mlp.";
+            auto y=mlp({x,weights.at(p+"gate_up.weight"),weights.at(p+"out.weight")})[0];mx::eval(y);return y;});
+        candidate.set_plan_mlp([](int,int){return qwen21::Transformer::MLPPlan::SplitUntimed;});candidate.set_observe_mlp([](int,int,double){});
+        for(step=0;step<3;++step){const float sigma=1.f-.25f*step;
+            auto expected=host_values(original.forward(latents,text,sigma,2,2,true));
+            auto actual=host_values(candidate.forward(latents,text,sigma,2,2,true));
+            double error=0,energy=0;for(size_t i=0;i<actual.size();++i){error+=std::pow(actual[i]-expected[i],2);energy+=std::pow(expected[i],2);}
+            require(std::sqrt(error/std::max(energy,1e-30))<.01,"same-shape GPU-first QKV plan changed joint fixture algebra");
+            require(stages==step*layers && projections==stages && feeds==(step+1)*layers,"GPU-first/remaining-private callback coverage differs");
+        }
+        candidate.set_project_qkv({});candidate.set_stage_qkv({});candidate.set_plan_qkv({});candidate.set_observe_qkv({});
+        candidate.set_decode_mlp({});candidate.set_plan_mlp({});candidate.set_observe_mlp({});candidate.set_joint_runtime_qkv_mlp(false);
+        require(bool(candidate.export_prefix_snapshot(UINT64_MAX)),"GPU-first joint route retained live callback ownership");
+    }
+}
 } // namespace
 
 int main() {
@@ -473,7 +684,10 @@ int main() {
         Fixture fixture;
         const auto adapter = fixture.directory / "tiny-lora.safetensors";
         write_adapter(adapter);
+        run_joint_qkv_mlp_regression();
         run_db_cache_regression(adapter);
+        run_db_snapshot_composition();
+        run_graph_reuse_regression(adapter);
         run_db_cache_reference_shapes(adapter);
         std::array<Sample, variants> expected;
         // Prime static activation kernels and all 0/1/2/3-reference + LoRA
@@ -503,9 +717,11 @@ int main() {
         require(largest - minimum <= idle_tolerance,
                 "compiled Transformer idle active memory accumulates");
         run_db_cache_regression(adapter);
+        run_graph_reuse_regression(adapter);
         run_db_cache_reference_shapes(adapter);
+        run_joint_qkv_mlp_regression();
         require(idle_active() <= baseline + idle_tolerance,
-                "DBCache retained compiled weights or residual buffers after destruction");
+                "Qwen21 diagnostics retained compiled weights or request buffers after destruction");
         std::cout << "{\"cycles\":" << repetitions
                   << ",\"variants\":" << variants
                   << ",\"baseline_active_bytes\":" << baseline
@@ -516,8 +732,12 @@ int main() {
                   << ",\"deterministic_prefill_decode\":true"
                   << ",\"snapshot_cycles\":" << repetitions
                   << ",\"snapshot_cross_transformer_parity\":true"
+                  << ",\"text_prefix_seed_sigma_independent\":true"
+                  << ",\"dbcache_prefix_snapshot_isolation\":true"
+                  << ",\"retained_graph_fresh_values_and_geometry\":true"
                   << ",\"dbcache_policy_and_invalidation\":true"
-                  << ",\"dbcache_reference_geometry_and_lora\":true}\n";
+                  << ",\"dbcache_reference_geometry_and_lora\":true"
+                  << ",\"joint_qkv_mlp_explicit_consent_and_gpu_parity\":true}\n";
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

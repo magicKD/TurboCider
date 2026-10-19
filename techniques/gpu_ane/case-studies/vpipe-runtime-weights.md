@@ -72,3 +72,28 @@ FP16 不是 BF16 的同宽 reinterpret。SwiGLU 乘积有溢出风险；GELU 的
 相同 checkpoint/LoRA/rows 下做 full GPU、serial row split、concurrent row split；再比较常量/runtime weights、chunk/tile、原转置与 source-layout staging。分别记录准备、load/首调、热调用、完整 FFN、整请求和峰值。
 
 否决：只隐藏了线程等待而未提交 GPU、量化 source 不同、GPU 强基线改变后不再盈利、尾部 padding/host prediction 太多、stage 争带宽、常量/cache 身份过期。可参考本库 [已有混合 FFN 证据](../../MAINTENANCE.md)，但它是另一个实现和切分方案，不是 vpipe 的实机复现。
+
+## 后续源码对照：固定图不等于固定控制状态
+
+另一个固定读本为`vpipe@18ddb3b5bd9c74ab7f2b4408ee78efc6cecd48e7`；它不替换上面的
+旧版本案例。阅读该版本的
+[`Qwen2.1调用点`](https://github.com/tgo-app-dev/vpipe/blob/18ddb3b5bd9c74ab7f2b4408ee78efc6cecd48e7/generative-models/qwen-image/metal-qwen-image21-transformer.cc)
+及[`begin/finish/plan_block`](https://github.com/tgo-app-dev/vpipe/blob/18ddb3b5bd9c74ab7f2b4408ee78efc6cecd48e7/generative-models/shared/ane-ffn.cc)：
+
+- FFN与QKV分别共享一份runtime图，两个模块共用session的一个ANE worker；两个
+  编译程序不意味着能同时占用两份ANE算力。QKV须在attention前join，随后才能
+  在attention窗口stage FFN，不能机械叠加两个单项倍率。
+- 该Qwen调用点把chunk固定为2048，`begin`又保留至少一个GPU row。图能按chunk
+  重复服务长序列，不代表短decode有合法非零share。`armed`只证明模块存在，
+  还须读当次actual prediction；初始化decline也可能由`_ane_tried`固定到此实例。
+- 长prefill创建模块后，短decode若仍先plan/stage/drain，直到`begin`才返回零，
+  会留下无实际ANE计算的成本。应在staging、barrier和控制器采样前做实际几何
+  准入；不可用“finish等待很少”证明该路径免费。
+- `plan_block`的section历史属于模块实例，调用者若切换prefill/decode几何，应
+  隔离CPU控制状态，不能让短decode probe直接否决长prefill的split。控制状态
+  可按phase/rows/representation有界缓存；无需因此重编译计算图。
+
+迁移到短序列任务时可比较较小固定chunk或intermediate-channel split，保留GPU
+tail而不重编译；不能因较小chunk“更灵活”就假定更快。以完整边界的同步、权重
+带宽、误差和首/热请求来裁决。这里保留方法，实验数组、采集程序与具体结果不
+放入知识库。

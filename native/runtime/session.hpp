@@ -92,6 +92,11 @@ struct HybridMetrics {
     double runtime_weight_full_gpu_probe_seconds = 0;
     uint64_t runtime_weight_fallback_blocks = 0, runtime_weight_ane_rows = 0;
     uint64_t runtime_weight_overflow_retries = 0;
+    bool runtime_weight_fixed_program_requested=false,runtime_weight_fixed_program_enabled=false,runtime_weight_program_disabled=false;
+    uint64_t runtime_weight_program_instances=0,runtime_weight_blocked_rebuilds=0;
+    std::vector<int> runtime_weight_function_rows;
+    int runtime_weight_row_alignment=0;
+    uint64_t runtime_weight_capability_calls=0;
     ane::OverflowReport runtime_weight_overflow_events;
     std::vector<int> runtime_weight_gpu_layers;
     uint64_t runtime_weight_forced_gpu_blocks = 0;
@@ -212,6 +217,62 @@ struct QwenEncoderPrefillMetrics {
     uint32_t input_rows=0, retained_rows=0;
     uint32_t qkv_fused_layers=0,qk_fused_layers=0,gate_up_fused_layers=0;
     double pack_seconds_this_request=0;
+};
+struct QwenTokenizerReuseMetrics {
+    bool reused=false, constructed_this_request=false, tokenized_this_request=false, retained=false;
+    std::string processor_sha256;
+    uint64_t processor_source_bytes=0;
+    double construction_seconds=0, tokenization_seconds=0, validation_seconds=0;
+};
+struct QwenRuntimePrefixSnapshotMetrics {
+    bool admitted=false, hit=false, published=false;
+    uint64_t bytes=0;
+    std::string recipe_sha256, decline_reason;
+};
+struct QwenPrivateQkvMetrics {
+    bool failed=false,validation_passed=false;
+    uint64_t predictions=0,completed_blocks=0,weight_stages=0,gpu_blocks=0,fallback_blocks=0,validation_calls=0;
+    uint64_t slot_bytes=0,estimated_bytes=0;
+    double setup_seconds=0,stage_seconds=0,activation_seconds=0,join_seconds=0,validation_relative_l2=0;
+    std::string program_key,failure_reason;
+};
+struct QwenGpuDualSwigluMetrics {
+    bool requested=false,enabled=false,validation_passed=false,disabled=false;
+    uint64_t attempts=0,completed_blocks=0,ordinary_blocks=0,fallback_blocks=0;
+    uint64_t validation_calls=0;
+    double validation_seconds=0;
+    std::string failure_reason;
+};
+struct QwenPrivateQkvPrefetchMetrics {
+    bool requested=false,enabled=false,future_pending=false;
+    uint64_t attempts=0,submissions=0,producer_submissions=0,claims=0,weight_completions=0,completed_hits=0;
+    uint64_t discards=0,retired_claims=0,failures=0;
+    double weight_join_wait_seconds=0,producer_lifetime_seconds=0;
+};
+struct QwenCompiledComplementMetrics {
+    bool enabled=false,validation_passed=false,disabled=false;
+    uint64_t attempts=0,completed_blocks=0,ordinary_blocks=0,fallback_blocks=0;
+    uint64_t validation_calls=0,trace_count=0;
+    double validation_seconds=0;
+    std::string failure_reason;
+};
+struct QwenRuntimeConservativeCacheMetrics {
+    uint64_t skip_callbacks=0,discarded_futures=0,restaged_step_heads=0;
+    std::vector<int> skipped_steps;
+};
+struct QwenCorrectedQkvMetrics {
+    bool bank_reused=false,prefix_snapshot_enabled=false,prefix_snapshot_hit=false;
+    uint64_t bank_bytes=0,completed_decode_blocks=0,completed_sampler_steps=0,completed_prefill_steps=0,prefix_snapshot_bytes=0;
+    double pack_seconds=0;
+};
+struct QwenLoraSwigluMetrics {
+    uint64_t completed_decode_blocks=0,completed_sampler_steps=0,completed_prefill_steps=0;
+    bool prefix_snapshot_enabled=false,prefix_snapshot_hit=false;
+};
+struct QwenAsyncStepPairMetrics {
+    uint64_t submitted_steps=0,checked_steps=0,accepted_steps=0,completion_batches=0,evaluation_calls=0;
+    uint64_t peak_pending_steps=0,peak_logical_state_bytes=0,host_ahead_observations=0;
+    bool final_drain_complete=false,diagnostic_submit_observer=false;
 };
 struct BlockResidencyMetrics {
     bool enabled = false, fully_resident = false, quantized = false;
@@ -419,6 +480,16 @@ struct RunResult {
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
     std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
+    std::optional<QwenTokenizerReuseMetrics> qwen_tokenizer_reuse;
+    std::optional<QwenRuntimePrefixSnapshotMetrics> qwen_runtime_prefix_snapshot;
+    std::optional<QwenPrivateQkvMetrics> qwen_private_qkv;
+    std::optional<QwenPrivateQkvPrefetchMetrics> qwen_private_qkv_prefetch;
+    std::optional<QwenGpuDualSwigluMetrics> qwen_gpu_dual_swiglu;
+    std::optional<QwenCompiledComplementMetrics> qwen_compiled_complement;
+    std::optional<QwenRuntimeConservativeCacheMetrics> qwen_runtime_conservative_cache;
+    std::optional<QwenCorrectedQkvMetrics> qwen_corrected_qkv;
+    std::optional<QwenLoraSwigluMetrics> qwen_lora_swiglu;
+    std::optional<QwenAsyncStepPairMetrics> qwen_async_step_pair;
     std::optional<NativeEncoderExecutionMetrics> native_encoder;
     std::optional<NativePrefillExecutionMetrics> native_prefill;
     std::optional<BlockResidencyMetrics> block_residency;

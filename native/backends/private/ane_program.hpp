@@ -9,6 +9,7 @@
 #include <functional>
 #include "../ane_gpu.hpp"
 #include "native_handoff_types.hpp"
+#include "ane_procedure.hpp"
 #include <memory>
 #include <span>
 #include <string>
@@ -71,6 +72,9 @@ class PreparedRequest {
 
 class Program {
   public:
+    // Explicit capability/research constructor; legacy programs retain their
+    // single-procedure ABI and binding rules unchanged.
+    struct MultipleProcedures {};
     // A missing/failed completion disables private submissions process-wide;
     // do not accumulate an unbounded number of quarantined driver requests.
     static bool healthy();
@@ -78,11 +82,19 @@ class Program {
     // framed inputs. Cache source files are checked byte-for-byte, not by size.
     Program(Device &, std::string_view mil, std::span<const uint8_t> constants,
             const std::filesystem::path &cache);
+    Program(Device &, std::string_view mil, std::span<const uint8_t> constants,
+            const std::filesystem::path &cache,MultipleProcedures);
     const std::vector<std::string> &inputs() const;
     const std::vector<std::string> &outputs() const;
     const std::string &cache_key() const;
     uint64_t binding_generation() const;
     bool compiled_now() const;
+    const std::vector<Procedure> &procedures() const;
+    PreparedRequest prepare_function(std::string_view function,
+                            std::span<const std::pair<std::string, Surface>> inputs,
+                            std::span<const std::pair<std::string, Surface>> outputs,
+                            uint64_t wait_value, uint64_t signal_value,
+                            std::function<void()> failure = {});
     Ticket enqueue(std::span<const std::pair<std::string, Surface>> inputs,
                    std::span<const std::pair<std::string, Surface>> outputs,
                    uint64_t wait_value, uint64_t signal_value,
@@ -99,11 +111,12 @@ class Program {
                             std::span<const std::pair<std::string, Surface>> outputs,
                             AneEventBinding events, std::function<void()> failure = {});
   private:
+    Program(Device &, std::string_view, std::span<const uint8_t>,const std::filesystem::path &,bool multiple);
     PreparedRequest prepare_impl(std::span<const std::pair<std::string, Surface>> inputs,
                                  std::span<const std::pair<std::string, Surface>> outputs,
                                  uint64_t wait_value, uint64_t signal_value,
                                  std::optional<AneEventBinding> external_events,
-                                 std::function<void()> failure);
+                                 std::function<void()> failure,const Procedure *procedure = nullptr);
     struct Impl;
     std::shared_ptr<Impl> impl_;
     friend class PreparedRequest;

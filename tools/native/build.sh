@@ -165,6 +165,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/models/qwen21/transformer.cpp
+ native/models/qwen21/runtime_private_qkv.cpp
  native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
  native/models/qwen21/native_block.cpp
  native/models/qwen21/native_denoiser.cpp native/models/qwen21/native_denoiser_math.cpp

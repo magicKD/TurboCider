@@ -76,11 +76,13 @@ class VerifiedEncoderTokenizer final {
     std::shared_ptr<const streaming::SourceLease> lease_;
     std::unique_ptr<Tokenizer> tokenizer_;
   public:
-    VerifiedEncoderTokenizer(const std::filesystem::path &root, std::atomic<bool> &cancel) {
+    VerifiedEncoderTokenizer(const std::filesystem::path &root, std::atomic<bool> &cancel,
+                             uint64_t maximum_source_bytes = std::numeric_limits<uint64_t>::max()) {
         streaming::SourceFileIdentity source;
         source.logical_id = "processor";
         source.path = root / "tokenizer.json";
         lease_ = capture_model_source(source, cancel);
+        require_source_limit(maximum_source_bytes);
         auto fd = lease_->duplicate_fd("processor");
         tokenizer_ = std::make_unique<Tokenizer>(fd.get(), lease_->file("processor").bytes);
         lease_->revalidate_after_drain();
@@ -89,5 +91,10 @@ class VerifiedEncoderTokenizer final {
     const Tokenizer &tokenizer() const { return *tokenizer_; }
     std::string identity() const { return std::string(lease_->digest()); }
     std::string sha256() const { return lease_->file("processor").content_digest; }
+    uint64_t source_bytes() const { return lease_->file("processor").bytes; }
+    void require_source_limit(uint64_t maximum_source_bytes) const {
+        require(source_bytes() <= maximum_source_bytes,
+                "Qwen verified tokenizer exceeds the retained processor source-size limit");
+    }
 };
 }

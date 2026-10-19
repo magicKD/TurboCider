@@ -2,10 +2,13 @@
 #include "diagnostic_options.hpp"
 #include "metal/qk_norm_rope.hpp"
 #include "metal/qkv_projection.hpp"
+#include "metal/lora_qkv_prepare.hpp"
+#include "metal/lora_swiglu.hpp"
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <algorithm>
 
 namespace tc::qwen21 {
 namespace {
@@ -39,8 +42,33 @@ Tensor gelu(const Tensor &x) {
 }
 
 Transformer::Transformer(const Weights &weights, TransformerConfig config,
-                         const std::vector<Tensor> *fused_qkv)
-    : weights_(weights), config_(config), fused_qkv_(fused_qkv) {
+                         const std::vector<Tensor> *fused_qkv,const std::vector<Tensor> *corrected_qkv,bool corrected_qkv_direct,bool lora_swiglu)
+    : weights_(weights), config_(config), fused_qkv_(fused_qkv),corrected_qkv_(corrected_qkv),corrected_qkv_direct_(corrected_qkv_direct),lora_swiglu_enabled_(lora_swiglu) {
+    if(lora_swiglu_enabled_) {
+        require(!fused_qkv_&&!corrected_qkv_&&config.hidden()==4096&&config.head_dim==128&&config.epsilon==1e-6f&&
+            weights.runtime_lora_bf16_fp32_ranks()&&weights.runtime_lora_b_epilogue(),"typed LoRA SwiGLU requires original joint r128 GPU geometry without packed QKV");
+        const auto snapshot=weights.runtime_lora_snapshot();lora_swiglu_terms_.reserve(config.layers);
+        for(int layer=0;layer<config.layers;++layer){
+            const auto p="transformer_blocks."+std::to_string(layer)+".img_mlp.gate_up";
+            const auto found=std::find_if(snapshot.bindings.begin(),snapshot.bindings.end(),[&](const auto &b){return b.prefix==p;});
+            require(found!=snapshot.bindings.end()&&found->ordered_terms.size()==2&&weights.at(p+".weight").shape()==mx::Shape{24576,4096}&&
+                weights.at(p+".weight").dtype()==mx::bfloat16&&!weights.has(p+".bias")&&!weights.convrot(p)&&!weights.quantized(p)&&!weights.nvfp4(p),
+                "typed LoRA SwiGLU requires original dense BF16 gate/up and two complete correction terms");
+            SwigluTerms terms;std::array<bool,2> seen{};
+            for(size_t i=0;i<found->ordered_terms.size();++i){const auto &t=found->ordered_terms[i];
+                const int kind=t.output_start==0&&t.output_end==12288?0:t.output_start==12288&&t.output_end==24576?1:-1;
+                require(kind>=0&&!seen[kind]&&t.down.shape()==mx::Shape{128,4096}&&t.up.shape()==mx::Shape{12288,128}&&
+                    t.down.dtype()==mx::bfloat16&&t.up.dtype()==mx::bfloat16&&t.up.flags().row_contiguous&&
+                    t.source_adapter_ordinal==0&&std::isfinite(t.scale),"typed LoRA SwiGLU requires distinct original r128 gate/up factors and ranges");
+                seen[kind]=true;terms.up[kind]=t.up;terms.scale[kind]=t.scale;terms.index[kind]=i;
+            }
+            require(seen[0]&&seen[1],"typed LoRA SwiGLU correction coverage incomplete");lora_swiglu_terms_.push_back(std::move(terms));
+        }
+    }
+    require(!corrected_qkv_||!corrected_qkv_direct_,"corrected QKV storage routes are exclusive");
+    require(!corrected_qkv_enabled() || (!fused_qkv_ && (!corrected_qkv_||corrected_qkv_->size()==size_t(config.layers)) &&
+        config.head_dim==128 && config.epsilon==1e-6f && weights.runtime_lora_bf16_fp32_ranks() && weights.runtime_lora_b_epilogue()),
+        "corrected QKV needs a complete independent bank and original joint BF16 A/B recipe");
     require(!fused_qkv_ || fused_qkv_->size() == size_t(config_.layers),
             "Qwen21 fused QKV bank must cover every transformer layer");
     require(!fused_qkv_ || config_.epsilon == 1e-6f,
@@ -97,21 +125,39 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
     return true;
 }
 
-bool Transformer::plain_prefix_route() const {
-    return !diagnostic_block_observer_ && !fused_qkv_ && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
+bool Transformer::graph_geometry_matches(const Tensor &text, int height, int width,
+                                         const std::vector<ReferenceLatents> &references) const {
+    if (!cosine_ || text.ndim() != 3 || text_length_ != text.shape(1) || height_ != height ||
+        width_ != width || references.size() != reference_geometry_.size()) return false;
+    for (size_t i = 0; i < references.size(); ++i)
+        if (references[i].geometry != reference_geometry_[i]) return false;
+    return true;
+}
+
+bool Transformer::plain_prefix_route(bool allow_db_cache, bool allow_direct_qkv,bool allow_lora_swiglu) const {
+    // Only the explicit original-buffer path may share ordinary-prefill K/V.
+    // Keep packed storage, DB composition and every callback guard separate.
+    if (allow_direct_qkv && (!corrected_qkv_direct_ || corrected_qkv_ || allow_db_cache)) return false;
+    if (allow_lora_swiglu && (!lora_swiglu_enabled_ || allow_db_cache)) return false;
+    return !joint_runtime_qkv_mlp_ && !joint_runtime_conservative_cache_ && !runtime_cache_skip_ && !diagnostic_block_observer_ && !fused_qkv_ && !corrected_qkv_ &&
+        (!corrected_qkv_direct_ || allow_direct_qkv) && (!lora_swiglu_enabled_ || allow_lora_swiglu) && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
         !reference_local_attention_ && !prefill_last_target_only_ &&
         !profile_gpu_blocks_ && !profile_gpu_ops_ && !profile_prefill_segments_ &&
         !decode_mlp_ && !prefill_mlp_ && !project_qkv_ && !plan_mlp_ &&
         !plan_qkv_ && !stage_mlp_ && !stage_qkv_ && !observe_mlp_ && !observe_qkv_ &&
-        !capture_tile_tails_ && !db_cache_enabled_ && ffn_cache_mode_ == FFNCacheMode::Off;
+        !capture_tile_tails_ && (!db_cache_enabled_ || allow_db_cache) &&
+        ffn_cache_mode_ == FFNCacheMode::Off;
 }
 
 std::optional<Transformer::PrefixSnapshot>
-Transformer::export_prefix_snapshot(uint64_t max_bytes) const {
-    if (!plain_prefix_route() || !cached_text_ ||
+Transformer::export_prefix_snapshot(uint64_t max_bytes, bool allow_db_cache, bool allow_direct_qkv,bool allow_lora_swiglu,
+                                    const std::string &runtime_recipe) const {
+    if (!runtime_recipe.empty() && (allow_db_cache || allow_direct_qkv || allow_lora_swiglu)) return std::nullopt;
+    if (!plain_prefix_route(allow_db_cache, allow_direct_qkv,allow_lora_swiglu) || !cached_text_ ||
         prefix_.size() != size_t(config_.layers) || sequence_.prefix_length <= 0 ||
         cached_references_.size() != reference_geometry_.size()) return std::nullopt;
     PrefixSnapshot snapshot;
+    snapshot.runtime_recipe = runtime_recipe;
     snapshot.config = config_;
     snapshot.text = cached_text_;
     snapshot.text_length = text_length_;
@@ -164,8 +210,12 @@ Transformer::export_prefix_snapshot(uint64_t max_bytes) const {
 
 bool Transformer::import_prefix_snapshot(const PrefixSnapshot &snapshot, const Tensor &text,
                                         int height, int width,
-                                        const std::vector<ReferenceLatents> &references) {
-    if (!plain_prefix_route() || snapshot.config != config_ || !snapshot.text ||
+                                        const std::vector<ReferenceLatents> &references,
+                                        bool allow_direct_qkv,bool allow_lora_swiglu,
+                                        const std::string &runtime_recipe) {
+    if (snapshot.runtime_recipe != runtime_recipe ||
+        (!runtime_recipe.empty() && (allow_direct_qkv || allow_lora_swiglu)) ||
+        !plain_prefix_route(false, allow_direct_qkv,allow_lora_swiglu) || snapshot.config != config_ || !snapshot.text ||
         snapshot.keys.size() != size_t(config_.layers) ||
         snapshot.values.size() != snapshot.keys.size() ||
         text.ndim() != 3 || text.shape(0) != 1 || text.shape(1) <= 0 ||
@@ -301,8 +351,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
+    if(lora_swiglu_enabled_)require(!trace&&!split_mlp&&!project_qkv_&&!fused_qkv_&&!corrected_qkv_&&!metal_qk_rope_&&!metal_qk_norm_rope_&&
+        !reference_local_attention_&&!prefill_last_target_only_&&!db_cache_enabled_&&!diagnostic_block_observer_&&!profile_gpu_blocks_&&!profile_gpu_ops_&&!profile_prefill_segments_&&
+        ffn_cache_mode_==FFNCacheMode::Off&&!layer_weights_&&!release_layer_&&!plan_mlp_&&!stage_mlp_&&!observe_mlp_&&!plan_qkv_&&!stage_qkv_&&!observe_qkv_&&
+        !decode_mlp_&&!prefill_mlp_,"typed LoRA SwiGLU requires complete ordinary GPU blocks without profiling, callbacks or temporal reuse");
+    if(corrected_qkv_enabled())require(!trace&&!split_mlp&&!project_qkv_&&!fused_qkv_&&!metal_qk_rope_&&!metal_qk_norm_rope_ &&
+        !reference_local_attention_&&!prefill_last_target_only_&&!db_cache_enabled_&&ffn_cache_mode_==FFNCacheMode::Off,
+        "corrected QKV requires ordinary full blocks and unchanged prefill");
     if (diagnostic_block_observer_)
-        require(!trace && !split_mlp && !fused_qkv_ && !project_qkv_ &&
+        require(!trace && !split_mlp && !fused_qkv_ && !corrected_qkv_enabled() && !project_qkv_ &&
                     !metal_qk_rope_ && !metal_qk_norm_rope_ && !reference_local_attention_ &&
                     !prefill_last_target_only_ && !profile_gpu_blocks_ && !profile_gpu_ops_ &&
                     !profile_prefill_segments_ && !db_cache_enabled_ &&
@@ -312,7 +369,16 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             "Qwen21 QKV stage and projection callbacks must be paired");
     require(!plan_qkv_ || (project_qkv_ && observe_qkv_),
             "Qwen21 planned QKV needs paired projection and completed-block observer");
-    require(!project_qkv_ || (!split_mlp && !fused_qkv_),
+    if(joint_runtime_qkv_mlp_)require(!trace&&!weights_.has_runtime_loras()&&!fused_qkv_&&!corrected_qkv_enabled()&&
+        !lora_swiglu_enabled_&&!metal_qk_rope_&&!metal_qk_norm_rope_&&!reference_local_attention_&&
+        !prefill_last_target_only_&&(!db_cache_enabled_||joint_runtime_conservative_cache_)&&ffn_cache_mode_==FFNCacheMode::Off&&!layer_weights_&&!release_layer_,
+        "explicit joint runtime QKV/MLP requires ordinary base arithmetic without other graph/cache routes");
+    require(bool(runtime_cache_skip_)==joint_runtime_conservative_cache_,"runtime cache skip callback requires paired explicit joint consent");
+    if(joint_runtime_conservative_cache_)require(joint_runtime_qkv_mlp_ && runtime_cache_skip_ && db_cache_enabled_ &&
+        config_.layers==32 && config_.hidden()==4096 && height==32 && width==32 && db_total_steps_==40 &&
+        db_front_blocks_==8 && db_warmup_steps_==8 && db_max_consecutive_==1 && db_threshold_==0.15f,
+        "joint runtime cache requires explicit base512 conservative40/F8W8 and a paired skip callback");
+    require(!project_qkv_ || ((!split_mlp || joint_runtime_qkv_mlp_) && !fused_qkv_),
             "Qwen21 QKV tier needs its own GPU FFN and cannot combine with another QKV tier");
     require(!plan_mlp_ || bool(observe_mlp_), "Qwen21 planned MLP requires a completed-block observer");
     const bool half_reuse_ffn = reuse && ffn_cache_mode_ == FFNCacheMode::ReuseEvenAndCapture;
@@ -421,6 +487,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 mx::eval(hidden);
                 ++db_cached_steps_;
                 ++db_consecutive_steps_;
+                if(runtime_cache_skip_)runtime_cache_skip_();
                 i = config_.layers - db_back_blocks - 1;
                 continue;
             }
@@ -465,6 +532,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         if (functions.size() <= size_t(i)) functions.resize(size_t(i) + 1);
         auto &function = functions[i][(split_this ? 1 : 0) + (external_qkv ? 2 : 0)];
         if (!function) {
+            if (graph_counters_enabled_) block_graph_builds_.fetch_add(1, std::memory_order_relaxed);
             const bool profile_ops = profile_gpu_ops_ && !split_this && i == 0;
             const bool profile_segments = profile_prefill_segments_ && !reuse && !split_this && i == 0;
             auto block = [this, i, reuse, prefix_length, split_this, external_qkv, capture_ffn,
@@ -475,6 +543,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                           local_references = reference_local_attention_,
                           dynamic_keys,
                           tracing = trace != nullptr](const std::vector<Tensor> &args) {
+                if (graph_counters_enabled_) block_graph_traces_.fetch_add(1, std::memory_order_relaxed);
                 Weights dynamic;
                 if(!dynamic_keys.empty())dynamic.bind_arrays(dynamic_keys,args,args.size()-dynamic_keys.size());
                 const Weights &weights=dynamic_keys.empty() ? weights_ : dynamic;
@@ -516,6 +585,25 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         weights.at(p + ".attn.norm_k.weight"),
                         cosine, sine, 32);
                     q = all[0]; k = all[1]; v = all[2];
+                } else if(reuse && corrected_qkv_enabled()) {
+                    std::array<Tensor,3> low{Tensor(0.f),Tensor(0.f),Tensor(0.f)},up{Tensor(0.f),Tensor(0.f),Tensor(0.f)};
+                    std::array<Tensor,3> bases{Tensor(0.f),Tensor(0.f),Tensor(0.f)};
+                    std::array<float,3> scales{1.f,1.f,1.f};const auto snapshot=weights.runtime_lora_snapshot();
+                    for(int projection=0;projection<3;++projection){
+                        const std::string name=p+".attn.to_"+std::string(projection==0?"q":projection==1?"k":"v");
+                        const auto b=std::find_if(snapshot.bindings.begin(),snapshot.bindings.end(),[&](const auto &x){return x.prefix==name;});
+                        require(b!=snapshot.bindings.end()&&b->ordered_terms.size()==1,"complete single QKV adapter term required");
+                        const auto &t=b->ordered_terms[0];require(t.output_start==0&&t.output_end==config_.hidden()&&t.down.shape(0)==128,
+                            "corrected QKV requires the complete original r128 projection");
+                        auto rank=weights.lora_input_ranks(input,name,0,config_.hidden());require(rank.size()==1,"one online A rank required");
+                        low[projection]=rank[0];up[projection]=t.up;scales[projection]=t.scale;
+                        if(corrected_qkv_direct_)bases[projection]=weights.at(name+".weight");
+                    }
+                    auto all=corrected_qkv_direct_?metal::prepare_corrected_qkv_direct(input,bases,low,up,scales,
+                        weights.at(p+".attn.norm_q.weight"),weights.at(p+".attn.norm_k.weight"),cosine,sine,32):
+                        metal::prepare_corrected_qkv(input,corrected_qkv_->at(i),low,up,scales,
+                        weights.at(p+".attn.norm_q.weight"),weights.at(p+".attn.norm_k.weight"),cosine,sine,32);
+                    q=all[0];k=all[1];v=all[2];
                 } else {
                     q = linear(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
                                weights, p + ".attn.to_q");
@@ -523,7 +611,7 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     v = heads(linear(input, weights, p + ".attn.to_v"), config_.heads, config_.head_dim);
                 }
                 mark("qkv_projection", {q, k, v});
-                if (fused_qkv_) {
+                if (fused_qkv_ || (reuse && corrected_qkv_enabled())) {
                     // Q/K normalization and RoPE are part of the projection.
                 } else if (fused_norm_rope) {
                     auto pair = metal::prepare_qk(q, k,
@@ -536,10 +624,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     k = mx::fast::rms_norm(heads(k, config_.heads, config_.head_dim),
                                            weights.at(p + ".attn.norm_k.weight"), config_.epsilon);
                 }
-                if (!fused_qkv_ && !fused_norm_rope && metal_rope) {
+                if (!fused_qkv_ && !(reuse && corrected_qkv_enabled()) && !fused_norm_rope && metal_rope) {
                     auto pair = rope_pairs_pair(q, k, cosine, sine);
                     q = pair[0]; k = pair[1];
-                } else if (!fused_qkv_ && !fused_norm_rope) {
+                } else if (!fused_qkv_ && !(reuse && corrected_qkv_enabled()) && !fused_norm_rope) {
                     q = rotate(q,
                         short_q ? slice_axis(cosine, 0, prefix_length, cosine.shape(0)) : cosine,
                         short_q ? slice_axis(sine, 0, prefix_length, sine.shape(0)) : sine);
@@ -624,7 +712,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 if (reuse_ffn_block) {
                     feed = args[9];
                 } else {
-                    if (weights.has(p + ".img_mlp.gate_up.weight")) {
+                    if (reuse && lora_swiglu_enabled_) {
+                        const auto name=p+".img_mlp.gate_up";const auto &terms=lora_swiglu_terms_.at(i);
+                        auto base=mx::matmul(input,mx::transpose(weights.at(name+".weight")));
+                        auto ranks=weights.lora_input_ranks(input,name,0,config_.hidden());require(ranks.size()==2,"two online F32 gate/up ranks required");
+                        ff=metal::prepare_lora_swiglu(base,ranks[terms.index[0]],terms.up[0],ranks[terms.index[1]],terms.up[1],terms.scale[0],terms.scale[1],16,128);
+                    } else if (weights.has(p + ".img_mlp.gate_up.weight")) {
                         auto gate_up = linear(input, weights, p + ".img_mlp.gate_up");
                         const int half = gate_up.shape(-1) / 2;
                         ff = silu(slice_axis(gate_up, -1, 0, half)) *
@@ -698,6 +791,8 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             }
         }
         auto outputs = function(args);
+        if(reuse && corrected_qkv_enabled())++corrected_qkv_decode_blocks_;
+        if(reuse && lora_swiglu_enabled_)++lora_swiglu_decode_blocks_;
         if (observe_block) {
             mx::eval(outputs);
             diagnostic_block_observer_({i, reuse, prefix_length, weights_, sequence_.segments,

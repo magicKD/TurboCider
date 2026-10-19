@@ -36,11 +36,34 @@ Y = P_gpu + P_ane + complete_down_LoRA + bias + residual
 
 这是实数代数等价；不同 reduction/FP16/W8A8 会近似，不保证 bitwise。
 
+图内K归约分片与host的row chunk不是同一个优化轴。减少gate/up/down的MatMul
+节点可能改变dequantize融合、activation压力和内部lowering，并不保证减少完整
+FFN时间；QKV单节点获益也不能外推到含非线性、旋转/再量化和down的FFN。
+先保持默认发射字节与ABI可复核，再用每次实际重备W的完整block、联合整请求、
+同配方反向恢复和独立selector观测裁决。若要继续定位，分别改变gate/up与down
+的K策略，而不是把两处同时改变后的退化归给某个硬件kernel。实现案例见
+[固定FFN投影筛选](../../docs/status/qwen-base512-ffn-projection-2026-10-18.md)。
+做完整2×2隔离时，先核对各窗口的真实输入和普通GPU controls一致，再计算
+主效应/交互项；额外反向/诊断重放应恢复同配方完整数组。跨窗口block差不是
+硬件operator成本，未执行的兼容/adapter guard也不能被归入当前瓶颈。见
+[投影独立消融](../../docs/status/qwen-base512-ffn-mixed-projection-2026-10-18.md)。
+
 ## 2. Token-row split
 
 对独立逐 row FFN，把 `X` 的行分 GPU/ANE，每支返回自己行的完整结果，按原行位置写回，无 channel partial sum。runtime-weight 模板可沿固定 chunk 重复使用；须计入逐层 W stage、每 chunk 调用和 padding。
 
 row split 的优点不会自动延伸到 attention：后者跨 row 依赖 K/V 与全局 softmax。不能把整个 Transformer row 切开而省略 redistribution。
+
+QKV线性投影同样可按token row分；每个row的head norm/RoPE仍可局部做，但完整
+attention的消费者边界必须等全部Q/K/V可用。权重可分段stage进同一runtime输入
+slot，避免为了Q/K/V共用MatMul而常驻全层packed副本。先区分已备权重的上界和
+每次重备权重的真实边界，再比较完整compiled GPU block，不能把拆分GPU控制
+的额外同步当作候选收益。手工K/N tiling还可能改变dequantize/lowering/concat
+成本，必须与单节点控制实测；源码经验的on-chip阈值不是普遍最优参数。
+
+一个QKV组件在FFN仍为GPU时获益，不证明它能叠加既有FFN-ANE收益。增加第二
+program会改变weight-stage窗口、同一ANE的串行竞争、预算与完成所有权；需要
+显式组合合同和当前最强整请求对照。示例见[base QKV组件筛选](../../docs/status/qwen-base512-private-qkv-component-2026-10-18.md)。
 
 ## 3. 拓扑决定能否与 attention 重叠
 

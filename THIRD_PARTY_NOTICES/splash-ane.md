@@ -17,6 +17,15 @@ resource ownership and bounded timeout quarantine; distribution build gate.
 The native FP16 micrograph emitter and Executor adapter are TurboCider code.
 No Splash model loader, inference engine or binaries are linked.
 
+TurboCider additions (2026-10-19): explicit multi-function procedure metadata
+normalization and request selection are informed by
+`runtime/ane/Program.mm` at upstream commit
+`be3b083c5f413673d44e44881042e875e674e333`. Driver function IDs and global
+input/output symbol indices are read and checked rather than assumed to be
+zero/local ordinals. The CPU metadata contract and capability MIL emitter are
+independent TurboCider code. The legacy constructor and generation defaults
+remain single-procedure; this capability alone is not image-speed evidence.
+
 TurboCider modifications (2026-10-05): move-only prepared request bindings,
 separate driver submission, CPU-pre-met calibration dependencies and one-shot
 calibration batch cleanup. Normal inference keeps its GPU-produced dependency

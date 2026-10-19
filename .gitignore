@@ -92,10 +92,12 @@ compile_commands.json
 
 # TurboCider generated artifacts and runtime state
 /outputs/
-/results/qwen21/
-# Local Z-Image benchmark requests, images, exports and compile identities.
-# Portable requests belong in examples/requests; conclusions belong in docs/.
-/results/z-image-*
+# Legacy output spellings and all new raw benchmark runs stay local too.
+# Existing committed results remain tracked; new portable fixtures belong in
+# tests/fixtures, requests in examples/requests, and conclusions in docs/.
+/output/
+/Output/
+/results/
 /artifacts/
 /state/
 /runtime.json

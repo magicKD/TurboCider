@@ -26,6 +26,13 @@ api: public, private, reference-only
 
 适用于低精度算术诊断；数学上等价的重排仍须重新验证，不能直接作为优化默认值。
 
+分母有严格floor时可以缩小倒数范围，但仍需原消费者验证。例：Qwen hidden
+量化的floor≥2^-12，使1/floor≤4096，却没有保证显式倒数复用在包含旋转的
+完整算子链中稳定更快。packed codes/scale还显示，tiny输入旋转后的数学量化
+目标未必全零；原/新实现相同不能替代独立oracle，也不能按输入幅值标签过滤
+这一差异。详见[有界倒数与真实FFN分工案例](../../docs/status/qwen-base512-hidden-quant-neighbor-share-2026-10-19.md)，
+它没有改变主runtime或授予整图/物理指令资格。
+
 ## 1. 同一输入合同，不假装三个入口是同一物理设备
 
 | 入口 | 实际软件协议 | 此批能确认 / 不能确认 |

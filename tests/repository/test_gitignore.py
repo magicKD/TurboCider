@@ -46,6 +46,31 @@ class GitignoreTests(unittest.TestCase):
                  "techniques/labs/metal/capture.trace.zip"]
         self.assertEqual(self.ignored(paths), set(paths))
 
+    def test_runtime_ane_runs_and_legacy_output_directories_stay_local(self):
+        paths = ["output/run/request.json", "Output/run/image.png",
+                 "outputs/qwen-runtime/trial/report.json",
+                 "outputs/qwen-runtime/native-source.tar.gz",
+                 "results/qwen21/image.png", "results/z-image-runtime/spec.json",
+                 "results/new-model/trial-memory.jsonl",
+                 "build/runtime-ane/libturbocider.dylib",
+                 "models/coreml/program.mlmodelc/metadata.json",
+                 "tools/profiling/__pycache__/runtime_image_collect.cpython-311.pyc"]
+        self.assertEqual(self.ignored(paths), set(paths))
+
+    def test_runtime_ane_source_and_portable_configuration_remain_trackable(self):
+        paths = ["native/models/qwen21/runtime_private_qkv.cpp",
+                 "native/backends/ane_fixed_program.hpp",
+                 "tools/profiling/README.md", "tools/profiling/qwen_base/collect.py",
+                 "tools/profiling/qwen_base/observer.mm",
+                 "tools/profiling/qwen_base/CMakeLists.txt",
+                 "tools/native/build_ane_w8_functions_probe.sh",
+                 "tests/native/test_qwen_runtime_cache_audit.py",
+                 "tests/fixtures/ane/descriptor.json", "tests/fixtures/ane/weights.bin",
+                 "examples/requests/qwen-runtime.json",
+                 "docs/benchmark/CURRENT_FASTEST_CONFIGS.md",
+                 "docs/design/validation/portable-summary.json"]
+        self.assertEqual(self.ignored(paths), set())
+
     def test_raw_bf16_archives_stay_local_at_any_depth(self):
         paths = ["ffn-bf16.tcbf16z", "techniques/integrations/ffn-bf16.tcbf16z",
                  "techniques/review/raw-pair.tcbf16z", "ffn-input.safetensors",

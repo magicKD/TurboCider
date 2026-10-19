@@ -1,6 +1,7 @@
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import statistics
@@ -494,8 +495,16 @@ class BaseBenchmarkReportTests(unittest.TestCase):
         self.assertFalse(candidate["request"]["compile_gpu"])
         self.assertTrue(candidate["request"]["allow_approximation"])
         self.assertIn("not fastest/default",candidate["selection_note"])
-        if (ROOT / "models/FLUX.2-klein-9B").exists():
-            self.assertTrue((ROOT / candidate["model_root"] / "transformer/0.safetensors").is_file())
+
+    @unittest.skipUnless(os.environ.get("TURBOCIDER_TEST_FLUX9_DERIVED_ASSET") == "1",
+                         "requires explicitly prepared local FLUX9 derived Q4 assets")
+    def test_flux9_local_memory_candidate_assets_exist_when_explicitly_requested(self):
+        # The original BF16 checkpoint can outlive disposable derived packs.
+        # Historical report validation must not depend on ignored local runs;
+        # an explicit asset check still fails if the requested pack is absent.
+        configs = json.loads((ROOT / "docs/benchmark/best-local-configs-20261011.json").read_text())
+        candidate = configs["memory_configurations"][0]
+        self.assertTrue((ROOT / candidate["model_root"] / "transformer/0.safetensors").is_file())
 
     def test_full_encoder_dit_recipe_has_all36_layers_and_does_not_claim_latency_win(self):
         campaign = next(row for row in self.report["campaigns"] if row["model"] == "flux2-klein-9b-matched-encoder-dit-q4-g32-cohort")

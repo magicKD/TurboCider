@@ -1,5 +1,8 @@
 # 生成模型与SeedVR2超分 benchmark 摘要
 
+新配置索引：[2026-10-19当前最快已测配置](CURRENT_FASTEST_CONFIGS.md)。本页下方
+保留原10月13–15日框架对照；不要把后续Private runtime热请求与旧fresh分母混算。
+
 2026-10-15补[SeedVR2 vs ComfyUI](SEEDVR2_COMFYUI.md)：图像256→512／
 512→1024完整请求约**4.81×／4.43×**，完整25帧/24FPS视频约**3.46×／3.48×**。
 每路6个fresh warm，分母选更快Comfy预设，TC也取同组配对中位数；

@@ -28,6 +28,13 @@ api: reference-only
 
 异步spans可能重叠/嵌套，不能相加成请求。`pre_ffn`可能包含上游lazy工作；deferred join把GPU消费留到后面，不是工作消失。profiling强同步会改变生产图，因此“定位模式”与“正式性能模式”分开。
 
+当worker的prediction等待减少而output完成等待增加时，先区分event、CB和
+encoder边界，不把等待换位置解释成设备计算提速。GPU encoder counter可补充
+证据，但应以实际shared-event延迟放行负控，确认采样是否包含此前等待，并
+校验counter时钟、数据、scope与完整consumer数量。encoder elapsed仍可含竞争/
+抢占/内部停顿，不是独占shader busy time；改变encoder创建方式的诊断也必须
+与无observer强基线分开。案例见[Qwen交接消融](../../docs/status/qwen-base512-ffn-handoff-encoder-2026-10-18.md)。
+
 ## Cold / warm / cache 状态
 
 至少标出 process-cold、compiled artifact hit/miss、OS file cache未清、model/session状态、conditioning/prefix hit、GPU compile、首prediction和warmup次数。独立进程共享driver/文件cache，不称严格系统冷启动。
@@ -41,6 +48,12 @@ Warmup要完整且不混入样本，shape/share切换后的首次编译也要按
 速度比为 `baseline/candidate`，耗时下降为 `1-candidate/baseline`；例如1.25×是耗时少20%，不是少25%。报告中位数、样本数、p90/最差值与顺序；小样本p90只是描述性顺序统计，不是置信区间。
 
 同一campaign的pool中位比与matched-pair比中位数是两种统计，不混用；phase的分支中位数也不能拼成不存在的最快请求。跨窗口数字可以作历史参照，不宣称严格因果。
+
+计时区间外也不一定没有观察者效应：在每对短sample之间CPU扫描大输出做checksum，
+会改变下一sample的cache、内存与调度状态。先在preflight做完整输入/权重变化
+检查，计时循环内保留真实设备完成与成功计数，再在循环后核对各arm独立owned
+末输出；若只能逐sample检查，应单列为诊断模式，并另跑无扫描的性能对照。
+不要靠移走完成等待或丢弃输出所有权来消除这项干扰。
 
 ## 实际执行证据
 

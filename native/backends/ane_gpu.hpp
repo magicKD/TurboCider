@@ -68,12 +68,16 @@ class Surface {
     void *data() const; // caller must not access while the ticket is live
     void *native_iosurface() const; // borrowed; retain this Surface through Core ML/GPU completion
     SurfaceBufferLease metal_buffer_lease() const;
-    bool is_view() const { return row_begin_ || row_count_; }
+    bool is_view() const { return row_begin_ || row_count_ || column_count_; }
     Surface slice_rows(uint32_t begin, uint32_t count) const; // consumer view only, not an ANE binding
+    // Metal staging/restore view over the same physical pitch/allocation.
+    // Never a driver binding: ANE keeps the original maximum-sized Surface.
+    Surface leading_columns(uint32_t count) const;
   private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
     uint32_t row_begin_ = 0, row_count_ = 0;
+    uint32_t column_count_ = 0;
     void retain_cache_claim(std::shared_ptr<WeightCodeCacheClaim>);
     size_t cache_capacity_bytes() const;
     friend class Transfer;

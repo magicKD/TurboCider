@@ -4,6 +4,12 @@ TurboCider runs Comfy-Org/Qwen-Image-2.1 natively through C++/MLX/Metal. Python
 is used only for offline validators and development diagnostics; inference is
 performed by the native runtime.
 
+Current research recipes are indexed in [fastest measured configurations](../benchmark/CURRENT_FASTEST_CONFIGS.md),
+with [integration and regression results](../status/runtime-ane-integration-2026-10-19.md).
+The October 19 runtime comparisons below are limited local observations: external
+inference CPU load failed the clean-performance gate. Their raw timing ratios
+are not certified speedups or a reason to change the GPU default.
+
 ## Supported App/CLI paths
 
 - Text-to-image and image editing with the BF16 Comfy checkpoint.
@@ -20,6 +26,105 @@ handling, mask/annotation authoring, and the PE-I2I warning. Use the GPU route
 for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
+
+## Turbo checkpoint (native research support)
+
+The original `qwen_image_2.1_turbo_bf16.safetensors` can now be installed in a
+separate model root, retaining its original filename and sharing the existing
+encoder/VAE/processor read-only. Use model `qwen-image-2.1`, variant
+`qwen-image-2.1-turbo`, and exactly **8 steps**. The runtime uses the checkpoint
+author's fixed CFG1 sigma schedule, not a shortened base or Viggle schedule.
+An explicit variant/source mismatch is rejected. Ordinary base selection and
+App defaults are unchanged; no Turbo LoRA/temporal-cache qualification follows.
+
+`tools/models/download_qwen21_modelscope.py` downloads the pinned ModelScope
+asset directly, verifies its complete SHA-256, and can create a fresh variant
+root with `--variant-root`. The complete-request profiler is
+`tools/profiling/qwen_base/expanded_collect.py`. Preliminary matched Turbo512
+generation/editing and fixed-model variable-size experiments are recorded in
+the [ongoing runtime study](../status/qwen-turbo-runtime-ane-2026-10-19.md).
+W8 ANE is approximate; supported execution does not mean broad image quality
+or stable performance qualification. Explicit runtime-prefix reuse is needed
+for the measured repeated-edit candidate; normal GPU defaults remain intact.
+Size-specific fixed-program Turbo measurements now include 768×512 (about
+1.24–1.25×) and 1024×1024 (about 1.10×), with independent hot compile/load
+checks. Selection is currently before owner initialization, not an implemented
+multi-procedure or prewarmed size pool. These are approximate, limited samples.
+
+Real r128 LoRA hybrid tests did not establish a robust gain over the strong
+GPU path; repeated editing was slower. Keep GPU as the normal LoRA route.
+The default-off `TURBOCIDER_QWEN21_RUNTIME_BASE_LORA=1` research domain preserves
+the ordinary base20–40 Euler schedule under narrowly admitted resident512
+BF16 runtime requests. Its synthetic rank2 smoke is not trained-adapter quality
+or speed qualification. See the [LoRA and model-expansion analysis](../status/runtime-ane-lora-and-model-expansion-2026-10-19.md).
+
+The original base INT8 ConvRot checkpoint also has a separately tested Private
+runtime path: Comfy H256 rotation precedes A8 quantization, and the checkpoint's
+already-rotated W8 codes are used directly. One fixed program serves all blocks;
+the matched base40/512² study measured about 1.36×, with zero observed hot
+compile/load calls. This is approximate (including visible local shape changes),
+not a lossless path or a default change. See the ongoing study for source pins,
+full-request controls, quality evidence and the bounded metadata-staging fix.
+
+## Fixed runtime ANE base-40 research path
+
+The base-only profiler now has an explicitly opt-in Private QKV+FFN route for
+resident 512×512, original BF16 checkpoints and forty actual steps. One fixed
+runtime-weight FFN graph and one fixed 512-row QKV graph serve all 32 layers;
+long reference prefill uses the same FFN chunks and ordinary GPU QKV. This is
+not a per-layer compiled checkpoint bank. Measured hot Private compile/load
+counts were zero, including generation→one/two-reference→generation transitions.
+
+Use `tools/profiling/qwen_base/collect.py --route runtime --channels 6144
+--private-qkv`; editing may also use `--runtime-prefix-snapshot`. The default-off
+native switch is `TURBOCIDER_QWEN21_PRIVATE_QKV=1`. It requires explicit
+approximation and the narrowly admitted healthy runtime recipe. The initial
+joint study did not combine LoRA, students, prefetch or temporal cache. W8/A8 representation is
+not physical INT8-placement proof or lossless image parity. The App and normal
+GPU defaults are unchanged. See the [measured joint experiment](../status/qwen-base512-joint-qkv-ffn-2026-10-18.md)
+and [profiling project](../../tools/profiling/qwen_base/README.md) for complete
+commands, independent controls, traces and quality limits.
+
+The newer `qwen-base-fixed-program-v1` research build also supports
+`collect.py --fixed-program` / `TURBOCIDER_PRIVATE_ANE_FIXED_PROGRAM=1`.
+It forbids FFN Program replacement on numerical overflow, computes the complete
+FFN on GPU and retains the failed state across same-configuration requests.
+QKV is stopped with a failed FFN, and failed arithmetic cannot publish a new
+runtime prefix bank. This optional policy does not change normal output math;
+it is not an opaque-driver or physical INT8 guarantee. See the
+[fixed-program failure and full-request study](../status/qwen-base512-fixed-program-2026-10-18.md).
+
+The earlier projection research source was built as `qwen-base-ffn-projection-v1` (658
+inputs), preserving the default emitter fingerprints. The opt-in profiler can
+also select `--ffn-projection k4096|single` with fixed-program enabled. These
+larger FFN reductions have not improved the measured complete-block or full
+generation/editing requests and are not enabled by default. See the
+[FFN projection study](../status/qwen-base512-ffn-projection-2026-10-18.md).
+
+The later mixed-projection source matched `qwen-base-ffn-mixed-projection-v2`: the same input
+count with a different bound runtime identity. It additionally separates
+`up-single` and `down-single`. Both were slower in matched complete-block
+screens; no new complete-image speed claim or default change is made. See the
+[isolated gate/up and down study](../status/qwen-base512-ffn-mixed-projection-2026-10-18.md).
+
+The activation research source matched `qwen-base-ffn-activation-v3` (659 inputs).
+With fixed-program enabled, the opt-in profiler can select
+`--ffn-activation sigmoid-complement`. The rewrite preserves the fixed runtime
+weight/IO shapes while avoiding a numerically rejected direct SiLU expression.
+Matched full requests showed a further small speed gain, but output geometry
+can change; default Exp, App behavior and approximation requirements remain
+unchanged. See the [activation study](../status/qwen-base512-ffn-activation-2026-10-18.md)
+for current timings, real overflow/fallback checks, variable references and
+quality limits. This is not physical INT8 or lossless-image proof.
+
+The current base-only research source matches `qwen-base-gpu-dual-v1` (661
+inputs). Its default-off `--gpu-dual-swiglu` experiments with the GPU FFN
+complement while retaining the two fixed, cross-layer ANE programs and the
+single-bank QKV lookahead baseline. Full forty-step generation/editing,
+changed prompts and one/two-reference transitions were audited, with zero
+observed hot Private compile/load calls. Incremental full RGBA matched the
+controls, but measured gains were too small to qualify a stable speedup or
+default adoption. See the [full-request study](../status/qwen-base512-gpu-dual-runtime-2026-10-19.md).
 
 ## Base-schedule LoRA and optional DiT cache
 
@@ -42,18 +147,94 @@ texture, color and local details. Results report the actual cached-step and
 saved-block counts in `qwen21_dbcache`; selecting a mode alone does not prove
 that it saved work.
 
+An additional CLI/C-API-only composition candidate accepts `conservative`
+together with explicit `execution: "gpu_ane"`, `qwen21_w8a8: true`, and an
+existing source-verified 6144-channel frozen manifest. It is restricted to
+resident 512×512, **40-step base requests**, original BF16 components, no LoRA,
+no encoder ANE, and standard 1024px reference processing. Full-reference edits
+still require `TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC=1`; this does not
+remove that independent experimental gate. `balanced`/`fast` and the App's
+DiT-cache control remain GPU-only. Default cache stays Off. This combines two
+approximations: review against full GPU, not only against an already-quantized
+ANE output. See the [composition experiment](../status/qwen512-cache-hybrid-2026-10-17.md).
+
 Compatible ordinary transformer LoRAs use the **base schedule**, with 20–40
 steps on the qualified 512×512 GPU route. They remain separate runtime low-rank
 matrices, with adjustable strength, and may opt into DiT cache. A known Viggle
-v0.2.1 filename still requires its pinned contents and six-step settings; it
+v0.2.1 filename still requires its pinned contents and normally six-step settings; it
 cannot silently become an ordinary adapter. Unknown adapter quality and training
 settings cannot be established from tensor compatibility alone.
+
+A separate, default-off research sampler uses the author's optional five nodes
+with the same pinned r128 adapter. Set `TURBOCIDER_QWEN21_STUDENT_FIVE_STEP=1`
+and `steps: 5` only for explicit approximate, resident512 ordinary GPU/MLX
+generation or 1–3 ref512 edits, strength1/inference-time. This is fewer model
+evaluations and a different quality tier, not equivalent six-step acceleration.
+It excludes r256, ANE/native/staged routes, DiT/temporal FFN cache and other
+approximation pilots; existing six-step guards remain unchanged. Explicit prefix
+snapshots may be used, but a sampler change invalidates the single retained bank.
+Plans/results label the actual five-step recipe. Local hot requests were about
+15–16% shorter in a small competing-load window, with visible image/layout
+differences; App/defaults are unchanged. See the
+[five-step experiment](../status/qwen512-five-step-2026-10-18.md).
+
+`TURBOCIDER_QWEN21_TOKENIZER_REUSE=1` is a separate, default-off CPU-only
+processor cache for original-BF16 resident512 ordinary GPU generation and
+1–3 ref512/ref1024 edits. It does not enable encoder fusion, retain model
+weights, or change tokenization/model arithmetic. It saves reconstruction
+on fresh prompts within the same Session; a full conditioning hit already
+skips that work. Processor content/generation validation remains active,
+with one owner and a 16MiB source-size limit (not a host RAM cap). The local
+six-step study observed roughly 0.10–0.16s less encoder-stage time and exact
+matched RGBA, but competing load prevented formal performance qualification.
+See the [CPU cache study](../status/qwen512-tokenizer-reuse-2026-10-18.md).
 
 DiT cache is separate from cross-request editing prefix reuse. The latter retains
 a bounded completed K/V bank for identical instructions and ordered reference
 contents, including new seeds, on qualified GPU edits. It is memory-only and
-cleared by unload. In this release DiT cache bypasses that prefix snapshot, so
-benchmark gains must not be multiplied together. See the
+cleared by unload. By default DiT cache bypasses that prefix snapshot.
+An experimental composition can be explicitly enabled with
+`TURBOCIDER_QWEN21_PREFIX_SNAPSHOT=1` for **base GPU, resident, conservative
+cache, 512×512, 20–40-step edits with 1–3 standard1024 references**, without
+LoRA, prompt enhancement, encoder ANE, streaming or a memory-budget override.
+The same explicit snapshot can compose with the source-verified frozen
+6144-channel W8A8 conservative route at exactly **40 steps**. Full-reference
+ANE edits still require the independent
+`TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC=1` opt-in; runtime-weight and
+LoRA hybrid routes remain excluded. Step zero stays full GPU even on a
+snapshot hit, and only subsequent FFNs use the frozen partition.
+It retains only immutable conditioning K/V; temporal residuals start fresh
+for every request, including new seeds. No default or App control is changed.
+The current one-reference/40-step experiment observed identical RGBA with
+about 12% less repeated-edit time; first-time instructions still pay full
+prefill and competing load prevented formal performance qualification.
+See the [composition record](../status/qwen512-prefix-cache-2026-10-17.md).
+The [frozen-composition follow-up](../status/qwen512-frozen-prefix-cache-2026-10-17.md)
+keeps the whole-GPU quality comparison separate from incremental snapshot parity.
+For pinned Viggle v0.2.1 six-step GPU edits, the explicit snapshot also supports
+resident 512×512 requests with standard1024 or diagnostic512 references and the
+existing joint BF16 A/B/F32-rank recipe. Use strength 1 and explicit
+`lora_strategy: "inference_time"`; the native loader still checks the released
+adapter SHA. Temporal FFN reuse, DiT cache, ANE, arbitrary adapters and manual
+arithmetic combinations remain excluded. Ref512/r256 still needs its independent
+`TURBOCIDER_QWEN21_LORA_REF512_DIAGNOSTIC=1` opt-in. This is not a new default
+or a teacher40-equivalent model. See the
+[six-step student study](../status/qwen512-student-prefix-2026-10-17.md).
+The published v0.2.1 r128 file has also been locally hash-verified and measured
+with the same six-step GPU/joint recipe. Its observed rank-selection gain was
+only about 3–4%, and its output is not identical to r256; the smaller file is
+not a guarantee of a better model or a twofold runtime gain. See the
+[bracketed r128/r256 study](../status/qwen512-r128-student-2026-10-17.md).
+Cross-request retention of full compiled block graphs was tested and retired:
+the matched request gain was below 1% with additional retained memory. Existing
+immutable prefix snapshots remain available; see the
+[negative graph-retention study](../status/qwen512-student-graph-negative-2026-10-18.md).
+A separate default-off bounded asynchronous two-step experiment preserved the
+tested raw latents and RGBA, but observed only about 0.63% generation and 0.06%
+prefix-hit editing reductions in unqualified five-step pilots. It is not a new
+recommended acceleration path and does not change App/defaults. See the
+[bounded scheduling result](../status/qwen512-async-step-pair-2026-10-18.md).
+Benchmark gains must not be multiplied together. See the
 [editing startup investigation](../status/2026-09-30-qwen21-edit-startup.md).
 
 Start with **Balanced** for a speed/detail tradeoff, **Conservative** when local

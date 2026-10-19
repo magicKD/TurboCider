@@ -1,5 +1,9 @@
 # TurboCider 图像与视频性能评测
 
+当前配置入口已更新至[2026-10-19最快已测配置](CURRENT_FASTEST_CONFIGS.md)，包含
+新Qwen Base/Turbo/ConvRot/LoRA研究结果与产物可用性。以下10月13–15日的原始
+框架配对、缓存口径和倍率保持不变，不用后续热命中数字回填历史比较。
+
 2026-10-13生成模型整理，2026-10-15补SeedVR2 · Apple M4 Max /64GiB · macOS26.6.2 · base-only，无额外LoRA。
 生成模型范围为FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5；FLUX9B不参与排名。
 SeedVR2作为图像／视频超分另列，不改写原四家族catalog或其完成口径。
