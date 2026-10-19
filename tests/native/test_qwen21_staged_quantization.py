@@ -28,7 +28,7 @@ def main() -> None:
             "MLX C++ headers/libraries are unavailable; run make setup or "
             "set MLX_ROOT"
         )
-    native = ROOT / "build/native"
+    native = Path(os.environ.get("TURBOCIDER_TEST_NATIVE_DIR", ROOT / "build/native")).resolve()
     if not (native / "libturbocider.dylib").is_file():
         raise FileNotFoundError("native dylib is unavailable; run make build")
     compiler = subprocess.check_output(

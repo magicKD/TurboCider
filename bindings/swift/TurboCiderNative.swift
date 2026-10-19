@@ -50,6 +50,7 @@ public struct NativeRequest: Codable, Sendable {
     public var allow_approximation: Bool?
     public var qwen21_w8a8: Bool?
     public var qwen21_dit_w8a8: Bool?
+    public var qwen21_dit_smoothquant_convrot: Bool?
     public var hybrid_mlp_mode: String?
     public var dump_tensors: String?
     public var operation: String?
@@ -132,6 +133,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var hybrid_mlp_mode: String?
     public var qwen21_w8a8: Bool?
     public var qwen21_dit_w8a8: Bool?
+    public var qwen21_dit_smoothquant_convrot: Bool?
     public var residency: String? = nil
 }
 public struct NativeParametersV2: Codable, Sendable {
@@ -186,7 +188,8 @@ public struct NativeRequestV2: Codable, Sendable {
             qwen21_dit_cache: request.qwen21_dit_cache,
             hybrid_mlp_mode: request.hybrid_mlp_mode,
             qwen21_w8a8: request.qwen21_w8a8,
-            qwen21_dit_w8a8: request.qwen21_dit_w8a8)
+            qwen21_dit_w8a8: request.qwen21_dit_w8a8,
+            qwen21_dit_smoothquant_convrot: request.qwen21_dit_smoothquant_convrot)
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)

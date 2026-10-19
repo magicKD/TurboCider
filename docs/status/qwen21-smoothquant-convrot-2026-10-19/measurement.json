@@ -1,0 +1,3483 @@
+{
+  "algorithm_comparison_date": "2026-10-17",
+  "timing_scope": "request_wall_including_export; excludes process and engine creation",
+  "runs": [
+    {
+      "wall_seconds": 22.513004999840632,
+      "timings": {
+        "denoise": 12.430618042,
+        "hybrid_setup": 7.542491416,
+        "image_encode": 3.33e-07,
+        "request_wall": 22.464622417,
+        "text_encode": 1.353237458,
+        "vae_decode": 1.015221209
+      },
+      "mlx_peak_bytes": 5829385340,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11694466156,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.613670083000001,
+        "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 83,
+        "Temperature": 3034,
+        "Voltage": 12837,
+        "InstantAmperage": 2420
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 83,
+        "Temperature": 3034,
+        "Voltage": 12837,
+        "InstantAmperage": 2420
+      },
+      "name": "formal-1-baseline",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792218856.521934,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218858.5466702,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218860.5661561,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218862.592436,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218864.619981,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218866.637982,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218868.668124,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218870.699156,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218872.717538,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218874.745722,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218876.7743292,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        },
+        {
+          "time": 1792218878.801566,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3034,
+          "Voltage": 12837,
+          "InstantAmperage": 2420
+        }
+      ],
+      "source_report_sha256": "1b1f32e0edfa503677452ceb8182bc8db53cb3ce99b6da5c10904d838235b32d"
+    },
+    {
+      "wall_seconds": 27.93697979208082,
+      "timings": {
+        "denoise": 17.620867541,
+        "hybrid_setup": 7.729271125,
+        "image_encode": 4.58e-07,
+        "request_wall": 27.877014792,
+        "text_encode": 1.378200834,
+        "vae_decode": 1.027748666
+      },
+      "mlx_peak_bytes": 5829385612,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11698350030,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 4.769336461999996,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3035,
+        "Voltage": 12795,
+        "InstantAmperage": 1778
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3035,
+        "Voltage": 12795,
+        "InstantAmperage": 1778
+      },
+      "name": "formal-1-combined",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792218909.355975,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218911.380024,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218913.4117749,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218915.4299378,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218917.4566662,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218919.476683,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218921.496285,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218923.529407,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218925.555354,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218927.580128,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218929.59879,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218931.6286411,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218933.6550531,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        },
+        {
+          "time": 1792218935.6833222,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3035,
+          "Voltage": 12795,
+          "InstantAmperage": 1778
+        }
+      ],
+      "source_report_sha256": "b93cf8ef0c1dbb7fb9cf4420dc75c83483658bd3cc9ff92014d2975793f6e65b"
+    },
+    {
+      "wall_seconds": 22.91713379090652,
+      "timings": {
+        "denoise": 12.5998775,
+        "hybrid_setup": 7.717810958,
+        "image_encode": 2.5e-07,
+        "request_wall": 22.869408375,
+        "text_encode": 1.418659458,
+        "vae_decode": 1.017486834
+      },
+      "mlx_peak_bytes": 5829385214,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11694466156,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.6324085379999995,
+        "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3037,
+        "Voltage": 12624,
+        "InstantAmperage": -250
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3040,
+        "Voltage": 12730,
+        "InstantAmperage": 1522
+      },
+      "name": "formal-2-baseline",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219014.992926,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3037,
+          "Voltage": 12624,
+          "InstantAmperage": -250
+        },
+        {
+          "time": 1792219017.013153,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219019.055288,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219021.073589,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219023.098774,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219025.121102,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219027.149583,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219029.185021,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219031.2063181,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219033.233886,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219035.2561972,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219037.277364,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        }
+      ],
+      "source_report_sha256": "1940ae610c634935d444964e3538f89d3da8121b2e42d288cd73d250f6aba198"
+    },
+    {
+      "wall_seconds": 24.76242091599852,
+      "timings": {
+        "denoise": 14.222939083,
+        "hybrid_setup": 7.927394833,
+        "image_encode": 2.09e-07,
+        "request_wall": 24.703505375,
+        "text_encode": 1.386591375,
+        "vae_decode": 1.028367625
+      },
+      "mlx_peak_bytes": 5829385514,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11698350030,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.6153895409999997,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3040,
+        "Voltage": 12730,
+        "InstantAmperage": 1522
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3040,
+        "Voltage": 12730,
+        "InstantAmperage": 1522
+      },
+      "name": "formal-2-combined",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219039.393336,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219041.420171,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219043.442443,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219045.466205,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219047.488539,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219049.5094059,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219051.532827,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219053.5593421,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219055.582873,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219057.606088,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219059.628693,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219061.65261,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        },
+        {
+          "time": 1792219063.677134,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3040,
+          "Voltage": 12730,
+          "InstantAmperage": 1522
+        }
+      ],
+      "source_report_sha256": "533c34416b049c0a9959e1958cbfba41185238526b442cb58f0c7d156e7c9044"
+    },
+    {
+      "wall_seconds": 22.769676458090544,
+      "timings": {
+        "denoise": 12.514730417,
+        "hybrid_setup": 7.711584291,
+        "image_encode": 5.42e-07,
+        "request_wall": 22.721517916,
+        "text_encode": 1.371419042,
+        "vae_decode": 1.011004708
+      },
+      "mlx_peak_bytes": 5829385232,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11694466156,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.6075142120000008,
+        "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3051,
+        "Voltage": 12602,
+        "InstantAmperage": -719
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3051,
+        "Voltage": 12602,
+        "InstantAmperage": -719
+      },
+      "name": "formal-3-baseline",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219140.850507,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219142.873605,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219144.8968651,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219146.918876,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219148.9390981,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219150.958495,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219152.977995,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219155.0066109,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219157.0307379,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219159.055962,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219161.078602,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219163.101331,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        }
+      ],
+      "source_report_sha256": "5837aaef628fb311c2cd89500264286add3c4b9fb82a4901659b6c7561cba81e"
+    },
+    {
+      "wall_seconds": 24.243144958047196,
+      "timings": {
+        "denoise": 14.00419225,
+        "hybrid_setup": 7.663788792,
+        "image_encode": 3.33e-07,
+        "request_wall": 24.193374875,
+        "text_encode": 1.384747625,
+        "vae_decode": 1.028828625
+      },
+      "mlx_peak_bytes": 5829385710,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11698350030,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.4917025340000003,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3045,
+        "Voltage": 12715,
+        "InstantAmperage": 1211
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3045,
+        "Voltage": 12715,
+        "InstantAmperage": 1211
+      },
+      "name": "formal-3-combined",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219090.125901,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219092.148812,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219094.1672451,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219096.187111,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219098.217628,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219100.2380521,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219102.256094,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219104.2844212,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219106.309033,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219108.329721,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219110.35461,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219112.374602,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        },
+        {
+          "time": 1792219114.4003751,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3045,
+          "Voltage": 12715,
+          "InstantAmperage": 1211
+        }
+      ],
+      "source_report_sha256": "3874fa492ce609bdec90a371878f7a16a1477ee685a107a26c36de45149acd92"
+    },
+    {
+      "wall_seconds": 22.710732667008415,
+      "timings": {
+        "denoise": 12.518743875,
+        "hybrid_setup": 7.613425875,
+        "image_encode": 2.5e-07,
+        "request_wall": 22.664630417,
+        "text_encode": 1.359722875,
+        "vae_decode": 1.051368791
+      },
+      "mlx_peak_bytes": 5829385250,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11694466156,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.6070302379999997,
+        "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3051,
+        "Voltage": 12602,
+        "InstantAmperage": -719
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3054,
+        "Voltage": 12806,
+        "InstantAmperage": 2046
+      },
+      "name": "formal-4-baseline",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219191.557495,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219193.579745,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219195.6024802,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219197.6244109,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219199.644254,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219201.662588,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219203.6977222,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219205.720957,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219207.7446,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219209.764801,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219211.787185,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        },
+        {
+          "time": 1792219213.8119411,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3054,
+          "Voltage": 12806,
+          "InstantAmperage": 2046
+        }
+      ],
+      "source_report_sha256": "581317b3d9ba9d8cc10b529394b5f58eb4011c71bd1a6ada5be1e53cded5dffd"
+    },
+    {
+      "wall_seconds": 24.233258167048916,
+      "timings": {
+        "denoise": 14.050058792,
+        "hybrid_setup": 7.63349625,
+        "image_encode": 4.58e-07,
+        "request_wall": 24.184199917,
+        "text_encode": 1.362428375,
+        "vae_decode": 1.02765175
+      },
+      "mlx_peak_bytes": 5829385542,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11698350030,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.5023611240000008,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3051,
+        "Voltage": 12602,
+        "InstantAmperage": -719
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 84,
+        "Temperature": 3051,
+        "Voltage": 12602,
+        "InstantAmperage": -719
+      },
+      "name": "formal-4-combined",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219165.1967502,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219167.219072,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219169.2377222,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219171.256513,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219173.277024,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219175.2960582,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219177.315695,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219179.344388,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219181.37058,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219183.391901,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219185.418106,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219187.442276,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        },
+        {
+          "time": 1792219189.462653,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 84,
+          "Temperature": 3051,
+          "Voltage": 12602,
+          "InstantAmperage": -719
+        }
+      ],
+      "source_report_sha256": "e694ab5970348190bb26033ed066d3fbbf435f258273238dab8d962348674c7e"
+    },
+    {
+      "wall_seconds": 23.027986333006993,
+      "timings": {
+        "denoise": 12.578950417,
+        "hybrid_setup": 7.861485542,
+        "image_encode": 5.42e-07,
+        "request_wall": 22.968742792,
+        "text_encode": 1.370846375,
+        "vae_decode": 1.034876167
+      },
+      "mlx_peak_bytes": 5829467182,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11694466156,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.6195562910000012,
+        "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "6105207e5936054e798fea91232f1cc48e3def65e28c478070fb1f38d75dbf4b",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3056,
+        "Voltage": 12700,
+        "InstantAmperage": -61
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3056,
+        "Voltage": 12700,
+        "InstantAmperage": -61
+      },
+      "name": "quality-text-baseline",
+      "request": {
+        "prompt": "A clean white poster with the words BLUE SKY in large blue letters, centered composition, no other text.",
+        "seed": 13,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219331.699326,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219333.722563,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219335.741745,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219337.764116,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219339.787117,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219341.8106701,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219343.829708,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219345.868169,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219347.889848,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219349.912541,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219351.9407911,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219353.967086,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        }
+      ],
+      "source_report_sha256": "5091b6e59a1f6aa711122bcd9efc7ddebd19a4cbdb8fc0dc9d498e268d8c203b"
+    },
+    {
+      "wall_seconds": 24.810473874909803,
+      "timings": {
+        "denoise": 14.583094166,
+        "hybrid_setup": 7.663405709,
+        "image_encode": 4.17e-07,
+        "request_wall": 24.755524,
+        "text_encode": 1.362678167,
+        "vae_decode": 1.029867417
+      },
+      "mlx_peak_bytes": 5829467504,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11698350030,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.601029713000001,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "fd4e6ed9a52b749942759c458dc8fbb8a8755277d973813c18849e94c76d44f7",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3057,
+        "Voltage": 12623,
+        "InstantAmperage": -527
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3058,
+        "Voltage": 12753,
+        "InstantAmperage": 1436
+      },
+      "name": "quality-text-combined",
+      "request": {
+        "prompt": "A clean white poster with the words BLUE SKY in large blue letters, centered composition, no other text.",
+        "seed": 13,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219404.841546,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219406.870765,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219408.895957,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219410.922928,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219412.945921,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219414.967815,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219416.993145,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219419.0374131,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219421.070699,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219423.096131,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219425.132617,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219427.163583,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        },
+        {
+          "time": 1792219429.1942332,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3057,
+          "Voltage": 12623,
+          "InstantAmperage": -527
+        }
+      ],
+      "source_report_sha256": "8c7e3fc504539b9623aae7f50e740647f16b439edc78fbe9b63dbfa3599760eb"
+    },
+    {
+      "wall_seconds": 22.74216283299029,
+      "timings": {
+        "denoise": 12.490818667,
+        "hybrid_setup": 7.681440917,
+        "image_encode": 5e-07,
+        "request_wall": 22.683922458,
+        "text_encode": 1.3521365,
+        "vae_decode": 1.037631625
+      },
+      "mlx_peak_bytes": 5829483542,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11694466156,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.593330876,
+        "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "f95f0e74921e41eebebd929b30b89be441889108d14d3b812cfbd9694578ce90",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3058,
+        "Voltage": 12753,
+        "InstantAmperage": 1436
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3058,
+        "Voltage": 12753,
+        "InstantAmperage": 1436
+      },
+      "name": "quality-objects-baseline",
+      "request": {
+        "prompt": "A red cube, a blue ceramic cup and a yellow ball arranged left to right on a wooden table, studio lighting.",
+        "seed": 17,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219465.9240808,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219467.952898,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219469.974299,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219472.001639,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219474.030143,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219476.0575109,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219478.083507,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219480.112972,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219482.1344352,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219484.1581922,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219486.183645,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219488.215997,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        }
+      ],
+      "source_report_sha256": "5b2f443d57637455f2bd69b132ebba4823f776450676c2ae1e0b776783e8a46b"
+    },
+    {
+      "wall_seconds": 24.408504041144624,
+      "timings": {
+        "denoise": 14.110582625,
+        "hybrid_setup": 7.747722666,
+        "image_encode": 4.58e-07,
+        "request_wall": 24.350897583,
+        "text_encode": 1.384548458,
+        "vae_decode": 0.996929459
+      },
+      "mlx_peak_bytes": 5829483972,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 11698350030,
+        "bytes_written": 0,
+        "cache_created": 0,
+        "cache_hits": 392,
+        "enabled": true,
+        "prepare_seconds": 0,
+        "read_seconds": 1.5610266599999998,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "16535956560e71cd3ec77730357024236e1d7fa044758bc63fa94c8bde6e4e13",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3058,
+        "Voltage": 12803,
+        "InstantAmperage": 1842
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3060,
+        "Voltage": 12794,
+        "InstantAmperage": 1662
+      },
+      "name": "quality-objects-combined",
+      "request": {
+        "prompt": "A red cube, a blue ceramic cup and a yellow ball arranged left to right on a wooden table, studio lighting.",
+        "seed": 17,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219541.074337,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12803,
+          "InstantAmperage": 1842
+        },
+        {
+          "time": 1792219543.094087,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12803,
+          "InstantAmperage": 1842
+        },
+        {
+          "time": 1792219545.116555,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12803,
+          "InstantAmperage": 1842
+        },
+        {
+          "time": 1792219547.1363862,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12803,
+          "InstantAmperage": 1842
+        },
+        {
+          "time": 1792219549.160274,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12803,
+          "InstantAmperage": 1842
+        },
+        {
+          "time": 1792219551.182525,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219553.202655,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219555.231313,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219557.255649,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219559.278558,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219561.301873,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219563.320808,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        },
+        {
+          "time": 1792219565.345812,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3060,
+          "Voltage": 12794,
+          "InstantAmperage": 1662
+        }
+      ],
+      "source_report_sha256": "fdaa47d496c440687f7f33cf4024bbbd408892395c8e2cd1d6f2570155530846"
+    },
+    {
+      "wall_seconds": 32.53572737495415,
+      "timings": {
+        "denoise": 21.979821458,
+        "hybrid_setup": 7.707945792,
+        "image_encode": 4.17e-07,
+        "request_wall": 32.478445875,
+        "text_encode": 1.382935958,
+        "vae_decode": 1.045918084
+      },
+      "mlx_peak_bytes": 6108374260,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": null,
+      "png_sha256": "d2234b75600e3dadf0db6129ff0cde02c94e7c709285508d8505476cb96572f7",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3055,
+        "Voltage": 12720,
+        "InstantAmperage": 959
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3055,
+        "Voltage": 12720,
+        "InstantAmperage": 959
+      },
+      "name": "reference-fox",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": false,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219264.6268108,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219266.652218,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219268.679023,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219270.700853,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219272.722804,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219274.740652,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219276.7600598,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219278.7916858,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219280.819795,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219282.841046,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219284.8917382,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219286.9155462,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219288.937907,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219290.959053,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219292.99976,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219295.024041,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219297.0569038,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        }
+      ],
+      "source_report_sha256": "886f1cfdfefade7b05241cd31a1a18cd474176deae92512d4f8c0a2b9a430830"
+    },
+    {
+      "wall_seconds": 32.13802900002338,
+      "timings": {
+        "denoise": 21.715174125,
+        "hybrid_setup": 7.752377042,
+        "image_encode": 1.67e-07,
+        "request_wall": 32.068036917,
+        "text_encode": 1.355174333,
+        "vae_decode": 1.096012041
+      },
+      "mlx_peak_bytes": 6113699042,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": null,
+      "png_sha256": "eb494ffbff5683939f65936a1b86d112e3203b8ad8ca46f34a4c3cf2b1d478c9",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3055,
+        "Voltage": 12720,
+        "InstantAmperage": 959
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3056,
+        "Voltage": 12700,
+        "InstantAmperage": -61
+      },
+      "name": "reference-text",
+      "request": {
+        "prompt": "A clean white poster with the words BLUE SKY in large blue letters, centered composition, no other text.",
+        "seed": 13,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": false,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219299.154839,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219301.1785028,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219303.199735,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219305.221668,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219307.243624,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219309.263017,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3055,
+          "Voltage": 12720,
+          "InstantAmperage": 959
+        },
+        {
+          "time": 1792219311.2808099,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219313.3032699,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219315.3279822,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219317.354908,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219319.379253,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219321.406629,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219323.4417222,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219325.474951,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219327.5026822,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        },
+        {
+          "time": 1792219329.5282571,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3056,
+          "Voltage": 12700,
+          "InstantAmperage": -61
+        }
+      ],
+      "source_report_sha256": "2843aa79cab4a7e9214949d66984f11f9c5a910508fefc09c64f4b4d53a5dc16"
+    },
+    {
+      "wall_seconds": 33.61148287518881,
+      "timings": {
+        "denoise": 23.161250542,
+        "hybrid_setup": 7.839343459,
+        "image_encode": 2.08e-07,
+        "request_wall": 33.551894334,
+        "text_encode": 1.358481291,
+        "vae_decode": 1.057168708
+      },
+      "mlx_peak_bytes": 6114764032,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": null,
+      "png_sha256": "0ee60bf25070d904a70ba26acaf0fdbca8a3a4a87f5195ab096b8c3cb2af9559",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3058,
+        "Voltage": 12753,
+        "InstantAmperage": 1436
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 85,
+        "Temperature": 3058,
+        "Voltage": 12753,
+        "InstantAmperage": 1436
+      },
+      "name": "reference-objects",
+      "request": {
+        "prompt": "A red cube, a blue ceramic cup and a yellow ball arranged left to right on a wooden table, studio lighting.",
+        "seed": 17,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": false,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792219431.294461,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219433.3204548,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219435.349421,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219437.370837,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219439.400022,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219441.4199302,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219443.44913,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219445.490695,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219447.5542421,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219449.596148,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219451.637228,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219453.659727,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219455.6889338,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219457.712599,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219459.73748,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219461.76294,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        },
+        {
+          "time": 1792219463.7888021,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 85,
+          "Temperature": 3058,
+          "Voltage": 12753,
+          "InstantAmperage": 1436
+        }
+      ],
+      "source_report_sha256": "ee290c8d8273d3c84d285c4b1db83a2d91afbe6684b492738f9bcb256914e8a3"
+    },
+    {
+      "wall_seconds": 36.34049066598527,
+      "timings": {
+        "denoise": 26.126402167,
+        "hybrid_setup": 7.697521167,
+        "image_encode": 3.33e-07,
+        "request_wall": 36.290198667,
+        "text_encode": 1.350422875,
+        "vae_decode": 0.999534584
+      },
+      "mlx_peak_bytes": 6548654452,
+      "db_hits": 25,
+      "ane_calls": 648,
+      "cache": {
+        "activation_dtype": "int8",
+        "activation_granularity": "per_token",
+        "bytes_read": 0,
+        "bytes_written": 11698350030,
+        "cache_created": 392,
+        "cache_hits": 0,
+        "enabled": true,
+        "prepare_seconds": 12.740971959999998,
+        "read_seconds": 0,
+        "recipe": "dit-w8a8-trial-combined-rht256-64-16-4-fp32-sq-a05-v1-777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+        "scope": "DiT linear projections, including first step; original ANE prefix retained",
+        "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+        "text_encoder_precision": "unchanged",
+        "vae_precision": "unchanged",
+        "weight_dtype": "int8",
+        "weight_granularity": "per_channel"
+      },
+      "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 83,
+        "Temperature": 3028,
+        "Voltage": 12623,
+        "InstantAmperage": 746
+      },
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 83,
+        "Temperature": 3030,
+        "Voltage": 12700,
+        "InstantAmperage": 1146
+      },
+      "name": "cold-combined",
+      "request": {
+        "prompt": "A red fox standing in fresh snow, soft morning light.",
+        "seed": 42,
+        "steps": 40,
+        "width": 512,
+        "height": 512,
+        "execution": "gpu_ane",
+        "residency": "component_staged",
+        "qwen21_w8a8": true,
+        "qwen21_dit_w8a8": true,
+        "qwen21_dit_cache": "fast"
+      },
+      "power_samples": [
+        {
+          "time": 1792218770.6523368,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3028,
+          "Voltage": 12623,
+          "InstantAmperage": 746
+        },
+        {
+          "time": 1792218772.671921,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3028,
+          "Voltage": 12623,
+          "InstantAmperage": 746
+        },
+        {
+          "time": 1792218774.69489,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3028,
+          "Voltage": 12623,
+          "InstantAmperage": 746
+        },
+        {
+          "time": 1792218776.7133381,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3028,
+          "Voltage": 12623,
+          "InstantAmperage": 746
+        },
+        {
+          "time": 1792218778.733135,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3028,
+          "Voltage": 12623,
+          "InstantAmperage": 746
+        },
+        {
+          "time": 1792218780.7551339,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3028,
+          "Voltage": 12623,
+          "InstantAmperage": 746
+        },
+        {
+          "time": 1792218782.78385,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218784.837366,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218786.862968,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218788.8986108,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218790.930212,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218792.957354,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218795.0053408,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218797.0300648,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218799.055347,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218801.080037,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218803.1085372,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        },
+        {
+          "time": 1792218805.130007,
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 83,
+          "Temperature": 3030,
+          "Voltage": 12700,
+          "InstantAmperage": 1146
+        }
+      ],
+      "source_report_sha256": "5ffb03c887b5b1b38dee98df70cb43063cc33f781c9fa3ff5ec7c0b35ba0aeac"
+    }
+  ],
+  "images": {
+    "images/objects-reference.png": "0ee60bf25070d904a70ba26acaf0fdbca8a3a4a87f5195ab096b8c3cb2af9559",
+    "images/fox-combined.png": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+    "images/fox-baseline.png": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+    "images/text-combined.png": "fd4e6ed9a52b749942759c458dc8fbb8a8755277d973813c18849e94c76d44f7",
+    "images/fox-reference.png": "d2234b75600e3dadf0db6129ff0cde02c94e7c709285508d8505476cb96572f7",
+    "images/text-baseline.png": "6105207e5936054e798fea91232f1cc48e3def65e28c478070fb1f38d75dbf4b",
+    "images/text-reference.png": "eb494ffbff5683939f65936a1b86d112e3203b8ad8ca46f34a4c3cf2b1d478c9",
+    "images/objects-baseline.png": "f95f0e74921e41eebebd929b30b89be441889108d14d3b812cfbd9694578ce90",
+    "images/objects-combined.png": "16535956560e71cd3ec77730357024236e1d7fa044758bc63fa94c8bde6e4e13"
+  },
+  "integration": {
+    "date": "2026-10-19",
+    "scope": "Functional and numerical regression only. Battery powered; some builds/tests ran concurrently. These timings are not a performance comparison and are omitted.",
+    "runtime_build_id": "tc-runtime-build-v1-cd8a8fdc19107868751f2ad094ac63ac503e51550d9cb970ade2233c2aee6cda",
+    "library_sha256": "95fe7595a9fe3a159d79609e33cc35b5ec65b978578f44e66b481c5d5bf26278",
+    "packaged_library_sha256": "94906a824f211803f7f7347304dd89990622fd94d64eda20b36dbf48ad4438ea",
+    "tests": {
+      "qwen_native_total": 110,
+      "qwen_native_skipped": 7,
+      "qwen_contracts": 50,
+      "runtime_build_identity": 8,
+      "cpp_boundaries": 2,
+      "swift_workflow": "pass",
+      "app_build_and_local_signature": "pass"
+    },
+    "runs": [
+      {
+        "name": "verify-combined",
+        "steps": 40,
+        "dbcache": "fast",
+        "combined": true,
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "cache_hits": 0,
+        "cache_created": 392,
+        "ane_calls": 648,
+        "db_hits": 25,
+        "source_report_sha256": "a6a72fd3e3e305b3412c1ff95db5daece3b5a6a8f9f043afaa3d5b0fae0b088f",
+        "library_sha256": "95fe7595a9fe3a159d79609e33cc35b5ec65b978578f44e66b481c5d5bf26278",
+        "power_before": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 82,
+          "Temperature": 3059,
+          "Voltage": 12285,
+          "InstantAmperage": -1113
+        },
+        "power_after": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 81,
+          "Temperature": 3060,
+          "Voltage": 12168,
+          "InstantAmperage": -2615
+        }
+      },
+      {
+        "name": "verify-baseline",
+        "steps": 40,
+        "dbcache": "fast",
+        "combined": false,
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+        "cache_hits": 392,
+        "cache_created": 0,
+        "ane_calls": 648,
+        "db_hits": 25,
+        "source_report_sha256": "b162f2a57b75ee08fa9d95790a1ea8334bbc2ad22febd7d3a8f1676a5f937343",
+        "library_sha256": "95fe7595a9fe3a159d79609e33cc35b5ec65b978578f44e66b481c5d5bf26278",
+        "power_before": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 81,
+          "Temperature": 3060,
+          "Voltage": 12168,
+          "InstantAmperage": -2615
+        },
+        "power_after": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 80,
+          "Temperature": 3065,
+          "Voltage": 12100,
+          "InstantAmperage": -2734
+        }
+      },
+      {
+        "name": "verify-text-combined",
+        "steps": 40,
+        "dbcache": "fast",
+        "combined": true,
+        "png_sha256": "fd4e6ed9a52b749942759c458dc8fbb8a8755277d973813c18849e94c76d44f7",
+        "cache_hits": 392,
+        "cache_created": 0,
+        "ane_calls": 648,
+        "db_hits": 25,
+        "source_report_sha256": "ea72c3160748326e2df216ae5df18363ea88d8b7184696c74b2cfcbbbb4e2eb6",
+        "library_sha256": "95fe7595a9fe3a159d79609e33cc35b5ec65b978578f44e66b481c5d5bf26278",
+        "power_before": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 79,
+          "Temperature": 3074,
+          "Voltage": 12135,
+          "InstantAmperage": -1749
+        },
+        "power_after": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 78,
+          "Temperature": 3077,
+          "Voltage": 12002,
+          "InstantAmperage": -3730
+        }
+      },
+      {
+        "name": "verify-objects-combined",
+        "steps": 40,
+        "dbcache": "fast",
+        "combined": true,
+        "png_sha256": "16535956560e71cd3ec77730357024236e1d7fa044758bc63fa94c8bde6e4e13",
+        "cache_hits": 392,
+        "cache_created": 0,
+        "ane_calls": 648,
+        "db_hits": 25,
+        "source_report_sha256": "62297909929f092e027d48503f56f6d79f518ab91ab3887b78c77484717c4735",
+        "library_sha256": "95fe7595a9fe3a159d79609e33cc35b5ec65b978578f44e66b481c5d5bf26278",
+        "power_before": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 78,
+          "Temperature": 3077,
+          "Voltage": 12002,
+          "InstantAmperage": -3730
+        },
+        "power_after": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 77,
+          "Temperature": 3085,
+          "Voltage": 12013,
+          "InstantAmperage": -2581
+        }
+      },
+      {
+        "name": "packaged-combined",
+        "steps": 40,
+        "dbcache": "fast",
+        "combined": true,
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "cache_hits": 392,
+        "cache_created": 0,
+        "ane_calls": 648,
+        "db_hits": 25,
+        "source_report_sha256": "5df258cb906c209860043837dae348966d3cb8e7dc54a0bc159b0ed15d0da0a1",
+        "library_sha256": "94906a824f211803f7f7347304dd89990622fd94d64eda20b36dbf48ad4438ea",
+        "power_before": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 75,
+          "Temperature": 3096,
+          "Voltage": 11994,
+          "InstantAmperage": -2286
+        },
+        "power_after": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 75,
+          "Temperature": 3095,
+          "Voltage": 11972,
+          "InstantAmperage": -2606
+        }
+      },
+      {
+        "name": "packaged-20-dbcache-off",
+        "steps": 20,
+        "dbcache": "off",
+        "combined": true,
+        "png_sha256": "6cee7798e1280b32061d7ae1c2d953eab6e804008a57f054bb9ba833c5afb5cd",
+        "cache_hits": 392,
+        "cache_created": 0,
+        "ane_calls": 608,
+        "db_hits": 0,
+        "source_report_sha256": "2efca0b589324668501d6820a24207feb8c01e549c883f8da52ec78417247305",
+        "library_sha256": "94906a824f211803f7f7347304dd89990622fd94d64eda20b36dbf48ad4438ea",
+        "power_before": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 75,
+          "Temperature": 3095,
+          "Voltage": 11972,
+          "InstantAmperage": -2606
+        },
+        "power_after": {
+          "ExternalConnected": false,
+          "ExternalChargeCapable": false,
+          "IsCharging": false,
+          "CurrentCapacity": 74,
+          "Temperature": 3097,
+          "Voltage": 11902,
+          "InstantAmperage": -3387
+        }
+      }
+    ],
+    "lifecycle": [
+      {
+        "name": "cancel-text",
+        "status": 2,
+        "active_after": 0,
+        "restored_wired": 268435456,
+        "wired_denoise": [],
+        "pass": true
+      },
+      {
+        "name": "retry-on",
+        "status": 0,
+        "active_after": 165258,
+        "restored_wired": 268435456,
+        "wired_denoise": [
+          6442450944
+        ],
+        "pass": true
+      },
+      {
+        "name": "switch-off",
+        "status": 0,
+        "active_after": 165888,
+        "restored_wired": 268435456,
+        "wired_denoise": [
+          6442450944
+        ],
+        "pass": true
+      },
+      {
+        "name": "cancel-dit",
+        "status": 2,
+        "active_after": 166112,
+        "restored_wired": 268435456,
+        "wired_denoise": [
+          6442450944
+        ],
+        "pass": true
+      },
+      {
+        "name": "retry-on-again",
+        "status": 0,
+        "active_after": 167050,
+        "restored_wired": 268435456,
+        "wired_denoise": [
+          6442450944
+        ],
+        "pass": true
+      }
+    ],
+    "active_after_engine_free": 3210
+  }
+}

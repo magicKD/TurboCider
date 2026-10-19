@@ -114,6 +114,8 @@ inline StagedOptimizationOptions staged_optimization_options(const Request &r, c
     const char *defaults = std::getenv("TURBOCIDER_QWEN21_STAGED_FAST_DEFAULTS");
     require(binary_option_or_unset(defaults), "Qwen staged fast defaults require 0 or 1");
     const bool qualified = qualified_staged_optimizations(r, device);
+    require(!r.qwen21_dit_smoothquant_convrot || r.qwen21_dit_w8a8,
+            "SmoothQuant+ConvRot requires DiT W8A8 with its staged ANE eligibility conditions");
     if (r.qwen21_dit_w8a8) {
         require(qualified && r.frames == 1 && !r.audio,
                 "DiT W8A8 requires M5 Pro 24 GiB, no LoRA, 512x512/20-40 steps, layer-streamed component_staged, GPU+ANE W8A8 and original MLX text/VAE precision");

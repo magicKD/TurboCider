@@ -282,6 +282,7 @@ struct StudioDraft: Codable, Sendable {
     var promptEnhancerPath = ""
     var qwen21DiTCache = "off"
     var qwen21DiTW8A8 = false
+    var qwen21DiTSmoothQuantConvRot = false
     // Editing preference; text-to-image always requests standard encoding.
     var qwen21ReferenceSize = 1024
     var residency = "resident"
@@ -298,7 +299,7 @@ struct StudioDraft: Codable, Sendable {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
-        case qwen21DiTCache, qwen21DiTW8A8, qwen21ReferenceSize
+        case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -337,6 +338,7 @@ struct StudioDraft: Codable, Sendable {
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         qwen21DiTCache = try c.decodeIfPresent(String.self, forKey: .qwen21DiTCache) ?? "off"
         qwen21DiTW8A8 = try c.decodeIfPresent(Bool.self, forKey: .qwen21DiTW8A8) ?? false
+        qwen21DiTSmoothQuantConvRot = try c.decodeIfPresent(Bool.self, forKey: .qwen21DiTSmoothQuantConvRot) ?? false
         qwen21ReferenceSize = try c.decodeIfPresent(Int.self, forKey: .qwen21ReferenceSize) ?? 1024
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
@@ -417,6 +419,10 @@ struct StudioDraft: Codable, Sendable {
               activeAssets.isEmpty, activeLoRAs.isEmpty, !promptEnhance,
               !promptEnhanceEditExperimental, promptEnhancerPath.isEmpty else { return false }
         return Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON ?? NativeEngine.system())
+    }
+    func qwen21DiTSmoothQuantConvRotIssue(systemJSON: String? = nil) -> String? {
+        if !qwen21DiTW8A8 { return "SmoothQuant＋ConvRot 需要先开启 DiT W8A8＋离线缓存。" }
+        return qwen21DiTW8A8Issue(systemJSON: systemJSON)
     }
     func qwen21DiTW8A8Issue(systemJSON: String? = nil) -> String? {
         qualifiedQwen21StagedANECache(systemJSON: systemJSON) ? nil :
@@ -806,6 +812,7 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         if let reason = qwen21ReferenceSizeIssue { throw NativeFailure(message: reason + " 可一键恢复标准 1024，其他参数保持不变。") }
+        if qwen21DiTSmoothQuantConvRot, let reason = qwen21DiTSmoothQuantConvRotIssue(systemJSON: systemJSON) { throw NativeFailure(message: reason) }
         if qwen21DiTW8A8, let reason = qwen21DiTW8A8Issue(systemJSON: systemJSON) { throw NativeFailure(message: reason) }
         guard Qwen21DiTCacheMode(rawValue: qwen21DiTCache) != nil else { throw NativeFailure(message: "DiT 缓存档位无效，请选择关闭、保守、均衡或快速。") }
         if qwen21DiTCache != "off", let reason = qwen21DiTCacheIssue(systemJSON: systemJSON) { throw NativeFailure(message: reason) }
@@ -875,6 +882,7 @@ struct StudioDraft: Codable, Sendable {
         request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
         // Omit the inactive extension so the existing Runtime ANE worker wire stays compatible.
         request.qwen21_dit_w8a8 = modelID == "qwen-image-2.1" && qwen21DiTW8A8 ? true : nil
+        request.qwen21_dit_smoothquant_convrot = modelID == "qwen-image-2.1" && qwen21DiTSmoothQuantConvRot ? true : nil
         request.qwen21_reference_size = modelID == "qwen-image-2.1" ? effectiveQwen21ReferenceSize : nil
         if usesQwen21FastReferenceEncoding { request.allow_approximation = true }
         if qwen21DiTCache != "off" { request.allow_approximation = true }
@@ -1536,6 +1544,7 @@ final class StudioState: ObservableObject {
         draft.streaming = StudioStreamingState()
         draft.qwen21DiTCache = "off"
         draft.qwen21DiTW8A8 = false
+        draft.qwen21DiTSmoothQuantConvRot = false
         draft.qwen21ReferenceSize = 1024
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
@@ -1750,6 +1759,7 @@ final class StudioState: ObservableObject {
         draft.streaming = StudioStreamingState()
         draft.qwen21DiTCache = "off"
         draft.qwen21DiTW8A8 = false
+        draft.qwen21DiTSmoothQuantConvRot = false
         message = "已应用六步 LoRA 预设：512×512、6 步、纯 GPU、强度 1。编辑支持 1–3 张参考图；此加速采样为近似模式。"
         save()
     }
@@ -1959,6 +1969,7 @@ final class StudioState: ObservableObject {
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
         draft.qwen21DiTW8A8 = request.qwen21_dit_w8a8 ?? false
+        draft.qwen21DiTSmoothQuantConvRot = request.qwen21_dit_smoothquant_convrot ?? false
         // A generated image's standard request does not describe the user's
         // editing preference. Restore that field only for editing histories.
         if request.model != "qwen-image-2.1" || draft.operation == "image.edit" {
