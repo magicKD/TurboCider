@@ -3479,5 +3479,1496 @@
       }
     ],
     "active_after_engine_free": 3210
+  },
+  "ac_integration_timing": {
+    "suite": {
+      "date": "2026-10-19",
+      "policy": "AC only; both recipes one preceding warmup; four balanced AB/BA pairs; new process per request; no concurrent task builds/inference; no OS cache purge",
+      "commit": "291649bc7906767ff2fbd7e3e6f9d0b5108ebd43",
+      "library_sha256": "95fe7595a9fe3a159d79609e33cc35b5ec65b978578f44e66b481c5d5bf26278",
+      "runtime_build_id": "tc-runtime-build-v1-cd8a8fdc19107868751f2ad094ac63ac503e51550d9cb970ade2233c2aee6cda",
+      "power_before": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 77,
+        "Temperature": 3080,
+        "Voltage": 12718,
+        "InstantAmperage": 3860
+      },
+      "pmset_custom": "Battery Power:\n Sleep On Power Button 1\n powermode            0\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            0\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         0\n womp                 1\n networkoversleep     0\n sleep                1\n tcpkeepalive         1\n disksleep            10\n",
+      "thermals_before": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+      "started": 1792383110.328469,
+      "order": [
+        "ac-formal-1-baseline",
+        "ac-formal-1-combined",
+        "ac-formal-2-combined",
+        "ac-formal-2-baseline",
+        "ac-formal-3-baseline",
+        "ac-formal-3-combined",
+        "ac-formal-4-combined",
+        "ac-formal-4-baseline"
+      ],
+      "status": "pass",
+      "power_after": {
+        "ExternalConnected": true,
+        "ExternalChargeCapable": true,
+        "IsCharging": true,
+        "CurrentCapacity": 79,
+        "Temperature": 3080,
+        "Voltage": 12597,
+        "InstantAmperage": 1377
+      },
+      "thermals_after": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+      "completed": 1792383358.024603
+    },
+    "summary": {
+      "baseline": {
+        "wall_seconds": [
+          21.96647808304988,
+          22.19805833301507,
+          22.16732224985026,
+          21.98867500014603
+        ],
+        "median": 22.077998624998145,
+        "range": [
+          21.96647808304988,
+          22.19805833301507
+        ],
+        "denoise_median": 12.035436417,
+        "cache_read_median": 1.567788741500001,
+        "mlx_peak_bytes": [
+          5829385244,
+          5829385256,
+          5829385292,
+          5829385376
+        ],
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913"
+      },
+      "combined": {
+        "wall_seconds": [
+          23.536148166051134,
+          23.59843362495303,
+          23.534913583891466,
+          23.55486504198052
+        ],
+        "median": 23.545506604015827,
+        "range": [
+          23.534913583891466,
+          23.59843362495303
+        ],
+        "denoise_median": 13.528649583,
+        "cache_read_median": 1.4925968779999992,
+        "mlx_peak_bytes": [
+          5829385472,
+          5829385542,
+          5829385654,
+          5829385738
+        ],
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1"
+      },
+      "delta_seconds": 1.4675079790176824,
+      "delta_percent": 6.646924859194775,
+      "paired_deltas": [
+        1.569670083001256,
+        1.4003752919379622,
+        1.367591334041208,
+        1.5661900418344885
+      ]
+    },
+    "runs": [
+      {
+        "name": "ac-warmup-baseline",
+        "variant": "baseline",
+        "warmup": true,
+        "wall_seconds": 26.080595958046615,
+        "timings": {
+          "denoise": 14.504513333,
+          "hybrid_setup": 8.602390708,
+          "image_encode": 6.25e-07,
+          "request_wall": 25.94741175,
+          "text_encode": 1.653518333,
+          "vae_decode": 0.999316
+        },
+        "mlx_peak_bytes": 5829385262,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11694466156,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "",
+          "calibration_sha256": "",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 3.4566399609999996,
+          "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": false,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 77,
+          "Temperature": 3080,
+          "Voltage": 12718,
+          "InstantAmperage": 3860
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3077,
+          "Voltage": 12646,
+          "InstantAmperage": 1937
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383110.356766,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383112.379852,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383114.406461,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383116.42884,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383118.451156,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383120.47151,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383122.496097,
+            true,
+            77,
+            3080
+          ],
+          [
+            1792383124.519412,
+            true,
+            77,
+            3077
+          ],
+          [
+            1792383126.5438652,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383128.5707772,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383130.593896,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383132.622262,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383134.645251,
+            true,
+            78,
+            3077
+          ]
+        ],
+        "source_report_sha256": "8e16f20b94fa4dfc7a953f59c0f46f15c447822c282304648ec9c41dbb0b8fc4"
+      },
+      {
+        "name": "ac-warmup-combined",
+        "variant": "combined",
+        "warmup": true,
+        "wall_seconds": 28.404233374865726,
+        "timings": {
+          "denoise": 18.220067625,
+          "hybrid_setup": 7.4519295,
+          "image_encode": 3.33e-07,
+          "request_wall": 28.350556292,
+          "text_encode": 1.469368791,
+          "vae_decode": 0.962151417
+        },
+        "mlx_peak_bytes": 5829385668,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11698344150,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "calibration_sha256": "777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 5.070080424000006,
+          "recipe": "dit-pc-w8a8-sq-a05-rht256-64-fp32-v1-aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": true,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3077,
+          "Voltage": 12646,
+          "InstantAmperage": 1937
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3077,
+          "Voltage": 12646,
+          "InstantAmperage": 1937
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383136.719126,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383138.744593,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383140.773685,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383142.794608,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383144.819865,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383146.842529,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383148.868186,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383150.889655,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383152.9214442,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383154.9440799,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383156.9675,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383158.990497,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383161.011421,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383163.033612,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383165.054267,
+            true,
+            78,
+            3077
+          ]
+        ],
+        "source_report_sha256": "6e304d4abb9ecfed33ae915177875a1a1f8cb202b94cac23485792ef1a02a2f0"
+      },
+      {
+        "name": "ac-formal-1-baseline",
+        "variant": "baseline",
+        "warmup": false,
+        "wall_seconds": 21.96647808304988,
+        "timings": {
+          "denoise": 12.098450917,
+          "hybrid_setup": 7.353055208,
+          "image_encode": 2.5e-07,
+          "request_wall": 21.914427958,
+          "text_encode": 1.371317209,
+          "vae_decode": 0.96720675
+        },
+        "mlx_peak_bytes": 5829385292,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11694466156,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "",
+          "calibration_sha256": "",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.5800946990000004,
+          "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": false,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3077,
+          "Voltage": 12646,
+          "InstantAmperage": 1937
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12512,
+          "InstantAmperage": 315
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383167.158922,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383169.178105,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383171.201746,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383173.218892,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383175.2420118,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383177.264659,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383179.284418,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383181.310564,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383183.336405,
+            true,
+            78,
+            3077
+          ],
+          [
+            1792383185.359711,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383187.3830788,
+            true,
+            78,
+            3075
+          ]
+        ],
+        "source_report_sha256": "d8f12278983cc18c2f08c1528cd8735b2d32028308356bd9860ee044ef1e6424"
+      },
+      {
+        "name": "ac-formal-1-combined",
+        "variant": "combined",
+        "warmup": false,
+        "wall_seconds": 23.536148166051134,
+        "timings": {
+          "denoise": 13.54795325,
+          "hybrid_setup": 7.449086084,
+          "image_encode": 3.33e-07,
+          "request_wall": 23.479670125,
+          "text_encode": 1.390612625,
+          "vae_decode": 0.970007125
+        },
+        "mlx_peak_bytes": 5829385654,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11698344150,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "calibration_sha256": "777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.4890587519999998,
+          "recipe": "dit-pc-w8a8-sq-a05-rht256-64-fp32-v1-aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": true,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12512,
+          "InstantAmperage": 315
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12512,
+          "InstantAmperage": 315
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383189.512662,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383191.535101,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383193.5586402,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383195.578496,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383197.598412,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383199.616745,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383201.642566,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383203.669039,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383205.695286,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383207.720002,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383209.743128,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383211.767475,
+            true,
+            78,
+            3075
+          ]
+        ],
+        "source_report_sha256": "a235029c40344dcfc697b4d25de88dd5657d0717c7f6b487707eb5a5a6238918"
+      },
+      {
+        "name": "ac-formal-2-combined",
+        "variant": "combined",
+        "warmup": false,
+        "wall_seconds": 23.59843362495303,
+        "timings": {
+          "denoise": 13.556315917,
+          "hybrid_setup": 7.498887125,
+          "image_encode": 2.91e-07,
+          "request_wall": 23.548924084,
+          "text_encode": 1.391173375,
+          "vae_decode": 0.964073417
+        },
+        "mlx_peak_bytes": 5829385738,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11698344150,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "calibration_sha256": "777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.5139304149999997,
+          "recipe": "dit-pc-w8a8-sq-a05-rht256-64-fp32-v1-aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": true,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12512,
+          "InstantAmperage": 315
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12512,
+          "InstantAmperage": 315
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383213.8544698,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383215.880651,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383217.909141,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383219.931008,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383221.9568,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383223.980059,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383226.002537,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383228.025729,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383230.050478,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383232.073972,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383234.097837,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383236.1224792,
+            true,
+            78,
+            3075
+          ]
+        ],
+        "source_report_sha256": "c74ed43dbf2b9cbb10f019ce099d985ea8795f848781ac5103099e65d04f741c"
+      },
+      {
+        "name": "ac-formal-2-baseline",
+        "variant": "baseline",
+        "warmup": false,
+        "wall_seconds": 22.19805833301507,
+        "timings": {
+          "denoise": 12.154853833,
+          "hybrid_setup": 7.499144958,
+          "image_encode": 3.75e-07,
+          "request_wall": 22.138909917,
+          "text_encode": 1.385131833,
+          "vae_decode": 0.973073209
+        },
+        "mlx_peak_bytes": 5829385376,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11694466156,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "",
+          "calibration_sha256": "",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.6041712040000013,
+          "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": false,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12512,
+          "InstantAmperage": 315
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12689,
+          "InstantAmperage": 3102
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383238.230958,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383240.252657,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383242.2768152,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383244.29893,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383246.321609,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383248.3392699,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383250.3597891,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383252.386373,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383254.4097989,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383256.432699,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383258.455623,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383260.478443,
+            true,
+            78,
+            3075
+          ]
+        ],
+        "source_report_sha256": "40ad0a5d6168ce9f015390b1f4ce932d5c01ce9493915bb285637ead7d6aa78a"
+      },
+      {
+        "name": "ac-formal-3-baseline",
+        "variant": "baseline",
+        "warmup": false,
+        "wall_seconds": 22.16732224985026,
+        "timings": {
+          "denoise": 11.970403791,
+          "hybrid_setup": 7.563732959,
+          "image_encode": 1.67e-07,
+          "request_wall": 22.115473125,
+          "text_encode": 1.414315666,
+          "vae_decode": 0.963854042
+        },
+        "mlx_peak_bytes": 5829385244,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11694466156,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "",
+          "calibration_sha256": "",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.5554827840000014,
+          "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": false,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 78,
+          "Temperature": 3075,
+          "Voltage": 12689,
+          "InstantAmperage": 3102
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3076,
+          "Voltage": 12616,
+          "InstantAmperage": 2320
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383262.605672,
+            true,
+            78,
+            3075
+          ],
+          [
+            1792383264.6280189,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383266.657693,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383268.679878,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383270.6989179,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383272.721566,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383274.746575,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383276.771821,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383278.795777,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383280.815327,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383282.8351302,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383284.857281,
+            true,
+            79,
+            3076
+          ]
+        ],
+        "source_report_sha256": "db742d0e7aa0fd1a3d091db374276b712afd67b412344c6a6e9686fff50280ac"
+      },
+      {
+        "name": "ac-formal-3-combined",
+        "variant": "combined",
+        "warmup": false,
+        "wall_seconds": 23.534913583891466,
+        "timings": {
+          "denoise": 13.509345916,
+          "hybrid_setup": 7.506869708,
+          "image_encode": 2.5e-07,
+          "request_wall": 23.49095175,
+          "text_encode": 1.38145975,
+          "vae_decode": 0.99061
+        },
+        "mlx_peak_bytes": 5829385472,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11698344150,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "calibration_sha256": "777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.4961350039999983,
+          "recipe": "dit-pc-w8a8-sq-a05-rht256-64-fp32-v1-aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": true,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3076,
+          "Voltage": 12616,
+          "InstantAmperage": 2320
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3076,
+          "Voltage": 12616,
+          "InstantAmperage": 2320
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383286.945486,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383288.9676511,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383290.988847,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383293.008995,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383295.034284,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383297.053258,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383299.082279,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383301.1072562,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383303.13099,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383305.1500502,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383307.174925,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383309.201162,
+            true,
+            79,
+            3076
+          ]
+        ],
+        "source_report_sha256": "3c8d79ddfc0b498e40ce3552fef105b98b955d563944885deafe56bf0cddb36a"
+      },
+      {
+        "name": "ac-formal-4-combined",
+        "variant": "combined",
+        "warmup": false,
+        "wall_seconds": 23.55486504198052,
+        "timings": {
+          "denoise": 13.504768958,
+          "hybrid_setup": 7.525025583,
+          "image_encode": 2.08e-07,
+          "request_wall": 23.508454667,
+          "text_encode": 1.379019458,
+          "vae_decode": 0.965862167
+        },
+        "mlx_peak_bytes": 5829385542,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11698344150,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "calibration_sha256": "777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.4799260160000003,
+          "recipe": "dit-pc-w8a8-sq-a05-rht256-64-fp32-v1-aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": true,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "075c56cbdebdcf8ab2dfd99a8e384e01a0671569894e9ea390db84e07743bbd1",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3076,
+          "Voltage": 12616,
+          "InstantAmperage": 2320
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3080,
+          "Voltage": 12597,
+          "InstantAmperage": 1377
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383311.316153,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383313.335078,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383315.358755,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383317.380855,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383319.403153,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383321.426039,
+            true,
+            79,
+            3076
+          ],
+          [
+            1792383323.451541,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383325.4756339,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383327.500426,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383329.52385,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383331.549602,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383333.573573,
+            true,
+            79,
+            3080
+          ]
+        ],
+        "source_report_sha256": "566c8c6f277e358d43b4c55fe88cc13813a05dd09cbcc1d6ea6c7e250db527ea"
+      },
+      {
+        "name": "ac-formal-4-baseline",
+        "variant": "baseline",
+        "warmup": false,
+        "wall_seconds": 21.98867500014603,
+        "timings": {
+          "denoise": 11.972421917,
+          "hybrid_setup": 7.517152833,
+          "image_encode": 2.5e-07,
+          "request_wall": 21.943448666,
+          "text_encode": 1.375996208,
+          "vae_decode": 0.963695459
+        },
+        "mlx_peak_bytes": 5829385256,
+        "db_hits": 25,
+        "ane_calls": 648,
+        "cache": {
+          "activation_dtype": "int8",
+          "activation_granularity": "per_token",
+          "bytes_read": 11694466156,
+          "bytes_written": 0,
+          "cache_created": 0,
+          "cache_hits": 392,
+          "calibration_payload_sha256": "",
+          "calibration_sha256": "",
+          "enabled": true,
+          "prepare_seconds": 0,
+          "read_seconds": 1.5392192869999999,
+          "recipe": "dit-pc-w8a8-absmax127-nk128-m32-v1",
+          "scope": "DiT linear projections, including first step; original ANE prefix retained",
+          "smoothquant_convrot": false,
+          "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+          "text_encoder_precision": "unchanged",
+          "vae_precision": "unchanged",
+          "weight_dtype": "int8",
+          "weight_granularity": "per_channel"
+        },
+        "png_sha256": "a613428414c843a889d60831548b4298300c4e4dae01b29600cc7ac409ca2913",
+        "power_before": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3080,
+          "Voltage": 12597,
+          "InstantAmperage": 1377
+        },
+        "power_after": {
+          "ExternalConnected": true,
+          "ExternalChargeCapable": true,
+          "IsCharging": true,
+          "CurrentCapacity": 79,
+          "Temperature": 3080,
+          "Voltage": 12597,
+          "InstantAmperage": 1377
+        },
+        "power_samples_columns": [
+          "epoch_seconds",
+          "external_connected",
+          "capacity_percent",
+          "battery_temperature_raw"
+        ],
+        "power_samples": [
+          [
+            1792383335.6819332,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383337.7047942,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383339.727097,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383341.747025,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383343.771832,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383345.7948868,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383347.8183098,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383349.842389,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383351.868962,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383353.893444,
+            true,
+            79,
+            3080
+          ],
+          [
+            1792383355.918644,
+            true,
+            79,
+            3080
+          ]
+        ],
+        "source_report_sha256": "c59975930583e9b9258f807b143c5a7e21611171520f466ee71fc83b1fa4ad60"
+      }
+    ]
   }
 }
