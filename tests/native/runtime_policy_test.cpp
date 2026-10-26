@@ -106,6 +106,21 @@ int main() {
     assert(qwen21::layer_staged_hybrid_t2i(qwen_ane, qwen_device));
     assert(qwen21::qualified_staged_optimizations(qwen_ane, qwen_device));
     auto dit_int8 = qwen_ane; dit_int8.audio = false; dit_int8.qwen21_dit_w8a8 = true;
+    auto combined = dit_int8; combined.qwen21_dit_smoothquant_convrot = true;
+    assert(qwen21::staged_optimization_options(combined, qwen_device).dit_w8a8);
+    for (auto mutate : std::vector<std::function<void(Request &)>>{
+            [](Request &r) { r.qwen21_dit_w8a8 = false; },
+            [](Request &r) { r.qwen21_w8a8 = false; },
+            [](Request &r) { r.residency = "resident"; },
+            [](Request &r) { r.execution = "gpu"; },
+            [](Request &r) { r.loras.push_back({"adapter.safetensors"}); }}) {
+        auto invalid = combined; mutate(invalid);
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(invalid, qwen_device); }));
+    }
+    for (const auto &device : std::vector<DeviceInfo>{{"Apple M5", 24ull << 30},
+            {"Apple M5 Max", 24ull << 30}, {"Apple M5 Pro", 48ull << 30},
+            {"Apple M4 Pro", 24ull << 30}, {"Apple M5 Pro", (24ull << 30)-1}})
+        assert(rejects_policy([&] { qwen21::staged_optimization_options(combined, device); }));
     for (int steps : {20, 25, 40}) {
         dit_int8.steps = steps;
         const auto option = qwen21::staged_optimization_options(dit_int8, qwen_device);

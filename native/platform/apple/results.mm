@@ -581,6 +581,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (staged.qk_norm_rope || qwen21::option_enabled(norm_rope))
             [algorithm_approximations addObject:@"qwen21_metal_qk_norm_rope"];
         if (staged.dit_w8a8) [algorithm_approximations addObject:@"qwen21_dit_w8a8_pc"];
+        if (r.qwen21_dit_smoothquant_convrot) [algorithm_approximations addObject:@"qwen21_dit_smoothquant_convrot"];
         if (staged.suffix_bits && !staged.dit_w8a8)
             [algorithm_approximations addObject:[NSString stringWithFormat:@"qwen21_staged_suffix_w%d", staged.suffix_bits]];
         if (staged.attention_bits && !staged.dit_w8a8)
@@ -700,6 +701,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         for (int block : r.qwen21_gpu_full_ffn_blocks) [blocks addObject:@(block)];
         report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
         report[@"qwen21_dit_w8a8"] = @(r.qwen21_dit_w8a8);
+        report[@"qwen21_dit_smoothquant_convrot"] = @(r.qwen21_dit_smoothquant_convrot);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
         report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
         report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
@@ -2052,6 +2054,9 @@ NSDictionary *to_dictionary(const RunResult &result) {
             @"scope": @"DiT linear projections, including first step; original ANE prefix retained",
             @"text_encoder_precision": @"unchanged", @"vae_precision": @"unchanged",
             @"cache_directory": @(m.directory.c_str()), @"source_sha256": @(m.source_sha256.c_str()),
+            @"smoothquant_convrot": @(m.smoothquant_convrot),
+            @"calibration_sha256": @(m.calibration_sha256.c_str()),
+            @"calibration_payload_sha256": @(m.calibration_payload_sha256.c_str()),
             @"recipe": @(m.recipe.c_str()), @"cache_hits": @(m.hits), @"cache_created": @(m.created),
             @"bytes_read": @(m.bytes_read), @"bytes_written": @(m.bytes_written),
             @"read_seconds": @(m.read_seconds), @"prepare_seconds": @(m.prepare_seconds)

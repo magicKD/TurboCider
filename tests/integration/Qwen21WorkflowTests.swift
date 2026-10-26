@@ -196,6 +196,27 @@ import ImageIO
         for hardware in unsupportedHardware {
             try check(int8Draft.qwen21DiTW8A8Issue(systemJSON: hardware) != nil, "DiT W8A8 hardware gate bypass")
         }
+        try check(!int8Draft.qwen21DiTSmoothQuantConvRot && int8Request.qwen21_dit_smoothquant_convrot == nil,
+                  "Existing W8A8 must remain the default")
+        var combinedDraft = int8Draft; combinedDraft.qwen21DiTSmoothQuantConvRot = true
+        let combinedRequest = try combinedDraft.request(output: output, systemJSON: eligibleHardware)
+        let savedCombined = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(combinedDraft))
+        try check(savedCombined.qwen21DiTSmoothQuantConvRot && combinedRequest.qwen21_dit_smoothquant_convrot == true &&
+                  NativeRequestV2(legacy: combinedRequest).execution.qwen21_dit_smoothquant_convrot == true,
+                  "Combined quantization lost across draft, v1 or v2")
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: combinedRequest,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.qwen21DiTSmoothQuantConvRot, "History dropped combination")
+        reuseStudio.selectModel("z-image-turbo")
+        try check(!reuseStudio.draft.qwen21DiTSmoothQuantConvRot, "Model switch retained combination")
+        var missingW8 = combinedDraft; missingW8.qwen21DiTW8A8 = false
+        var rejectedCombined = false
+        do { _ = try missingW8.request(output: output, systemJSON: eligibleHardware) } catch { rejectedCombined = true }
+        try check(rejectedCombined, "Combination without W8A8 accepted")
+        for hardware in unsupportedHardware {
+            try check(combinedDraft.qwen21DiTSmoothQuantConvRotIssue(systemJSON: hardware) != nil,
+                      "Combination bypassed hardware gate")
+        }
         let invalidANECacheChanges: [(String, (inout StudioDraft) -> Void)] = [
             ("short schedule", { $0.steps = 19 }), ("long schedule", { $0.steps = 41 }),
             ("resident", { $0.residency = "resident" }), ("canvas", { $0.height = 1024 }),
@@ -214,7 +235,7 @@ import ImageIO
         ]
         for cacheMode in Qwen21DiTCacheMode.allCases where cacheMode != .off {
             for (name, change) in invalidANECacheChanges {
-                var invalidInt8 = int8Draft; change(&invalidInt8)
+                var invalidInt8 = combinedDraft; change(&invalidInt8)
                 var rejectedInt8 = false
                 do { _ = try invalidInt8.request(output: output, systemJSON: eligibleHardware) } catch { rejectedInt8 = true }
                 try check(rejectedInt8, "DiT W8A8 accepted invalid configuration: \(name)")

@@ -1,0 +1,2003 @@
+{
+  "identity": "777c4179010b3f662515013bbd51e1e57e792b9635b3d55a9fea073956a9eedc",
+  "source_sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+  "method": "SmoothQuant per-input-channel alpha=0.5, scale clip [1/16,16], inverse rounded FP16; paired W uses exact reciprocal of stored inverse",
+  "calibration_route": "current W8A8 + unchanged ANE; DBCache off; all 40 steps; compiler disabled only during capture",
+  "calibration_files": {
+    "runs/calibrate-portrait/calibration.json": "ab55a3f05409b4fa53397455de8c7e3100f1be330eee4f462f164b69299f7d08",
+    "runs/calibrate-city/calibration.json": "35f5187647a2536c31766475e396d981fe42cb8d0333d18fe056c4b6fa651db2",
+    "runs/calibrate-painting/calibration.json": "ca2a30f71e8b47f3137b8920cb7ecd4c9129a97633e63fcfa4ae56aaa75becc9"
+  },
+  "evaluation_prompts_excluded": [
+    "fox",
+    "text",
+    "objects"
+  ],
+  "schema": "qwen21-sq-convrot-profile-v1",
+  "payload_sha256": "aff47203c41c7007ee8319553876b8719a32831b4c6f787a3403121ada0c9e74",
+  "entries": [
+    {
+      "key": "attention/block0/to_k",
+      "offset": 0,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block0/to_out.0",
+      "offset": 4096,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block0/to_q",
+      "offset": 8192,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block0/to_v",
+      "offset": 12288,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block1/to_k",
+      "offset": 16384,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block1/to_out.0",
+      "offset": 20480,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block1/to_q",
+      "offset": 24576,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block1/to_v",
+      "offset": 28672,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block10/to_k",
+      "offset": 32768,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block10/to_out.0",
+      "offset": 36864,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block10/to_q",
+      "offset": 40960,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block10/to_v",
+      "offset": 45056,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block11/to_k",
+      "offset": 49152,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block11/to_out.0",
+      "offset": 53248,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block11/to_q",
+      "offset": 57344,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block11/to_v",
+      "offset": 61440,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block12/to_k",
+      "offset": 65536,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block12/to_out.0",
+      "offset": 69632,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block12/to_q",
+      "offset": 73728,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block12/to_v",
+      "offset": 77824,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block13/to_k",
+      "offset": 81920,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block13/to_out.0",
+      "offset": 86016,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block13/to_q",
+      "offset": 90112,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block13/to_v",
+      "offset": 94208,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block14/to_k",
+      "offset": 98304,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block14/to_out.0",
+      "offset": 102400,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block14/to_q",
+      "offset": 106496,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block14/to_v",
+      "offset": 110592,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block15/to_k",
+      "offset": 114688,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block15/to_out.0",
+      "offset": 118784,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block15/to_q",
+      "offset": 122880,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block15/to_v",
+      "offset": 126976,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block16/to_k",
+      "offset": 131072,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block16/to_out.0",
+      "offset": 135168,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block16/to_q",
+      "offset": 139264,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block16/to_v",
+      "offset": 143360,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block17/to_k",
+      "offset": 147456,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block17/to_out.0",
+      "offset": 151552,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block17/to_q",
+      "offset": 155648,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block17/to_v",
+      "offset": 159744,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block18/to_k",
+      "offset": 163840,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block18/to_out.0",
+      "offset": 167936,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block18/to_q",
+      "offset": 172032,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block18/to_v",
+      "offset": 176128,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block19/to_k",
+      "offset": 180224,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block19/to_out.0",
+      "offset": 184320,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block19/to_q",
+      "offset": 188416,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block19/to_v",
+      "offset": 192512,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block2/to_k",
+      "offset": 196608,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block2/to_out.0",
+      "offset": 200704,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block2/to_q",
+      "offset": 204800,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block2/to_v",
+      "offset": 208896,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block20/to_k",
+      "offset": 212992,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block20/to_out.0",
+      "offset": 217088,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block20/to_q",
+      "offset": 221184,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block20/to_v",
+      "offset": 225280,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block21/to_k",
+      "offset": 229376,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block21/to_out.0",
+      "offset": 233472,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block21/to_q",
+      "offset": 237568,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block21/to_v",
+      "offset": 241664,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block22/to_k",
+      "offset": 245760,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block22/to_out.0",
+      "offset": 249856,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block22/to_q",
+      "offset": 253952,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block22/to_v",
+      "offset": 258048,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block23/to_k",
+      "offset": 262144,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block23/to_out.0",
+      "offset": 266240,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block23/to_q",
+      "offset": 270336,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block23/to_v",
+      "offset": 274432,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block24/to_k",
+      "offset": 278528,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block24/to_out.0",
+      "offset": 282624,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block24/to_q",
+      "offset": 286720,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block24/to_v",
+      "offset": 290816,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block25/to_k",
+      "offset": 294912,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block25/to_out.0",
+      "offset": 299008,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block25/to_q",
+      "offset": 303104,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block25/to_v",
+      "offset": 307200,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block26/to_k",
+      "offset": 311296,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block26/to_out.0",
+      "offset": 315392,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block26/to_q",
+      "offset": 319488,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block26/to_v",
+      "offset": 323584,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block27/to_k",
+      "offset": 327680,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block27/to_out.0",
+      "offset": 331776,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block27/to_q",
+      "offset": 335872,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block27/to_v",
+      "offset": 339968,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block28/to_k",
+      "offset": 344064,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block28/to_out.0",
+      "offset": 348160,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block28/to_q",
+      "offset": 352256,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block28/to_v",
+      "offset": 356352,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block29/to_k",
+      "offset": 360448,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block29/to_out.0",
+      "offset": 364544,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block29/to_q",
+      "offset": 368640,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block29/to_v",
+      "offset": 372736,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block3/to_k",
+      "offset": 376832,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block3/to_out.0",
+      "offset": 380928,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block3/to_q",
+      "offset": 385024,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block3/to_v",
+      "offset": 389120,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block30/to_k",
+      "offset": 393216,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block30/to_out.0",
+      "offset": 397312,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block30/to_q",
+      "offset": 401408,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block30/to_v",
+      "offset": 405504,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block31/to_k",
+      "offset": 409600,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block31/to_out.0",
+      "offset": 413696,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block31/to_q",
+      "offset": 417792,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block31/to_v",
+      "offset": 421888,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block4/to_k",
+      "offset": 425984,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block4/to_out.0",
+      "offset": 430080,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block4/to_q",
+      "offset": 434176,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block4/to_v",
+      "offset": 438272,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block5/to_k",
+      "offset": 442368,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block5/to_out.0",
+      "offset": 446464,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block5/to_q",
+      "offset": 450560,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block5/to_v",
+      "offset": 454656,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block6/to_k",
+      "offset": 458752,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block6/to_out.0",
+      "offset": 462848,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block6/to_q",
+      "offset": 466944,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block6/to_v",
+      "offset": 471040,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block7/to_k",
+      "offset": 475136,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block7/to_out.0",
+      "offset": 479232,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block7/to_q",
+      "offset": 483328,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block7/to_v",
+      "offset": 487424,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block8/to_k",
+      "offset": 491520,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block8/to_out.0",
+      "offset": 495616,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block8/to_q",
+      "offset": 499712,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block8/to_v",
+      "offset": 503808,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block9/to_k",
+      "offset": 507904,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block9/to_out.0",
+      "offset": 512000,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block9/to_q",
+      "offset": 516096,
+      "channels": 4096
+    },
+    {
+      "key": "attention/block9/to_v",
+      "offset": 520192,
+      "channels": 4096
+    },
+    {
+      "key": "dit/img_in",
+      "offset": 524288,
+      "channels": 64
+    },
+    {
+      "key": "dit/modulation.1",
+      "offset": 524352,
+      "channels": 4096
+    },
+    {
+      "key": "dit/norm_out.linear",
+      "offset": 528448,
+      "channels": 4096
+    },
+    {
+      "key": "dit/proj_out",
+      "offset": 532544,
+      "channels": 4096
+    },
+    {
+      "key": "dit/time_text_embed.timestep_embedder.linear_1",
+      "offset": 536640,
+      "channels": 256
+    },
+    {
+      "key": "dit/time_text_embed.timestep_embedder.linear_2",
+      "offset": 536896,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.0.attn.to_k",
+      "offset": 540992,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.0.attn.to_out.0",
+      "offset": 545088,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.0.attn.to_q",
+      "offset": 549184,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.0.attn.to_v",
+      "offset": 553280,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.0.img_mlp.gate_up",
+      "offset": 557376,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.0.img_mlp.out",
+      "offset": 561472,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.1.attn.to_k",
+      "offset": 573760,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.1.attn.to_out.0",
+      "offset": 577856,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.1.attn.to_q",
+      "offset": 581952,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.1.attn.to_v",
+      "offset": 586048,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.1.img_mlp.gate_up",
+      "offset": 590144,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.1.img_mlp.out",
+      "offset": 594240,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.10.attn.to_k",
+      "offset": 606528,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.10.attn.to_out.0",
+      "offset": 610624,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.10.attn.to_q",
+      "offset": 614720,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.10.attn.to_v",
+      "offset": 618816,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.10.img_mlp.gate_up",
+      "offset": 622912,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.10.img_mlp.out",
+      "offset": 627008,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.11.attn.to_k",
+      "offset": 639296,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.11.attn.to_out.0",
+      "offset": 643392,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.11.attn.to_q",
+      "offset": 647488,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.11.attn.to_v",
+      "offset": 651584,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.11.img_mlp.gate_up",
+      "offset": 655680,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.11.img_mlp.out",
+      "offset": 659776,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.12.attn.to_k",
+      "offset": 672064,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.12.attn.to_out.0",
+      "offset": 676160,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.12.attn.to_q",
+      "offset": 680256,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.12.attn.to_v",
+      "offset": 684352,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.12.img_mlp.gate_up",
+      "offset": 688448,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.12.img_mlp.out",
+      "offset": 692544,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.13.attn.to_k",
+      "offset": 704832,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.13.attn.to_out.0",
+      "offset": 708928,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.13.attn.to_q",
+      "offset": 713024,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.13.attn.to_v",
+      "offset": 717120,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.13.img_mlp.gate_up",
+      "offset": 721216,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.13.img_mlp.out",
+      "offset": 725312,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.14.attn.to_k",
+      "offset": 737600,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.14.attn.to_out.0",
+      "offset": 741696,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.14.attn.to_q",
+      "offset": 745792,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.14.attn.to_v",
+      "offset": 749888,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.14.img_mlp.gate_up",
+      "offset": 753984,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.14.img_mlp.out",
+      "offset": 758080,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.15.attn.to_k",
+      "offset": 770368,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.15.attn.to_out.0",
+      "offset": 774464,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.15.attn.to_q",
+      "offset": 778560,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.15.attn.to_v",
+      "offset": 782656,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.15.img_mlp.gate_up",
+      "offset": 786752,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.15.img_mlp.out",
+      "offset": 790848,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.16.attn.to_k",
+      "offset": 803136,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.16.attn.to_out.0",
+      "offset": 807232,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.16.attn.to_q",
+      "offset": 811328,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.16.attn.to_v",
+      "offset": 815424,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.16.img_mlp.gate_up",
+      "offset": 819520,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.16.img_mlp.out",
+      "offset": 823616,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.17.attn.to_k",
+      "offset": 835904,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.17.attn.to_out.0",
+      "offset": 840000,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.17.attn.to_q",
+      "offset": 844096,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.17.attn.to_v",
+      "offset": 848192,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.17.img_mlp.gate_up",
+      "offset": 852288,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.17.img_mlp.out",
+      "offset": 856384,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.18.attn.to_k",
+      "offset": 868672,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.18.attn.to_out.0",
+      "offset": 872768,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.18.attn.to_q",
+      "offset": 876864,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.18.attn.to_v",
+      "offset": 880960,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.18.img_mlp.gate_up",
+      "offset": 885056,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.18.img_mlp.out",
+      "offset": 889152,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.19.attn.to_k",
+      "offset": 901440,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.19.attn.to_out.0",
+      "offset": 905536,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.19.attn.to_q",
+      "offset": 909632,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.19.attn.to_v",
+      "offset": 913728,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.19.img_mlp.gate_up",
+      "offset": 917824,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.19.img_mlp.out",
+      "offset": 921920,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.2.attn.to_k",
+      "offset": 934208,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.2.attn.to_out.0",
+      "offset": 938304,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.2.attn.to_q",
+      "offset": 942400,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.2.attn.to_v",
+      "offset": 946496,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.2.img_mlp.gate_up",
+      "offset": 950592,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.2.img_mlp.out",
+      "offset": 954688,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.20.attn.to_k",
+      "offset": 966976,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.20.attn.to_out.0",
+      "offset": 971072,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.20.attn.to_q",
+      "offset": 975168,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.20.attn.to_v",
+      "offset": 979264,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.20.img_mlp.gate_up",
+      "offset": 983360,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.20.img_mlp.out",
+      "offset": 987456,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.21.attn.to_k",
+      "offset": 999744,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.21.attn.to_out.0",
+      "offset": 1003840,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.21.attn.to_q",
+      "offset": 1007936,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.21.attn.to_v",
+      "offset": 1012032,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.21.img_mlp.gate_up",
+      "offset": 1016128,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.21.img_mlp.out",
+      "offset": 1020224,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.22.attn.to_k",
+      "offset": 1032512,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.22.attn.to_out.0",
+      "offset": 1036608,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.22.attn.to_q",
+      "offset": 1040704,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.22.attn.to_v",
+      "offset": 1044800,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.22.img_mlp.gate_up",
+      "offset": 1048896,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.22.img_mlp.out",
+      "offset": 1052992,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.23.attn.to_k",
+      "offset": 1065280,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.23.attn.to_out.0",
+      "offset": 1069376,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.23.attn.to_q",
+      "offset": 1073472,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.23.attn.to_v",
+      "offset": 1077568,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.23.img_mlp.gate_up",
+      "offset": 1081664,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.23.img_mlp.out",
+      "offset": 1085760,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.24.attn.to_k",
+      "offset": 1098048,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.24.attn.to_out.0",
+      "offset": 1102144,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.24.attn.to_q",
+      "offset": 1106240,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.24.attn.to_v",
+      "offset": 1110336,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.24.img_mlp.gate_up",
+      "offset": 1114432,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.24.img_mlp.out",
+      "offset": 1118528,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.25.attn.to_k",
+      "offset": 1130816,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.25.attn.to_out.0",
+      "offset": 1134912,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.25.attn.to_q",
+      "offset": 1139008,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.25.attn.to_v",
+      "offset": 1143104,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.25.img_mlp.gate_up",
+      "offset": 1147200,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.25.img_mlp.out",
+      "offset": 1151296,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.26.attn.to_k",
+      "offset": 1163584,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.26.attn.to_out.0",
+      "offset": 1167680,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.26.attn.to_q",
+      "offset": 1171776,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.26.attn.to_v",
+      "offset": 1175872,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.26.img_mlp.gate_up",
+      "offset": 1179968,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.26.img_mlp.out",
+      "offset": 1184064,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.27.attn.to_k",
+      "offset": 1196352,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.27.attn.to_out.0",
+      "offset": 1200448,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.27.attn.to_q",
+      "offset": 1204544,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.27.attn.to_v",
+      "offset": 1208640,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.27.img_mlp.gate_up",
+      "offset": 1212736,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.27.img_mlp.out",
+      "offset": 1216832,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.28.attn.to_k",
+      "offset": 1229120,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.28.attn.to_out.0",
+      "offset": 1233216,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.28.attn.to_q",
+      "offset": 1237312,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.28.attn.to_v",
+      "offset": 1241408,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.28.img_mlp.gate_up",
+      "offset": 1245504,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.28.img_mlp.out",
+      "offset": 1249600,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.29.attn.to_k",
+      "offset": 1261888,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.29.attn.to_out.0",
+      "offset": 1265984,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.29.attn.to_q",
+      "offset": 1270080,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.29.attn.to_v",
+      "offset": 1274176,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.29.img_mlp.gate_up",
+      "offset": 1278272,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.29.img_mlp.out",
+      "offset": 1282368,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.3.attn.to_k",
+      "offset": 1294656,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.3.attn.to_out.0",
+      "offset": 1298752,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.3.attn.to_q",
+      "offset": 1302848,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.3.attn.to_v",
+      "offset": 1306944,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.3.img_mlp.gate_up",
+      "offset": 1311040,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.3.img_mlp.out",
+      "offset": 1315136,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.30.attn.to_k",
+      "offset": 1327424,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.30.attn.to_out.0",
+      "offset": 1331520,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.30.attn.to_q",
+      "offset": 1335616,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.30.attn.to_v",
+      "offset": 1339712,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.30.img_mlp.gate_up",
+      "offset": 1343808,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.30.img_mlp.out",
+      "offset": 1347904,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.31.attn.to_k",
+      "offset": 1360192,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.31.attn.to_out.0",
+      "offset": 1364288,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.31.attn.to_q",
+      "offset": 1368384,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.31.attn.to_v",
+      "offset": 1372480,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.31.img_mlp.gate_up",
+      "offset": 1376576,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.31.img_mlp.out",
+      "offset": 1380672,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.4.attn.to_k",
+      "offset": 1392960,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.4.attn.to_out.0",
+      "offset": 1397056,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.4.attn.to_q",
+      "offset": 1401152,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.4.attn.to_v",
+      "offset": 1405248,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.4.img_mlp.gate_up",
+      "offset": 1409344,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.4.img_mlp.out",
+      "offset": 1413440,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.5.attn.to_k",
+      "offset": 1425728,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.5.attn.to_out.0",
+      "offset": 1429824,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.5.attn.to_q",
+      "offset": 1433920,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.5.attn.to_v",
+      "offset": 1438016,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.5.img_mlp.gate_up",
+      "offset": 1442112,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.5.img_mlp.out",
+      "offset": 1446208,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.6.attn.to_k",
+      "offset": 1458496,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.6.attn.to_out.0",
+      "offset": 1462592,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.6.attn.to_q",
+      "offset": 1466688,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.6.attn.to_v",
+      "offset": 1470784,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.6.img_mlp.gate_up",
+      "offset": 1474880,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.6.img_mlp.out",
+      "offset": 1478976,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.7.attn.to_k",
+      "offset": 1491264,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.7.attn.to_out.0",
+      "offset": 1495360,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.7.attn.to_q",
+      "offset": 1499456,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.7.attn.to_v",
+      "offset": 1503552,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.7.img_mlp.gate_up",
+      "offset": 1507648,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.7.img_mlp.out",
+      "offset": 1511744,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.8.attn.to_k",
+      "offset": 1524032,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.8.attn.to_out.0",
+      "offset": 1528128,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.8.attn.to_q",
+      "offset": 1532224,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.8.attn.to_v",
+      "offset": 1536320,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.8.img_mlp.gate_up",
+      "offset": 1540416,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.8.img_mlp.out",
+      "offset": 1544512,
+      "channels": 12288
+    },
+    {
+      "key": "dit/transformer_blocks.9.attn.to_k",
+      "offset": 1556800,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.9.attn.to_out.0",
+      "offset": 1560896,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.9.attn.to_q",
+      "offset": 1564992,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.9.attn.to_v",
+      "offset": 1569088,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.9.img_mlp.gate_up",
+      "offset": 1573184,
+      "channels": 4096
+    },
+    {
+      "key": "dit/transformer_blocks.9.img_mlp.out",
+      "offset": 1577280,
+      "channels": 12288
+    },
+    {
+      "key": "dit/txt_in.in_layer",
+      "offset": 1589568,
+      "channels": 4096
+    },
+    {
+      "key": "dit/txt_in.out_layer",
+      "offset": 1593664,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block0/down",
+      "offset": 1597760,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block0/gate_up",
+      "offset": 1603904,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block1/down",
+      "offset": 1608000,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block1/gate_up",
+      "offset": 1614144,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block10/down",
+      "offset": 1618240,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block10/gate_up",
+      "offset": 1624384,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block11/down",
+      "offset": 1628480,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block11/gate_up",
+      "offset": 1634624,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block12/down",
+      "offset": 1638720,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block12/gate_up",
+      "offset": 1644864,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block13/down",
+      "offset": 1648960,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block13/gate_up",
+      "offset": 1655104,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block14/down",
+      "offset": 1659200,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block14/gate_up",
+      "offset": 1665344,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block15/down",
+      "offset": 1669440,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block15/gate_up",
+      "offset": 1675584,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block16/down",
+      "offset": 1679680,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block16/gate_up",
+      "offset": 1685824,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block17/down",
+      "offset": 1689920,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block17/gate_up",
+      "offset": 1696064,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block18/down",
+      "offset": 1700160,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block18/gate_up",
+      "offset": 1706304,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block19/down",
+      "offset": 1710400,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block19/gate_up",
+      "offset": 1716544,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block2/down",
+      "offset": 1720640,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block2/gate_up",
+      "offset": 1726784,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block20/down",
+      "offset": 1730880,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block20/gate_up",
+      "offset": 1737024,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block21/down",
+      "offset": 1741120,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block21/gate_up",
+      "offset": 1747264,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block22/down",
+      "offset": 1751360,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block22/gate_up",
+      "offset": 1757504,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block23/down",
+      "offset": 1761600,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block23/gate_up",
+      "offset": 1767744,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block24/down",
+      "offset": 1771840,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block24/gate_up",
+      "offset": 1777984,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block25/down",
+      "offset": 1782080,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block25/gate_up",
+      "offset": 1788224,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block26/down",
+      "offset": 1792320,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block26/gate_up",
+      "offset": 1798464,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block27/down",
+      "offset": 1802560,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block27/gate_up",
+      "offset": 1808704,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block28/down",
+      "offset": 1812800,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block28/gate_up",
+      "offset": 1818944,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block29/down",
+      "offset": 1823040,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block29/gate_up",
+      "offset": 1829184,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block3/down",
+      "offset": 1833280,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block3/gate_up",
+      "offset": 1839424,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block30/down",
+      "offset": 1843520,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block30/gate_up",
+      "offset": 1849664,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block31/down",
+      "offset": 1853760,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block31/gate_up",
+      "offset": 1859904,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block4/down",
+      "offset": 1864000,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block4/gate_up",
+      "offset": 1870144,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block5/down",
+      "offset": 1874240,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block5/gate_up",
+      "offset": 1880384,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block6/down",
+      "offset": 1884480,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block6/gate_up",
+      "offset": 1890624,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block7/down",
+      "offset": 1894720,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block7/gate_up",
+      "offset": 1900864,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block8/down",
+      "offset": 1904960,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block8/gate_up",
+      "offset": 1911104,
+      "channels": 4096
+    },
+    {
+      "key": "suffix/block9/down",
+      "offset": 1915200,
+      "channels": 6144
+    },
+    {
+      "key": "suffix/block9/gate_up",
+      "offset": 1921344,
+      "channels": 4096
+    }
+  ],
+  "calibration_requests": [
+    {
+      "prompt": "A studio photograph of an elderly woman wearing a green scarf, detailed face, soft window light.",
+      "seed": 123,
+      "steps": 40,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "prompt": "A rainy street in Tokyo at night, neon signs reflected in puddles, cinematic photography.",
+      "seed": 321,
+      "steps": 40,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "prompt": "A watercolor painting of a mountain lake with pine trees and a small wooden boat, morning mist.",
+      "seed": 456,
+      "steps": 40,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

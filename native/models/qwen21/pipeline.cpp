@@ -1338,6 +1338,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             (layer_staged ? ":layer-staged" : ":resident") +
             ":suffix-bits=" + std::to_string(staged_options.suffix_bits) +
             (r.qwen21_dit_w8a8 ? ":dit-w8a8" : ":dit-default") +
+            (r.qwen21_dit_smoothquant_convrot ? ":sq-convrot" : ":untransformed") +
             (r.qwen21_gpu_full_ffn_blocks.empty() ? ":full" : ":fallback357");
         // Keep the established 4096-channel path and permit the separately
         // calibrated 6144-channel W8A8 experiment only by explicit manifest.
@@ -1399,7 +1400,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             require(layer_staged && hybrid_->ane_mlp_end == 6144, "DiT W8A8 requires streamed verified ANE execution");
             dit_source->revalidate_after_drain();
             cider_cache = std::make_shared<CiderCache>(qwen21_dit_cache_root(),
-                hybrid_->verified_checkpoint_sha256, [&cancelled] { checkpoint(cancelled); });
+                hybrid_->verified_checkpoint_sha256, [&cancelled] { checkpoint(cancelled); },
+                r.qwen21_dit_smoothquant_convrot);
         }
         if (r.qwen21_dit_w8a8 || !hybrid_mlp_ || hybrid_runtime_options_ != runtime_options) {
             hybrid_mlp_.reset();

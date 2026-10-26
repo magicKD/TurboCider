@@ -77,6 +77,7 @@ runtime_build_identity() {
 }
 runtime_build_identity
 "$BUILD_IDENTITY_PYTHON" tools/native/embed_qwen21_cider_kernels.py --output "$BUILD_IDENTITY_DIR/qwen21_cider_kernels_generated.hpp"
+"$BUILD_IDENTITY_PYTHON" tools/native/embed_qwen21_sq_profile.py --output "$BUILD_IDENTITY_DIR/qwen21_sq_profile_generated.hpp"
 CATALOG_INPUT=(--inventory native/runtime/streaming/bundled_catalog.json)
 if [[ -n "${TURBOCIDER_TEST_BUNDLED_CATALOG:-}" ]]; then
  if [[ "$TEST_HOOKS" != "1" ]]; then
