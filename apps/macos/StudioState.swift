@@ -220,6 +220,7 @@ struct StudioAcceleration: Codable, Sendable {
     var sourceManifest = ""
     var knownManifests: [String]?
     var compileGPU: Bool?
+    // Legacy persisted key: optional GPU fast preset, independent of manifest precision.
     var qwen21W8A8: Bool?
     var coreMLStorage: String?
     var coreMLCache: String?
@@ -411,8 +412,9 @@ struct StudioDraft: Codable, Sendable {
     }
     func qualifiedQwen21StagedANECache(systemJSON: String? = nil) -> Bool {
         guard modelID == "qwen-image-2.1", operation == "image.generate",
-              acceleration?.policy == "gpu_ane", acceleration?.qwen21W8A8 == true,
+              acceleration?.policy == "gpu_ane",
               acceleration?.manifest.isEmpty == false, !usesRuntimeANE,
+              (try? AccelerationDiscovery.qwen21ManifestUsesW8A8(acceleration?.manifest ?? "")) == true,
               acceleration?.compileGPU != true, profilePath.isEmpty,
               width == 512, height == 512, frames == 1, !audio, (20...40).contains(steps),
               residency == "component_staged", !usesPublicStreaming,
@@ -927,7 +929,8 @@ struct StudioDraft: Codable, Sendable {
             if acceleration.policy == "gpu_ane" && model.supports_gpu_ane == true && !loraRequiresBaseGPU && !usesRuntimeANE {
                 guard !acceleration.manifest.isEmpty else { throw NativeFailure(message: "请在模型中心选择已编译的分区 manifest，或先预编译本地源分区。") }
                 request.ane_manifest = acceleration.manifest; request.allow_approximation = true
-                if modelID == "qwen-image-2.1", acceleration.qwen21W8A8 == true {
+                if modelID == "qwen-image-2.1",
+                   try AccelerationDiscovery.qwen21ManifestUsesW8A8(acceleration.manifest) {
                     guard Qwen21LowMemoryANEHardware.isEligible(systemJSON: systemJSON ?? NativeEngine.system()) else {
                         throw NativeFailure(message: "Qwen 低内存 ANE 实验仅适用于 Apple M5 Pro、24 GiB 内存；请关闭此实验选项。")
                     }
@@ -939,6 +942,7 @@ struct StudioDraft: Codable, Sendable {
                         throw NativeFailure(message: "Qwen 低内存 ANE 仅支持 512×512 文生图、至少 2 步和分阶段加载；请关闭参考图、LoRA与提示词增强。DiT 缓存另需 20–40 步并关闭设备配置。")
                     }
                     request.qwen21_w8a8 = true
+                    request.qwen21_staged_fast = acceleration.qwen21W8A8 == true
                     request.hybrid_mlp_mode = "base_fused"
                 }
             }
@@ -1957,7 +1961,7 @@ final class StudioState: ObservableObject {
         if request.model == "z-image-turbo", let budget = request.memory_budget_bytes {
             draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
         }
-        draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", compileGPU: request.compile_gpu, qwen21W8A8: request.qwen21_w8a8)
+        draft.acceleration = StudioAcceleration(policy: request.profile == nil ? request.execution : "profile", manifest: request.ane_manifest ?? "", compileGPU: request.compile_gpu, qwen21W8A8: request.qwen21_staged_fast ?? request.qwen21_w8a8)
         if let options = job.runtimeOptions {
             draft.acceleration?.runtimeAneProfileID = options.profile_id
             draft.acceleration?.runtimeDescriptor = options.descriptor_path

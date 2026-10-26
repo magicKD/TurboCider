@@ -392,6 +392,8 @@ final class NativeJobStore: ObservableObject {
         let preferred = config.manifest, known = config.knownManifests ?? []
         let preferSmallestRows = draft.modelID == "z-image-turbo" &&
             AccelerationDiscovery.optimizationEnabled("z_image_smallest_partition")
+        let allowRowTiling = draft.modelID == "z-image-turbo" &&
+            draft.width == 512 && draft.height == 512 && draft.activeLoRAs.isEmpty
         accelerationStatus = "正在检查 ANE 编译缓存…"
         let textTokens = draft.modelID == "z-image-turbo"
             ? try await Task.detached {
@@ -405,13 +407,14 @@ final class NativeJobStore: ObservableObject {
         let match = await Task.detached {
             AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: preferred, cache: cache,
                 minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs, knownManifests: known,
-                preferSmallestRows: preferSmallestRows)
+                preferSmallestRows: preferSmallestRows, allowRowTiling: allowRowTiling)
         }.value
         try Task.checkCancellation()
         if let match {
             config.manifest = match.manifest
             config.sourceManifest = match.source
-            accelerationStatus = "已复用 ANE 编译缓存 · \(match.rows) 行 · 未重新编译"
+            accelerationStatus = "已复用 ANE 编译缓存 · \(match.rows) 行" +
+                (match.tiles > 1 ? " × \(match.tiles) 个 FFN 分块 · 保留完整文本" : "") + " · 未重新编译"
         } else {
             let source = config.sourceManifest
             let sourceMatch = await Task.detached {
@@ -424,7 +427,7 @@ final class NativeJobStore: ObservableObject {
                 return AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: sources.first ?? "", cache: cache,
                     minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs,
                     knownManifests: Array(sources.dropFirst()), requireCompiled: false,
-                    preferSmallestRows: preferSmallestRows)
+                    preferSmallestRows: preferSmallestRows, allowRowTiling: allowRowTiling)
             }.value
             guard let sourceMatch else {
                 accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"

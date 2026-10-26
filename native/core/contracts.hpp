@@ -41,6 +41,8 @@ struct Request {
     // Explicit Qwen21-only W8A8 diagnostics in the public CLI contract.
     // The default remains the original 1024-reference BF16 GPU path.
     bool qwen21_w8a8 = false, qwen21_gpu_w8a16 = false;
+    // Absent preserves the qualified CLI preset; false isolates ANE with BF16 GPU weights.
+    std::optional<bool> qwen21_staged_fast;
     bool qwen21_dit_w8a8 = false;
     bool qwen21_dit_smoothquant_convrot = false;
     // Independent executor identity, separate from GPU/ANE device policy.

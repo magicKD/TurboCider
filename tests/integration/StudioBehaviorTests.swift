@@ -395,6 +395,25 @@ struct StudioBehaviorTests {
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: zLarge, cache: compiled,
                     minimumRows: 1120, modelID: "z-image-turbo", knownManifests: [zSmall])?.manifest == zLarge,
                   "Explicit discovery preference changed without opting into row minimization")
+        for needed in [1568, 1792, 2048] {
+            let tiled = AccelerationDiscovery.find(modelPath: fixture.path, preferred: zLarge, cache: compiled,
+                minimumRows: needed, modelID: "z-image-turbo", knownManifests: [zSmall],
+                preferSmallestRows: true, allowRowTiling: true)
+            try check(tiled?.manifest == zSmall && tiled?.rows == 1536 && tiled?.tiles == 2,
+                      "Long Z-Image caption selected oversized padding instead of complete FFN tiles")
+        }
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: zSmall, cache: compiled,
+                    minimumRows: 2049, modelID: "z-image-turbo", knownManifests: [],
+                    allowRowTiling: true)?.manifest != zSmall,
+                  "Tiling exceeded the bounded 512-image plus 1024-caption route")
+        let registeredSmall = try LibraryANEPartition.inspect(modelID: "z-image-turbo", manifest: URL(fileURLWithPath: zSmall))
+        var otherWeights = registeredSmall; otherWeights.id = UUID().uuidString
+        otherWeights.checkpoint = root.appendingPathComponent("other-weights.safetensors").path
+        try Data([9]).write(to: URL(fileURLWithPath: otherWeights.checkpoint))
+        let filtered = AccelerationDiscovery.registeredCompiled([registeredSmall, otherWeights],
+            modelID: "z-image-turbo", modelPath: fixture.path)
+        try check(filtered.count == 1 && filtered.first?.id == registeredSmall.id,
+                  "Identical bucket labels exposed partitions compiled for different weights")
         let discoveryLoRAFile = root.appendingPathComponent("discovery-lora.safetensors")
         try Data([7, 8]).write(to: discoveryLoRAFile)
         let discoveryLoRA = StudioLoRA(path: discoveryLoRAFile.path, strength: 0.6)
@@ -918,7 +937,11 @@ struct StudioBehaviorTests {
         qwen.acceleration?.policy = "gpu"
         try check((try qwen.request(output: output)).execution == "gpu" && qwen.aneConfigurationNotice == nil,
                   "Switching to GPU did not recover the ordinary Qwen LoRA request")
-        qwen.loras = []; qwen.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/unused/manifest.json", qwen21W8A8: true)
+        let frozenQwenManifest = root.appendingPathComponent("qwen-w8a8.json")
+        try JSONSerialization.data(withJSONObject: ["schema_version": 2,
+            "export_identity": ["owner": "turbocider.qwen21.dit.coreml.v1", "tensor_layout": "qwen21",
+                "variant": "int8_pc", "activation_precision": "int8"]]).write(to: frozenQwenManifest)
+        qwen.loras = []; qwen.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: frozenQwenManifest.path, qwen21W8A8: true)
         do {
             _ = try qwen.request(output: output, systemJSON: #"{"gpu":"Apple M4 Pro","physical_memory_bytes":51539607552}"#)
             throw NativeFailure(message: "Frozen Qwen W8A8 experiment was enabled on an unsupported device")

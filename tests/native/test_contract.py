@@ -155,6 +155,29 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(code, 0, error)
             self.assertGreater(other['memory_estimate_bytes'] + (4 << 30), 24 << 30)
 
+    def test_qwen21_ane_only_keeps_staging_without_gpu_quantization(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    qwen21_w8a8=True, qwen21_staged_fast=False, qwen21_dit_cache='off',
+                    ane_manifest='checkpoint-verified-at-execution.json')
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS': '4',
+                                     'TURBOCIDER_QWEN21_STAGED_ATTN_BITS': '4'}):
+            code, result, error = plan(base)
+        self.assertEqual(code, 0, error)
+        self.assertFalse(result['qwen21_staged_fast'])
+        self.assertEqual(result['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
+                         qwen21_streaming_device())
+        self.assertFalse(any('staged_suffix_w' in x or 'staged_attention_w' in x or
+                             'dit_w8a8' in x or 'qk_norm_rope' in x
+                             for x in result['algorithm_approximations']))
+        for invalid in ('false', 0, 1):
+            self.assertNotEqual(plan({**base, 'qwen21_staged_fast': invalid})[0], 0)
+        if qwen21_streaming_device():
+            code, combined, error = plan({**base, 'qwen21_dit_w8a8': True})
+            self.assertEqual(code, 0, error)
+            self.assertIn('qwen21_dit_w8a8_pc', combined['algorithm_approximations'])
+
     def test_qwen21_layer_staged_hybrid_fits_24gib_only_for_bounded_route(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
                     width=512, height=512, steps=40, audio=False, frames=1,
