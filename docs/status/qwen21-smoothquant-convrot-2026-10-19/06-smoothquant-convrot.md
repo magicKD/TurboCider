@@ -72,10 +72,6 @@ SmoothQuant 直接复用单独方案的同一份冻结校准 profile、alpha=0.5
 
 三个 512×512 样本等权合并像素 RMSE：当前 W8A8 4.530638，本方案 2.695481。
 
-- [狐狸输出](images/fox-combined.png)；[同轮浮点参考](images/fox-reference.png)。
-- [文字输出](images/text-combined.png)；[同轮浮点参考](images/text-reference.png)。
-- [物体输出](images/objects-combined.png)；[同轮浮点参考](images/objects-reference.png)。
-
 独立校准的三个生成请求累计 **155.265 秒**（同一请求计时口径）；这是一次性准备成本，另加 profile 生成及上表首次权重缓存准备，不计入后续命中缓存的推理耗时。两种方案共享这份校准，不重复采集。
 
 人工逐张检查了四种配置及浮点参考的 15 张评估图：所有文字图都正确拼写 BLUE SKY；物体图均保持红色方块、蓝杯、黄球的从左到右顺序；狐狸图主体和雪地构图一致，局部毛发、腿部及雪面细节存在差异。狐狸在所有版本中均呈低头蹲伏姿态，不能声称完全符合提示词中的 standing。RMSE 增大并不等于图片不可用，也不代表已经测量了感知质量。
@@ -90,7 +86,7 @@ SmoothQuant 直接复用单独方案的同一份冻结校准 profile、alpha=0.5
 
 实验库 SHA256：`127135812ae48c272387715e726470f2c09d650881b6c96eb7e59f661d9284f6`。Runtime build ID：`tc-runtime-build-v1-5b7315f17e337ae7369247968c3264da9ebbc342f9a5f34e785b17f013636b49`。实验基于提交 `d3452b58ae9730dcb5c90d4003183da1af39af73`，生产集成保持相同的变换顺序、校准系数和 FP32/FP16 边界；集成后的数值复核见后文。
 
-本目录 [measurement.json](measurement.json) 保存本报告所用运行的计时、缓存/ANE 回执摘要、电源采样和 PNG SHA256；样图使用仓库相对链接，可直接查看。该文件是原始回执的摘录，不包含机器路径、完整日志或大体积模型缓存。
+本目录 [measurement.json](measurement.json) 保存本报告所用运行的计时、缓存/ANE 回执摘要、电源采样和 PNG SHA256。评估图片不随报告提交；`output_png_sha256` 按输出文件名保留校验哈希。该文件是原始回执的摘录，不包含机器路径、完整日志或大体积模型缓存。
 
 ## 客户端开启与对比
 
