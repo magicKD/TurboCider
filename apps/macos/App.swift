@@ -303,12 +303,28 @@ struct StudioView: View {
                 imageUpscaling = false; page = studio.draft.modelID == "seedvr2-3b" ? .upscale : .studio
             }
         }
-        .onChange(of: page) { _, next in
+        .onChange(of: page) { previous, next in
             showingRecentResults = false
-            if next == .upscale, !imageUpscaling, studio.draft.modelID != "seedvr2-3b" { showSeedVR2() }
+            if next == .studio {
+                if imageUpscaling || studio.draft.operation.hasSuffix(".upscale") {
+                    guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
+                          !store.resolvingAcceleration else {
+                        page = previous
+                        studio.message = "请先完成当前任务或停止本地 API，再返回创作。"
+                        return
+                    }
+                }
+                guard studio.activateCreation() else { page = previous; return }
+                imageUpscaling = false
+            }
+            if next == .upscale, !imageUpscaling, studio.draft.modelID != "seedvr2-3b" {
+                showSeedVR2()
+                if studio.draft.modelID != "seedvr2-3b" { page = previous }
+            }
         }
         .onChange(of: studio.draft.modelID) { _, id in
             if page == .upscale && id != "seedvr2-3b" && !imageUpscaling { page = .studio }
+            if page == .studio && id == "seedvr2-3b" { page = .upscale }
         }
         .onChange(of: upscaleSourcePath) { _, _ in
             if imageUpscaling { selected = nil; compareOriginal = false; resultSelection.clear() }
@@ -357,7 +373,7 @@ struct StudioView: View {
     private var workspace: some View {
         VStack(spacing: 0) {
             if page == .upscale { upscaleHeader.padding(.horizontal,18).padding(.top,12) }
-            if studio.draft.modelID == "seedvr2-3b" && !imageUpscaling {
+            if page == .upscale && studio.draft.modelID == "seedvr2-3b" && !imageUpscaling {
                 SeedVR2UpscaleControls(studio: studio,
                     locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
                     manageModels: { librarySelection = "seedvr2-3b"; page = .models })
@@ -439,6 +455,7 @@ struct StudioView: View {
                     imageUpscaling = true; page = .upscale
                     return
                 }
+                if $0 == "video.upscale" { showSeedVR2(kind: "video"); return }
                 imageUpscaling = false
                 studio.changeOperation(studio.draft.modelID == "qwen-image-2.1" && $0 == "image.transform" ? "image.edit" : $0)
                 focusInput()

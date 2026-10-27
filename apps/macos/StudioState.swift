@@ -1249,6 +1249,8 @@ final class StudioState: ObservableObject {
     let models: [StudioModel]
     let importer: StudioAssetImporter
     private let file: URL
+    private let creationFile: URL
+    private var creationDraft: StudioDraft?
     private var saveTask: Task<Void, Never>?
     private var undoAssets: [([StudioAsset], UUID?)] = []
     /// Importing may suspend while a provider or disk is slow. Only inputs that
@@ -1284,6 +1286,8 @@ final class StudioState: ObservableObject {
         }
         self.models = models
         file = directory.appendingPathComponent("studio-draft.json")
+        creationFile = directory.appendingPathComponent("creation-draft.json")
+        creationDraft = (try? Data(contentsOf: creationFile)).flatMap { try? JSONDecoder().decode(StudioDraft.self, from: $0) }
         importer = StudioAssetImporter(directory: directory.appendingPathComponent("inputs"))
         if FileManager.default.fileExists(atPath: file.path) {
             do { draft = try JSONDecoder().decode(StudioDraft.self, from: Data(contentsOf: file)) }
@@ -1414,8 +1418,10 @@ final class StudioState: ObservableObject {
     }
     func save() {
         saveTask?.cancel()
+        if isCreationDraft(draft) { creationDraft = draft }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let creationDraft { try JSONEncoder().encode(creationDraft).write(to: creationFile, options: .atomic) }
             try JSONEncoder().encode(draft).write(to: file, options: .atomic); saved = true
         } catch { saved = false; message = "草稿保存失败：\(error.localizedDescription)" }
     }
@@ -1543,6 +1549,45 @@ final class StudioState: ObservableObject {
         message = nil
     }
     var creationKind: String { draft.operation.hasPrefix("video.") ? "video" : "image" }
+    private func isCreationDraft(_ value: StudioDraft) -> Bool {
+        !value.operation.hasSuffix(".upscale") && models.contains { $0.id == value.modelID && $0.supports(value.operation) }
+    }
+    /// Upscaling temporarily owns the active draft. Returning to creation must
+    /// restore the original model, editing inputs and sampling settings, even
+    /// after an App restart or a detour through the model library.
+    @discardableResult func activateCreation() -> Bool {
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return false }
+        if isCreationDraft(draft) { return true }
+        if var restored = creationDraft, isCreationDraft(restored) {
+            // Registrations and auxiliary-upscaler preferences may have changed
+            // while the creation draft was parked. Keep those shared settings.
+            restored.modelPaths = draft.modelPaths
+            restored.modelLoRAs = draft.modelLoRAs
+            restored.tinyVAEPaths = draft.tinyVAEPaths
+            restored.upscaleModelPaths = draft.upscaleModelPaths
+            restored.upscaleModelPath = draft.upscaleModelPath
+            restored.upscaleVariant = draft.upscaleVariant
+            restored.upscaleCompute = draft.upscaleCompute
+            restored.upscaleAutoPreload = draft.upscaleAutoPreload
+            restored.seedvr2VAE = draft.seedvr2VAE
+            restored.promptEnhancerPath = draft.promptEnhancerPath
+            draft = restored
+        } else {
+            // Older versions saved only the SeedVR2 draft. Recover a usable
+            // creation route without requiring a download or losing the text.
+            let operation = creationKind + ".generate"
+            let candidates = models.filter { $0.supports(operation) }
+            guard let model = candidates.first(where: { !(draft.modelPaths[$0.id] ?? "").isEmpty }) ?? candidates.first else {
+                message = "暂时没有可用的创作执行器，请前往模型中心查看。"; return false
+            }
+            let assets = draft.assets, input = draft.initImageID
+            applyModel(model)
+            draft.operation = operation; draft.assets = assets; draft.initImageID = input
+        }
+        undoAssets = []; message = nil
+        save()
+        return true
+    }
     @discardableResult func activateSeedVR2Upscaling(kind: String? = nil) -> Bool {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return false }
         let media = kind ?? creationKind
@@ -1568,10 +1613,10 @@ final class StudioState: ObservableObject {
         } catch { message = error.localizedDescription }
     }
     var creationModels: [StudioModel] {
-        models.filter { model in model.availableOperations.contains { $0.hasPrefix(creationKind + ".") } }
+        models.filter { model in model.availableOperations.contains { $0.hasPrefix(creationKind + ".") && !$0.hasSuffix(".upscale") } }
     }
     var creationOperations: [String] {
-        let operations = creationModels.flatMap(\.availableOperations)
+        let operations = models.flatMap(\.availableOperations)
             .filter { $0.hasPrefix(creationKind + ".") }
         let preferred = ["image.generate", "image.transform", "image.edit", "image.upscale", "video.generate", "video.image", "video.keyframes", "video.reference", "video.upscale"]
         return preferred.filter { operations.contains($0) } + Set(operations).subtracting(preferred).sorted()
@@ -1625,6 +1670,7 @@ final class StudioState: ObservableObject {
         applyModel(model)
     }
     private func applyModel(_ model: StudioModel) {
+        if isCreationDraft(draft), !model.availableOperations.contains(where: { !$0.hasSuffix(".upscale") }) { save() }
         let id = model.id
         message = nil
         draft.modelLoRAs[draft.modelID] = draft.loras
@@ -2054,6 +2100,7 @@ final class StudioState: ObservableObject {
     func reuse(_ job: NativeJob) {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
         let request = job.request
+        if request.operation?.hasSuffix(".upscale") == true, isCreationDraft(draft) { save() }
         if UpscaleVariant.from(modelID: request.model) != nil, request.operation == "image.upscale" {
             draft.upscaleModelPath = job.modelPath ?? ""
             draft.upscaleCompute = UpscaleCompute(rawValue: request.execution) ?? .gpu
@@ -2175,6 +2222,7 @@ final class StudioState: ObservableObject {
     }
     func newDraft() {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
+        guard activateCreation() else { return }
         var model = models.first { $0.id == draft.modelID && $0.executor }
         if model == nil {
             model = models.first { $0.executor && !(draft.modelPaths[$0.id] ?? "").isEmpty }
