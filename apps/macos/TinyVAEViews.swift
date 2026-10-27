@@ -28,7 +28,7 @@ struct TinyVAEControls: View {
                             }
                         }.accessibilityIdentifier("tinyVAEChooseModel")
                     }
-                    if draft.modelID == "qwen-image-2.1" {
+                    if draft.modelID == "qwen-image-2.1" && draft.operation == "image.edit" {
                         Picker("参考图编码", selection: $draft.tinyVAEEncoder) {
                             Text("原始 VAE（质量优先）").tag("original")
                             Text("Tiny（近似、速度优先）").tag("tiny")
@@ -48,7 +48,7 @@ struct TinyVAEControls: View {
                         .accessibilityIdentifier("tinyPreviewInterval")
                     }
                     Text(
-                        "预览独立于最终解码，默认每 2 步更新，并显示最后一步。预览不会改变采样结果；Tiny 编码／最终解码会损失细节。Z-Image 文生图不调用参考图编码器。"
+                        "预览显示当前去噪估计，尺寸与最终图一致，默认每 2 步更新，并显示最后一步。预览不会改变采样结果；Tiny 编码／最终解码会损失细节。Z-Image 文生图不调用参考图编码器。"
                     )
                     .font(.caption2).foregroundStyle(.secondary)
                     if draft.streaming.selection != .off {
@@ -66,10 +66,12 @@ struct TinyLivePreview: View {
     let step: Int
     let total: Int
     var body: some View {
-        VStack(spacing: 8) {
-            if let image = NSImage(data: data) { Image(nsImage: image).resizable().scaledToFit() }
-            Text("实时预览 · \(step)/\(total) 步 · 非最终结果").font(.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier(
-            "tinyLivePreview")
+        InteractiveMediaPreview(path: "", imageData: data)
+            .overlay(alignment: .topLeading) {
+                Text("实时预览 · \(step)/\(total) 步 · 非最终结果")
+                    .font(.caption).padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule()).padding(8)
+            }
+            .accessibilityIdentifier("tinyLivePreview")
     }
 }

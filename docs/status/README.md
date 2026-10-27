@@ -1,5 +1,10 @@
 # TurboCider 状态文档入口
 
+2026-10-27 [dev 合并至 dev-verify：Tiny VAE 预览修复与本机 App 验收](2026-10-27-dev-verify-tiny-preview.md)：
+合并无冲突，超分模型可在右侧直接切换。修正带噪 latent 预览和 App 裁切布局，
+真实 512×512 Z-Image / Qwen Viggle Turbo 预览与最终图尺寸一致，最终 PNG 与关闭预览基线相同。
+同时记录 Tiny 最终解码、Qwen 参考编码、缓存及取消/重试；只下载两份对应 Tiny 权重。
+
 2026-10-15 [本机 App 更新与 SeedVR2 超分入口](2026-10-15-seedvr2-app-update.md)：
 新增独立 SeedVR2 侧栏、图片/视频切换、源尺寸预设和省内存建议；修复模型中心的超分类别。
 公有 API 新包通过发布/签名校验、7 个真实超分/驻留切换任务并更新至原 App 路径，已重新启动。

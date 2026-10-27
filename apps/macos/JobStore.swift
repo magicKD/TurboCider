@@ -1074,7 +1074,8 @@ final class NativeJobStore: ObservableObject {
             guard fstat(fd, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
                   info.st_uid == getuid(), info.st_nlink == 1, info.st_size > 0, info.st_size <= 16 << 20 else { return }
             let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
-            guard let data = try? handle.read(upToCount: Int(info.st_size)), data.count == Int(info.st_size) else { return }
+            guard let data = try? handle.read(upToCount: Int(info.st_size)), data.count == Int(info.st_size),
+                  TinyPreviewFrame.matches(data, width: jobs[i].request.width, height: jobs[i].request.height) else { return }
             livePreviewStep = event.completed; livePreview = data
             return
         }

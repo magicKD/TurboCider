@@ -742,8 +742,12 @@ struct StudioBehaviorTests {
         try rejects { try invalidZ.validate() }
         let creationStudio = StudioState(directory: root.appendingPathComponent("creation-first"))
         try check(creationStudio.creationOperations.contains("image.generate"), "Image entry missing without installed models")
+        try check(creationStudio.creationOperations.allSatisfy { $0.hasPrefix("image.") },
+                  "Image creation exposed video operations from the dual-media upscaler")
         creationStudio.changeCreationKind("video")
         try check(creationStudio.creationKind == "video" && creationStudio.draft.operation == "video.generate", "Video entry did not select a compatible executor")
+        try check(creationStudio.creationOperations.allSatisfy { $0.hasPrefix("video.") },
+                  "Video creation exposed image operations from the dual-media upscaler")
         try check(creationStudio.creationModels.allSatisfy { $0.availableOperations.contains { $0.hasPrefix("video.") } }, "Image model leaked into video choices")
         creationStudio.changeCreationKind("image")
         creationStudio.changeOperation("image.edit")

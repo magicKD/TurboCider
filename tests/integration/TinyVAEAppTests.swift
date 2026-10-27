@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Combine
 import ImageIO
 
@@ -66,6 +67,16 @@ import ImageIO
         try check(
             !TinyPreviewPath.valid(good, output: legacy.output, steps: 4),
             "preview wrong step count accepted")
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 512, pixelsHigh: 512,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        memset(bitmap.bitmapData!, 255, bitmap.bytesPerRow * bitmap.pixelsHigh)
+        let frame = bitmap.representation(using: .png, properties: [:])!
+        try check(TinyPreviewFrame.matches(frame, width: 512, height: 512),
+                  "full-size 512 preview rejected")
+        try check(!TinyPreviewFrame.matches(frame, width: 511, height: 512)
+                    && !TinyPreviewFrame.matches(Data([0]), width: 512, height: 512),
+                  "wrong-size or invalid preview accepted")
         print(
             "Tiny VAE App defaults, persistence, request conversion, memory guard and preview correlation passed"
         )

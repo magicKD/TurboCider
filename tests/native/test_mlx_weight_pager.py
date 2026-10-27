@@ -67,6 +67,7 @@ def main() -> None:
             str(ROOT / "native/runtime/streaming/source_lease.cpp"),
             str(ROOT / "native/runtime/memory_manifest.cpp"),
             str(ROOT / "native/runtime/memory_policy.cpp"),
+            str(ROOT / "native/backends/ane_memory.cpp"),
             str(ROOT / "native/core/common.cpp"),
             "-L", str(library), "-lmlx", "-ljaccl", "-licucore",
             "-framework", "Foundation", "-framework", "Metal",

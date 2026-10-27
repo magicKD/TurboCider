@@ -26,9 +26,13 @@ import SwiftUI
         studio.draft.width = 1024;studio.draft.height = 1024;studio.draft.frames = 97
         studio.draft.modelPaths["seedvr2-3b"] = "metadata-only"
         try render("video-header",width: 760,height: 100,
-                   UpscaleWorkspaceHeader(kind: .constant("video"),modelID: .constant("seedvr2-3b"),locked: false))
+                   UpscaleWorkspaceHeader(kind: .constant("video"),locked: false))
         try render("image-header",width: 760,height: 100,
-                   UpscaleWorkspaceHeader(kind: .constant("image"),modelID: .constant("real-esrgan-x2plus"),locked: false))
+                   UpscaleWorkspaceHeader(kind: .constant("image"),locked: false))
+        try render("image-model-picker",width: 270,height: 90,
+                   UpscaleModelPicker(studio: studio,modelID: .constant("real-esrgan-x2plus"),kind: "image",locked: false))
+        try render("video-model-picker",width: 270,height: 90,
+                   UpscaleModelPicker(studio: studio,modelID: .constant("seedvr2-3b"),kind: "video",locked: false))
         try render("settings-speed",width: 760,height: 220,
                    SeedVR2UpscaleControls(studio: studio,locked: false,manageModels: {}))
         studio.applySeedVR2MemoryAdvice()

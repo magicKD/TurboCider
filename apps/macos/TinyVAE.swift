@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 extension StudioDraft {
     var supportsTinyVAE: Bool {
@@ -51,5 +52,17 @@ enum TinyPreviewPath {
     static func valid(_ event: NativeEvent, output: String, steps: Int) -> Bool {
         event.phase == "preview" && event.preview_path == expected(output: output)
             && event.completed > 0 && event.completed <= steps && event.total == steps
+    }
+}
+
+enum TinyPreviewFrame {
+    static func matches(_ data: Data, width: Int, height: Int) -> Bool {
+        guard width > 0, height > 0,
+              data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let actualWidth = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let actualHeight = properties[kCGImagePropertyPixelHeight] as? NSNumber else { return false }
+        return actualWidth.intValue == width && actualHeight.intValue == height
     }
 }

@@ -1572,6 +1572,7 @@ final class StudioState: ObservableObject {
     }
     var creationOperations: [String] {
         let operations = creationModels.flatMap(\.availableOperations)
+            .filter { $0.hasPrefix(creationKind + ".") }
         let preferred = ["image.generate", "image.transform", "image.edit", "image.upscale", "video.generate", "video.image", "video.keyframes", "video.reference", "video.upscale"]
         return preferred.filter { operations.contains($0) } + Set(operations).subtracting(preferred).sorted()
     }

@@ -12,6 +12,13 @@ enum UpscaleModelChoice: String, CaseIterable, Identifiable {
         }
     }
     var supportsVideo: Bool { self == .seedvr2 }
+    func isConfigured(in draft: StudioDraft) -> Bool {
+        if self == .seedvr2 { return !(draft.modelPaths[rawValue] ?? "").isEmpty }
+        guard let variant = UpscaleVariant.from(modelID: rawValue) else { return false }
+        let path = draft.upscaleVariant == variant ? draft.upscaleModelPath
+            : draft.upscaleModelPaths[variant.rawValue] ?? ""
+        return !path.isEmpty
+    }
 }
 
 struct SeedVR2ProgressPresentation {

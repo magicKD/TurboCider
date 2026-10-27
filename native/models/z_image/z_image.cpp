@@ -4457,12 +4457,18 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         auto noise = denoise(z, caption, sigmas[i], float(r.width), r.height, i, event, cancelled,
                              cache_context ? &context_cache : nullptr,false,observer);
         if (reference_latent) require(observed==34,"candidate validation missed a transformer block");
+        std::optional<Tensor> preview_estimate;
+        if (preview.due(i + 1) && i + 1 < r.steps)
+            preview_estimate = components::flow_preview_estimate(z, noise, sigmas[i]);
         z = euler_step(z, noise, sigmas[i + 1] - sigmas[i]);
         mx::eval(z);
         dump("z_latent_step_" + std::to_string(i + 1), z);
         require(mx::all(mx::isfinite(z)).item<bool>(), "nonfinite Z-Image latent");
         event("denoise", i + 1, r.steps);
-        if(preview.due(i+1))preview.publish(mx::reshape(z,{1,16,z.shape(2),z.shape(3)}),i+1);
+        if (preview.due(i + 1)) {
+            const auto &clean = preview_estimate ? *preview_estimate : z;
+            preview.publish(mx::reshape(clean, {1, 16, z.shape(2), z.shape(3)}), i + 1);
+        }
     }
     calibration_capture.finish();
     if (reference_latent) {

@@ -2509,6 +2509,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                                            Transformer::FFNCacheMode::Off);
                 auto noise = dit.forward(latents, text, schedule.data<float>()[step], r.height / 16, r.width / 16,
                                          true, nullptr, references);
+                std::optional<Tensor> preview_estimate;
+                if (preview.due(step + 1) && step + 1 < r.steps)
+                    preview_estimate = components::flow_preview_estimate(
+                        latents, noise, schedule.data<float>()[step]);
                 latents = latents + noise * Tensor(schedule.data<float>()[step+1] - schedule.data<float>()[step], latents.dtype());
                 const auto graph_seconds = profile_steps ? seconds(step_started) : 0.;
                 if(async_steps){
@@ -2559,8 +2563,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                               << "}" << std::endl;
                 }
                 if(!async_steps)emit(event, "denoise", step + 1, r.steps);
-                if(preview.due(step+1))preview.publish(mx::transpose(mx::reshape(latents,
-                    {1,r.height/16,r.width/16,64}),{0,3,1,2}),step+1);
+                if (preview.due(step + 1)) {
+                    const auto &clean = preview_estimate ? *preview_estimate : latents;
+                    preview.publish(mx::transpose(mx::reshape(clean,
+                        {1, r.height / 16, r.width / 16, 64}), {0, 3, 1, 2}), step + 1);
+                }
             }
             if(async_steps){
                 require(async_steps->complete()&&async_steps->peak_pending()<=2,"bounded async steps did not complete all state/mask dependencies");

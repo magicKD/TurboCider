@@ -367,6 +367,7 @@ struct StudioView: View {
             if imageUpscaling {
                 ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath,
                                  showsWorkspaceTitle: page != .upscale,
+                                 modelSelection: upscaleModelSelection,
                                  manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models },
                                  historyContent: imageHistoryJobs.isEmpty ? nil : AnyView(resultStrip), selectedPreviewJob: selectedJob,
                                  usePreviewAsSource: useHistoryAsUpscaleSource) { job in
@@ -383,19 +384,21 @@ struct StudioView: View {
                     guard kind != (imageUpscaling ? "image" : studio.creationKind) else { return }
                     if imageUpscaling || studio.draft.modelID != "seedvr2-3b" { showSeedVR2(kind: kind) }
                     else { studio.changeOperation(kind + ".upscale"); focusInput() }
-                }),
-                modelID: Binding(get: {
-                    imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b"
-                }, set: { id in
-                    guard id != (imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b") else { return }
-                    if id == "seedvr2-3b" { showSeedVR2(kind: "image") }
-                    else if let variant = UpscaleVariant.from(modelID: id) {
-                        if let asset = studio.draft.activeAssets.first, asset.mediaKind == "image", upscaleSourcePath.isEmpty {
-                            upscaleSourcePath = asset.path
-                        }
-                        studio.selectUpscaleVariant(variant); imageUpscaling = true; focusInput()
-                    }
                 }), locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+    }
+    private var upscaleModelSelection: Binding<String> {
+        Binding(get: {
+            imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b"
+        }, set: { id in
+            guard id != (imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b") else { return }
+            if id == "seedvr2-3b" { showSeedVR2(kind: "image") }
+            else if let variant = UpscaleVariant.from(modelID: id) {
+                if let asset = studio.draft.activeAssets.first, asset.mediaKind == "image", upscaleSourcePath.isEmpty {
+                    upscaleSourcePath = asset.path
+                }
+                studio.selectUpscaleVariant(variant); imageUpscaling = true; focusInput()
+            }
+        })
     }
     private func showSeedVR2(kind: String? = nil) {
         guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
@@ -500,7 +503,11 @@ struct StudioView: View {
     private var mediaStage: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                if let job = selectedJob {
+                if store.livePreview != nil, store.livePreviewWorkflowID == nil {
+                    Label("实时采样预览", systemImage: "photo")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                } else if let job = selectedJob {
                     Label(compareOriginal ? "修改前" : "生成结果", systemImage: "photo")
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
@@ -544,7 +551,7 @@ struct StudioView: View {
                     Button { page = .library } label: { Image(systemName: "clock.arrow.circlepath") }
                         .buttonStyle(.borderless).help("全部历史结果").accessibilityLabel("全部历史结果")
                 }
-            }.controlSize(.small)
+            }.controlSize(.small).frame(height: 24)
             if let data = store.livePreview, store.livePreviewWorkflowID == nil {
                 TinyLivePreview(data: data, step: store.livePreviewStep, total: store.livePreviewTotal)
             } else if let job = selectedJob {
@@ -835,8 +842,9 @@ struct StudioView: View {
             Text(studio.draft.modelID == "seedvr2-3b" ? "超分设置" : "生成设置").font(.headline)
             VStack(alignment: .leading, spacing: 8) {
                 if page == .upscale {
-                    Text(model?.displayName ?? "SeedVR2").font(.subheadline)
-                    Text("在页面顶部切换超分模型。").font(.caption).foregroundStyle(.secondary)
+                    UpscaleModelPicker(studio: studio, modelID: upscaleModelSelection,
+                                       kind: studio.creationKind,
+                                       locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
                 } else {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
                     ForEach(studio.creationModels) { item in

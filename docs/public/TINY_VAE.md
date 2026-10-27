@@ -10,8 +10,10 @@ PyTorch 或上游仓库。原始 VAE 保持默认，Tiny 编码／最终解码�
 - Qwen 编辑可选择 Tiny 参考图编码；Z-Image 的现有文生图没有参考编码阶段。
 - 最终图可独立选择原始 VAE 或 Tiny。RGBA 的 alpha 不会被丢弃。
 - 开启实时预览，默认每 2 步，可配置 1–50 步；最后一步也会更新。
-  预览最长边不超过 512 像素，是当前 latent 的近似可视化，不是最终结果，
-  不会改变采样 latent。
+  预览 PNG 与请求的最终输出分辨率一致，使用当前步骤预测的干净 latent（x0），
+  不直接解码仍含噪声的采样状态；预览不改变采样 latent。
+- App 预览与最终图共用适应画布、缩放、拖动和透明背景显示，更新时保留上一帧，
+  避免单独图片布局造成放大、裁切或闪烁。预览仍是近似估计，不是最终结果。
 
 预览只占一个原子替换的请求侧车 PNG，取消、失败、成功后清理；App 只读取当前
 请求的确切侧车路径，绝不把预览作为最终结果发布。设置随草稿／历史请求保存。
@@ -97,7 +99,8 @@ GPU 验收使用 512×512；Z-Image 为 4 步，Qwen 原生 Turbo checkpoint 为
 - 官方 PyTorch 对照：12 个数值用例（含 512 解码、1024 Qwen 编码）和 8 个
   坏权重拒绝用例。最大相对 L2 误差约 9.30e-6，最大绝对误差约 3.04e-4，
   小于 1/8 个 8-bit 像素级的数值门限；这不是对 Tiny 相对原始 VAE 画质的保证。
-- 原生预览测试：960 像素对应 latent 限制为 480×320 预览；验证不修改原 latent、
+- 较早版本原生预览测试：960 像素对应 latent 限制为 480×320 预览；后续修复已改为
+  与请求一致的完整分辨率。原测试验证不修改原 latent、
   cadence、取消／异常清理、关闭时零预览工作、拒绝覆盖已有侧车文件。
 - 回归：Qwen 126 项（8 项条件跳过）、请求契约 141 项（1 项缺少 Wan fixture
   跳过）均通过；另有 Tiny 请求／App 草稿与协议测试、原生边界与发布检查。
@@ -116,3 +119,8 @@ GPU 验收使用 512×512；Z-Image 为 4 步，Qwen 原生 Turbo checkpoint 为
 `app-qwen-downloaded/acceptance.json`、`app-qwen-base20/acceptance.json`；
 可运行 App 位于 `release/TurboCider.app`。
 这些权重与生成文件均未提交到 Git。
+
+2026-10-27 后续修复与本机 GUI 验收见
+[dev-verify 预览修复记录](../status/2026-10-27-dev-verify-tiny-preview.md)：
+改为预测干净 latent 的完整分辨率预览，与最终图共用 App 画布；真实 512×512
+Z-Image 和 Qwen Viggle Turbo 生图的预览开关不改变最终 PNG。
