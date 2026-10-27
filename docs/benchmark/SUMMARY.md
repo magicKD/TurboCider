@@ -1,4 +1,13 @@
-# 当前四家族 benchmark 摘要
+# 生成模型与SeedVR2超分 benchmark 摘要
+
+新配置索引：[2026-10-19当前最快已测配置](CURRENT_FASTEST_CONFIGS.md)。本页下方
+保留原10月13–15日框架对照；不要把后续Private runtime热请求与旧fresh分母混算。
+
+2026-10-15补[SeedVR2 vs ComfyUI](SEEDVR2_COMFYUI.md)：图像256→512／
+512→1024完整请求约**4.81×／4.43×**，完整25帧/24FPS视频约**3.46×／3.48×**。
+每路6个fresh warm，分母选更快Comfy预设，TC也取同组配对中位数；
+这是resident GPU速度证据，不是ANE收益或同口径内存排名，整体资格仍为false。
+以下原生成模型四家族摘要与catalog不改写。
 
 完整收敛版见[性能报告](PERFORMANCE_REPORT.md)。2026-10-13整理，M4 Max64GiB，base-only。
 最新重点为[ComfyUI对已有TC最优](COMFYUI_MODEL_COMPARISON.md)：Z1.48×、

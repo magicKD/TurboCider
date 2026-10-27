@@ -52,7 +52,7 @@ public:
                 if(![value isKindOfClass:NSDictionary.class])return;
                 NSString *phase=value[@"phase"];
                 if(![phase isKindOfClass:NSString.class] || [phase isEqual:@"transformer_block"] || [phase isEqual:@"z_image_denoise_block"])return;
-                if([phase isEqual:self.phase_] && now-self.last_<std::chrono::milliseconds(250))return;
+                if(![phase isEqual:@"preview"] && [phase isEqual:self.phase_] && now-self.last_<std::chrono::milliseconds(250))return;
                 self.emit(@"progress",value);self.last_=now;self.phase_=phase;
             } catch(...) {} // Diagnostics cannot change execution/receipt outcome.
         }

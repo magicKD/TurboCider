@@ -84,7 +84,10 @@ private:
     @autoreleasepool {
       NSString *src = [NSString stringWithUTF8String:source.c_str()];
       MTLCompileOptions *opts = [[MTLCompileOptions alloc] init];
-      opts.languageVersion = MTLLanguageVersion4_0;
+      // Keep Metal 4 at runtime while allowing builds with pre-26 SDK headers,
+      // as in the native Metal graph backend.
+      static_assert(MTLLanguageVersion3_1 == ((3U << 16) + 1));
+      opts.languageVersion = static_cast<MTLLanguageVersion>(4U << 16);
       NSError *error = nil;
       id<MTLDevice> device_objc = (__bridge id<MTLDevice>)mtl_device;
       id<MTLLibrary> lib_objc = [device_objc newLibraryWithSource:src

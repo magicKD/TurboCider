@@ -4,6 +4,10 @@ import Foundation
     static func main() throws {
         func check(_ ok: Bool, _ text: String) throws { if !ok { throw NativeFailure(message: text) } }
         let empty = RunInsights(json: "{}")
+        let seed = RunInsights(json: #"{"model":"seedvr2-3b","timings_seconds":{"vae_encode":79.59,"denoise":56.05,"vae_decode":200.07}}"#)
+        try check(seed.isSeedVR2 && seed.vaeEncodeSeconds == 79.59 && seed.vaeDecodeSeconds == 200.07 && seed.denoiseSeconds == 56.05,
+                  "SeedVR2 VAE timings missing")
+        try check(!empty.isSeedVR2 && empty.vaeEncodeSeconds == nil && empty.vaeDecodeSeconds == nil,"absent VAE timings became measured zero")
         try check(empty.qwen21DiTCacheMode == nil && empty.qwen21DiTCacheSteps == nil && empty.qwen21DiTCacheSavedBlocks == nil,
                   "Missing DiT cache telemetry became measured zero")
         let dit = RunInsights(json: #"{"qwen21_dbcache":{"mode":"balanced","threshold":0.25,"max_consecutive":2,"cached_steps":8,"saved_middle_blocks":320}}"#)

@@ -17,6 +17,7 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var secondsPerStep: Double?
     /// Denoise boundary 0→1; absent when that boundary was not observed or in older history.
     var firstDenoiseStepSeconds: Double? = nil
+    var phaseStartedElapsed: Double? = nil
     var modelPath: String?
     var outputDeleted: Bool?
     /// Public selector metadata is persisted for display/reuse only. Native
@@ -69,13 +70,16 @@ struct NativeJob: Codable, Identifiable, Sendable {
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
     var routeSummary: String? {
         if let runtimeReceipt { return runtimeReceipt.label }
-        if request.operation == "image.upscale" {
+        if UpscaleVariant.from(modelID: request.model) != nil, request.operation == "image.upscale" {
             let scale = request.model == "real-esrgan-x2plus" ? 2 : 4
             return request.execution == "ane" ? "Core ML · \(scale)× 图像超分 · CPU/ANE（ANE 驻留未知）" : "Core ML · \(scale)× 图像超分 · CPU/GPU"
         }
         guard let resultJSON, let data = resultJSON.data(using: .utf8),
               let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plan = result["plan"] as? [String: Any], let execution = plan["execution"] as? String else { return nil }
+        if request.model == "seedvr2-3b" {
+            return "\(execution.hasPrefix("gpu_ane") ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU") · 原始 FP16 权重 / FP32 稳定状态"
+        }
         if request.model == "z-image-turbo", let checkpoint = result["checkpoint"] as? String,
            let variant = ZImageVariant.all.first(where: { $0.filename == URL(fileURLWithPath: checkpoint).lastPathComponent }) {
             let precision = variant.title.components(separatedBy: " · ")[0]
@@ -134,6 +138,11 @@ final class NativeJobStore: ObservableObject {
     private let upscaleSession = UpscaleSession()
     private var upscalePrepareTask: Task<UpscaleModelInfo, Error>?
     @Published private(set) var jobs: [NativeJob] = []
+    @Published private(set) var livePreview: Data?
+    @Published private(set) var livePreviewStep = 0
+    @Published private(set) var livePreviewTotal = 0
+    private(set) var livePreviewWorkflowID: String?
+    private var activePreviewOutput: String?
     @Published private(set) var busy = false
     @Published private(set) var workerCleanupPending = false
     @Published private(set) var storageError: String?
@@ -376,6 +385,13 @@ final class NativeJobStore: ObservableObject {
         // Public streaming v1 is GPU-only. Do not perform ANE discovery or
         // mutate the request before the public validator reports a conflict.
         guard !draft.usesPublicStreaming else { return draft }
+        if draft.modelID == "seedvr2-3b", draft.usesANE {
+            guard !(draft.acceleration?.manifest.isEmpty ?? true) else {
+                throw NativeFailure(message: "请选择通过校验的 SeedVR2 原始 FP16 已编译前缀 manifest。")
+            }
+            accelerationStatus = "SeedVR2 手动原始 FP16 前缀 · 由 native 校验银行身份与分块执行"
+            return draft
+        }
         guard draft.usesANE, ["flux2-klein-4b", "z-image-turbo"].contains(draft.modelID) else { return draft }
         // The App request selects GPU for a separately loaded runtime LoRA.
         // Do not require or compile a frozen partition that will not be used.
@@ -752,7 +768,11 @@ final class NativeJobStore: ObservableObject {
         let frozenInputAssets = NativeJob.matchingInputAssets(inputAssets, for: request)
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
-        defer { busy = workerCleanupPending; activeID = nil; ltxTask = nil; publicWorkerTask = nil; imageValidationTask = nil }
+        livePreview = nil; livePreviewStep = 0; livePreviewTotal = request.steps; livePreviewWorkflowID = workflowID
+        defer {
+            busy = workerCleanupPending; activeID = nil; ltxTask = nil; publicWorkerTask = nil; imageValidationTask = nil
+            livePreview = nil; activePreviewOutput = nil; livePreviewWorkflowID = nil
+        }
         let imageTransaction = NativeRequestV2(legacy: request).operation.hasPrefix("image.")
             ? try ImageOutputTransaction(request: request) : nil
         var generationRequest = request
@@ -766,6 +786,7 @@ final class NativeJobStore: ObservableObject {
                 stagedStreamingRequest?.outputs[0].path = imageTransaction.stagedURL.path
             }
         }
+        activePreviewOutput = generationRequest.output
         if streamingRequest == nil && runtimeOptions == nil {
             let planRequest = generationRequest
             do { _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value }
@@ -995,7 +1016,13 @@ final class NativeJobStore: ObservableObject {
             jobs[i].resultJSON = String(decoding: result, as: UTF8.self)
             sessionReport = jobs[i].resultJSON
             jobs[i].elapsed = Self.seconds(start.duration(to: .now))
-            sessionState = runtimeOptions != nil ? "图片完成 · Runtime 实验进程已释放" : usesImageWorker ? "图片完成 · 工作进程已释放" : usesLTXWorker ? "视频完成 · 独立进程已释放" : request.residency == "component_staged" ? "会话就绪 · 图像权重已释放" : "会话可复用"
+            if runtimeOptions != nil { sessionState = "图片完成 · Runtime 实验进程已释放" }
+            else if usesImageWorker { sessionState = "图片完成 · 工作进程已释放" }
+            else if usesLTXWorker { sessionState = "视频完成 · 独立进程已释放" }
+            else if request.residency == "component_staged" {
+                sessionState = request.model == "seedvr2-3b"
+                    ? "会话就绪 · DiT 已释放，VAE 可复用" : "会话就绪 · 图像权重已释放"
+            } else { sessionState = "会话可复用" }
             try persist()
             return jobs[i]
         } catch {
@@ -1033,6 +1060,25 @@ final class NativeJobStore: ObservableObject {
     private func receive(_ event: NativeEvent, id: UUID) {
         guard activeID == id, event.sequence > lastSequence, let i = jobs.firstIndex(where: { $0.id == id }), !jobs[i].isTerminal else { return }
         lastSequence = event.sequence
+        if event.phase == "preview" {
+            guard jobs[i].request.tiny_vae?.preview == true, !cancelRequested,
+                  let output = activePreviewOutput,
+                  TinyPreviewPath.valid(event, output: output, steps: jobs[i].request.steps),
+                  let path = event.preview_path else { return }
+            // Bound bytes and require a regular owned file before opening. A
+            // sidecar is telemetry only and is never a final output candidate.
+            let fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { return }
+            defer { close(fd) }
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+                  info.st_uid == getuid(), info.st_nlink == 1, info.st_size > 0, info.st_size <= 16 << 20 else { return }
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+            guard let data = try? handle.read(upToCount: Int(info.st_size)), data.count == Int(info.st_size),
+                  TinyPreviewFrame.matches(data, width: jobs[i].request.width, height: jobs[i].request.height) else { return }
+            livePreviewStep = event.completed; livePreview = data
+            return
+        }
         if event.phase.hasPrefix("route_") {
             if let receipt = jobs[i].runtimeReceipt {
                 actualRoute = receipt.label
@@ -1052,10 +1098,17 @@ final class NativeJobStore: ObservableObject {
             }
             return
         }
+        if jobs[i].request.model == "seedvr2-3b" {
+            // Per-frame export is part of decode; streaming imports must not
+            // replace the encode stage while its source is being consumed.
+            if event.phase == "seedvr2_vae_export_frame" ||
+                (event.phase == "seedvr2_video_import" && jobs[i].phase == "seedvr2_encode_progress") { return }
+        }
         var current = jobs[i]
         current.state = cancelRequested ? "cancelling" : "running"
         if event.phase == "denoise", denoiseStart == nil { denoiseStart = event.completed }
         let offset = event.phase == "denoise" ? (denoiseStart ?? 0) : 0
+        if current.phase != event.phase { current.phaseStartedElapsed = event.elapsed_seconds }
         current.phase = event.phase; current.completed = event.completed - offset; current.total = event.total - offset
         current.elapsed = event.elapsed_seconds
         current.secondsPerStep = telemetry.observe(event)

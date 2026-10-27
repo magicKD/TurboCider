@@ -100,6 +100,7 @@ For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`.
 | `bindings/`, `integrations/comfyui/` | C / Swift SDK, Python HTTP client and ComfyUI nodes |
 | `tools/`, `tests/` | Builds, conversion, regression tests and benchmarks |
 | `docs/public/`, `docs/benchmark/` | User guides and verifiable performance records |
+| [`techniques/`](techniques/README.md) | Reusable Apple Silicon optimization wiki: Metal, ANE, GPU/ANE, memory, profiling and model onboarding |
 
 [Documentation](docs/public/README.md) · [Model library](docs/public/MODEL_LIBRARY.md) · [Cache and memory](docs/public/CACHES.md)
 

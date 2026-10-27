@@ -11,12 +11,15 @@
 #include "encoder_prefill.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include "../../backends/ane_qkv.hpp"
+#include "runtime_gpu_dual.hpp"
+#include "runtime_compiled_complement_options.hpp"
 
 namespace tc::qwen21 {
 class NativeSession;
 class EncoderRuntimeCache;
 class NativeEncoder;
 class NativePrefill;
+class RuntimePrivateQkv;
 class Session final : public ModelSession {
   public:
     explicit Session(const std::filesystem::path &);
@@ -37,6 +40,10 @@ class Session final : public ModelSession {
     // Borrowed real uncached FFN input; observer must finish/drain its bounded
     // component and throw DiagnosticBlockReplayComplete before image decoding.
     void set_diagnostic_prefill_observer(DiagnosticPrefillObserver);
+    using DiagnosticAsyncStepObserver=std::function<void(int,size_t,bool)>;
+    // Submitted-step observation only, never a completed progress event.
+    // No borrowed tensors/weights escape; useful for bounded cancel tests.
+    void set_diagnostic_async_step_observer(DiagnosticAsyncStepObserver);
     // Explicit model-selection/idle prewarm. Cost is returned and retained in
     // request metadata; it must not be described as free cold-start speedup.
     double prewarm_native_prefill(const std::filesystem::path&);
@@ -53,16 +60,23 @@ class Session final : public ModelSession {
     bool native_quarantined_ = false;
     DiagnosticBlockObserver diagnostic_block_observer_;
     DiagnosticPrefillObserver diagnostic_prefill_observer_;
+    DiagnosticAsyncStepObserver diagnostic_async_step_observer_;
     Weights transformer_, vae_;
     std::unique_ptr<GgufComponent> transformer_gguf_,encoder_gguf_;
     // Diagnostic shallow views of QKV matrices replacing their three source
     // weights in transformer_. Never retained on a route without opt-in.
     std::vector<Tensor> fused_qkv_weights_;
+    // Default-off decode pilot. Copies only original BF16 bases; runtime
+    // A/B factors remain bound to transformer_ and are consumed online.
+    std::vector<Tensor> corrected_qkv_weights_;
     ConditioningCache conditioning_cache_;
     std::unique_ptr<Weights> encoder_weights_;
     std::string encoder_weight_identity_;
     uint64_t encoder_weight_loads_ = 0;
     std::unique_ptr<VerifiedEncoderTokenizer> encoder_tokenizer_;
+    // Standalone CPU cache is released on opt-out. Preserve the historical
+    // fused-prefill owner's lifetime when this independent option is unused.
+    bool standalone_tokenizer_cache_ = false;
     // Optional one-entry executor only; never retains the complete encoder
     // weights. Drain before request-owned text sources die or identity changes.
     std::unique_ptr<ane::HybridFfn> encoder_runtime_;
@@ -92,6 +106,10 @@ class Session final : public ModelSession {
     std::unique_ptr<HybridMLP> hybrid_mlp_;
     std::unique_ptr<ane::HybridFfn> runtime_ffn_;
     std::unique_ptr<ane::HybridQkv> runtime_qkv_;
+    std::unique_ptr<RuntimePrivateQkv> runtime_private_qkv_;
+    RuntimeGpuDualState runtime_gpu_dual_;
+    RuntimeCompiledComplementState runtime_compiled_complement_;
+    std::function<std::vector<Tensor>(const std::vector<Tensor>&)> runtime_compiled_complement_fn_;
     std::string runtime_manifest_;
     std::string qkv_manifest_;
     std::string hybrid_manifest_;

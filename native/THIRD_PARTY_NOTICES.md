@@ -1,5 +1,13 @@
 # Third-party notices
 
+The native image tiny autoencoder (`native/components/vae/tiny.cpp`) is a C++/MLX
+port of madebyollin/taesd, commit fdbae2df989db95761f482efb8977e1182fb68d2,
+Copyright (c) 2023 Ollin Boer Bohan, MIT. It implements TAEF1 (Z-Image) and
+TAEQI2.1 (Qwen Image 2.1), with native cancellation, strict weight validation
+and request-scoped preview publication. The full license is retained in
+`native/licenses/TAESD-LICENSE.txt`. Official weights are optional local assets;
+development-only PyTorch conversion is not included in the App.
+
 The optional private ANE program layer adapts selectors, IOSurface layout and
 shared-event handoff from Splash PR #260, commit
 `0ac3d5b170523774d8c85cd86493908a64c80eee`, under Apache-2.0. TurboCider adds
@@ -9,6 +17,14 @@ modification details are in `THIRD_PARTY_NOTICES/splash-ane.md`; the complete
 license is in `THIRD_PARTY_NOTICES/Apache-2.0.txt` (source), or
 `Splash-ANE-NOTICE.md` and `Splash-Apache-2.0.txt` (distribution). Model weights
 and Splash inference binaries are not distributed.
+
+The research-only `dequantize_q4_0` and `dequantize_q8_0` excerpts under
+`techniques/assets/source-excerpts/ggml-dequant-64e9bce/` come from
+`ggml-org/llama.cpp`, commit `64e9bceb2c3a856efed96feda784a50947049feb`,
+`ggml/src/ggml-metal/kernels/dequantize.h`, Copyright (c) 2023-2026 The ggml
+authors, under MIT. The accompanying `LICENSE` and `PROVENANCE.json` retain
+the full license, source hash, selected ranges and modification scope. These
+excerpts are not part of the native App/CLI build targets.
 
 The FLUX.2/Qwen3/VAE implementation was ported with reference to mflux
 (commit 12fd27ea7015c6c872ced51b56b313306a543dd2). Model weights are not distributed.
@@ -56,6 +72,11 @@ FastVideo's Apache-2.0 license and TAEHV's upstream license are included in
 `licenses/FastVideo-LICENSE.txt` and `licenses/TAEHV-LICENSE.txt` in source, and
 as `FastVideo-LICENSE.txt` and `TAEHV-LICENSE.txt` in distribution resources.
 Model weights are not distributed in this repository.
+
+The native Metal graph attention support derives from Apple MLX Steel and the
+Apache-2.0 vpipe adapter. Source attribution, modification details and the MIT
+license are in `THIRD_PARTY_NOTICES/mlx-steel-attention.md`; distributions include
+`MLX-Steel-Attention-NOTICE.md`, `MLX-LICENSE.txt` and `Apache-2.0.txt`.
 
 The historical Python worker is retained only in `tools/validation/wan/` as a
 development oracle. It is not linked, discovered or copied into the App/CLI.

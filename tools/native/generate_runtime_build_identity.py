@@ -21,6 +21,11 @@ DOMAIN = "tc-runtime-build-v1"
 CATALOG_DOMAIN = "tc-catalog-runtime-v1"
 INSTRUMENTATION_FLAGS = {"-DTURBOCIDER_ENABLE_TEST_HOOKS=1", "-DTURBOCIDER_ENABLE_AUDIT_COUNTERS=1"}
 SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cpp", ".m", ".mm", ".metal", ".inc"}
+EXPERIMENTAL_VAE_SOURCES=(
+    "tools/native/seedvr2_vae_ane_causal_conv.mm",
+    "tools/native/seedvr2_vae_ane_causal_conv.hpp",
+    "tools/native/seedvr2_vae_upscale_io.hpp",
+)
 BUILD_SCRIPTS = (
     "tools/native/build.sh",
     "tools/native/embed_qwen21_sq_profile.py",
@@ -75,6 +80,10 @@ def source_inputs(root: Path) -> list[dict]:
         paths.extend(p for p in folder.rglob("*")
                      if p.is_file() and p.suffix in SOURCE_SUFFIXES)
     paths.extend(root / name for name in BUILD_SCRIPTS)
+    # Isolated full-request VAE experiments can link these public-API helpers.
+    # Bind their source as well, rather than fingerprinting only the native TU
+    # that enables them. Ordinary builds also retain a reproducible source key.
+    paths.extend(root / name for name in EXPERIMENTAL_VAE_SOURCES)
     return entries(root, paths)
 
 

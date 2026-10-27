@@ -8,6 +8,11 @@ class PrivateW8Graph final : public Executor {
   public:
     PrivateW8Graph(GraphShape, size_t budget, const std::filesystem::path &cache = {},
                    W8Basis basis = W8Basis::SylvesterDH);
+    // Explicit research constructor; no environment/default/Session adoption.
+    PrivateW8Graph(GraphShape,size_t,const std::filesystem::path &,W8Basis,std::vector<int> fixed_rows);
+    const std::vector<int> &fixed_row_functions() const override;
+    int device_row_alignment() const override;
+    uint64_t capability_calls() const override;
     ~PrivateW8Graph() override;
     BackendKind backend() const override { return BackendKind::PrivateANE; }
     const GraphShape &shape() const override;
@@ -25,6 +30,7 @@ class PrivateW8Graph final : public Executor {
     WeightCodeCacheReport weight_code_cache_stats() const override;
     StagePipelineStats stage_pipeline_stats() const override;
     A8SinglePassStats activation_stage_stats() const override;
+    ProgramPolicyStats program_policy_stats() const override;
     bool device_submission_fence_enabled() const override;
     bool activation_lookahead_enabled() const override;
     void stage_weights(std::vector<WeightView>) override;

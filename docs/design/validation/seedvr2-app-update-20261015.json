@@ -1,0 +1,211 @@
+{
+  "schema": "tc-seedvr2-app-update-v1",
+  "date": "2026-10-15",
+  "status": "installed_and_running",
+  "source_commit": "f5dcaf582373612dbad2127d97ad631bdd4a7ac0",
+  "app": "dist/TurboCider.app",
+  "native_runtime_build_id": "tc-runtime-build-v1-4e8be37be47f87c3918fe9afec1df909ecb5aeb7c71bc74f624b3b1a310531fd",
+  "native_source_count": 648,
+  "release_policy": {
+    "public_only": true,
+    "private_ane": false,
+    "test_hooks": false,
+    "audit_counters": false,
+    "unqualified_vae_experiments": false,
+    "checked_actual_class_bytes_symbols_and_links": true,
+    "code_signing": "local_ad_hoc",
+    "deep_strict_signature_verified": true
+  },
+  "packaged_code": {
+    "TurboCiderNativeApp": {
+      "sha256": "29fb57c2e1812016e966f49d0c9482cd61a1d152133358ea74a0887d941a739a",
+      "text_sections_match_build": true
+    },
+    "libturbocider.dylib": {
+      "sha256": "8e29fccdee1ae440e942c10a5a31b608f1410e0b22b8cb5a75b886858ce76d03",
+      "text_sections_match_build": true
+    },
+    "turbocider": {
+      "sha256": "75d3d01d2ac2b3c8ea68a10e6039cb7c7612ac08311846b781068ed9335d9cff",
+      "text_sections_match_build": true
+    },
+    "turbocider-library": {
+      "sha256": "bf2c8f09f3a18f04e2f8937dd8c1fa5db09106fc8a3af6003d3fcc76a0de0c63",
+      "text_sections_match_build": true
+    },
+    "h3-quantize-stream-cache": {
+      "sha256": "cdd84ffb357de57175c90e1cf4cd2074f3106175adbae53934213cce3c54275a",
+      "text_sections_match_build": true
+    }
+  },
+  "real_app_tests": {
+    "public_jobs": 7,
+    "earlier_test_build_jobs": 7,
+    "source_report": "outputs/seedvr2-app-update-20261015/real-app-tests-public/generation-report.json",
+    "source_report_sha256": "28ce717a255ee5d96ba82ceaa88b21ddb725ca5858576a569c57a62ac1a3b1d6",
+    "media": [
+      {
+        "kind": "image",
+        "size": 512,
+        "paths": [
+          "outputs/seedvr2-app-update-20261015/real-app-tests/app-image-512.png",
+          "outputs/seedvr2-app-update-20261015/real-app-tests-public/app-image-512.png"
+        ],
+        "artifact_sha256": [
+          "f3b172629e88b96c29936dfcc1447056509c43086165981857b66f5063f3cf36",
+          "f3b172629e88b96c29936dfcc1447056509c43086165981857b66f5063f3cf36"
+        ],
+        "artifact_bitwise_equal": true,
+        "alpha_pixels_bitwise_equal": true,
+        "decoded_frames": 1,
+        "decoded_pixels_bitwise_equal": true,
+        "pixel_values": 1048576,
+        "mae_8bit": 0,
+        "rmse_8bit": 0,
+        "maximum_error_8bit": 0,
+        "psnr_db": null,
+        "cosine": 1,
+        "relative_l2": 0,
+        "verified_frame_count": 1,
+        "actual_steps": 1,
+        "frames": 1,
+        "fps": 24,
+        "execution": "gpu",
+        "numerical_recipe": "seedvr2-stable-fp16-fp32-v1",
+        "checkpoint_sha256_verified": true
+      },
+      {
+        "kind": "image",
+        "size": 1024,
+        "paths": [
+          "outputs/seedvr2-app-update-20261015/real-app-tests/app-image-1024.png",
+          "outputs/seedvr2-app-update-20261015/real-app-tests-public/app-image-1024.png"
+        ],
+        "artifact_sha256": [
+          "1dd4f3b09c0f9514a7f2d68dc99d0e9c21dc1b73a07b1c89a7ec6bcf7e959996",
+          "1dd4f3b09c0f9514a7f2d68dc99d0e9c21dc1b73a07b1c89a7ec6bcf7e959996"
+        ],
+        "artifact_bitwise_equal": true,
+        "alpha_pixels_bitwise_equal": true,
+        "decoded_frames": 1,
+        "decoded_pixels_bitwise_equal": true,
+        "pixel_values": 4194304,
+        "mae_8bit": 0,
+        "rmse_8bit": 0,
+        "maximum_error_8bit": 0,
+        "psnr_db": null,
+        "cosine": 1,
+        "relative_l2": 0,
+        "verified_frame_count": 1,
+        "actual_steps": 1,
+        "frames": 1,
+        "fps": 24,
+        "execution": "gpu",
+        "numerical_recipe": "seedvr2-stable-fp16-fp32-v1",
+        "checkpoint_sha256_verified": true
+      },
+      {
+        "kind": "video",
+        "size": 512,
+        "paths": [
+          "outputs/seedvr2-app-update-20261015/real-app-tests/app-video-512.mp4",
+          "outputs/seedvr2-app-update-20261015/real-app-tests-public/app-video-512.mp4"
+        ],
+        "artifact_sha256": [
+          "7327718c457520001d7c81e6a0f32514bafaa28639a561765b485141b95d0b07",
+          "8f449b0c3a33763c9df54180ece621cab58ee56837e6c53f4c7dbcf5fe521d87"
+        ],
+        "artifact_bitwise_equal": false,
+        "alpha_pixels_bitwise_equal": null,
+        "decoded_frames": 25,
+        "decoded_pixels_bitwise_equal": true,
+        "pixel_values": 19660800,
+        "mae_8bit": 0,
+        "rmse_8bit": 0,
+        "maximum_error_8bit": 0,
+        "psnr_db": null,
+        "cosine": 1,
+        "relative_l2": 0,
+        "verified_frame_count": 25,
+        "audio_streams": 0,
+        "actual_steps": 1,
+        "frames": 25,
+        "fps": 24,
+        "execution": "gpu",
+        "numerical_recipe": "seedvr2-stable-fp16-fp32-v1",
+        "checkpoint_sha256_verified": true
+      },
+      {
+        "kind": "video",
+        "size": 1024,
+        "paths": [
+          "outputs/seedvr2-app-update-20261015/real-app-tests/app-video-1024.mp4",
+          "outputs/seedvr2-app-update-20261015/real-app-tests-public/app-video-1024.mp4"
+        ],
+        "artifact_sha256": [
+          "f21e1e9fbdb13f9a130b5b7cce376c321038e70d496f64ef9d36798848bb1e02",
+          "bd97f5080715d96b8818f9301cfe92abbd6781337045f84f3d46ec23cd492d98"
+        ],
+        "artifact_bitwise_equal": false,
+        "alpha_pixels_bitwise_equal": null,
+        "decoded_frames": 25,
+        "decoded_pixels_bitwise_equal": true,
+        "pixel_values": 78643200,
+        "mae_8bit": 0,
+        "rmse_8bit": 0,
+        "maximum_error_8bit": 0,
+        "psnr_db": null,
+        "cosine": 1,
+        "relative_l2": 0,
+        "verified_frame_count": 25,
+        "audio_streams": 0,
+        "actual_steps": 1,
+        "frames": 25,
+        "fps": 24,
+        "execution": "gpu",
+        "numerical_recipe": "seedvr2-stable-fp16-fp32-v1",
+        "checkpoint_sha256_verified": true
+      }
+    ],
+    "residency_switches": [
+      "resident",
+      "component_staged",
+      "resident"
+    ],
+    "residency_switch_pngs_identical": true,
+    "scope": "Functional Swift StudioState/NativeJobStore + native C ABI requests/exports/history, not a new benchmark or UI-click acceptance"
+  },
+  "host_tests": {
+    "repository_passed": 17,
+    "release_gate_passed": 10,
+    "request_contract_ran": 129,
+    "request_contract_skipped": 1,
+    "model_hub_passed": true,
+    "seedvr2_quick_entry_and_output_presets_passed": true
+  },
+  "preserved": {
+    "old_history_count": 6,
+    "new_history_count": 6,
+    "all_old_history_ids_present": true,
+    "model_paths_unchanged": 4,
+    "active_generation_model_unchanged": true,
+    "seedvr2_model_already_registered": true,
+    "models_downloaded": false,
+    "source_media_deleted": false
+  },
+  "backup": "outputs/seedvr2-app-update-20261015/backup.r8VWw3",
+  "launch": {
+    "pid": 85943,
+    "on_screen_window_id": 924,
+    "same_canonical_bundle_path": true,
+    "accessibility_automation_permitted": false,
+    "screen_capture_permitted": false,
+    "ui_click_and_screenshot_acceptance": false
+  },
+  "initial_checks": {
+    "private_benchmark_library_correctly_rejected_for_stable_packaging": true,
+    "overlapping_gpu_contract_attempt_retried_when_idle": true,
+    "stale_targeted_build_text_fixture_updated_without_weakening_release_checks": true
+  },
+  "remote_pushed": false
+}

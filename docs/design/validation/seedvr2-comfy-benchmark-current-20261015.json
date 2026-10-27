@@ -1,0 +1,908 @@
+{
+  "schema": "seedvr2-comfy-benchmark-export-v1",
+  "published_date": "2026-10-15",
+  "measurement_date": "2026-10-14",
+  "status": "complete_retained_speed_evidence_export",
+  "new_inference_experiments_run": false,
+  "overall_qualification_passed": false,
+  "hardware": {
+    "chip": "Apple M4 Max",
+    "ram_bytes": 68719476736,
+    "os": "macOS 26.6.2"
+  },
+  "protocol": {
+    "observer": "tools/validation/seedvr2_paired_cohort.py",
+    "request_observer": "tools/validation/seedvr2_framework_screen.py",
+    "timing_scope": "complete request including import, resize, VAE encode, sampling, VAE decode and PNG/silent H264 MP4 export",
+    "excluded": [
+      "process/server readiness",
+      "model construction",
+      "offline compilation"
+    ],
+    "order": [
+      "native-gpu",
+      "reference",
+      "reference",
+      "native-gpu"
+    ],
+    "processes_per_comparison": 4,
+    "cold_requests_per_process": 1,
+    "warm_requests_per_process": 3,
+    "warm_requests_per_route": 6,
+    "seeds_per_process": [
+      42,
+      43,
+      44,
+      45
+    ],
+    "steps": 1,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "cfg": 1,
+    "color_correction": "none",
+    "fresh_conditioning": true,
+    "model_loader_cache_allowed": true,
+    "allocator_cache_limit_bytes": 4294967296
+  },
+  "native": {
+    "route": "native-gpu",
+    "numerical_recipe": "seedvr2-stable-fp16-fp32-v1",
+    "weight_residency": "resident",
+    "precision": "original FP16 weights, FP16 DiT projections/attention and VAE; FP32 residual/time/norm/output/Euler"
+  },
+  "reference": {
+    "comfyui_version": "0.39.0",
+    "comfy_commit": "b0b743566f65daafc423b4fea8a2fbda94b3384a",
+    "pytorch_version": "2.12.1",
+    "python_version": "3.13.12",
+    "device": "mps",
+    "shared_options": [
+      "--fp16-vae",
+      "--disable-all-custom-nodes",
+      "--disable-api-nodes",
+      "--preview-method",
+      "none"
+    ],
+    "presets": {
+      "default": {
+        "route": "comfy-default",
+        "attention": "sub-quadratic",
+        "extra_options": []
+      },
+      "sdpa": {
+        "route": "comfy-sdpa-gpu",
+        "attention": "pytorch SDPA",
+        "extra_options": [
+          "--use-pytorch-cross-attention",
+          "--gpu-only",
+          "--fp16-unet"
+        ]
+      }
+    },
+    "observed_dit_dtype_log": "model weight dtype torch.float16, manual cast: torch.bfloat16",
+    "video_compatibility_patch": {
+      "path": "tools/validation/seedvr2_comfy_mps_cache.patch",
+      "sha256": "3e9bc820e762b238f3fe8e50b7dc1ffd3efa1078c228eacbadb8565d1c3243e6"
+    }
+  },
+  "headline_selection": "lowest measured reference warm median per workload; native median from that same paired record, never independently minimized",
+  "limitations": [
+    "Speed gates only: original records retain overall_qualification_passed=false; independent FP32 quality gates are separate.",
+    "Native and Comfy use different numerical recipes; not equal-precision or bit-identical framework parity.",
+    "Video reference is a task-owned MPS-compatible copy with the disclosed non-CUDA cache-transfer guard, not unmodified stock video.",
+    "No physical ANE occupancy or GPU/ANE speedup claim; later hybrid/VAE/block-stream experiments are not mixed into these ratios.",
+    "No same-metric Comfy process-memory comparison; MLX active memory is not whole-process physical footprint.",
+    "Single host and finite workloads, not universal Mac, plugin, long-video, >121-frame or 16-GiB qualification.",
+    "Raw outputs/logs are retained local evidence identified by relative IDs and SHA-256; they are not distributed with this export."
+  ],
+  "comparisons": [
+    {
+      "id": "image512-default",
+      "workload": {
+        "kind": "image",
+        "source_width": 256,
+        "source_height": 256,
+        "width": 512,
+        "height": 512,
+        "frames": 1,
+        "fps": null
+      },
+      "reference_preset": "default",
+      "record": {
+        "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/report.json",
+        "sha256": "c765b1fec2138a49339563b196cea1e083bf53131007d5278cbe732d63ef3c14"
+      },
+      "source_sha256": "7c323be280fb9f5f404d75fa8687d51cba6666440bdf4f5661d757b1a4af600e",
+      "native_library_sha256": "de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7",
+      "native_runtime_build_manifest_sha256": "5c95f378a17657ef48d9bc81ed5f8bca79a83f45905fb9c9d0c6e21fc883d012",
+      "comfy_vae_source_sha256": "e01dd80282d357e183e1c3b732f26747e5caf8f5778cf9eca1f26ab015132532",
+      "comfy_local_changes_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/0-native-gpu/report.json",
+            "sha256": "8060bbab5e35eb3641d96ebbe310159d3da53d57f174cd35edfb6349cb3d3134"
+          },
+          "cold_request_seconds": 1.5669227079488337,
+          "warm_seconds": [
+            0.8272094591520727,
+            0.8264823749195784,
+            0.8282534170430154
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/1-comfy-default/report.json",
+            "sha256": "cc59ecc3e4a4f1bf5ba8671f423ca28d594093a53313a80e98ac4923c5e0bf3c"
+          },
+          "cold_request_seconds": 5.266308499965817,
+          "warm_seconds": [
+            3.962451749946922,
+            3.999828959116712,
+            3.988554999930784
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/1-comfy-default/server.stderr.txt",
+            "sha256": "dda26c10690a439fd90e111528e025c83fbb1a9bdb7d95f3ade791cecd1a32ac"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/2-comfy-default/report.json",
+            "sha256": "b207c70d19f016081e861d40cc384b35a724347a8a999d65aa8aeea74a275bfb"
+          },
+          "cold_request_seconds": 4.958860625047237,
+          "warm_seconds": [
+            3.9805674159433693,
+            3.9914093338884413,
+            3.9817464160732925
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/2-comfy-default/server.stderr.txt",
+            "sha256": "9cba190719cf4ea72f74e1c56688e9ac8f546ac0635b1ab99c5b4c0b519e076d"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-default-v1-20261014/3-native-gpu/report.json",
+            "sha256": "a66c7d93dd193751ff48be4f6fb1f6ff66b1a147b4a438f851a403a3681e8511"
+          },
+          "cold_request_seconds": 1.4106755000539124,
+          "warm_seconds": [
+            0.8332623329479247,
+            0.8259728748816997,
+            0.8268585831392556
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 0.8270340211456642,
+      "reference_warm_median_seconds": 3.9851507080020383,
+      "speedup": 4.818605530255617,
+      "saved_seconds": 3.158116686856374,
+      "time_saved_percent": 79.24710803320411,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "image512-sdpa",
+      "workload": {
+        "kind": "image",
+        "source_width": 256,
+        "source_height": 256,
+        "width": 512,
+        "height": 512,
+        "frames": 1,
+        "fps": null
+      },
+      "reference_preset": "sdpa",
+      "record": {
+        "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/report.json",
+        "sha256": "b95c24e1ab063ce4018ec8694835f53e14b21ec5b56903d8f8619c122d228c77"
+      },
+      "source_sha256": "7c323be280fb9f5f404d75fa8687d51cba6666440bdf4f5661d757b1a4af600e",
+      "native_library_sha256": "de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7",
+      "native_runtime_build_manifest_sha256": "5c95f378a17657ef48d9bc81ed5f8bca79a83f45905fb9c9d0c6e21fc883d012",
+      "comfy_vae_source_sha256": "e01dd80282d357e183e1c3b732f26747e5caf8f5778cf9eca1f26ab015132532",
+      "comfy_local_changes_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/0-native-gpu/report.json",
+            "sha256": "91b9c3329073802d13949a4c6a1b8fd68b7f4caf6ce84906d63b603a60b6d98a"
+          },
+          "cold_request_seconds": 1.4113691670354456,
+          "warm_seconds": [
+            0.8257960840128362,
+            0.8303771251812577,
+            0.8275521658360958
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/1-comfy-sdpa-gpu/report.json",
+            "sha256": "f56f6686fd1d0fcc171c81ca3c6e5e08ca7fb08374e031ae8f5141e853d248e7"
+          },
+          "cold_request_seconds": 4.671252541942522,
+          "warm_seconds": [
+            3.9688130421563983,
+            3.9810835421085358,
+            3.985587582923472
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/1-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "56821e450dcfe684e591098fa6403c36793d177cee2f150a8723b45d7932bd48"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/2-comfy-sdpa-gpu/report.json",
+            "sha256": "a9c932dcffa89bc98d70afda6cf89dee1f18c2b38bb3d36f4ec55924b6cdfd73"
+          },
+          "cold_request_seconds": 4.593625792069361,
+          "warm_seconds": [
+            3.978117084130645,
+            3.9775459580123425,
+            3.976036666193977
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/2-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "e33583f2be2ebf7c1e5e83fa2198a9014283411d2512914caa484ee80ef7a177"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image512-paired-sdpa-v1-20261014/3-native-gpu/report.json",
+            "sha256": "b4745fb004fd146fc6c70d0e6013f24654e469850ec7481bafe4fe5cb1bd4fcb"
+          },
+          "cold_request_seconds": 1.4131350410170853,
+          "warm_seconds": [
+            0.8251862081233412,
+            0.8281514998525381,
+            0.829280124977231
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 0.827851832844317,
+      "reference_warm_median_seconds": 3.9778315210714936,
+      "speedup": 4.80500418463113,
+      "saved_seconds": 3.1499796882271767,
+      "time_saved_percent": 79.18836359813145,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "image1024-default",
+      "workload": {
+        "kind": "image",
+        "source_width": 512,
+        "source_height": 512,
+        "width": 1024,
+        "height": 1024,
+        "frames": 1,
+        "fps": null
+      },
+      "reference_preset": "default",
+      "record": {
+        "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/report.json",
+        "sha256": "e8cae73540b221626ae3e446878fee8187b3664fd5c782f64e0652ca391075d6"
+      },
+      "source_sha256": "7109f36e7b110c70125f5e9a39d54aa2c2bb9cf05ba5e46d443854625a6ab33a",
+      "native_library_sha256": "de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7",
+      "native_runtime_build_manifest_sha256": "5c95f378a17657ef48d9bc81ed5f8bca79a83f45905fb9c9d0c6e21fc883d012",
+      "comfy_vae_source_sha256": "e01dd80282d357e183e1c3b732f26747e5caf8f5778cf9eca1f26ab015132532",
+      "comfy_local_changes_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/0-native-gpu/report.json",
+            "sha256": "0ffe43236a496c463284ba244d711a14e29254dcc028a1ddcf249eb8a2be6785"
+          },
+          "cold_request_seconds": 4.123237750027329,
+          "warm_seconds": [
+            3.5059460001066327,
+            3.485291624907404,
+            3.423005749937147
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/1-comfy-default/report.json",
+            "sha256": "9720d887905bbf805455d3b4e973880629579e608927f4802930e99f5ea8ec4b"
+          },
+          "cold_request_seconds": 16.771938791964203,
+          "warm_seconds": [
+            15.56689954106696,
+            15.541486375033855,
+            15.535169709008187
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/1-comfy-default/server.stderr.txt",
+            "sha256": "3d8d4ceb4723f9c2a8e38dbc526497715a705a04dc48fb1dac046604c0950113"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/2-comfy-default/report.json",
+            "sha256": "a8696caa6c59280213916fd5136b4951ee1da21889967b1b4f2690a420cd16c4"
+          },
+          "cold_request_seconds": 16.547004665946588,
+          "warm_seconds": [
+            15.531177416210994,
+            15.535677916137502,
+            15.534074666909873
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/2-comfy-default/server.stderr.txt",
+            "sha256": "3d918949db0e279fe1a9e66d95f72d530959f4ac3000992d80c20cc7bf8e6eba"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-default-v1-20261014/3-native-gpu/report.json",
+            "sha256": "3308922ca31736cef221bfcadc9b374c0d4048cb28b051c036d8a03b9dda743e"
+          },
+          "cold_request_seconds": 4.075467166956514,
+          "warm_seconds": [
+            3.506693708943203,
+            3.5214822909329087,
+            3.5434355000033975
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 3.506319854524918,
+      "reference_warm_median_seconds": 15.535423812572844,
+      "speedup": 4.43069213794752,
+      "saved_seconds": 12.029103958047926,
+      "time_saved_percent": 77.43016285344436,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "image1024-sdpa",
+      "workload": {
+        "kind": "image",
+        "source_width": 512,
+        "source_height": 512,
+        "width": 1024,
+        "height": 1024,
+        "frames": 1,
+        "fps": null
+      },
+      "reference_preset": "sdpa",
+      "record": {
+        "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/report.json",
+        "sha256": "6817eb4cb661bbf36664086cc4414c4eb872b2aba9ff50fed2a7258789331401"
+      },
+      "source_sha256": "7109f36e7b110c70125f5e9a39d54aa2c2bb9cf05ba5e46d443854625a6ab33a",
+      "native_library_sha256": "de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7",
+      "native_runtime_build_manifest_sha256": "5c95f378a17657ef48d9bc81ed5f8bca79a83f45905fb9c9d0c6e21fc883d012",
+      "comfy_vae_source_sha256": "e01dd80282d357e183e1c3b732f26747e5caf8f5778cf9eca1f26ab015132532",
+      "comfy_local_changes_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/0-native-gpu/report.json",
+            "sha256": "8f3238afc59eb2e5584b0f83aca55ef10e5f2d8be42c98d59ab4abcfc5ea3d9a"
+          },
+          "cold_request_seconds": 4.053270542062819,
+          "warm_seconds": [
+            3.484799207886681,
+            3.482911540893838,
+            3.5014463330153376
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/1-comfy-sdpa-gpu/report.json",
+            "sha256": "532f67b468b5429cbd3cd420750cb312e7be86e28ce22acdc7f2501df2bad4fe"
+          },
+          "cold_request_seconds": 16.200986000010744,
+          "warm_seconds": [
+            15.62987683317624,
+            15.633763290941715,
+            15.664377541979775
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/1-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "42ddd997d79430e987a8dfdc97737eae2e11e3716fec4be24129fa4f57a26831"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/2-comfy-sdpa-gpu/report.json",
+            "sha256": "bf5ebdc96bb62d2471cf111bbd22aa8503820d9b34a0b95868d25d1260264f8b"
+          },
+          "cold_request_seconds": 16.20347383315675,
+          "warm_seconds": [
+            15.638361666118726,
+            15.621283000102267,
+            15.639964708127081
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/2-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "8b4dbac118582d67418da722f1ca60a29955fbdf313f125b962de79389a86555"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-image1024-paired-sdpa-v1-20261014/3-native-gpu/report.json",
+            "sha256": "83f809a82ce7c3232ba0f4c984521f104bd78a3adb449319a4a9259992f3f4e7"
+          },
+          "cold_request_seconds": 4.064321999903768,
+          "warm_seconds": [
+            3.5060922079719603,
+            3.521298083011061,
+            3.520614250097424
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 3.503769270493649,
+      "reference_warm_median_seconds": 15.63606247853022,
+      "speedup": 4.462640451300962,
+      "saved_seconds": 12.132293208036572,
+      "time_saved_percent": 77.59174168493729,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "video512-default",
+      "workload": {
+        "kind": "video",
+        "source_width": 256,
+        "source_height": 256,
+        "width": 512,
+        "height": 512,
+        "frames": 25,
+        "fps": 24
+      },
+      "reference_preset": "default",
+      "record": {
+        "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/report.json",
+        "sha256": "a44c7d1c82fb6db3b0077b19cca114e8264e77efe61fdd3b6984dae9c878119e"
+      },
+      "source_sha256": "3652f99384844a1bb19647d90eef3bc1440450a22fb859584e276e3b9a48e4ef",
+      "native_library_sha256": "45caa42aba570667c45ba9b6f8eb4c1bcaaf20386e2746dd5929651a1c9c71d6",
+      "native_runtime_build_manifest_sha256": "0472847539ab196898b2206d8533f343a0ec3db3fafe5d9af40e73866a56ed39",
+      "comfy_vae_source_sha256": "866e7d349626d8529585ef6e5ff0d00b7a8d6f8995ef301a96979e29bf1d1f0c",
+      "comfy_local_changes_sha256": "f8eed1012af72677668a263930478ee94fd84ba16b86ca55bd8c9d93940c54c8",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/0-native-gpu/report.json",
+            "sha256": "ef4ffb699c774d3b8ce7ae8a4405c094a7e7ef3444af061ea0706b94c8a716c1"
+          },
+          "cold_request_seconds": 21.206968082813546,
+          "warm_seconds": [
+            20.556240791920573,
+            20.563560832990333,
+            20.584667791845277
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/1-comfy-default/report.json",
+            "sha256": "39aae1e3c68db77f69b7ac2e898c70e5b93b9ce4a88ebb1c17f53963e7f2ab19"
+          },
+          "cold_request_seconds": 72.10391508392058,
+          "warm_seconds": [
+            71.19082258292474,
+            71.18764866585843,
+            71.1667457500007
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/1-comfy-default/server.stderr.txt",
+            "sha256": "bb0ce9af3db3f39a0bee892b9b2e490139f7eb5f303d9444f292921cc709da22"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/2-comfy-default/report.json",
+            "sha256": "a4483203825fa5855b19b5fbf3a16afab1a672540eaf30639cefa090379fdb7e"
+          },
+          "cold_request_seconds": 72.10872062505223,
+          "warm_seconds": [
+            71.18837508303113,
+            71.19774820795283,
+            71.1972695000004
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/2-comfy-default/server.stderr.txt",
+            "sha256": "48c30abc3b0007c0560be1326e65a72cfd5a0a46a8b888bb34fee3b4df4029aa"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-staged-candidate-video512-t25-paired-default-v1-20261014/3-native-gpu/report.json",
+            "sha256": "6b5ec4ecda921e45a5c03e88d51d6993e950c965dcffaa9ed25b8e6488d6fe9b"
+          },
+          "cold_request_seconds": 21.24050391698256,
+          "warm_seconds": [
+            20.586440291954204,
+            20.58665395900607,
+            20.687795208068565
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 20.58555404189974,
+      "reference_warm_median_seconds": 71.18959883297794,
+      "speedup": 3.458230887936218,
+      "saved_seconds": 50.604044791078195,
+      "time_saved_percent": 71.08348076213112,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "video512-sdpa",
+      "workload": {
+        "kind": "video",
+        "source_width": 256,
+        "source_height": 256,
+        "width": 512,
+        "height": 512,
+        "frames": 25,
+        "fps": 24
+      },
+      "reference_preset": "sdpa",
+      "record": {
+        "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/report.json",
+        "sha256": "d1b108f4d3e5e6309209ab403da8cba2bc07d9affbd5833444ba3d9276003b76"
+      },
+      "source_sha256": "3652f99384844a1bb19647d90eef3bc1440450a22fb859584e276e3b9a48e4ef",
+      "native_library_sha256": "de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7",
+      "native_runtime_build_manifest_sha256": "5c95f378a17657ef48d9bc81ed5f8bca79a83f45905fb9c9d0c6e21fc883d012",
+      "comfy_vae_source_sha256": "866e7d349626d8529585ef6e5ff0d00b7a8d6f8995ef301a96979e29bf1d1f0c",
+      "comfy_local_changes_sha256": "f8eed1012af72677668a263930478ee94fd84ba16b86ca55bd8c9d93940c54c8",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/0-native-gpu/report.json",
+            "sha256": "56572d331d433b2f63b099f89a28dba7e24b3bd4b7b6903abc87cadfa9c5bcdc"
+          },
+          "cold_request_seconds": 21.229772750055417,
+          "warm_seconds": [
+            20.59453095914796,
+            20.601570332888514,
+            20.572510165860876
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/1-comfy-sdpa-gpu/report.json",
+            "sha256": "618fd90409dc8f5bf1eeb3e334e98565a96d03e53c8c1ea447a1554066615ea1"
+          },
+          "cold_request_seconds": 72.29081016709097,
+          "warm_seconds": [
+            71.36090579209849,
+            71.29975429107435,
+            71.32503162510693
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/1-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "3009acf672258e8e867b81f6cb82eb2e564a2654b0edc14115318451cae5aaca"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/2-comfy-sdpa-gpu/report.json",
+            "sha256": "dbab3175d7f5311328e3beac2f43cf890e2ba1e08f6002e473a32cd5d09b8e24"
+          },
+          "cold_request_seconds": 72.30185641697608,
+          "warm_seconds": [
+            71.34697504201904,
+            71.3531076668296,
+            71.32718500006013
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/2-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "206446af8f6da7f64c82f2b84e0c7d11aa844af2a94d3ef5a92e2ff95e1bfe71"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video512-t25-paired-sdpa-v1-20261014/3-native-gpu/report.json",
+            "sha256": "1c1c8d12eaa7c883c35cad9766a6e7702fd746315572b7f690abda882b80c624"
+          },
+          "cold_request_seconds": 21.27146895811893,
+          "warm_seconds": [
+            20.603120499989018,
+            20.574571875156835,
+            20.606837500119582
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 20.598050646018237,
+      "reference_warm_median_seconds": 71.33708002103958,
+      "speedup": 3.4632927769225383,
+      "saved_seconds": 50.739029375021346,
+      "time_saved_percent": 71.12574464788408,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "video1024-default",
+      "workload": {
+        "kind": "video",
+        "source_width": 512,
+        "source_height": 512,
+        "width": 1024,
+        "height": 1024,
+        "frames": 25,
+        "fps": 24
+      },
+      "reference_preset": "default",
+      "record": {
+        "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/report.json",
+        "sha256": "9257e69dd63ad86caabc92fd359e65600cbab2a433d45b3b7228f504ec097ed7"
+      },
+      "source_sha256": "dfa47e97c192f5de641ca418f8413339481ae307bd9ad81da2e926cea8ab648b",
+      "native_library_sha256": "596c160aabcc7ec248c6e842e86da1b2b27a0338bab41749014dff866a35d7e4",
+      "native_runtime_build_manifest_sha256": "5396f9de384350d4040e293cbc20c78143a55be1885bce7363c69085fcb5b2ac",
+      "comfy_vae_source_sha256": "866e7d349626d8529585ef6e5ff0d00b7a8d6f8995ef301a96979e29bf1d1f0c",
+      "comfy_local_changes_sha256": "f8eed1012af72677668a263930478ee94fd84ba16b86ca55bd8c9d93940c54c8",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/0-native-gpu/report.json",
+            "sha256": "96e032458098662ac383e64d5333668fe6c2abe47591674c61ea48e3a029f61d"
+          },
+          "cold_request_seconds": 85.46432945807464,
+          "warm_seconds": [
+            84.96575245796703,
+            85.13298875000328,
+            85.07674383418635
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/1-comfy-default/report.json",
+            "sha256": "f3208424d6c6475d225ac6034833e6314c55d51821ffaf7a9d895556a8df8e44"
+          },
+          "cold_request_seconds": 296.4944333329331,
+          "warm_seconds": [
+            295.48179420805536,
+            295.4399313752074,
+            295.38152279215865
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/1-comfy-default/server.stderr.txt",
+            "sha256": "2aff03d88022d5a991ef0853f1e0e5cd7217b59b63cdff5cae0f791b09d2d744"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-default",
+          "record": {
+            "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/2-comfy-default/report.json",
+            "sha256": "6bea76f47c401e331aa04c69b8db81032ee469ba0caf997f7531012d35b8a1f1"
+          },
+          "cold_request_seconds": 296.49438454187475,
+          "warm_seconds": [
+            298.7229417921044,
+            295.43681091605686,
+            295.4315351671539
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/2-comfy-default/server.stderr.txt",
+            "sha256": "7be1f2b8c4b5e6ef3c850a723dd8d5faa2c62c35b233f2e4f29a4a0711b156dd"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-media-lifetime-video1024-t25-paired-default-v1-20261014/3-native-gpu/report.json",
+            "sha256": "62f95786ae716d16b5b288b446cd572cee645a0d2bc1b58dd008130d617cee36"
+          },
+          "cold_request_seconds": 85.63601195905358,
+          "warm_seconds": [
+            85.01280450006016,
+            85.00874229194596,
+            84.86751220794395
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 85.01077339600306,
+      "reference_warm_median_seconds": 295.4383711456321,
+      "speedup": 3.4753050624466226,
+      "saved_seconds": 210.42759774962906,
+      "time_saved_percent": 71.22554762729239,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    },
+    {
+      "id": "video1024-sdpa",
+      "workload": {
+        "kind": "video",
+        "source_width": 512,
+        "source_height": 512,
+        "width": 1024,
+        "height": 1024,
+        "frames": 25,
+        "fps": 24
+      },
+      "reference_preset": "sdpa",
+      "record": {
+        "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/report.json",
+        "sha256": "f24a6b32ce805bc5c540f4fb2bd5b9bb8421c596aca23a81a81eb7d5d70b1b48"
+      },
+      "source_sha256": "dfa47e97c192f5de641ca418f8413339481ae307bd9ad81da2e926cea8ab648b",
+      "native_library_sha256": "de18ca6024dc87ae802660acbce81f5ef0a0fad3d3736d3c41e9635e4c978be7",
+      "native_runtime_build_manifest_sha256": "5c95f378a17657ef48d9bc81ed5f8bca79a83f45905fb9c9d0c6e21fc883d012",
+      "comfy_vae_source_sha256": "866e7d349626d8529585ef6e5ff0d00b7a8d6f8995ef301a96979e29bf1d1f0c",
+      "comfy_local_changes_sha256": "f8eed1012af72677668a263930478ee94fd84ba16b86ca55bd8c9d93940c54c8",
+      "cohorts": [
+        {
+          "index": 0,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/0-native-gpu/report.json",
+            "sha256": "2ea9df2e823dd57e99c6e99c8c9b1c96a92eb2cd15509cf837a965817331f92c"
+          },
+          "cold_request_seconds": 85.44419079180807,
+          "warm_seconds": [
+            86.88068804098293,
+            85.4739595418796,
+            84.9691414590925
+          ]
+        },
+        {
+          "index": 1,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/1-comfy-sdpa-gpu/report.json",
+            "sha256": "1b66cacc5d1614c5e69fa4d28c421a6c23123dad3863cc7c4fc1716f9dbfef08"
+          },
+          "cold_request_seconds": 297.75700270803645,
+          "warm_seconds": [
+            299.4580796249211,
+            298.0866335001774,
+            298.5272577498108
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/1-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "99d081153f3458a4be33b9e6f6af4183aab7a65c5b1dee04fa5a35d05752759c"
+          }
+        },
+        {
+          "index": 2,
+          "route": "comfy-sdpa-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/2-comfy-sdpa-gpu/report.json",
+            "sha256": "65f185bf70122dcaf1477a3b01e794af72f5bd2ffc0b724678c33c02cb0c37fe"
+          },
+          "cold_request_seconds": 297.3687776669394,
+          "warm_seconds": [
+            300.0089612919837,
+            298.95112254214473,
+            298.8515137080103
+          ],
+          "dtype_log_record": {
+            "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/2-comfy-sdpa-gpu/server.stderr.txt",
+            "sha256": "a6022535c0d5ee3313718eea11853d6c32260c2492cb50eb5b3a3eae9f98302f"
+          }
+        },
+        {
+          "index": 3,
+          "route": "native-gpu",
+          "record": {
+            "path": "outputs/seedvr2-stable-video1024-t25-paired-sdpa-v2-20261014/3-native-gpu/report.json",
+            "sha256": "9e25c60673d8682681385419e617ea20c3b3e8d623d40a3e4bc328fd0ec4698f"
+          },
+          "cold_request_seconds": 85.43439558311366,
+          "warm_seconds": [
+            84.72056804201566,
+            84.74612820800394,
+            84.78796787490137
+          ]
+        }
+      ],
+      "outputs_checked": 16,
+      "fresh_conditioning_checked": true,
+      "output_geometry_checked": true,
+      "native_warm_median_seconds": 84.87855466699693,
+      "reference_warm_median_seconds": 298.9013181250775,
+      "speedup": 3.5215175293424075,
+      "saved_seconds": 214.0227634580806,
+      "time_saved_percent": 71.60315143492313,
+      "speed_gate_passed": true,
+      "overall_qualification_passed": false
+    }
+  ],
+  "model_provenance": {
+    "schema": "turbocider-seedvr2-source-v1",
+    "source": "modelscope",
+    "repository": "Comfy-Org/SeedVR2",
+    "revision": "8d30a39cd60f07cfff11306406f97021a50ff0eb",
+    "files": [
+      {
+        "path": "diffusion_models/seedvr2_3b_fp16.safetensors",
+        "bytes": 6784268336,
+        "sha256": "98669fd2c06df5eca88baf68cd5c478775c8e61fc110e598c52b350145ea2660"
+      },
+      {
+        "path": "vae/seedvr2_ema_vae_fp16.safetensors",
+        "bytes": 501324814,
+        "sha256": "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1"
+      }
+    ]
+  },
+  "headline_comparison_ids": [
+    "image512-sdpa",
+    "image1024-default",
+    "video512-default",
+    "video1024-default"
+  ]
+}

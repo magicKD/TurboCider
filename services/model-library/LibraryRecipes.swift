@@ -151,6 +151,9 @@ struct LibraryRecipe: Codable, Sendable {
         }
     }()
     static let all: [LibraryRecipe] = [
+        .init(modelID: "seedvr2-3b", repository: "Comfy-Org/SeedVR2",
+              include: ["diffusion_models/seedvr2_3b_fp16.safetensors", "vae/seedvr2_ema_vae_fp16.safetensors"],
+              preparation: "原生图像 / 视频超分；原始 FP16 权重、BF16 DiT、FP16 因果 VAE。无需文本编码器。先使用 GPU；GPU+ANE 和成对速度验收仍在进行。视频需填写完整源帧数和整数源 FPS，当前输出无音轨。"),
         .init(modelID: "qwen-image-2.1", repository: "Comfy-Org/Qwen-Image-2.1",
               include: [qwenBF16, qwenEncoder, qwenVAE, qwenTokenizer],
               preparation: qwenVariants[0].preparation,

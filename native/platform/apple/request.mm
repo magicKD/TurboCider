@@ -110,6 +110,60 @@ static void parse_quantized_execution(NSDictionary *d, QuantizedExecutionConfig 
     string(@"ane_compute", c.ane_compute);
     validate_quantized_execution(c);
 }
+static void parse_tiny_vae(NSDictionary *d, Request &r) {
+    dictionary(d, "tiny_vae");
+    keys(d, @[@"path", @"encoder", @"decoder", @"preview", @"interval"]);
+    require(r.model == "qwen-image-2.1" || r.model == "z-image-turbo" ||
+                r.model == "z-image-turbo-gguf",
+            "tiny_vae supports Qwen Image 2.1 and Z-Image only");
+    TinyVAEConfig c;
+    c.path = string_value(d, @"path");
+    c.encoder = string_value(d, @"encoder", c.encoder);
+    c.decoder = string_value(d, @"decoder", c.decoder);
+    c.preview = boolean(d, @"preview", false);
+    c.interval = number(d, @"interval", 2);
+    require(c.encoder == "original" || c.encoder == "tiny", "tiny_vae.encoder must be original or tiny");
+    require(c.decoder == "original" || c.decoder == "tiny", "tiny_vae.decoder must be original or tiny");
+    require(c.interval >= 1 && c.interval <= 50, "tiny_vae.interval must be 1...50");
+    require(std::filesystem::path(c.path).is_absolute() && std::filesystem::is_regular_file(c.path),
+            "tiny_vae.path must be an absolute existing safetensors file");
+    r.tiny_vae = std::move(c);
+}
+static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
+    require(r.model == "seedvr2-3b", "seedvr2_vae is only supported by SeedVR2");
+    dictionary(d, "seedvr2_vae");
+    keys(d, @[@"encoder", @"decoder", @"convolution", @"history", @"tile_rows", @"allocator_cache_bytes",
+        @"spatial", @"encoder_spatial", @"spatial_rows", @"spatial_disk_budget_bytes", @"share_upscale_history"]);
+    SeedVR2VAEConfig config;
+    config.encoder = string_value(d, @"encoder", config.encoder);
+    config.decoder = string_value(d, @"decoder", config.decoder);
+    config.convolution = string_value(d, @"convolution", config.convolution);
+    config.history = string_value(d, @"history", config.history);
+    config.share_upscale_history = boolean(d,@"share_upscale_history",false);
+    config.spatial = string_value(d, @"spatial", config.spatial);
+    config.encoder_spatial = string_value(d, @"encoder_spatial", config.encoder_spatial);
+    config.spatial_rows = number(d, @"spatial_rows", config.spatial_rows);
+    config.spatial_disk_budget_bytes = byte_count(d, @"spatial_disk_budget_bytes", config.spatial_disk_budget_bytes);
+    config.tile_rows = number(d, @"tile_rows", config.tile_rows);
+    config.allocator_cache_bytes = byte_count(d, @"allocator_cache_bytes", config.allocator_cache_bytes);
+    require(config.decoder == "buffered" || config.decoder == "streaming", "SeedVR2 VAE decoder must be buffered or streaming");
+    require(config.encoder == "buffered" || config.encoder == "streaming", "SeedVR2 VAE encoder must be buffered or streaming");
+    require(config.history == "compact" || config.history == "frames", "SeedVR2 VAE history must be compact or frames");
+    require(!config.share_upscale_history || (config.history=="frames" && config.convolution=="singleton2d" && config.spatial=="full"),
+            "share_upscale_history requires frames, singleton2d and full decoder spatial scheduling");
+    require(config.spatial == "full" || config.spatial == "file_rows", "SeedVR2 VAE spatial must be full or file_rows");
+    require(config.encoder_spatial == "full" || config.encoder_spatial == "file_rows", "SeedVR2 VAE encoder_spatial must be full or file_rows");
+    require(config.spatial_rows >= 8 && config.spatial_rows <= 128 && config.spatial_rows % 8 == 0,
+        "SeedVR2 spatial row bands must be 8-aligned in 8...128");
+    require(config.spatial_disk_budget_bytes > 0 && config.spatial_disk_budget_bytes <= (8ull << 30),
+        "SeedVR2 spatial scratch budget must be positive and at most 8 GiB");
+    require(config.convolution == "singleton2d" || config.convolution == "conv3d" ||
+            config.convolution == "mixed3d" || config.convolution == "tiled3d", "unsupported SeedVR2 VAE convolution recipe");
+    require(config.tile_rows >= 128 && config.tile_rows <= 65536 && config.tile_rows % 128 == 0,
+            "SeedVR2 convolution tile rows must be a 128-aligned integer in 128...65536");
+    require(config.allocator_cache_bytes <= (16ull << 30), "SeedVR2 allocator cache must be in 0...17179869184 bytes");
+    r.seedvr2_vae = std::move(config);
+}
 static NSArray *ltx_option_keys() {
     return @[
         @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
@@ -242,9 +296,11 @@ Request request_from_json(NSDictionary *d) {
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
             @"hybrid_mlp_mode",
-            @"quantized_cache", @"warmup_iterations", @"memory_constrained"
+            @"quantized_cache", @"warmup_iterations", @"memory_constrained", @"seedvr2_vae", @"tiny_vae"
         ]);
         r.model = string_value(d, @"model", r.model);
+        if (d[@"seedvr2_vae"]) parse_seedvr2_vae(d[@"seedvr2_vae"], r);
+        if (d[@"tiny_vae"]) parse_tiny_vae(d[@"tiny_vae"], r);
         r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
         r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
@@ -254,6 +310,7 @@ Request request_from_json(NSDictionary *d) {
         auto model_descriptor = module_for(r.model).describe();
         auto descriptor = to_dictionary(model_descriptor);
         r.operation = string_value(d, @"operation",
+                                   [descriptor[@"output"] isEqual:@"image+video"] ? model_descriptor.executor_operations.front() :
                                    [descriptor[@"output"] isEqual:@"image"] ? "image.generate"
                                                                             : "video.generate");
         r.prompt = string_value(d, @"prompt");
@@ -322,7 +379,9 @@ Request request_from_json(NSDictionary *d) {
                 "one primary output is required");
         auto output = dictionary(outputs[0], "output");
         keys(output, @[ @"kind", @"path", @"width", @"height", @"frames", @"fps", @"audio" ]);
-        require([@(string_value(output, @"kind").c_str()) isEqual:descriptor[@"output"]],
+        const auto expected_kind = model_descriptor.output == "image+video"
+            ? (r.operation.starts_with("video.") ? "video" : "image") : model_descriptor.output;
+        require(string_value(output, @"kind") == expected_kind,
                 "output kind does not match model");
         r.output = string_value(output, @"path");
         r.width = number(output, @"width", [descriptor[@"default_width"] intValue]);
@@ -341,7 +400,8 @@ Request request_from_json(NSDictionary *d) {
                @"residency", @"memory_budget_bytes", @"warmup_iterations",
                @"hybrid_mlp_mode",
                @"qwen21_w8a8", @"qwen21_dit_w8a8", @"qwen21_dit_smoothquant_convrot", @"qwen21_gpu_w8a16", @"qwen21_gpu_full_ffn_blocks", @"qwen21_dit_cache", @"qwen21_denoiser_backend", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
-               @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution" ]);
+               @"quantized_cache", @"memory_constrained", @"streaming", @"quantized_execution", @"seedvr2_vae" ]);
+        if (execution[@"seedvr2_vae"]) parse_seedvr2_vae(execution[@"seedvr2_vae"], r);
         r.execution = string_value(execution, @"policy", "gpu");
         r.profile = string_value(execution, @"profile");
         r.ane_manifest = string_value(execution, @"ane_manifest");
@@ -367,13 +427,14 @@ Request request_from_json(NSDictionary *d) {
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
                             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-                            @"qwen21_reference_size",
+                            @"qwen21_reference_size", @"tiny_vae",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
                             @"vsa_impl" ]);
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
+        if (parameters[@"tiny_vae"]) parse_tiny_vae(parameters[@"tiny_vae"], r);
         r.noise_path = string_value(parameters, @"noise_path");
         r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");
         r.prompt_enhance = boolean(parameters, @"prompt_enhance", false);
@@ -400,6 +461,15 @@ Request request_from_json(NSDictionary *d) {
             }
         }
     }
+    if (r.tiny_vae && (r.tiny_vae->encoder == "tiny" || r.tiny_vae->decoder == "tiny")) {
+        require(r.allow_approximation,
+                "tiny VAE encoding/final decoding requires allow_approximation=true");
+        require(!r.streaming_selector && !r.memory_constrained.enabled,
+                "tiny VAE approximation is not calibrated for public streaming/memory-constrained presets");
+    }
+    if (r.tiny_vae && r.tiny_vae->preview)
+        require(!r.streaming_selector && !r.memory_constrained.enabled,
+                "tiny preview working set is not calibrated for public streaming/memory-constrained presets");
     r.lora_strategy = string_value(d, @"lora_strategy", r.lora_strategy);
     r.dump = string_value(d, @"dump_tensors");
     if (d[@"loras"]) {

@@ -1,0 +1,73 @@
+{
+  "schema": "tc-upscale-workspace-validation-v1",
+  "date": "2026-10-15",
+  "status": "installed_and_running",
+  "scope": "App usability, stage progress and functional regression; no new performance or lossy-quality qualification",
+  "app": "dist/TurboCider.app",
+  "native_runtime_build_id": "tc-runtime-build-v1-8843e5ea2e75cbf9dd57f634b01c4bb8c0caa1790d43b05b3ca40309dfc3c4eb",
+  "native_source_count": 648,
+  "release": {
+    "private_ane": false,
+    "test_hooks": false,
+    "audit_counters": false,
+    "unqualified_vae_experiments": false,
+    "actual_binary_policy_checked": true,
+    "local_ad_hoc_signature_verified": true,
+    "notarized": false,
+    "app_binary_sha256": "c287272054a46906decaa730b47ec0936ff833b6c1323f0acdc24ea192bc79e8",
+    "native_library_sha256": "2821421a63a415b15ef444d98517d0140506e29c9f80700d17860544770ac22f"
+  },
+  "tests": {
+    "native_contract_total": 129,
+    "native_contract_conditional_skips": 1,
+    "seedvr2_contract_passed": 14,
+    "repository_passed": 17,
+    "release_policy_passed": 10,
+    "swift_seedvr2_workflow_passed": true,
+    "swift_model_hub_passed": true,
+    "swift_run_insights_passed": true,
+    "own_view_offscreen_renders": 7,
+    "gui_click_automation_performed": false,
+    "screen_capture_performed": false
+  },
+  "real_app_workflow": {
+    "jobs": 7,
+    "image_sizes": [512, 1024],
+    "video_sizes": [512, 1024],
+    "video_frames": 25,
+    "video_fps": 24,
+    "resident_staged_resident_switch_passed": true,
+    "report": "outputs/upscale-ui-update-20261015/app-functional/generation-report.json",
+    "report_sha256": "5541ede2eed8e1e0e008fd9a1f9fc836cbe99eeb93af42d66b7ce2a363de6c2c"
+  },
+  "complete_video_progress": {
+    "frames": 97,
+    "fps": 24,
+    "functional_output_size": [256, 256],
+    "not_a_performance_benchmark": true,
+    "buffered_and_streaming_progress_monotonic": true,
+    "encode_completed": 97,
+    "transformer_blocks_completed": 32,
+    "decode_completed": 97,
+    "cancellation_status": 2,
+    "cancellation_final_and_temporary_outputs_absent": true,
+    "same_engine_recovery_passed": true,
+    "source_unchanged": true,
+    "matched_before_after_all_decoded_pixels_equal": true,
+    "before_after_libraries_in_separate_processes": true,
+    "report": "outputs/upscale-ui-update-20261015/progress-97-v3/report.json",
+    "report_sha256": "145dce73bd3eba56b81f8abafd4e1af5dfc517d1ddd139c1886ae5cfbe7eac2c"
+  },
+  "deployment": {
+    "canonical_process_running": true,
+    "onscreen_main_windows": 1,
+    "existing_history_count": 9,
+    "history_semantically_unchanged": true,
+    "draft_semantically_unchanged": true,
+    "model_library_semantically_unchanged": true,
+    "library_settings_semantically_unchanged": true,
+    "backup": "outputs/upscale-ui-update-20261015/backup.RyPAiz/",
+    "old_app_retained": true,
+    "standalone_dist_cli_replaced": false
+  }
+}

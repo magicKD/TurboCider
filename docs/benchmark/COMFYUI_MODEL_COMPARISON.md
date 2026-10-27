@@ -1,6 +1,7 @@
 # ComfyUI Mac vs TurboCider 已测最优
 
-2026-10-13整理；实测窗口2026-10-11至12，M4 Max64GiB /macOS26.6.2，base-only，无额外LoRA。
+2026-10-13生成模型整理；其窗口为2026-10-11至12，M4 Max64GiB /macOS26.6.2，base-only，无额外LoRA。
+2026-10-15另补下方SeedVR2超分配对结果（实测10月14日），不混入旧四模型跨窗口排名。
 按最新要求：**已测TurboCider取保留的最优配置，不重复跑；Comfy已测的Z也不重跑。**
 新补Qwen完整PNG和LTX完整AV MP4。Comfy为v0.39.0 /PyTorch2.12.1 MPS，GPU/SDPA
 预设均实际执行；比值采用更快的Comfy预设，不拿慢配置放大优势。
@@ -23,7 +24,24 @@
 先前Unsloth/mflux的各自同cohort倍率仍在[总体性能报告](PERFORMANCE_REPORT.md)。
 不能据此说四模型/所有Mac配置/插件/Torch版本都全面领先。
 
-### 纯GPU与GPU/ANE一起看，不把更慢的混合路线当赢家
+## SeedVR2超分：独立ABBA，不回用其他原生窗口的最低值
+
+| 完整超分任务 | 更快Comfy预设与中位s | 同组TC GPU中位s | 每次节省 | 倍率／耗时减少 |
+| --- | ---: | ---: | ---: | --- |
+| 图像256→512 | SDPA/GPU-only，3.978 | 0.828 | 3.150s | **4.81×／79.2%** |
+| 图像512→1024 | 默认attention，15.535 | 3.506 | 12.029s | **4.43×／77.4%** |
+| 视频256→512，25帧/24FPS | 默认attention，MPS兼容，71.190 | 20.586 | 50.604s | **3.46×／71.1%** |
+| 视频512→1024，25帧/24FPS | 默认attention，MPS兼容，295.438 | 85.011 | 210.428s | **3.48×／71.2%** |
+
+每路6个fresh warm，完整导入／resize／VAE／1步采样／PNG或无音轨H.264导出，
+不含构造／服务准备；cold独立列出。TC为resident GPU，不是GPU/ANE倍率。
+Comfy0.39.0 /Torch2.12.1 MPS，两预设均显式FP16 VAE，实际DiT日志
+为FP16权重／BF16 manual cast；不同于TC稳定FP16/FP32配方，不称等精度。
+视频Comfy仅在任务副本打non-CUDA缓存转移guard，不使用stock崩溃作分母。
+速度门通过但原记录`overall_qualification_passed=false`，无同口径内存排名。
+全部8组控制／cold／样本／身份见[SeedVR2专页](SEEDVR2_COMFYUI.md)。
+
+## 生成模型：纯GPU与GPU/ANE一起看，不把更慢的混合路线当赢家
 
 下面回用各自原记录，没有重新跑TC。Z/Qwen的GPU列取其保留混合最优
 所在窗口的GPU control，避免把别的prompt/cache窗口最小值拼进去。

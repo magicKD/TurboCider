@@ -202,6 +202,13 @@ struct A8SinglePassStats {
     // No kernel timing, successful completion or physical overlap claim.
     uint64_t eligible_submissions = 0, ineligible_submissions = 0;
 };
+struct ProgramPolicyStats {
+    bool fixed = false;
+    // Host Program constructions, INCLUDING initialization/self-test. These
+    // are not actual compiler API calls or opaque driver-internal operations.
+    uint64_t instances = 0, blocked_rebuilds = 0;
+    bool disabled = false;
+};
 
 // Model/scheduler contract, independent of Core ML and private ObjC classes.
 // All executors share the same source views, row chunks, adapter corrections,
@@ -211,6 +218,11 @@ class Executor {
     virtual ~Executor() = default;
     virtual BackendKind backend() const = 0;
     virtual const GraphShape &shape() const = 0;
+    // Physical bucket and logical row alignment differ for an explicit
+    // fixed-function family. Default executors preserve their old padding.
+    virtual int device_row_alignment() const { return shape().rows; }
+    virtual const std::vector<int> &fixed_row_functions() const { static const std::vector<int> empty;return empty; }
+    virtual uint64_t capability_calls() const { return 0; }
     virtual size_t slot_bytes() const = 0;
     virtual size_t estimated_bytes() const = 0;
     virtual double load_seconds() const = 0;
@@ -235,6 +247,7 @@ class Executor {
     virtual WeightCodeCacheReport weight_code_cache_stats() const { return {}; }
     virtual StagePipelineStats stage_pipeline_stats() const { return {}; }
     virtual A8SinglePassStats activation_stage_stats() const { return {}; }
+    virtual ProgramPolicyStats program_policy_stats() const { return {}; }
     virtual bool device_submission_fence_enabled() const { return false; }
     virtual bool activation_lookahead_enabled() const { return false; }
     virtual void stage_device_weights(std::vector<DeviceWeightView>) {

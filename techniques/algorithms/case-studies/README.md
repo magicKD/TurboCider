@@ -1,0 +1,30 @@
+# algorithms 实现与分析案例
+
+[知识库](../../README.md) · [来源](../../sources/README.md)
+
+历史数字只说明各自记录的环境与边界；这里保留分析过程和可迁移教训，不附实验包。
+
+- [QK量化×稀疏消融：真实输入、条件误差与不可相加的预算](attention-precision-study.md)
+- [Cache-DiT消费者调用链：单次getter、lazy clock与真实gate的小型重放](cache-consumer-callchain.md)
+- [DeepCache真实SD1.5 MPS生成：约3倍不等于通过质量预算](deepcache-sd15-mps-quality.md)
+- [DeepCache：U-Net分支边界、真实body跳算与MLX移植差异](deepcache-unet-boundaries.md)
+- [2026-10-16 算法研究实验：数学反例与 MLX attention 对照](experiments-20261016.md)
+- [FasterCache 调用链：CFG 身份、空间 FFT 与 attention 刷新耦合](fastercache-consumer-study.md)
+- [预测缓存状态审计：12个固定源码CPU观察与4个合同反例](forecast-state-audit.md)
+- [HiDiffusion 完整 Tiny U-Net：skip 消费者、组合拒绝与请求时钟](hidiffusion-unet-consumer.md)
+- [MLX packed QMM＋低秩补偿：实际设备成本、权重结构与解码精度边界](lowrank-mlx-component-study.md)
+- [MLX TeaCache：真实CPU gate、CFG配对与生成事务](mlx-teacache-lifecycle.md)
+- [原生 Qwen 完整请求：DBCache 的速度、RGB 与 alpha 取舍](native-cache-request-study.md)
+- [NNC gate 成本：缓存分母、合并读回与刷新开销](nnc-gate-controller-cost.md)
+- [NNC packing 签名：反驳角色交替必然重编译的假设](nnc-packing-signatures.md)
+- [真实BF16 FFN GPU：强dense基线、packed权重与低秩分支成本](real-ffn-gpu-study.md)
+- [真实Qwen全宽FFN：低秩目标、校准迁移与量化组合误差](real-qwen-lowrank.md)
+- [真实 Qwen QKV 的稀疏性：4224行CPU抽样，不是生成加速基准](real-qwen-sparsity.md)
+- [Sol-Attn诊断反例：调试route mask不能天然充当oracle](sol-debug-bounds.md)
+- [原始 Sol-Attn Metal 实测：长度门槛、误差曲线与双 dense 基线](sol-mps-component-study.md)
+- [SpargeAttention入口合同：mask、causal、dtype与CDF不能只看签名](sparge-call-contracts.md)
+- [稀疏路由复用：缓存plan，不等于缓存attention输出](sparse-route-reuse.md)
+- [将频谱差搬到空间：MLX GPU 的缓存周期成本与精度边界](spatial-cache-mlx-study.md)
+- [T-GATE MPS 成本：同配方数值通过，少投影仍只带来有限净收益](tgate-mps-resident-cost.md)
+- [ToMeSD consumer 与真实 Qwen FFN：token 合并的成本、恢复和长尾](token-merge-consumer-and-real-ffn.md)
+- [VDE在MPS上的净成本：少调用、标量读回与观察器重入](vde-mps-controller-cost.md)

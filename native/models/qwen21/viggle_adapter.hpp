@@ -8,7 +8,7 @@ struct ViggleAdapter {
     std::string_view rank;
 };
 
-// The two released v0.2.1 students share the six-node schedule and alpha/r=1.
+// The two released v0.2.1 students default to six nodes and alpha/r=1.
 // Pin both identities; a filename alone never establishes adapter provenance.
 inline constexpr ViggleAdapter viggle_v021_adapters[] = {
     {"Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
@@ -21,5 +21,10 @@ inline const ViggleAdapter *viggle_v021_adapter(std::string_view filename) {
     for (const auto &adapter : viggle_v021_adapters)
         if (adapter.filename == filename) return &adapter;
     return nullptr;
+}
+
+inline std::string_view viggle_v021_sampler_identity(int steps) {
+    return steps == 6 ? "viggle-v021-six-node-qwen-shift-no-terminal-v1" :
+           steps == 5 ? "viggle-v021-five-node-qwen-shift-no-terminal-v1" : "";
 }
 } // namespace tc::qwen21

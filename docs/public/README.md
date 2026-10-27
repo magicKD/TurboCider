@@ -11,6 +11,7 @@ CLI, C / Swift SDK or local job API.
 | [Z-Image 512² GPU/ANE](Z_IMAGE_ANE.md) | Use the fastest measured local W8A8 hybrid manifest from the CLI, with its exact qualification limits |
 | [Usage reference](USAGE.md) | Configure requests, model capabilities, LoRA, ANE and SDKs |
 | [Model library](MODEL_LIBRARY.md) | Register, inspect, download and share model components |
+| [SeedVR2 image/video super-resolution](SEEDVR2.md) | Use the SeedVR2 超分 sidebar, source-based resolution shortcuts and native PNG/MP4 restoration |
 | [Local API](LOCAL_API.md) | Submit jobs and reuse a persistent session |
 | [ComfyUI / Comfy Desktop](COMFYUI.md) | Use TurboCider as a model backend without installing weights in ComfyUI |
 | [ComfyUI 中文教程](COMFYUI_TUTORIAL.zh-CN.md) | 从 App 或独立后台启动 API，在 Desktop 使用模型、LoRA、参考图与批量生成 |

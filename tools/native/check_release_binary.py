@@ -17,6 +17,21 @@ def check(library: Path, manifest: Path) -> None:
     if any(flag.startswith('-DTURBOCIDER_ENABLE_PRIVATE_ANE') and
            flag != '-DTURBOCIDER_ENABLE_PRIVATE_ANE=0' for flag in flags):
         raise ValueError('stable release packaging requires private ANE disabled; use a public-only build')
+    if any(flag.startswith('-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT') and
+           flag != '-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=0' for flag in flags):
+        raise ValueError('stable release packaging requires unqualified VAE upscale experiment disabled')
+    if any(flag.startswith('-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE') and
+           flag != '-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE=0' for flag in flags):
+        raise ValueError('stable release packaging requires VAE phase profiling disabled')
+    if any(flag.startswith('-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT') and
+           flag != '-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=0' for flag in flags):
+        raise ValueError('stable release packaging requires unqualified VAE causal convolution disabled')
+    if any(flag.startswith('-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT') and
+           flag != '-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT=0' for flag in flags):
+        raise ValueError('stable release packaging requires unqualified SeedVR2 block streaming disabled')
+    if any(flag.startswith('-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_TEST_HOOKS') and
+           flag != '-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_TEST_HOOKS=0' for flag in flags):
+        raise ValueError('stable release packaging requires SeedVR2 block streaming disabled test hooks')
     symbols = subprocess.check_output(['nm', '-gU', str(library)], text=True)
     for line in symbols.splitlines():
         symbol = line.split()[-1] if line.split() else ''
@@ -26,6 +41,16 @@ def check(library: Path, manifest: Path) -> None:
     # classes are dynamically loaded, so nm alone cannot detect them. Do this
     # BEFORE package.sh can replace an existing App or distributable CLI.
     strings = subprocess.check_output(['strings', str(library)], text=True)
+    if any(marker in strings for marker in ('block-stream prototype requires GPU-only forward without tensor dumps',
+            'seedvr2-block-source-injected-read-failure')):
+        raise ValueError('stable release library contains unqualified SeedVR2 block streaming')
+    if 'tc_seedvr2_vae_phase_profile_v1' in strings:
+        raise ValueError('stable release library contains VAE phase profiling')
+    if any(marker in strings for marker in ('tc_seedvr2_ane_causal_pack', 'tc_seedvr2_ane_norm_causal_pack',
+            'causal-conv experiment returned an incomplete activation', 'seedvr2-causal-request-pixels-v1')):
+        raise ValueError('stable release library contains unqualified VAE causal convolution')
+    if any(name in strings for name in ('tc_seedvr2_upscale_bias_shuffle','tc_seedvr2_ane_projection_pack','coreml_projection_probe')):
+        raise ValueError('stable release library contains unqualified VAE upscale experiment')
     for name in ('_ANEClient', '_ANERequest', '_ANEIOSurfaceObject', '_ANESharedEvents', '_ANEInMemoryModel'):
         if name in strings:
             raise ValueError('stable release library contains private ANE class: ' + name)

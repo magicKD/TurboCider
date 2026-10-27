@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "model": "seedvr2-3b",
+  "operation": "image.upscale",
+  "inputs": [{"kind": "image", "role": "source", "path": "source.png"}],
+  "outputs": [{"kind": "image", "path": "upscaled.png", "width": 1024, "height": 1024, "frames": 1, "audio": false}],
+  "sampling": {"seed": 42, "steps": 1},
+  "execution": {"policy": "gpu", "residency": "resident"}
+}

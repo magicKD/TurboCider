@@ -14,6 +14,11 @@ case "$PACKAGE_ONLY" in
 esac
 EXPERIMENTAL_PROBES="${TURBOCIDER_BUILD_EXPERIMENTAL_PROBES:-0}"
 PRIVATE_ANE="${TURBOCIDER_ENABLE_PRIVATE_ANE:-0}"
+VAE_CAUSAL_EXPERIMENT="${TURBOCIDER_BUILD_VAE_CAUSAL_EXPERIMENT:-0}"
+case "$VAE_CAUSAL_EXPERIMENT" in
+ 0|1) ;;
+ *) printf 'TURBOCIDER_BUILD_VAE_CAUSAL_EXPERIMENT must be 0 or 1\n' >&2; exit 2 ;;
+esac
 case "$PRIVATE_ANE" in
  0|1) ;;
  *) printf 'TURBOCIDER_ENABLE_PRIVATE_ANE must be 0 or 1\n' >&2; exit 2 ;;
@@ -64,6 +69,9 @@ if [[ "$EXPERIMENTAL_PROBES" == "1" ]]; then
 fi
 if [[ "$PRIVATE_ANE" == "1" ]]; then
  COMMON+=(-DTURBOCIDER_ENABLE_PRIVATE_ANE=1)
+fi
+if [[ "$VAE_CAUSAL_EXPERIMENT" == "1" ]]; then
+ COMMON+=(-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=1)
 fi
 BUILD_IDENTITY_DIR="$OUT/runtime-build"
 BUILD_IDENTITY_PYTHON="${TURBOCIDER_BUILD_PYTHON:-python3}"
@@ -131,6 +139,7 @@ SOURCES=(
  native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
  native/components/diffusion/wan.cpp
  native/components/vae/taehv.cpp
+ native/components/vae/tiny.cpp
  native/models/wan/dit.cpp
  native/models/wan/wan_pipeline.cpp
  native/models/wan/hybrid.cpp native/platform/apple/wan_hybrid.mm
@@ -160,6 +169,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
  native/third_party/cider/w8a8_primitive.mm native/models/qwen21/cider_w8a8.cpp
  native/models/qwen21/transformer.cpp
+ native/models/qwen21/runtime_private_qkv.cpp
  native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
  native/models/qwen21/native_block.cpp
  native/models/qwen21/native_denoiser.cpp native/models/qwen21/native_denoiser_math.cpp
@@ -182,6 +192,11 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/qwen21/bf16_streaming.cpp native/models/qwen21/bf16_streaming_pipeline.cpp
  native/platform/apple/qwen21_bf16_streaming.mm
  native/models/qwen21_module.cpp
+ native/models/seedvr2_module.cpp native/models/seedvr2/geometry.cpp
+ native/models/seedvr2/model.cpp native/models/seedvr2/vae.cpp
+ native/models/seedvr2/pipeline.cpp native/models/seedvr2/media.cpp
+ native/models/seedvr2/hybrid.cpp native/platform/apple/seedvr2_hybrid.mm native/platform/apple/seedvr2_prefix_buffers.mm
+ native/platform/apple/seedvr2_session.mm native/media/video_input.mm native/media/rgb_video_reader.mm
  native/platform/apple/z_image_weight_stream.mm
  native/models/llada/llada.cpp native/models/llada/llada_text.cpp
  native/models/llada/llada_transformer.cpp
@@ -193,6 +208,9 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
 )
 if [[ "$PRIVATE_ANE" == "1" ]]; then
  SOURCES+=(native/backends/private/ane_program.mm native/backends/private/ane_mil.cpp native/backends/private/ane_executor.mm native/backends/private/ane_w8_executor.mm native/backends/private/ane_calibration.mm native/backends/metal_graph/native_ane_handoff.mm native/backends/metal_graph/native_ane_stages.mm native/backends/metal_graph/native_hybrid_ffn.mm native/backends/metal_graph/native_prefill_ffn.mm)
+fi
+if [[ "$VAE_CAUSAL_EXPERIMENT" == "1" ]]; then
+ SOURCES+=(tools/native/seedvr2_vae_ane_causal_conv.mm)
 fi
 for src in "${SOURCES[@]}"; do
  # Keep the relative path in the object name.  Multiple model directories
@@ -263,6 +281,7 @@ fi
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" "$LTX_OUT/ltx_audio_mux_tool.o" "$OUT/native_media_audio.o" "$OUT/native_media_video.o" -o "$OUT/ltx-audio-mux" -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo
 "$CXX" -isysroot "$SDK" "${MACOS_FLAGS[@]}" -dynamiclib "${OBJECTS[@]}" "${H3_OBJECTS[@]}" "$LTX_OUT/libltx-runtime.a" -o "$OUT/libturbocider.dylib" -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -framework MetalPerformanceShaders -framework MetalPerformanceShadersGraph -framework CoreML -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework Accelerate -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers -framework Vision -Wl,-rpath,"$MLX_ROOT/lib" -Wl,-install_name,@rpath/libturbocider.dylib
 if [[ "${TURBOCIDER_BUILD_LIB_ONLY:-0}" == "1" ]]; then
+ runtime_build_identity --verify
  printf 'Built %s/libturbocider.dylib (library only)\n' "$OUT"
  exit 0
 fi
@@ -284,6 +303,7 @@ if [[ "$PACKAGE_ONLY" == "1" ]]; then
  printf 'Built package binaries; test and auxiliary probe targets skipped\n'
  exit 0
 fi
+"$CXX" "${COMMON[@]}" tools/native/tiny_vae_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/tiny-vae-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"

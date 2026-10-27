@@ -11,6 +11,25 @@ import check_release_binary as release
 
 
 class ReleaseBinaryTests(unittest.TestCase):
+    def test_block_stream_experiment_flags_and_actual_bytes_are_not_distributable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/'manifest.json';library=Path(folder)/'lib.dylib'
+            def policy(flags):
+                manifest.write_text(json.dumps({'inputs':{'policy':{'test_hooks':'0','audit_counters':'0','common_flags':flags}}}))
+            for flag in ('-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT=1','-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT',
+                         '-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_TEST_HOOKS=1','-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_TEST_HOOKS'):
+                policy([flag])
+                with patch.object(release.subprocess,'check_output') as inspect:
+                    with self.assertRaisesRegex(ValueError,'block streaming disabled'):release.check(library,manifest)
+                    inspect.assert_not_called()
+            policy(['-DTURBOCIDER_ENABLE_SEEDVR2_BLOCK_STREAM_EXPERIMENT=0'])
+            def output(command,**kwargs):return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
+            with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
+            for marker in ('block-stream prototype requires GPU-only forward without tensor dumps','seedvr2-block-source-injected-read-failure'):
+                with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                    marker if command[0]=='strings' else output(command)):
+                    with self.assertRaisesRegex(ValueError,'contains unqualified SeedVR2 block streaming'):release.check(library,manifest)
+
     def test_flags_and_exported_symbols_must_both_be_release(self):
         with tempfile.TemporaryDirectory() as folder:
             manifest = Path(folder) / 'manifest.json'
@@ -30,6 +49,30 @@ class ReleaseBinaryTests(unittest.TestCase):
     def test_packaging_guard_precedes_existing_app_removal(self):
         source = (ROOT / 'tools/native/package.sh').read_text()
         self.assertLess(source.index('check_release_binary.py'), source.index('rm -rf "$APP"'))
+
+    def test_targeted_app_build_includes_model_library_helper(self):
+        source = (ROOT / 'tools/native/build_app.sh').read_text()
+        helper = source.index('services/model-library/main.swift -o "$OUT/turbocider-library"')
+        self.assertIn('APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"', source)
+        targeted = source.index('if [[ "$APP_TARGETS" == seedvr2 ]]')
+        self.assertLess(helper, targeted)
+        self.assertLess(source.index('-o "$OUT/TurboCiderNativeApp"'), targeted)
+        block = source[targeted:source.index('\nfi', targeted)]
+        self.assertIn('tests/integration/SeedVR2AppTests.swift', block)
+        self.assertIn('tests/integration/ModelHubPresentationTests.swift', block)
+
+    def test_attention_support_notices_are_in_app_and_cli(self):
+        source = (ROOT / 'tools/native/package.sh').read_text()
+        self.assertIn('cp THIRD_PARTY_NOTICES/mlx-steel-attention.md "$RES/MLX-Steel-Attention-NOTICE.md"', source)
+        self.assertIn('cp THIRD_PARTY_NOTICES/Apache-2.0.txt "$RES/Apache-2.0.txt"', source)
+        self.assertIn('cp "$RES/MLX-Steel-Attention-NOTICE.md" "$RES/Apache-2.0.txt" "$DIST/cli/"', source)
+
+    def test_package_output_override_scopes_app_and_cli_together(self):
+        source = (ROOT / 'tools/native/package.sh').read_text()
+        self.assertIn('DIST="${TURBOCIDER_PACKAGE_OUTPUT_DIR:-$ROOT/dist}"', source)
+        self.assertIn('APP="$DIST/TurboCider.app"', source)
+        self.assertIn('for folder in "$BIN" "$DIST/cli"', source)
+        self.assertNotIn('$ROOT/dist/cli', source)
 
     def test_stable_packaging_rejects_private_flags_actual_class_bytes_and_links(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -55,6 +98,61 @@ class ReleaseBinaryTests(unittest.TestCase):
             with patch.object(release.subprocess, 'check_output', side_effect=lambda command, **kw:
                               '/System/Library/PrivateFrameworks/AppleNeuralEngine.framework' if command[0] == 'otool' else output(command)):
                 with self.assertRaisesRegex(ValueError, 'private framework'): release.check(library, manifest)
+
+    def test_stable_packaging_rejects_unqualified_vae_upscale_flags_and_bytes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/'manifest.json';library=Path(folder)/'lib.dylib'
+            def policy(flags):
+                manifest.write_text(json.dumps({'inputs':{'policy':{'test_hooks':'0','audit_counters':'0','common_flags':flags}}}))
+            for flag in ('-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=1','-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT'):
+                policy([flag])
+                with patch.object(release.subprocess,'check_output') as inspect:
+                    with self.assertRaisesRegex(ValueError,'upscale experiment disabled'):release.check(library,manifest)
+                    inspect.assert_not_called()
+            policy(['-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=0'])
+            def output(command,**kwargs):
+                return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
+            with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
+            for name in ('tc_seedvr2_upscale_bias_shuffle','tc_seedvr2_ane_projection_pack','coreml_projection_probe'):
+                with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                    name if command[0]=='strings' else output(command)):
+                    with self.assertRaisesRegex(ValueError,'contains unqualified VAE'):release.check(library,manifest)
+
+    def test_phase_diagnostic_flags_and_actual_bytes_are_not_distributable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/'manifest.json';library=Path(folder)/'lib.dylib'
+            def policy(flags):
+                manifest.write_text(json.dumps({'inputs':{'policy':{'test_hooks':'0','audit_counters':'0','common_flags':flags}}}))
+            for flag in ('-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE=1','-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE'):
+                policy([flag])
+                with patch.object(release.subprocess,'check_output') as inspect:
+                    with self.assertRaisesRegex(ValueError,'phase profiling disabled'):release.check(library,manifest)
+                    inspect.assert_not_called()
+            policy(['-DTURBOCIDER_ENABLE_VAE_PHASE_PROFILE=0'])
+            def output(command,**kwargs):
+                return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
+            with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
+            with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                'tc_seedvr2_vae_phase_profile_v1' if command[0]=='strings' else output(command)):
+                with self.assertRaisesRegex(ValueError,'contains VAE phase profiling'):release.check(library,manifest)
+
+    def test_causal_conv_experiment_flags_and_bytes_are_not_distributable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest=Path(folder)/'manifest.json';library=Path(folder)/'lib.dylib'
+            def policy(flags):
+                manifest.write_text(json.dumps({'inputs':{'policy':{'test_hooks':'0','audit_counters':'0','common_flags':flags}}}))
+            for flag in ('-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=1','-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT'):
+                policy([flag])
+                with patch.object(release.subprocess,'check_output') as inspect:
+                    with self.assertRaisesRegex(ValueError,'causal convolution disabled'):release.check(library,manifest)
+                    inspect.assert_not_called()
+            policy(['-DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=0'])
+            def output(command,**kwargs):return {'nm':'0000 T _tc_engine_create\n','strings':'','otool':'CoreML.framework\n'}[command[0]]
+            with patch.object(release.subprocess,'check_output',side_effect=output):release.check(library,manifest)
+            for marker in ('tc_seedvr2_ane_causal_pack','tc_seedvr2_ane_norm_causal_pack','causal-conv experiment returned an incomplete activation','seedvr2-causal-request-pixels-v1'):
+                with patch.object(release.subprocess,'check_output',side_effect=lambda command,**kwargs:
+                    marker if command[0]=='strings' else output(command)):
+                    with self.assertRaisesRegex(ValueError,'contains unqualified VAE causal'):release.check(library,manifest)
 
 
 if __name__ == '__main__':

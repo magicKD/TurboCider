@@ -48,6 +48,7 @@ struct StudioBehaviorTests {
             else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
         }
         defer { try? FileManager.default.removeItem(at: root) }
+        try verifyCreationReturn(directory: root.appendingPathComponent("creation-return"))
         let poisoned = NativeJobStore(directory: root.appendingPathComponent("poisoned-store"))
         try check(!poisoned.recordProcessQuarantine(NativeFailure(message: "ordinary failure")), "Ordinary errors must remain retryable")
         try check(poisoned.recordProcessQuarantine(NativeFailure(message: "streaming_process_quarantined: primary: cancelled; GPU drain incomplete")), "Quarantine error was ignored")
@@ -742,8 +743,12 @@ struct StudioBehaviorTests {
         try rejects { try invalidZ.validate() }
         let creationStudio = StudioState(directory: root.appendingPathComponent("creation-first"))
         try check(creationStudio.creationOperations.contains("image.generate"), "Image entry missing without installed models")
+        try check(creationStudio.creationOperations.allSatisfy { $0.hasPrefix("image.") },
+                  "Image creation exposed video operations from the dual-media upscaler")
         creationStudio.changeCreationKind("video")
         try check(creationStudio.creationKind == "video" && creationStudio.draft.operation == "video.generate", "Video entry did not select a compatible executor")
+        try check(creationStudio.creationOperations.allSatisfy { $0.hasPrefix("video.") },
+                  "Video creation exposed image operations from the dual-media upscaler")
         try check(creationStudio.creationModels.allSatisfy { $0.availableOperations.contains { $0.hasPrefix("video.") } }, "Image model leaked into video choices")
         creationStudio.changeCreationKind("image")
         creationStudio.changeOperation("image.edit")
@@ -1458,5 +1463,77 @@ struct StudioBehaviorTests {
                   studio.draft.prompt == prompt && studio.draft.assets == assets,
                   "Qwen Turbo controls changed another model's schedule or content")
         print("PASS Turbo controls: add/enable/disable/remove, model round trip, retained TTI references, precise conflict reasons, GPU hint and unchanged old drafts/other models")
+    }
+}
+
+extension StudioBehaviorTests {
+    @MainActor static func verifyCreationReturn(directory: URL) throws {
+        func check(_ condition: Bool, _ message: String) throws {
+            guard condition else { throw NativeFailure(message: message) }
+        }
+        let studio = StudioState(directory: directory)
+        studio.changeModel("flux2-klein-4b")
+        studio.changeOperation("image.edit")
+        let input = StudioAsset(path: "creation-source.png", name: "creation source", width: 512, height: 512)
+        studio.draft.assets = [input]; studio.draft.initImageID = input.id
+        studio.draft.prompt = "Keep my original editing prompt"
+        studio.draft.steps = 7; studio.draft.seedText = "12345"
+        studio.draft.width = 512; studio.draft.height = 512
+        studio.draft.tinyPreview = true
+        let original = studio.draft
+        try check(studio.activateSeedVR2Upscaling(kind: "image"), "Cannot enter upscale from creation")
+        studio.draft.prompt = "Upscale draft text"
+        studio.draft.width = 1024; studio.draft.height = 1024
+        studio.draft.assets = []; studio.draft.initImageID = nil
+        studio.draft.modelPaths["seedvr2-3b"] = "/new/seedvr-registration"
+        studio.selectUpscaleVariant(.x2plus)
+        studio.draft.upscaleModelPath = "/new/esrgan-registration"
+        studio.save()
+        // Simulate a restart in SeedVR2, including switching to Real-ESRGAN.
+        let reopened = StudioState(directory: directory)
+        try check(reopened.draft.modelID == "seedvr2-3b", "Upscale draft was not persisted")
+        reopened.importing = true
+        try check(!reopened.activateCreation() && reopened.draft.modelID == "seedvr2-3b", "Return changed a draft during import")
+        reopened.importing = false
+        try check(reopened.activateCreation(), "Cannot restore creation after restart")
+        try check(reopened.draft.modelID == original.modelID && reopened.draft.operation == original.operation &&
+                  reopened.draft.prompt == original.prompt && reopened.draft.assets == original.assets &&
+                  reopened.draft.initImageID == original.initImageID && reopened.draft.width == original.width &&
+                  reopened.draft.height == original.height && reopened.draft.steps == original.steps &&
+                  reopened.draft.seedText == original.seedText && reopened.draft.tinyPreview,
+                  "Returning from upscale lost creation content/settings")
+        try check(reopened.draft.modelPaths["seedvr2-3b"] == "/new/seedvr-registration" &&
+                  reopened.draft.upscaleVariant == .x2plus && reopened.draft.upscaleModelPath == "/new/esrgan-registration",
+                  "Returning discarded model registrations or auxiliary-upscaler preferences")
+        try check(!reopened.creationModels.contains { $0.id == "seedvr2-3b" } &&
+                  reopened.creationOperations.contains("image.generate") && reopened.creationOperations.contains("image.edit") &&
+                  reopened.creationOperations.allSatisfy { $0.hasPrefix("image.") }, "Creation picker lost its normal operations")
+        // Video creation must also return to its original model and frame count.
+        reopened.changeCreationKind("video")
+        reopened.draft.frames = 25
+        let videoModel = reopened.draft.modelID
+        try check(reopened.activateSeedVR2Upscaling(kind: "video") && reopened.activateCreation(), "Video upscale round trip failed")
+        try check(reopened.draft.modelID == videoModel && reopened.draft.operation == "video.generate" && reopened.draft.frames == 25,
+                  "Video creation state was replaced by upscale state")
+        try check(reopened.activateSeedVR2Upscaling(kind: "image"), "Cannot enter image upscale from video")
+        reopened.newDraft()
+        try check(reopened.draft.modelID == videoModel && reopened.draft.operation == "video.generate" && reopened.draft.prompt.isEmpty,
+                  "New creation remained trapped in an upscale-only model")
+        // Existing installations have no separate creation snapshot yet.
+        let legacyDirectory = directory.appendingPathComponent("legacy")
+        try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        var legacy = StudioDraft(); legacy.modelID = "seedvr2-3b"; legacy.operation = "image.upscale"
+        legacy.modelPaths["flux2-klein-4b"] = "/existing/flux"
+        try JSONEncoder().encode(legacy).write(to: legacyDirectory.appendingPathComponent("studio-draft.json"))
+        let migrated = StudioState(directory: legacyDirectory)
+        try check(migrated.activateCreation() && migrated.draft.modelID == "flux2-klein-4b" && migrated.draft.operation == "image.generate",
+                  "Legacy SeedVR2 draft did not recover a configured creation model")
+        // An explicit history/model change already selected a new creation draft;
+        // returning must not overwrite it with an older parked draft.
+        try check(migrated.activateSeedVR2Upscaling(), "Cannot enter upscale for explicit-selection test")
+        migrated.changeModel("qwen-image-2.1"); migrated.draft.prompt = "Explicitly selected new creation"
+        try check(migrated.activateCreation() && migrated.draft.modelID == "qwen-image-2.1" &&
+                  migrated.draft.prompt == "Explicitly selected new creation", "Return overwrote an explicit creation selection")
+        print("PASS creation/upscale return: editing draft, restart, imports, registrations, video, new creation and legacy migration")
     }
 }

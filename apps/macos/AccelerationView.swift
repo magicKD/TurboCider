@@ -23,6 +23,8 @@ struct AccelerationView: View {
     }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "gpu" : "profile") }
     @State private var zImageBucket: Int?
+    @State private var seedvr2TemporaryFreeBytes: UInt64?
+    @State private var seedvr2ResourceRevision = 0
     @State private var qwenLowMemoryANEAvailable = false
     @State private var runtimeANEAvailable = false
     private var zImageCapacity: String? {
@@ -38,10 +40,14 @@ struct AccelerationView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("推理加速与准备").font(.title2)
+            if studio.draft.modelID == "seedvr2-3b" { seedvr2VAEControls }
             Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
             Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE }, set: { studio.setANEEnabled($0) }))
                 .toggleStyle(.checkbox).disabled(store.busy || !supportsGPUANE).accessibilityIdentifier("enableANE")
-            Text("默认只使用 GPU；普通 ANE 使用匹配的冻结分区，本机 Runtime 实验使用独立进程。").font(.caption).foregroundStyle(.secondary)
+            Text(studio.draft.modelID == "seedvr2-3b"
+                 ? "默认只使用 GPU。手动混合模式需选择通过校验的原始 FP16 已编译分区；不自动编译或替换分区。"
+                 : "默认只使用 GPU；普通 ANE 使用匹配的冻结分区，本机 Runtime 实验使用独立进程。")
+                .font(.caption).foregroundStyle(.secondary)
             Text("本次执行设备：\(studio.draft.executionDeviceLabel)").font(.caption)
                 .accessibilityIdentifier("accelerationExecutionDevice")
             if let notice = studio.draft.aneConfigurationNotice {
@@ -120,6 +126,9 @@ struct AccelerationView: View {
                         Text("当前设备不支持此实验；已保存的实验选项可关闭，普通 Qwen ANE 配置仍可使用。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                } else if studio.draft.modelID == "seedvr2-3b" {
+                    Text("GPU 处理 attention、文本 FFN、VAE 与视频 FFN 的剩余通道；Core ML CPU+NE 处理原始 FP16 前缀，不量化权重。固定行数分批保留完整视频，实际 ANE 驻留由系统决定。")
+                        .font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
                 }
@@ -172,7 +181,118 @@ struct AccelerationView: View {
         }.task(id: discoveryID) { await discover() }
             .task { qwenLowMemoryANEAvailable = Qwen21LowMemoryANEHardware.isEligible(); runtimeANEAvailable = RuntimeImageWorker.hardwareEligible() }
             .task(id: "\(studio.draft.modelID)|\(config.manifest)") { await readZImageBucket() }
+            .task(id: seedvr2ResourceCheckID) { await readSeedVR2ScratchSpace() }
             .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+    }
+    private var seedvr2Config: NativeSeedVR2VAEConfig { studio.draft.seedvr2VAE ?? NativeSeedVR2VAEConfig() }
+    private var seedvr2ResourceCheckID: String {
+        "\(studio.draft.modelID)|\(studio.draft.operation)|\(seedvr2Config.spatial)|\(seedvr2Config.encoder_spatial)|\(seedvr2ResourceRevision)"
+    }
+    private var seedvr2Notices: [SeedVR2ResourceAdvice.Notice] {
+        SeedVR2ResourceAdvice.notices(operation: studio.draft.operation, width: studio.draft.width, height: studio.draft.height,
+            sourceFrames: studio.draft.activeAssets.first(where: { $0.mediaKind == "video" })?.frames,
+            configuredFrames: studio.draft.frames, physicalMemory: ProcessInfo.processInfo.physicalMemory,
+            options: seedvr2Config, temporaryFreeBytes: seedvr2TemporaryFreeBytes)
+    }
+    private func readSeedVR2ScratchSpace() async {
+        guard studio.draft.modelID == "seedvr2-3b" else { seedvr2TemporaryFreeBytes = nil; return }
+        let key = seedvr2ResourceCheckID
+        let bytes = await Task.detached(priority: .utility) { () -> UInt64? in
+            // Filesystem queries may block. Never perform this work while
+            // rendering the SwiftUI body or assume a failed query means zero.
+            guard let values = try? FileManager.default.attributesOfFileSystem(forPath: FileManager.default.temporaryDirectory.path),
+                  let free = values[.systemFreeSize] as? NSNumber else { return nil }
+            return free.uint64Value
+        }.value
+        guard !Task.isCancelled, key == seedvr2ResourceCheckID else { return }
+        seedvr2TemporaryFreeBytes = bytes
+    }
+    private func updateSeedVR2(_ change: (inout NativeSeedVR2VAEConfig) -> Void) {
+        var config = seedvr2Config; change(&config); studio.draft.seedvr2VAE = config; studio.save()
+    }
+    @ViewBuilder private var seedvr2VAEControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SeedVR2 VAE / 内存").font(.headline)
+            Picker("编码空间阶段", selection: Binding(get: { seedvr2Config.encoder_spatial }, set: { value in updateSeedVR2 {
+                $0.encoder_spatial = value
+                if value == "file_rows" && !["singleton2d", "conv3d"].contains($0.convolution) { $0.convolution = "singleton2d" }
+            } })) {
+                Text("完整编码（原有路径）").tag("full")
+                Text("全局统计编码 head 行带（视频较慢）").tag("file_rows")
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEEncoderSpatial")
+            Picker("解码空间阶段", selection: Binding(get: { seedvr2Config.spatial }, set: { value in updateSeedVR2 {
+                $0.spatial = value
+                if value != "full" { $0.share_upscale_history = false }
+                if value == "file_rows" && !["singleton2d", "conv3d"].contains($0.convolution) { $0.convolution = "singleton2d" }
+            } })) {
+                Text("完整帧（原有路径）").tag("full")
+                Text("全局统计行带 / 临时历史文件（较慢）").tag("file_rows")
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAESpatial")
+            if seedvr2Config.spatial == "file_rows" || seedvr2Config.encoder_spatial == "file_rows" {
+                Picker("空间行带高度", selection: Binding(get: { seedvr2Config.spatial_rows }, set: { value in updateSeedVR2 { $0.spatial_rows = value } })) {
+                    Text("32 行").tag(32); Text("64 行").tag(64); Text("128 行").tag(128)
+                }.disabled(store.busy).accessibilityIdentifier("seedvr2VAESpatialRows")
+                Text("只调度高分辨率编码 head / 解码阶段，保留全帧统计/完整 attention 与时间降采样。当前仅支持 ≤1024 画布；当前临时文件配额 \(SeedVR2ResourceAdvice.gib(seedvr2Config.spatial_disk_budget_bytes))，视频累计 I/O 会很大。卷积拆分可能改变 FP16 末位，不是硬 RAM 预算或 16 GB 可用性保证。")
+                    .font(.caption).foregroundStyle(.orange)
+                HStack {
+                    Text(seedvr2TemporaryFreeBytes.map { "临时卷可用空间快照 \(SeedVR2ResourceAdvice.gib($0))" } ?? "临时卷空间待确认")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("刷新空间") { seedvr2ResourceRevision += 1 }.disabled(store.busy)
+                }
+            }
+            Picker("视频输入驻留", selection: Binding(get: { seedvr2Config.encoder }, set: { value in updateSeedVR2 { $0.encoder = value } })) {
+                Text("整段导入（原有路径）").tag("buffered")
+                Text("逐帧导入编码（减少 RGB 驻留）").tag("streaming")
+            }.disabled(store.busy || studio.draft.operation != "video.upscale")
+                .accessibilityIdentifier("seedvr2VAEEncoder")
+            Picker("视频输出驻留", selection: Binding(get: { seedvr2Config.decoder }, set: { value in updateSeedVR2 { $0.decoder = value } })) {
+                Text("整段缓存（原有路径）").tag("buffered")
+                Text("逐帧导出（降低输出驻留）").tag("streaming")
+            }.disabled(store.busy || studio.draft.operation != "video.upscale")
+                .accessibilityIdentifier("seedvr2VAEDecoder")
+            Picker("卷积工作区", selection: Binding(get: { seedvr2Config.convolution }, set: { value in updateSeedVR2 {
+                $0.convolution = value
+                if value != "singleton2d" { $0.share_upscale_history = false }
+            } })) {
+                Text("速度优先 · singleton2d").tag("singleton2d")
+                if seedvr2Config.spatial == "full" && seedvr2Config.encoder_spatial == "full" {
+                    Text("大卷积分块 · mixed3d（较慢）").tag("mixed3d")
+                    Text("全部卷积分块 · tiled3d（更慢）").tag("tiled3d")
+                }
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEConvolution")
+            Picker("因果历史缓存", selection: Binding(get: { seedvr2Config.history }, set: { value in updateSeedVR2 {
+                $0.history = value
+                if value != "frames" { $0.share_upscale_history = false }
+            } })) {
+                Text("紧凑历史 · compact（原有默认）").tag("compact")
+                Text("独立帧引用 · frames（减少复制）").tag("frames")
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAEHistory")
+            Toggle("共享空间上采样历史（减少帧副本）", isOn: Binding(get: { seedvr2Config.share_upscale_history }, set: { value in updateSeedVR2 {
+                $0.share_upscale_history = value
+                if value { $0.history = "frames" }
+            } })).disabled(store.busy || seedvr2Config.spatial != "full" || seedvr2Config.convolution != "singleton2d")
+                .accessibilityIdentifier("seedvr2VAEShareUpscaleHistory")
+            if seedvr2Config.share_upscale_history {
+                Text("仅复用已独立生成的空间上采样单帧，保留原有时间阶段和 FP16 数值。需要 frames + singleton2d + 完整解码；图像不保留无用历史。减少副本不等于整段峰值同比下降，也不是硬内存预算。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Picker("临时分配器缓存", selection: Binding(get: { seedvr2Config.allocator_cache_bytes }, set: { value in updateSeedVR2 { $0.allocator_cache_bytes = value } })) {
+                Text("4 GiB（速度优先）").tag(UInt64(4) << 30)
+                Text("1 GiB（减少缓存）").tag(UInt64(1) << 30)
+                Text("不保留空闲缓存（较慢）").tag(UInt64(0))
+            }.disabled(store.busy).accessibilityIdentifier("seedvr2VAECache")
+            Text("逐帧导入按原有 5/4 帧分段编码；分块仅限制卷积工作区，不是整套 VAE 的空间 tiling，也不是硬内存上限。输入/输出流式仍保留完整条件/DiT latent；当前源视频上限仍为 121 帧。")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(seedvr2Notices) { notice in
+                Text(notice.message).font(.caption).foregroundStyle(.orange)
+                    .accessibilityIdentifier("seedvr2Advice-\(notice.id)")
+            }
+            if !seedvr2Notices.isEmpty || studio.draft.frames >= 65 || ProcessInfo.processInfo.physicalMemory <= (UInt64(32) << 30) {
+                Button("应用省内存建议") {
+                    studio.applySeedVR2MemoryAdvice()
+                }.disabled(store.busy).accessibilityIdentifier("seedvr2ApplyMemoryAdvice")
+            }
+        }
     }
     private func readZImageBucket() async {
         zImageBucket = nil
@@ -230,7 +350,15 @@ struct AccelerationView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
         panel.message = compiled ? "选择引用 .mlmodelc 的分区 manifest" : "选择引用 .mlpackage 的源分区 manifest"
         if panel.runModal() == .OK, let url = panel.url {
-            library.registerANE(url, modelID: studio.draft.modelID, studio: studio, select: true)
+            if studio.draft.modelID == "seedvr2-3b" {
+                // SeedVR2 uses its exact original-FP16 prefix-bank ABI, not
+                // the generic quantized library manifest schema. Native plan
+                // and load perform the qualified-manifest/tree checks.
+                update { $0.manifest = url.path; $0.sourceManifest = ""; $0.policy = "gpu_ane" }
+                studio.message = nil; studio.save()
+            } else {
+                library.registerANE(url, modelID: studio.draft.modelID, studio: studio, select: true)
+            }
         }
     }
     private func prepare(warmup: Bool) {

@@ -117,6 +117,14 @@ struct HubClient: Sendable {
     init(provider: HubProvider = .modelscope, token: String? = nil, testEndpoint: URL? = nil) {
         self.provider = provider; endpoint = testEndpoint ?? provider.endpoint; self.token = token
     }
+    /// Explicit public-asset mirror, with no credentials/cookies forwarded to
+    /// the third-party endpoint. The mirror is not a source of trust: callers
+    /// must pin and verify the official file digest before publication.
+    init(publicHuggingFaceMirror: Bool) {
+        provider = .huggingface
+        endpoint = publicHuggingFaceMirror ? URL(string: "https://hf-mirror.com")! : HubProvider.huggingface.endpoint
+        token = nil
+    }
 
     private func session(delegate: HubTransferDelegate = HubTransferDelegate()) -> URLSession {
         let config = URLSessionConfiguration.ephemeral

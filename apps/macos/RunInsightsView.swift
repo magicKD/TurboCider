@@ -8,6 +8,18 @@ struct RunInsightsView: View {
     var body: some View {
         let info = metrics
         VStack(alignment: .leading, spacing: 12) {
+            if info.isSeedVR2 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("SeedVR2 · 分阶段耗时", systemImage: "arrow.up.left.and.arrow.down.right")
+                    HStack(spacing: 16) {
+                        if let seconds = info.vaeEncodeSeconds { Text(String(format: "VAE 编码 %.1f 秒",seconds)) }
+                        if let seconds = info.denoiseSeconds { Text(String(format: "模型恢复 %.1f 秒",seconds)) }
+                        if let seconds = info.vaeDecodeSeconds { Text(String(format: "VAE 解码 %.1f 秒",seconds)) }
+                    }.font(.caption).monospacedDigit()
+                    Text("单步恢复仍需完整 VAE 编解码和 32 个模型块。视频的主要耗时通常在 VAE，不是提示词编码。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.accessibilityIdentifier("seedvr2StageTimings")
+            } else {
             HStack {
                 Label(info.cacheLabel, systemImage: info.promptCacheHit == true ? "arrow.triangle.2.circlepath" : "text.bubble")
                     .foregroundStyle(info.promptCacheHit == true ? Color.green : Color.secondary)
@@ -15,6 +27,7 @@ struct RunInsightsView: View {
                 if let seconds = info.textSeconds { Text(String(format: "文本 %.3f 秒", seconds)).monospacedDigit() }
                 if let seconds = info.denoiseSeconds { Text(String(format: "采样 %.2f 秒", seconds)).monospacedDigit() }
             }.font(.callout)
+            }
             if let hit = info.editPrefixCacheHit {
                 Label(hit ? "已复用编辑参考缓存" : "本次计算编辑参考缓存",
                       systemImage: hit ? "arrow.triangle.2.circlepath" : "photo")

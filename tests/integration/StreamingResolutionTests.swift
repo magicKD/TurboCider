@@ -28,6 +28,16 @@ struct StreamingResolutionTests {
                         "Hybrid options must match the native V2 execution field layout")
         }
         let original = NativeRequestV2(legacy: NativeRequest(prompt: "fixture", output: "/tmp/fixture.png"), targetBytes: 10 << 30)
+        var stagedLegacy = NativeRequest(prompt: "fixture", output: "/tmp/fixture.png")
+        stagedLegacy.residency = "component_staged"
+        try require(NativeRequestV2(legacy: stagedLegacy, targetBytes: 10 << 30).execution.residency == nil,
+                    "legacy private residency must not leak into public streaming intent")
+        stagedLegacy.model = "seedvr2-3b"
+        stagedLegacy.operation = "image.upscale"
+        try require(NativeRequestV2(legacy: stagedLegacy).execution.residency == "component_staged",
+                    "SeedVR2 schema-2 conversion must preserve explicit staging")
+        try require(NativeRequestV2(legacy: stagedLegacy, targetBytes: 10 << 30).execution.residency == nil,
+                    "streaming selector still must not carry a private residency")
         let requested = original.execution.streaming!
         var exact = requested
         exact.selection = "preset"; exact.preset_id = "fixture"; exact.preset_revision = 3

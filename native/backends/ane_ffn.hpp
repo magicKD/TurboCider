@@ -60,6 +60,10 @@ class HybridFfn {
     // Do NOT apply down-LoRA here: it must consume joined hidden exactly once.
     using ChannelGpu = std::function<std::pair<Tensor, Tensor>(const Tensor &, int, int)>;
     using NextWeights = std::function<std::vector<FfnWeight>(int)>;
+    // Owner-thread callback after launch_device and async_eval submissions of
+    // an untimed channel block, before finish. Not hardware-overlap proof.
+    // Row/timed/GPU/fallback paths do not invoke it; exceptions keep drains.
+    using AfterSubmit = std::function<void()>;
     struct Adapter {
         struct ChannelDownRanks {
             uint64_t scratch_bytes_per_row = 0;
@@ -145,6 +149,10 @@ class HybridFfn {
     Tensor run(int layer, const Tensor &input, const Gpu &gpu,
                std::atomic<bool> &cancelled, const Adapter *adapter = nullptr,
                const ChannelGpu &channel_gpu = {}, const NextWeights &next_weights = {});
+    Tensor run(int layer,const Tensor &input,const Gpu &gpu,std::atomic<bool> &cancelled,const Adapter *adapter,
+               const ChannelGpu &channel_gpu,const NextWeights &next_weights,const AfterSubmit &after_submit);
+    bool supports_after_submit() const { return available() && channel_split() && fixed_async_ && !profile_ &&
+        graph_->device_submission_fence_enabled(); }
     void drain(bool discard_future = true);
     HybridMetrics metrics() const;
     const std::string &reason() const { return reason_; }
@@ -154,7 +162,8 @@ class HybridFfn {
     bool retains_resources() const {
         return graph_ || !weights_.empty() || !smoothquant_.empty() || output_.capacity() || hidden_.capacity();
     }
-    bool usable_configuration() const { return available() || calibration_declined_; }
+    bool sticky_fixed_program_failure() const { return failed_ && metrics_.runtime_weight_fixed_program_requested; }
+    bool usable_configuration() const { return available() || calibration_declined_ || sticky_fixed_program_failure(); }
     bool supports_lora_inputs() const { return graph_ && graph_->shape().lora_inputs; }
     bool channel_split() const { return axis_ == PartitionAxis::IntermediateChannels; }
     int gpu_channels() const { return metrics_.runtime_weight_gpu_channels; }
@@ -197,6 +206,9 @@ class HybridFfn {
     RowPolicy row_policy_;
     std::vector<Tensor> weights_;
     std::vector<Tensor> smoothquant_;
+    // At most current/future ConvRot metadata (six planes each), never codes
+    // or dense weights. Stable copies also preserve prefetch source identity.
+    std::vector<std::pair<Tensor, Tensor>> convrot_metadata_;
     // Worker scratch only. Copy completed results into independently owned
     // tensors before publishing them to GPU consumers or adapter callbacks.
     std::vector<uint16_t> output_, hidden_;
@@ -226,8 +238,9 @@ class HybridFfn {
     void degrade(const std::string &, int layer);
     void release_for_memory(const std::string &reason);
     bool admit_scratch(int ane_rows, bool adapter);
+    void materialize_sources(std::vector<FfnWeight> &);
     Tensor run_channels(int, const Tensor &, const Gpu &, const ChannelGpu &,
-                        std::atomic<bool> &, const Adapter *, const NextWeights &);
+                        std::atomic<bool> &, const Adapter *, const NextWeights &,const AfterSubmit &);
     std::vector<DeviceWeightRegion> device_regions(const std::vector<FfnWeight> &, int layer) const;
     uint64_t retained_bytes() const;
     uint64_t smoothquant_bank_margin() const;

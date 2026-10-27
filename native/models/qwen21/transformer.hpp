@@ -1,6 +1,7 @@
 #pragma once
 #include "../../backends/mlx.hpp"
 #include <array>
+#include <atomic>
 #include "sequence.hpp"
 #include "diagnostic_block_observer.hpp"
 #include "staged_attention_quantization.hpp"
@@ -38,8 +39,12 @@ class Transformer {
         int text_length = 0, height = 0, width = 0, prefix_length = 0;
         mx::Dtype dtype = mx::bfloat16;
         uint64_t bytes = 0; // Compact K/V buffers; conditioning is shared.
+        // Nonempty only for an explicitly tagged runtime arithmetic bank.
+        // Ordinary GPU callers must never silently import this provenance.
+        std::string runtime_recipe;
     };
-    Transformer(const Weights &, TransformerConfig = {}, const std::vector<Tensor> *fused_qkv = nullptr);
+    Transformer(const Weights &, TransformerConfig = {}, const std::vector<Tensor> *fused_qkv = nullptr,
+                const std::vector<Tensor> *corrected_qkv = nullptr,bool corrected_qkv_direct=false,bool lora_swiglu=false);
     Transformer(const Transformer &) = delete;
     Transformer &operator=(const Transformer &) = delete;
     // Idle, opt-in diagnostic only. Borrowed observations never escape forward.
@@ -49,10 +54,17 @@ class Transformer {
     void reset();
     bool prefix_matches(const Tensor &text, int height, int width,
                         const std::vector<ReferenceLatents> &references) const;
-    std::optional<PrefixSnapshot> export_prefix_snapshot(uint64_t max_bytes) const;
+    // The explicit composition exports ONLY conditioning K/V. DB residuals
+    // stay in this Transformer and are never serialized into PrefixSnapshot.
+    std::optional<PrefixSnapshot> export_prefix_snapshot(uint64_t max_bytes,
+                                                       bool allow_db_cache = false,
+                                                       bool allow_direct_qkv = false,bool allow_lora_swiglu = false,
+                                                       const std::string &runtime_recipe = {}) const;
     bool import_prefix_snapshot(const PrefixSnapshot &, const Tensor &text,
                                 int height, int width,
-                                const std::vector<ReferenceLatents> &references);
+                                const std::vector<ReferenceLatents> &references,
+                                bool allow_direct_qkv = false,bool allow_lora_swiglu = false,
+                                const std::string &runtime_recipe = {});
     Tensor forward(const Tensor &latents, const Tensor &text, float timestep,
                    int latent_height, int latent_width, bool cache_prefix = true,
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
@@ -76,6 +88,13 @@ class Transformer {
         return bytes;
     }
     double staged_attention_pack_seconds() const { return staged_attention_pack_seconds_; }
+    uint64_t corrected_qkv_decode_blocks()const{return corrected_qkv_decode_blocks_;}
+    uint64_t lora_swiglu_decode_blocks()const{return lora_swiglu_decode_blocks_;}
+    bool graph_geometry_matches(const Tensor &, int, int, const std::vector<ReferenceLatents> &) const;
+    // Host graph construction/trace counters, not GPU library/kernel counts.
+    void enable_graph_counters() { graph_counters_enabled_ = true; }
+    uint64_t block_graph_builds() const { return block_graph_builds_.load(std::memory_order_relaxed); }
+    uint64_t block_graph_traces() const { return block_graph_traces_.load(std::memory_order_relaxed); }
     // The caller restores lazy checkpoint arrays before each forward. After
     // each GPU block completes, discard its compiled constants and weights.
     void set_layer_release(std::function<void(const std::string &)> fn) {
@@ -105,6 +124,13 @@ class Transformer {
     void set_project_qkv(ProjectQKV fn) { project_qkv_ = std::move(fn); }
     void set_plan_qkv(PlanQKV fn) { plan_qkv_ = std::move(fn); }
     void set_observe_qkv(ObserveQKV fn) { observe_qkv_ = std::move(fn); }
+    // Explicit internal composition consent. Caller separately owns/admitted
+    // both fixed executors, source/drain scopes and their shared device budget.
+    // Ordinary QKV+split-MLP remains rejected unless explicitly enabled.
+    void set_joint_runtime_qkv_mlp(bool enabled,bool conservative_cache=false) {
+        joint_runtime_qkv_mlp_=enabled;joint_runtime_conservative_cache_=enabled&&conservative_cache;
+    }
+    void set_runtime_cache_skip(std::function<void()> fn) { runtime_cache_skip_=std::move(fn); }
     // SplitUntimed requires a callback returning owned/evaluated FFN output,
     // never a lazy view into the next Core ML prediction's shared backing.
     enum class MLPPlan { Split, SplitUntimed, GpuProbe, Gpu };
@@ -180,9 +206,23 @@ class Transformer {
     std::shared_ptr<CiderCache> cider_cache_;
     std::vector<std::optional<StagedAttentionWeights>> staged_attention_;
     double staged_attention_pack_seconds_ = 0;
+    std::atomic<uint64_t> block_graph_builds_{0}, block_graph_traces_{0};
+    bool graph_counters_enabled_ = false;
     // Session-owned diagnostic bank; Q/K/V are concatenated once per model
     // load rather than rebuilding 3 GiB of matrices on every image request.
     const std::vector<Tensor> *fused_qkv_ = nullptr;
+    const std::vector<Tensor> *corrected_qkv_ = nullptr;
+    bool corrected_qkv_direct_=false;
+    bool corrected_qkv_enabled()const{return corrected_qkv_||corrected_qkv_direct_;}
+    uint64_t corrected_qkv_decode_blocks_=0;
+    struct SwigluTerms {
+        std::array<Tensor,2> up{Tensor(0.f),Tensor(0.f)};
+        std::array<float,2> scale{};
+        std::array<size_t,2> index{};
+    };
+    bool lora_swiglu_enabled_=false;
+    uint64_t lora_swiglu_decode_blocks_=0;
+    std::vector<SwigluTerms> lora_swiglu_terms_;
     bool metal_qk_rope_ = false;
     bool metal_qk_norm_rope_ = false;
     int reference_local_attention_ = 0; // 1: later references; 2: last reference only; 3: later references in final 16 blocks
@@ -223,6 +263,9 @@ class Transformer {
     ProjectQKV project_qkv_;
     PlanQKV plan_qkv_;
     ObserveQKV observe_qkv_;
+    bool joint_runtime_qkv_mlp_=false;
+    bool joint_runtime_conservative_cache_=false;
+    std::function<void()> runtime_cache_skip_;
     PlanMLP plan_mlp_;
     ObserveMLP observe_mlp_;
     StageMLP stage_mlp_;
@@ -231,7 +274,7 @@ class Transformer {
     RetireWeights retire_weights_;
     int prefill_first_block_ = 0, decode_first_block_ = 0;
     Tensor embedding(float timestep, mx::Dtype) const;
-    bool plain_prefix_route() const;
+    bool plain_prefix_route(bool allow_db_cache = false, bool allow_direct_qkv = false,bool allow_lora_swiglu = false) const;
     void geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &);
 };
 } // namespace tc::qwen21

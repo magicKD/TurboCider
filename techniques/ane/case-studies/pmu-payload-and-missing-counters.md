@@ -1,0 +1,50 @@
+# ANE PMU本机实验：数值通过，遥测未取得
+
+<!-- knowledge
+id: technique-ane-case-studies-pmu-payload-and-missing-counters
+type: case-study
+aliases: evidence-ane-pmu-20261016
+-->
+
+> 历史案例摘要：用于学习机制、取舍与失败边界；不随库分发实验数据或验证环境，不代表当前实测。
+
+[总目录](../../README.md) · [技术合同](../../profiling/ane-pmu-lab.md) · [原工具来源](../../sources/repos/ane-pmu-provenance.md) · [capacity来源](../../sources/repos/ane-capacity-pmu.md)
+
+2026-10-16，M4 Max/64GiB、macOS26.6.2、CLT/SDK26.5、Apple clang21、Python3.9.6。现场ANE属性报告h16g/16cores，只是设备属性，不说明这张图占用了所有core。前一轮GPU的applegpu_g16s是另一个设备/命名空间。
+
+## 实际做了什么
+
+原工具从只读source编译到ignored输出。help、missing-model、自有C32/width32 conv MIL、仅普通get-task-allow的独立debug签名控制均运行；没有申请硬件counter特权或更改安全设置。MPSGraph capacity另外限制FP16/B1/C32/H=W32/K3/L1/2次、禁用其独立GPU对照，将TMPDIR与package设为任务新目录，避免其“最新bundle”搜索触及别的session。
+
+原创自包含客户端实测：affine `[1,32,1,32]`、dense1×1 conv的C32/width32及C128/width512；mask0/15、mask2+显式compile/load enableProfiling请求，以及新进程确认。9组各9次（3 warmup含first、6后续），共81次；真实物理pitch和完整输出均核对。较大conv源数学8,388,608 MACs，但不把source operation count当退休硬件counter。
+
+## 结果表
+
+| 控制 | 实际结果 | 采用决定 |
+| --- | --- | --- |
+| 原CLI，模型不存在 | 仍打印PMU ACTIVE、exit0 | 可复现的CLI假阳性，不是能力证据 |
+| 原CLI，自有conv与debug签名版 | compile/load/evaluate完成；stderr没有stats object；均exit0 | API执行观察，不采用遥测/性能资格 |
+| 自有客户端，81个完整输出 | 全部finite、对独立数学最大绝对差0；完整FP16输出SHA也吻合 | 指定合成图的数值/ABI证据 |
+| 18个mask0调用 | stats object缺失，符合无capture控制 | 不声称PMU0活动 |
+| 63个mask2/15调用 | stats object全部缺失 | 当前调用路径没有可解析counter |
+| 后期54个profiled调用 | 各自4096-byte stats surface逐次全零 | buffer观察；较早9个无此字段，不回填 |
+| strict mask15入口 | native数值与unload成功；wrapper exit3 | 明确区分execution成功与PMU未取得 |
+| capacity CLI | 导出5文件package，无ANE bundle，未进入PMU分支；表格counter为0 | 这些0来自缺省/skip，不是实测cycle或DRAM |
+
+两种签名在同一个MIL路径都没有stats，不能把其差异简单归为缺少普通debug entitlement。对自有统计类的只读mask翻译，当前framework0→0、2→4、15→15；canonical mask参数可翻译，也不保证采集成功。`initWithRequestPerformanceBuffer:statsBufferSize:`的参数是pointer-to-pointer和size-pointer；未按报告地址猜构造器或强转IOSurface，也没有调用未审计的kernel入口。
+
+所有host-call样本保留，但没有产生物理计时、counter rate、GHz、Joule或hardware TOPS。不同进程/顺序/图大小的这些短时诊断不是正式overhead比较；尤其profile请求没有产出telemetry，不能把mask0/15 wall之差当真实counter采集税。
+
+## 独立验证与来源强弱
+
+只读curator核对source snapshots、MIL/合成weight blob/binary hash、child exit、真实布局、全部warmup/样本与源稳定标记。独立标准库按明确的FP16 dyadic公式、math.fsum和RNE重建每个逻辑tensor，校验81次完整输入/输出SHA；不是只相信native的`numeric_pass`。输入的17列周期明确披露，不冒充真实激活。
+
+prototype collector在几次运行间增加surface witness、ABI metadata、mask翻译和strict gate；每run保留当时的源码SHA/snapshot，不将历史数据改挂当前文件。最早两组没有raw-surface字段，但都有source snapshot；当前入口还会保存CPU合同helper并检查其前后hash。原上游CLI不是数值验证器，因此没有给它的输出补造数学资格。
+
+原始stdout/stderr含地址/路径/boot状态，只保留ignored本地；公开JSON只保留hash、有限布尔摘要、数值/范围、ABI和本任务合成结果，未发布opaque统计buffer、用户模型或会话。新source checkout和所有编译/临时产物均限定本任务；不删模型、旧实验或系统cache。
+
+## 结论与仍未完成的工作
+
+P03在**本机所测试的MIL和MPSGraph序列化路径没有取得可用PMU**，所以“29寄存器语义、累计/每请求、缩放、聚合宽度、reset/overflow、clock/能耗单位”的本机资格全部仍未完成。不能从此扩大成“M4不支持PMU”或建议降低安全保护。
+
+可以立即复用的是缺失值/计时域/所有权/固定来源与独立数值合同。真实Qwen、GPU→ANE实际backing与并发、完整请求以及其他private/公开profiling入口继续研究；本轮没有改产品默认，也没有新Qwen性能资格。
