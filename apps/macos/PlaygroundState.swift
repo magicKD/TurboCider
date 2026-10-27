@@ -205,8 +205,7 @@ struct PlaygroundDocument: Codable, Sendable {
                 settings.qwen21Sampler = "auto"
                 if settings.steps == 2 { settings.steps = 40 }
             }
-            if settings.modelID == "qwen-image-2.1", settings.activeLoRAs.count == 1,
-               URL(fileURLWithPath: settings.activeLoRAs[0].path).lastPathComponent == StudioDraft.qwen21DMD2AdapterName {
+            if settings.activeLoRAs.count == 1, settings.hasQwen21DMD2Adapter {
                 settings.configureQwen21DMD2()
             }
         }

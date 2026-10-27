@@ -107,7 +107,8 @@ import ImageIO
             )
             return
         }
-        guard args.count == 6 && ["--gpu", "--gpu-base"].contains(args[1]) else { return }
+        let dmd2 = args.count == 7 && args[1] == "--gpu-dmd2"
+        guard dmd2 || (args.count == 6 && ["--gpu", "--gpu-base"].contains(args[1])) else { return }
         let authoredBase = args[1] == "--gpu-base"
         let modelID = args[2], model = URL(fileURLWithPath: args[3]),
             tiny = URL(fileURLWithPath: args[4]).standardizedFileURL.path
@@ -130,6 +131,14 @@ import ImageIO
             request.steps = modelID == "qwen-image-2.1" ? 8 : 4
             request.audio = false
             request.residency = modelID == "qwen-image-2.1" ? "component_staged" : "resident"
+            if dmd2 {
+                try check(modelID == "qwen-image-2.1", "DMD2 acceptance is Qwen-only")
+                request.steps = 2
+                request.qwen21_sampler = "dmd2"
+                request.loras = [NativeLoRA(path: args[6], strength: 1, role: "transformer")]
+                request.lora_strategy = "inference_time"
+                request.allow_approximation = true
+            }
             if mode != "baseline" {
                 request.tiny_vae = NativeTinyVAEConfig(
                     path: tiny, decoder: mode == "tiny-final" ? "tiny" : "original",

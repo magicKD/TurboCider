@@ -8,8 +8,11 @@ import argparse
 import ctypes as C
 import hashlib
 import json
+import os
 from pathlib import Path
 import statistics
+import subprocess
+import sys
 import time
 
 
@@ -46,6 +49,8 @@ def main():
     p.add_argument("--lora", type=Path)
     p.add_argument("--sampler", choices=["auto", "dmd2"], default="auto")
     p.add_argument("--reference-size", type=int, choices=[512, 1024], default=1024)
+    p.add_argument("--metal-trace", type=Path, help="fresh trace from the injected development-only Metal observer")
+    p.add_argument("--sample-run", type=int, help="macOS development only: sample this run's first denoise second")
     a = p.parse_args()
     if a.runs < 1 or (a.steps is not None and a.steps < 1):
         p.error("--runs and --steps must be positive")
@@ -55,6 +60,8 @@ def main():
         p.error("Z-Image Turbo currently exposes text-to-image only; do not invent an edit timing")
     if a.sampler != "auto" and a.model_id != "qwen-image-2.1":
         p.error("--sampler is supported only for Qwen Image 2.1")
+    if a.sample_run is not None and (sys.platform != "darwin" or not 0 <= a.sample_run < a.runs):
+        p.error("--sample-run requires macOS and a valid zero-based run index")
     a.output.mkdir(parents=True, exist_ok=True)
     lib = C.CDLL(str(a.library.resolve()))
     pointer = C.POINTER(C.c_void_p)
@@ -76,6 +83,7 @@ def main():
         return text
 
     report = dict(schema_version=1, preparation_mode=a.prepare,
+                  instrumentation=dict(metal_trace=a.metal_trace is not None, host_sample_run=a.sample_run),
                   runtime=consume(lib.tc_runtime_build_identity()),
                   system=json.loads(consume(lib.tc_system_json())), runs=[], preparation=None)
     request = dict(model=a.model_id, operation="image.edit" if a.reference else "image.generate",
@@ -103,29 +111,49 @@ def main():
         raise RuntimeError(message)
     report["constructor_seconds"] = time.perf_counter() - start
 
-    def invoke(value, prepare=None):
+    def invoke(value, prepare=None, run_index=None):
         events, callback_errors = [], []
+        sampler = None
+        sample_path = a.output / f"{run_index}.sample.txt"
         @callback_type
         def callback(raw, _):
+            nonlocal sampler
             try:
                 event = json.loads(raw)
+                event["observed_monotonic_ns"] = time.perf_counter_ns()
+                if a.sample_run is not None and run_index == a.sample_run and sampler is None and event["phase"] == "denoise" and event["completed"] == 0:
+                    if sample_path.exists():
+                        raise ValueError("sample output already exists")
+                    sampler = subprocess.Popen(["/usr/bin/sample", str(os.getpid()), "1", "1", "-mayDie", "-file", str(sample_path.resolve())],
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if event["phase"] not in ("transformer_block", "z_image_denoise_block"):
                     events.append(event)
             except Exception as error:
                 callback_errors.append(str(error))
         output, error = C.c_void_p(), C.c_void_p()
-        start = time.perf_counter()
+        observed_start = time.perf_counter_ns()
         if prepare is None:
             status = lib.tc_engine_generate(engine, json.dumps(value).encode(), callback, None,
                                             C.byref(output), C.byref(error))
         else:
             status = lib.tc_engine_prepare(engine, json.dumps(value).encode(), int(prepare == "warmup"),
                                            callback, None, C.byref(output), C.byref(error))
-        wall = time.perf_counter() - start
+        observed_end = time.perf_counter_ns()
+        wall = (observed_end - observed_start) / 1e9
         text, message = consume(output), consume(error)
+        if sampler is not None and sampler.wait(timeout=10) != 0:
+            raise RuntimeError("macOS sample failed; do not treat this as a valid profile")
         if status or callback_errors:
             raise RuntimeError(message or callback_errors)
-        return dict(**summarize(events, wall), metrics=json.loads(text), events=events)
+        row = dict(**summarize(events, wall), metrics=json.loads(text), events=events,
+                   observed_start_ns=observed_start, observed_end_ns=observed_end)
+        if a.metal_trace:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "profiling/image_startup"))
+            from metal_trace import summarize_trace
+            row["metal_trace"] = summarize_trace(a.metal_trace, observed_start, observed_end, events, os.getpid())
+        if sampler is not None:
+            row["host_sample"] = str(sample_path.resolve())
+        return row
 
     try:
         if a.prepare != "none":
@@ -135,7 +163,7 @@ def main():
             value = dict(request, prompt=base_prompt + (" Soft studio lighting." if changed else ""),
                          output=str((a.output / f"{index}.png").resolve()))
             print(f"START {a.model_id} {value['operation']} run={index} changed_prompt={changed}", flush=True)
-            row = invoke(value)
+            row = invoke(value, run_index=index)
             row.update(index=index, changed_prompt=changed, request=value,
                        png_sha256=hashlib.sha256(Path(value["output"]).read_bytes()).hexdigest())
             report["runs"].append(row)

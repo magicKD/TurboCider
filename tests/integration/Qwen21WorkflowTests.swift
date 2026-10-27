@@ -654,6 +654,25 @@ import ImageIO
         studio.applyQwen21DMD2Preset()
         try check(studio.draft.usesQwen21DMD2 && studio.draft.steps == 2,
                   "Explicit preset did not support the upstream generic filename")
+        let genericRequest = try studio.draft.request(output: output)
+        let genericJob = NativeJob(id: UUID(), createdAt: Date(), request: genericRequest, state: "succeeded",
+            phase: "complete", completed: 2, total: 2, elapsed: 1, modelPath: root.path)
+        studio.selectModel("flux2-klein-4b")
+        studio.selectModel("qwen-image-2.1")
+        try check(studio.draft.steps == 2 && studio.draft.usesQwen21DMD2 && studio.draft.activeLoRAs[0].qwen21Sampler == "dmd2",
+                  "Generic filename lost the DMD2 recipe across a model switch")
+        let genericID = studio.draft.activeLoRAs[0].id
+        studio.setLoRAEnabled(genericID, enabled: false)
+        studio.setLoRAEnabled(genericID, enabled: true)
+        try check(studio.draft.steps == 2 && studio.draft.usesQwen21DMD2,
+                  "Re-enabling the generic filename silently selected the base sampler")
+        studio.reuse(genericJob)
+        studio.selectModel("flux2-klein-4b")
+        studio.selectModel("qwen-image-2.1")
+        try check(studio.draft.steps == 2 && studio.draft.usesQwen21DMD2,
+                  "Generic DMD2 history lost the adapter-specific sampler")
+        let genericDraft = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
+        try check(genericDraft.activeLoRAs[0].qwen21Sampler == "dmd2", "Generic adapter recipe did not persist")
         print("PASS DMD2 App preset, persistence, request v1/v2 and LoRA/model switching")
     }
 }

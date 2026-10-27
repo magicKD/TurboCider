@@ -82,9 +82,11 @@ build/native/turbocider-tiny-vae-app-tests
 python tools/validation/tiny_vae_parity.py --reference-root SOURCE --models models/tiny-vae --probe build/native/tiny-vae-probe --output outputs/tiny-parity
 build/native/turbocider-tiny-vae-app-tests --gpu z-image-turbo MODEL models/tiny-vae/taef1.safetensors OUTPUT
 build/native/turbocider-tiny-vae-app-tests --gpu qwen-image-2.1 QWEN_TURBO_MODEL models/tiny-vae/taeqi2_1.safetensors OUTPUT
+build/native/turbocider-tiny-vae-app-tests --gpu-dmd2 qwen-image-2.1 QWEN_BASE_MODEL TINY.safetensors OUTPUT DMD2.safetensors
 ```
 
 GPU 验收使用 512×512；Z-Image 为 4 步，Qwen 原生 Turbo checkpoint 为其作者指定的 8 步。
+DMD2 验收单独使用基础 checkpoint 与固定两步 LoRA，不与 Turbo 八步权重混用。
 检查真实 App 事件链、预览开关最终图片字节一致、Tiny 最终解码、采样中取消、
 取消后恢复，以及 Qwen Tiny 参考图编码。不要以缺少 Metal 设备的跳过代替通过。
 

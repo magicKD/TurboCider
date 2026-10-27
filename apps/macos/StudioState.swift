@@ -116,10 +116,15 @@ struct StudioLoRA: Codable, Sendable, Identifiable, Equatable {
     var strength: Double = 1.0
     var role: String = "transformer"
     var enabled: Bool = true
-    init(id: UUID = UUID(), path: String, strength: Double = 1.0, role: String = "transformer", enabled: Bool = true) {
+    // User-selected recipe, not evidence of the file's identity. The native
+    // runtime still verifies DMD2's pinned SHA before applying it.
+    var qwen21Sampler: String? = nil
+    init(id: UUID = UUID(), path: String, strength: Double = 1.0, role: String = "transformer", enabled: Bool = true,
+         qwen21Sampler: String? = nil) {
         self.id = id; self.path = path; self.strength = strength; self.role = role; self.enabled = enabled
+        self.qwen21Sampler = qwen21Sampler
     }
-    private enum CodingKeys: String, CodingKey { case id, path, strength, role, enabled }
+    private enum CodingKeys: String, CodingKey { case id, path, strength, role, enabled, qwen21Sampler }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -127,6 +132,7 @@ struct StudioLoRA: Codable, Sendable, Identifiable, Equatable {
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? 1.0
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? "transformer"
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        qwen21Sampler = try c.decodeIfPresent(String.self, forKey: .qwen21Sampler)
     }
 }
 
@@ -366,6 +372,7 @@ struct StudioDraft: Codable, Sendable {
         loras = try c.decodeIfPresent([StudioLoRA].self, forKey: .loras) ?? loras
         modelLoRAs = try c.decodeIfPresent([String: [StudioLoRA]].self, forKey: .modelLoRAs) ?? [:]
         initImageID = try c.decodeIfPresent(UUID.self, forKey: .initImageID)
+        rememberQwen21DMD2Selection()
         // Old sampling budgets are not calibrated full-request targets. Keep
         // the existing experimental residency choice; the separate public
         // selector stays Off until explicitly selected by the user.
@@ -387,10 +394,18 @@ struct StudioDraft: Codable, Sendable {
         return adapter
     }
     static let qwen21DMD2AdapterName = "Qwen-Image-2.1-DMD2-2steps.safetensors"
+    var hasQwen21DMD2Adapter: Bool {
+        modelID == "qwen-image-2.1" && activeLoRAs.contains {
+            $0.qwen21Sampler == "dmd2" || URL(fileURLWithPath: $0.path).lastPathComponent == Self.qwen21DMD2AdapterName
+        }
+    }
     var usesQwen21DMD2: Bool {
-        modelID == "qwen-image-2.1" && (qwen21Sampler == "dmd2" || activeLoRAs.contains {
-            URL(fileURLWithPath: $0.path).lastPathComponent == Self.qwen21DMD2AdapterName
-        })
+        modelID == "qwen-image-2.1" && (qwen21Sampler == "dmd2" || hasQwen21DMD2Adapter)
+    }
+    mutating func rememberQwen21DMD2Selection() {
+        guard modelID == "qwen-image-2.1", qwen21Sampler == "dmd2", activeLoRAs.count == 1,
+              let index = loras.firstIndex(where: { $0.id == activeLoRAs[0].id }) else { return }
+        loras[index].qwen21Sampler = "dmd2"
     }
     mutating func configureQwen21DMD2() {
         qwen21Sampler = "dmd2"
@@ -403,6 +418,7 @@ struct StudioDraft: Codable, Sendable {
         if activeLoRAs.count == 1, let index = loras.firstIndex(where: { $0.id == activeLoRAs[0].id }) {
             loras[index].role = "transformer"; loras[index].strength = 1
         }
+        rememberQwen21DMD2Selection()
     }
     var effectiveQwen21ReferenceSize: Int { operation == "image.edit" ? qwen21ReferenceSize : 1024 }
     var usesQwen21FastReferenceEncoding: Bool {
@@ -1667,6 +1683,7 @@ final class StudioState: ObservableObject {
     private func applyModel(_ model: StudioModel) {
         let id = model.id
         message = nil
+        draft.rememberQwen21DMD2Selection()
         draft.modelLoRAs[draft.modelID] = draft.loras
         draft.modelID = id
         draft.operation = (model.executor_operations ?? model.operations).first ??
@@ -1791,8 +1808,7 @@ final class StudioState: ObservableObject {
     }
     private func synchronizeQwen21TurboSettings(wasTurbo: Bool) {
         guard draft.modelID == "qwen-image-2.1" else { return }
-        if draft.activeLoRAs.count == 1,
-           URL(fileURLWithPath: draft.activeLoRAs[0].path).lastPathComponent == StudioDraft.qwen21DMD2AdapterName {
+        if draft.activeLoRAs.count == 1, draft.hasQwen21DMD2Adapter {
             draft.configureQwen21DMD2()
             message = "已应用官方 DMD2 两步预设；运行时校验文件 SHA256。"
         } else if draft.qwen21TurboLoRA != nil {
@@ -1917,7 +1933,8 @@ final class StudioState: ObservableObject {
         configureQwen21TurboPreset()
     }
     func applyQwen21DMD2Preset() {
-        guard !imageInputsBusy, draft.modelID == "qwen-image-2.1", draft.activeLoRAs.count == 1 else {
+        guard !imageInputsBusy, draft.modelID == "qwen-image-2.1", draft.activeLoRAs.count == 1,
+              !draft.hasQwen21TurboAdapter else {
             message = "请先启用单个官方 DMD2 两步 LoRA。"; return
         }
         draft.configureQwen21DMD2()
@@ -2186,7 +2203,8 @@ final class StudioState: ObservableObject {
                                frames: input.kind == "video" ? request.frames : nil,
                                fps: input.kind == "video" ? request.fps : nil)
         }
-        draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
+        draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role,
+            qwen21Sampler: request.model == "qwen-image-2.1" && request.qwen21_sampler == "dmd2" ? "dmd2" : nil) }
         draft.modelLoRAs[request.model] = draft.loras
         draft.loraStrategy = request.lora_strategy ?? "auto"
         draft.initImageID = draft.assets.first?.id; draft.strength = request.inputs?.first?.strength ?? 0.75

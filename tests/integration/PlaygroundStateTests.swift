@@ -532,6 +532,14 @@ import UniformTypeIdentifiers
         try check(state.updateLoRA(dmd2ID, { $0.enabled = true }) && state.applyDMD2Preset() &&
                   state.settings.steps == 2 && state.orderedAssets == assets &&
                   state.instruction == "Preserve this template instruction", "DMD2 preset changed Playground content")
+        try check(state.removeLoRA(dmd2ID), "Cannot remove canonical DMD2")
+        let genericDMD2 = root.appendingPathComponent("pytorch_lora_weights.safetensors")
+        try Data("CPU-only generic DMD2 placeholder".utf8).write(to: genericDMD2)
+        try check(state.addLoRA(genericDMD2.path) && state.applyDMD2Preset(), "Cannot explicitly select generic DMD2")
+        let genericDMD2ID = state.settings.activeLoRAs[0].id
+        try check(state.updateLoRA(genericDMD2ID, { $0.enabled = false }) &&
+                  state.updateLoRA(genericDMD2ID, { $0.enabled = true }) && state.settings.steps == 2 &&
+                  state.settings.activeLoRAs[0].qwen21Sampler == "dmd2", "Generic DMD2 reactivation lost its sampler")
         state.updateSettings { $0 = beforeDMD2 }
         let outfitBefore = try bytes(state.current)
         state.selectTemplate(.identity)

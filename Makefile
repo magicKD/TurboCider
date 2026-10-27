@@ -64,6 +64,7 @@ package: build
 test:
 	@$(MAKE) test-tiny-vae
 	@"$(PYTHON)" -B tests/native/test_image_first_step.py
+	@"$(PYTHON)" -B tests/native/test_metal_compile_trace.py
 	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
 	@$(MAKE) test-acceleration-contract
 	@$(MAKE) test-quantized-host
