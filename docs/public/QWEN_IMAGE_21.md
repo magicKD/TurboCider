@@ -4,6 +4,10 @@ TurboCider runs Comfy-Org/Qwen-Image-2.1 natively through C++/MLX/Metal. Python
 is used only for offline validators and development diagnostics; inference is
 performed by the native runtime.
 
+The pinned [DMD2 two-step LoRA recipe](QWEN_IMAGE_21_DMD2.md) is separate from
+the base, Viggle six-step and native Turbo eight-step schedules. See the
+[first-step latency observations](../benchmark/IMAGE_FIRST_STEP.md) for startup boundaries.
+
 Current research recipes are indexed in [fastest measured configurations](../benchmark/CURRENT_FASTEST_CONFIGS.md),
 with [integration and regression results](../status/runtime-ane-integration-2026-10-19.md).
 The October 19 runtime comparisons below are limited local observations: external

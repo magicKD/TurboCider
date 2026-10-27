@@ -870,10 +870,11 @@ struct StudioView: View {
                     Text("采样步数")
                     TextField("采样步数", value: $studio.draft.steps, format: .number)
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("steps")
-                        .disabled(studio.draft.qwen21TurboLoRA != nil || studio.draft.modelID == "seedvr2-3b")
-                    Button("重置") { studio.draft.steps = studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
+                        .disabled(studio.draft.usesQwen21DMD2 || studio.draft.qwen21TurboLoRA != nil || studio.draft.modelID == "seedvr2-3b")
+                    Button("重置") { studio.draft.steps = studio.draft.usesQwen21DMD2 ? 2 : studio.draft.qwen21TurboLoRA != nil ? 6 : (model?.default_steps ?? 4) }
                 }
                 Text(studio.draft.modelID == "seedvr2-3b" ? "SeedVR2 固定为单步恢复；不使用文本提示词，不自动截帧。"
+                     : studio.draft.usesQwen21DMD2 ? "DMD2 固定两步，sigma 1 → 0.5 → 0、CFG 1；不使用基础模型或 Turbo 采样。"
                      : studio.draft.qwen21TurboLoRA != nil ? "Turbo 快速模式固定使用专用 6 步采样。"
                      : studio.draft.usesQwen21FastReferenceEncoding ? "快速 512 参考编码使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
                      : studio.draft.modelID == "qwen-image-2.1" && (!studio.draft.activeLoRAs.isEmpty || studio.draft.qwen21DiTCache != "off") ? "普通 LoRA 与 DiT 缓存使用基础采样：20–40 步，默认 40 步。可自行选择 25 步等配置。"
@@ -1007,7 +1008,8 @@ struct StudioView: View {
                         }
                     }
                 }
-                Text(studio.draft.qwen21TurboLoRA != nil ? "六步 Viggle 使用单个适配器，强度固定为 1；关闭后保留文件。"
+                Text(studio.draft.usesQwen21DMD2 ? "DMD2 使用单个官方适配器，强度需为 1、2 步，最多 1MP／3 张参考图；运行时校验 SHA256。"
+                     : studio.draft.qwen21TurboLoRA != nil ? "六步 Viggle 使用单个适配器，强度固定为 1；关闭后保留文件。"
                      : studio.draft.modelID == "qwen-image-2.1" ? "普通 LoRA 使用纯 GPU、20–40 步、512×512，最多 3 张参考图；单个适配器强度默认 1，可输入 −8 到 8。"
                      : "强度默认 1.0；取消勾选会保留文件和强度。可输入 −8 到 8。").font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.qwen21TurboLoRA != nil {
@@ -1015,6 +1017,14 @@ struct StudioView: View {
                         .disabled(store.busy || assetControlsLocked)
                         .accessibilityIdentifier("qwen21TurboPreset")
                     Text("已识别六步 Viggle 适配器；预设保留提示词和参考图。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                if studio.draft.modelID == "qwen-image-2.1", studio.draft.activeLoRAs.count == 1,
+                   !studio.draft.hasQwen21TurboAdapter {
+                    Button("应用官方 DMD2 两步设置") { studio.applyQwen21DMD2Preset() }
+                        .disabled(store.busy || assetControlsLocked)
+                        .accessibilityIdentifier("qwen21DMD2Preset")
+                    Text("仅用于 linoyts 官方 DMD2 文件；其他 LoRA 会在运行时被拒绝。保留原始文件名时请手动应用此预设。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 if studio.draft.qwen21TurboLoRA != nil {

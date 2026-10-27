@@ -286,7 +286,7 @@ Request request_from_json(NSDictionary *d) {
             @"operation",    @"inputs",         @"fps",
             @"residency",    @"profile",        @"model_variant",
             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_dit_cache", @"qwen21_denoiser_backend",
+            @"qwen21_w8a8", @"qwen21_gpu_w8a16", @"qwen21_reference_size", @"qwen21_sampler", @"qwen21_dit_cache", @"qwen21_denoiser_backend",
             @"qwen21_gpu_full_ffn_blocks", @"qwen21_native_ane_cache", @"qwen21_native_w8_staging", @"qwen21_native_scale_cache", @"qwen21_native_lora_kernel",
             @"loras",        @"audio",          @"noise_path",
             @"vsa",          @"vsa_sparsity",   @"vsa_tile_size",
@@ -297,6 +297,7 @@ Request request_from_json(NSDictionary *d) {
             @"quantized_cache", @"warmup_iterations", @"memory_constrained", @"seedvr2_vae", @"tiny_vae"
         ]);
         r.model = string_value(d, @"model", r.model);
+        r.qwen21_sampler = string_value(d, @"qwen21_sampler", r.qwen21_sampler);
         if (d[@"seedvr2_vae"]) parse_seedvr2_vae(d[@"seedvr2_vae"], r);
         if (d[@"tiny_vae"]) parse_tiny_vae(d[@"tiny_vae"], r);
         r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
@@ -425,13 +426,14 @@ Request request_from_json(NSDictionary *d) {
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
                             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-                            @"qwen21_reference_size", @"tiny_vae",
+                            @"qwen21_reference_size", @"qwen21_sampler", @"tiny_vae",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
                             @"vsa_impl" ]);
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
+        r.qwen21_sampler = string_value(parameters, @"qwen21_sampler", r.qwen21_sampler);
         if (parameters[@"tiny_vae"]) parse_tiny_vae(parameters[@"tiny_vae"], r);
         r.noise_path = string_value(parameters, @"noise_path");
         r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");

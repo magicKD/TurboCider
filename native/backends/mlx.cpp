@@ -1285,9 +1285,9 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                 destination=value; // Preserve the legacy resolver's behavior.
             };
             if (remove_suffix(stem, ".lora_A.default.weight") || remove_suffix(stem, ".lora_A.weight") ||
-                remove_suffix(stem, ".lora_down.weight")) assign(pairs[stem].down);
+                remove_suffix(stem, ".lora_down.weight") || remove_suffix(stem, ".lora.down.weight")) assign(pairs[stem].down);
             else if (remove_suffix(stem, ".lora_B.default.weight") || remove_suffix(stem, ".lora_B.weight") ||
-                     remove_suffix(stem, ".lora_up.weight")) assign(pairs[stem].up);
+                     remove_suffix(stem, ".lora_up.weight") || remove_suffix(stem, ".lora.up.weight")) assign(pairs[stem].up);
             else if (remove_suffix(stem, ".alpha") || remove_suffix(stem, ".lora_alpha")) assign(pairs[stem].alpha);
             else {
                 if (native_lora_rejection_.empty()) native_lora_rejection_="unsupported LoRA tensor: "+raw;

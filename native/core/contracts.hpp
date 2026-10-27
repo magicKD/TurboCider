@@ -76,6 +76,7 @@ struct Request {
     std::string qwen21_native_lora_kernel = "scalar";
     bool qwen21_native_lora_kernel_specified = false;
     int qwen21_reference_size = 1024;
+    std::string qwen21_sampler = "auto";
     std::string qwen21_dit_cache = "off";
     // Explicit JSON off overrides diagnostic environment defaults. Requests
     // constructed without this option retain the legacy diagnostic route.

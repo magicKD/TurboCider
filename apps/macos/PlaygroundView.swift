@@ -281,7 +281,7 @@ struct PlaygroundView: View {
                     Button("40 步") { state.updateSettings { $0.steps = 40 } }
                 }
             }
-            Text(state.settings.hasQwen21TurboAdapter ? "六步 Viggle：6 步、强度 1，可使用下方快速预设。" : "基础模型和普通 LoRA 建议 20–40 步；较多步数更慢。")
+            Text(state.settings.usesQwen21DMD2 ? "DMD2：固定 2 步、强度 1、CFG 1；运行时校验官方文件。" : state.settings.hasQwen21TurboAdapter ? "六步 Viggle：6 步、强度 1，可使用下方快速预设。" : "基础模型和普通 LoRA 建议 20–40 步；较多步数更慢。")
                 .font(.caption2).foregroundStyle(.secondary)
             Toggle("随机 Seed", isOn: settingsBinding(\.randomSeed)).toggleStyle(.checkbox)
                 .accessibilityIdentifier("playgroundRandomSeed")
@@ -351,7 +351,7 @@ struct PlaygroundView: View {
             ForEach(state.settings.loras) { lora in loraRow(lora) }
             Text("普通 LoRA 强度默认 1，可输入 −8 到 8。取消勾选会保留文件；参数不兼容时会提示原因。")
                 .font(.caption2).foregroundStyle(.secondary)
-            if !state.settings.activeLoRAs.isEmpty && !state.settings.hasQwen21TurboAdapter &&
+            if !state.settings.activeLoRAs.isEmpty && !state.settings.hasQwen21TurboAdapter && !state.settings.usesQwen21DMD2 &&
                 (state.settings.width != 512 || state.settings.height != 512) {
                 Text("普通 LoRA 当前需要 512×512 输出；恢复该画布或关闭 LoRA 后可生成。")
                     .font(.caption2).foregroundStyle(.orange)
@@ -365,6 +365,12 @@ struct PlaygroundView: View {
                 }
                 Button("应用 512×512 / 6 步 GPU 预设") { state.applyTurboPreset() }
                     .accessibilityIdentifier("playgroundTurboPreset")
+            }
+            if state.settings.activeLoRAs.count == 1 && !state.settings.hasQwen21TurboAdapter {
+                Button("应用官方 DMD2 两步 GPU 预设") { state.applyDMD2Preset() }
+                    .accessibilityIdentifier("playgroundDMD2Preset")
+                Text("仅用于 linoyts 官方 DMD2 文件；其他 LoRA 会在运行时被拒绝。")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Picker("LoRA 策略", selection: settingsBinding(\.loraStrategy)) {
                 Text("自动").tag("auto")

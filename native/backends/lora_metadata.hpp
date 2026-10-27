@@ -127,7 +127,22 @@ inline Policy inspect(const std::unordered_map<std::string,std::string>& metadat
                 else if(name=="bias") accepted=item.kind==V::String && item.string=="none";
                 else if(name=="peft_type") accepted=item.kind==V::String && item.string=="LORA";
                 else if(name=="lora_dropout") accepted=item.kind==V::Number && item.number>=0 && item.number<1;
-                else if(name=="init_lora_weights" || name=="inference_mode") accepted=item.kind==V::Boolean;
+                else if(name=="inference_mode") accepted=item.kind==V::Boolean;
+                else if(name=="init_lora_weights") accepted=item.kind==V::Boolean ||
+                    (item.kind==V::String && item.string=="gaussian");
+                else if(name=="use_qalora" || name=="ensure_weight_tying" || name=="lora_bias")
+                    accepted=item.kind==V::Boolean && !item.boolean;
+                else if(name=="qalora_group_size") accepted=item.kind==V::Number && item.number==16;
+                else if(name=="peft_version") accepted=item.kind==V::String && item.string.size()<=128;
+                else if(name=="megatron_core") accepted=item.kind==V::String && item.string=="megatron.core";
+                else if(name=="loftq_config") accepted=item.kind==V::Object && item.object.empty();
+                else if(name=="alora_invocation_tokens" || name=="arrow_config" || name=="auto_mapping" ||
+                    name=="base_model_name_or_path" || name=="corda_config" || name=="eva_config" ||
+                    name=="exclude_modules" || name=="layer_replication" || name=="layers_pattern" ||
+                    name=="layers_to_transform" || name=="lora_ga_config" || name=="megatron_config" ||
+                    name=="monteclora_config" || name=="revision" || name=="target_parameters" ||
+                    name=="task_type" || name=="trainable_token_indices" || name=="use_bdlora" ||
+                    name=="velora_config") accepted=item.kind==V::Null;
                 else if(name=="modules_to_save") accepted=item.kind==V::Null;
                 else if(name=="target_modules") {
                     accepted=item.kind==V::Array;

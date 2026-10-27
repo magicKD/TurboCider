@@ -518,6 +518,21 @@ import UniformTypeIdentifiers
                   state.instruction == "Preserve this template instruction",
                   "Explicit Turbo preset lost its parameters or template content")
         try check(try state.generationDraft().steps == 6, "Explicit Turbo preset did not produce a valid submission draft")
+        let beforeDMD2 = state.settings
+        try check(state.removeLoRA(state.settings.qwen21TurboLoRA!.id), "Cannot remove Turbo before DMD2")
+        let dmd2Path = root.appendingPathComponent(StudioDraft.qwen21DMD2AdapterName)
+        try Data("CPU-only DMD2 placeholder".utf8).write(to: dmd2Path)
+        try check(state.addLoRA(dmd2Path.path) && state.settings.usesQwen21DMD2 && state.settings.steps == 2,
+                  "DMD2 activation did not apply its two-step recipe")
+        try check(try state.generationDraft().request(output: root.appendingPathComponent("unused-dmd2.png")).qwen21_sampler == "dmd2",
+                  "Playground did not forward the DMD2 sampler")
+        let dmd2ID = state.settings.activeLoRAs[0].id
+        try check(state.updateLoRA(dmd2ID, { $0.enabled = false }) && state.settings.qwen21Sampler == "auto" &&
+                  state.settings.steps == 40, "Disabling DMD2 left a two-step base sampler")
+        try check(state.updateLoRA(dmd2ID, { $0.enabled = true }) && state.applyDMD2Preset() &&
+                  state.settings.steps == 2 && state.orderedAssets == assets &&
+                  state.instruction == "Preserve this template instruction", "DMD2 preset changed Playground content")
+        state.updateSettings { $0 = beforeDMD2 }
         let outfitBefore = try bytes(state.current)
         state.selectTemplate(.identity)
         try check(state.settings.width == 512 && state.settings.steps == initial.steps && state.settings.qwen21DiTCache == "off",

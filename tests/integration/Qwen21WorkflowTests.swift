@@ -609,5 +609,51 @@ import ImageIO
                                 completed: 6, total: 6, elapsed: 1)
         let rejectedMissing = await studio.editResult(missing)
         try check(!rejectedMissing && studio.draft.assets == assets, "Missing result changed the editing draft")
+        // DMD2 is a separate, explicit two-step recipe, not a renamed Viggle
+        // adapter or a low-step base request. File SHA is enforced at inference.
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.modelPaths["qwen-image-2.1"] = root.path
+        studio.draft.loras = []; studio.draft.assets = []
+        studio.draft.prompt = "A red ceramic teapot"
+        let dmd2Path = root.appendingPathComponent(StudioDraft.qwen21DMD2AdapterName)
+        try Data("adapter fixture".utf8).write(to: dmd2Path)
+        studio.addLoRA(dmd2Path.path)
+        try check(studio.draft.usesQwen21DMD2 && studio.draft.steps == 2,
+                  "Canonical DMD2 activation did not select two-step sampling")
+        let dmd2Request = try studio.draft.request(output: output)
+        let dmd2V2 = NativeRequestV2(legacy: dmd2Request)
+        try check(dmd2Request.qwen21_sampler == "dmd2" && dmd2Request.allow_approximation == true &&
+                  dmd2Request.lora_strategy == "inference_time" && dmd2V2.parameters.qwen21_sampler == "dmd2",
+                  "DMD2 recipe lost its sampler/approximation in v1/v2 conversion")
+        let persistedDMD2 = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(studio.draft))
+        try check(persistedDMD2.usesQwen21DMD2 && persistedDMD2.qwen21Sampler == "dmd2",
+                  "DMD2 sampler did not persist")
+        studio.draft.operation = "image.edit"; studio.draft.assets = [assets[0]]
+        studio.draft.qwen21ReferenceSize = 512
+        try check(studio.draft.qwen21ReferenceSizeIssue == nil, "DMD2 fast reference encoding was rejected")
+        _ = try studio.draft.request(output: output)
+        studio.draft.loras[0].strength = 0.5
+        try rejects({ _ = try studio.draft.request(output: output) }, "DMD2 strength other than 1 was accepted")
+        studio.applyQwen21DMD2Preset()
+        studio.draft.steps = 6
+        try rejects({ _ = try studio.draft.request(output: output) }, "DMD2 accepted Viggle steps")
+        studio.applyQwen21DMD2Preset()
+        studio.setLoRAEnabled(studio.draft.loras[0].id, enabled: false)
+        try check(studio.draft.qwen21Sampler == "auto" && studio.draft.steps == 40,
+                  "Disabling DMD2 left a stale sampler or two-step base request")
+        studio.setLoRAEnabled(studio.draft.loras[0].id, enabled: true)
+        studio.selectModel("flux2-klein-4b")
+        try check(studio.draft.qwen21Sampler == "auto", "DMD2 sampler leaked into another model")
+        studio.selectModel("qwen-image-2.1")
+        try check(studio.draft.steps == 2 && studio.draft.usesQwen21DMD2, "Returning to DMD2 lost its preset")
+        studio.removeLoRA(studio.draft.loras[0].id)
+        let genericPath = root.appendingPathComponent("pytorch_lora_weights.safetensors")
+        try Data("adapter fixture".utf8).write(to: genericPath)
+        studio.addLoRA(genericPath.path)
+        try check(!studio.draft.usesQwen21DMD2, "Generic LoRA filename was automatically treated as DMD2")
+        studio.applyQwen21DMD2Preset()
+        try check(studio.draft.usesQwen21DMD2 && studio.draft.steps == 2,
+                  "Explicit preset did not support the upstream generic filename")
+        print("PASS DMD2 App preset, persistence, request v1/v2 and LoRA/model switching")
     }
 }

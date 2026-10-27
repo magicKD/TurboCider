@@ -2,6 +2,9 @@
 
 主报告：[图像与视频性能评测](PERFORMANCE_REPORT.md)。
 
+2026-10-27：[图像首步耗时与 DMD2 两步观察](IMAGE_FIRST_STEP.md)，区分采样前、
+首步、后续步和完整请求；不将首步差值直接等同于编译开销。
+
 2026-10-19更新：[当前最快已测配置](CURRENT_FASTEST_CONFIGS.md)。集中记录各模型
 的Public/Private/GPU、尺寸/步数、热命中与fresh边界、LoRA/近似档，以及已清理
 须重建的产物；Qwen Base完整40步文生图研究基线约28.7–28.8s为Private runtime。

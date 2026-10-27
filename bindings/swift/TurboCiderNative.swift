@@ -109,6 +109,7 @@ public struct NativeRequest: Codable, Sendable {
     public var prompt_enhance_edit_experimental: Bool?
     public var qwen21_dit_cache: String?
     public var qwen21_reference_size: Int?
+    public var qwen21_sampler: String?
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
@@ -188,6 +189,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var qwen21_w8a8: Bool?
 }
 public struct NativeParametersV2: Codable, Sendable {
+    public var qwen21_sampler: String? = nil
     public var tiny_vae: NativeTinyVAEConfig? = nil
     public var dynamic_text: Bool
     public var compile_gpu: Bool?
@@ -249,6 +251,7 @@ public struct NativeRequestV2: Codable, Sendable {
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)
         parameters.tiny_vae = request.tiny_vae
+        parameters.qwen21_sampler = request.qwen21_sampler
         dump_tensors = request.dump_tensors
         loras = request.loras
         lora_strategy = request.lora_strategy

@@ -37,6 +37,7 @@ class OrdinaryLoRABindingTests(unittest.TestCase):
             report = json.loads(result.stdout)
             self.assertEqual(report["device"], "cpu")
             self.assertEqual(report["projections"], 224)
+            self.assertEqual(report["dmd2_projections"], 128)
             self.assertTrue(report["unknown_rejected"])
             self.assertTrue(report["unsupported_tensor_rejected"])
             self.assertTrue(report["orphan_alpha_rejected"])

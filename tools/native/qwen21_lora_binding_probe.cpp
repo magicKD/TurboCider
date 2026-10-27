@@ -122,10 +122,26 @@ int main(int argc, char **argv) {
         }
         tc::require(rejected_incomplete && weights.sorted_keys().empty(),
                     "incomplete pair must fail closed");
+        // Upstream DMD2 uses a different suffix and a transformer namespace.
+        // Exercise the real loader and projection math, not just string matching.
+        adapter.clear();
+        for (int block = 0; block < 32; ++block) {
+            for (const auto *projection : {"to_q", "to_k", "to_v", "to_out.0"}) {
+                const auto stem = "transformer.transformer_blocks." + std::to_string(block) + ".attn." + projection;
+                adapter.emplace(stem + ".lora.down.weight", tc::mx::ones({rank, hidden}, tc::mx::bfloat16));
+                adapter.emplace(stem + ".lora.up.weight", tc::mx::ones({hidden, rank}, tc::mx::bfloat16));
+            }
+        }
+        write();
+        tc::require(bind(true) == 128, "DMD2 suffixes did not bind exactly 128 attention projections");
+        auto dmd2_output = tc::mx::astype(weights.project(input, "transformer_blocks.0.attn.to_q"), tc::mx::float32);
+        tc::mx::eval(dmd2_output);
+        tc::require(tc::mx::all(dmd2_output == tc::Tensor(float(hidden * rank) * .75f)).item<bool>(),
+                    "DMD2 low-rank projection math changed");
         std::cout << "{\"device\":\"cpu\",\"projections\":224,\"unknown_rejected\":true,"
                      "\"unsupported_tensor_rejected\":true,\"orphan_alpha_rejected\":true,"
                      "\"oversized_b_rejected\":true,\"zero_rank_rejected\":true,"
-                     "\"incomplete_rejected\":true,\"legacy_subset_preserved\":true}\n";
+                     "\"incomplete_rejected\":true,\"legacy_subset_preserved\":true,\"dmd2_projections\":128}\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

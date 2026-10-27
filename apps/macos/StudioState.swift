@@ -288,6 +288,7 @@ struct StudioDraft: Codable, Sendable {
     var qwen21DiTCache = "off"
     // Editing preference; text-to-image always requests standard encoding.
     var qwen21ReferenceSize = 1024
+    var qwen21Sampler = "auto"
     var tinyVAEPaths: [String: String] = [:]
     var tinyVAEEncoder = "original"
     var tinyVAEDecoder = "original"
@@ -309,6 +310,7 @@ struct StudioDraft: Codable, Sendable {
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21ReferenceSize
+        case qwen21Sampler
         case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, tinyPreview, tinyPreviewInterval
     }
     init(from decoder: Decoder) throws {
@@ -348,6 +350,7 @@ struct StudioDraft: Codable, Sendable {
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         qwen21DiTCache = try c.decodeIfPresent(String.self, forKey: .qwen21DiTCache) ?? "off"
         qwen21ReferenceSize = try c.decodeIfPresent(Int.self, forKey: .qwen21ReferenceSize) ?? 1024
+        qwen21Sampler = try c.decodeIfPresent(String.self, forKey: .qwen21Sampler) ?? "auto"
         tinyVAEPaths = try c.decodeIfPresent([String: String].self, forKey: .tinyVAEPaths) ?? [:]
         tinyVAEEncoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEEncoder) ?? "original"
         tinyVAEDecoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEDecoder) ?? "original"
@@ -383,6 +386,24 @@ struct StudioDraft: Codable, Sendable {
               Self.qwen21TurboAdapterNames.contains(URL(fileURLWithPath: adapter.path).lastPathComponent) else { return nil }
         return adapter
     }
+    static let qwen21DMD2AdapterName = "Qwen-Image-2.1-DMD2-2steps.safetensors"
+    var usesQwen21DMD2: Bool {
+        modelID == "qwen-image-2.1" && (qwen21Sampler == "dmd2" || activeLoRAs.contains {
+            URL(fileURLWithPath: $0.path).lastPathComponent == Self.qwen21DMD2AdapterName
+        })
+    }
+    mutating func configureQwen21DMD2() {
+        qwen21Sampler = "dmd2"
+        width = 512; height = 512; steps = 2; frames = 1; audio = false
+        profilePath = ""; acceleration = StudioAcceleration(policy: "gpu")
+        streaming = StudioStreamingState(); qwen21DiTCache = "off"
+        if !["resident", "component_staged"].contains(residency) { residency = "component_staged" }
+        promptEnhance = false; promptEnhanceEditExperimental = false
+        loraStrategy = "inference_time"
+        if activeLoRAs.count == 1, let index = loras.firstIndex(where: { $0.id == activeLoRAs[0].id }) {
+            loras[index].role = "transformer"; loras[index].strength = 1
+        }
+    }
     var effectiveQwen21ReferenceSize: Int { operation == "image.edit" ? qwen21ReferenceSize : 1024 }
     var usesQwen21FastReferenceEncoding: Bool {
         modelID == "qwen-image-2.1" && operation == "image.edit" && qwen21ReferenceSize == 512
@@ -398,6 +419,11 @@ struct StudioDraft: Codable, Sendable {
         if usesPublicStreaming { return "快速 512 暂不支持流式内存档位。" }
         if activeLoRAs.isEmpty {
             return (20...40).contains(steps) ? nil : "基础模型的快速 512 需要 20–40 步，请自行调整步数。"
+        }
+        if usesQwen21DMD2 {
+            return activeLoRAs.count == 1 && activeLoRAs[0].role == "transformer" &&
+                activeLoRAs[0].strength == 1 && steps == 2 && qwen21DiTCache == "off" &&
+                ["auto", "inference_time"].contains(loraStrategy) ? nil : "DMD2 快速 512 需单个两步适配器、强度 1、运行时加载且关闭 DiT 缓存。"
         }
         if !hasQwen21TurboAdapter {
             guard activeLoRAs.count == 1, let adapter = activeLoRAs.first,
@@ -426,6 +452,7 @@ struct StudioDraft: Codable, Sendable {
     var qwen21DiTCacheUnavailableReason: String? {
         guard modelID == "qwen-image-2.1", ["image.generate", "image.edit"].contains(operation) else { return "DiT 缓存仅支持 Qwen 2.1 生图或图片编辑。" }
         if hasQwen21TurboAdapter { return "六步 Viggle Turbo 不支持 DiT 缓存，请保持关闭。" }
+        if usesQwen21DMD2 { return "DMD2 两步采样不支持 DiT 缓存，请保持关闭。" }
         if ![1024, 512].contains(effectiveQwen21ReferenceSize) { return "DiT 缓存支持标准 1024 或快速 512 参考编码。" }
         if (acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")) != "gpu" || !profilePath.isEmpty {
             return "DiT 缓存仅支持纯 GPU，请关闭 ANE 与设备配置。"
@@ -798,8 +825,20 @@ struct StudioDraft: Codable, Sendable {
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
-        if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty {
-            if hasQwen21TurboAdapter {
+        if modelID == "qwen-image-2.1", usesQwen21DMD2 || !activeLoRAs.isEmpty {
+            if usesQwen21DMD2 {
+                guard activeLoRAs.count == 1, activeLoRAs[0].strength == 1,
+                      activeLoRAs[0].role == "transformer", !hasQwen21TurboAdapter,
+                      steps == 2, frames == 1, !audio, activeAssets.count <= 3,
+                      width <= 2048, height <= 2048, Int64(width) * Int64(height) <= 1048576,
+                      ["auto", "inference_time"].contains(loraStrategy),
+                      (acceleration?.policy ?? "gpu") == "gpu", profilePath.isEmpty,
+                      ["resident", "component_staged"].contains(residency),
+                      streaming.selection == .off, !promptEnhance, !promptEnhanceEditExperimental,
+                      qwen21DiTCache == "off" else {
+                    throw NativeFailure(message: "DMD2 需单个官方两步 LoRA、强度 1、2 步、纯 GPU、最多 1MP／3 张参考图；请应用 DMD2 两步预设。")
+                }
+            } else if hasQwen21TurboAdapter {
                 guard qwen21TurboLoRA != nil else { throw NativeFailure(message: "六步 Viggle 需单独启用一个适配器，不能与其他 LoRA 混用。") }
                 let issues = qwen21TurboConfigurationIssues
                 guard issues.isEmpty else { throw NativeFailure(message: issues.joined(separator: "；") + "。请应用 Turbo 快速设置。") }
@@ -893,6 +932,8 @@ struct StudioDraft: Codable, Sendable {
         request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
         request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
         request.qwen21_reference_size = modelID == "qwen-image-2.1" ? effectiveQwen21ReferenceSize : nil
+        request.qwen21_sampler = usesQwen21DMD2 ? "dmd2" : nil
+        if usesQwen21DMD2 { request.allow_approximation = true }
         request.tiny_vae = try tinyVAEConfiguration()
         if request.tiny_vae?.encoder == "tiny" || request.tiny_vae?.decoder == "tiny" { request.allow_approximation = true }
         if usesQwen21FastReferenceEncoding { request.allow_approximation = true }
@@ -1643,12 +1684,13 @@ final class StudioState: ObservableObject {
         draft.streaming = StudioStreamingState()
         draft.qwen21DiTCache = "off"
         draft.qwen21ReferenceSize = 1024
+        draft.qwen21Sampler = "auto"
         draft.residency = model.default_residency ?? "resident"
         draft.profilePath = ""
         draft.acceleration = StudioAcceleration(policy: "gpu")
         draft.loras = draft.modelLoRAs[id] ?? []
         draft.loraStrategy = "auto"
-        if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }
+        synchronizeQwen21TurboSettings(wasTurbo: false)
         if !model.operations.contains(where: { $0 != "image.generate" && $0 != "video.generate" }) {
             draft.assets.removeAll(); draft.initImageID = nil
         }
@@ -1749,8 +1791,19 @@ final class StudioState: ObservableObject {
     }
     private func synchronizeQwen21TurboSettings(wasTurbo: Bool) {
         guard draft.modelID == "qwen-image-2.1" else { return }
-        if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }
+        if draft.activeLoRAs.count == 1,
+           URL(fileURLWithPath: draft.activeLoRAs[0].path).lastPathComponent == StudioDraft.qwen21DMD2AdapterName {
+            draft.configureQwen21DMD2()
+            message = "已应用官方 DMD2 两步预设；运行时校验文件 SHA256。"
+        } else if draft.qwen21TurboLoRA != nil {
+            draft.qwen21Sampler = "auto"
+            configureQwen21TurboPreset()
+        }
         else {
+            if draft.qwen21Sampler == "dmd2" {
+                draft.qwen21Sampler = "auto"
+                if draft.steps == 2 { draft.steps = 40 }
+            }
             if wasTurbo, draft.steps == 6 { draft.steps = 40 }
             message = wasTurbo && draft.activeLoRAs.isEmpty
                 ? "已关闭六步 Turbo，基础 Qwen 使用 \(draft.steps) 步；提示词与参考图已保留。" : nil
@@ -1851,7 +1904,7 @@ final class StudioState: ObservableObject {
         let size = (512, 512)
         draft.operation = example.referenceCount == 0 ? "image.generate" : "image.edit"
         draft.prompt = example.prompt
-        let steps = draft.qwen21TurboLoRA != nil ? 6 : 40
+        let steps = draft.usesQwen21DMD2 ? 2 : draft.qwen21TurboLoRA != nil ? 6 : 40
         draft.width = size.0; draft.height = size.1; draft.steps = steps
         draft.profilePath = ""
         var acceleration = draft.acceleration ?? StudioAcceleration()
@@ -1863,6 +1916,14 @@ final class StudioState: ObservableObject {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
         configureQwen21TurboPreset()
     }
+    func applyQwen21DMD2Preset() {
+        guard !imageInputsBusy, draft.modelID == "qwen-image-2.1", draft.activeLoRAs.count == 1 else {
+            message = "请先启用单个官方 DMD2 两步 LoRA。"; return
+        }
+        draft.configureQwen21DMD2()
+        message = "DMD2：固定 sigma 1 → 0.5 → 0、CFG 1、强度 1。运行时校验官方文件；仅研究用途。"
+        save()
+    }
     private func configureQwen21TurboPreset() {
         guard let adapter = draft.qwen21TurboLoRA,
               let index = draft.loras.firstIndex(where: { $0.id == adapter.id }) else {
@@ -1870,6 +1931,7 @@ final class StudioState: ObservableObject {
             return
         }
         draft.width = 512; draft.height = 512; draft.steps = 6
+        draft.qwen21Sampler = "auto"
         draft.frames = 1; draft.audio = false
         draft.loras[index].role = "transformer"; draft.loras[index].strength = 1
         draft.loraStrategy = "inference_time"
@@ -2098,6 +2160,7 @@ final class StudioState: ObservableObject {
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
+        draft.qwen21Sampler = request.qwen21_sampler ?? "auto"
         draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"
         draft.tinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
         draft.tinyPreview = request.tiny_vae?.preview ?? false

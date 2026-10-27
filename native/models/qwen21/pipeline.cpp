@@ -233,11 +233,15 @@ void Session::prepare_transformer(const Request &r,const Event &event,std::atomi
     }
     if(bind && pinned_student)require(sha256_file(r.loras[0].path)==adapter->sha256,
         "Viggle v0.2.1 r128/r256 LoRA hash does not match the pinned adapter");
+    if (bind && dmd2_requested(r))
+        require(adapter_lease && adapter_lease->file("qwen21-adapter").content_digest == dmd2_sha256,
+                "DMD2 adapter hash does not match the pinned official source");
     load(event,cancelled);transformer_.set_runtime_lora_fp16(lora_fp16);
     if(bind) {
         lora_applied_projections_=adapter_lease ? transformer_.apply_loras_leased(r.loras,"transformer",event,cancelled,true,
             adapter_lease,{"qwen21-adapter"},true) : transformer_.apply_loras(r.loras,"transformer",event,cancelled,true,true);
-        require(pinned_student ? lora_applied_projections_==227 : lora_applied_projections_>0,
+        require(pinned_student ? lora_applied_projections_==227 :
+                    dmd2_requested(r) ? lora_applied_projections_==dmd2_projection_count : lora_applied_projections_>0,
             "Qwen21 LoRA did not bind transformer projections");
         active_lora_identity_=std::move(identity);
     }
@@ -334,6 +338,13 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     auto start = Clock::now();
     ScopedWiredResidency wired_residency;
     Request r = requested;
+    const bool dmd2 = dmd2_requested(r);
+    if (dmd2) {
+        require(r.loras.size() == 1, "DMD2 requires one pinned adapter");
+        require(sha256_file(r.loras[0].path) == dmd2_sha256,
+                "DMD2 adapter hash does not match the pinned official source");
+        r.qwen21_sampler = "dmd2";
+    }
     const bool tiny_encoder=r.tiny_vae && r.tiny_vae->encoder=="tiny";
     const bool tiny_decoder=r.tiny_vae && r.tiny_vae->decoder=="tiny";
     require(!(r.tiny_vae && r.tiny_vae->preview && (async_step_pair || native_denoiser_requested(r))),
@@ -1279,6 +1290,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             require(digest == student_adapter->sha256,
                     "Viggle v0.2.1 r128/r256 LoRA hash does not match the pinned adapter");
         }
+        if (bind_lora && dmd2)
+            require(lora_sha256 == dmd2_sha256, "DMD2 source changed before LoRA binding");
         if (layer_staged) {
             // Keep the decoder out of the DiT working set (including prepare).
             vae_.clear();
@@ -1298,7 +1311,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (bind_lora) {
             if (lora_verification.value) lora_verification.value->revalidate();
             lora_applied_projections_ = transformer_.apply_loras(r.loras, "transformer", event, cancelled, true, true);
-            require(pinned_student ? lora_applied_projections_ == 227 : lora_applied_projections_ > 0,
+            require(pinned_student ? lora_applied_projections_ == 227 :
+                        dmd2 ? lora_applied_projections_ == dmd2_projection_count : lora_applied_projections_ > 0,
                     "Qwen21 LoRA did not bind transformer projections");
             if (!pinned_student || runtime_requested) {
                 // Keep the second complete digest after binding. The async path
@@ -1703,7 +1717,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     if (profile_segments && std::string_view(profile_segments) == "1")
         result.selection += "; diagnostic synchronized block-0 prefill attention segments";
     if (!r.loras.empty()) {
-        if (!student_schedule)
+        if (dmd2)
+            result.selection += "; official DMD2 two-step runtime LoRA";
+        else if (!student_schedule)
             result.selection += "; ordinary runtime LoRA with base Euler schedule";
         else if (!student_adapter)
             result.selection += "; experimental runtime LoRA with Viggle six-step schedule; adapter quality unqualified";
@@ -1861,6 +1877,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     result.timings.hybrid = (hybrid_requested || runtime_requested || qkv_requested) ? seconds(hybrid_start) : 0;
     result.checkpoint = transformer_source_.filename().string();
     if(turbo)result.selection+="; "+std::string(turbo_sampler_identity)+"; original Turbo checkpoint, not base/student schedule";
+    if (dmd2) result.selection += "; " + std::string(dmd2_sampler_identity) +
+        "; pinned rank32 attention-only DMD2, CFG1, no dynamic/terminal sigma shift";
     if(convrot_transformer) {
         result.precision="int8_convrot_dit+bf16_text+bf16_vae";
         result.selection+=configured_convrot_packed()?
@@ -1895,7 +1913,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         require(!async_step_pair||!calibration_capture.enabled(),"bounded async steps exclude calibration capture");
         if (layer_staged && hybrid_requested && hybrid_->ane_mlp_end == 6144)
             wired_residency.activate(6ull << 30);
-        auto schedule = turbo ? turbo_sigmas(r.width,r.height,r.steps) :
+        auto schedule = dmd2 ? dmd2_sigmas(r.width, r.height, r.steps) :
+            turbo ? turbo_sigmas(r.width,r.height,r.steps) :
             student_schedule ? viggle_v021_sigmas(r.width, r.height, r.steps) : sigmas(r.width, r.height, r.steps);
         mx::eval(schedule);
         auto latents = mx::astype(mx::random::normal({1, r.height / 16 * (r.width / 16), 64},
@@ -1965,7 +1984,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         if (!retain_prefix) clear_prefix_cache();
         const float first_sigma = schedule.data<float>()[0];
     const std::string prefix_runtime = std::to_string(r.steps) + ":" +
-            (turbo ? std::string(turbo_sampler_identity) : student_schedule ? std::string(viggle_v021_sampler_identity(r.steps)) : "base-euler-terminal-stretch-v1") + ":" +
+            (dmd2 ? std::string(dmd2_sampler_identity) : turbo ? std::string(turbo_sampler_identity) : student_schedule ? std::string(viggle_v021_sampler_identity(r.steps)) : "base-euler-terminal-stretch-v1") + ":" +
             std::to_string(r.width) + ":" + std::to_string(r.height) + ":" +
             active_lora_identity_ + ":" + (lora_fp16 ? "fp16" : "fp32") +
             (bf16_operand_ranks ? ":bf16-operands-f32-ranks-v1:" : ":") +

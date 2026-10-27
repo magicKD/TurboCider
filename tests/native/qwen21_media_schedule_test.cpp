@@ -26,10 +26,22 @@ int main(int argc, char **argv) {
         std::unordered_map<std::string, tc::Tensor> schedules;
         const float turbo_nodes[]={1.f,.978453f,.95418f,.926626f,.89508f,.845148f,.704534f,.414568f,0.f};
         for(auto dims:{std::pair{512,512},std::pair{768,512},std::pair{1024,1024}}) {
+            auto dmd2 = tc::qwen21::dmd2_sigmas(dims.first, dims.second);
+            tc::mx::eval(dmd2);
+            tc::require(dmd2.shape() == tc::mx::Shape{3} && dmd2.data<float>()[0] == 1.f &&
+                        dmd2.data<float>()[1] == .5f && dmd2.data<float>()[2] == 0.f,
+                        "DMD2 nodes must be exact, with no resolution shift or terminal stretching");
+            schedules.emplace("dmd2_" + std::to_string(dims.first) + "x" + std::to_string(dims.second), dmd2);
             auto turbo=tc::qwen21::turbo_sigmas(dims.first,dims.second);tc::mx::eval(turbo);
             tc::require(turbo.shape()==tc::mx::Shape{9},"Turbo8 shape invalid");
             for(int i=0;i<9;++i)tc::require(turbo.data<float>()[i]==turbo_nodes[i],"Turbo nodes must be exact and independent of canvas shift");
             schedules.emplace("turbo_"+std::to_string(dims.first)+"x"+std::to_string(dims.second),turbo);
+        }
+        for (int invalid : {-1, 0, 1, 3, 6, 8, 20, 40}) {
+            bool denied = false;
+            try { (void)tc::qwen21::dmd2_sigmas(512, 512, invalid); }
+            catch (const std::exception &) { denied = true; }
+            tc::require(denied, "DMD2 accepted a non-authored step count");
         }
         for(int invalid:{0,1,6,7,9,20,40}) {
             bool denied=false;try{(void)tc::qwen21::turbo_sigmas(512,512,invalid);}catch(const std::exception&){denied=true;}

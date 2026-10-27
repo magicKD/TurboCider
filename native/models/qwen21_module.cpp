@@ -2,6 +2,7 @@
 #include "qwen21/diagnostic_options.hpp"
 #include "qwen21/native_route.hpp"
 #include "qwen21/viggle_adapter.hpp"
+#include "qwen21/dmd2_adapter.hpp"
 #include "qwen21/runtime_gpu_layer_config.hpp"
 #include "qwen21/runtime_prefix_snapshot.hpp"
 #include "qwen21/runtime_private_qkv_options.hpp"
@@ -18,6 +19,9 @@ ModelModule qwen21_module() {
         [] { return Recipe{"qwen-image-2.1", {{"text_encode", {}}, {"denoise", {"text_encode"}, 40},
                                             {"vae_decode", {"denoise"}}, {"export", {"vae_decode"}}}, true}; },
         [](const Request &r) {
+            require(r.qwen21_sampler == "auto" || r.qwen21_sampler == "dmd2", "unknown Qwen21 sampler");
+            const bool dmd2 = qwen21::dmd2_requested(r);
+            if (dmd2) qwen21::validate_dmd2_request(r);
             const bool runtime_cache=qwen21::configured_runtime_conservative_cache_request(r);
             (void)qwen21::configured_runtime_function_request(r);
             qwen21::validate_native_denoiser_request(r);
@@ -395,9 +399,12 @@ ModelModule qwen21_module() {
                             std::isfinite(r.loras[0].strength) &&
                             r.loras[0].strength >= -8.f && r.loras[0].strength <= 8.f &&
                             r.lora_strategy == "inference_time" &&
-                            ((r.width == 512 && r.height == 512) || lora_1024) && r.inputs.size() <= 3,
+                            ((r.width == 512 && r.height == 512) || lora_1024 || dmd2) && r.inputs.size() <= 3,
                         "Qwen21 LoRA needs one runtime transformer adapter with finite strength -8...8, a 512px canvas and 0...3 references");
-                if (viggle || experimental_adapter) {
+                if (dmd2) {
+                    // Admission above is distinct from both the base and Viggle
+                    // schedules. Actual source SHA and bindings are checked by Session.
+                } else if (viggle || experimental_adapter) {
                     require((!viggle || experimental_adapter || r.loras[0].strength == 1.f) &&
                                 (r.steps == 6 || student_five_step) &&
                                 (r.execution == "gpu" ||

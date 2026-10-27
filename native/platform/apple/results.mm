@@ -4,6 +4,7 @@
 #include "../../models/seedvr2/precision.hpp"
 #include "../../models/qwen21/native_route.hpp"
 #include "../../models/qwen21/viggle_adapter.hpp"
+#include "../../models/qwen21/dmd2_adapter.hpp"
 #include <cstdlib>
 #include <string_view>
 #include "../../runtime/memory_execution.hpp"
@@ -486,6 +487,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         }];
     }
     NSMutableArray *algorithm_approximations = [NSMutableArray array];
+    if (r.model == "qwen-image-2.1" && qwen21::dmd2_requested(r))
+        [algorithm_approximations addObject:@"qwen21_dmd2_fixed_two_step_distillation"];
     if(qwen21::joint_bf16_lora_ab(r))
         [algorithm_approximations addObject:@"qwen21_joint_bf16_lora_ab_operands"];
     if(r.model=="qwen-image-2.1" && r.hybrid_mlp_mode=="runtime") {
@@ -707,6 +710,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                     ? @"ltx_denoiser_working_set_target_not_process_cap"
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
+        @"qwen21_sampler" : (r.model == "qwen-image-2.1" && qwen21::dmd2_requested(r)) ? @"dmd2" : @"auto",
         @"residency" : @(r.residency.c_str()),
         @"tiny_vae" : r.tiny_vae ? (id)@{
             @"path": @(r.tiny_vae->path.c_str()), @"encoder": @(r.tiny_vae->encoder.c_str()),

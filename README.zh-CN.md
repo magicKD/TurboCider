@@ -13,6 +13,7 @@ TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。用原�
 ## 性能亮点
 
 Qwen Image 2.1／Z-Image 现支持原生 Tiny VAE 和可配置步数的实时预览，见 [Tiny VAE 使用说明](docs/public/TINY_VAE.md)。
+Qwen 另支持固定摘要的 [DMD2 两步 LoRA](docs/public/QWEN_IMAGE_21_DMD2.md)，首步耗时口径与本机观察见[启动测量记录](docs/benchmark/IMAGE_FIRST_STEP.md)。
 
 同一台 **Apple M4 Max · 64 GiB**，比较完整生成耗时，包含编码、采样、解码和结果输出。
 

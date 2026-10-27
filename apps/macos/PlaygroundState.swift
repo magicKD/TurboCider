@@ -200,6 +200,16 @@ struct PlaygroundDocument: Codable, Sendable {
         guard canEditSettings else { return false }
         var settings = self.settings
         update(&settings)
+        if settings.modelID != self.settings.modelID || settings.activeLoRAs.map(\.path) != self.settings.activeLoRAs.map(\.path) {
+            if settings.qwen21Sampler == "dmd2" {
+                settings.qwen21Sampler = "auto"
+                if settings.steps == 2 { settings.steps = 40 }
+            }
+            if settings.modelID == "qwen-image-2.1", settings.activeLoRAs.count == 1,
+               URL(fileURLWithPath: settings.activeLoRAs[0].path).lastPathComponent == StudioDraft.qwen21DMD2AdapterName {
+                settings.configureQwen21DMD2()
+            }
+        }
         guard settings.loras.allSatisfy({ $0.strength.isFinite }) else {
             message = "LoRA 强度需为有限数字。"; return false
         }
@@ -228,6 +238,7 @@ struct PlaygroundDocument: Codable, Sendable {
         settings.streaming = StudioStreamingState()
         settings.profilePath = ""; settings.acceleration = StudioAcceleration()
         settings.qwen21DiTCache = "off"; settings.qwen21ReferenceSize = 1024
+        settings.qwen21Sampler = "auto"
         settings.promptEnhance = false; settings.promptEnhanceEditExperimental = false
         settings.loraStrategy = "inference_time"
     }
@@ -254,6 +265,7 @@ struct PlaygroundDocument: Codable, Sendable {
     @discardableResult func applyTurboPreset() -> Bool {
         guard canEditSettings, let adapter = settings.qwen21TurboLoRA else { return false }
         let applied = updateSettings { settings in
+            settings.qwen21Sampler = "auto"
             settings.width = 512; settings.height = 512; settings.steps = 6
             settings.frames = 1; settings.audio = false; settings.loraStrategy = "inference_time"
             settings.profilePath = ""; settings.acceleration = StudioAcceleration()
@@ -263,6 +275,13 @@ struct PlaygroundDocument: Codable, Sendable {
             }
         }
         if applied { message = "已应用 512×512 / 6 步 / 纯 GPU / 强度 1 预设；图片和指令已保留。" }
+        return applied
+    }
+    @discardableResult func applyDMD2Preset() -> Bool {
+        guard canEditSettings, settings.modelID == "qwen-image-2.1", settings.activeLoRAs.count == 1,
+              !settings.hasQwen21TurboAdapter else { return false }
+        let applied = updateSettings { $0.configureQwen21DMD2() }
+        if applied { message = "已应用官方 DMD2 两步 GPU 预设；运行时校验文件 SHA256。" }
         return applied
     }
     @discardableResult func setQwen21ReferenceSize(_ size: Int) -> Bool {

@@ -21,6 +21,25 @@ int main() {
     assert(!local.rejection_for(128,64.f).empty());
     assert(!parse(R"({"r":16,"lora_alpha":8})").rejection_for(16,{}).empty());
     assert(parse(R"({"r":16,"lora_alpha":8})").rejection_for(16,8.f).empty());
+    const auto dmd2 = parse(R"({"transformer.r":32,"transformer.lora_alpha":32,
+      "transformer.init_lora_weights":"gaussian","transformer.use_qalora":false,
+      "transformer.ensure_weight_tying":false,"transformer.lora_bias":false,
+      "transformer.qalora_group_size":16,"transformer.peft_version":"0.20.0",
+      "transformer.megatron_core":"megatron.core","transformer.loftq_config":{}})");
+    assert(dmd2.rejection_for(32,{}).empty());
+    for (const auto *name : {"alora_invocation_tokens", "arrow_config", "auto_mapping",
+         "base_model_name_or_path", "corda_config", "eva_config", "exclude_modules",
+         "layer_replication", "layers_pattern", "layers_to_transform", "lora_ga_config",
+         "megatron_config", "monteclora_config", "revision", "target_parameters", "task_type",
+         "trainable_token_indices", "use_bdlora", "velora_config"}) {
+        assert(parse(std::string("{\"") + name + "\":null}").rejection_for(32,{}).empty());
+        assert(!parse(std::string("{\"") + name + "\":true}").rejection_for(32,{}).empty());
+    }
+    for (const auto *json : {R"({"use_qalora":true})", R"({"ensure_weight_tying":true})",
+         R"({"lora_bias":true})", R"({"qalora_group_size":32})", R"({"peft_version":20})",
+         R"({"megatron_core":"other"})", R"({"loftq_config":{"bits":4}})",
+         R"({"init_lora_weights":"pissa"})"})
+        assert(!parse(json).rejection_for(32,{}).empty());
     for (const auto* json:{R"({"use_rslora":true})",R"({"use_dora":true})",
          R"({"fan_in_fan_out":true})",R"({"alpha_pattern":{"foo":8}})",
          R"({"rank_pattern":{"foo":16}})",R"({"peft_type":"IA3"})",

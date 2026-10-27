@@ -155,7 +155,7 @@ static ExecutionPlan make_plan_impl(
             "hybrid_mlp_mode is supported only for Qwen-Image-2.1 and Z-Image Turbo (including native GGUF)");
     require(r.model == "qwen-image-2.1" ||
                 (!r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
-                 r.qwen21_reference_size == 1024 && r.qwen21_gpu_full_ffn_blocks.empty() &&
+                 r.qwen21_reference_size == 1024 && r.qwen21_sampler == "auto" && r.qwen21_gpu_full_ffn_blocks.empty() &&
                  r.qwen21_dit_cache == "off" && r.qwen21_denoiser_backend == "mlx" &&
                  r.qwen21_native_ane_cache.empty() && r.qwen21_native_w8_staging=="generic" &&
                  !r.qwen21_native_w8_staging_specified && !r.qwen21_native_scale_cache &&

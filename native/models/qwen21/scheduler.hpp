@@ -2,8 +2,14 @@
 #include "../../backends/mlx.hpp"
 #include "viggle_adapter.hpp"
 #include "checkpoint_recipe.hpp"
+#include "dmd2_adapter.hpp"
 
 namespace tc::qwen21 {
+inline Tensor dmd2_sigmas(int width, int height, int steps = 2) {
+    require(width > 0 && height > 0 && width % 32 == 0 && height % 32 == 0 && steps == 2,
+            "DMD2 requires aligned dimensions and exactly two steps");
+    return Tensor(dmd2_sigma_nodes.data(), {int(dmd2_sigma_nodes.size())}, mx::float32);
+}
 inline Tensor turbo_sigmas(int width,int height,int steps=8) {
     require(width>0 && height>0 && width%16==0 && height%16==0 && steps==8,
         "Qwen21 Turbo requires aligned canvas and its authored eight-step schedule");
