@@ -17,6 +17,7 @@
 #include "transformer.hpp"
 #include "async_step_pair.hpp"
 #include "vae.hpp"
+#include "../../components/vae/tiny.hpp"
 #include "scheduler.hpp"
 #include "runtime_activation.hpp"
 #include "pe_generation.hpp"
@@ -333,6 +334,11 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     auto start = Clock::now();
     ScopedWiredResidency wired_residency;
     Request r = requested;
+    const bool tiny_encoder=r.tiny_vae && r.tiny_vae->encoder=="tiny";
+    const bool tiny_decoder=r.tiny_vae && r.tiny_vae->decoder=="tiny";
+    require(!(r.tiny_vae && r.tiny_vae->preview && (async_step_pair || native_denoiser_requested(r))),
+            "tiny preview currently requires the synchronous MLX denoiser (disable async step pair/native DiT experiments)");
+    components::TinyPreview preview(r,event,cancelled);
     const bool turbo=turbo_checkpoint(transformer_source_);
     const bool convrot_transformer=convrot_checkpoint(transformer_source_);
     r.model_variant=turbo ? "qwen-image-2.1-turbo" : "qwen-image-2.1";
@@ -834,6 +840,9 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
     std::string encoder_identity=r.encoder_ane_manifest.empty() ? "gpu" :
         std::filesystem::canonical(r.encoder_ane_manifest).string()+":"+sha256_file(r.encoder_ane_manifest)+
         ane::HybridFfn::executor_configuration_identity()+(retain_encoder_runtime ? ":retained-encoder-executor-v1" : ":request-encoder-executor-v1");
+    // Switching VAE or replacing tiny weights must invalidate reference latents
+    // as well as combined conditioning. Never reuse original-VAE references.
+    if(tiny_encoder)encoder_identity+=":tiny-vae:"+std::filesystem::canonical(r.tiny_vae->path).string()+":"+sha256_file(r.tiny_vae->path);
     if(encoder_channels)encoder_identity+=":encoder-channels-"+std::to_string(*encoder_channels);
     if(encoder_source)encoder_identity+=":retained-source-"+encoder_source->identity;
     if(metal_encoder_requested)encoder_identity+=std::string(":native-metal-")+(native_encoder_vision_bf16()?"bf16-vision":"fp32-vision")+native_encoder_ane_cache().string();
@@ -1145,8 +1154,10 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             dump("qwen21_reference_" + std::to_string(i), references[i].latents);
     } else if (!images.empty()) {
         Weights weights;
-        weights.load_file(root_ / "vae/qwen_image_2.1_vae_bf16.safetensors");
-        VAE encoder(weights);
+        std::unique_ptr<VAE> encoder;
+        std::unique_ptr<components::TinyAutoencoder> tiny;
+        if(tiny_encoder)tiny=std::make_unique<components::TinyAutoencoder>(r.tiny_vae->path,r.model,true,false);
+        else {weights.load_file(root_ / "vae/qwen_image_2.1_vae_bf16.safetensors");encoder=std::make_unique<VAE>(weights);}
         for (size_t i = 0; i < images.size(); ++i) {
             checkpoint(cancelled);
             if (!images[i]) {
@@ -1155,7 +1166,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                 dump("qwen21_reference_" + std::to_string(i), entry.latent);
                 continue;
             }
-            auto latent = encoder.encode(mx::transpose(*images[i] * 2.f - 1.f, {0, 3, 1, 2}), event, cancelled);
+            auto latent = tiny ? tiny->encode(mx::transpose(*images[i],{0,3,1,2}),event,cancelled) :
+                encoder->encode(mx::transpose(*images[i] * 2.f - 1.f, {0, 3, 1, 2}), event, cancelled);
             latent = mx::astype(mx::reshape(mx::transpose(latent, {0, 2, 3, 1}), {1, -1, 64}), mx::bfloat16);
             mx::eval(latent);
             references.push_back({latent, {images[i]->shape(1) / 16, images[i]->shape(2) / 16, slots[i]}});
@@ -2547,6 +2559,8 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
                               << "}" << std::endl;
                 }
                 if(!async_steps)emit(event, "denoise", step + 1, r.steps);
+                if(preview.due(step+1))preview.publish(mx::transpose(mx::reshape(latents,
+                    {1,r.height/16,r.width/16,64}),{0,3,1,2}),step+1);
             }
             if(async_steps){
                 require(async_steps->complete()&&async_steps->peak_pending()<=2,"bounded async steps did not complete all state/mask dependencies");
@@ -2684,7 +2698,7 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
         }
         checkpoint(cancelled);
         auto decode_start = Clock::now();
-        if ((layer_staged || native_dit) && !vae_.bytes()) {
+        if (!tiny_decoder && (layer_staged || native_dit) && !vae_.bytes()) {
             emit(event, "load_qwen21_vae", 0, 1);
             if (conditioning_source)
                 vae_.load_lease(conditioning_source, {"vae"}, quiet_load, cancelled);
@@ -2692,10 +2706,18 @@ RunResult Session::run(const Request &requested, const Event &event, std::atomic
             vae_.materialize();
             emit(event, "load_qwen21_vae", 1, 1);
         }
-        VAE decoder(vae_, fp16_vae_decode ? VAE::DecodeConvolution::FP16WithFP32State :
-                                          VAE::DecodeConvolution::Original, fused_vae_norm);
         auto spatial = mx::transpose(mx::reshape(latents, {1, r.height / 16, r.width / 16, 64}), {0, 3, 1, 2});
-        auto decoded = decoder.decode_checked(spatial, event, cancelled);
+        VAE::Decoded decoded{Tensor(0.f),false};
+        if(tiny_decoder) {
+            components::TinyAutoencoder tiny(r.tiny_vae->path,r.model,false,true);
+            decoded.pixels=mx::clip(tiny.decode(spatial,event,cancelled),Tensor(0.f),Tensor(1.f))*2.f-1.f;
+            result.selection+="; approximate TAEQI2.1 final decode";
+        } else {
+            VAE decoder(vae_, fp16_vae_decode ? VAE::DecodeConvolution::FP16WithFP32State :
+                                              VAE::DecodeConvolution::Original, fused_vae_norm);
+            decoded=decoder.decode_checked(spatial,event,cancelled);
+        }
+        if(tiny_encoder)result.selection+="; approximate TAEQI2.1 reference encoding";
         auto pixels = mx::transpose(decoded.pixels, {0, 2, 3, 1});
         mx::eval(pixels);
         require(mx::all(mx::isfinite(pixels)).item<bool>(), "nonfinite Qwen21 pixels");

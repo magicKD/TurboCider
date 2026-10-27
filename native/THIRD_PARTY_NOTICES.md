@@ -1,5 +1,13 @@
 # Third-party notices
 
+The native image tiny autoencoder (`native/components/vae/tiny.cpp`) is a C++/MLX
+port of madebyollin/taesd, commit fdbae2df989db95761f482efb8977e1182fb68d2,
+Copyright (c) 2023 Ollin Boer Bohan, MIT. It implements TAEF1 (Z-Image) and
+TAEQI2.1 (Qwen Image 2.1), with native cancellation, strict weight validation
+and request-scoped preview publication. The full license is retained in
+`native/licenses/TAESD-LICENSE.txt`. Official weights are optional local assets;
+development-only PyTorch conversion is not included in the App.
+
 The optional private ANE program layer adapts selectors, IOSurface layout and
 shared-event handoff from Splash PR #260, commit
 `0ac3d5b170523774d8c85cd86493908a64c80eee`, under Apache-2.0. TurboCider adds

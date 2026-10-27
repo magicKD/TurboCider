@@ -138,6 +138,11 @@ final class NativeJobStore: ObservableObject {
     private let upscaleSession = UpscaleSession()
     private var upscalePrepareTask: Task<UpscaleModelInfo, Error>?
     @Published private(set) var jobs: [NativeJob] = []
+    @Published private(set) var livePreview: Data?
+    @Published private(set) var livePreviewStep = 0
+    @Published private(set) var livePreviewTotal = 0
+    private(set) var livePreviewWorkflowID: String?
+    private var activePreviewOutput: String?
     @Published private(set) var busy = false
     @Published private(set) var workerCleanupPending = false
     @Published private(set) var storageError: String?
@@ -763,7 +768,11 @@ final class NativeJobStore: ObservableObject {
         let frozenInputAssets = NativeJob.matchingInputAssets(inputAssets, for: request)
         // Close the reentrancy window before any async plan/session operation.
         busy = true; cancelRequested = false; actualRoute = nil
-        defer { busy = workerCleanupPending; activeID = nil; ltxTask = nil; publicWorkerTask = nil; imageValidationTask = nil }
+        livePreview = nil; livePreviewStep = 0; livePreviewTotal = request.steps; livePreviewWorkflowID = workflowID
+        defer {
+            busy = workerCleanupPending; activeID = nil; ltxTask = nil; publicWorkerTask = nil; imageValidationTask = nil
+            livePreview = nil; activePreviewOutput = nil; livePreviewWorkflowID = nil
+        }
         let imageTransaction = NativeRequestV2(legacy: request).operation.hasPrefix("image.")
             ? try ImageOutputTransaction(request: request) : nil
         var generationRequest = request
@@ -777,6 +786,7 @@ final class NativeJobStore: ObservableObject {
                 stagedStreamingRequest?.outputs[0].path = imageTransaction.stagedURL.path
             }
         }
+        activePreviewOutput = generationRequest.output
         if streamingRequest == nil && runtimeOptions == nil {
             let planRequest = generationRequest
             do { _ = try await Task.detached { try NativeEngine.plan(planRequest) }.value }
@@ -1050,6 +1060,24 @@ final class NativeJobStore: ObservableObject {
     private func receive(_ event: NativeEvent, id: UUID) {
         guard activeID == id, event.sequence > lastSequence, let i = jobs.firstIndex(where: { $0.id == id }), !jobs[i].isTerminal else { return }
         lastSequence = event.sequence
+        if event.phase == "preview" {
+            guard jobs[i].request.tiny_vae?.preview == true, !cancelRequested,
+                  let output = activePreviewOutput,
+                  TinyPreviewPath.valid(event, output: output, steps: jobs[i].request.steps),
+                  let path = event.preview_path else { return }
+            // Bound bytes and require a regular owned file before opening. A
+            // sidecar is telemetry only and is never a final output candidate.
+            let fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { return }
+            defer { close(fd) }
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+                  info.st_uid == getuid(), info.st_nlink == 1, info.st_size > 0, info.st_size <= 16 << 20 else { return }
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+            guard let data = try? handle.read(upToCount: Int(info.st_size)), data.count == Int(info.st_size) else { return }
+            livePreviewStep = event.completed; livePreview = data
+            return
+        }
         if event.phase.hasPrefix("route_") {
             if let receipt = jobs[i].runtimeReceipt {
                 actualRoute = receipt.label

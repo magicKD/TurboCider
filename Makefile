@@ -12,6 +12,7 @@ COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-qwen21-runtime-activation
 .PHONY: test-qwen21-runtime-host
 .PHONY: test-base-benchmark
+.PHONY: test-tiny-vae test-tiny-vae-metal test-tiny-vae-download
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -37,6 +38,9 @@ help:
 	@echo 'make test-ltx-streaming-lifecycle MODEL=/path OUTPUT=/path  Opt-in real LTX exact lifecycle test'
 	@echo 'make test-ltx-streaming-lifecycle-faults MODEL=/path OUTPUT=/path  Require a test-hook build and unsafe-cleanup matrix'
 	@echo 'make test-qwen21                 Run focused Qwen21 native/App contract checks (no inference)'
+	@echo 'make test-tiny-vae               Verify tiny VAE request contracts (native build required)'
+	@echo 'make test-tiny-vae-metal         Verify preview cadence, cancellation and latent invariance'
+	@echo 'make test-tiny-vae-download      Verify pinned tiny VAE downloads with local fixtures'
 	@echo 'make test-qwen21-runtime-host    Verify fixed-program/QKV/format/prefix/profiling contracts (no inference)'
 	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
 	@echo 'make test-acceleration-contract   Check optional routes, benchmark reports and host math (no inference)'
@@ -58,6 +62,7 @@ build-vision-quality:
 package: build
 	@tools/native/package.sh
 test:
+	@$(MAKE) test-tiny-vae
 	@"$(PYTHON)" tests/native/test_qwen21_sequence.py
 	@$(MAKE) test-acceleration-contract
 	@$(MAKE) test-quantized-host
@@ -115,6 +120,15 @@ test:
 	@"$(PYTHON)" -B tests/native/test_vdn_modelscope.py
 	@"$(PYTHON)" -B tests/native/test_vdn_mlx_solve.py
 	@"$(PYTHON)" tests/native/test_inventory.py
+# Tiny VAE contracts are CPU-only; the opt-in Metal target uses local tiny weights.
+test-tiny-vae:
+	@"$(PYTHON)" -B tests/native/test_tiny_vae.py
+test-tiny-vae-metal:
+	@bash tools/native/build_tiny_vae_tests.sh
+	@build/native/tiny-preview-test z-image-turbo models/tiny-vae/taef1.safetensors build/native/tiny-preview-z.png
+	@build/native/tiny-preview-test qwen-image-2.1 models/tiny-vae/taeqi2_1.safetensors build/native/tiny-preview-qwen.png
+test-tiny-vae-download:
+	@"$(PYTHON)" -B tests/native/test_tiny_vae_download.py
 # No real model weights, full inference, or system memory pressure in these
 # focused targets. GPU tests may report SKIP when Metal access is unavailable.
 test-streaming-host:
@@ -267,6 +281,7 @@ test-quantized-host:
 test-runtime-ane: test-runtime-ane-host
 	@TURBOCIDER_TEST_RUNTIME_ANE=1 "$(PYTHON)" -B tests/native/test_ane_runtime.py
 test-app:
+	@build/native/turbocider-tiny-vae-app-tests
 	@build/native/turbocider-runtime-image-worker-tests
 	@build/native/turbocider-upscaler-tests
 	@$(MAKE) test-reference-preparation

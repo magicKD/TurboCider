@@ -578,6 +578,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 ? (r.qwen21_w8a8 ? @"qwen21_decode_mlp_w8a8_per_tensor" : @"qwen21_decode_mlp_fp16_partition")
                 : r.model == "seedvr2-3b" ? @"seedvr2_original_fp16_video_ffn_prefix_fp16_partial_down_fp32_join"
                 : @"single_block_mlp_coreml_approximation"];
+    if(r.tiny_vae && r.tiny_vae->encoder=="tiny")
+        [algorithm_approximations addObject:@"tiny_vae_reference_encoding"];
+    if(r.tiny_vae && r.tiny_vae->decoder=="tiny")
+        [algorithm_approximations addObject:@"tiny_vae_final_decoding"];
     if (r.model == "qwen-image-2.1" && r.qwen21_reference_size != 1024)
         [algorithm_approximations addObject:[NSString stringWithFormat:
             @"qwen21_reference_resize_%d", r.qwen21_reference_size]];
@@ -704,6 +708,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
                 : (r.memory_budget_bytes ? @"runtime_request_budget" : @"unset"),
         @"operation" : @(r.operation.c_str()),
         @"residency" : @(r.residency.c_str()),
+        @"tiny_vae" : r.tiny_vae ? (id)@{
+            @"path": @(r.tiny_vae->path.c_str()), @"encoder": @(r.tiny_vae->encoder.c_str()),
+            @"decoder": @(r.tiny_vae->decoder.c_str()), @"preview": @(r.tiny_vae->preview),
+            @"interval": @(r.tiny_vae->interval)
+        } : (id)NSNull.null,
         @"seedvr2_vae" : r.seedvr2_vae ? (id)@{
             @"encoder": @(r.seedvr2_vae->encoder.c_str()),
             @"decoder": @(r.seedvr2_vae->decoder.c_str()),

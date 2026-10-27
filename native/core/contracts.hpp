@@ -30,6 +30,11 @@ struct SeedVR2VAEConfig {
     int tile_rows = 16384;
     uint64_t allocator_cache_bytes = 4ull << 30;
 };
+struct TinyVAEConfig {
+    std::string path, encoder = "original", decoder = "original";
+    bool preview = false;
+    int interval = 2;
+};
 struct Request {
     std::string model = "flux2-klein-4b";
     std::string operation = "image.generate";
@@ -122,6 +127,7 @@ struct Request {
     StreamingConfig streaming;
     QuantizedExecutionConfig quantized_execution;
     std::optional<SeedVR2VAEConfig> seedvr2_vae;
+    std::optional<TinyVAEConfig> tiny_vae;
     std::optional<StreamingConfig> streaming_requested;
     std::optional<StreamingSelector> streaming_selector;
     std::optional<StreamingSelector> streaming_selector_requested;

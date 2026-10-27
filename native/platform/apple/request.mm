@@ -110,6 +110,25 @@ static void parse_quantized_execution(NSDictionary *d, QuantizedExecutionConfig 
     string(@"ane_compute", c.ane_compute);
     validate_quantized_execution(c);
 }
+static void parse_tiny_vae(NSDictionary *d, Request &r) {
+    dictionary(d, "tiny_vae");
+    keys(d, @[@"path", @"encoder", @"decoder", @"preview", @"interval"]);
+    require(r.model == "qwen-image-2.1" || r.model == "z-image-turbo" ||
+                r.model == "z-image-turbo-gguf",
+            "tiny_vae supports Qwen Image 2.1 and Z-Image only");
+    TinyVAEConfig c;
+    c.path = string_value(d, @"path");
+    c.encoder = string_value(d, @"encoder", c.encoder);
+    c.decoder = string_value(d, @"decoder", c.decoder);
+    c.preview = boolean(d, @"preview", false);
+    c.interval = number(d, @"interval", 2);
+    require(c.encoder == "original" || c.encoder == "tiny", "tiny_vae.encoder must be original or tiny");
+    require(c.decoder == "original" || c.decoder == "tiny", "tiny_vae.decoder must be original or tiny");
+    require(c.interval >= 1 && c.interval <= 50, "tiny_vae.interval must be 1...50");
+    require(std::filesystem::path(c.path).is_absolute() && std::filesystem::is_regular_file(c.path),
+            "tiny_vae.path must be an absolute existing safetensors file");
+    r.tiny_vae = std::move(c);
+}
 static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
     require(r.model == "seedvr2-3b", "seedvr2_vae is only supported by SeedVR2");
     dictionary(d, "seedvr2_vae");
@@ -275,10 +294,11 @@ Request request_from_json(NSDictionary *d) {
             @"vsa_dense_layers", @"vsa_impl",
             @"lora_strategy", @"streaming_offload", @"memory_budget_bytes",
             @"hybrid_mlp_mode",
-            @"quantized_cache", @"warmup_iterations", @"memory_constrained", @"seedvr2_vae"
+            @"quantized_cache", @"warmup_iterations", @"memory_constrained", @"seedvr2_vae", @"tiny_vae"
         ]);
         r.model = string_value(d, @"model", r.model);
         if (d[@"seedvr2_vae"]) parse_seedvr2_vae(d[@"seedvr2_vae"], r);
+        if (d[@"tiny_vae"]) parse_tiny_vae(d[@"tiny_vae"], r);
         r.hybrid_mlp_mode = string_value(d, @"hybrid_mlp_mode", r.hybrid_mlp_mode);
         r.model_variant = string_value(d, @"model_variant", r.model_variant);
         r.prompt_enhancer_path = string_value(d, @"prompt_enhancer_path");
@@ -405,13 +425,14 @@ Request request_from_json(NSDictionary *d) {
         auto parameters = d[@"parameters"] ? dictionary(d[@"parameters"], "parameters") : @{};
         keys(parameters, @[ @"dynamic_text", @"compile_gpu", @"noise_path",
                             @"prompt_enhancer_path", @"prompt_enhance", @"prompt_enhance_edit_experimental",
-                            @"qwen21_reference_size",
+                            @"qwen21_reference_size", @"tiny_vae",
                             @"streaming_offload", @"vsa", @"vsa_sparsity",
                             @"vsa_tile_size", @"vsa_prefix_mode",
                             @"vsa_dense_first_n_steps", @"vsa_dense_layers",
                             @"vsa_impl" ]);
         r.compile_gpu = boolean(parameters, @"compile_gpu", false);
         r.dynamic_text = boolean(parameters, @"dynamic_text", true);
+        if (parameters[@"tiny_vae"]) parse_tiny_vae(parameters[@"tiny_vae"], r);
         r.noise_path = string_value(parameters, @"noise_path");
         r.prompt_enhancer_path = string_value(parameters, @"prompt_enhancer_path");
         r.prompt_enhance = boolean(parameters, @"prompt_enhance", false);
@@ -438,6 +459,15 @@ Request request_from_json(NSDictionary *d) {
             }
         }
     }
+    if (r.tiny_vae && (r.tiny_vae->encoder == "tiny" || r.tiny_vae->decoder == "tiny")) {
+        require(r.allow_approximation,
+                "tiny VAE encoding/final decoding requires allow_approximation=true");
+        require(!r.streaming_selector && !r.memory_constrained.enabled,
+                "tiny VAE approximation is not calibrated for public streaming/memory-constrained presets");
+    }
+    if (r.tiny_vae && r.tiny_vae->preview)
+        require(!r.streaming_selector && !r.memory_constrained.enabled,
+                "tiny preview working set is not calibrated for public streaming/memory-constrained presets");
     r.lora_strategy = string_value(d, @"lora_strategy", r.lora_strategy);
     r.dump = string_value(d, @"dump_tensors");
     if (d[@"loras"]) {

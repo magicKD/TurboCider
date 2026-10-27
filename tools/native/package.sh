@@ -42,6 +42,16 @@ cp assets/branding/AppIcon.icns assets/branding/LogoMark.png "$RES/"
 mkdir -p "$RES/ModelBrands"
 cp assets/branding/model-brands/* "$RES/ModelBrands/"
 cp assets/config/local-streaming-profile.json "$RES/"
+# Optional native-only image autoencoders. Never package conversion scripts,
+# .pth/pickle checkpoints, or a Python runtime. Users may also select their own
+# converted safetensors through the App without rebuilding it.
+TINY_VAE_DIR="${TURBOCIDER_TINY_VAE_DIR:-$ROOT/models/tiny-vae}"
+for architecture in taef1 taeqi2_1; do
+ if [[ -f "$TINY_VAE_DIR/$architecture.safetensors" ]]; then
+  mkdir -p "$RES/tiny-vae"
+  cp "$TINY_VAE_DIR/$architecture.safetensors" "$RES/tiny-vae/"
+ fi
+done
 cp "$OUT"/turbocider "$BIN/"
 for folder in "$BIN" "$DIST/cli"; do
  cp "$OUT"/turbocider-library "$folder/"
@@ -85,6 +95,8 @@ cp "$RES/THIRD_PARTY_NOTICES.md" "$RES/MLX-LICENSE.txt" "$DIST/cli/"
 cp "$RES/Splash-ANE-NOTICE.md" "$RES/Splash-Apache-2.0.txt" "$DIST/cli/"
 cp "$RES/MLX-Steel-Attention-NOTICE.md" "$RES/Apache-2.0.txt" "$DIST/cli/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$RES/"
+cp native/licenses/TAESD-LICENSE.txt "$RES/"
+cp native/licenses/TAESD-LICENSE.txt "$DIST/cli/"
 cp native/licenses/FastVideo-LICENSE.txt native/licenses/TAEHV-LICENSE.txt "$DIST/cli/"
 cp "$RES/TurboCider-LICENSE.txt" "$DIST/cli/"
 cat > "$APP/Contents/Info.plist" <<PLIST

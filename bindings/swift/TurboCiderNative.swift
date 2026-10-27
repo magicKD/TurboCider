@@ -72,6 +72,18 @@ public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
         allocator_cache_bytes = try c.decodeIfPresent(UInt64.self,forKey: .allocator_cache_bytes) ?? (4 << 30)
     }
 }
+public struct NativeTinyVAEConfig: Codable, Sendable, Equatable {
+    public var path: String
+    public var encoder: String = "original"
+    public var decoder: String = "original"
+    public var preview: Bool = false
+    public var interval: Int = 2
+    public init(path: String, encoder: String = "original", decoder: String = "original",
+                preview: Bool = false, interval: Int = 2) {
+        self.path = path; self.encoder = encoder; self.decoder = decoder
+        self.preview = preview; self.interval = interval
+    }
+}
 public struct NativeRequest: Codable, Sendable {
     public var schema_version = 1
     public var model = "flux2-klein-4b"
@@ -101,6 +113,7 @@ public struct NativeRequest: Codable, Sendable {
     public var profile: String?
     public var residency: String?
     public var seedvr2_vae: NativeSeedVR2VAEConfig?
+    public var tiny_vae: NativeTinyVAEConfig?
     public var memory_budget_bytes: UInt64?
     public var quantized_cache: String?
     public var fps: Int?
@@ -175,6 +188,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var qwen21_w8a8: Bool?
 }
 public struct NativeParametersV2: Codable, Sendable {
+    public var tiny_vae: NativeTinyVAEConfig? = nil
     public var dynamic_text: Bool
     public var compile_gpu: Bool?
     public var noise_path: String?
@@ -234,6 +248,7 @@ public struct NativeRequestV2: Codable, Sendable {
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)
+        parameters.tiny_vae = request.tiny_vae
         dump_tensors = request.dump_tensors
         loras = request.loras
         lora_strategy = request.lora_strategy
@@ -440,6 +455,7 @@ public struct NativeEvent: Codable, Sendable {
     public let completed: Int
     public let total: Int
     public let elapsed_seconds: Double
+    public var preview_path: String? = nil
 }
 public struct NativeAPIErrorEnvelope: Codable, Sendable {
     public let schema_version: Int

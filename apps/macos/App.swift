@@ -545,7 +545,9 @@ struct StudioView: View {
                         .buttonStyle(.borderless).help("全部历史结果").accessibilityLabel("全部历史结果")
                 }
             }.controlSize(.small)
-            if let job = selectedJob {
+            if let data = store.livePreview, store.livePreviewWorkflowID == nil {
+                TinyLivePreview(data: data, step: store.livePreviewStep, total: store.livePreviewTotal)
+            } else if let job = selectedJob {
                 let path = compareOriginal ? (job.request.inputs?.first?.path ?? job.request.output) : job.request.output
                 if ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) {
                     StudioOutputPreview(path: path).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1053,6 +1055,7 @@ struct StudioView: View {
                                     showsVariantPicker: false, manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models })
                 }
             }
+            TinyVAEControls(draft: $studio.draft, locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
             DisclosureGroup("高级参数") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("动态文本长度", isOn: $studio.draft.dynamicText).controlSize(.small)

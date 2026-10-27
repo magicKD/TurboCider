@@ -2,6 +2,7 @@
 #include "../../backends/ane_backend.hpp"
 #include "../../backends/ane_gpu_layer_policy.hpp"
 #include "z_image.hpp"
+#include "../../components/vae/tiny.hpp"
 #include "block_profile.hpp"
 #include "hybrid_math.hpp"
 #include "ffn.hpp"
@@ -3787,6 +3788,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
                       bool warmup, bool load_only) try {
     require(!streaming_quarantined_, "streaming_process_quarantined: restart the process");
     auto r = requested;
+    components::TinyPreview preview(r,event,cancelled);
     ane::smoothquant::validate_request(r);
     ZProfileRequest profile(r);
     auto begin = Clock::now();
@@ -4460,6 +4462,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         dump("z_latent_step_" + std::to_string(i + 1), z);
         require(mx::all(mx::isfinite(z)).item<bool>(), "nonfinite Z-Image latent");
         event("denoise", i + 1, r.steps);
+        if(preview.due(i+1))preview.publish(mx::reshape(z,{1,16,z.shape(2),z.shape(3)}),i+1);
     }
     calibration_capture.finish();
     if (reference_latent) {
@@ -4595,7 +4598,13 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
         vae_.materialize();
     }
     auto decode_start = Clock::now();
-    auto decoded = decode(z, r.width, r.height, event, cancelled);
+    auto decoded = [&] {
+        if(r.tiny_vae && r.tiny_vae->decoder=="tiny") {
+            components::TinyAutoencoder tiny(r.tiny_vae->path,r.model,false,true);
+            return mx::clip(tiny.decode(mx::reshape(z,{1,16,z.shape(2),z.shape(3)}),event,cancelled),Tensor(0.f),Tensor(1.f))*2.f-1.f;
+        }
+        return decode(z,r.width,r.height,event,cancelled);
+    }();
     dump("z_latent_final", z);
     dump("z_decoded", decoded);
     const double decode_seconds = std::chrono::duration<double>(Clock::now() - decode_start).count();
@@ -4616,6 +4625,7 @@ RunResult ZImage::run(const Request &requested, const Event &event, std::atomic<
     result.request = r;
     result.plan = std::move(plan);
     result.selection = selection;
+    if(r.tiny_vae && r.tiny_vae->decoder=="tiny")result.selection+="; approximate TAEF1 final decode";
     if (calibration_capture.enabled()) result.selection += "; calibration capture: timings are not performance evidence";
     result.warmup = warmup;
     result.prompt_cache_hit = prompt_hit;

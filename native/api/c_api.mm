@@ -1249,6 +1249,24 @@ int tc_engine_generate(tc_engine *e, const char *r, tc_event_callback cb, void *
                     }
                 }
             };
+            event.preview = [&](const std::string &path, int current, int total) {
+                tc::checkpoint(e->cancelled);
+                if (cb) {
+                    @autoreleasepool {
+                        auto s = tc::json(@{
+                            @"schema_version" : @1,
+                            @"sequence" : @(++seq),
+                            @"phase" : @"preview",
+                            @"completed" : @(current),
+                            @"total" : @(total),
+                            @"preview_path" : @(path.c_str()),
+                            @"elapsed_seconds" :
+                                @(std::chrono::duration<double>(tc::Clock::now() - begin).count())
+                        });
+                        cb(s.c_str(), ctx);
+                    }
+                }
+            };
             tc::RunResult result;
             try {
                 result = public_execution

@@ -137,6 +137,7 @@ SOURCES=(
  native/components/weights/affine.cpp native/platform/apple/wan_checkpoint.mm
  native/components/diffusion/wan.cpp
  native/components/vae/taehv.cpp
+ native/components/vae/tiny.cpp
  native/models/wan/dit.cpp
  native/models/wan/wan_pipeline.cpp
  native/models/wan/hybrid.cpp native/platform/apple/wan_hybrid.mm
@@ -298,6 +299,7 @@ if [[ "$PACKAGE_ONLY" == "1" ]]; then
  printf 'Built package binaries; test and auxiliary probe targets skipped\n'
  exit 0
 fi
+"$CXX" "${COMMON[@]}" tools/native/tiny_vae_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/tiny-vae-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tensor_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-tensor-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_tokenizer_probe.cpp -L"$OUT" -lturbocider -framework Foundation -Wl,-rpath,@executable_path -o "$OUT/h3-mlx-tokenizer-probe"
 "$CXX" "${COMMON[@]}" tools/native/h3_mlx_conditioner_probe.cpp -L"$OUT" -lturbocider -L"$MLX_ROOT/lib" -lmlx -ljaccl -licucore -framework Foundation -framework Metal -Wl,-rpath,@executable_path -Wl,-rpath,"$MLX_ROOT/lib" -o "$OUT/h3-mlx-conditioner-probe"

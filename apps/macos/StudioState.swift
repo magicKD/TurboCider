@@ -288,6 +288,11 @@ struct StudioDraft: Codable, Sendable {
     var qwen21DiTCache = "off"
     // Editing preference; text-to-image always requests standard encoding.
     var qwen21ReferenceSize = 1024
+    var tinyVAEPaths: [String: String] = [:]
+    var tinyVAEEncoder = "original"
+    var tinyVAEDecoder = "original"
+    var tinyPreview = false
+    var tinyPreviewInterval = 2
     var residency = "resident"
     var seedvr2VAE: NativeSeedVR2VAEConfig?
     var zImageStreamingBudgetGiB = 10
@@ -304,6 +309,7 @@ struct StudioDraft: Codable, Sendable {
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21ReferenceSize
+        case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, tinyPreview, tinyPreviewInterval
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -342,6 +348,11 @@ struct StudioDraft: Codable, Sendable {
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         qwen21DiTCache = try c.decodeIfPresent(String.self, forKey: .qwen21DiTCache) ?? "off"
         qwen21ReferenceSize = try c.decodeIfPresent(Int.self, forKey: .qwen21ReferenceSize) ?? 1024
+        tinyVAEPaths = try c.decodeIfPresent([String: String].self, forKey: .tinyVAEPaths) ?? [:]
+        tinyVAEEncoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEEncoder) ?? "original"
+        tinyVAEDecoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEDecoder) ?? "original"
+        tinyPreview = try c.decodeIfPresent(Bool.self, forKey: .tinyPreview) ?? false
+        tinyPreviewInterval = try c.decodeIfPresent(Int.self, forKey: .tinyPreviewInterval) ?? 2
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
         seedvr2VAE = try c.decodeIfPresent(NativeSeedVR2VAEConfig.self, forKey: .seedvr2VAE)
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
@@ -882,6 +893,8 @@ struct StudioDraft: Codable, Sendable {
         request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
         request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
         request.qwen21_reference_size = modelID == "qwen-image-2.1" ? effectiveQwen21ReferenceSize : nil
+        request.tiny_vae = try tinyVAEConfiguration()
+        if request.tiny_vae?.encoder == "tiny" || request.tiny_vae?.decoder == "tiny" { request.allow_approximation = true }
         if usesQwen21FastReferenceEncoding { request.allow_approximation = true }
         if qwen21DiTCache != "off" { request.allow_approximation = true }
         if modelID == "z-image-turbo", residency == "streamed" {
@@ -2085,6 +2098,11 @@ final class StudioState: ObservableObject {
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
+        draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"
+        draft.tinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
+        draft.tinyPreview = request.tiny_vae?.preview ?? false
+        draft.tinyPreviewInterval = request.tiny_vae?.interval ?? 2
+        if let tiny = request.tiny_vae { draft.tinyVAEPaths[draft.tinyArchitecture] = tiny.path }
         // A generated image's standard request does not describe the user's
         // editing preference. Restore that field only for editing histories.
         if request.model != "qwen-image-2.1" || draft.operation == "image.edit" {
