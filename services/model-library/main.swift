@@ -34,6 +34,7 @@ private struct Failure: Encodable { let ok = false; let error: String }
             turbocider library remove-lora LORA_ID [--root DIRECTORY]
             turbocider library plan REQUEST.json [--root DIRECTORY]
             turbocider library download REQUEST.json [--root DIRECTORY]
+            turbocider library download-tiny taef1|taeqi2_1 huggingface|mirror [--root DIRECTORY]
             turbocider library configure DIRECTORY
             turbocider library resolve MODEL_ID [--root DIRECTORY]
             turbocider library import CONFIG.json [--root DIRECTORY]
@@ -82,6 +83,11 @@ private struct Failure: Encodable { let ok = false; let error: String }
         }
         let store = try LibraryStore(root: rootOverride ?? LibraryStore.defaultRoot)
         switch command {
+        case "download-tiny" where args.count == 3:
+            guard let asset = TinyVAEAsset.all.first(where: { $0.id == args[1] }),
+                  let source = TinyVAESource(rawValue: args[2]) else { throw LibraryFailure(message: "Use download-tiny taef1|taeqi2_1 huggingface|mirror") }
+            let client = HubClient(publicHuggingFaceMirror: source == .mirror)
+            emit(Success(result: try await TinyVAEDownloader(store: store, client: client).install(asset) { emit($0,to:.standardError) }))
         case "location" where args.count == 1:
             emit(Success(result: ["root": store.root.path]))
         case "configure" where args.count == 2:

@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import ImageIO
 import UniformTypeIdentifiers
+import AVFoundation
 
 enum Qwen21LowMemoryANEHardware {
     private struct Hardware: Decodable {
@@ -141,6 +142,10 @@ struct StudioAsset: Codable, Identifiable, Equatable, Sendable {
     var name: String
     var width: Int
     var height: Int
+    var kind: String? = nil
+    var frames: Int? = nil
+    var fps: Int? = nil
+    var mediaKind: String { kind ?? "image" }
     // Optional fields preserve compatibility with existing drafts. An old
     // asset's current file becomes its original baseline on first preparation.
     var original: StudioAssetOriginal? = nil
@@ -286,7 +291,13 @@ struct StudioDraft: Codable, Sendable {
     var qwen21DiTSmoothQuantConvRot = false
     // Editing preference; text-to-image always requests standard encoding.
     var qwen21ReferenceSize = 1024
+    var tinyVAEPaths: [String: String] = [:]
+    var tinyVAEEncoder = "original"
+    var tinyVAEDecoder = "original"
+    var tinyPreview = false
+    var tinyPreviewInterval = 2
     var residency = "resident"
+    var seedvr2VAE: NativeSeedVR2VAEConfig?
     var zImageStreamingBudgetGiB = 10
     var profilePath = ""
     var acceleration: StudioAcceleration?
@@ -299,8 +310,9 @@ struct StudioDraft: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
-        case assets, loras, initImageID, loraStrategy, modelLoRAs, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
+        case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
+        case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, tinyPreview, tinyPreviewInterval
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -341,7 +353,13 @@ struct StudioDraft: Codable, Sendable {
         qwen21DiTW8A8 = try c.decodeIfPresent(Bool.self, forKey: .qwen21DiTW8A8) ?? false
         qwen21DiTSmoothQuantConvRot = try c.decodeIfPresent(Bool.self, forKey: .qwen21DiTSmoothQuantConvRot) ?? false
         qwen21ReferenceSize = try c.decodeIfPresent(Int.self, forKey: .qwen21ReferenceSize) ?? 1024
+        tinyVAEPaths = try c.decodeIfPresent([String: String].self, forKey: .tinyVAEPaths) ?? [:]
+        tinyVAEEncoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEEncoder) ?? "original"
+        tinyVAEDecoder = try c.decodeIfPresent(String.self, forKey: .tinyVAEDecoder) ?? "original"
+        tinyPreview = try c.decodeIfPresent(Bool.self, forKey: .tinyPreview) ?? false
+        tinyPreviewInterval = try c.decodeIfPresent(Int.self, forKey: .tinyPreviewInterval) ?? 2
         residency = try c.decodeIfPresent(String.self, forKey: .residency) ?? residency
+        seedvr2VAE = try c.decodeIfPresent(NativeSeedVR2VAEConfig.self, forKey: .seedvr2VAE)
         zImageStreamingBudgetGiB = try c.decodeIfPresent(Int.self, forKey: .zImageStreamingBudgetGiB) ?? 10
         profilePath = try c.decodeIfPresent(String.self, forKey: .profilePath) ?? profilePath
         acceleration = try c.decodeIfPresent(StudioAcceleration.self, forKey: .acceleration)
@@ -675,10 +693,12 @@ struct StudioDraft: Codable, Sendable {
     }
     var activeAssets: [StudioAsset] {
         switch operation {
-        case "image.transform": return assets.filter { $0.id == initImageID }
-        case "image.edit": return assets
-        case "video.image": return assets.filter { $0.id == initImageID }
-        case "video.reference", "video.keyframes": return assets
+        case "image.upscale": return assets.filter { $0.id == initImageID && $0.mediaKind == "image" }
+        case "video.upscale": return assets.filter { $0.id == initImageID && $0.mediaKind == "video" }
+        case "image.transform": return assets.filter { $0.id == initImageID && $0.mediaKind == "image" }
+        case "image.edit": return assets.filter { $0.mediaKind == "image" }
+        case "video.image": return assets.filter { $0.id == initImageID && $0.mediaKind == "image" }
+        case "video.reference", "video.keyframes": return assets.filter { $0.mediaKind == "image" }
         default: return []
         }
     }
@@ -690,7 +710,7 @@ struct StudioDraft: Codable, Sendable {
     }
     func validate(model: StudioModel, systemJSON: String? = nil) throws {
         guard !modelPath.isEmpty else { throw NativeFailure(message: "请先在模型中心选择模型文件夹。") }
-        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
+        guard modelID == "seedvr2-3b" || !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure(message: "请输入描述画面或修改方式的提示词。") }
         if let issue = runtimeANEIssue { throw NativeFailure(message: issue) }
         guard model.supports(operation) else { throw NativeFailure(message: "当前模型不支持“\(operation)”操作。") }
         // Bound user-entered integers before any model-specific token/latent
@@ -775,6 +795,19 @@ struct StudioDraft: Codable, Sendable {
                 throw NativeFailure(message: "Z-Image LoRA 仅支持 transformer 角色。")
             }
         }
+        if modelID == "seedvr2-3b" {
+            guard steps == 1, ["resident", "component_staged"].contains(residency), !audio else {
+                throw NativeFailure(message: "SeedVR2 固定使用单步 GPU 超分，可选常驻或分阶段驻留；当前不保留音轨。")
+            }
+            guard activeAssets.count == 1 else { throw NativeFailure(message: "请选择一份参与超分的源图片或源视频。") }
+            if operation == "image.upscale" {
+                guard frames == 1, activeAssets[0].mediaKind == "image" else { throw NativeFailure(message: "图像超分需要一张源图片。") }
+            } else {
+                guard (2...121).contains(frames), activeAssets[0].mediaKind == "video" else { throw NativeFailure(message: "视频超分需要 2–121 帧的源视频。") }
+                if let sourceFrames = activeAssets[0].frames, sourceFrames != frames { throw NativeFailure(message: "请使用完整源帧数 \(sourceFrames)，不会自动截帧。") }
+                if let sourceFPS = activeAssets[0].fps, sourceFPS != fps { throw NativeFailure(message: "请使用源 FPS \(sourceFPS)，不会自动改变帧率。") }
+            }
+        }
         guard (1...120).contains(fps) else { throw NativeFailure(message: "帧率超出支持范围。") }
         if !randomSeed { _ = try fixedSeed() }
         guard strength.isFinite, (0...1).contains(strength) else { throw NativeFailure(message: "图像强度需为 0–1。") }
@@ -785,7 +818,7 @@ struct StudioDraft: Codable, Sendable {
         }
         if operation == "video.image" && activeAssets.count != 1 { throw NativeFailure(message: "视频首帧模式需要一张首帧图片。") }
         if operation == "video.keyframes" && !(1...2).contains(activeAssets.count) { throw NativeFailure(message: "关键帧模式需要一张首帧，或首尾两张图片。") }
-        if !activeAssets.isEmpty {
+        if activeAssets.contains(where: { $0.mediaKind == "image" }) {
             guard model.inputs?.contains("image") != false else {
                 throw NativeFailure(message: "当前模型不支持图片输入。")
             }
@@ -855,7 +888,7 @@ struct StudioDraft: Codable, Sendable {
         let model = StudioModel.catalog().first { $0.id == modelID }
         guard let model, model.executor else { throw NativeFailure(message: "当前模型没有可用执行器。") }
         try validate(model: model, systemJSON: systemJSON)
-        var request = NativeRequest(prompt: prompt, output: output.path)
+        var request = NativeRequest(prompt: modelID == "seedvr2-3b" ? "" : prompt, output: output.path)
         request.model = modelID; request.operation = operation
         request.width = width; request.height = height; request.steps = steps
         request.seed = randomSeed ? random() : try fixedSeed()
@@ -877,6 +910,12 @@ struct StudioDraft: Codable, Sendable {
             }
         }
         request.dynamic_text = dynamicText; request.residency = residency
+        if modelID == "seedvr2-3b", var config = seedvr2VAE {
+            // The decoder sink writes video frames. Still-image export keeps
+            // the established alpha-preserving PNG path.
+            if operation == "image.upscale" { config.decoder = "buffered"; config.encoder = "buffered" }
+            request.seedvr2_vae = config
+        }
         request.prompt_enhance = modelID == "qwen-image-2.1" && promptEnhance
         request.prompt_enhance_edit_experimental = modelID == "qwen-image-2.1" &&
             operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
@@ -886,6 +925,8 @@ struct StudioDraft: Codable, Sendable {
         request.qwen21_dit_w8a8 = modelID == "qwen-image-2.1" && qwen21DiTW8A8 ? true : nil
         request.qwen21_dit_smoothquant_convrot = modelID == "qwen-image-2.1" && qwen21DiTSmoothQuantConvRot ? true : nil
         request.qwen21_reference_size = modelID == "qwen-image-2.1" ? effectiveQwen21ReferenceSize : nil
+        request.tiny_vae = try tinyVAEConfiguration()
+        if request.tiny_vae?.encoder == "tiny" || request.tiny_vae?.decoder == "tiny" { request.allow_approximation = true }
         if usesQwen21FastReferenceEncoding { request.allow_approximation = true }
         if qwen21DiTCache != "off" { request.allow_approximation = true }
         if modelID == "z-image-turbo", residency == "streamed" {
@@ -958,12 +999,13 @@ struct StudioDraft: Codable, Sendable {
         request.inputs = activeAssets.enumerated().map { index, asset in
             let role: String
             switch operation {
+            case "image.upscale", "video.upscale": role = "source"
             case "image.transform": role = "init_image"
             case "video.image": role = "first_frame"
             case "video.keyframes": role = index == 0 ? "first_frame" : "last_frame"
             default: role = "reference"
             }
-            return NativeInput(kind: "image", role: role, path: asset.path,
+            return NativeInput(kind: asset.mediaKind, role: role, path: asset.path,
                                strength: (operation == "image.transform" || operation == "video.image") ? strength : nil)
         }
         request.loras = activeLoRAs.isEmpty ? nil : activeLoRAs.map { NativeLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
@@ -1012,6 +1054,40 @@ actor StudioAssetImporter {
     func importData(_ data: Data) throws -> StudioAsset {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw NativeFailure(message: "剪贴板不包含可解码的图片。") }
         return try stage(source: source, name: "粘贴图片", sourceURL: nil, data: data)
+    }
+    func importVideoFile(_ url: URL) async throws -> StudioAsset {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw NativeFailure(message: "视频文件中没有视频轨：\(url.lastPathComponent)")
+        }
+        let size = try await track.load(.naturalSize)
+        let transform = try await track.load(.preferredTransform)
+        let rate = try await track.load(.nominalFrameRate)
+        let duration = try await asset.load(.duration)
+        let oriented = CGRect(origin: .zero, size: size).applying(transform)
+        let seconds = CMTimeGetSeconds(duration)
+        guard rate.isFinite, seconds.isFinite, seconds > 0,
+              oriented.width.isFinite, oriented.height.isFinite,
+              rate >= 1, rate <= 120, seconds * Double(rate) >= 1.5,
+              seconds * Double(rate) <= 121.5 else {
+            throw NativeFailure(message: "视频帧率、时长或尺寸元数据无效。")
+        }
+        let fps = Int(rate.rounded())
+        let frameCount = Int((seconds * Double(rate)).rounded())
+        let width = Int(abs(oriented.width).rounded()), height = Int(abs(oriented.height).rounded())
+        guard width > 0, height > 0, width * height <= 16_777_216,
+              fps >= 1, fps <= 120, abs(Double(rate) - Double(fps)) < 0.0001,
+              (2...121).contains(frameCount) else {
+            throw NativeFailure(message: "视频超分需要 2–121 帧、整数源 FPS 的短视频；不会自动截帧或重采样。")
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
+        let target = directory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        try FileManager.default.copyItem(at: url, to: target)
+        return StudioAsset(path: target.path, name: url.lastPathComponent, width: width, height: height,
+                           kind: "video", frames: frameCount, fps: fps)
     }
     func prepare(asset: StudioAsset, preset: ReferenceImagePreparation) throws -> Preparation {
         try Task.checkCancellation()
@@ -1208,6 +1284,8 @@ final class StudioState: ObservableObject {
     let models: [StudioModel]
     let importer: StudioAssetImporter
     private let file: URL
+    private let creationFile: URL
+    private var creationDraft: StudioDraft?
     private var saveTask: Task<Void, Never>?
     private var undoAssets: [([StudioAsset], UUID?)] = []
     /// Importing may suspend while a provider or disk is slow. Only inputs that
@@ -1243,6 +1321,8 @@ final class StudioState: ObservableObject {
         }
         self.models = models
         file = directory.appendingPathComponent("studio-draft.json")
+        creationFile = directory.appendingPathComponent("creation-draft.json")
+        creationDraft = (try? Data(contentsOf: creationFile)).flatMap { try? JSONDecoder().decode(StudioDraft.self, from: $0) }
         importer = StudioAssetImporter(directory: directory.appendingPathComponent("inputs"))
         if FileManager.default.fileExists(atPath: file.path) {
             do { draft = try JSONDecoder().decode(StudioDraft.self, from: Data(contentsOf: file)) }
@@ -1373,10 +1453,36 @@ final class StudioState: ObservableObject {
     }
     func save() {
         saveTask?.cancel()
+        if isCreationDraft(draft) { creationDraft = draft }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let creationDraft { try JSONEncoder().encode(creationDraft).write(to: creationFile, options: .atomic) }
             try JSONEncoder().encode(draft).write(to: file, options: .atomic); saved = true
         } catch { saved = false; message = "草稿保存失败：\(error.localizedDescription)" }
+    }
+    func applySeedVR2MemoryAdvice() {
+        guard draft.modelID == "seedvr2-3b" else { return }
+        var options = draft.seedvr2VAE ?? NativeSeedVR2VAEConfig()
+        let video = draft.operation == "video.upscale"
+        draft.residency = "component_staged"
+        options.encoder = video ? "streaming" : "buffered"
+        options.decoder = video ? "streaming" : "buffered"
+        options.allocator_cache_bytes = UInt64(1) << 30
+        options.history = "frames"
+        options.share_upscale_history = video && options.convolution == "singleton2d" && options.spatial == "full"
+        // Preserve explicit row/workspace choices; this is advice applied by
+        // the user, not a lowered admission estimate or physical RAM promise.
+        draft.seedvr2VAE = options
+        save()
+    }
+    func applySeedVR2SpeedSettings() {
+        guard draft.modelID == "seedvr2-3b" else { return }
+        draft.residency = "resident"
+        // Qualified frame histories avoid repeated concatenation; no spatial
+        // approximation, file spill or model reload is needed on this route.
+        draft.seedvr2VAE = NativeSeedVR2VAEConfig(history: "frames")
+        message = "已选择常驻权重、完整空间计算、4 GiB 缓存及分帧历史，不降低恢复分辨率。省内存设置并不保证更快。"
+        save()
     }
     func installZImage(model: URL, sharedText: URL?) throws {
         let installed = try ZImageInstallation.install(model: model, sharedText: sharedText,
@@ -1466,6 +1572,10 @@ final class StudioState: ObservableObject {
             let operation = draft.operation
             selectModel(id)
             if model.supports(operation) { draft.operation = operation }
+            else if let sameKind = model.availableOperations.first(where: { $0.hasPrefix(operation.hasPrefix("video.") ? "video." : "image.") }) {
+                draft.operation = sameKind
+            }
+            synchronizeUpscaleSource()
             return
         }
         if !model.supports(draft.operation) {
@@ -1474,17 +1584,82 @@ final class StudioState: ObservableObject {
         message = nil
     }
     var creationKind: String { draft.operation.hasPrefix("video.") ? "video" : "image" }
+    private func isCreationDraft(_ value: StudioDraft) -> Bool {
+        !value.operation.hasSuffix(".upscale") && models.contains { $0.id == value.modelID && $0.supports(value.operation) }
+    }
+    /// Upscaling temporarily owns the active draft. Returning to creation must
+    /// restore the original model, editing inputs and sampling settings, even
+    /// after an App restart or a detour through the model library.
+    @discardableResult func activateCreation() -> Bool {
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return false }
+        if isCreationDraft(draft) { return true }
+        if var restored = creationDraft, isCreationDraft(restored) {
+            // Registrations and auxiliary-upscaler preferences may have changed
+            // while the creation draft was parked. Keep those shared settings.
+            restored.modelPaths = draft.modelPaths
+            restored.modelLoRAs = draft.modelLoRAs
+            restored.tinyVAEPaths = draft.tinyVAEPaths
+            restored.upscaleModelPaths = draft.upscaleModelPaths
+            restored.upscaleModelPath = draft.upscaleModelPath
+            restored.upscaleVariant = draft.upscaleVariant
+            restored.upscaleCompute = draft.upscaleCompute
+            restored.upscaleAutoPreload = draft.upscaleAutoPreload
+            restored.seedvr2VAE = draft.seedvr2VAE
+            restored.promptEnhancerPath = draft.promptEnhancerPath
+            draft = restored
+        } else {
+            // Older versions saved only the SeedVR2 draft. Recover a usable
+            // creation route without requiring a download or losing the text.
+            let operation = creationKind + ".generate"
+            let candidates = models.filter { $0.supports(operation) }
+            guard let model = candidates.first(where: { !(draft.modelPaths[$0.id] ?? "").isEmpty }) ?? candidates.first else {
+                message = "暂时没有可用的创作执行器，请前往模型中心查看。"; return false
+            }
+            let assets = draft.assets, input = draft.initImageID
+            applyModel(model)
+            draft.operation = operation; draft.assets = assets; draft.initImageID = input
+        }
+        undoAssets = []; message = nil
+        save()
+        return true
+    }
+    @discardableResult func activateSeedVR2Upscaling(kind: String? = nil) -> Bool {
+        guard !imageInputsBusy else { message = "请等待素材导入完成。"; return false }
+        let media = kind ?? creationKind
+        guard ["image", "video"].contains(media),
+              let model = models.first(where: { $0.id == "seedvr2-3b" }),
+              model.supports(media + ".upscale") else {
+            message = "当前引擎没有可用的 SeedVR2 图像 / 视频超分。"; return false
+        }
+        if draft.modelID != model.id { selectModel(model.id) }
+        changeOperation(media + ".upscale")
+        save()
+        return true
+    }
+    func applySeedVR2OutputPreset(_ preset: SeedVR2OutputPreset) {
+        guard draft.modelID == "seedvr2-3b", !imageInputsBusy,
+              let source = draft.activeAssets.first else {
+            message = "请先选择一份参与超分的源图片或视频。"; return
+        }
+        do {
+            let size = try preset.dimensions(source: source)
+            draft.width = size.width; draft.height = size.height
+            message = nil; save()
+        } catch { message = error.localizedDescription }
+    }
     var creationModels: [StudioModel] {
-        models.filter { model in model.availableOperations.contains { $0.hasPrefix(creationKind + ".") } }
+        models.filter { model in model.availableOperations.contains { $0.hasPrefix(creationKind + ".") && !$0.hasSuffix(".upscale") } }
     }
     var creationOperations: [String] {
-        let operations = creationModels.flatMap(\.availableOperations)
-        let preferred = ["image.generate", "image.transform", "image.edit", "video.generate", "video.image", "video.keyframes", "video.reference"]
+        let operations = models.flatMap(\.availableOperations)
+            .filter { $0.hasPrefix(creationKind + ".") }
+        let preferred = ["image.generate", "image.transform", "image.edit", "image.upscale", "video.generate", "video.image", "video.keyframes", "video.reference", "video.upscale"]
         return preferred.filter { operations.contains($0) } + Set(operations).subtracting(preferred).sorted()
     }
     func changeCreationKind(_ kind: String) {
         guard ["image", "video"].contains(kind), kind != creationKind else { return }
-        changeOperation(kind + ".generate")
+        if draft.modelID == "seedvr2-3b" { changeOperation(kind + ".upscale") }
+        else { changeOperation(kind + ".generate") }
     }
     func changeOperation(_ operation: String) {
         guard !imageInputsBusy else { return }
@@ -1504,6 +1679,7 @@ final class StudioState: ObservableObject {
         message = switchedModel.map { "已切换至 \($0.name)，模型参数与加速配置已重置，已恢复该模型的 LoRA 选择。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
         draft.operation = operation
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
+        synchronizeUpscaleSource()
     }
     func selectInstallation(modelID: String, path: String) {
         guard !imageInputsBusy, !path.isEmpty else { return }
@@ -1529,6 +1705,7 @@ final class StudioState: ObservableObject {
         applyModel(model)
     }
     private func applyModel(_ model: StudioModel) {
+        if isCreationDraft(draft), !model.availableOperations.contains(where: { !$0.hasSuffix(".upscale") }) { save() }
         let id = model.id
         message = nil
         draft.modelLoRAs[draft.modelID] = draft.loras
@@ -1717,8 +1894,29 @@ final class StudioState: ObservableObject {
     var supportsImageInputs: Bool {
         guard let model = models.first(where: { $0.id == draft.modelID }), model.executor, model.inputs?.contains("image") != false, (model.max_images ?? 8) > 0 else { return false }
         return (model.executor_operations ?? model.operations).contains {
-            ["image.transform", "image.edit", "video.image", "video.reference", "video.keyframes"].contains($0)
+            ["image.transform", "image.edit", "image.upscale", "video.image", "video.reference", "video.keyframes"].contains($0)
         }
+    }
+    var supportsVideoInputs: Bool {
+        draft.operation == "video.upscale" && models.first(where: { $0.id == draft.modelID })?.supports("video.upscale") == true
+    }
+    func selectSourceAsset(_ id: UUID) {
+        guard !importing, draft.assets.contains(where: { $0.id == id }) else { return }
+        draft.initImageID = id
+        synchronizeUpscaleSource()
+    }
+    private func synchronizeUpscaleSource() {
+        guard draft.modelID == "seedvr2-3b" else { return }
+        draft.steps = 1; draft.audio = false
+        let kind = draft.operation == "video.upscale" ? "video" : "image"
+        if !draft.assets.contains(where: { $0.id == draft.initImageID && $0.mediaKind == kind }) {
+            draft.initImageID = draft.assets.first(where: { $0.mediaKind == kind })?.id
+        }
+        if kind == "image" { draft.frames = 1 }
+        else if let source = draft.activeAssets.first {
+            if let frames = source.frames { draft.frames = frames }
+            if let fps = source.fps { draft.fps = fps }
+        } else if draft.frames < 2 || draft.frames > 121 { draft.frames = 17 }
     }
     // Keep the existing eight-asset staging area for smaller-input models,
     // while allowing the complete ten-reference Qwen21 input contract.
@@ -1851,14 +2049,18 @@ final class StudioState: ObservableObject {
     }
     func addFiles(_ urls: [URL]) async {
         guard !urls.isEmpty else { return }
-        guard validateImageImport() else { return }
+        guard supportsVideoInputs || validateImageImport() else { return }
         guard !importing else { return }
         let context = assetImportContext
         importing = true; defer { importing = false }
         var staged: [StudioAsset] = []
         do {
             guard draft.assets.count + urls.count <= imageImportLimit else { throw NativeFailure(message: "最多保留 \(imageImportLimit) 张输入图片。本次未导入任何图片，请减少选择后重试。") }
-            for url in urls { try Task.checkCancellation(); staged.append(try await importer.importFile(url)) }
+            for url in urls {
+                try Task.checkCancellation()
+                if supportsVideoInputs { staged.append(try await importer.importVideoFile(url)) }
+                else { staged.append(try await importer.importFile(url)) }
+            }
             try validateAssetImportContext(context, additionalImages: staged.count)
             attach(staged)
         } catch { await importer.discard(staged); message = imageImportErrorMessage(error) }
@@ -1896,7 +2098,7 @@ final class StudioState: ObservableObject {
     }
     func importProviders(_ providers: [NSItemProvider]) async {
         guard !providers.isEmpty else { return }
-        guard validateImageImport() else { return }
+        guard supportsVideoInputs || validateImageImport() else { return }
         guard !importing else { return }
         let context = assetImportContext
         importing = true; defer { importing = false }
@@ -1910,7 +2112,10 @@ final class StudioState: ObservableObject {
                 guard let type else { throw NativeFailure(message: "拖入的内容不是图片文件。") }
                 let data = try await ItemProviderDataLoader.load(provider: provider, typeIdentifier: type)
                 try Task.checkCancellation()
-                if type == UTType.fileURL.identifier, let url = URL(dataRepresentation: data, relativeTo: nil) { staged.append(try await importer.importFile(url)) }
+                if type == UTType.fileURL.identifier, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    if supportsVideoInputs { staged.append(try await importer.importVideoFile(url)) }
+                    else { staged.append(try await importer.importFile(url)) }
+                }
                 else { staged.append(try await importer.importData(data)) }
             }
             try validateAssetImportContext(context, additionalImages: staged.count)
@@ -1920,15 +2125,22 @@ final class StudioState: ObservableObject {
     private func attach(_ assets: [StudioAsset]) {
         rememberAssets(); draft.assets.append(contentsOf: assets)
         if draft.initImageID == nil { draft.initImageID = assets.first?.id }
+        if draft.modelID == "seedvr2-3b", let source = assets.last {
+            draft.initImageID = source.id
+            draft.width = max(64, min(2048, source.width * 2) / 16 * 16)
+            draft.height = max(64, min(2048, source.height * 2) / 16 * 16)
+            synchronizeUpscaleSource()
+        }
         message = draft.operation == "image.generate"
             ? (draft.modelID == "qwen-image-2.1"
                 ? "图片已保留。请选择「图片编辑」让它们参与生成。"
-                : "图片已保留。请选择「单图修改」或「参考编辑」让它们参与生成。") : nil
+                 : "图片已保留。请选择「单图修改」或「参考编辑」让它们参与生成。") : nil
     }
     func reuse(_ job: NativeJob) {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
         let request = job.request
-        if request.operation == "image.upscale" {
+        if request.operation?.hasSuffix(".upscale") == true, isCreationDraft(draft) { save() }
+        if UpscaleVariant.from(modelID: request.model) != nil, request.operation == "image.upscale" {
             draft.upscaleModelPath = job.modelPath ?? ""
             draft.upscaleCompute = UpscaleCompute(rawValue: request.execution) ?? .gpu
             draft.upscaleVariant = request.model == "real-esrgan-x2plus" ? .x2plus : .x4plus
@@ -1958,6 +2170,7 @@ final class StudioState: ObservableObject {
         draft.ltxAccelerationMode = request.ltx_sol_stage2 == true
             ? (request.ltx_stage2_text_rows == 256 ? "fast_approx" : "sol") : "quality"
         draft.residency = request.residency ?? "resident"; draft.profilePath = request.profile ?? ""
+        draft.seedvr2VAE = request.seedvr2_vae
         if request.model == "z-image-turbo", let budget = request.memory_budget_bytes {
             draft.zImageStreamingBudgetGiB = Int(min(budget >> 30, 12))
         }
@@ -1974,6 +2187,11 @@ final class StudioState: ObservableObject {
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
         draft.qwen21DiTW8A8 = request.qwen21_dit_w8a8 ?? false
         draft.qwen21DiTSmoothQuantConvRot = request.qwen21_dit_smoothquant_convrot ?? false
+        draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"
+        draft.tinyVAEDecoder = request.tiny_vae?.decoder ?? "original"
+        draft.tinyPreview = request.tiny_vae?.preview ?? false
+        draft.tinyPreviewInterval = request.tiny_vae?.interval ?? 2
+        if let tiny = request.tiny_vae { draft.tinyVAEPaths[draft.tinyArchitecture] = tiny.path }
         // A generated image's standard request does not describe the user's
         // editing preference. Restore that field only for editing histories.
         if request.model != "qwen-image-2.1" || draft.operation == "image.edit" {
@@ -1989,7 +2207,10 @@ final class StudioState: ObservableObject {
             let height = info?[kCGImagePropertyPixelHeight] as? Int ?? 0
             let rotated = (info?[kCGImagePropertyOrientation] as? Int ?? 1) >= 5
             return StudioAsset(path: input.path, name: url.lastPathComponent,
-                               width: rotated ? height : width, height: rotated ? width : height)
+                               width: rotated ? height : width, height: rotated ? width : height,
+                               kind: input.kind,
+                               frames: input.kind == "video" ? request.frames : nil,
+                               fps: input.kind == "video" ? request.fps : nil)
         }
         draft.loras = (request.loras ?? []).map { StudioLoRA(path: $0.path, strength: $0.strength, role: $0.role) }
         draft.modelLoRAs[request.model] = draft.loras
@@ -2042,6 +2263,7 @@ final class StudioState: ObservableObject {
     }
     func newDraft() {
         guard !imageInputsBusy else { message = "请等待素材导入完成。"; return }
+        guard activateCreation() else { return }
         var model = models.first { $0.id == draft.modelID && $0.executor }
         if model == nil {
             model = models.first { $0.executor && !(draft.modelPaths[$0.id] ?? "").isEmpty }

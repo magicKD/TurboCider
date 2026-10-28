@@ -1,5 +1,21 @@
 # TurboCider 状态文档入口
 
+2026-10-27 [dev 合并至 dev-verify：Tiny VAE 预览修复与本机 App 验收](2026-10-27-dev-verify-tiny-preview.md)：
+合并无冲突，超分模型可在右侧直接切换。修正带噪 latent 预览和 App 裁切布局，
+真实 512×512 Z-Image / Qwen Viggle Turbo 预览与最终图尺寸一致，最终 PNG 与关闭预览基线相同。
+同时记录 Tiny 最终解码、Qwen 参考编码、缓存及取消/重试；只下载两份对应 Tiny 权重。
+
+2026-10-15 [本机 App 更新与 SeedVR2 超分入口](2026-10-15-seedvr2-app-update.md)：
+新增独立 SeedVR2 侧栏、图片/视频切换、源尺寸预设和省内存建议；修复模型中心的超分类别。
+公有 API 新包通过发布/签名校验、7 个真实超分/驻留切换任务并更新至原 App 路径，已重新启动。
+原6条历史和4个模型路径保留，旧包/配置有备份；视频仍为2–121帧整数CFR、无音轨输出。
+
+2026-10-15 [main 合并至 dev：整合与同机性能复核](2026-10-15-main-into-dev.md)：
+保留 SeedVR2 与 main 新功能，完成原生/App 构建及相关回归。M4 Max/64GiB 同参数 ABBA、48 PNG：
+Qwen GPU/冻结混合和 Z GPU 基本持平，Z 冻结混合小幅省时 1.75%，同路图像 RGBA 全一致。
+另用两提示词筛选 Qwen 可选 DiT cache：保守/均衡/快速约 31.12/26.24/23.11s，对同组 off42.63s 省 27%/38%/46%；
+属于有损近似（SSIM约0.992/0.980/0.955–0.966），默认 off 不变。60 PNG 全部完成，无模型下载、安装替换或远端推送。
+
 2026-10-10 [dev-graph 合并至 dev-verify：冲突处理与本机验收](dev-graph-into-dev-verify-2026-10-10.md)：
 16 个冲突文件完成整合，保留现有 streaming、LoRA 和缓存路径；普通/Private 库及 App 编译通过。
 同输入六步编辑默认 GPU 请求 38.41→36.58 s，单样本省时 4.76%；显式 Native GPU 冷请求没有收益。

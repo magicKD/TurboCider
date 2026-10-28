@@ -32,6 +32,58 @@ public struct NativeLoRA: Codable, Sendable, Identifiable {
         self.path = path; self.strength = strength; self.role = role
     }
 }
+public struct NativeSeedVR2VAEConfig: Codable, Sendable, Equatable {
+    public var encoder: String
+    public var decoder: String
+    public var convolution: String
+    public var history: String
+    public var share_upscale_history: Bool
+    public var spatial: String
+    public var encoder_spatial: String
+    public var spatial_rows: Int
+    public var spatial_disk_budget_bytes: UInt64
+    public var tile_rows: Int
+    public var allocator_cache_bytes: UInt64
+    public init(decoder: String = "buffered", convolution: String = "singleton2d",
+                tileRows: Int = 16384, allocatorCacheBytes: UInt64 = 4 << 30, history: String = "compact", encoder: String = "buffered",
+                spatial: String = "full", spatialRows: Int = 64, spatialDiskBudgetBytes: UInt64 = 8 << 30, encoderSpatial: String = "full",
+                shareUpscaleHistory: Bool = false) {
+        self.encoder = encoder
+        self.decoder = decoder; self.convolution = convolution
+        self.history = history
+        share_upscale_history = shareUpscaleHistory
+        self.spatial = spatial; spatial_rows = spatialRows; spatial_disk_budget_bytes = spatialDiskBudgetBytes
+        encoder_spatial = encoderSpatial
+        tile_rows = tileRows; allocator_cache_bytes = allocatorCacheBytes
+    }
+    private enum CodingKeys: String, CodingKey { case encoder, decoder, convolution, history, share_upscale_history, spatial, encoder_spatial, spatial_rows, spatial_disk_budget_bytes, tile_rows, allocator_cache_bytes }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        encoder = try c.decodeIfPresent(String.self,forKey: .encoder) ?? "buffered"
+        self.decoder = try c.decodeIfPresent(String.self,forKey: .decoder) ?? "buffered"
+        convolution = try c.decodeIfPresent(String.self,forKey: .convolution) ?? "singleton2d"
+        history = try c.decodeIfPresent(String.self,forKey: .history) ?? "compact"
+        share_upscale_history = try c.decodeIfPresent(Bool.self,forKey: .share_upscale_history) ?? false
+        spatial = try c.decodeIfPresent(String.self,forKey: .spatial) ?? "full"
+        encoder_spatial = try c.decodeIfPresent(String.self,forKey: .encoder_spatial) ?? "full"
+        spatial_rows = try c.decodeIfPresent(Int.self,forKey: .spatial_rows) ?? 64
+        spatial_disk_budget_bytes = try c.decodeIfPresent(UInt64.self,forKey: .spatial_disk_budget_bytes) ?? (8 << 30)
+        tile_rows = try c.decodeIfPresent(Int.self,forKey: .tile_rows) ?? 16384
+        allocator_cache_bytes = try c.decodeIfPresent(UInt64.self,forKey: .allocator_cache_bytes) ?? (4 << 30)
+    }
+}
+public struct NativeTinyVAEConfig: Codable, Sendable, Equatable {
+    public var path: String
+    public var encoder: String = "original"
+    public var decoder: String = "original"
+    public var preview: Bool = false
+    public var interval: Int = 2
+    public init(path: String, encoder: String = "original", decoder: String = "original",
+                preview: Bool = false, interval: Int = 2) {
+        self.path = path; self.encoder = encoder; self.decoder = decoder
+        self.preview = preview; self.interval = interval
+    }
+}
 public struct NativeRequest: Codable, Sendable {
     public var schema_version = 1
     public var model = "flux2-klein-4b"
@@ -63,6 +115,8 @@ public struct NativeRequest: Codable, Sendable {
     public var inputs: [NativeInput]?
     public var profile: String?
     public var residency: String?
+    public var seedvr2_vae: NativeSeedVR2VAEConfig?
+    public var tiny_vae: NativeTinyVAEConfig?
     public var memory_budget_bytes: UInt64?
     public var quantized_cache: String?
     public var fps: Int?
@@ -114,6 +168,7 @@ public struct NativeSamplingV2: Codable, Sendable {
 }
 public struct NativeExecutionV2: Codable, Sendable {
     public var policy: String
+    public var residency: String? = nil
     public var profile: String?
     public var ane_manifest: String?
     public var encoder_ane_manifest: String?
@@ -130,15 +185,16 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var ltx_sol_dense_edge_steps: Int?
     public var ltx_stage2_text_rows: Int?
     public var streaming: NativeStreamingSelectorV2?
+    public var seedvr2_vae: NativeSeedVR2VAEConfig? = nil
     public var qwen21_dit_cache: String?
     public var hybrid_mlp_mode: String?
     public var qwen21_w8a8: Bool?
     public var qwen21_staged_fast: Bool?
     public var qwen21_dit_w8a8: Bool?
     public var qwen21_dit_smoothquant_convrot: Bool?
-    public var residency: String? = nil
 }
 public struct NativeParametersV2: Codable, Sendable {
+    public var tiny_vae: NativeTinyVAEConfig? = nil
     public var dynamic_text: Bool
     public var compile_gpu: Bool?
     public var noise_path: String?
@@ -173,7 +229,11 @@ public struct NativeRequestV2: Codable, Sendable {
                                   audio: request.audio ?? false)]
         sampling = NativeSamplingV2(seed: request.seed, steps: request.steps)
         execution = NativeExecutionV2(
-            policy: request.execution, profile: request.profile,
+            policy: request.execution,
+            // Preserve SeedVR2's explicit, non-streaming residency choice.
+            // Public streaming intents must continue omitting private knobs.
+            residency: request.model == "seedvr2-3b" && targetBytes == nil ? request.residency : nil,
+            profile: request.profile,
             ane_manifest: request.ane_manifest, encoder_ane_manifest: nil,
             allow_approximation: request.allow_approximation,
             quantized_cache: request.quantized_cache, warmup_iterations: nil,
@@ -193,9 +253,11 @@ public struct NativeRequestV2: Codable, Sendable {
             qwen21_staged_fast: request.qwen21_staged_fast,
             qwen21_dit_w8a8: request.qwen21_dit_w8a8,
             qwen21_dit_smoothquant_convrot: request.qwen21_dit_smoothquant_convrot)
+        execution.seedvr2_vae = request.seedvr2_vae
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)
+        parameters.tiny_vae = request.tiny_vae
         dump_tensors = request.dump_tensors
         loras = request.loras
         lora_strategy = request.lora_strategy
@@ -402,6 +464,7 @@ public struct NativeEvent: Codable, Sendable {
     public let completed: Int
     public let total: Int
     public let elapsed_seconds: Double
+    public var preview_path: String? = nil
 }
 public struct NativeAPIErrorEnvelope: Codable, Sendable {
     public let schema_version: Int

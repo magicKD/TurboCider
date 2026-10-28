@@ -1,11 +1,29 @@
 #pragma once
 #include "ane_runtime.hpp"
+#include "ane_fixed_program.hpp"
+#include "ane_w8_projection.hpp"
+#include "ane_w8_activation.hpp"
 #include <cstdlib>
 #include <algorithm>
 
 namespace tc::ane {
 enum class BackendPreference { Public, Private, Auto, Off };
 struct BackendPolicy { BackendPreference preferred = BackendPreference::Public; bool allow_private = false; };
+inline void validate_fixed_program_backend(bool fixed,BackendPolicy policy,std::string_view path) {
+    if(fixed && (policy.preferred!=BackendPreference::Private || !policy.allow_private ||
+                 (path!="w8a8" && path!="convrot_w8a8")))
+        throw std::runtime_error("fixed program requires explicitly authorized Private W8 backend");
+}
+inline void validate_w8_projection_backend(W8Projection projection,bool fixed,BackendPolicy policy,std::string_view path,bool lora) {
+    if(projection!=W8Projection::Descriptor && (!fixed || policy.preferred!=BackendPreference::Private ||
+        !policy.allow_private || path!="w8a8" || lora))
+        throw std::runtime_error("experimental W8 projection requires fixed authorized Private base-only Sylvester W8");
+}
+inline void validate_w8_activation_backend(W8Activation activation,W8Projection projection,bool fixed,BackendPolicy policy,std::string_view path,bool lora) {
+    if(activation!=W8Activation::ExpDivide && (projection!=W8Projection::Descriptor || !fixed ||
+        policy.preferred!=BackendPreference::Private || !policy.allow_private || path!="w8a8" || lora))
+        throw std::runtime_error("experimental W8 activation requires fixed authorized Private base-only Sylvester W8 and descriptor projection");
+}
 inline bool configured_request_rows() {
     const char *raw = std::getenv("TURBOCIDER_PRIVATE_ANE_ROWS");
     if (raw && std::string(raw) != "descriptor" && std::string(raw) != "request")

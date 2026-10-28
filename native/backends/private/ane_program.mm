@@ -161,7 +161,7 @@ void source_file(const std::filesystem::path &path, const void *data, size_t siz
         require(!chmod(path.c_str(), 0600), "cannot restrict private ANE cached source");
     }
 }
-std::vector<std::string> symbols(NSDictionary *attributes, NSString *key) {
+std::vector<std::string> symbols(NSDictionary *attributes, NSString *key,bool allow_duplicates = false) {
     id array = attributes[@"ANEFModelDescription"][key];
     require([array isKindOfClass:NSArray.class] && [array count] > 0, "private ANE graph symbol list missing");
     std::vector<std::string> result;
@@ -174,10 +174,51 @@ std::vector<std::string> symbols(NSDictionary *attributes, NSString *key) {
         // the driver's original order; never assume alphabetical ordering.
         if ([key isEqualToString:@"kANEFModelOutputSymbolsArrayKey"] && name.ends_with("@output"))
             name.resize(name.size() - 7);
-        require(unique.insert(name).second, "private ANE duplicate graph symbol");
+        require(unique.insert(name).second || allow_duplicates, "private ANE duplicate graph symbol");
         result.push_back(std::move(name));
     }
     return result;
+}
+std::vector<Procedure> procedures(NSDictionary *attributes) {
+    id description = attributes[@"ANEFModelDescription"];
+    require([description isKindOfClass:NSDictionary.class],"private ANE procedure description missing");
+    id functions = description[@"kANEFModelProcedureNameToIDMapKey"];
+    id entries = description[@"ANEFModelProcedures"];
+    require([functions isKindOfClass:NSDictionary.class] && [functions count] > 0 && [functions count] <= 16 &&
+            [entries isKindOfClass:NSArray.class] && [entries count] == [functions count],
+            "private ANE function/procedure table missing");
+    auto integer = [](id value) -> uint32_t {
+        require([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID(),
+                "private ANE procedure index is not an integer");
+        const double n = [value doubleValue];
+        require(std::isfinite(n) && n >= 0 && n <= UINT32_MAX && n == std::floor(n),
+                "private ANE procedure index out of range");
+        return uint32_t(n);
+    };
+    std::map<std::string,uint32_t> names;
+    for (id name in functions) {
+        require([name isKindOfClass:NSString.class] && [name length] > 0,"private ANE function name invalid");
+        require(names.emplace([(NSString *)name UTF8String],integer(functions[name])).second,
+                "private ANE duplicate function name");
+    }
+    std::vector<ProcedureSymbols> normalized;
+    for (id entry in entries) {
+        require([entry isKindOfClass:NSDictionary.class],"private ANE procedure entry invalid");
+        ProcedureSymbols p; p.id = integer(entry[@"ANEFModelProcedureID"]);
+        auto indices = [&](NSString *key) {
+            id list = entry[key];
+            require([list isKindOfClass:NSArray.class] && [list count] > 0 && [list count] <= 128,
+                    "private ANE procedure symbols missing");
+            std::vector<uint32_t> result;
+            for (id index in list) result.push_back(integer(index));
+            return result;
+        };
+        p.inputs = indices(@"ANEFModelInputSymbolIndexArray");
+        p.outputs = indices(@"ANEFModelOutputSymbolIndexArray");
+        normalized.push_back(std::move(p));
+    }
+    return checked_procedures(symbols(attributes,@"kANEFModelInputSymbolsArrayKey",true),
+        symbols(attributes,@"kANEFModelOutputSymbolsArrayKey",true),names,normalized);
 }
 } // namespace
 
@@ -186,6 +227,8 @@ struct Program::Impl {
     id model;
     std::optional<Device> device;
     std::vector<std::string> inputs, outputs;
+    std::vector<Procedure> procedures;
+    bool multiple = false;
     std::string key;
     const uint64_t binding_generation = next_binding_generation();
     bool loaded = false, compiled = false;
@@ -194,7 +237,11 @@ struct Program::Impl {
     }
 };
 Program::Program(Device &device, std::string_view mil, std::span<const uint8_t> constants,
-                 const std::filesystem::path &cache) : impl_(std::make_shared<Impl>()) {
+                 const std::filesystem::path &cache) : Program(device,mil,constants,cache,false) {}
+Program::Program(Device &device, std::string_view mil, std::span<const uint8_t> constants,
+                 const std::filesystem::path &cache,MultipleProcedures) : Program(device,mil,constants,cache,true) {}
+Program::Program(Device &device, std::string_view mil, std::span<const uint8_t> constants,
+                 const std::filesystem::path &cache,bool multiple) : impl_(std::make_shared<Impl>()) {
     @autoreleasepool {
       @try {
         require(healthy(), "private ANE disabled after failed/missing completion");
@@ -229,19 +276,37 @@ Program::Program(Device &device, std::string_view mil, std::span<const uint8_t> 
         }
         impl_->loaded = true;
         NSDictionary *attributes = [(id<TCAneModel>)impl_->model modelAttributes];
-        impl_->inputs = symbols(attributes, @"kANEFModelInputSymbolsArrayKey");
-        impl_->outputs = symbols(attributes, @"kANEFModelOutputSymbolsArrayKey");
+        impl_->multiple = multiple;
+        if (multiple) impl_->procedures = private_api::procedures(attributes);
+        else {
+            impl_->inputs = symbols(attributes, @"kANEFModelInputSymbolsArrayKey");
+            impl_->outputs = symbols(attributes, @"kANEFModelOutputSymbolsArrayKey");
+        }
       } @catch (NSException *exception) {
         throw CapabilityError("private ANE Objective-C exception: " + std::string(exception.reason.UTF8String ?: "unknown"));
       }
     }
 }
 bool Program::healthy() { return process_healthy.load() && gpu::healthy(); }
-const std::vector<std::string> &Program::inputs() const { return impl_->inputs; }
-const std::vector<std::string> &Program::outputs() const { return impl_->outputs; }
+const std::vector<std::string> &Program::inputs() const {
+    require(!impl_->multiple,"private ANE multi-function program requires an explicit procedure");return impl_->inputs;
+}
+const std::vector<std::string> &Program::outputs() const {
+    require(!impl_->multiple,"private ANE multi-function program requires an explicit procedure");return impl_->outputs;
+}
 const std::string &Program::cache_key() const { return impl_->key; }
 uint64_t Program::binding_generation() const { return impl_->binding_generation; }
 bool Program::compiled_now() const { return impl_->compiled; }
+const std::vector<Procedure> &Program::procedures() const {
+    require(impl_->multiple,"private ANE legacy program does not expose function metadata");return impl_->procedures;
+}
+PreparedRequest Program::prepare_function(std::string_view function,
+    std::span<const std::pair<std::string,Surface>> inputs,std::span<const std::pair<std::string,Surface>> outputs,
+    uint64_t wait_value,uint64_t signal_value,std::function<void()> failure) {
+    require(impl_->multiple,"private ANE explicit function binding requires its research constructor");
+    const auto &p = named_procedure(impl_->procedures,function);
+    return prepare_impl(inputs,outputs,wait_value,signal_value,std::nullopt,std::move(failure),&p);
+}
 
 struct Ticket::Impl {
     std::mutex mutex;
@@ -381,12 +446,13 @@ PreparedRequest Program::prepare_impl(std::span<const std::pair<std::string, Sur
                                      std::span<const std::pair<std::string, Surface>> outputs,
                                      uint64_t wait_value, uint64_t signal_value,
                                      std::optional<AneEventBinding> external_events,
-                                     std::function<void()> failure) {
+                                     std::function<void()> failure,const Procedure *procedure) {
     @autoreleasepool {
       const bool external = external_events.has_value();
       auto emergency_failure = failure;
       @try {
         require(healthy(), "private ANE disabled after failed/missing completion");
+        require(impl_->multiple == bool(procedure),"private ANE explicit function selection required");
         if (external) {
             external_events->validate_metadata(impl_->device->native_device(), impl_->key, impl_->binding_generation);
         } else {
@@ -443,10 +509,16 @@ PreparedRequest Program::prepare_impl(std::span<const std::pair<std::string, Sur
         };
         // Build bindings before any async evaluation. No driver work exists
         // if validation throws here.
-        NSArray *in = objects(inputs, impl_->inputs, false), *out = objects(outputs, impl_->outputs, true);
+        NSArray *in = objects(inputs, procedure ? procedure->inputs : impl_->inputs, false),
+                *out = objects(outputs, procedure ? procedure->outputs : impl_->outputs, true);
         auto indices = [](NSUInteger count) {
             NSMutableArray *result = [NSMutableArray new];
             for (NSUInteger i = 0; i < count; ++i) [result addObject:@(i)];
+            return result;
+        };
+        auto mapped_indices = [](const std::vector<uint32_t> &values) {
+            NSMutableArray *result = [NSMutableArray new];
+            for (auto value : values) [result addObject:@(value)];
             return result;
         };
         id wait = [(Class<TCAneEvents>)api_class(@"_ANESharedWaitEvent", @selector(waitEventWithValue:sharedEvent:eventType:))
@@ -458,8 +530,9 @@ PreparedRequest Program::prepare_impl(std::span<const std::pair<std::string, Sur
             sharedEventsWithSignalEvents:@[signal] waitEvents:@[wait]];
         require(events != nil, "private ANE shared event binding failed");
         state->request = [(Class<TCAneRequest>)api_class(@"_ANERequest", @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:))
-            requestWithInputs:in inputIndices:indices(in.count) outputs:out outputIndices:indices(out.count)
-            weightsBuffer:nil perfStats:nil procedureIndex:@0 sharedEvents:events transactionHandle:nil];
+            requestWithInputs:in inputIndices:procedure ? mapped_indices(procedure->input_indices) : indices(in.count)
+            outputs:out outputIndices:procedure ? mapped_indices(procedure->output_indices) : indices(out.count)
+            weightsBuffer:nil perfStats:nil procedureIndex:@(procedure ? procedure->id : 0) sharedEvents:events transactionHandle:nil];
         require(state->request && [state->request respondsToSelector:@selector(setCompletionHandler:)], "private ANE async request creation failed");
         [(id<TCAneRequest>)state->request setCompletionHandler:^(BOOL ok, NSError *error) {
             bool first_failure;

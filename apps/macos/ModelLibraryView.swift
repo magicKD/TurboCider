@@ -14,7 +14,8 @@ struct ModelLibraryView: View {
     @State private var query = ""
     @State private var category = ModelHubCategory.all
     @State private var scope = ModelHubScope.discover
-    @State private var showsLoRAs = false
+    @State private var section = "models"
+    private var showsLoRAs: Bool { section == "loras" }
     @State private var downloadModel: StudioModel?
     @State private var componentModel: StudioModel?
     @State private var replacementPaths: [String: String] = [:]
@@ -40,10 +41,11 @@ struct ModelLibraryView: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             sessionBanner
-            Picker("管理内容", selection: $showsLoRAs) {
-                Text("基础模型").tag(false)
-                Text("LoRA · \(library.loras.count)").tag(true)
-            }.pickerStyle(.segmented).labelsHidden().frame(width: 250).accessibilityIdentifier("modelLibrarySection")
+            Picker("管理内容", selection: $section) {
+                Text("基础模型").tag("models")
+                Text("LoRA · \(library.loras.count)").tag("loras")
+                Text("Tiny VAE").tag("tiny")
+            }.pickerStyle(.segmented).labelsHidden().frame(width: 360).accessibilityIdentifier("modelLibrarySection")
             if library.busy || library.message != nil {
                 HStack(spacing: 8) {
                     if library.busy { ProgressView().controlSize(.small) }
@@ -53,7 +55,9 @@ struct ModelLibraryView: View {
                     if library.busy { Button("取消") { library.cancel() } }
                 }.padding(.horizontal, 4)
             }
-            if showsLoRAs {
+            if section == "tiny" {
+                TinyVAELibraryView(library: library, studio: studio, locked: store.busy)
+            } else if showsLoRAs {
                 ModelLoRALibraryView(store: store, studio: studio, library: library)
             } else {
             HStack(spacing: 12) {
@@ -112,12 +116,12 @@ struct ModelLibraryView: View {
             }
         }.padding(24)
             .task {
-                if let selection, UpscaleVariant.from(modelID: selection) != nil { category = .upscale }
+                if let selection, UpscaleVariant.from(modelID: selection) != nil || selection == "seedvr2-3b" { category = .upscale }
                 library.refresh(studio: studio)
             }
             .onChange(of: store.busy) { _, busy in if !busy { library.refresh(studio: studio) } }
             .onChange(of: componentKey) { _, _ in refreshComponents() }
-            .onChange(of: showsLoRAs) { _, _ in refreshComponents() }
+            .onChange(of: section) { _, _ in refreshComponents() }
             .onChange(of: library.busy) { _, busy in if !busy { refreshComponents() } }
             .sheet(item: $downloadModel) { item in ModelDownloadView(model: item, library: library, studio: studio) }
             .sheet(item: $componentModel) { item in componentEditor(item) }
@@ -157,7 +161,7 @@ struct ModelLibraryView: View {
             .background(tint.opacity(0.08), in: Capsule())
     }
     private func refreshComponents() {
-        guard !showsLoRAs, let selected, !library.busy else { return }
+        guard section == "models", let selected, !library.busy else { return }
         let path = studio.draft.modelPaths[selected.id] ?? ""
         if !path.isEmpty { library.inspectComponents(modelID: selected.id, path: path) }
     }
@@ -304,7 +308,7 @@ struct ModelLibraryView: View {
                     HStack {
                         Label("LoRA · \(library.loras.filter { $0.modelID == item.id }.count) 个登记", systemImage: "slider.horizontal.3")
                         Spacer()
-                        Button("管理 LoRA") { showsLoRAs = true }.accessibilityIdentifier("manageLoRAs")
+                        Button("管理 LoRA") { section = "loras" }.accessibilityIdentifier("manageLoRAs")
                     }
                 }
                 if ["z-image-turbo", "flux2-klein-4b"].contains(item.id) {

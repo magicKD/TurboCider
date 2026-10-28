@@ -1050,6 +1050,24 @@ Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefi
     const auto &weight=at(prefix+".weight");
     if(convrot(prefix)) {
         require(weight.dtype()==mx::uint32,"F32 ConvRot partial requires original packed source: "+prefix);
+        if(at(prefix+".scales").dtype()==mx::float32) {
+            // Original Comfy per-row F32 coefficients must not silently become
+            // BF16/FP16 to fit the typed-MPP metadata contract. Use the same
+            // established affine Q8 operator as the full GPU path, but retain
+            // its F32 output BEFORE the ordinary projection's final BF16 cast.
+            const auto& scales=at(prefix+".scales");const auto& biases=at(prefix+".biases");
+            const int width=weight.shape(1)*4;
+            require(weight.ndim()==2 && scales.ndim()==2 && scales.shape(0)==weight.shape(0) && scales.shape(1)>0 &&
+                biases.shape()==scales.shape() && biases.dtype()==mx::float32 && width%scales.shape(1)==0 &&
+                rb>=0 && re>rb && re<=weight.shape(0) && cb>=0 && ce>cb && ce<=width && cb%256==0 && ce%256==0 &&
+                x.shape(-1)==ce-cb,"F32-coefficient ConvRot partial geometry differs");
+            const int group=width/scales.shape(1);
+            require(group==32 || group==64 || group==128,"unsupported F32 ConvRot affine group");
+            auto q=slice_axis(slice_axis(weight,0,rb,re),1,cb/4,ce/4);
+            auto s=slice_axis(slice_axis(scales,0,rb,re),1,cb/group,ce/group);
+            auto b=slice_axis(slice_axis(biases,0,rb,re),1,cb/group,ce/group);
+            return mx::quantized_matmul(mx::astype(convrot_rotate(x,metal_convrot_),mx::float32),q,s,b,true,group,8,"affine");
+        }
         if(affine_bf16_fp32_partial_) {
             require(x.dtype()==mx::bfloat16 && at(prefix+".scales").dtype()==mx::bfloat16 &&
                     at(prefix+".biases").dtype()==mx::bfloat16,"BF16-rounded partial requires original BF16 activation/metadata");

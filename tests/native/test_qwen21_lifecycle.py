@@ -51,8 +51,12 @@ class TransformerLifecycleTests(unittest.TestCase):
             self.assertTrue(measured["deterministic_prefill_decode"])
             self.assertEqual(measured["snapshot_cycles"], 24)
             self.assertTrue(measured["snapshot_cross_transformer_parity"])
+            self.assertTrue(measured["text_prefix_seed_sigma_independent"])
+            self.assertTrue(measured["dbcache_prefix_snapshot_isolation"])
+            self.assertTrue(measured["retained_graph_fresh_values_and_geometry"])
             self.assertTrue(measured["dbcache_policy_and_invalidation"])
             self.assertTrue(measured["dbcache_reference_geometry_and_lora"])
+            self.assertTrue(measured["joint_qkv_mlp_explicit_consent_and_gpu_parity"])
             self.assertGreater(measured["weight_bytes_per_base_cycle"], 65536)
             self.assertLessEqual(measured["maximum_active_bytes"],
                                  measured["baseline_active_bytes"] +

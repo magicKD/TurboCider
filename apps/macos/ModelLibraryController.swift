@@ -41,7 +41,7 @@ enum LibraryTool {
                 if Task.isCancelled, cancelledAt == nil { cancelledAt = .now; process.terminate() }
                 if let cancelledAt, cancelledAt.duration(to: .now) > .seconds(5) { kill(process.processIdentifier, SIGKILL); throw CancellationError() }
                 // Optional filesystem inspection must not hang behind a file provider.
-                if arguments.first != "download", start.duration(to: .now) > .seconds(arguments.first == "plan" ? 180 : 20) {
+                if arguments.first != "download" && arguments.first != "download-tiny", start.duration(to: .now) > .seconds(arguments.first == "plan" ? 180 : 20) {
                     process.terminate(); throw NativeFailure(message: "模型库操作超时，请检查目录访问权限或网络后重试。")
                 }
                 // A cancelled sleep must not skip the helper's cleanup grace period.
@@ -469,6 +469,28 @@ enum LibraryTool {
             let response = try await LibraryTool.run(["plan", "{request}", "--root", root], payload: JSONEncoder().encode(request))
             completion(try LibraryTool.decode(LibraryDownloadPlan.self, from: response))
         }
+    }
+    func tinyVAEPath(_ asset: TinyVAEAsset) -> String? {
+        installations.filter { $0.modelID == asset.installationModelID && $0.revision == asset.revision }
+            .map { URL(fileURLWithPath: $0.path).appendingPathComponent(asset.filename).path }
+            .first { FileManager.default.fileExists(atPath: $0) }
+    }
+    func downloadTinyVAE(_ asset: TinyVAEAsset, source: TinyVAESource) {
+        perform { [self] in
+            let response = try await LibraryTool.run(["download-tiny", asset.id, source.rawValue, "--root", root]) { [weak self] event in
+                Task { @MainActor in self?.event = event }
+            }
+            _ = try LibraryTool.decode(LibraryInstallation.self, from: response)
+            try await readIndex()
+            message = "\(asset.title) 已下载并通过 SHA256 校验，无需 Python。可点击“用于创作”选择。"
+        }
+    }
+    func useTinyVAE(_ asset: TinyVAEAsset, studio: StudioState) {
+        guard !busy, !studio.imageInputsBusy, let path = tinyVAEPath(asset) else {
+            message = "请先完成 Tiny VAE 下载与校验。"; return
+        }
+        studio.draft.tinyVAEPaths[asset.id] = path
+        message = "已选择 \(asset.title)。请在对应模型的“Tiny VAE 与实时预览”中开启所需功能。"
     }
     func download(_ request: LibraryDownloadRequest, studio: StudioState) {
         perform { [self] in

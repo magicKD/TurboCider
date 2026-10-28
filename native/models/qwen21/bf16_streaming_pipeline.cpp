@@ -1,4 +1,5 @@
 #include "pipeline.hpp"
+#include "../../components/vae/tiny.hpp"
 #include "bf16_streaming.hpp"
 #include "conditioning.hpp"
 #include "diagnostic_options.hpp"
@@ -52,6 +53,7 @@ RunResult Session::run_bf16_streamed(const Request &r,const Event &event,std::at
         std::filesystem::create_directories(r.dump);
         mx::save_safetensors((std::filesystem::path(r.dump)/(std::string(name)+".safetensors")).string(),{{"tensor",tensor}});
     };
+    components::TinyPreview preview(r,event,cancelled);
     Tensor text(0.f);const auto text_start=Clock::now();
     bf16_stream_scope([&] {
         emit("load_qwen21_text",0,1);
@@ -92,6 +94,7 @@ RunResult Session::run_bf16_streamed(const Request &r,const Event &event,std::at
             bank.finish_pass();auto &phase=reuse ? result.qwen_ffn_phases->decode : result.qwen_ffn_phases->prefill;
             ++phase.steps;phase.rows=reuse ? 1024 : uint64_t(result.total_tokens);phase.step_seconds+=elapsed(step_start);
             ++result.actual_steps;emit("denoise",step+1,r.steps);
+            if(preview.due(step+1))preview.publish(mx::transpose(mx::reshape(latents,{1,32,32,64}),{0,3,1,2}),step+1);
         }
         bank.finish();result.qwen_bf16_streaming->denoiser=bank.metrics();
     });
@@ -99,9 +102,17 @@ RunResult Session::run_bf16_streamed(const Request &r,const Event &event,std::at
     // Both component weight banks are gone before VAE loading, not merely
     // labels changed on still-resident arrays. Source leases/graphs drained.
     checkpoint(cancelled);const auto decode_start=Clock::now();Weights vae;
-    emit("load_qwen21_vae",0,1);vae.load_file(root_/"vae/qwen_image_2.1_vae_bf16.safetensors");vae.materialize();emit("load_qwen21_vae",1,1);
-    VAE decoder(vae);auto spatial=mx::transpose(mx::reshape(latents,{1,32,32,64}),{0,3,1,2});
-    auto pixels=mx::transpose(decoder.decode(spatial,event,cancelled),{0,2,3,1});mx::eval(pixels);
+    auto spatial=mx::transpose(mx::reshape(latents,{1,32,32,64}),{0,3,1,2});
+    auto decoded=[&] {
+        if(r.tiny_vae && r.tiny_vae->decoder=="tiny") {
+            components::TinyAutoencoder tiny(r.tiny_vae->path,r.model,false,true);
+            result.selection+="; approximate TAEQI2.1 final decode";
+            return mx::clip(tiny.decode(spatial,event,cancelled),Tensor(0.f),Tensor(1.f))*2.f-1.f;
+        }
+        emit("load_qwen21_vae",0,1);vae.load_file(root_/"vae/qwen_image_2.1_vae_bf16.safetensors");vae.materialize();emit("load_qwen21_vae",1,1);
+        VAE decoder(vae);return decoder.decode(spatial,event,cancelled);
+    }();
+    auto pixels=mx::transpose(decoded,{0,2,3,1});mx::eval(pixels);
     require(mx::all(mx::isfinite(pixels)).item<bool>(),"nonfinite streamed Qwen pixels");dump("qwen21_pixels",pixels);
     result.timings.decode=elapsed(decode_start);
     if(!warmup){checkpoint(cancelled);emit("export",0,1);save_rgba_png(pixels,r.output);emit("export",1,1);}

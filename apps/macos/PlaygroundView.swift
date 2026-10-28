@@ -185,6 +185,7 @@ struct PlaygroundView: View {
             canvasSettings
             Divider()
             samplingSettings
+            TinyVAEControls(draft: Binding(get: { state.settings }, set: { value in state.updateSettings { $0 = value } }), locked: controlsLocked)
             Divider()
             executionSettings
             Divider()
@@ -513,7 +514,9 @@ struct PlaygroundView: View {
                 }
             }
             ZStack {
-                if !showReference, let job = selectedJob {
+                if !showReference, let data = store.livePreview, store.livePreviewWorkflowID == state.template.workflowID {
+                    TinyLivePreview(data: data, step: store.livePreviewStep, total: store.livePreviewTotal)
+                } else if !showReference, let job = selectedJob {
                     InteractiveMediaPreview(path: job.request.output)
                 } else if let asset = state.previewAsset {
                     InteractiveMediaPreview(path: asset.path)

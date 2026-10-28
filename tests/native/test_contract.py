@@ -135,10 +135,264 @@ class ContractTests(unittest.TestCase):
                 code, _, error = plan({**base, **change})
                 self.assertNotEqual(code, 0, str(change))
             code, result, error = plan({**base, 'qwen21_dit_smoothquant_convrot': False})
+            if qwen21_streaming_device():
+                self.assertEqual(code, 0, error)
+                self.assertFalse(result['qwen21_dit_smoothquant_convrot'])
+                self.assertTrue(result['qwen21_dit_w8a8'])
+            else:
+                # Disabling the transform does not disable DiT W8A8's separate
+                # M5 Pro 24 GiB admission requirement.
+                self.assertNotEqual(code, 0)
+                self.assertIn('DiT W8A8 requires M5 Pro 24 GiB', error)
+            code, result, error = plan({**base, 'qwen21_dit_smoothquant_convrot': False,
+                                       'qwen21_dit_w8a8': False})
             self.assertEqual(code, 0, error)
             self.assertFalse(result['qwen21_dit_smoothquant_convrot'])
-            self.assertTrue(result['qwen21_dit_w8a8'])
+            self.assertFalse(result['qwen21_dit_w8a8'])
 
+
+    def test_qwen21_corrected_qkv_is_default_off_and_plan_runtime_share_admission(self):
+        flag='TURBOCIDER_QWEN21_CORRECTED_QKV'
+        r=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',width=512,height=512,
+               steps=6,frames=1,audio=False,execution='gpu',residency='resident',allow_approximation=True,
+               loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',strength=1.,role='transformer')],
+               lora_strategy='inference_time',qwen21_dit_cache='off')
+        label='qwen21_corrected_qkv_decode_experimental'
+        with patch.dict(os.environ,{flag:'0','TURBOCIDER_QWEN21_LORA_BF16_AB':'1'}):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            self.assertNotIn(label,result['algorithm_approximations'])
+        with patch.dict(os.environ,{flag:'1','TURBOCIDER_QWEN21_LORA_BF16_AB':'1'}):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            self.assertIn(label,result['algorithm_approximations'])
+            edit=dict(operation='image.edit',qwen21_reference_size=512,inputs=[dict(kind='image',role='reference',path='ref.png')])
+            self.assertEqual(plan({**r,**edit})[0],0)
+            for change in (dict(steps=5),dict(width=1024),dict(allow_approximation=False),dict(execution='gpu_ane'),
+                           dict(residency='component_staged'),dict(loras=[]),dict(memory_budget_bytes=1)):
+                self.assertNotEqual(plan({**r,**change})[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_LORA_BF16_AB':'0'}):self.assertNotEqual(plan(r)[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_PREFIX_SNAPSHOT':'1'}):self.assertNotEqual(plan(r)[0],0)
+        for value in ('','true','01','2'):
+            with patch.dict(os.environ,{flag:value}):self.assertNotEqual(plan(r)[0],0)
+
+    def test_qwen21_direct_qkv_needs_explicit_parent_and_same_request_scope(self):
+        direct='TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT'
+        r=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',width=512,height=512,steps=6,frames=1,audio=False,
+               execution='gpu',residency='resident',allow_approximation=True,lora_strategy='inference_time',qwen21_dit_cache='off',
+               loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',strength=1.,role='transformer')])
+        with patch.dict(os.environ,{direct:'1','TURBOCIDER_QWEN21_CORRECTED_QKV':'1','TURBOCIDER_QWEN21_LORA_BF16_AB':'1'}):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            self.assertIn('qwen21_corrected_qkv_direct_original_buffers_experimental',result['algorithm_approximations'])
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_CORRECTED_QKV':'0'}):self.assertNotEqual(plan(r)[0],0)
+            for change in (dict(width=1024),dict(steps=5),dict(execution='gpu_ane'),dict(loras=[])):
+                self.assertNotEqual(plan({**r,**change})[0],0)
+        for value in ('','true','01','2'):
+            with patch.dict(os.environ,{direct:value}):self.assertNotEqual(plan(r)[0],0)
+
+    def test_qwen21_authored_five_step_direct_qkv_composition_is_separate(self):
+        r=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',width=512,height=512,steps=5,frames=1,audio=False,
+               execution='gpu',residency='resident',allow_approximation=True,lora_strategy='inference_time',qwen21_dit_cache='off',
+               loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',strength=1.,role='transformer')])
+        flags={'TURBOCIDER_QWEN21_STUDENT_FIVE_STEP':'1','TURBOCIDER_QWEN21_CORRECTED_QKV':'1',
+               'TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT':'1','TURBOCIDER_QWEN21_LORA_BF16_AB':'1'}
+        with patch.dict(os.environ,flags):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            labels=result['algorithm_approximations']
+            self.assertIn('qwen21_viggle_v021_r128_5step_sampler_experimental',labels)
+            self.assertIn('qwen21_five_step_direct_qkv_composition_experimental',labels)
+            self.assertNotIn('qwen21_viggle_v021_r128_6step_distillation',labels)
+            edit=dict(operation='image.edit',qwen21_reference_size=512,inputs=[dict(kind='image',role='reference',path='ref.png')])
+            self.assertEqual(plan({**r,**edit})[0],0)
+            for key in ('TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT','TURBOCIDER_QWEN21_STUDENT_FIVE_STEP','TURBOCIDER_QWEN21_LORA_BF16_AB'):
+                with patch.dict(os.environ,{key:'0'}):self.assertNotEqual(plan(r)[0],0)
+            self.assertNotEqual(plan({**r,'steps':6})[0],0)
+
+    def test_qwen21_direct_qkv_prefix_requires_independent_bounded_opt_in(self):
+        r=dict(model='qwen-image-2.1',operation='image.edit',prompt='A red teapot',width=512,height=512,steps=6,frames=1,audio=False,
+               execution='gpu',residency='resident',allow_approximation=True,lora_strategy='inference_time',qwen21_dit_cache='off',
+               qwen21_reference_size=512,inputs=[dict(kind='image',role='reference',path='ref.png')],
+               loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',strength=1.,role='transformer')])
+        flags={key:'1' for key in ('TURBOCIDER_QWEN21_CORRECTED_QKV','TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT',
+               'TURBOCIDER_QWEN21_CORRECTED_QKV_PREFIX','TURBOCIDER_QWEN21_PREFIX_SNAPSHOT','TURBOCIDER_QWEN21_LORA_BF16_AB')}
+        with patch.dict(os.environ,flags):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            self.assertIn('qwen21_direct_qkv_immutable_prefix_composition_experimental',result['algorithm_approximations'])
+            for key in flags:
+                with patch.dict(os.environ,{key:'0'}):self.assertNotEqual(plan(r)[0],0)
+            for change in (dict(inputs=r['inputs']*2),dict(qwen21_reference_size=1024),dict(dump_tensors='raw'),
+                           dict(operation='image.generate',inputs=[]),dict(execution='gpu_ane')):
+                self.assertNotEqual(plan({**r,**change})[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_STUDENT_FIVE_STEP':'1'}):
+                self.assertEqual(plan({**r,'steps':5})[0],0)
+
+    def test_qwen21_typed_lora_swiglu_is_explicit_and_composes_with_bounded_direct_prefix(self):
+        r=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',width=512,height=512,steps=6,frames=1,audio=False,
+               execution='gpu',residency='resident',allow_approximation=True,lora_strategy='inference_time',qwen21_dit_cache='off',
+               loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',strength=1.,role='transformer')])
+        flags={'TURBOCIDER_QWEN21_LORA_SWIGLU':'1','TURBOCIDER_QWEN21_LORA_BF16_AB':'1'}
+        with patch.dict(os.environ,flags):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            self.assertIn('qwen21_typed_lora_swiglu_decode_experimental',result['algorithm_approximations'])
+            for change in (dict(width=1024),dict(steps=5),dict(allow_approximation=False),dict(execution='gpu_ane'),dict(residency='component_staged'),dict(loras=[])):
+                self.assertNotEqual(plan({**r,**change})[0],0)
+            edit={**r,'operation':'image.edit','qwen21_reference_size':512,'inputs':[dict(kind='image',role='reference',path='ref.png')]}
+            for qkv in (False,True):
+                for prefix in (False,True):
+                    more={'TURBOCIDER_QWEN21_CORRECTED_QKV':str(int(qkv)),'TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT':str(int(qkv)),
+                          'TURBOCIDER_QWEN21_CORRECTED_QKV_PREFIX':str(int(qkv and prefix)),'TURBOCIDER_QWEN21_PREFIX_SNAPSHOT':str(int(prefix))}
+                    with patch.dict(os.environ,more):self.assertEqual(plan(edit)[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_STUDENT_FIVE_STEP':'1'}):self.assertEqual(plan({**r,'steps':5})[0],0)
+            for key in ('TURBOCIDER_QWEN21_LORA_BF16_AB',):
+                with patch.dict(os.environ,{key:'0'}):self.assertNotEqual(plan(r)[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_LORA_SWIGLU':'true'}):self.assertNotEqual(plan(r)[0],0)
+
+    def test_qwen21_bounded_async_steps_are_explicit_and_preserve_student_scope(self):
+        r=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',width=512,height=512,steps=6,frames=1,audio=False,
+               execution='gpu',residency='resident',allow_approximation=True,lora_strategy='inference_time',qwen21_dit_cache='off',
+               loras=[dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',strength=1.,role='transformer')])
+        flags={'TURBOCIDER_QWEN21_ASYNC_STEP_PAIR':'1','TURBOCIDER_QWEN21_LORA_BF16_AB':'1'}
+        with patch.dict(os.environ,flags):
+            code,result,error=plan(r);self.assertEqual(code,0,error)
+            self.assertIn('qwen21_bounded_async_step_pair_experimental',result['algorithm_approximations'])
+            for change in (dict(steps=5),dict(steps=40),dict(width=1024),dict(execution='gpu_ane'),dict(residency='component_staged'),dict(loras=[])):
+                self.assertNotEqual(plan({**r,**change})[0],0)
+            for key in ('TURBOCIDER_QWEN21_PROFILE_STEPS','TURBOCIDER_ANE_CALIBRATION_REPLAY','TURBOCIDER_QWEN21_VAE_FP16_CONV'):
+                with patch.dict(os.environ,{key:'1'}):self.assertNotEqual(plan(r)[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_STUDENT_FIVE_STEP':'1'}):self.assertEqual(plan({**r,'steps':5})[0],0)
+            edit={**r,'operation':'image.edit','qwen21_reference_size':512,'inputs':[dict(kind='image',role='reference',path='ref.png')]}
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_LORA_SWIGLU':'1','TURBOCIDER_QWEN21_CORRECTED_QKV':'1',
+                'TURBOCIDER_QWEN21_CORRECTED_QKV_DIRECT':'1','TURBOCIDER_QWEN21_CORRECTED_QKV_PREFIX':'1','TURBOCIDER_QWEN21_PREFIX_SNAPSHOT':'1'}):
+                self.assertEqual(plan(edit)[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_ASYNC_STEP_PAIR':'true'}):self.assertNotEqual(plan(r)[0],0)
+
+    def test_qwen21_standalone_tokenizer_reuse_is_not_encoder_fusion(self):
+        request=dict(model='qwen-image-2.1',operation='image.generate',prompt='A fox',width=512,height=512,
+                     steps=40,frames=1,audio=False,execution='gpu',residency='resident',allow_approximation=False)
+        flag='TURBOCIDER_QWEN21_TOKENIZER_REUSE'
+        with patch.dict(os.environ,{flag:'1'}):
+            code,result,error=plan(request)
+            self.assertEqual(code,0,error)
+            self.assertEqual(result['encoder_gpu_graph'],'qwen3_vl_deepstack_gpu_only')
+            self.assertEqual(result['encoder_precision'],'bf16')
+            self.assertFalse(any('tokenizer' in label for label in result['algorithm_approximations']))
+            for invalid in (dict(width=1024),dict(residency='component_staged'),dict(prompt_enhance=True),
+                            dict(execution='gpu_ane'),dict(qwen21_denoiser_backend='native-metal-graph'),
+                            dict(memory_budget_bytes=8<<30)):
+                self.assertNotEqual(plan({**request,**invalid})[0],0)
+            with patch.dict(os.environ,{'TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU':'1'}):
+                self.assertNotEqual(plan(request)[0],0)
+        for value in ('','true','01','2'):
+            with patch.dict(os.environ,{flag:value}): self.assertNotEqual(plan(request)[0],0)
+
+    def test_qwen21_authored_five_step_sampler_is_explicit_and_separate(self):
+        adapter = dict(path='Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors',
+                       strength=1., role='transformer')
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                       width=512, height=512, steps=5, frames=1, audio=False,
+                       execution='gpu', residency='resident', allow_approximation=True,
+                       loras=[adapter], lora_strategy='inference_time', qwen21_dit_cache='off')
+        flag = 'TURBOCIDER_QWEN21_STUDENT_FIVE_STEP'
+        with patch.dict(os.environ, {flag: '0'}):
+            self.assertNotEqual(plan(request)[0], 0)
+            self.assertEqual(plan({**request, 'steps': 6})[0], 0)
+        with patch.dict(os.environ, {flag: '1'}):
+            for joint in ('0', '1'):
+                with patch.dict(os.environ, {'TURBOCIDER_QWEN21_LORA_BF16_AB': joint}):
+                    for count in range(4):
+                        edit = dict(operation='image.edit', qwen21_reference_size=512,
+                                    inputs=[dict(kind='image', role='reference', path=f'{i}.png')
+                                            for i in range(count)]) if count else {}
+                        code, result, error = plan({**request, **edit})
+                        self.assertEqual(code, 0, error)
+                        labels = result['algorithm_approximations']
+                        self.assertIn('qwen21_viggle_v021_r128_5step_sampler_experimental', labels)
+                        self.assertNotIn('qwen21_viggle_v021_r128_6step_distillation', labels)
+                        if count:
+                            self.assertIn('qwen21_viggle_r128_reference_resize_512', labels)
+            for invalid in (dict(steps=6), dict(steps=4), dict(width=1024), dict(allow_approximation=False),
+                            dict(residency='component_staged'), dict(execution='gpu_ane'),
+                            dict(qwen21_denoiser_backend='native-metal-graph'), dict(loras=[]),
+                            dict(loras=[{**adapter, 'strength': .5}]),
+                            dict(loras=[{**adapter, 'path': adapter['path'].replace('r128', 'r256')}]),
+                            dict(qwen21_dit_cache='conservative'), dict(operation='image.edit', inputs=[])):
+                self.assertNotEqual(plan({**request, **invalid})[0], 0, invalid)
+            for conflict, value in (
+                    ('TURBOCIDER_QWEN21_VAE_FP16_CONV', '1'),
+                    ('TURBOCIDER_QWEN21_STUDENT_FINAL_FFN_REUSE', '16'),
+                    ('TURBOCIDER_QWEN21_BF16_STREAMING', '1'),
+                    ('TURBOCIDER_QWEN21_ENCODER_BACKEND', 'metal')):
+                with patch.dict(os.environ, {conflict: value}):
+                    self.assertNotEqual(plan(request)[0], 0)
+        for value in ('', 'true', '01', '5', ' 1'):
+            with patch.dict(os.environ, {flag: value}):
+                self.assertNotEqual(plan(request)[0], 0)
+        # Six -> five -> six restoration does not relabel the original tier.
+        with patch.dict(os.environ, {flag: '0'}):
+            code, result, error = plan({**request, 'steps': 6})
+            self.assertEqual(code, 0, error)
+            self.assertIn('qwen21_viggle_v021_r128_6step_distillation', result['algorithm_approximations'])
+
+    def test_qwen21_fused_vae_norm_remains_explicit_gpu_research(self):
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                       width=512, height=512, steps=40, audio=False, frames=1,
+                       execution='gpu', residency='resident', allow_approximation=True)
+        flag = 'TURBOCIDER_QWEN21_VAE_FUSED_NORM'
+        with patch.dict(os.environ, {flag: '1'}):
+            self.assertEqual(plan(request)[0], 0)
+            for extra in (dict(allow_approximation=False), dict(width=1024), dict(residency='component_staged')):
+                code, _, error = plan({**request, **extra})
+                self.assertNotEqual(code, 0)
+                self.assertIn('VAE fused norm requires', error)
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_VAE_FP16_CONV': '1'}):
+                self.assertEqual(plan(request)[0], 0)
+        with patch.dict(os.environ, {flag: 'bad'}):
+            code, _, error = plan(request)
+            self.assertNotEqual(code, 0)
+            self.assertIn('requires 0 or 1', error)
+
+    def test_qwen21_fp16_vae_is_an_explicit_bounded_approximation(self):
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                       width=512, height=512, steps=40, audio=False, frames=1,
+                       execution='gpu', residency='resident', allow_approximation=True)
+        flag = 'TURBOCIDER_QWEN21_VAE_FP16_CONV'
+        with patch.dict(os.environ, {flag: '1'}):
+            code, _, error = plan(request)
+            self.assertEqual(code, 0, error)
+            for extra in (dict(allow_approximation=False), dict(width=1024),
+                          dict(residency='component_staged'), dict(execution='gpu_ane'),
+                          dict(qwen21_denoiser_backend='native_metal')):
+                code, _, error = plan({**request, **extra})
+                self.assertNotEqual(code, 0)
+                # Shared executor guards can reject an invalid ANE/native
+                # request before Qwen's decoder-specific validation runs.
+                if 'execution' not in extra and 'qwen21_denoiser_backend' not in extra:
+                    self.assertIn('VAE FP16 convolution requires', error)
+        with patch.dict(os.environ, {flag: 'bad'}):
+            code, _, error = plan(request)
+            self.assertNotEqual(code, 0)
+            self.assertIn('requires 0 or 1', error)
+
+    def test_qwen21_retired_student_graph_flag_fails_early(self):
+        request = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                       width=512, height=512, steps=40, audio=False, frames=1,
+                       execution='gpu', residency='resident')
+        flag = 'TURBOCIDER_QWEN21_RETAIN_STUDENT_GRAPH'
+        with patch.dict(os.environ):
+            for key in tuple(os.environ):
+                if key.startswith('TURBOCIDER_QWEN21_'):
+                    os.environ.pop(key)
+            for value in (None, '0'):
+                if value is None:
+                    os.environ.pop(flag, None)
+                else:
+                    os.environ[flag] = value
+                code, _, error = plan(request)
+                self.assertEqual(code, 0, error)
+            for value, reason in (('1', 'retired: no measured net benefit'),
+                                  ('bad', 'requires 0 or 1'), ('', 'requires 0 or 1')):
+                os.environ[flag] = value
+                code, _, error = plan(request)
+                self.assertNotEqual(code, 0)
+                self.assertIn(reason, error)
 
     def test_qwen21_layer_staged_t2i_fits_24gib_without_lowering_other_routes(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
@@ -161,10 +415,23 @@ class ContractTests(unittest.TestCase):
                     execution='gpu_ane', residency='component_staged', allow_approximation=True,
                     qwen21_w8a8=True, qwen21_staged_fast=False, qwen21_dit_cache='off',
                     ane_manifest='checkpoint-verified-at-execution.json')
+        v2 = dict(schema_version=2, model=base['model'], operation=base['operation'],
+                  inputs=[dict(kind='text', role='prompt', text=base['prompt'])],
+                  outputs=[dict(kind='image', path='result.png', width=512, height=512)],
+                  sampling=dict(seed=42, steps=25),
+                  execution={key: base[key] for key in (
+                      'residency', 'allow_approximation', 'qwen21_w8a8',
+                      'qwen21_staged_fast', 'qwen21_dit_cache', 'ane_manifest')})
+        v2['execution']['policy'] = base['execution']
         with patch.dict(os.environ, {'TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS': '4',
                                      'TURBOCIDER_QWEN21_STAGED_ATTN_BITS': '4'}):
             code, result, error = plan(base)
+            v2_code, v2_result, v2_error = plan(v2)
         self.assertEqual(code, 0, error)
+        self.assertEqual(v2_code, 0, v2_error)
+        for key in ('qwen21_staged_fast', 'precision', 'memory_estimate_bytes',
+                    'algorithm_approximations'):
+            self.assertEqual(v2_result[key], result[key], key)
         self.assertFalse(result['qwen21_staged_fast'])
         self.assertEqual(result['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
                          qwen21_streaming_device())
@@ -384,6 +651,47 @@ class ContractTests(unittest.TestCase):
             code, gate_up, error = plan(base)
             self.assertEqual(code, 0, error)
             self.assertGreater(gate_up['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+
+    def test_qwen21_conservative_frozen_cache_preserves_composition_guards(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',
+                    width=512, height=512, steps=40, audio=False, frames=1,
+                    execution='gpu_ane', residency='resident', allow_approximation=True,
+                    qwen21_w8a8=True, ane_manifest='checkpoint-verified-at-execution.json',
+                    qwen21_dit_cache='conservative')
+        with patch.dict(os.environ):
+            for key in tuple(os.environ):
+                if key.startswith('TURBOCIDER_QWEN21_'):
+                    os.environ.pop(key)
+            code, result, error = plan(base)
+            self.assertEqual(code, 0, error)
+            self.assertEqual(result['qwen21_dit_cache'], 'conservative')
+            self.assertEqual(result['execution'], 'gpu_ane_experimental')
+            self.assertIn('qwen21_decode_dit_cache', result['algorithm_approximations'])
+            for invalid in (dict(qwen21_dit_cache='balanced'), dict(qwen21_dit_cache='fast'),
+                            dict(steps=20), dict(steps=39), dict(qwen21_w8a8=False),
+                            dict(qwen21_gpu_w8a16=True), dict(qwen21_gpu_full_ffn_blocks=[3, 5, 7]),
+                            dict(hybrid_mlp_mode='runtime'),
+                            dict(encoder_ane_manifest='encoder.json'), dict(memory_budget_bytes=8 << 30),
+                            dict(allow_approximation=False), dict(qwen21_reference_size=512)):
+                with self.subTest(invalid=invalid):
+                    self.assertNotEqual(plan({**base, **invalid})[0], 0)
+            # The resident frozen-cache recipe is distinct from the existing
+            # M5 Pro / 24 GiB staged route, which also supports this preset.
+            code, staged, error = plan({**base, 'residency': 'component_staged'})
+            if qwen21_streaming_device():
+                self.assertEqual(code, 0, error)
+                self.assertEqual(staged['qwen21_dit_cache'], 'conservative')
+                self.assertIn('qwen21_decode_dit_cache', staged['algorithm_approximations'])
+                self.assertLessEqual(staged['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+            else:
+                self.assertNotEqual(code, 0)
+            edit = {**base, 'operation': 'image.edit',
+                    'inputs': [dict(kind='image', role='reference', path='reference.png')]}
+            self.assertNotEqual(plan(edit)[0], 0)
+            with patch.dict(os.environ, {'TURBOCIDER_QWEN21_FULL_REF_W8A8_DIAGNOSTIC': '1'}):
+                code, result, error = plan(edit)
+                self.assertEqual(code, 0, error)
+                self.assertEqual(result['qwen21_reference_size'], 1024)
 
     def test_qwen21_dit_cache_request_presets_and_schema_roundtrip(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A teapot',

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "descriptor_version": 1,
+  "backend": "private_runtime_shape",
+  "kind": "swiglu",
+  "layout": "out_in",
+  "biases": false,
+  "lora_inputs": false,
+  "rows": 2048,
+  "hidden": 4096,
+  "width": 12288,
+  "tile_k": 4096,
+  "tile_n": 512
+}

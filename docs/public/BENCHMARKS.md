@@ -13,6 +13,63 @@ is inspectable reported evidence, not a claim that every original experiment
 can be reproduced from documentation alone. Record IDs identify dated retained
 measurements; they are not live links to unpublished files.
 
+## SeedVR2 on M4 Max — October 14, 2026
+
+Published October 15 by exporting eight existing paired reports, with no new
+inference runs. Hardware: Apple M4 Max, 64 GiB, macOS 26.6.2. Original
+Comfy-Org/SeedVR2 3B FP16 DiT/VAE, revision
+`8d30a39cd60f07cfff11306406f97021a50ff0eb`, no LoRA. One Euler/simple step,
+CFG 1, no color correction; PNG or silent H.264 MP4 export.
+
+| Workload | Native GPU, default pair s | Comfy default median s | Native GPU, SDPA pair s | Comfy SDPA median s |
+| --- | ---: | ---: | ---: | ---: |
+| Image 256→512 | 0.827034 | 3.985151 | 0.827852 | 3.977832 |
+| Image 512→1024 | 3.506320 | 15.535424 | 3.503769 | 15.636062 |
+| Video 256→512, 25 frames / 24 FPS | 20.585554 | 71.189599 | 20.598051 | 71.337080 |
+| Video 512→1024, 25 frames / 24 FPS | 85.010773 | 295.438371 | 84.878555 | 298.901318 |
+
+The two native columns belong to their respective default/SDPA paired records;
+they are not interchangeable controls. Headlines select the faster Comfy
+median per workload and **its own paired native median**: 4.81×, 4.43×, 3.46×,
+3.48×. No later hybrid, tiling or block-stream sample is substituted.
+
+Each comparison has four independent processes/servers in native/reference/
+reference/native order, one cold plus three warm requests per process, seeds
+42/43/44/45: six warm requests per route, 16 complete outputs per comparison.
+New input filenames invalidate conditioning cache; native reports cache misses
+and Comfy media/resize/encode/sample/decode/export nodes actually execute.
+Model loader caching is allowed. Every output has checked dimensions; every
+video preserves all 25 frames at 24 FPS. Timing includes import/resize, VAE,
+sampling and export, excluding construction, server readiness and offline
+compilation; cold samples are separately exported.
+
+Native uses resident GPU `seedvr2-stable-fp16-fp32-v1`: FP16 projections,
+attention and VAE, with FP32 residual/time/norm/output/Euler and a 4 GiB
+allocator cache limit. ComfyUI 0.39.0 commit
+`b0b743566f65daafc423b4fea8a2fbda94b3384a`, Python 3.13.12, PyTorch 2.12.1
+MPS; both presets explicitly use `--fp16-vae`. Default uses sub-quadratic
+attention / ordinary residency; SDPA adds `--use-pytorch-cross-attention`,
+`--gpu-only` and `--fp16-unet`. Both logs report
+`model weight dtype torch.float16, manual cast: torch.bfloat16`.
+This is a configuration comparison, not equal-precision/bit-exact parity.
+
+Images use unmodified Comfy sources. Video uses only the disclosed
+[non-CUDA cache-transfer guard](../../tools/validation/seedvr2_comfy_mps_cache.patch)
+in an isolated reference copy; it disables CUDA-event cache transfers on MPS.
+Unmodified stock video crashes are not denominators. User services/source
+were not changed. All speed gates pass, but all eight records still retain
+`overall_qualification_passed=false`; independent FP32 quality gates are
+described in the [SeedVR2 guide](SEEDVR2.md#validation-boundary).
+No matched Comfy process-memory ranking, ANE occupancy, long-video or 16 GiB
+qualification is implied.
+
+The committed [sample export](../design/validation/seedvr2-comfy-benchmark-current-20261015.json)
+contains every cold/warm sample, input/model SHA, per-record native library/build
+SHA, and relative IDs/SHA-256 of paired reports, child reports and dtype logs.
+Raw reports/media are retained locally, not distributed. The
+[detailed benchmark](../benchmark/SEEDVR2_COMFYUI.md) lists cold controls,
+absolute savings, record IDs and selection boundaries.
+
 ## M5 Pro — September 16, 2026
 
 M5 Pro, 16-core GPU, 24 GiB, macOS 26.4.1, MLX 0.32.0. Medians include

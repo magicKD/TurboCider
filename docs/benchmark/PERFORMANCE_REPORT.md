@@ -1,16 +1,41 @@
 # TurboCider 图像与视频性能评测
 
-2026-10-13整理 · Apple M4 Max /64GiB · macOS26.6.2 · base-only，无额外LoRA。
-范围仅FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5；FLUX9B不参与排名。
+当前配置入口已更新至[2026-10-19最快已测配置](CURRENT_FASTEST_CONFIGS.md)，包含
+新Qwen Base/Turbo/ConvRot/LoRA研究结果与产物可用性。以下10月13–15日的原始
+框架配对、缓存口径和倍率保持不变，不用后续热命中数字回填历史比较。
+
+2026-10-13生成模型整理，2026-10-15补SeedVR2 · Apple M4 Max /64GiB · macOS26.6.2 · base-only，无额外LoRA。
+生成模型范围为FLUX4B、Z-Image Turbo、Qwen Image2.1、LTX2.5；FLUX9B不参与排名。
+SeedVR2作为图像／视频超分另列，不改写原四家族catalog或其完成口径。
 本报告收敛已有完整实验与刚结束的Unsloth/ComfyUI对照，不再扩大参数网格。
 
-**最新Comfy重点对照**按用户要求复用TC已测最优，不再重跑原生：
+**生成模型Comfy重点对照（10月13日）**按用户要求复用TC已测最优，不再重跑原生：
 Z **1.48×**、Qwen2.1 **1.56×**、LTX质量GPU **1.76×**／最快近似 **1.81×**。
 完整请求分别省**2.755s**、**17.291s**、LTX质量**48.382s**／近似**50.361s**。
 这是已有最优记录的跨窗口比较，LTX Comfy只有单warm观察；下方原同窗口
 倍率不改写。完整四模型表与来源/精度/缓存边界见[Comfy模型对照](COMFYUI_MODEL_COMPARISON.md)。
 
-## 核心结论
+## SeedVR2：完整超分对ComfyUI（10月15日补录）
+
+复用10月14日已完成的8组ABBA，不重跑实验。每任务选择更快的Comfy预设，
+TC取该组配对结果；每路6个fresh warm，导入／resize／VAE encode／1步采样／
+VAE decode／PNG或无音轨H.264导出全部计入，构造与cold另列。
+
+| 超分任务 | 更快Comfy完整s | TC GPU完整s | Comfy/TC | 每次节省 | 耗时减少 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 图像256→512 | 3.978，SDPA/GPU-only | 0.828 | **4.81×** | 3.150s | 79.2% |
+| 图像512→1024 | 15.535，默认attention | 3.506 | **4.43×** | 12.029s | 77.4% |
+| 视频256→512，25帧/24FPS | 71.190，默认attention，MPS兼容 | 20.586 | **3.46×** | 50.604s | 71.1% |
+| 视频512→1024，25帧/24FPS | 295.438，默认attention，MPS兼容 | 85.011 | **3.48×** | 210.428s | 71.2% |
+
+TC为稳定FP16/FP32 **resident GPU**，不是ANE收益。Comfy0.39.0 /Torch2.12.1
+MPS两种预设实际均记录FP16权重、BF16 manual cast，不宣称等精度／bit-exact。
+视频参考只在任务副本加入non-CUDA缓存转移guard，不是未修改stock视频。
+原记录速度门通过但`overall_qualification_passed=false`；无同口径Comfy物理
+内存对比，不发布内存排名。全部默认／SDPA控制、cold、版本与原始样本绑定见
+[SeedVR2专页](SEEDVR2_COMFYUI.md)和[机器证据](../design/validation/seedvr2-comfy-benchmark-current-20261015.json)。
+
+## 生成模型：核心结论
 
 **在已测完整任务中，TurboCider GPU/ANE相对固定Unsloth/Metal路径达到
 3.40×（Qwen GGUF）和3.15×（Z-Image）；相对mflux0.22约快1.32–1.34×，

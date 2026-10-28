@@ -17,6 +17,24 @@ struct LoRAAsset {
     float strength = 1.0f;
     std::string role = "transformer";
 };
+struct SeedVR2VAEConfig {
+    std::string encoder = "buffered";
+    std::string decoder = "buffered";
+    std::string convolution = "singleton2d";
+    std::string history = "compact";
+    bool share_upscale_history = false;
+    std::string spatial = "full";
+    std::string encoder_spatial = "full";
+    int spatial_rows = 64;
+    uint64_t spatial_disk_budget_bytes = 8ull << 30;
+    int tile_rows = 16384;
+    uint64_t allocator_cache_bytes = 4ull << 30;
+};
+struct TinyVAEConfig {
+    std::string path, encoder = "original", decoder = "original";
+    bool preview = false;
+    int interval = 2;
+};
 struct Request {
     std::string model = "flux2-klein-4b";
     std::string operation = "image.generate";
@@ -112,6 +130,8 @@ struct Request {
     MemoryConstrainedConfig memory_constrained;
     StreamingConfig streaming;
     QuantizedExecutionConfig quantized_execution;
+    std::optional<SeedVR2VAEConfig> seedvr2_vae;
+    std::optional<TinyVAEConfig> tiny_vae;
     std::optional<StreamingConfig> streaming_requested;
     std::optional<StreamingSelector> streaming_selector;
     std::optional<StreamingSelector> streaming_selector_requested;

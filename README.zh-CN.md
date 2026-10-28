@@ -12,6 +12,8 @@ TurboCider 是面向 Apple Silicon Mac 的本地多模态推理引擎。用原�
 
 ## 性能亮点
 
+Qwen Image 2.1／Z-Image 现支持原生 Tiny VAE 和可配置步数的实时预览，见 [Tiny VAE 使用说明](docs/public/TINY_VAE.md)。
+
 同一台 **Apple M4 Max · 64 GiB**，比较完整生成耗时，包含编码、采样、解码和结果输出。
 
 | 模型与任务 | 对比框架 / 格式 | 对比耗时 | TurboCider | 加速比 / 耗时减少 |
@@ -111,6 +113,7 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | `bindings/`、`integrations/comfyui/` | C / Swift SDK、Python HTTP 客户端与 ComfyUI 节点 |
 | `tools/`、`tests/` | 构建、转换、回归测试和性能验证 |
 | `docs/public/`、`docs/benchmark/` | 使用指南与可核查的评测记录 |
+| [`techniques/`](techniques/README.md) | Apple Silicon 优化百科：Metal、ANE、GPU/ANE 协同、内存、profiling 与新模型接入 |
 
 [文档入口](docs/public/README.md) · [模型库](docs/public/MODEL_LIBRARY.md) · [缓存与内存](docs/public/CACHES.md)
 

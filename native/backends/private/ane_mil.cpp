@@ -4,14 +4,15 @@
 #include "../metal_graph/native_ane_lora_contract.hpp"
 #include <algorithm>
 #include "../ane_w8a8_math.hpp"
+#include "../ane_w8_functions.hpp"
 #include <cstring>
 
 namespace tc::ane::private_api {
 namespace {
 std::string shape(int rows, int cols) { return "[1, 1, " + std::to_string(rows) + ", " + std::to_string(cols) + "]"; }
 std::string tensor(int rows, int cols) { return "tensor<fp16, " + shape(rows, cols) + ">"; }
-std::string buffer(int rows, int cols) {
-    const int stride = (cols + 31) / 32 * 32;
+std::string buffer(int rows, int cols,int physical_columns=0) {
+    const int stride = ((physical_columns?physical_columns:cols) + 31) / 32 * 32;
     const auto plane = std::to_string(uint64_t(rows) * stride);
     return "tensor_buffer<fp16, shape=" + shape(rows, cols) + ", strides=[" + plane + ", " + plane + ", " +
         std::to_string(stride) + ", 1], interleave_factors=[1, 1, 1, 1]>";
@@ -176,7 +177,8 @@ namespace {
 namespace lora_contract = tc::metal_graph::native_ane_lora_contract;
 W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float headroom, W8Basis basis,
     int activation_group_size,int hidden_group_size,bool bf16_value_boundaries,
-    const lora_contract::Spec* native_lora = nullptr) {
+    const lora_contract::Spec* native_lora = nullptr,W8Projection projection_policy=W8Projection::Descriptor,
+    W8Activation activation_policy=W8Activation::ExpDivide,int physical_rows=0,std::string_view function="main_ane") {
     // An explicit 4224-row bucket can cover 1024px image tokens and up to
     // 128 caption tokens in one request. Keep the existing smaller buckets
     // available: fewer handoffs are not a model-speed/quality guarantee.
@@ -191,6 +193,13 @@ W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float he
     const bool grouped=activation_group_size==256;
     if(hidden_group_size==-1)hidden_group_size=activation_group_size;
     const bool hidden_grouped=hidden_group_size==256;
+    if(activation_policy!=W8Activation::ExpDivide && (projection_policy!=W8Projection::Descriptor ||
+            basis!=W8Basis::SylvesterDH || s.lora_inputs || activation_group_size || hidden_group_size ||
+            bf16_value_boundaries || native_lora || headroom!=1.f))
+        throw CapabilityError("experimental W8 activation requires base-only ungrouped Sylvester, descriptor projection and unit headroom");
+    if(projection_policy!=W8Projection::Descriptor && (basis!=W8Basis::SylvesterDH || s.lora_inputs ||
+            activation_group_size || hidden_group_size || bf16_value_boundaries || native_lora))
+        throw CapabilityError("experimental W8 projection requires base-only ungrouped Sylvester arithmetic");
     if(activation_group_size!=0 && (!grouped || !comfy))
         throw CapabilityError("group A8 MIL requires explicit Comfy group256 recipe");
     if(hidden_group_size!=0 && (!hidden_grouped || !comfy))
@@ -225,9 +234,14 @@ W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float he
     };
     std::string parameters, body;
     auto line = [&](const std::string &text) { body += "        " + text + ";\n"; };
-    auto input = [&](const char *type, const std::string &name, int r, int c) {
-        if (!parameters.empty()) parameters += ", "; parameters += in_buffer(type, r, c) + " " + name;
-        line(typed(type, r, c) + " " + name + "_t = tensor_buffer_to_tensor<ios17>(input = " + name + ")");
+    auto input = [&](const char *type, const std::string &name, int r, int c,bool tokens=false) {
+        const int stored=tokens && physical_rows?physical_rows:c;
+        if (!parameters.empty()) parameters += ", "; parameters += in_buffer(type, r, stored) + " " + name;
+        if(stored==c)line(typed(type, r, c) + " " + name + "_t = tensor_buffer_to_tensor<ios17>(input = " + name + ")");
+        else {
+            line(typed(type,r,stored)+" "+name+"_storage = tensor_buffer_to_tensor<ios17>(input = "+name+")");
+            line(typed(type,r,c)+" "+name+"_t = slice_by_size(x = "+name+"_storage, begin = tensor<int32, [4]>([0, 0, 0, 0]), size = tensor<int32, [4]>("+shape(r,c)+"))");
+        }
     };
     auto f = [&](const std::string &name, int r, const std::string &expression) { line(typed("fp16", r, s.rows) + " " + name + " = " + expression); };
     std::vector<std::string> carrier_checks;
@@ -259,12 +273,21 @@ W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float he
     auto projection = [&](const std::string &name, const std::string &w, const std::string &x, int n, int k,
                           const std::string &group_scales=std::string{},const std::string &row_scales=std::string{}) {
         const bool group_projection=name=="d"?hidden_grouped:grouped;
-        const int tile = group_projection ? 256 : s.tile_k > 0 ? std::min(s.tile_k, 2048) : 2048;
+        const auto leaf_policy=w8_projection_leaf(projection_policy,name=="d");
+        const int tile = w8_projection_k_tile(leaf_policy,s.tile_k,k,group_projection);
         if (tile < 128) throw CapabilityError("private W8A8 K tile too small");
         std::string total;
         for (int begin = 0; begin < k; begin += tile) {
             const int width = std::min(tile, k - begin); const auto suffix = std::to_string(begin);
             const auto wt = name + "w" + suffix, xt = name + "x" + suffix, p = name + "p" + suffix;
+            if(leaf_policy!=W8Projection::Descriptor && begin==0 && width==k) {
+                // Full operands feed dequantize -> MatMul directly, as in
+                // the single-node QKV control. No checkpoint constants.
+                line(typed("fp16",n,width)+" "+wt+" = dequantize(input = "+w+"_t, scale = fp16(0x1p-7))");
+                f(xt,width,"dequantize(input = "+x+", scale = fp16(0x1p-7))");
+                f(p,n,"matmul(transpose_x = bool(false), transpose_y = bool(false), x = "+wt+", y = "+xt+")");
+                total=p;continue;
+            }
             // Slice INT8 first, then dequantize each MatMul operand directly.
             // This retains the Splash-style dequantize -> MatMul pattern;
             // slicing a full FP16 dequantized matrix can inhibit quantized
@@ -290,7 +313,7 @@ W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float he
         }
         return total;
     };
-    input("int8", "x", s.hidden, s.rows); input("fp16", "tx", grouped?s.hidden/256:1, s.rows);
+    input("int8", "x", s.hidden, s.rows,true); input("fp16", "tx", grouped?s.hidden/256:1, s.rows,true);
     input("int8", "wg", s.width, s.hidden); input("fp16", "sg", s.width, 1);
     input("int8", "wu", s.width, s.hidden); input("fp16", "su", s.width, 1);
     input("int8", "wd", s.hidden, s.width);
@@ -329,8 +352,24 @@ W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float he
             finite_boundary(up,s.width,"native_up_corrected");
         }
     }
-    f("neg", s.width, "mul(x = " + gate + ", y = fp16(-1))"); f("eg", s.width, "exp(x = neg)");
-    f("denom", s.width, "add(x = eg, y = fp16(1))"); f("silu", s.width, "real_div(x = " + gate + ", y = denom)");
+    switch(activation_policy) {
+        case W8Activation::ExpDivide:
+            f("neg", s.width, "mul(x = " + gate + ", y = fp16(-1))"); f("eg", s.width, "exp(x = neg)");
+            f("denom", s.width, "add(x = eg, y = fp16(1))"); f("silu", s.width, "real_div(x = " + gate + ", y = denom)");
+            break;
+        case W8Activation::Sigmoid:
+            f("sigmoid",s.width,"sigmoid(x = "+gate+")");
+            f("silu",s.width,"mul(x = "+gate+", y = sigmoid)");
+            break;
+        case W8Activation::SiLU:f("silu",s.width,"silu(x = "+gate+")");break;
+        case W8Activation::SigmoidComplement:
+            f("neg",s.width,"mul(x = "+gate+", y = fp16(-1))");
+            f("sigmoid_negative",s.width,"sigmoid(x = neg)");
+            f("complement",s.width,"sub(x = fp16(1), y = sigmoid_negative)");
+            f("silu",s.width,"mul(x = "+gate+", y = complement)");
+            break;
+        default:throw CapabilityError("invalid W8 activation policy");
+    }
     if(bf16_value_boundaries) {
         const auto silu_value=round_boundary("silu","silu_bf16_value");
         f("hsafe_raw", s.width, "mul(x = " + silu_value + ", y = " + up + ")");
@@ -431,9 +470,9 @@ W8FfnProgram w8_swiglu_program_impl(const GraphShape &s, uint64_t seed, float he
         ", "+rank_output:s.lora_inputs?", hsafe":"";
     const std::string outputs = "(" + y + ", "+hscale+extra+")";
     f("packed", result.packed_rows, "concat(values = " + outputs + ", axis = int32(2), interleave = bool(false))");
-    const int pitch = (s.rows + 31) / 32 * 32; const auto plane = std::to_string(uint64_t(result.packed_rows) * pitch);
-    line(buffer(result.packed_rows, s.rows) + " y = tensor_to_tensor_buffer<ios17>(input = packed, interleave_factors = tensor<uint8, [4]>([1, 1, 1, 1]), strides = tensor<int64, [4]>([" + plane + ", " + plane + ", " + std::to_string(pitch) + ", 1]))");
-    result.mil = "program(1.3)\n{\n    func main_ane<ios18>(" + parameters + ") {\n" + body + "    } -> (y);\n}\n";
+    const int pitch = ((physical_rows?physical_rows:s.rows) + 31) / 32 * 32; const auto plane = std::to_string(uint64_t(result.packed_rows) * pitch);
+    line(buffer(result.packed_rows, s.rows,physical_rows) + " y = tensor_to_tensor_buffer<ios17>(input = packed, interleave_factors = tensor<uint8, [4]>([1, 1, 1, 1]), strides = tensor<int64, [4]>([" + plane + ", " + plane + ", " + std::to_string(pitch) + ", 1]))");
+    result.mil = "program(1.3)\n{\n    func "+std::string(function)+"<ios18>(" + parameters + ") {\n" + body + "    } -> (y);\n}\n";
     return result;
 }
 } // namespace
@@ -444,6 +483,16 @@ W8FfnProgram w8_swiglu_program(const GraphShape& shape,uint64_t seed,float headr
     return w8_swiglu_program_impl(shape,seed,headroom,basis,activation_group_size,hidden_group_size,bf16_value_boundaries);
 }
 
+W8FfnProgram w8_swiglu_projection_program(const GraphShape&shape,uint64_t seed,float headroom,W8Basis basis,
+    int activation_group_size,int hidden_group_size,bool bf16_value_boundaries,W8Projection projection) {
+    return w8_swiglu_program_impl(shape,seed,headroom,basis,activation_group_size,hidden_group_size,bf16_value_boundaries,nullptr,projection);
+}
+
+W8FfnProgram w8_swiglu_activation_program(const GraphShape&shape,uint64_t seed,float headroom,W8Basis basis,
+    int activation_group_size,int hidden_group_size,bool bf16_value_boundaries,W8Projection projection,W8Activation activation) {
+    return w8_swiglu_program_impl(shape,seed,headroom,basis,activation_group_size,hidden_group_size,bf16_value_boundaries,nullptr,projection,activation);
+}
+
 W8FfnProgram native_lora_program(const tc::metal_graph::native_ane_lora_contract::Spec& spec) {
     const auto& geometry=spec.geometry();
     const bool base=spec.variant()==lora_contract::Variant::Base;
@@ -451,6 +500,26 @@ W8FfnProgram native_lora_program(const tc::metal_graph::native_ane_lora_contract
     auto result=w8_swiglu_program_impl(shape,20260930,spec.headroom(),W8Basis::SylvesterDH,0,0,false,base?nullptr:&spec);
     if(result.packed_rows!=int(spec.packed_rows()))
         throw CapabilityError("native LoRA emitter output disagrees with immutable ABI");
+    return result;
+}
+
+W8FfnFamily w8_swiglu_function_family_program(const GraphShape &shape,std::span<const int> rows,W8Activation activation) {
+    W8FfnFamily result;result.rows=checked_w8_function_rows(shape,rows);
+    constexpr std::string_view prefix="program(1.3)\n{\n",suffix="}\n";
+    result.program.mil=prefix;
+    for(int count:result.rows) {
+        auto logical=shape;logical.rows=count;
+        auto part=w8_swiglu_program_impl(logical,20260930,1.f,W8Basis::SylvesterDH,0,0,false,
+            nullptr,W8Projection::Descriptor,activation,shape.rows,w8_function_name(count));
+        if(result.program.constants.empty()) {
+            result.program.constants=part.constants;result.program.packed_rows=part.packed_rows;result.program.headroom=part.headroom;
+        } else if(result.program.constants!=part.constants || result.program.packed_rows!=part.packed_rows)
+            throw CapabilityError("W8 family changed its shared constants or packed-output ABI");
+        if(!part.mil.starts_with(prefix) || !part.mil.ends_with(suffix))throw CapabilityError("W8 family emitter envelope invalid");
+        result.program.mil+=part.mil.substr(prefix.size(),part.mil.size()-prefix.size()-suffix.size());
+        if(result.program.mil.size()>(16u<<20))throw CapabilityError("W8 function family source exceeds limit");
+    }
+    result.program.mil+=suffix;
     return result;
 }
 }

@@ -1,4 +1,5 @@
 #include "vae.hpp"
+#include "metal/vae_norm_silu.hpp"
 #include <cmath>
 
 namespace tc::qwen21 {
@@ -51,26 +52,37 @@ std::string VAE::canonical_key(const std::string &key) {
     std::string result = key;
     if (result.starts_with("conv1.")) result.replace(0, 5, "quant_conv");
     else if (result.starts_with("conv2.")) result.replace(0, 5, "post_quant_conv");
-    result = std::regex_replace(result, std::regex("^(encoder|decoder)\\.conv1\\."), "$1.conv_in.");
-    result = std::regex_replace(result, std::regex("^(encoder|decoder)\\.head\\.0\\."), "$1.norm_out.");
-    result = std::regex_replace(result, std::regex("^(encoder|decoder)\\.head\\.2\\."), "$1.conv_out.");
-    result = std::regex_replace(result, std::regex("\\.middle\\.0\\."), ".mid_block.resnets.0.");
-    result = std::regex_replace(result, std::regex("\\.middle\\.1\\."), ".mid_block.attentions.0.");
-    result = std::regex_replace(result, std::regex("\\.middle\\.2\\."), ".mid_block.resnets.1.");
-    result = std::regex_replace(result, std::regex("decoder\\.upsamples\\.([0-4])\\.upsamples\\.3\\."), "decoder.up_blocks.$1.upsampler.");
-    result = std::regex_replace(result, std::regex("decoder\\.upsamples\\.([0-4])\\.upsamples\\.([0-2])\\."), "decoder.up_blocks.$1.resnets.$2.");
-    result = std::regex_replace(result, std::regex("encoder\\.downsamples\\.([0-4])\\.downsamples\\.2\\."), "encoder.down_blocks.$1.downsampler.");
-    result = std::regex_replace(result, std::regex("encoder\\.downsamples\\.([0-4])\\.downsamples\\.([0-1])\\."), "encoder.down_blocks.$1.resnets.$2.");
-    result = std::regex_replace(result, std::regex("\\.residual\\.0\\."), ".norm1.");
-    result = std::regex_replace(result, std::regex("\\.residual\\.2\\."), ".conv1.");
-    result = std::regex_replace(result, std::regex("\\.residual\\.3\\."), ".norm2.");
-    result = std::regex_replace(result, std::regex("\\.residual\\.6\\."), ".conv2.");
-    result = std::regex_replace(result, std::regex("\\.shortcut\\."), ".conv_shortcut.");
+    // Immutable CPU patterns only, not cached model tensors or compiled GPU
+    // graphs. Previously every key in every request recompiled all 15 rules.
+    static const std::pair<std::regex, const char *> rules[] = {
+        {std::regex("^(encoder|decoder)\\.conv1\\."), "$1.conv_in."},
+        {std::regex("^(encoder|decoder)\\.head\\.0\\."), "$1.norm_out."},
+        {std::regex("^(encoder|decoder)\\.head\\.2\\."), "$1.conv_out."},
+        {std::regex("\\.middle\\.0\\."), ".mid_block.resnets.0."},
+        {std::regex("\\.middle\\.1\\."), ".mid_block.attentions.0."},
+        {std::regex("\\.middle\\.2\\."), ".mid_block.resnets.1."},
+        {std::regex("decoder\\.upsamples\\.([0-4])\\.upsamples\\.3\\."), "decoder.up_blocks.$1.upsampler."},
+        {std::regex("decoder\\.upsamples\\.([0-4])\\.upsamples\\.([0-2])\\."), "decoder.up_blocks.$1.resnets.$2."},
+        {std::regex("encoder\\.downsamples\\.([0-4])\\.downsamples\\.2\\."), "encoder.down_blocks.$1.downsampler."},
+        {std::regex("encoder\\.downsamples\\.([0-4])\\.downsamples\\.([0-1])\\."), "encoder.down_blocks.$1.resnets.$2."},
+        {std::regex("\\.residual\\.0\\."), ".norm1."},
+        {std::regex("\\.residual\\.2\\."), ".conv1."},
+        {std::regex("\\.residual\\.3\\."), ".norm2."},
+        {std::regex("\\.residual\\.6\\."), ".conv2."},
+        {std::regex("\\.shortcut\\."), ".conv_shortcut."},
+    };
+    for (const auto &[pattern, replacement] : rules)
+        result = std::regex_replace(result, pattern, replacement);
     return result;
 }
 
-VAE::VAE(const Weights &weights)
-    : mean_(means, {1, 64, 1, 1}, mx::float32), std_(deviations, {1, 64, 1, 1}, mx::float32) {
+VAE::VAE(const Weights &weights, DecodeConvolution decode_convolution, bool fused_decode_norm)
+    : fused_decode_norm_(fused_decode_norm), mean_(means, {1, 64, 1, 1}, mx::float32),
+      std_(deviations, {1, 64, 1, 1}, mx::float32) {
+    require(decode_convolution == DecodeConvolution::Original ||
+            decode_convolution == DecodeConvolution::FP16WithFP32State,
+            "invalid Qwen21 VAE decoder convolution policy");
+    std::vector<Tensor> compute_weights;
     for (const auto &key : weights.sorted_keys()) {
         if (key.find("time_conv") != std::string::npos) continue;
         auto name = canonical_key(key);
@@ -82,27 +94,51 @@ VAE::VAE(const Weights &weights)
             }
             require(value.ndim() == 4, "invalid Qwen21 VAE convolution: " + name);
             value = mx::transpose(value, {0, 2, 3, 1});
+            if (decode_convolution == DecodeConvolution::FP16WithFP32State &&
+                (name.starts_with("decoder.") || name == "post_quant_conv.weight")) {
+                require(value.dtype() == mx::bfloat16, "Qwen21 FP16 decoder requires original BF16 coefficients");
+                auto half = mx::astype(value, mx::float16);
+                decode_fp16_weights_.emplace(name, half);
+                compute_weights.push_back(half);
+            }
         }
         require(values_.emplace(name, value).second, "duplicate Qwen21 VAE tensor: " + name);
+    }
+    if (!compute_weights.empty()) {
+        mx::eval(compute_weights);
+        std::vector<Tensor> finite;
+        for (const auto &weight : compute_weights) finite.push_back(mx::all(mx::isfinite(weight)));
+        require(mx::all(mx::stack(finite)).item<bool>(), "Qwen21 FP16 decoder coefficient overflow/nonfinite");
     }
 }
 
 Tensor VAE::conv(const Tensor &x, const std::string &p, int padding, int stride) const {
-    auto y = mx::conv2d(mx::transpose(x, {0, 2, 3, 1}), values_.at(p + ".weight"),
-                        {stride, stride}, {padding, padding});
+    auto selected = decode_fp16_weights_.find(p + ".weight");
+    auto input = mx::transpose(x, {0, 2, 3, 1});
+    auto y = selected == decode_fp16_weights_.end()
+        ? mx::conv2d(input, values_.at(p + ".weight"), {stride, stride}, {padding, padding})
+        : mx::astype(mx::conv2d(mx::astype(input, mx::float16), selected->second,
+                               {stride, stride}, {padding, padding}), mx::float32);
     y = y + values_.at(p + ".bias");
     return mx::transpose(y, {0, 3, 1, 2});
 }
 Tensor VAE::normalize(const Tensor &x, const std::string &p) const {
+    if (fused_decode_norm_ && p.starts_with("decoder."))
+        return metal::vae_norm_silu(x, values_.at(p + ".gamma"), false);
     auto f = mx::astype(x, mx::float32);
     auto l2 = mx::sqrt(mx::sum(f * f, 1, true));
     auto gamma = mx::reshape(values_.at(p + ".gamma"), {1, x.shape(1), 1, 1});
     return mx::astype((f / mx::maximum(l2, Tensor(1e-12f))) * std::sqrt(float(x.shape(1))) * gamma, x.dtype());
 }
+Tensor VAE::normalized_activation(const Tensor &x, const std::string &p) const {
+    if (fused_decode_norm_ && p.starts_with("decoder."))
+        return metal::vae_norm_silu(x, values_.at(p + ".gamma"), true);
+    return silu(normalize(x, p));
+}
 Tensor VAE::residual(const Tensor &x, const std::string &p) const {
     auto skip = values_.count(p + ".conv_shortcut.weight") ? conv(x, p + ".conv_shortcut", 0) : x;
-    auto hidden = conv(silu(normalize(x, p + ".norm1")), p + ".conv1");
-    return conv(silu(normalize(hidden, p + ".norm2")), p + ".conv2") + skip;
+    auto hidden = conv(normalized_activation(x, p + ".norm1"), p + ".conv1");
+    return conv(normalized_activation(hidden, p + ".norm2"), p + ".conv2") + skip;
 }
 Tensor VAE::middle(const Tensor &x, const std::string &p) const {
     auto hidden = residual(x, p + ".resnets.0");
@@ -136,7 +172,27 @@ Tensor VAE::decode(const Tensor &latents, const Event &event, std::atomic<bool> 
         mx::eval(hidden);
         if (event) event("qwen21_vae_decode", block + 1, 5);
     }
-    return conv(silu(normalize(hidden, "decoder.norm_out")), "decoder.conv_out");
+    return conv(normalized_activation(hidden, "decoder.norm_out"), "decoder.conv_out");
+}
+
+VAE::Decoded VAE::decode_checked(const Tensor &latents, const Event &event, std::atomic<bool> &cancelled) const {
+    auto pixels = decode(latents, event, cancelled);
+    mx::eval(pixels);
+    if (mx::all(mx::isfinite(pixels)).item<bool>()) return {pixels, false};
+    require(!decode_fp16_weights_.empty(), "nonfinite Qwen21 pixels on original convolution precision");
+    checkpoint(cancelled);
+    // Copy only tensor owners/metadata, never original coefficients. Clear
+    // this local compute view; the request's VAE and immutable master stay
+    // unchanged, including after cancellation/failure of the full retry.
+    VAE fallback = *this;
+    fallback.decode_fp16_weights_.clear();
+    const Event fallback_event = event ? Event([&](const std::string &phase, int n, int total) {
+        event(phase + "_fp32_fallback", n, total);
+    }) : Event{};
+    pixels = fallback.decode(latents, fallback_event, cancelled);
+    mx::eval(pixels);
+    require(mx::all(mx::isfinite(pixels)).item<bool>(), "nonfinite Qwen21 pixels after complete FP32 convolution fallback");
+    return {pixels, true};
 }
 
 Tensor VAE::encode(const Tensor &image, const Event &event, std::atomic<bool> &cancelled,
