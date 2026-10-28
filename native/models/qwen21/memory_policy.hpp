@@ -128,7 +128,9 @@ inline StagedOptimizationOptions staged_optimization_options(const Request &r, c
         }
         return {8, 8, option_or_default(std::getenv("TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE"), true), true};
     }
-    const bool use_defaults = qualified && (!defaults || option_enabled(defaults));
+    if (r.qwen21_staged_fast == false) return {};
+    const bool use_defaults = qualified && r.qwen21_staged_fast.value_or(true) &&
+        (!defaults || option_enabled(defaults));
     auto bits = [qualified, use_defaults](const char *name) {
         const char *value = std::getenv(name);
         if (!value) return use_defaults ? 4 : 0;

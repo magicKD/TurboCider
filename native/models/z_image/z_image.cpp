@@ -8,6 +8,7 @@
 #include "ffn.hpp"
 #include "convrot_partial_config.hpp"
 #include "padding.hpp"
+#include "ane_row_tiling.hpp"
 #include "hybrid_stream.hpp"
 #include "vae.hpp"
 #include "metal_kernels.hpp"
@@ -1160,7 +1161,9 @@ Tensor z_compiled_hybrid_block(const Tensor &x, const Weights &w, const std::str
     }
     mx::async_eval({gpu});
     profile.submitted(gpu);
-    auto ane = slice_axis(hybrid->predict(block, packed), 1, 0, ane_rows);
+    auto ane = z_image::predict_ane_rows(
+        slice_axis(packed, 1, 0, ane_rows), hybrid->rows,
+        [&](const Tensor &tile) { return hybrid->predict(block, tile); });
     if (ane_rows < actual_rows)
         ane = mx::concatenate({ane,
             mx::zeros({1, actual_rows - ane_rows, hybrid->hidden}, ane.dtype())}, 1);
@@ -1799,7 +1802,9 @@ Tensor z_block(const Tensor &x, const Weights &w, const std::string &prefix,
             profile.submitted(gpu);
             ane = hybrid->predict_with_lora(hybrid_block, packed, deltas);
         } else {
-            ane = hybrid->predict(hybrid_block, packed);
+            ane = z_image::predict_ane_rows(
+                slice_axis(packed, 1, 0, ane_rows), hybrid->rows,
+                [&](const Tensor &tile) { return hybrid->predict(hybrid_block, tile); });
         }
         ane = slice_axis(ane, 1, 0, ane_rows);
         if (ane_rows < actual_rows)
@@ -3702,14 +3707,23 @@ std::string ZImage::select_acceleration(Request &r, int rows, const Event &event
                     "Z-Image hybrid requires a safetensors file or index");
         if (automatic && hybrid_ && hybrid_->rows != matched->bucket)
             hybrid_.reset();
+        // A 512px image contributes 1024 rows, in addition to up to 1024
+        // caption rows. Small frozen FFN partitions can cover the whole input
+        // in tiles; never truncate text or pad every block to a 4K image graph.
+        int graph_rows = image_only ? 1024 : rows;
+        if (!automatic && !image_only && r.hybrid_mlp_mode == "auto" &&
+            active_loras_.empty() && r.width == 512 && r.height == 512 && rows <= 2048) {
+            const auto capacity = hybrid_bucket_plan(r.ane_manifest, rows);
+            if (!capacity.supported) graph_rows = capacity.maximum_rows;
+        }
         if (!hybrid_ || hybrid_->manifest != r.ane_manifest)
             hybrid_ = std::make_unique<HybridSession>(
-                r.ane_manifest, root_, image_only ? 1024 : rows, event, cancelled,
+                r.ane_manifest, root_, graph_rows, event, cancelled,
                 r.warmup_iterations,
                 transformer_checkpoint_, r.hybrid_mlp_mode == "lora_suffix" ||
                                              r.hybrid_mlp_mode == "lora_fused"
                     ? std::vector<LoRAAsset>{} : active_loras_, matched ? matched->bucket : 0);
-        hybrid_->set_tokens(image_only ? 1024 : rows);
+        hybrid_->set_tokens(graph_rows);
         require(hybrid_->hidden == 3840 &&
                     hybrid_->block_count == 32 && hybrid_->mlp_width == 10240 &&
                     hybrid_->ane_mlp_start == 0 && hybrid_->ane_mlp_end < 10240,

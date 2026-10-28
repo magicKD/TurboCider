@@ -22,6 +22,13 @@ struct AccelerationView: View {
         return "\(studio.draft.modelID)|\(studio.draft.modelPath)|\(studio.draft.operation)|\(studio.draft.width)x\(studio.draft.height)|\(studio.draft.steps)|\(studio.draft.residency)|\(adapters)"
     }
     private var config: StudioAcceleration { studio.draft.acceleration ?? StudioAcceleration(policy: studio.draft.profilePath.isEmpty ? "gpu" : "profile") }
+    private var registeredManifests: [LibraryANEPartition] {
+        AccelerationDiscovery.registeredCompiled(library.anePartitions,
+            modelID: studio.draft.modelID, modelPath: studio.draft.modelPath)
+    }
+    private var manifestSelectionDisabled: Bool {
+        library.busy || store.busy || store.externalServiceActive || store.resolvingAcceleration
+    }
     @State private var zImageBucket: Int?
     @State private var seedvr2TemporaryFreeBytes: UInt64?
     @State private var seedvr2ResourceRevision = 0
@@ -109,7 +116,7 @@ struct AccelerationView: View {
             }
             if config.policy == "gpu_ane" && !studio.draft.usesRuntimeANE {
                 if studio.draft.modelID == "qwen-image-2.1" {
-                    Toggle("Qwen 固定量化分区（实验）", isOn: Binding(
+                    Toggle("GPU 4 位权重缓存（加速）", isOn: Binding(
                         get: { config.qwen21W8A8 ?? false },
                         set: { value in
                             guard !value || qwenLowMemoryANEAvailable else { return }
@@ -118,26 +125,26 @@ struct AccelerationView: View {
                         }))
                         .disabled(store.busy || (!qwenLowMemoryANEAvailable && config.qwen21W8A8 != true))
                         .accessibilityIdentifier("qwenLowMemoryANE")
-                    Text("使用已编译的冻结量化分区，仅支持 Apple M5 Pro、24 GiB 内存和 512×512 文生图。需选择匹配分区并关闭参考图、LoRA 与提示词增强；20–40 步、分阶段加载且未使用设备配置时，默认使用 4 位 GPU 权重缓存，也可选择 DiT 缓存。图像细节可能变化。")
+                    Text("仅控制 GPU 注意力与 FFN 补充分支的 4 位权重缓存。关闭后保留原精度 GPU 权重和逐层加载，可单独测 ANE；DiT W8A8 开启时使用其独立 8 位缓存。ANE 精度由所选 manifest 决定，关闭此项不会把 W8A8 分区变为 FP16。")
                         .font(.caption).foregroundStyle(.secondary)
-                    Text("此选项是冻结量化分区，与上面的 Runtime 实验不同。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !qwenLowMemoryANEAvailable {
-                        Text("当前设备不支持此实验；已保存的实验选项可关闭，普通 Qwen ANE 配置仍可使用。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
                 } else if studio.draft.modelID == "seedvr2-3b" {
                     Text("GPU 处理 attention、文本 FFN、VAE 与视频 FFN 的剩余通道；Core ML CPU+NE 处理原始 FP16 前缀，不量化权重。固定行数分批保留完整视频，实际 ANE 驻留由系统决定。")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。固定或变长分区的容量必须容纳文本和所有图片 token。").font(.caption).foregroundStyle(.secondary)
+                    Text("GPU 处理 attention，Core ML 处理量化 MLP；结果可能与纯 GPU 略有不同。实际 ANE 驻留由系统决定。Z-Image 512 画布支持将长文本的 FFN 分块执行，不截断提示词；其他任务仍需匹配完整 token 容量。").font(.caption).foregroundStyle(.secondary)
                 }
                 if (studio.draft.modelID.hasPrefix("flux2-") || studio.draft.modelID == "z-image-turbo") && !studio.draft.activeLoRAs.isEmpty && !studio.draft.aneLoRARequiresGPU {
                     Text("带 LoRA 的 ANE 加速需要匹配同一文件与强度的分区。没有匹配缓存时会提示选择对应分区，或关闭 ANE 使用 GPU。")
                         .font(.caption).foregroundStyle(.orange)
                 }
-                Button(config.manifest.isEmpty ? "选择已编译分区 manifest…" : "更换已编译分区 manifest…") { choose(compiled: true) }
-                if !config.manifest.isEmpty { Text(URL(fileURLWithPath: config.manifest).lastPathComponent).font(.caption).textSelection(.enabled) }
+                if studio.draft.modelID == "seedvr2-3b" {
+                    // SeedVR2 keeps its original-FP16 manifest ABI and native
+                    // validation; it does not use the quantized registry.
+                    Button(config.manifest.isEmpty ? "选择已编译分区 manifest…" : "更换已编译分区 manifest…") { choose(compiled: true) }
+                    if !config.manifest.isEmpty { Text(URL(fileURLWithPath: config.manifest).lastPathComponent).font(.caption).textSelection(.enabled) }
+                } else {
+                    manifestPicker
+                }
                 if let zImageCapacity { Text(zImageCapacity).font(.caption).foregroundStyle(.secondary) }
             }
             if studio.draft.modelID == "qwen-image-2.1" {
@@ -183,6 +190,60 @@ struct AccelerationView: View {
             .task(id: "\(studio.draft.modelID)|\(config.manifest)") { await readZImageBucket() }
             .task(id: seedvr2ResourceCheckID) { await readSeedVR2ScratchSpace() }
             .padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+    }
+    private var manifestPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("编译分区 manifest").font(.headline)
+            HStack {
+                Menu("已登记分区（\(registeredManifests.count)）") {
+                    ForEach(registeredManifests) { item in
+                        Button {
+                            selectManifest(URL(fileURLWithPath: item.path))
+                        } label: {
+                            Label(manifestLabel(item), systemImage: config.manifest == item.path ? "checkmark.circle.fill" : "doc")
+                        }
+                    }
+                }
+                .disabled(registeredManifests.isEmpty)
+                .accessibilityIdentifier("registeredANEManifests")
+                Button("从文件添加…") { choose(compiled: true) }
+                    .accessibilityIdentifier("chooseANEManifest")
+                if !config.manifest.isEmpty {
+                    Button("重新检查") { selectManifest(URL(fileURLWithPath: config.manifest)) }
+                        .help("重新读取 manifest 并检查分区文件，成功后保留为当前选择。")
+                        .accessibilityIdentifier("recheckANEManifest")
+                }
+            }.disabled(manifestSelectionDisabled)
+            if registeredManifests.isEmpty {
+                Text("首次从文件添加后会自动登记，以后可在这里直接选择。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("仅显示匹配当前模型权重的编译分区；选择时重新检查文件，生成时核对容量与 LoRA。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !config.manifest.isEmpty {
+                if let item = registeredManifests.first(where: { $0.path == config.manifest }) {
+                    Text("当前分区 · \(item.capacity) · \(item.partitionCount) 层")
+                        .font(.caption).accessibilityIdentifier("selectedANEManifestSummary")
+                }
+                Text(config.manifest).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                    .help(config.manifest).accessibilityIdentifier("selectedANEManifestPath")
+            }
+            if let message = library.message {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("aneManifestMessage")
+            }
+        }
+    }
+    private func manifestLabel(_ item: LibraryANEPartition) -> String {
+        let file = URL(fileURLWithPath: item.path)
+        let adapters = item.loras.isEmpty ? "基础模型" : "LoRA × \(item.loras.count)"
+        return "\(item.capacity) · \(item.partitionCount) 层 · \(adapters) — \(file.deletingLastPathComponent().lastPathComponent)/\(file.lastPathComponent)"
+    }
+    private func selectManifest(_ url: URL) {
+        guard !manifestSelectionDisabled else { return }
+        library.registerANE(url, modelID: studio.draft.modelID, studio: studio, select: true)
     }
     private var seedvr2Config: NativeSeedVR2VAEConfig { studio.draft.seedvr2VAE ?? NativeSeedVR2VAEConfig() }
     private var seedvr2ResourceCheckID: String {
@@ -347,7 +408,13 @@ struct AccelerationView: View {
         } else { discoveryMessage = "未发现匹配当前权重的完整编译分区，自动模式使用 GPU。可先预编译或指定本地分区。" }
     }
     private func choose(compiled: Bool) {
+        guard !manifestSelectionDisabled else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
+        let currentPath = compiled ? config.manifest : config.sourceManifest
+        let rememberedPath = currentPath.isEmpty ? registeredManifests.first?.path ?? "" : currentPath
+        if !rememberedPath.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: rememberedPath).deletingLastPathComponent()
+        }
         panel.message = compiled ? "选择引用 .mlmodelc 的分区 manifest" : "选择引用 .mlpackage 的源分区 manifest"
         if panel.runModal() == .OK, let url = panel.url {
             if studio.draft.modelID == "seedvr2-3b" {

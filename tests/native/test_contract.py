@@ -409,6 +409,42 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(code, 0, error)
             self.assertGreater(other['memory_estimate_bytes'] + (4 << 30), 24 << 30)
 
+    def test_qwen21_ane_only_keeps_staging_without_gpu_quantization(self):
+        base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
+                    width=512, height=512, steps=25, audio=False, frames=1,
+                    execution='gpu_ane', residency='component_staged', allow_approximation=True,
+                    qwen21_w8a8=True, qwen21_staged_fast=False, qwen21_dit_cache='off',
+                    ane_manifest='checkpoint-verified-at-execution.json')
+        v2 = dict(schema_version=2, model=base['model'], operation=base['operation'],
+                  inputs=[dict(kind='text', role='prompt', text=base['prompt'])],
+                  outputs=[dict(kind='image', path='result.png', width=512, height=512)],
+                  sampling=dict(seed=42, steps=25),
+                  execution={key: base[key] for key in (
+                      'residency', 'allow_approximation', 'qwen21_w8a8',
+                      'qwen21_staged_fast', 'qwen21_dit_cache', 'ane_manifest')})
+        v2['execution']['policy'] = base['execution']
+        with patch.dict(os.environ, {'TURBOCIDER_QWEN21_STAGED_SUFFIX_BITS': '4',
+                                     'TURBOCIDER_QWEN21_STAGED_ATTN_BITS': '4'}):
+            code, result, error = plan(base)
+            v2_code, v2_result, v2_error = plan(v2)
+        self.assertEqual(code, 0, error)
+        self.assertEqual(v2_code, 0, v2_error)
+        for key in ('qwen21_staged_fast', 'precision', 'memory_estimate_bytes',
+                    'algorithm_approximations'):
+            self.assertEqual(v2_result[key], result[key], key)
+        self.assertFalse(result['qwen21_staged_fast'])
+        self.assertEqual(result['memory_estimate_bytes'] + (4 << 30) <= 24 << 30,
+                         qwen21_streaming_device())
+        self.assertFalse(any('staged_suffix_w' in x or 'staged_attention_w' in x or
+                             'dit_w8a8' in x or 'qk_norm_rope' in x
+                             for x in result['algorithm_approximations']))
+        for invalid in ('false', 0, 1):
+            self.assertNotEqual(plan({**base, 'qwen21_staged_fast': invalid})[0], 0)
+        if qwen21_streaming_device():
+            code, combined, error = plan({**base, 'qwen21_dit_w8a8': True})
+            self.assertEqual(code, 0, error)
+            self.assertIn('qwen21_dit_w8a8_pc', combined['algorithm_approximations'])
+
     def test_qwen21_layer_staged_hybrid_fits_24gib_only_for_bounded_route(self):
         base = dict(model='qwen-image-2.1', operation='image.generate', prompt='A fox',
                     width=512, height=512, steps=40, audio=False, frames=1,
@@ -634,11 +670,21 @@ class ContractTests(unittest.TestCase):
             for invalid in (dict(qwen21_dit_cache='balanced'), dict(qwen21_dit_cache='fast'),
                             dict(steps=20), dict(steps=39), dict(qwen21_w8a8=False),
                             dict(qwen21_gpu_w8a16=True), dict(qwen21_gpu_full_ffn_blocks=[3, 5, 7]),
-                            dict(residency='component_staged'), dict(hybrid_mlp_mode='runtime'),
+                            dict(hybrid_mlp_mode='runtime'),
                             dict(encoder_ane_manifest='encoder.json'), dict(memory_budget_bytes=8 << 30),
                             dict(allow_approximation=False), dict(qwen21_reference_size=512)):
                 with self.subTest(invalid=invalid):
                     self.assertNotEqual(plan({**base, **invalid})[0], 0)
+            # The resident frozen-cache recipe is distinct from the existing
+            # M5 Pro / 24 GiB staged route, which also supports this preset.
+            code, staged, error = plan({**base, 'residency': 'component_staged'})
+            if qwen21_streaming_device():
+                self.assertEqual(code, 0, error)
+                self.assertEqual(staged['qwen21_dit_cache'], 'conservative')
+                self.assertIn('qwen21_decode_dit_cache', staged['algorithm_approximations'])
+                self.assertLessEqual(staged['memory_estimate_bytes'] + (4 << 30), 24 << 30)
+            else:
+                self.assertNotEqual(code, 0)
             edit = {**base, 'operation': 'image.edit',
                     'inputs': [dict(kind='image', role='reference', path='reference.png')]}
             self.assertNotEqual(plan(edit)[0], 0)

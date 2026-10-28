@@ -781,6 +781,7 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         if (!precision.empty()) report[@"precision"] = @(precision.c_str());
         for (int block : r.qwen21_gpu_full_ffn_blocks) [blocks addObject:@(block)];
         report[@"qwen21_w8a8"] = @(r.qwen21_w8a8);
+        if (r.qwen21_staged_fast) report[@"qwen21_staged_fast"] = @(*r.qwen21_staged_fast);
         report[@"qwen21_dit_w8a8"] = @(r.qwen21_dit_w8a8);
         report[@"qwen21_dit_smoothquant_convrot"] = @(r.qwen21_dit_smoothquant_convrot);
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);

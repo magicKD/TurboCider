@@ -34,10 +34,17 @@ import Foundation
         try check(store.accelerationStatus?.contains("未重新编译") == true, "Existing cache not reused")
         draft.acceleration?.knownManifests = []
         draft.acceleration?.coreMLCache = URL(fileURLWithPath: args[3]).appendingPathComponent("empty-cache").path
+        draft.prompt = long + " snow"
+        let extended = try await store.resolveAcceleration(draft)
+        try check(extended.acceleration?.manifest.isEmpty == false,
+                  "513-token caption lost ANE despite complete tiled FFN support")
+        try check(store.accelerationStatus?.contains("未重新编译") == true,
+                  "Extended caption unnecessarily rebuilt a frozen FFN partition")
+        draft.prompt = long + String(repeating: " snow", count: 513)
         do {
             _ = try await store.resolveAcceleration(draft)
-            throw NativeFailure(message: "Old 32-token cache accepted a 512-token prompt")
-        } catch { try check(error.localizedDescription.contains("1536"), "Capacity error does not explain required rows") }
-        print("PASS: exact token count, extended and overlimit counting, variable cache routing, legacy capacity rejection, no recompilation")
+            throw NativeFailure(message: "1025-token prompt bypassed the model limit")
+        } catch { try check(error.localizedDescription.contains("1024"), "Model limit error is unclear") }
+        print("PASS: exact token count, extended and overlimit counting, variable and tiled cache routing, no recompilation")
     }
 }

@@ -72,11 +72,22 @@ import ImageIO
             #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803776.5}"#,
             "{}", "invalid JSON"
         ]
+        func qwenManifest(_ name: String, w8a8: Bool) throws -> String {
+            let path = root.appendingPathComponent(name + ".json")
+            try JSONSerialization.data(withJSONObject: ["schema_version": 2,
+                "export_identity": ["owner": "turbocider.qwen21.dit.coreml.v1", "tensor_layout": "qwen21",
+                    "variant": w8a8 ? "int8_pc" : "fp16", "activation_precision": w8a8 ? "int8" : "fp16"]])
+                .write(to: path)
+            return path.path
+        }
+        let fp16Manifest = try qwenManifest("fp16", w8a8: false)
+        let w8Manifest = try qwenManifest("w8a8", w8a8: true)
         var aneDraft = studio.draft
         aneDraft.operation = "image.generate"; aneDraft.assets = []
-        aneDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/qwen-compiled.json")
+        aneDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: fp16Manifest)
         try check(try aneDraft.request(output: output, systemJSON: "{}").qwen21_w8a8 == nil,
                   "Existing FP16 ANE selection silently enabled W8A8")
+        aneDraft.acceleration?.manifest = w8Manifest
         aneDraft.acceleration?.qwen21W8A8 = true
         let aneRequest = try aneDraft.request(output: output, systemJSON: eligibleHardware)
         let savedANE = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(aneDraft))
@@ -94,6 +105,7 @@ import ImageIO
             catch { rejected = error.localizedDescription.contains("Apple M5 Pro") }
             try check(rejected, "A migrated low-memory ANE draft bypassed the hardware gate")
             var ordinaryANE = savedANE; ordinaryANE.acceleration?.qwen21W8A8 = false
+            ordinaryANE.acceleration?.manifest = fp16Manifest
             let ordinaryRequest = try ordinaryANE.request(output: output, systemJSON: systemJSON)
             try check(ordinaryRequest.execution == "gpu_ane" && ordinaryRequest.qwen21_w8a8 == nil &&
                       ordinaryRequest.hybrid_mlp_mode == nil,
@@ -179,6 +191,29 @@ import ImageIO
         try check(!aneDraft.qwen21DiTW8A8 && aneRequest.qwen21_dit_w8a8 == nil &&
                   NativeRequestV2(legacy: aneRequest).execution.qwen21_dit_w8a8 == nil,
                   "Inactive DiT extension must stay absent for existing worker protocols")
+        var aneOnly = aneDraft
+        aneOnly.acceleration?.qwen21W8A8 = false
+        let isolated = try aneOnly.request(output: output, systemJSON: eligibleHardware)
+        try check(isolated.qwen21_w8a8 == true && isolated.qwen21_staged_fast == false &&
+                  isolated.qwen21_dit_w8a8 == nil && isolated.qwen21_dit_smoothquant_convrot == nil &&
+                  isolated.qwen21_dit_cache == "off" && isolated.residency == "component_staged",
+                  "ANE-only request lost artifact precision or enabled GPU/cache approximations")
+        try check(NativeRequestV2(legacy: isolated).execution.qwen21_staged_fast == false,
+                  "V2 request lost the explicit GPU preset opt-out")
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: isolated,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.acceleration?.qwen21W8A8 == false &&
+                  (try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)).qwen21_staged_fast == false,
+                  "History silently enabled GPU optimizations for ANE-only work")
+        aneOnly.qwen21DiTW8A8 = true
+        let independentDiT = try aneOnly.request(output: output, systemJSON: eligibleHardware)
+        try check(independentDiT.qwen21_dit_w8a8 == true && independentDiT.qwen21_staged_fast == false,
+                  "DiT W8A8 incorrectly depends on the separate GPU 4-bit preset")
+        var missingManifest = aneDraft; missingManifest.acceleration?.manifest = root.appendingPathComponent("missing.json").path
+        var missingRejected = false
+        do { _ = try missingManifest.request(output: output, systemJSON: eligibleHardware) }
+        catch { missingRejected = error.localizedDescription.contains("manifest") }
+        try check(missingRejected, "Missing ANE artifact did not report an actionable manifest error")
         var int8Draft = aneDraft; int8Draft.qwen21DiTW8A8 = true
         let int8Request = try int8Draft.request(output: output, systemJSON: eligibleHardware)
         let savedInt8 = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(int8Draft))
@@ -226,7 +261,7 @@ import ImageIO
             ("PE edit", { $0.promptEnhanceEditExperimental = true }),
             ("PE path", { $0.promptEnhancerPath = root.path }),
             ("profile", { $0.profilePath = "/test/device-profile.json" }),
-            ("ordinary ANE", { $0.acceleration?.qwen21W8A8 = false }),
+            ("ordinary ANE", { $0.acceleration?.manifest = fp16Manifest }),
             ("automatic ANE", { $0.acceleration?.policy = "auto" }),
             ("runtime ANE", { $0.acceleration?.runtimeAneProfileID = RuntimeImageWorker.profileID }),
             ("compile GPU", { $0.acceleration?.compileGPU = true }),

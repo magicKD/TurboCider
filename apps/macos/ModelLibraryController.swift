@@ -393,11 +393,35 @@ enum LibraryTool {
         } catch { message = error.localizedDescription }
     }
     func registerANE(_ url: URL, modelID: String, studio: StudioState? = nil, select: Bool = false) {
+        let libraryRoot = root
+        let originalDraft = studio?.draft
+        let workspace = studio?.workspaceResetID
         perform { [self] in
-            let data = try await LibraryTool.run(["register-ane", modelID, url.path, "--root", root])
+            // Reinspect registered entries too: inventory metadata can outlive
+            // the manifest or one of its compiled partitions.
+            let data = try await metadataRunner(["register-ane", modelID, url.path, "--root", libraryRoot])
             let item = try LibraryTool.decode(LibraryANEPartition.self, from: data)
-            try await readIndex()
-            if select, let studio { useANE(item, studio: studio) }
+            try Task.checkCancellation()
+            try await readIndex(root: libraryRoot)
+            if select, let studio, let originalDraft {
+                // File-provider reads can finish after the user changes the
+                // model or execution route. Keep the registration, but do not
+                // replace their newer choice or switch them back to a model.
+                guard studio.workspaceResetID == workspace,
+                      studio.draft.modelID == originalDraft.modelID,
+                      studio.draft.modelPath == originalDraft.modelPath,
+                      studio.draft.profilePath == originalDraft.profilePath,
+                      studio.draft.activeLoRAs == originalDraft.activeLoRAs,
+                      studio.draft.acceleration?.policy == originalDraft.acceleration?.policy,
+                      studio.draft.acceleration?.manifest == originalDraft.acceleration?.manifest,
+                      studio.draft.acceleration?.sourceManifest == originalDraft.acceleration?.sourceManifest,
+                      studio.draft.acceleration?.runtimeAneProfileID == originalDraft.acceleration?.runtimeAneProfileID,
+                      studio.draft.acceleration?.qwen21W8A8 == originalDraft.acceleration?.qwen21W8A8 else {
+                    message = "ANE 分区已登记；模型或加速配置已变化，请在当前模型中重新选择分区。"
+                    return
+                }
+                useANE(item, studio: studio)
+            }
             message = "ANE 分区已登记 · \(item.capacity)。生成时复核基础权重与 LoRA。"
         }
     }
