@@ -5,7 +5,7 @@ implements full causal pre-norm RMSNorm/SwiGLU blocks, with independent weights
 and buffers for 1–3 layers. It does not modify production model routing.
 
 - [Full technical report](notes/REPORT.md)
-- [M4 Max reproduction (ongoing, separate from historical M4 Pro)](notes/M4_MAX_REPRODUCTION.md)
+- [M4 Max reproduction archive (separate from historical M4 Pro)](../../docs/experiments/transformer/M4_MAX_REPRODUCTION.md)
 - [Protocol and implementation audit](notes/PROTOCOL.md)
 - Machine-readable summary: `notes/summary.json` (generated locally)
 - [All measurements](notes/measurements.csv)
@@ -35,7 +35,8 @@ make -C experimental/transformer build/ltx-stage2-replay
 ```
 
 The replay has a fixed geometry and validates byte-exact references. See
-`notes/M4_MAX_REPRODUCTION.md` for its full argument contract and measured
+[the archived reproduction record](../../docs/experiments/transformer/M4_MAX_REPRODUCTION.md)
+for its full argument contract and measured
 limitations. Do not use replay, QKV capture or VAE intervention runs as
 end-to-end production benchmarks.
 
