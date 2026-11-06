@@ -1,5 +1,5 @@
 // Experimental only. In-memory MIL / IOSurface mechanism: maderix/ANE (MIT),
-// extended by mac_local_ai; see notes/THIRD_PARTY.md. No production linkage.
+// extended by mac_local_ai; see docs/experiments/transformer/m4-pro/THIRD_PARTY.md. No production linkage.
 class PrivateFFN {
  public:
     PrivateFFN(const std::string &path,int m,int k,int n,void *input,void *output)

@@ -21,8 +21,9 @@ vendor snapshots into the shipping source list.
 Keep runnable research sources here and archive experiment narratives under
 `docs/experiments/`. The [Transformer archive](../docs/experiments/transformer/README.md)
 holds the M4 Max reproduction ledger and links the historical M4 Pro report.
-Existing report generators and their M4 Pro evidence remain in the laboratory
-until migrated together in a separate change.
+The M4 Pro report, protocol, provenance and small evidence are archived there
+as well. Report generators remain with the runnable sources and write ignored
+local output without overwriting the archive.
 
 New raw runs, tensor dumps, compiled models and generated media belong in the
 ignored root `outputs/` directory. Retain small, portable evidence with the

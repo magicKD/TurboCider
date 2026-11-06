@@ -199,7 +199,7 @@ head split 为显式 materialized 图，未穷举 ANE-specific attention lowerin
 
 @@COUNT_TEXT@@
 
-完整数据在 [measurements.csv](measurements.csv)、[measurements.json](measurements.json)、[summary.json](summary.json)；每个原始 JSON 保存命令、返回码、stdout/stderr 和进程总时长。复现入口见 [实验 README](../README.md)，预先协议及实现修正见 [PROTOCOL.md](PROTOCOL.md)。所有图可从原始结果重建，SVG 可直接用于后续论文或技术文档。
+完整数据在 [measurements.csv](measurements.csv)、`measurements.json`（本地生成）、`summary.json`（本地生成）；每个原始 JSON 保存命令、返回码、stdout/stderr 和进程总时长。复现入口见 [实验 README](../../../../experimental/transformer/README.md)，预先协议及实现修正见 [PROTOCOL.md](PROTOCOL.md)。所有图可从原始结果重建，SVG 可直接用于后续论文或技术文档。
 
 ## 11. 缓存清理
 

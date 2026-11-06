@@ -4,11 +4,11 @@ Research-only TurboCider extension derived from `mac_local_ai`. The experiment
 implements full causal pre-norm RMSNorm/SwiGLU blocks, with independent weights
 and buffers for 1–3 layers. It does not modify production model routing.
 
-- [Full technical report](notes/REPORT.md)
+- [Full technical report](../../docs/experiments/transformer/m4-pro/REPORT.md)
 - [M4 Max reproduction archive (separate from historical M4 Pro)](../../docs/experiments/transformer/M4_MAX_REPRODUCTION.md)
-- [Protocol and implementation audit](notes/PROTOCOL.md)
+- [Protocol and implementation audit](../../docs/experiments/transformer/m4-pro/PROTOCOL.md)
 - Machine-readable summary: `notes/summary.json` (generated locally)
-- [All measurements](notes/measurements.csv)
+- [Archived measurements](../../docs/experiments/transformer/m4-pro/measurements.csv)
 - Raw measurements, exact commands, stdout/stderr: `notes/raw` (generated locally)
 
 ## Current code map
@@ -65,7 +65,7 @@ Run these suites **serially**, not in parallel. Each script saves raw data and
 removes its own generated models after measuring a configuration. Rerunning a
 suite overwrites its same-named measurement files; copy `notes/raw` first to
 preserve a previous campaign. The historical screening defaults and shape set
-are written in `notes/PROTOCOL.md`.
+are written in the [archived protocol](../../docs/experiments/transformer/m4-pro/PROTOCOL.md).
 
 The `steel` fused attention implementation loads
 `mac_local_ai/build/steel_qwen_attention.metallib`; the drivers explicitly set
@@ -81,7 +81,8 @@ samples, and fixes the ANE=0 concat dereference. `add_heads.py` adds complete
 head computation. `add_private.py` and `add_private_gpu.py` produce separate
 private implementations. Generated runners are ignored by Git and rebuilt by
 Make; all modifications remain reviewable in the adapter scripts and `.inc`
-files. Source provenance and third-party attribution are under `notes`.
+files. Source provenance and third-party attribution are in the
+[experiment archive](../../docs/experiments/transformer/m4-pro/THIRD_PARTY.md).
 
 ## Analyze
 
@@ -99,19 +100,26 @@ Confidence intervals use hierarchical moving-block bootstrap (4 adjacent
 pairs, 1,500 draws, fixed seed). They describe this campaign, not hardware
 variability across machines or operating systems.
 
+`report.py` reads the archived `REPORT.template.md` and writes
+`notes/REPORT.generated.md`; `render_report.py` renders that local result to
+`notes/REPORT.generated.html`. They do not update the historical report in
+`docs/experiments/transformer/m4-pro/`. Review and archive a new campaign
+separately rather than overwriting the published observations.
+
 ## Git tracking policy
 
-Keep source scripts, the baseline and `.inc` files, Markdown documentation,
-the published Markdown/HTML report, CSV measurements, and SVG figures.
+Keep source scripts, the baseline and `.inc` files here. Published Markdown,
+the report template, CSV measurements, SVG figures and attribution live together
+under `docs/experiments/transformer/m4-pro/`. HTML is a local generated view.
 All JSON and JSONL files in this experiment directory are local artifacts and
 are ignored by Git, including raw measurements, summaries, and metadata.
 Run the experiment suites above before running the analysis scripts to generate
-measurement data and summaries locally. JSON links in the historical report
-require the corresponding local files; a fresh checkout does not include them.
+measurement data and summaries locally. JSON paths in the historical report
+refer to local-only files; a fresh checkout does not include them.
 Reruns produce new observations and need not match the published timings.
 
 Do not track binaries, generated `src/runner*.mm`, model/weight caches, Python
-bytecode, diagnostic logs, or duplicate PNG previews. The root `.gitignore`
+bytecode, diagnostic logs, generated reports, CSV or figures. The root `.gitignore`
 already covers Python caches and logs; this directory only adds local rules.
 This JSON policy applies only to `experimental/transformer`; repository-wide
 configuration and validation JSON files are unaffected. Future scratch runs
