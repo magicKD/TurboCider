@@ -1,20 +1,47 @@
-# TurboCider 实验代码边界
+# Experimental code
 
-`experimental/` 只保存研究快照、非公开 API 试验和已被正式实现替代的原型。这里的代码不属于 TurboCider 的产品 ABI，也不进入默认 native library、CLI、App 或发行包。
+`experimental/` holds opt-in research code. Its targets are not part of the
+default native library, CLI, App or release package and do not define the
+product ABI.
 
-正式构建边界由以下机制共同保证：
+## Available experiments
 
-- `tools/native/build.sh` 使用显式源文件清单，不递归收集 `experimental/`；
-- `tests/repository/test_layout.py` 拒绝正式构建重新引用实验目录；
-- Apple private ANE 的 `_ANEInMemoryModel*`、`_ANERequest` 和 `_ANEIOSurfaceObject` 调用只存在于实验快照；
-- 正式 H3 runtime 链接 `h3_ane_disabled.c`，任何历史 private-ANE 入口都会 fail closed；
-- 公共 GPU+ANE 路径使用 Core ML、显式 manifest、checkpoint/LoRA provenance 和 caller-owned output backing，不依赖 private API。
+The maintained directory map contains one laboratory:
 
-目录说明：
+- [transformer/](transformer/README.md): synthetic Transformer CPU/GPU/ANE
+  splitting, public/private API comparisons, real LTX replay diagnostics and
+  VAE quality studies. Its README lists the build and reproduction commands.
 
-- `transformer/`：M4 Pro 上独立 1–3 层 Transformer 的 tensor、FFN sequence-row、完整 attention-head 并行研究，包含 public/private API 对照、原始数据和 [完整技术报告](transformer/notes/REPORT.md)；
-- `video/`：H3/LTX 迁移早期快照，不应继续同步模型数学；
-- `private-ane/`：private API 的适用范围、实测结论和不可发行原因；
-- `tools/experimental/`：只构建研究快照的显式入口，与 `make build`、`make package` 无关。
+The old `video/` and `private-ane/` snapshot directories no longer exist.
+Production model implementations are under `native/models/`; do not restore
+vendor snapshots into the shipping source list.
 
-完整 Transformer CPU/GPU/ANE 结论见 [异构并行技术报告](../docs/design/transformer-heterogeneous-report.md)。
+## Documentation and results
+
+Keep runnable research sources here and archive experiment narratives under
+`docs/experiments/`. The [Transformer archive](../docs/experiments/transformer/README.md)
+holds the M4 Max reproduction ledger and links the historical M4 Pro report.
+Existing report generators and their M4 Pro evidence remain in the laboratory
+until migrated together in a separate change.
+
+New raw runs, tensor dumps, compiled models and generated media belong in the
+ignored root `outputs/` directory. Retain small, portable evidence with the
+corresponding archived narrative; do not turn a kernel observation into a
+whole-model performance claim.
+
+## Shipping boundary
+
+- `tools/native/build.sh` uses an explicit source list and excludes this tree.
+- The default native build uses public APIs. A separate research configuration
+  can enable `native/backends/private/` with `TURBOCIDER_ENABLE_PRIVATE_ANE=1`;
+  private API code is therefore not confined to `experimental/`.
+- `tools/native/package.sh` invokes `check_release_binary.py`, which rejects
+  private-ANE release artifacts.
+- The legacy H3 private-ANE entry points link `h3_ane_disabled.c` and fail
+  closed. The source isolation rules are checked by
+  `tests/repository/test_layout.py`.
+
+Consult the [current acceleration entry](../docs/status/acceleration.md) for
+runtime choices and the [historical heterogeneous report](../docs/design/transformer-heterogeneous-report.md)
+for earlier adoption decisions. Historical reports describe their own code
+revision and hardware.
