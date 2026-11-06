@@ -13,6 +13,7 @@ COMFYUI_PYTHON ?= $(PYTHON)
 .PHONY: test-qwen21-runtime-host
 .PHONY: test-base-benchmark
 .PHONY: test-tiny-vae test-tiny-vae-metal test-tiny-vae-download
+.PHONY: test-h3-download
 help:
 	@echo 'TurboCider — native multimodal inference system'
 	@echo 'MLX_ROOT=/path/to/mlx make build    Build engine, CLI, App and Swift tests'
@@ -41,6 +42,7 @@ help:
 	@echo 'make test-tiny-vae               Verify tiny VAE request contracts (native build required)'
 	@echo 'make test-tiny-vae-metal         Verify preview cadence, cancellation and latent invariance'
 	@echo 'make test-tiny-vae-download      Verify pinned tiny VAE downloads with local fixtures'
+	@echo 'make test-h3-download           Verify H3 resumable downloads and identities without network'
 	@echo 'make test-qwen21-runtime-host    Verify fixed-program/QKV/format/prefix/profiling contracts (no inference)'
 	@echo 'make build-runtime-ane-probe      Build optional runtime-weight Core ML component probe (not CLI)'
 	@echo 'make test-acceleration-contract   Check optional routes, benchmark reports and host math (no inference)'
@@ -117,9 +119,15 @@ test:
 	@"$(PYTHON)" -B tests/native/test_h3_mlx_cache.py
 	@"$(PYTHON)" -B tests/native/test_h3_mlx_prepare.py
 	@"$(PYTHON)" -B tests/native/test_h3_mlx_modelscope.py
+	@$(MAKE) test-h3-download
 	@"$(PYTHON)" -B tests/native/test_vdn_modelscope.py
 	@"$(PYTHON)" -B tests/native/test_vdn_mlx_solve.py
 	@"$(PYTHON)" tests/native/test_inventory.py
+# Download fixtures use local bytes and mocked HTTP responses, never weights.
+test-h3-download:
+	@"$(PYTHON)" -B tests/native/test_h3_download_common.py
+	@"$(PYTHON)" -B tests/native/test_h3_fl2va_modelscope.py
+	@"$(PYTHON)" -B tests/native/test_h3_vae_modelscope.py
 # Tiny VAE contracts are CPU-only; the opt-in Metal target uses local tiny weights.
 test-tiny-vae:
 	@"$(PYTHON)" -B tests/native/test_tiny_vae.py
