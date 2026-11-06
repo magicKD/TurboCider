@@ -30,10 +30,7 @@ fi
  echo "MLX license is missing: $MLX_LICENSE_PATH" >&2
  exit 1
 }
-MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
- /cmd LC_BUILD_VERSION/{build=1; next}
- build && /minos /{print $2; exit}
-')"
+MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 PACKAGE_MIN_MACOS="${TURBOCIDER_PACKAGE_MIN_MACOS:-${MLX_MIN_MACOS:-15.0}}"
 rm -rf "$APP" "$DIST/cli"
 mkdir -p "$BIN" "$RES" "$DIST/cli"

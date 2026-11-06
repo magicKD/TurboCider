@@ -487,7 +487,7 @@ than the fallback. On the two-reference sample, however, full coverage was
 closer to GPU (RGB correlation 0.944 versus 0.928 for fallback). Neither
 route establishes physical ANE occupancy or general image fidelity; GPU
 remains the default. See the
-[full-coverage edit comparison](../status/qwen21-w8a8-full32-edit.md)
+[full-coverage edit comparison](../experiments/qwen21-w8a8/qwen21-w8a8-full32-edit.md)
 for timings and visual caveats.
 
 A separate **diagnostic-only full-size-reference editing** option is now
@@ -505,7 +505,7 @@ three-reference 40-step sticker placement/size visibly changed, and both
 5-step outputs had ghosting. The tested W8A16 GPU suffix was again slower
 than BF16 (BF16/W8A16 median **0.986×** on the full-size two-reference 5-step
 sample). This is not a quality-qualified default or cold-start speed claim;
-see the [full-reference diagnostic report](../status/qwen21-w8a8-fullref-512-diagnostics-2026-09-26.md).
+see the [full-reference diagnostic report](../experiments/qwen21-w8a8/qwen21-w8a8-fullref-512-diagnostics-2026-09-26.md).
 
 For **20–40-step base-model** requests where the user accepts visible
 texture/shadow differences, `TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC=1` enables
@@ -597,7 +597,7 @@ resident Session measured GPU **5.999/5.997 s** versus W8A8
 around its legs and tail; an independent glass-bottle-and-cactus prompt/seed
 also gave visually similar results in a diagnostic generator. These are
 limited samples, not a default quality or cold-start speed guarantee; the
-[text-to-image evidence](../status/qwen21-w8a8-6144-t2i.md) distinguishes
+[text-to-image evidence](../experiments/qwen21-w8a8/qwen21-w8a8-6144-t2i.md) distinguishes
 per-step timing from complete resident and first requests.
 
 For the speed-first explicit W8A8 edit candidate, use schema 1 fields like
@@ -645,8 +645,8 @@ compiled manifest for resident Session benchmarking, but does not qualify
 1024² editing or change the default GPU policy. The measured warm-request
 speedups are 1.114× at 5 steps and 1.159× at 40 steps on one prompt/seed;
 physical ANE placement and broad image quality remain unverified. See the
-[512²](../status/qwen21-w8a8-ane-diagnostics-2026-09-25.md) and
-[1024²](../status/qwen21-w8a8-ane-1024-diagnostics.md) reports for timing
+[512²](../experiments/qwen21-w8a8/qwen21-w8a8-ane-diagnostics-2026-09-25.md) and
+[1024²](../experiments/qwen21-w8a8/qwen21-w8a8-ane-1024-diagnostics.md) reports for timing
 scope, visual differences, and remaining validation work.
 
 ## 512² validation snapshot

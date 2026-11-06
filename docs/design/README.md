@@ -11,7 +11,7 @@
 | 原生引擎职责、类型接口与重构验收 | [C++ 引擎边界](native-cpp-engine.md) |
 | 任务路由与 GPU/ANE 分工 | [任务感知加速](task-aware-acceleration.md) · [并行加速](parallel-acceleration.md) |
 | 受限内存、权重驻留与调度 | [驻留调度器](memory-constrained-residency-scheduler-20260915.md) · [Streaming 设计目录](streaming/README.md) |
-| GGUF、量化执行与有限解码 | [量化执行目录](quantized-execution/README.md) · [量化与 streaming 对照](quantized-streaming-vpipe-comparison.md) |
+| GGUF、量化执行与有限解码 | [量化执行设计](quantized-execution/README.md) · [实施与实验账本](../experiments/quantized-execution/README.md) · [量化与 streaming 对照](quantized-streaming-vpipe-comparison.md) |
 | Qwen Native Metal / GPU+ANE command graph | [专项设计目录](qwen-image-gpu-ane-command-graph/README.md) |
 | Apple 芯片与 kernel 优化 | [Mac kernel 优化](mac-kernel-opt.md) · [M5 ANE 适配](m5-ane-adaptation.md) |
 | H3 C++/MLX INT6 | [加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md) |
@@ -44,28 +44,31 @@
 - [Native encoder 与编辑首步 ANE](qwen-image-gpu-ane-command-graph/23-native-encoder-prefill-ane.md)
 
 对应的[Base E2E](../status/2026-10-08-native-register-w1-base-e2e.md)、
-[LoRA 基础实现](../status/2026-10-08-native-lora-foundation.md)、
-[SGMMA 组件筛选](../status/2026-10-08-native-lora-sgmma-screen.md)和
-[整图配对](../status/2026-10-08-native-lora-sgmma-e2e.md)保留其各自结论。
-Encoder 的[GPU 融合](../status/2026-10-08-qwen-edit-encoder.md)、
-[ANE 初版](../status/2026-10-08-qwen-ane-encoder.md)、
-[后续优化](../status/2026-10-08-qwen-encoder-followup.md)、
-[调度校准](../status/2026-10-08-qwen-encoder-scheduling.md)和
-[Native 实验](../status/2026-10-08-qwen-native-encoder.md)是独立历史记录。
+[LoRA 基础实现](../experiments/native-lora/2026-10-08-native-lora-foundation.md)、
+[SGMMA 组件筛选](../experiments/native-lora/2026-10-08-native-lora-sgmma-screen.md)和
+[整图配对](../experiments/native-lora/2026-10-08-native-lora-sgmma-e2e.md)保留其各自结论。
+Encoder 的[GPU 融合](../experiments/qwen-encoder/2026-10-08-qwen-edit-encoder.md)、
+[ANE 初版](../experiments/qwen-encoder/2026-10-08-qwen-ane-encoder.md)、
+[后续优化](../experiments/qwen-encoder/2026-10-08-qwen-encoder-followup.md)、
+[调度校准](../experiments/qwen-encoder/2026-10-08-qwen-encoder-scheduling.md)和
+[Native 实验](../experiments/qwen-encoder/2026-10-08-qwen-native-encoder.md)是独立历史记录。
 
 ## SeedVR2 专项设计
 
-- [Block 权重驻留](seedvr2-block-weight-residency.md)
-- [VAE 优化总览](seedvr2-vae-optimization.md)与[空间调度](seedvr2-vae-spatial-scheduler.md)
-- [Halo 对齐分块](seedvr2-vae-halo-aligned-tiles.md)与[norm packing / 资源建议](seedvr2-vae-norm-pack-and-resource-advice.md)
-- [ANE 可行性](seedvr2-vae-ane-feasibility.md)、[超分 causal convolution](seedvr2-vae-upscale-causal-conv.md)与[virtual causal convolution](seedvr2-vae-virtual-causal-conv.md)
-- [阶段性能与超分历史](seedvr2-vae-phase-and-upscale-history.md)
+历史测量单独保存在 [SeedVR2 实验归档](../experiments/seedvr2/README.md)，下面同时列出设计与证据入口。
+
+- [Block 权重驻留](../experiments/seedvr2/2026-10-15-block-weight-residency.md)
+- [VAE 优化总览](seedvr2-vae-optimization.md)与[空间调度](../experiments/seedvr2/2026-10-14-vae-spatial-scheduler.md)
+- [Halo 对齐分块](../experiments/seedvr2/2026-10-15-vae-halo-aligned-tiles.md)与[norm packing / 资源建议](../experiments/seedvr2/2026-10-15-vae-norm-pack-and-resource-advice.md)
+- [ANE 可行性](../experiments/seedvr2/2026-10-15-vae-ane-feasibility.md)、[超分 causal convolution](../experiments/seedvr2/2026-10-15-vae-upscale-causal-conv.md)与[virtual causal convolution](../experiments/seedvr2/2026-10-15-vae-virtual-causal-conv.md)
+- [阶段性能与超分历史](../experiments/seedvr2/2026-10-15-vae-phase-and-upscale-history.md)
 
 ## 历史实验与证据
 
 - [LTX Stage-2 sparse 结果](../experiments/ltx-stage2-sparse/results.md)与[研究账本](../experiments/ltx-stage2-sparse/research.md)：保留速度与质量未同时达标的结论。
 - [M4 Max reproduction](../../experimental/transformer/notes/M4_MAX_REPRODUCTION.md)：GPU/ANE、LTX Stage-2 与 VAE 生命周期的独立复验记录。
-- [Transformer 异构报告](transformer-heterogeneous-report.md)与[2026-09-15 ANE 分阶段决策](ane-acceleration-status-2026-09-15.md)：历史设备、版本和计时边界不能外推到当前产品。
+- [Transformer 异构报告](../experiments/transformer/2026-09-08-adoption-report.md)与[2026-09-15 ANE 分阶段决策](../experiments/transformer/2026-09-15-ane-decisions.md)：历史设备、版本和计时边界不能外推到当前产品。
+- [Z-Image Metal 历史实验](../experiments/z-image-metal/README.md)：分开保存失效计时、健康状态对照和 M4 Pro 探索，保留原结论与性能账本。
 - [验证摘要索引](validation/README.md)与[VDN H3/MLX GPU 验证](validation/vdn-h3-mlx-gpu-validation-2026-09-12.json)：小型证据与依赖身份保留原路径。
 
 新实验叙述及小型证据放入 `docs/experiments/<topic>/`。原始张量、生成媒体和过程日志

@@ -43,6 +43,6 @@ whole-model performance claim.
   `tests/repository/test_layout.py`.
 
 Consult the [current acceleration entry](../docs/status/acceleration.md) for
-runtime choices and the [historical heterogeneous report](../docs/design/transformer-heterogeneous-report.md)
+runtime choices and the [historical heterogeneous report](../docs/experiments/transformer/2026-09-08-adoption-report.md)
 for earlier adoption decisions. Historical reports describe their own code
 revision and hardware.

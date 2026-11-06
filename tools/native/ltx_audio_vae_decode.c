@@ -1,41 +1,9 @@
 #include "ltx_mlx_audio_vae.h"
 
-#include <errno.h>
+#include "ltx_audio_decode_io.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
-static void fail(const char *message) {
-    fprintf(stderr, "error: %s\n", message);
-    exit(1);
-}
-
-static void *read_file(const char *path, size_t expected_bytes) {
-    FILE *stream = fopen(path, "rb");
-    if (!stream) fail(strerror(errno));
-    if (fseek(stream, 0, SEEK_END) != 0) fail("cannot seek input");
-    long length = ftell(stream);
-    if (length < 0 || (size_t)length != expected_bytes) {
-        fail("input byte count does not match BLC shape");
-    }
-    rewind(stream);
-    void *data = malloc(expected_bytes);
-    if (!data) fail("out of memory reading audio latent");
-    if (fread(data, 1, expected_bytes, stream) != expected_bytes) {
-        fail("cannot read audio latent");
-    }
-    fclose(stream);
-    return data;
-}
-
-static void write_file(const char *path, const void *data, size_t bytes) {
-    FILE *stream = fopen(path, "wb");
-    if (!stream) fail(strerror(errno));
-    if (fwrite(data, 1, bytes, stream) != bytes || fclose(stream) != 0) {
-        fail("cannot write mel output");
-    }
-}
 
 int main(int argc, char **argv) {
     if (argc != 6 && argc != 7) {
@@ -58,7 +26,10 @@ int main(int argc, char **argv) {
     size_t input_elements = (size_t)batch * tokens * 128u;
     size_t output_elements = (size_t)batch * 2u *
         (tokens * 4u - 3u) * 64u;
-    uint16_t *input = read_file(argv[2], input_elements * sizeof(uint16_t));
+    uint16_t *input = read_file(
+        argv[2], input_elements * sizeof(uint16_t),
+        "input byte count does not match BLC shape",
+        "out of memory reading audio latent", "cannot read audio latent");
     uint16_t *output = calloc(output_elements, sizeof(uint16_t));
     if (!output) fail("out of memory allocating mel output");
     char error[1024] = {0};
@@ -76,7 +47,8 @@ int main(int argc, char **argv) {
     if (!decoded) {
         fail(error);
     }
-    write_file(argv[5], output, output_elements * sizeof(uint16_t));
+    write_file(argv[5], output, output_elements * sizeof(uint16_t),
+               "cannot write mel output");
     printf("{\"batch\":%u,\"tokens\":%u,\"mel_time\":%u,"
            "\"mel_bins\":64,\"channels\":2,\"weight_tensors\":%u,"
            "\"weight_bytes\":%llu}\n",

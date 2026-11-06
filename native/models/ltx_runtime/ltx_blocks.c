@@ -9,7 +9,6 @@
 #include "ltx_safetensors.h"
 #include "ltx_transformer_io.h"
 #include "ltx_upsampler.h"
-#include "ltx_video_vae.h"
 #include "ltx_weights.h"
 #include "ltx_streaming_slot.h"
 #include "ltx_mlx_upsampler.h"
@@ -32,33 +31,16 @@
 #include "ltx_ane_qkv.h"
 #endif
 
-#ifdef LTX_ENABLE_MLX_MEDIA
-#include "ltx_mlx_video_vae.h"
-#endif
-
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
-#include <signal.h>
-#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-
-/* Timing is reported through TurboCider events/results, never stdout. */
-#define printf(...) ((int)0)
-extern char **environ;
-
-#ifdef LTX_ENABLE_MLX_MEDIA
-typedef struct {
-    pid_t process;
-} mlx_vae_worker;
-#endif
 
 /* Experimental second Metal context used to measure whether the two
  * mathematically independent AV cross-attention directions can overlap.
@@ -154,7 +136,6 @@ static ltx_sparse_pattern sol_sparse_pattern = {0u, 1u, 0u, 0u, 0u};
 
 enum {
     LTX_MAX_TABLE_ROWS = 9,
-    LTX_MAX_CUSTOM_SIGMAS = 32,
 };
 
 typedef struct {
@@ -388,76 +369,6 @@ static av_persistent_worker av_audio_worker = {
     .done = PTHREAD_COND_INITIALIZER,
 };
 
-static void *av_persistent_worker_main(void *opaque) {
-    av_persistent_worker *worker = opaque;
-    for (;;) {
-        pthread_mutex_lock(&worker->mutex);
-        while (!worker->pending && !worker->stop)
-            pthread_cond_wait(&worker->wake, &worker->mutex);
-        if (worker->stop && !worker->pending) {
-            pthread_mutex_unlock(&worker->mutex);
-            return NULL;
-        }
-        av_worker_function function = worker->function;
-        void *context = worker->opaque;
-        worker->pending = 0;
-        worker->active = 1;
-        pthread_mutex_unlock(&worker->mutex);
-
-        function(context);
-
-        pthread_mutex_lock(&worker->mutex);
-        worker->active = 0;
-        worker->completed = 1;
-        pthread_cond_signal(&worker->done);
-        pthread_mutex_unlock(&worker->mutex);
-    }
-}
-
-static int av_persistent_worker_start(char *error, size_t error_size) {
-    av_persistent_worker *worker = &av_audio_worker;
-    pthread_mutex_lock(&worker->mutex);
-    worker->stop = 0;
-    worker->active = 0;
-    worker->pending = 0;
-    worker->completed = 0;
-    worker->function = NULL;
-    worker->opaque = NULL;
-    pthread_mutex_unlock(&worker->mutex);
-    if (pthread_create(
-            &worker->thread, NULL, av_persistent_worker_main, worker) != 0) {
-        snprintf(error, error_size,
-                 "cannot create persistent Audio worker");
-        return 0;
-    }
-    pthread_mutex_lock(&worker->mutex);
-    worker->initialized = 1;
-    pthread_mutex_unlock(&worker->mutex);
-    return 1;
-}
-
-static void av_persistent_worker_stop(void) {
-    av_persistent_worker *worker = &av_audio_worker;
-    pthread_mutex_lock(&worker->mutex);
-    int initialized = worker->initialized;
-    if (initialized) {
-        worker->stop = 1;
-        pthread_cond_signal(&worker->wake);
-    }
-    pthread_mutex_unlock(&worker->mutex);
-    if (!initialized) return;
-    pthread_join(worker->thread, NULL);
-    pthread_mutex_lock(&worker->mutex);
-    worker->initialized = 0;
-    worker->stop = 0;
-    worker->active = 0;
-    worker->pending = 0;
-    worker->completed = 0;
-    worker->function = NULL;
-    worker->opaque = NULL;
-    pthread_mutex_unlock(&worker->mutex);
-}
-
 static int av_task_start(av_task_handle *handle,
                          av_worker_function function, void *opaque,
                          const char *label,
@@ -510,149 +421,6 @@ static int av_task_wait(av_task_handle *handle) {
     return ok;
 }
 
-static int environment_flag(const char *name, int default_value) {
-    const char *value = ltx_runtime_getenv(name);
-    if (!value || !value[0]) return default_value;
-    return strcmp(value, "0") != 0 &&
-           strcmp(value, "false") != 0 &&
-           strcmp(value, "off") != 0 &&
-           strcmp(value, "no") != 0;
-}
-
-static int compare_double(const void *left, const void *right) {
-    double a = *(const double *)left;
-    double b = *(const double *)right;
-    return (a > b) - (a < b);
-}
-
-static uint32_t parse_u32(const char *text, const char *label) {
-    char *end = NULL;
-    unsigned long value = strtoul(text, &end, 10);
-    if (!text[0] || !end || *end || !value || value > UINT32_MAX) {
-        fprintf(stderr, "bench_block: invalid %s: %s\n", label, text);
-        exit(2);
-    }
-    return (uint32_t)value;
-}
-
-static void configure_generation_geometry(void) {
-    const char *width_text = ltx_runtime_getenv("LTX_OUTPUT_WIDTH");
-    const char *height_text = ltx_runtime_getenv("LTX_OUTPUT_HEIGHT");
-    uint32_t requested_width = width_text && width_text[0] ?
-        parse_u32(width_text, "LTX_OUTPUT_WIDTH") : 704u;
-    uint32_t requested_height = height_text && height_text[0] ?
-        parse_u32(height_text, "LTX_OUTPUT_HEIGHT") : 480u;
-    uint32_t stage1_width = requested_width / 64u;
-    uint32_t stage1_height = requested_height / 64u;
-    if (!stage1_width || !stage1_height ||
-        stage1_width > UINT32_MAX / 2u ||
-        stage1_height > UINT32_MAX / 2u) {
-        fprintf(stderr,
-                "bench_block: output size must be at least 64x64: %ux%u\n",
-                requested_width, requested_height);
-        exit(2);
-    }
-    uint32_t stage2_width = stage1_width * 2u;
-    uint32_t stage2_height = stage1_height * 2u;
-    uint64_t stage1_rows =
-        (uint64_t)active_geometry.latent_frames *
-        stage1_height * stage1_width;
-    uint64_t stage2_rows =
-        (uint64_t)active_geometry.latent_frames *
-        stage2_height * stage2_width;
-    if (stage1_rows > UINT32_MAX || stage2_rows > UINT32_MAX) {
-        fprintf(stderr,
-                "bench_block: output geometry is too large: %ux%u\n",
-                requested_width, requested_height);
-        exit(2);
-    }
-    active_geometry.requested_width = requested_width;
-    active_geometry.requested_height = requested_height;
-    active_geometry.stage1_height = stage1_height;
-    active_geometry.stage1_width = stage1_width;
-    active_geometry.stage2_height = stage2_height;
-    active_geometry.stage2_width = stage2_width;
-    active_geometry.stage1_rows = (uint32_t)stage1_rows;
-    active_geometry.stage2_rows = (uint32_t)stage2_rows;
-    active_geometry.output_height = stage2_height * 32u;
-    active_geometry.output_width = stage2_width * 32u;
-}
-
-static uint32_t parse_index(const char *text, const char *label) {
-    char *end = NULL;
-    unsigned long value = strtoul(text, &end, 10);
-    if (!text[0] || !end || *end || value > UINT32_MAX) {
-        fprintf(stderr, "bench_block: invalid %s: %s\n", label, text);
-        exit(2);
-    }
-    return (uint32_t)value;
-}
-
-static uint64_t parse_u64(const char *text, const char *label) {
-    char *end = NULL;
-    unsigned long long value = strtoull(text, &end, 10);
-    if (!text[0] || !end || *end) {
-        fprintf(stderr, "bench_block: invalid %s: %s\n", label, text);
-        exit(2);
-    }
-    return (uint64_t)value;
-}
-
-static float parse_f32(const char *text, const char *label) {
-    char *end = NULL;
-    float value = strtof(text, &end);
-    if (!text[0] || !end || *end || !isfinite(value)) {
-        fprintf(stderr, "bench_block: invalid %s: %s\n", label, text);
-        exit(2);
-    }
-    return value;
-}
-
-static uint32_t environment_index(const char *name,
-                                  uint32_t default_value) {
-    const char *value = ltx_runtime_getenv(name);
-    return value && value[0] ? parse_index(value, name) : default_value;
-}
-
-static int parse_float_list(const char *name, const char *text,
-                            float *values, size_t capacity, size_t *count,
-                            char *error, size_t error_size) {
-    if (!text || !text[0]) {
-        *count = 0u;
-        return 1;
-    }
-    const char *cursor = text;
-    size_t parsed = 0u;
-    while (*cursor) {
-        char *end = NULL;
-        errno = 0;
-        float value = strtof(cursor, &end);
-        if (errno || end == cursor || !isfinite(value) ||
-            parsed >= capacity) {
-            snprintf(error, error_size, "invalid %s list: %s", name, text);
-            return 0;
-        }
-        values[parsed++] = value;
-        cursor = end;
-        while (*cursor == ' ' || *cursor == '\t') cursor++;
-        if (!*cursor) break;
-        if (*cursor != ',') {
-            snprintf(error, error_size, "invalid %s separator: %s",
-                     name, text);
-            return 0;
-        }
-        cursor++;
-        while (*cursor == ' ' || *cursor == '\t') cursor++;
-        if (!*cursor) {
-            snprintf(error, error_size, "trailing comma in %s: %s",
-                     name, text);
-            return 0;
-        }
-    }
-    *count = parsed;
-    return 1;
-}
-
 static int sol_video_self_stage_enabled(uint32_t rows) {
     if (rows == active_geometry.stage1_rows)
         return sol_video_self.stage1_enabled;
@@ -685,67 +453,6 @@ static int sol_video_self_should_run(uint32_t rows,
     return 1;
 }
 
-static int resolve_sigma_schedule(
-        const char *environment_name,
-        const float *default_sigmas, size_t default_count,
-        float *storage, size_t storage_capacity,
-        const float **sigmas, size_t *sigma_count,
-        char *error, size_t error_size) {
-    const char *text = ltx_runtime_getenv(environment_name);
-    if (!text || !text[0]) {
-        *sigmas = default_sigmas;
-        *sigma_count = default_count;
-        return 1;
-    }
-    const char *cursor = text;
-    size_t count = 0;
-    while (*cursor) {
-        char *end = NULL;
-        errno = 0;
-        float value = strtof(cursor, &end);
-        if (errno || end == cursor || !isfinite(value) ||
-            value < 0.0f || value > 1.0f ||
-            count >= storage_capacity) {
-            snprintf(error, error_size, "invalid %s sigma list: %s",
-                     environment_name, text);
-            return 0;
-        }
-        storage[count++] = value;
-        cursor = end;
-        while (*cursor == ' ' || *cursor == '\t') cursor++;
-        if (!*cursor) break;
-        if (*cursor != ',') {
-            snprintf(error, error_size, "invalid %s separator: %s",
-                     environment_name, text);
-            return 0;
-        }
-        cursor++;
-        while (*cursor == ' ' || *cursor == '\t') cursor++;
-        if (!*cursor) {
-            snprintf(error, error_size, "trailing comma in %s: %s",
-                     environment_name, text);
-            return 0;
-        }
-    }
-    if (count < 2u || storage[0] <= 0.0f || storage[count - 1u] != 0.0f) {
-        snprintf(error, error_size,
-                 "%s must start above zero and end at zero",
-                 environment_name);
-        return 0;
-    }
-    for (size_t index = 1; index < count; index++) {
-        if (storage[index] >= storage[index - 1u]) {
-            snprintf(error, error_size,
-                     "%s sigmas must be strictly descending",
-                     environment_name);
-            return 0;
-        }
-    }
-    *sigmas = storage;
-    *sigma_count = count;
-    return 1;
-}
-
 static int checked_bytes(uint64_t elements, size_t element_size,
                          size_t *bytes) {
     if (!bytes || elements > SIZE_MAX / element_size) return 0;
@@ -762,41 +469,6 @@ static int fixture_path(char *path, size_t path_size,
         return 0;
     }
     return 1;
-}
-
-static int file_size_exact(const char *path, size_t *bytes,
-                           char *error, size_t error_size) {
-    struct stat info;
-    if (stat(path, &info) != 0 || !S_ISREG(info.st_mode) ||
-        info.st_size < 0 || (uint64_t)info.st_size > SIZE_MAX) {
-        snprintf(error, error_size, "cannot stat fixture file %s", path);
-        return 0;
-    }
-    *bytes = (size_t)info.st_size;
-    return 1;
-}
-
-static int read_file_exact(const char *path, void *data, size_t bytes,
-                           char *error, size_t error_size) {
-    size_t actual = 0;
-    if (!file_size_exact(path, &actual, error, error_size)) return 0;
-    if (actual != bytes) {
-        snprintf(error, error_size,
-                 "fixture file %s has %zu bytes, expected %zu",
-                 path, actual, bytes);
-        return 0;
-    }
-    FILE *file = fopen(path, "rb");
-    if (!file) {
-        snprintf(error, error_size, "cannot open fixture file %s", path);
-        return 0;
-    }
-    size_t count = fread(data, 1u, bytes, file);
-    int close_result = fclose(file);
-    int ok = count == bytes && close_result == 0;
-    if (!ok)
-        snprintf(error, error_size, "cannot read fixture file %s", path);
-    return ok;
 }
 
 static int write_file_exact(const char *path, const void *data, size_t bytes,
@@ -836,120 +508,6 @@ static int ensure_directory(const char *path,
     return 1;
 }
 
-static int read_fixture_file(const char *directory, const char *name,
-                             void *data, size_t bytes,
-                             char *error, size_t error_size) {
-    char path[4096];
-    return fixture_path(path, sizeof(path), directory, name,
-                        error, error_size) &&
-        read_file_exact(path, data, bytes, error, error_size);
-}
-
-static int read_fixture_file_prefix(const char *directory, const char *name,
-                                    void *data, size_t bytes,
-                                    char *error, size_t error_size) {
-    char path[4096];
-    size_t actual = 0;
-    if (!fixture_path(path, sizeof(path), directory, name,
-                      error, error_size) ||
-        !file_size_exact(path, &actual, error, error_size)) return 0;
-    if (actual < bytes) {
-        snprintf(error, error_size,
-                 "fixture file %s has %zu bytes, needs prefix %zu",
-                 path, actual, bytes);
-        return 0;
-    }
-    FILE *file = fopen(path, "rb");
-    if (!file) {
-        snprintf(error, error_size, "cannot open fixture file %s", path);
-        return 0;
-    }
-    size_t count = fread(data, 1u, bytes, file);
-    int close_result = fclose(file);
-    if (count != bytes || close_result != 0) {
-        snprintf(error, error_size,
-                 "cannot read fixture prefix from %s", path);
-        return 0;
-    }
-    return 1;
-}
-
-static int fixture_rows(const char *directory, const char *name,
-                        size_t row_bytes, uint32_t *rows,
-                        char *error, size_t error_size) {
-    char path[4096];
-    size_t bytes = 0;
-    if (!row_bytes ||
-        !fixture_path(path, sizeof(path), directory, name,
-                      error, error_size) ||
-        !file_size_exact(path, &bytes, error, error_size) ||
-        !bytes || bytes % row_bytes || bytes / row_bytes > UINT32_MAX) {
-        if (!error[0])
-            snprintf(error, error_size,
-                     "invalid row geometry for fixture file %s", name);
-        return 0;
-    }
-    *rows = (uint32_t)(bytes / row_bytes);
-    return 1;
-}
-
-static int conditioning_rows(const char *directory,
-                             uint32_t video_dim, uint32_t audio_dim,
-                             uint32_t *rows,
-                             char *error, size_t error_size) {
-    size_t video_row_bytes = 0;
-    size_t audio_bytes = 0;
-    size_t mask_bytes = 0;
-    size_t actual_audio_bytes = 0;
-    size_t actual_mask_bytes = 0;
-    char path[4096];
-    if (!directory || !rows ||
-        !checked_bytes(video_dim, sizeof(uint16_t), &video_row_bytes) ||
-        !fixture_rows(directory, "video_context.bf16", video_row_bytes,
-                      rows, error, error_size) ||
-        !checked_bytes((uint64_t)*rows * audio_dim, sizeof(uint16_t),
-                       &audio_bytes) ||
-        !checked_bytes(*rows, sizeof(uint16_t), &mask_bytes) ||
-        !fixture_path(path, sizeof(path), directory,
-                      "audio_context.bf16", error, error_size) ||
-        !file_size_exact(path, &actual_audio_bytes, error, error_size) ||
-        actual_audio_bytes != audio_bytes) {
-        if (!error[0])
-            snprintf(error, error_size,
-                     "invalid audio context geometry in %s", directory);
-        return 0;
-    }
-    if (!fixture_path(path, sizeof(path), directory,
-                      "text_mask.bf16", error, error_size) ||
-        !file_size_exact(path, &actual_mask_bytes, error, error_size) ||
-        actual_mask_bytes != mask_bytes) {
-        if (!error[0])
-            snprintf(error, error_size,
-                     "invalid text mask geometry in %s", directory);
-        return 0;
-    }
-    return 1;
-}
-
-static int write_gpu_buffer_file(
-        const ltx_gpu_buffer *buffer, size_t bytes,
-        const char *directory, const char *name,
-        char *error, size_t error_size) {
-    char path[4096];
-    void *host = malloc(bytes);
-    if (!host) {
-        snprintf(error, error_size,
-                 "out of memory exporting generation artifact");
-        return 0;
-    }
-    int ok = fixture_path(path, sizeof(path), directory, name,
-                          error, error_size) &&
-        ltx_gpu_buffer_read(buffer, host, bytes, error, error_size) &&
-        write_file_exact(path, host, bytes, error, error_size);
-    free(host);
-    return ok;
-}
-
 /* Step-level scheduler fixtures are disabled by default because each dump
  * fences the GPU and copies the complete BF16 latent to the host.  They are
  * only used to locate the first C/Metal versus C++/MLX divergence. */
@@ -971,537 +529,6 @@ static int write_schedule_step_file(
         return 0;
     }
     return 1;
-}
-
-static int write_generation_outputs(
-        const char *directory,
-        const ltx_gpu_buffer *video_latent,
-        const ltx_gpu_buffer *audio_latent,
-        const ltx_gpu_buffer *video_pixels,
-        uint32_t video_rows, uint32_t video_channels,
-        uint32_t audio_rows, uint32_t audio_channels,
-        uint32_t text_rows, uint64_t seed, double decode_seconds,
-        char *error, size_t error_size) {
-    size_t video_bytes = 0;
-    size_t audio_bytes = 0;
-    size_t pixel_bytes = 0;
-    char metadata_path[4096];
-    if (!directory || !video_latent || !audio_latent ||
-        !checked_bytes((uint64_t)video_rows * video_channels,
-                       sizeof(uint16_t), &video_bytes) ||
-        !checked_bytes((uint64_t)audio_rows * audio_channels,
-                       sizeof(uint16_t), &audio_bytes) ||
-        (video_pixels &&
-         !checked_bytes((uint64_t)3u * active_geometry.output_frames *
-                        active_geometry.output_height *
-                        active_geometry.output_width,
-                        sizeof(uint16_t), &pixel_bytes)) ||
-        !ensure_directory(directory, error, error_size) ||
-        !write_gpu_buffer_file(
-            video_latent, video_bytes, directory, "video_latent.bf16",
-            error, error_size) ||
-        !write_gpu_buffer_file(
-            audio_latent, audio_bytes, directory, "audio_latent.bf16",
-            error, error_size) ||
-        (video_pixels &&
-         !write_gpu_buffer_file(
-             video_pixels, pixel_bytes, directory, "video_pixels.bf16",
-             error, error_size)) ||
-        !fixture_path(metadata_path, sizeof(metadata_path), directory,
-                      "generation.json", error, error_size)) return 0;
-
-    FILE *metadata = fopen(metadata_path, "w");
-    if (!metadata) {
-        snprintf(error, error_size, "cannot open output file %s",
-                 metadata_path);
-        return 0;
-    }
-    int count = fprintf(
-        metadata,
-        "{\n"
-        "  \"format\": \"ltx-mac-generation-v2\",\n"
-        "  \"dtype\": \"bfloat16\",\n"
-        "  \"seed\": %llu,\n"
-        "  \"text_rows\": %u,\n"
-        "  \"requested_video\": {\"width\": %u, \"height\": %u, "
-        "\"frames\": %u, \"fps\": 24},\n"
-        "  \"decoded_video\": {\"width\": %u, \"height\": %u, "
-        "\"frames\": %u, \"fps\": 24},\n"
-        "  \"video\": {\"file\": \"video_latent.bf16\", "
-        "\"layout\": \"BFHWC-token-major\", "
-        "\"shape\": [1, %u, %u, %u, %u], \"rows\": %u},\n"
-        "  \"audio\": {\"file\": \"audio_latent.bf16\", "
-        "\"layout\": \"BLC-token-major\", "
-        "\"shape\": [1, %u, %u]},\n"
-        "  \"native_video\": {\"file\": \"video_pixels.bf16\", "
-        "\"layout\": \"BCFHW\", \"dtype\": \"bfloat16\", "
-        "\"shape\": [1, 3, %u, %u, %u], "
-        "\"decode_seconds\": %.6f}\n"
-        "}\n",
-        (unsigned long long)seed, text_rows,
-        active_geometry.requested_width, active_geometry.requested_height,
-        active_geometry.output_frames,
-        active_geometry.output_width, active_geometry.output_height,
-        active_geometry.output_frames,
-        active_geometry.latent_frames, active_geometry.stage2_height,
-        active_geometry.stage2_width, video_channels, video_rows,
-        audio_rows, audio_channels,
-        active_geometry.output_frames, active_geometry.output_height,
-        active_geometry.output_width,
-        decode_seconds);
-    int close_result = fclose(metadata);
-    if (count < 0 || close_result != 0) {
-        snprintf(error, error_size, "cannot write output file %s",
-                 metadata_path);
-        return 0;
-    }
-    return 1;
-}
-
-#ifdef LTX_ENABLE_MLX_MEDIA
-static int write_generation_outputs_host(
-        const char *directory,
-        const uint16_t *video_latent,
-        const uint16_t *audio_latent,
-        const uint16_t *video_pixels,
-        uint32_t video_rows, uint32_t video_channels,
-        uint32_t audio_rows, uint32_t audio_channels,
-        uint32_t text_rows, uint64_t seed, double decode_seconds,
-        char *error, size_t error_size) {
-    size_t video_bytes = 0;
-    size_t audio_bytes = 0;
-    size_t pixel_bytes = 0;
-    char video_path[4096];
-    char audio_path[4096];
-    char pixel_path[4096];
-    char metadata_path[4096];
-    if (!directory || !video_latent || !audio_latent || !video_pixels ||
-        !checked_bytes((uint64_t)video_rows * video_channels,
-                       sizeof(uint16_t), &video_bytes) ||
-        !checked_bytes((uint64_t)audio_rows * audio_channels,
-                       sizeof(uint16_t), &audio_bytes) ||
-        !checked_bytes((uint64_t)3u * active_geometry.output_frames *
-                       active_geometry.output_height *
-                       active_geometry.output_width,
-                       sizeof(uint16_t), &pixel_bytes) ||
-        !ensure_directory(directory, error, error_size) ||
-        !fixture_path(video_path, sizeof(video_path), directory,
-                      "video_latent.bf16", error, error_size) ||
-        !fixture_path(audio_path, sizeof(audio_path), directory,
-                      "audio_latent.bf16", error, error_size) ||
-        !fixture_path(pixel_path, sizeof(pixel_path), directory,
-                      "video_pixels.bf16", error, error_size) ||
-        !fixture_path(metadata_path, sizeof(metadata_path), directory,
-                      "generation.json", error, error_size) ||
-        !write_file_exact(video_path, video_latent, video_bytes,
-                          error, error_size) ||
-        !write_file_exact(audio_path, audio_latent, audio_bytes,
-                          error, error_size) ||
-        !write_file_exact(pixel_path, video_pixels, pixel_bytes,
-                          error, error_size)) return 0;
-
-    FILE *metadata = fopen(metadata_path, "w");
-    if (!metadata) {
-        snprintf(error, error_size, "cannot open output file %s",
-                 metadata_path);
-        return 0;
-    }
-    int count = fprintf(
-        metadata,
-        "{\n"
-        "  \"format\": \"ltx-mac-generation-v2\",\n"
-        "  \"dtype\": \"bfloat16\",\n"
-        "  \"seed\": %llu,\n"
-        "  \"text_rows\": %u,\n"
-        "  \"requested_video\": {\"width\": %u, \"height\": %u, "
-        "\"frames\": %u, \"fps\": 24},\n"
-        "  \"decoded_video\": {\"width\": %u, \"height\": %u, "
-        "\"frames\": %u, \"fps\": 24},\n"
-        "  \"video\": {\"file\": \"video_latent.bf16\", "
-        "\"layout\": \"BFHWC-token-major\", "
-        "\"shape\": [1, %u, %u, %u, %u], \"rows\": %u},\n"
-        "  \"audio\": {\"file\": \"audio_latent.bf16\", "
-        "\"layout\": \"BLC-token-major\", "
-        "\"shape\": [1, %u, %u]},\n"
-        "  \"native_video\": {\"file\": \"video_pixels.bf16\", "
-        "\"layout\": \"BCFHW\", \"dtype\": \"bfloat16\", "
-        "\"shape\": [1, 3, %u, %u, %u], "
-        "\"decode_seconds\": %.6f}\n"
-        "}\n",
-        (unsigned long long)seed, text_rows,
-        active_geometry.requested_width, active_geometry.requested_height,
-        active_geometry.output_frames,
-        active_geometry.output_width, active_geometry.output_height,
-        active_geometry.output_frames,
-        active_geometry.latent_frames, active_geometry.stage2_height,
-        active_geometry.stage2_width, video_channels, video_rows,
-        audio_rows, audio_channels,
-        active_geometry.output_frames, active_geometry.output_height,
-        active_geometry.output_width,
-        decode_seconds);
-    int close_result = fclose(metadata);
-    if (count < 0 || close_result != 0) {
-        snprintf(error, error_size, "cannot write output file %s",
-                 metadata_path);
-        return 0;
-    }
-    return 1;
-}
-
-static int write_generation_latents_host(
-        const char *directory,
-        const uint16_t *video_latent,
-        const uint16_t *audio_latent,
-        uint32_t video_rows, uint32_t video_channels,
-        uint32_t audio_rows, uint32_t audio_channels,
-        char *error, size_t error_size) {
-    size_t video_bytes = 0;
-    size_t audio_bytes = 0;
-    char video_path[4096];
-    char audio_path[4096];
-    return directory && video_latent && audio_latent &&
-        checked_bytes((uint64_t)video_rows * video_channels,
-                      sizeof(uint16_t), &video_bytes) &&
-        checked_bytes((uint64_t)audio_rows * audio_channels,
-                      sizeof(uint16_t), &audio_bytes) &&
-        ensure_directory(directory, error, error_size) &&
-        fixture_path(video_path, sizeof(video_path), directory,
-                     "video_latent.bf16", error, error_size) &&
-        fixture_path(audio_path, sizeof(audio_path), directory,
-                     "audio_latent.bf16", error, error_size) &&
-        write_file_exact(video_path, video_latent, video_bytes,
-                         error, error_size) &&
-        write_file_exact(audio_path, audio_latent, audio_bytes,
-                         error, error_size);
-}
-
-static int write_generation_metadata_only(
-        const char *directory,
-        uint32_t video_rows, uint32_t video_channels,
-        uint32_t audio_rows, uint32_t audio_channels,
-        uint32_t text_rows, uint64_t seed, double decode_seconds,
-        char *error, size_t error_size) {
-    char metadata_path[4096];
-    if (!fixture_path(metadata_path, sizeof(metadata_path), directory,
-                      "generation.json", error, error_size)) return 0;
-    FILE *metadata = fopen(metadata_path, "w");
-    if (!metadata) {
-        snprintf(error, error_size, "cannot open output file %s",
-                 metadata_path);
-        return 0;
-    }
-    int count = fprintf(
-        metadata,
-        "{\n"
-        "  \"format\": \"ltx-mac-generation-v2\",\n"
-        "  \"dtype\": \"bfloat16\",\n"
-        "  \"seed\": %llu,\n"
-        "  \"text_rows\": %u,\n"
-        "  \"requested_video\": {\"width\": %u, \"height\": %u, "
-        "\"frames\": %u, \"fps\": 24},\n"
-        "  \"decoded_video\": {\"width\": %u, \"height\": %u, "
-        "\"frames\": %u, \"fps\": 24},\n"
-        "  \"video\": {\"file\": \"video_latent.bf16\", "
-        "\"layout\": \"BFHWC-token-major\", "
-        "\"shape\": [1, %u, %u, %u, %u], \"rows\": %u},\n"
-        "  \"audio\": {\"file\": \"audio_latent.bf16\", "
-        "\"layout\": \"BLC-token-major\", "
-        "\"shape\": [1, %u, %u]},\n"
-        "  \"native_video\": {\"file\": \"video_pixels.bf16\", "
-        "\"layout\": \"BCFHW\", \"dtype\": \"bfloat16\", "
-        "\"shape\": [1, 3, %u, %u, %u], "
-        "\"decode_seconds\": %.6f}\n"
-        "}\n",
-        (unsigned long long)seed, text_rows,
-        active_geometry.requested_width, active_geometry.requested_height,
-        active_geometry.output_frames,
-        active_geometry.output_width, active_geometry.output_height,
-        active_geometry.output_frames,
-        active_geometry.latent_frames, active_geometry.stage2_height,
-        active_geometry.stage2_width, video_channels, video_rows,
-        audio_rows, audio_channels,
-        active_geometry.output_frames, active_geometry.output_height,
-        active_geometry.output_width,
-        decode_seconds);
-    int close_result = fclose(metadata);
-    if (count < 0 || close_result != 0) {
-        snprintf(error, error_size, "cannot write output file %s",
-                 metadata_path);
-        return 0;
-    }
-    return 1;
-}
-
-static int run_mlx_video_vae_helper(
-        const char *helper,
-        const char *checkpoint,
-        const char *directory,
-        char *error, size_t error_size) {
-    char input_path[4096];
-    char output_path[4096];
-    char frames_text[16];
-    char height_text[16];
-    char width_text[16];
-    if (!helper || !helper[0] || !checkpoint || !checkpoint[0] ||
-        !fixture_path(input_path, sizeof(input_path), directory,
-                      "video_latent.bf16", error, error_size) ||
-        !fixture_path(output_path, sizeof(output_path), directory,
-                      "video_pixels.bf16", error, error_size) ||
-        snprintf(frames_text, sizeof(frames_text), "%u",
-                 active_geometry.latent_frames) < 0 ||
-        snprintf(height_text, sizeof(height_text), "%u",
-                 active_geometry.stage2_height) < 0 ||
-        snprintf(width_text, sizeof(width_text), "%u",
-                 active_geometry.stage2_width) < 0) return 0;
-    char *const arguments[] = {
-        (char *)helper,
-        (char *)checkpoint,
-        frames_text,
-        height_text,
-        width_text,
-        (char *)"0",
-        input_path,
-        output_path,
-        NULL,
-    };
-    pid_t process = 0;
-    int spawn_error = posix_spawn(
-        &process, helper, NULL, NULL, arguments, environ);
-    if (spawn_error != 0) {
-        snprintf(error, error_size, "spawn MLX VAE helper: %s",
-                 strerror(spawn_error));
-        return 0;
-    }
-    int status = 0;
-    pid_t waited = 0;
-    do {
-        waited = waitpid(process, &status, 0);
-    } while (waited < 0 && errno == EINTR);
-    if (waited != process) {
-        snprintf(error, error_size, "wait for MLX VAE helper: %s",
-                 strerror(errno));
-        return 0;
-    }
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        snprintf(error, error_size,
-                 "MLX VAE helper failed with status %d", status);
-        return 0;
-    }
-    return 1;
-}
-
-static int start_mlx_video_vae_worker(
-        mlx_vae_worker *worker,
-        const char *helper,
-        const char *checkpoint,
-        const char *directory,
-        char *error, size_t error_size) {
-    char input_path[4096];
-    char output_path[4096];
-    char frames_text[16];
-    char height_text[16];
-    char width_text[16];
-    if (!worker || worker->process > 0 || !helper || !helper[0] ||
-        !checkpoint || !checkpoint[0] ||
-        !fixture_path(input_path, sizeof(input_path), directory,
-                      "video_latent.bf16", error, error_size) ||
-        !fixture_path(output_path, sizeof(output_path), directory,
-                      "video_pixels.bf16", error, error_size) ||
-        snprintf(frames_text, sizeof(frames_text), "%u",
-                 active_geometry.latent_frames) < 0 ||
-        snprintf(height_text, sizeof(height_text), "%u",
-                 active_geometry.stage2_height) < 0 ||
-        snprintf(width_text, sizeof(width_text), "%u",
-                 active_geometry.stage2_width) < 0) return 0;
-    char *const arguments[] = {
-        (char *)helper,
-        (char *)"--resident-worker",
-        (char *)checkpoint,
-        frames_text,
-        height_text,
-        width_text,
-        input_path,
-        output_path,
-        NULL,
-    };
-    int spawn_error = posix_spawn(
-        &worker->process, helper, NULL, NULL, arguments, environ);
-    if (spawn_error != 0) {
-        worker->process = 0;
-        snprintf(error, error_size, "spawn resident MLX VAE worker: %s",
-                 strerror(spawn_error));
-        return 0;
-    }
-    printf("mlx_vae_worker_spawn pid=%d mode=prewarm-and-stop\n",
-           (int)worker->process);
-    return 1;
-}
-
-static int finish_mlx_video_vae_worker(
-        mlx_vae_worker *worker, double *decode_seconds,
-        char *error, size_t error_size) {
-    if (!worker || worker->process <= 0) {
-        snprintf(error, error_size, "resident MLX VAE worker is not running");
-        return 0;
-    }
-    int status = 0;
-    pid_t waited = 0;
-    do {
-        waited = waitpid(worker->process, &status, WUNTRACED);
-    } while (waited < 0 && errno == EINTR);
-    if (waited != worker->process) {
-        snprintf(error, error_size, "wait for resident MLX VAE worker: %s",
-                 strerror(errno));
-        return 0;
-    }
-    if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGSTOP) {
-        if (WIFEXITED(status))
-            snprintf(error, error_size,
-                     "resident MLX VAE worker exited before decode: %d",
-                     WEXITSTATUS(status));
-        else
-            snprintf(error, error_size,
-                     "resident MLX VAE worker did not reach ready state");
-        worker->process = 0;
-        return 0;
-    }
-    double started = now_seconds();
-    if (kill(worker->process, SIGCONT) != 0) {
-        snprintf(error, error_size, "resume resident MLX VAE worker: %s",
-                 strerror(errno));
-        return 0;
-    }
-    do {
-        waited = waitpid(worker->process, &status, 0);
-    } while (waited < 0 && errno == EINTR);
-    if (decode_seconds) *decode_seconds = now_seconds() - started;
-    worker->process = 0;
-    if (waited <= 0) {
-        snprintf(error, error_size, "wait for resident MLX VAE decode: %s",
-                 strerror(errno));
-        return 0;
-    }
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        snprintf(error, error_size,
-                 "resident MLX VAE decode failed with status %d", status);
-        return 0;
-    }
-    return 1;
-}
-
-static void stop_mlx_video_vae_worker(mlx_vae_worker *worker) {
-    if (!worker || worker->process <= 0) return;
-    (void)kill(worker->process, SIGKILL);
-    int status = 0;
-    while (waitpid(worker->process, &status, 0) < 0 && errno == EINTR) {}
-    worker->process = 0;
-}
-
-static int exec_mlx_video_vae_helper(
-        const char *helper,
-        const char *checkpoint,
-        const char *directory,
-        uint64_t seed,
-        uint32_t text_rows,
-        double two_stage_elapsed_before_exec,
-        double boundary_seconds,
-        char *error, size_t error_size) {
-    char input_path[4096];
-    char output_path[4096];
-    char seed_text[32];
-    char rows_text[32];
-    char elapsed_text[64];
-    char boundary_text[64];
-    char frames_text[16];
-    char height_text[16];
-    char width_text[16];
-    char requested_width_text[16];
-    char requested_height_text[16];
-    if (!helper || !helper[0] || !checkpoint || !checkpoint[0] ||
-        !fixture_path(input_path, sizeof(input_path), directory,
-                      "video_latent.bf16", error, error_size) ||
-        !fixture_path(output_path, sizeof(output_path), directory,
-                      "video_pixels.bf16", error, error_size) ||
-        snprintf(seed_text, sizeof(seed_text), "%llu",
-                 (unsigned long long)seed) < 0 ||
-        snprintf(rows_text, sizeof(rows_text), "%u", text_rows) < 0 ||
-        snprintf(elapsed_text, sizeof(elapsed_text), "%.9f",
-                 two_stage_elapsed_before_exec) < 0 ||
-        snprintf(boundary_text, sizeof(boundary_text), "%.9f",
-                 boundary_seconds) < 0 ||
-        snprintf(frames_text, sizeof(frames_text), "%u",
-                 active_geometry.latent_frames) < 0 ||
-        snprintf(height_text, sizeof(height_text), "%u",
-                 active_geometry.stage2_height) < 0 ||
-        snprintf(width_text, sizeof(width_text), "%u",
-                 active_geometry.stage2_width) < 0 ||
-        snprintf(requested_width_text, sizeof(requested_width_text), "%u",
-                 active_geometry.requested_width) < 0 ||
-        snprintf(requested_height_text, sizeof(requested_height_text), "%u",
-                 active_geometry.requested_height) < 0) return 0;
-    if (setenv("LTX_MLX_FINALIZE_DIR", directory, 1) != 0 ||
-        setenv("LTX_MLX_FINALIZE_SEED", seed_text, 1) != 0 ||
-        setenv("LTX_MLX_FINALIZE_TEXT_ROWS", rows_text, 1) != 0 ||
-        setenv("LTX_MLX_FINALIZE_PREDECODE_SECONDS", elapsed_text, 1) != 0 ||
-        setenv("LTX_MLX_FINALIZE_BOUNDARY_SECONDS", boundary_text, 1) != 0 ||
-        setenv("LTX_MLX_FINALIZE_REQUESTED_WIDTH",
-               requested_width_text, 1) != 0 ||
-        setenv("LTX_MLX_FINALIZE_REQUESTED_HEIGHT",
-               requested_height_text, 1) != 0) {
-        snprintf(error, error_size, "set MLX finalize environment: %s",
-                 strerror(errno));
-        return 0;
-    }
-    char *const arguments[] = {
-        (char *)helper,
-        (char *)checkpoint,
-        frames_text,
-        height_text,
-        width_text,
-        (char *)"0",
-        input_path,
-        output_path,
-        NULL,
-    };
-    fflush(NULL);
-    execve(helper, arguments, environ);
-    snprintf(error, error_size, "exec MLX VAE helper: %s", strerror(errno));
-    return 0;
-}
-#endif
-
-static comparison_metrics compare_bf16_f32(
-        const uint16_t *candidate, const float *reference,
-        uint64_t elements) {
-    comparison_metrics metrics = {0};
-    double difference2 = 0.0;
-    double reference2 = 0.0;
-    double candidate2 = 0.0;
-    double dot = 0.0;
-    for (uint64_t index = 0; index < elements; index++) {
-        double expected = reference[index];
-        double actual = bf16_to_f32(candidate[index]);
-        if (!isfinite(actual)) {
-            metrics.nonfinite++;
-            continue;
-        }
-        double difference = actual - expected;
-        double absolute = fabs(difference);
-        if (absolute > metrics.max_abs) metrics.max_abs = absolute;
-        difference2 += difference * difference;
-        reference2 += expected * expected;
-        candidate2 += actual * actual;
-        dot += expected * actual;
-    }
-    metrics.rel_l2 = reference2 > 0.0 ?
-        sqrt(difference2 / reference2) : 0.0;
-    metrics.cosine = reference2 > 0.0 && candidate2 > 0.0 ?
-        dot / sqrt(reference2 * candidate2) : 0.0;
-    metrics.reference_rms = elements ?
-        sqrt(reference2 / (double)elements) : 0.0;
-    metrics.candidate_rms = elements ?
-        sqrt(candidate2 / (double)elements) : 0.0;
-    return metrics;
 }
 
 static int make_name(char *name, size_t name_size,
@@ -2288,19 +1315,6 @@ static int apply_scalar_conditioning_one(
         add_parameters_to_table(
             &weight->av_audio, 4u, 1u, values->v2a_gate,
             error, error_size);
-}
-
-static int apply_video_split_conditioning_one(
-        ltx_transformer_conditioning_values *values,
-        ltx_transformer_conditioning_values *conditioned,
-        block_weights *weight, char *error, size_t error_size) {
-    return add_parameters_to_table(
-            &weight->video_adaln_conditioned, 0u, 9u,
-            conditioned->video_adaln, error, error_size) &&
-        add_parameters_to_table(
-            &weight->av_video_conditioned, 0u, 4u,
-            conditioned->av_video, error, error_size) &&
-        apply_scalar_conditioning_one(values, weight, error, error_size);
 }
 
 static int apply_video_split_conditioning(
@@ -4104,38 +3118,6 @@ static int run_blocks(ltx_gpu *gpu, block_weights *weights,
     return 1;
 }
 
-static size_t block_weight_bytes(const block_weights *weights) {
-    return
-        weights->video_self.query.weight_bytes +
-        weights->video_self.key.weight_bytes +
-        weights->video_self.value.weight_bytes +
-        weights->video_self.output.weight_bytes +
-        weights->audio_self.query.weight_bytes +
-        weights->audio_self.key.weight_bytes +
-        weights->audio_self.value.weight_bytes +
-        weights->audio_self.output.weight_bytes +
-        weights->video_text.query.weight_bytes +
-        weights->video_text.key.weight_bytes +
-        weights->video_text.value.weight_bytes +
-        weights->video_text.output.weight_bytes +
-        weights->audio_text.query.weight_bytes +
-        weights->audio_text.key.weight_bytes +
-        weights->audio_text.value.weight_bytes +
-        weights->audio_text.output.weight_bytes +
-        weights->audio_to_video.query.weight_bytes +
-        weights->audio_to_video.key.weight_bytes +
-        weights->audio_to_video.value.weight_bytes +
-        weights->audio_to_video.output.weight_bytes +
-        weights->video_to_audio.query.weight_bytes +
-        weights->video_to_audio.key.weight_bytes +
-        weights->video_to_audio.value.weight_bytes +
-        weights->video_to_audio.output.weight_bytes +
-        weights->video_mlp.fc1.weight_bytes +
-        weights->video_mlp.fc2.weight_bytes +
-        weights->audio_mlp.fc1.weight_bytes +
-        weights->audio_mlp.fc2.weight_bytes;
-}
-
 static size_t linear_resident_bytes(const gpu_linear *linear) {
     return ltx_gpu_buffer_bytes(linear->weight) +
         ltx_gpu_buffer_bytes(linear->scale) +
@@ -4194,9 +3176,7 @@ static int run_blocks_and_release(
         const ltx_gpu_buffer *text_mask,
         uint32_t video_rows, uint32_t audio_rows,
         uint32_t text_rows, block_timing *timing,
-        size_t *released_bytes,
         char *error, size_t error_size) {
-    size_t bytes = 0;
     for (uint32_t index = 0; index < block_count; index++) {
         if (!run_block(
                 gpu, &weights[index], first_block + index,
@@ -4211,10 +3191,8 @@ static int run_blocks_and_release(
                      first_block + index, detail);
             return 0;
         }
-        bytes += block_weight_bytes(&weights[index]);
         free_block_weights(&weights[index]);
     }
-    if (released_bytes) *released_bytes = bytes;
     return 1;
 }
 
@@ -4854,421 +3832,6 @@ static uint32_t detach_ane_qkv_stage(
 }
 #endif
 
-static int run_block_fixture(
-                             const ltx_st_header *header,
-                             const ltx_st_mapping *mapping,
-                             ltx_gpu *gpu, block_weights *weights,
-                             const char *fixture_directory,
-                             char *error, size_t error_size) {
-    uint32_t video_rows = 0;
-    uint32_t audio_rows = 0;
-    uint32_t text_rows = 0;
-    uint32_t video_dim = weights->video_self.query_dim;
-    uint32_t audio_dim = weights->audio_self.query_dim;
-    size_t video_bytes = 0;
-    size_t audio_bytes = 0;
-    size_t video_text_bytes = 0;
-    size_t audio_text_bytes = 0;
-    size_t mask_bytes = 0;
-    size_t video_position_bytes = 0;
-    size_t audio_position_bytes = 0;
-    size_t video_reference_bytes = 0;
-    size_t audio_reference_bytes = 0;
-    size_t video_patch_input_bytes = 0;
-    size_t audio_patch_input_bytes = 0;
-    size_t video_head_reference_bytes = 0;
-    size_t audio_head_reference_bytes = 0;
-    uint16_t *host_video = NULL;
-    uint16_t *host_audio = NULL;
-    uint16_t *host_video_patch = NULL;
-    uint16_t *host_audio_patch = NULL;
-    uint16_t *host_video_text = NULL;
-    uint16_t *host_audio_text = NULL;
-    uint16_t *host_mask = NULL;
-    uint16_t *actual_video_patch = NULL;
-    uint16_t *actual_audio_patch = NULL;
-    uint16_t *actual_video = NULL;
-    uint16_t *actual_audio = NULL;
-    uint16_t *actual_video_head = NULL;
-    uint16_t *actual_audio_head = NULL;
-    float *video_positions = NULL;
-    float *audio_positions = NULL;
-    float *reference_video_patch = NULL;
-    float *reference_audio_patch = NULL;
-    float *reference_video = NULL;
-    float *reference_audio = NULL;
-    float *reference_video_head = NULL;
-    float *reference_audio_head = NULL;
-    ltx_transformer_io *io = NULL;
-    ltx_transformer_conditioning *conditioning = NULL;
-    ltx_transformer_conditioning_values conditioning_values = {0};
-    ltx_gpu_buffer *video_patch_input = NULL;
-    ltx_gpu_buffer *audio_patch_input = NULL;
-    ltx_gpu_buffer *video_embedded = NULL;
-    ltx_gpu_buffer *audio_embedded = NULL;
-    ltx_gpu_buffer *video_head_workspace = NULL;
-    ltx_gpu_buffer *audio_head_workspace = NULL;
-    ltx_gpu_buffer *video_head_output = NULL;
-    ltx_gpu_buffer *audio_head_output = NULL;
-    ltx_gpu_buffer *video_text = NULL;
-    ltx_gpu_buffer *audio_text = NULL;
-    ltx_gpu_buffer *text_mask = NULL;
-    block_rope rope = {0};
-    block_workspace workspace = {0};
-    int ok = 0;
-
-    io = ltx_transformer_io_load(
-        header, mapping, gpu, "model.diffusion_model",
-        error, error_size);
-    conditioning = ltx_transformer_conditioning_load(
-        header, mapping, gpu, "model.diffusion_model",
-        error, error_size);
-    if (!io || !conditioning ||
-        ltx_transformer_io_video_hidden_dim(io) != video_dim ||
-        ltx_transformer_io_audio_hidden_dim(io) != audio_dim) {
-        if (!error[0])
-            snprintf(error, error_size,
-                     "incompatible Transformer I/O fixture geometry");
-        goto cleanup;
-    }
-    uint32_t video_patch_dim =
-        ltx_transformer_io_video_patch_dim(io);
-    uint32_t audio_patch_dim =
-        ltx_transformer_io_audio_patch_dim(io);
-    if (!fixture_rows(fixture_directory, "video_positions.f32",
-                      3u * sizeof(float), &video_rows,
-                      error, error_size) ||
-        !fixture_rows(fixture_directory, "audio_positions.f32",
-                      sizeof(float), &audio_rows,
-                      error, error_size) ||
-        !fixture_rows(fixture_directory, "text_mask.bf16",
-                      sizeof(uint16_t), &text_rows,
-                      error, error_size) ||
-        !checked_bytes((uint64_t)video_rows * video_dim,
-                       sizeof(uint16_t), &video_bytes) ||
-        !checked_bytes((uint64_t)audio_rows * audio_dim,
-                       sizeof(uint16_t), &audio_bytes) ||
-        !checked_bytes((uint64_t)text_rows * video_dim,
-                       sizeof(uint16_t), &video_text_bytes) ||
-        !checked_bytes((uint64_t)text_rows * audio_dim,
-                       sizeof(uint16_t), &audio_text_bytes) ||
-        !checked_bytes(text_rows, sizeof(uint16_t), &mask_bytes) ||
-        !checked_bytes((uint64_t)video_rows * 3u,
-                       sizeof(float), &video_position_bytes) ||
-        !checked_bytes(audio_rows, sizeof(float), &audio_position_bytes) ||
-        !checked_bytes((uint64_t)video_rows * video_dim,
-                       sizeof(float), &video_reference_bytes) ||
-        !checked_bytes((uint64_t)audio_rows * audio_dim,
-                       sizeof(float), &audio_reference_bytes) ||
-        !checked_bytes((uint64_t)video_rows * video_patch_dim,
-                       sizeof(uint16_t), &video_patch_input_bytes) ||
-        !checked_bytes((uint64_t)audio_rows * audio_patch_dim,
-                       sizeof(uint16_t), &audio_patch_input_bytes) ||
-        !checked_bytes((uint64_t)video_rows * video_patch_dim,
-                       sizeof(float), &video_head_reference_bytes) ||
-        !checked_bytes((uint64_t)audio_rows * audio_patch_dim,
-                       sizeof(float), &audio_head_reference_bytes)) {
-        if (!error[0])
-            snprintf(error, error_size, "invalid fixture geometry");
-        return 0;
-    }
-
-    host_video = malloc(video_bytes);
-    host_audio = malloc(audio_bytes);
-    host_video_patch = malloc(video_patch_input_bytes);
-    host_audio_patch = malloc(audio_patch_input_bytes);
-    host_video_text = malloc(video_text_bytes);
-    host_audio_text = malloc(audio_text_bytes);
-    host_mask = malloc(mask_bytes);
-    actual_video_patch = malloc(video_bytes);
-    actual_audio_patch = malloc(audio_bytes);
-    actual_video = malloc(video_bytes);
-    actual_audio = malloc(audio_bytes);
-    actual_video_head = malloc(
-        (size_t)video_rows * video_patch_dim * sizeof(uint16_t));
-    actual_audio_head = malloc(
-        (size_t)audio_rows * audio_patch_dim * sizeof(uint16_t));
-    video_positions = malloc(video_position_bytes);
-    audio_positions = malloc(audio_position_bytes);
-    reference_video_patch = malloc(video_reference_bytes);
-    reference_audio_patch = malloc(audio_reference_bytes);
-    reference_video = malloc(video_reference_bytes);
-    reference_audio = malloc(audio_reference_bytes);
-    reference_video_head = malloc(video_head_reference_bytes);
-    reference_audio_head = malloc(audio_head_reference_bytes);
-    if (!host_video || !host_audio || !host_video_patch ||
-        !host_audio_patch || !host_video_text ||
-        !host_audio_text || !host_mask ||
-        !actual_video_patch || !actual_audio_patch ||
-        !actual_video || !actual_audio ||
-        !actual_video_head || !actual_audio_head ||
-        !video_positions || !audio_positions ||
-        !reference_video_patch || !reference_audio_patch ||
-        !reference_video || !reference_audio ||
-        !reference_video_head || !reference_audio_head) {
-        snprintf(error, error_size, "out of memory reading block fixture");
-        goto cleanup;
-    }
-
-    if (!read_fixture_file(fixture_directory, "video_input.bf16",
-                           host_video, video_bytes, error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_input.bf16",
-                           host_audio, audio_bytes, error, error_size) ||
-        !read_fixture_file(fixture_directory, "video_patch_input.bf16",
-                           host_video_patch, video_patch_input_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_patch_input.bf16",
-                           host_audio_patch, audio_patch_input_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "video_patch_output.f32",
-                           reference_video_patch, video_reference_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_patch_output.f32",
-                           reference_audio_patch, audio_reference_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "video_context.bf16",
-                           host_video_text, video_text_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_context.bf16",
-                           host_audio_text, audio_text_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "text_mask.bf16",
-                           host_mask, mask_bytes, error, error_size) ||
-        !read_fixture_file(fixture_directory, "video_positions.f32",
-                           video_positions, video_position_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_positions.f32",
-                           audio_positions, audio_position_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "video_output.f32",
-                           reference_video, video_reference_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_output.f32",
-                           reference_audio, audio_reference_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "video_head_output.f32",
-                           reference_video_head,
-                           video_head_reference_bytes,
-                           error, error_size) ||
-        !read_fixture_file(fixture_directory, "audio_head_output.f32",
-                           reference_audio_head,
-                           audio_head_reference_bytes,
-                           error, error_size) ||
-        !apply_scalar_conditioning(
-            conditioning, weights, 1u, 0.9f, &conditioning_values,
-            error, error_size) ||
-        !apply_scalar_conditioning(
-            conditioning, weights, 1u, 0.5f, &conditioning_values,
-            error, error_size)) goto cleanup;
-    video_embedded = conditioning_values.video_embedded;
-    audio_embedded = conditioning_values.audio_embedded;
-
-    if (!create_block_rope_from_positions(
-            gpu, weights, video_positions, audio_positions,
-            video_rows, audio_rows, &rope, error, error_size) ||
-        !create_workspace(
-            gpu, video_rows, video_dim, weights->video_mlp.hidden_dim,
-            weights->video_self.heads,
-            audio_rows, audio_dim,
-            text_rows, &workspace, error, error_size)) goto cleanup;
-    video_patch_input = ltx_gpu_buffer_new_copy(
-        gpu, host_video_patch, video_patch_input_bytes,
-        error, error_size);
-    audio_patch_input = ltx_gpu_buffer_new_copy(
-        gpu, host_audio_patch, audio_patch_input_bytes,
-        error, error_size);
-    if (!video_patch_input || !audio_patch_input ||
-        !video_embedded || !audio_embedded) goto cleanup;
-    video_head_workspace = ltx_gpu_buffer_new(
-        gpu, video_bytes, error, error_size);
-    audio_head_workspace = ltx_gpu_buffer_new(
-        gpu, audio_bytes, error, error_size);
-    video_head_output = ltx_gpu_buffer_new(
-        gpu, video_patch_input_bytes, error, error_size);
-    audio_head_output = ltx_gpu_buffer_new(
-        gpu, audio_patch_input_bytes, error, error_size);
-    video_text = ltx_gpu_buffer_new_copy(
-        gpu, host_video_text, video_text_bytes, error, error_size);
-    audio_text = ltx_gpu_buffer_new_copy(
-        gpu, host_audio_text, audio_text_bytes, error, error_size);
-    text_mask = ltx_gpu_buffer_new_copy(
-        gpu, host_mask, mask_bytes, error, error_size);
-    if (!video_head_workspace || !audio_head_workspace ||
-        !video_head_output || !audio_head_output ||
-        !video_text || !audio_text || !text_mask) goto cleanup;
-
-    if (!ltx_transformer_io_patchify_video(
-            io, workspace.video_state[0], video_patch_input,
-            video_rows, error, error_size) ||
-        !ltx_transformer_io_patchify_audio(
-            io, workspace.audio_state[0], audio_patch_input,
-            audio_rows, error, error_size) ||
-        !ltx_gpu_buffer_read(
-            workspace.video_state[0], actual_video_patch,
-            video_bytes, error, error_size) ||
-        !ltx_gpu_buffer_read(
-            workspace.audio_state[0], actual_audio_patch,
-            audio_bytes, error, error_size)) goto cleanup;
-    comparison_metrics video_patch_metrics = compare_bf16_f32(
-        actual_video_patch, reference_video_patch,
-        (uint64_t)video_rows * video_dim);
-    comparison_metrics audio_patch_metrics = compare_bf16_f32(
-        actual_audio_patch, reference_audio_patch,
-        (uint64_t)audio_rows * audio_dim);
-
-#define LTX_FIXTURE_RESET_AND_RUN(TIMING) \
-    (ltx_transformer_io_patchify_video( \
-         io, workspace.video_state[0], video_patch_input, \
-         video_rows, error, error_size) && \
-     ltx_transformer_io_patchify_audio( \
-         io, workspace.audio_state[0], audio_patch_input, \
-         audio_rows, error, error_size) && \
-     run_block(gpu, weights, 0u, &rope, &workspace, video_text, audio_text, \
-               text_mask, video_rows, audio_rows, text_rows, (TIMING), \
-               error, error_size) && \
-     ltx_transformer_io_output_video( \
-         io, video_head_output, video_head_workspace, \
-         workspace.video_state[0], video_embedded, video_rows, \
-         error, error_size) && \
-     ltx_transformer_io_output_audio( \
-         io, audio_head_output, audio_head_workspace, \
-         workspace.audio_state[0], audio_embedded, audio_rows, \
-         error, error_size))
-    if (!LTX_FIXTURE_RESET_AND_RUN(NULL)) goto cleanup;
-    block_timing timing = {0};
-    double start = now_seconds();
-    if (!LTX_FIXTURE_RESET_AND_RUN(&timing)) goto cleanup;
-    double elapsed = now_seconds() - start;
-    if (!ltx_gpu_buffer_read(workspace.video_state[0], actual_video,
-                             video_bytes, error, error_size) ||
-        !ltx_gpu_buffer_read(workspace.audio_state[0], actual_audio,
-                             audio_bytes, error, error_size) ||
-        !ltx_gpu_buffer_read(video_head_output, actual_video_head,
-                             video_patch_input_bytes,
-                             error, error_size) ||
-        !ltx_gpu_buffer_read(audio_head_output, actual_audio_head,
-                             audio_patch_input_bytes,
-                             error, error_size)) goto cleanup;
-#undef LTX_FIXTURE_RESET_AND_RUN
-
-    comparison_metrics video_metrics = compare_bf16_f32(
-        actual_video, reference_video, (uint64_t)video_rows * video_dim);
-    comparison_metrics audio_metrics = compare_bf16_f32(
-        actual_audio, reference_audio, (uint64_t)audio_rows * audio_dim);
-    comparison_metrics video_head_metrics = compare_bf16_f32(
-        actual_video_head, reference_video_head,
-        (uint64_t)video_rows * video_patch_dim);
-    comparison_metrics audio_head_metrics = compare_bf16_f32(
-        actual_audio_head, reference_audio_head,
-        (uint64_t)audio_rows * audio_patch_dim);
-    printf("fixture=%s video_rows=%u audio_rows=%u text_rows=%u\n",
-           fixture_directory, video_rows, audio_rows, text_rows);
-    printf("fixture_step_ms=%.3f path=patchify-block-output-head "
-           "text_mask=additive-bf16 semantics=reference-pre-cross\n",
-           elapsed * 1000.0);
-    printf("video_patch rel_l2=%.9g cosine=%.9g max_abs=%.9g "
-           "nonfinite=%llu\n",
-           video_patch_metrics.rel_l2, video_patch_metrics.cosine,
-           video_patch_metrics.max_abs,
-           (unsigned long long)video_patch_metrics.nonfinite);
-    printf("audio_patch rel_l2=%.9g cosine=%.9g max_abs=%.9g "
-           "nonfinite=%llu\n",
-           audio_patch_metrics.rel_l2, audio_patch_metrics.cosine,
-           audio_patch_metrics.max_abs,
-           (unsigned long long)audio_patch_metrics.nonfinite);
-    printf("video rel_l2=%.9g cosine=%.9g max_abs=%.9g "
-           "reference_rms=%.9g candidate_rms=%.9g nonfinite=%llu\n",
-           video_metrics.rel_l2, video_metrics.cosine,
-           video_metrics.max_abs, video_metrics.reference_rms,
-           video_metrics.candidate_rms,
-           (unsigned long long)video_metrics.nonfinite);
-    printf("audio rel_l2=%.9g cosine=%.9g max_abs=%.9g "
-           "reference_rms=%.9g candidate_rms=%.9g nonfinite=%llu\n",
-           audio_metrics.rel_l2, audio_metrics.cosine,
-           audio_metrics.max_abs, audio_metrics.reference_rms,
-           audio_metrics.candidate_rms,
-           (unsigned long long)audio_metrics.nonfinite);
-    printf("video_head rel_l2=%.9g cosine=%.9g max_abs=%.9g "
-           "reference_rms=%.9g candidate_rms=%.9g nonfinite=%llu\n",
-           video_head_metrics.rel_l2, video_head_metrics.cosine,
-           video_head_metrics.max_abs, video_head_metrics.reference_rms,
-           video_head_metrics.candidate_rms,
-           (unsigned long long)video_head_metrics.nonfinite);
-    printf("audio_head rel_l2=%.9g cosine=%.9g max_abs=%.9g "
-           "reference_rms=%.9g candidate_rms=%.9g nonfinite=%llu\n",
-           audio_head_metrics.rel_l2, audio_head_metrics.cosine,
-           audio_head_metrics.max_abs, audio_head_metrics.reference_rms,
-           audio_head_metrics.candidate_rms,
-           (unsigned long long)audio_head_metrics.nonfinite);
-    printf("profile_ms video_sa=%.3f audio_sa=%.3f "
-           "video_text=%.3f audio_text=%.3f av_norm_mod=%.3f "
-           "a2v=%.3f v2a=%.3f av_residual=%.3f "
-           "video_ffn=%.3f audio_ffn=%.3f\n",
-           timing.video_self * 1000.0, timing.audio_self * 1000.0,
-           timing.video_text * 1000.0, timing.audio_text * 1000.0,
-           timing.av_norm_modulation * 1000.0,
-           timing.audio_to_video * 1000.0,
-           timing.video_to_audio * 1000.0,
-           timing.av_residual * 1000.0,
-           timing.video_ffn * 1000.0, timing.audio_ffn * 1000.0);
-
-    if (video_patch_metrics.nonfinite || audio_patch_metrics.nonfinite ||
-        video_metrics.nonfinite || audio_metrics.nonfinite ||
-        video_head_metrics.nonfinite || audio_head_metrics.nonfinite ||
-        video_patch_metrics.rel_l2 > 0.05 ||
-        audio_patch_metrics.rel_l2 > 0.05 ||
-        video_metrics.rel_l2 > 0.15 || audio_metrics.rel_l2 > 0.15 ||
-        video_head_metrics.rel_l2 > 0.15 ||
-        audio_head_metrics.rel_l2 > 0.15 ||
-        video_patch_metrics.cosine < 0.999 ||
-        audio_patch_metrics.cosine < 0.999 ||
-        video_metrics.cosine < 0.99 || audio_metrics.cosine < 0.99 ||
-        video_head_metrics.cosine < 0.99 ||
-        audio_head_metrics.cosine < 0.99) {
-        snprintf(error, error_size,
-                 "block fixture parity outside tolerance");
-        goto cleanup;
-    }
-    ok = 1;
-
-cleanup:
-    ltx_gpu_buffer_free(video_text);
-    ltx_gpu_buffer_free(audio_text);
-    ltx_gpu_buffer_free(text_mask);
-    ltx_gpu_buffer_free(video_head_output);
-    ltx_gpu_buffer_free(audio_head_output);
-    ltx_gpu_buffer_free(video_head_workspace);
-    ltx_gpu_buffer_free(audio_head_workspace);
-    ltx_gpu_buffer_free(video_patch_input);
-    ltx_gpu_buffer_free(audio_patch_input);
-    ltx_transformer_conditioning_free(conditioning);
-    ltx_transformer_io_free(io);
-    free_workspace(&workspace);
-    free_block_rope(&rope);
-    free(host_video);
-    free(host_audio);
-    free(host_video_patch);
-    free(host_audio_patch);
-    free(host_video_text);
-    free(host_audio_text);
-    free(host_mask);
-    free(actual_video_patch);
-    free(actual_audio_patch);
-    free(actual_video);
-    free(actual_audio);
-    free(actual_video_head);
-    free(actual_audio_head);
-    free(video_positions);
-    free(audio_positions);
-    free(reference_video_patch);
-    free(reference_audio_patch);
-    free(reference_video);
-    free(reference_audio);
-    free(reference_video_head);
-    free(reference_audio_head);
-    return ok;
-}
-
 static void fill_schedule_noise(float *values, uint32_t elements,
                                 size_t step, float phase) {
     for (uint32_t index = 0; index < elements; index++) {
@@ -5447,7 +4010,6 @@ static int run_denoise_schedule(
         ok = 0;
         goto cleanup;
     }
-    double schedule_start = now_seconds();
     for (size_t step = 0; step + 1u < sigma_count; step++) {
         if(report_progress("ltx_step",(int)step,(int)sigma_count-1,error,error_size)){ok=0;goto cleanup;}
         sol_video_self.active_step = step;
@@ -5455,7 +4017,6 @@ static int run_denoise_schedule(
         float sigma = sigmas[step];
         float sigma_next = sigmas[step + 1u];
         ltx_transformer_conditioning_values values = {0};
-        double conditioning_start = now_seconds();
         const uint32_t resident_conditioning_blocks = stream_source ?
             pinned_block_count : block_count;
         if (!apply_video_split_conditioning(
@@ -5471,13 +4032,9 @@ static int run_denoise_schedule(
             ok = 0;
             goto cleanup;
         }
-        double conditioning_seconds = now_seconds() - conditioning_start;
 
-        double model_start = now_seconds();
         int release_blocks = release_blocks_on_final_step &&
             step + 2u == sigma_count;
-        size_t released_block_bytes = 0;
-        double release_start = release_blocks ? now_seconds() : 0.0;
         if (!ltx_transformer_io_patchify_video(
                 io, workspace->video_state[0], video_current,
                 video_rows, error, error_size) ||
@@ -5501,7 +4058,7 @@ static int run_denoise_schedule(
                   video_text, audio_text, text_mask,
                   video_rows, audio_rows, text_rows,
                   profile_blocks ? &profile_timing : NULL,
-                  &released_block_bytes, error, error_size) :
+                  error, error_size) :
               run_blocks(
                   gpu, weights, first_block, block_count, rope, workspace,
                   video_text, audio_text, text_mask,
@@ -5530,14 +4087,7 @@ static int run_denoise_schedule(
             ok = 0;
             goto cleanup;
         }
-        if (release_blocks)
-            printf("final_step_block_release blocks=%u bytes=%zu "
-                   "elapsed_ms=%.3f\n",
-                   block_count, released_block_bytes,
-                   (now_seconds() - release_start) * 1000.0);
-        double model_seconds = now_seconds() - model_start;
 
-        double update_start = now_seconds();
         if (!(has_video_conditioning ?
               ltx_gpu_velocity_to_denoised_bf16_split(
                   gpu, video_x0, video_current, video_velocity,
@@ -5616,7 +4166,6 @@ static int run_denoise_schedule(
             ok = 0;
             goto cleanup;
         }
-        double update_seconds = now_seconds() - update_start;
         swap_buffers(&video_current, &video_next);
         swap_buffers(&audio_current, &audio_next);
         if (dump_steps &&
@@ -5631,12 +4180,6 @@ static int run_denoise_schedule(
             ok = 0;
             goto cleanup;
         }
-        printf("schedule_step=%zu sigma=%.9g sigma_next=%.9g "
-               "conditioning_ms=%.3f transformer_ms=%.3f update_ms=%.3f\n",
-               step, sigma, sigma_next,
-               conditioning_seconds * 1000.0,
-               model_seconds * 1000.0,
-               update_seconds * 1000.0);
     }
 
     ok = ltx_gpu_buffer_read(
@@ -5647,30 +4190,14 @@ static int run_denoise_schedule(
             error, error_size);
     if (!ok) goto cleanup;
     uint64_t nonfinite = 0;
-    double video_square = 0.0;
-    double audio_square = 0.0;
     for (uint32_t index = 0; index < video_elements; index++) {
         double value = bf16_to_f32(video_final_host[index]);
         if (!isfinite(value)) nonfinite++;
-        video_square += value * value;
     }
     for (uint32_t index = 0; index < audio_elements; index++) {
         double value = bf16_to_f32(audio_final_host[index]);
         if (!isfinite(value)) nonfinite++;
-        audio_square += value * value;
     }
-    printf("schedule=%s steps=%zu blocks=%u video_rows=%u audio_rows=%u "
-           "elapsed_seconds=%.6f video_rms=%.9g audio_rms=%.9g "
-           "nonfinite=%llu noise=%s\n",
-           ancestral ? "ltx2.5-stage1-ancestral" :
-                       "ltx2.5-stage2-deterministic",
-           sigma_count - 1u, block_count, video_rows, audio_rows,
-           now_seconds() - schedule_start,
-           sqrt(video_square / video_elements),
-           sqrt(audio_square / audio_elements),
-           (unsigned long long)nonfinite,
-           video_noise_rng || audio_noise_rng ?
-               "seeded-pcg32-gaussian" : "deterministic-synthetic");
     if (profile_blocks) {
         fprintf(stderr,
             "ltx_c_profile stage=%d video_self_ms=%.3f audio_self_ms=%.3f "
