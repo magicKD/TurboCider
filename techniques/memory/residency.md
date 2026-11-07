@@ -37,6 +37,14 @@ export:    尚未消费的帧/音频 + codec / mux / staging
 
 [native README](../../native/README.md)保留 LTX resident candidate 导致 VAE decode 变慢的历史经验；模型“常驻”不保证完整请求更快。保住小 conditioning，释放大 encoder，通常比保住所有 weights 更值得先测。
 
+## 已知条件前置计算与权重退休
+
+多步生成中，若一组小条件仅依赖预先已知的 schedule 和固定权重，可在循环前按原始 shape、dtype 与舍入边界逐步求值，保存紧凑的独立结果，再释放仅供这些投影使用的权重。投影次数保持不变；收益来自缩短大权重的存活区间，代价是前置计算、同步与小结果缓存。
+
+先证明输出已完成求值、无输入图或 sibling、无大 backing 别名，再排空 GPU 最后读者并撤销所有真实 owner。结果身份应绑定来源、adapter、精度与实际 schedule；prefix/reset 生命周期也要验证。初始 admission 仍需容纳预计算前的完整权重，不能提前扣掉尚未释放的容量。
+
+[Qwen Turbo8 实例](../../docs/experiments/qwen21-timestep-condition-cache-2026-11-08.md)保留八次原始 M2/BF16 几何，用640KiB条件替换循环期间的194MiB纯时间权重驻留，并核对完整轨迹字节。该案例说明阶段 active 可下降，整请求峰值仍可能由 VAE 决定；可选权重缓存叠加与整图速度需分别测量。
+
 ## 计数器不能相加
 
 - MLX active：allocator 已用张量；cache/peak 有各自含义。
