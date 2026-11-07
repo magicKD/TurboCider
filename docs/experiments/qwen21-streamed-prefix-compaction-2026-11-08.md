@@ -81,9 +81,31 @@ The Swift desktop App build, local ad-hoc packaging/release check and
 packaged CLI GPU self-test passed. Actual GUI preview verification remains
 pending manual Mac unlock; Computer Use reported a locked desktop.
 
+While GUI access was blocked, the Swift App-state acceptance harness ran
+one real preview request from a separate signed copy of the packaged App.
+It used clean temporary Studio/Library state and the packaged native
+library, verified by actual dyld loading and runtime ID. NativeJobStore /
+NativeEngine completed `preparing → running → finalizing → succeeded`,
+published valid 512px preview frames at steps `[2,4,6,8]`, retained exactly
+the intermediate steps `[2,4,6]`, and produced the identical baseline PNG.
+Route, phase sequence, history, and terminal preview/session cleanup
+assertions passed. This is App-state/native-engine coverage, not GUI
+clicks or isolated CLI-worker coverage.
+
+The outer Python harness initially rejected the legal final preview step
+8 and expected an incorrect generic VAE phase name. The Swift test itself
+exited zero with the correct existing assertions. A CPU-only postcheck
+validated the completed evidence; the original harness failure and its
+source remain preserved. No GPU retry was performed. The complete sampler
+recorded about 3.75 GiB peak footprint and zero swap I/O. Source App/native
+binaries and the final `dist` package were unchanged by this fixture test.
+
 Raw logs and both real-model ownership receipts are local under
 `outputs/qwen-convrot-gpu-fusion-20261107/`. The complete-image failed batch
 and successful short-image witness are under `kv-compact-full-image/run/`;
 `postmortem.json` supplements rather than replaces its failed `report.json`.
 The separate successful packaged long run is under
 `kv-compact-packaged-long/`.
+App-state preview evidence and the original outer-harness error are under
+`kv-compact-tiny-app/run/`; `postverify-report.json` records the CPU-only
+correction.
