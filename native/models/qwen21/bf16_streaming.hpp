@@ -4,8 +4,12 @@
 #include "../../runtime/streaming/slot_pool.hpp"
 #include "../../runtime/streaming/io_executor.hpp"
 #include "../../runtime/streaming/qwen_bf16_metrics.hpp"
+#include "../../core/tokenizer.hpp"
 
 namespace tc::qwen21 {
+struct StreamEmbeddingSource {
+    streaming::FieldSpec codes, scales;
+};
 bool bf16_streaming_enabled();
 void bf16_stream_scope(const std::function<void()> &);
 enum class StreamWeightMode { Bf16, Bf16ConvRotCompanion, ConvRotFloat, ConvRotW8A8 };
@@ -16,6 +20,7 @@ struct Bf16StreamPlan {
     uint32_t layers=0,prefix=0;
     double verification_seconds=0;
     StreamWeightMode mode = StreamWeightMode::Bf16;
+    std::optional<StreamEmbeddingSource> embedding;
 };
 // Parses the held-fd safetensors header, validates the complete directory and
 // describes only consumed language/fixed/layer fields. No payload allocation.
@@ -55,6 +60,10 @@ class Bf16StreamBank final {
     Bf16StreamBank(const Bf16StreamBank &)=delete;
     Bf16StreamBank &operator=(const Bf16StreamBank &)=delete;
     const Weights &resident() const {return resident_;}
+    // Gather only requested vocabulary rows from the authenticated held fd.
+    // The returned BF16 embeddings own their storage before any layer refill.
+    Tensor embedding_rows(const Tokens &);
+    int embedding_vocabulary() const;
     void begin_pass(uint32_t);
     const Weights &acquire(int layer);
     // Caller must have synchronously evaluated ALL outputs/prefix readers.

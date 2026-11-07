@@ -1,9 +1,13 @@
 #include "bf16_streaming.hpp"
 #include "diagnostic_options.hpp"
+#include "../../backends/convrot_rotation.hpp"
 #include "../../backends/ane_memory.hpp"
 #include "../../runtime/streaming/gguf_storage.hpp"
 #include <algorithm>
 #include <cstdlib>
+#include <cerrno>
+#include <cmath>
+#include <unistd.h>
 
 namespace tc::qwen21 {
 namespace {
@@ -102,6 +106,60 @@ Bf16StreamBank::~Bf16StreamBank() {
     // Includes any partly submitted graph on exception/cancel. A failed drain
     // cannot safely release reusable storage; terminate instead of use-after-free.
     try {mx::synchronize();}catch(...){std::terminate();}
+}
+int Bf16StreamBank::embedding_vocabulary() const {
+    require(plan_.embedding.has_value(), "Qwen sparse embedding requires a ConvRot encoder source");
+    return int(plan_.embedding->codes.materialization->shape.at(0));
+}
+Tensor Bf16StreamBank::embedding_rows(const Tokens &tokens) {
+    checkpoint(cancel_);
+    require(!finished_ && !pass_live_ && !layer_live_ && metrics_.gathered_embedding_rows == 0,
+        "Qwen sparse embedding gather must precede the encoder pass exactly once");
+    const int vocabulary = embedding_vocabulary();
+    require(!tokens.ids.empty() && tokens.ids.size() <= size_t(Tokenizer::qwen21_limit),
+        "Qwen sparse embedding requires a bounded nonempty token sequence");
+    for (int id : tokens.ids)
+        require(id >= 0 && id < vocabulary, "Qwen21 token ID out of vocabulary");
+    const auto &source = *plan_.embedding;
+    const int rows = int(tokens.ids.size()), width = int(source.codes.materialization->shape.at(1));
+    const uint64_t code_bytes = uint64_t(rows) * width, scale_bytes = uint64_t(rows) * sizeof(float);
+    const auto code_capacity = capacity_upper(code_bytes), scale_capacity = capacity_upper(scale_bytes);
+    require(gguf::checked_add(metrics_.managed_weight_capacity_bytes,
+        gguf::checked_add(metrics_.derived_weight_capacity_bytes,gguf::checked_add(code_capacity,scale_capacity))) <=
+        metrics_.managed_weight_budget_bytes, "Qwen sparse embedding exceeds managed weight budget");
+    streaming::gguf_storage::ExactCapacityCacheScope exact;
+    auto codes = allocate_float_backing({rows,width},mx::int8,code_bytes);
+    auto scales = allocate_float_backing({rows,1},mx::float32,scale_bytes);
+    plan_.lease->revalidate_after_drain();
+    const auto &file = plan_.lease->descriptor().files.at(0);
+    auto fd = plan_.lease->duplicate_fd(file.logical_id);
+    const uint64_t code_offset = source.codes.materialization->reads.at(0).offset;
+    const uint64_t scale_offset = source.scales.materialization->reads.at(0).offset;
+    auto read = [&](void *destination,uint64_t bytes,uint64_t offset) {
+        uint64_t done=0;
+        while(done<bytes) {
+            checkpoint(cancel_);
+            const auto count=::pread(fd.get(),static_cast<char *>(destination)+done,size_t(bytes-done),off_t(offset+done));
+            if(count<0 && errno==EINTR)continue;
+            require(count>0,"Qwen sparse embedding source read failed");
+            done+=uint64_t(count);
+        }
+    };
+    for(int row=0;row<rows;++row) {
+        const uint64_t id=uint64_t(tokens.ids[size_t(row)]);
+        read(codes.data<int8_t>()+uint64_t(row)*width,width,code_offset+id*width);
+        read(scales.data<float>()+row,sizeof(float),scale_offset+id*sizeof(float));
+        require(std::isfinite(scales.data<float>()[row]),"nonfinite Qwen sparse embedding scale");
+    }
+    plan_.lease->revalidate_after_drain();
+    auto rotated=mx::astype(codes,mx::float32)*scales;
+    auto embeddings=mx::astype(convrot_kernel::rotate(rotated,convrot_kernel::Rotation::SimdRegister),mx::bfloat16);
+    mx::eval(embeddings);
+    // Keep an admitted upper bound including the transient gathered codes.
+    metrics_.managed_weight_capacity_bytes+=code_capacity+scale_capacity;
+    metrics_.gathered_embedding_rows=uint64_t(rows);
+    metrics_.gathered_embedding_source_bytes=code_bytes+scale_bytes;
+    return embeddings;
 }
 void Bf16StreamBank::schedule(uint32_t layer) {
     if(layer>=plan_.layers)return;

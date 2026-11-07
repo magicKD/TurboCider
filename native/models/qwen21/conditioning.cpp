@@ -193,6 +193,11 @@ MultimodalPrompt assemble_token_rows(const Tokens &tokens,const Tensor &table,in
 }
 }
 
+MultimodalPrompt assemble_prompt_rows(const Tokens &tokens,const Tensor &rows,int vocabulary,
+                                     const std::vector<VisualReference> &refs,int max_tokens) {
+    return assemble_token_rows(tokens,rows,vocabulary,refs,max_tokens);
+}
+
 MultimodalPrompt assemble_prompt(const Tokens &tokens,const Tensor &table,
                                 const std::vector<VisualReference> &refs,int max_tokens) {
     require(table.ndim()==2 && table.shape(1)>0,"invalid Qwen21 embedding table");

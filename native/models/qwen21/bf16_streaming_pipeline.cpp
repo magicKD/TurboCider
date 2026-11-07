@@ -157,7 +157,9 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         emit("load_qwen21_text", 1, 1);
         Tokenizer tokenizer(root_ / "processor");
         const auto tokens = tokenizer.raw_bounded(reference_prompt_template(r.prompt, 0), Tokenizer::qwen21_limit);
-        auto assembled = assemble_prompt(tokens, bank.resident(), {});
+        auto assembled = convrot_encoder ?
+            assemble_prompt_rows(tokens, bank.embedding_rows(tokens), bank.embedding_vocabulary(), {}) :
+            assemble_prompt(tokens, bank.resident(), {});
         TextConfig config;
         config.final_norm = false;
         TextEncoder encoder(bank.resident(), config);

@@ -1,5 +1,6 @@
 #include "models/qwen21/bf16_streaming.hpp"
 #include "models/qwen21/text_encoder.hpp"
+#include "models/qwen21/encoder_convrot.hpp"
 #include "models/qwen21/transformer.hpp"
 #include <iostream>
 
@@ -27,10 +28,12 @@ void check_plan(const Bf16StreamPlan &plan, bool encoder) {
     const auto &layout = plan.layout.stages.at(0);
     require(plan.prefix == 0 && stage.blocks.size() == layers && layout.groups.size() == layers &&
             layout.pools.at(0).slots.size() == 2, "unexpected ConvRot layer slot layout");
-    require(stage.resident_fields.size() == (encoder ? 4 : 9), "unexpected fixed ConvRot fields");
+    require(stage.resident_fields.size() == (encoder ? 1 : 9), "unexpected fixed ConvRot fields");
+    require(plan.embedding.has_value() == encoder, "sparse embedding source missing or attached to DiT");
     require(stage.blocks.at(0).fields.size() == (encoder ? 25 : 20), "unexpected typed layer source closure");
     for (const auto &field : stage.resident_fields)
-        require(!field.name.starts_with("lm_head.") && !field.name.starts_with("model.visual."),
+        require(!field.name.starts_with("lm_head.") && !field.name.starts_with("model.visual.") &&
+                !field.name.starts_with("model.embed_tokens."),
                 "unused encoder weights became resident");
     for (const auto &block : stage.blocks)
         for (const auto &field : block.fields)
@@ -78,15 +81,38 @@ void check_encoder(const char *path, StreamWeightMode mode, bool w8a8, std::atom
     mx::eval(expected);
 
     Bf16StreamBank bank(bf16_stream_plan(path, true, layers, 0, 1, cancel, mode), budget, cancel);
+    require(bank.embedding_vocabulary() == 128, "sparse embedding vocabulary changed");
+    Tokens invalid=tokens;
+    invalid.ids[0]=-1;
+    rejects([&] { bank.embedding_rows(invalid); }, "out of vocabulary");
+    invalid.ids[0]=128;
+    rejects([&] { bank.embedding_rows(invalid); }, "out of vocabulary");
+    invalid.ids.clear();
+    rejects([&] { bank.embedding_rows(invalid); }, "bounded nonempty");
+    invalid.ids.assign(Tokenizer::qwen21_limit+1,1);
+    rejects([&] { bank.embedding_rows(invalid); }, "bounded nonempty");
+    cancel.store(true);
+    rejects([&] { bank.embedding_rows(tokens); }, "cancelled");
+    cancel.store(false);
+    auto embeddings=bank.embedding_rows(tokens);
+    auto ids=Tensor(tokens.ids.data(),{int(tokens.ids.size())},mx::int32);
+    equal(embeddings,encoder_embedding_rows(weights,ids,"model.embed_tokens"),
+        "sparse embedding changed duplicate or out-of-order rows");
+    rejects([&] { bank.embedding_rows(tokens); }, "exactly once");
     TextEncoder streamed(bank.resident(), config);
     streamed.set_layer_weights([&](int layer) -> const Weights & { return bank.acquire(layer); },
                               [&](int layer) { bank.retire(layer); });
     const auto before = convrot_w8a8_stats();
     bank.begin_pass(0);
-    equal(streamed.encode(tokens, {}, cancel), expected, "streamed ConvRot encoder changed hidden states");
+    auto positions=mx::broadcast_to(mx::reshape(mx::arange(4,mx::int32),{1,4}),{3,4});
+    equal(streamed.encode_embeddings(mx::expand_dims(embeddings,0),positions,tokens.valid,{},cancel),
+        expected, "streamed ConvRot encoder changed hidden states");
     bank.finish_pass();
     bank.finish();
     check_bank(bank.metrics(), 1, w8a8);
+    require(bank.metrics().resident_source_bytes == 512 && bank.metrics().gathered_embedding_rows == 4 &&
+            bank.metrics().gathered_embedding_source_bytes == 4*(256+sizeof(float)),
+            "sparse embedding did not drop the full vocabulary or record actual reads");
     require(convrot_w8a8_stats().projections - before.projections == (w8a8 ? 7 * layers : 0),
             "encoder lost its selected layer mode");
 }

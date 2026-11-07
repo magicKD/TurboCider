@@ -213,6 +213,13 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
             validate_projection(unused_head, "lm_head", false);
         }
     }
+    if (convrot && encoder) {
+        plan.embedding = StreamEmbeddingSource{std::move(fixed.at("model.embed_tokens.weight")),
+            std::move(fixed.at("model.embed_tokens.weight_scale"))};
+        fixed.erase("model.embed_tokens.weight");
+        fixed.erase("model.embed_tokens.weight_scale");
+        fixed.erase("model.embed_tokens.comfy_quant");
+    }
     for(auto &[name,field]:fixed)stage.resident_fields.push_back(std::move(field));
     for(uint32_t i=0;i<layers;++i) {
         require(block_fields[i].size()==expected.size(),"Qwen weight stream layer source closure incomplete");
@@ -227,7 +234,7 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
     }
     for(uint32_t i=0;i<passes;++i)stage.passes.push_back({i,i==0 ? "prefill" : "decode",{1,layers}});
     plan.descriptor={"qwen-image-2.1",identity.content_digest,
-        convrot ? (tensorops ? "original-convrot-w8a8-two-slot-v1" : "original-convrot-float-a-two-slot-v1") :
+        convrot ? (tensorops ? "original-convrot-w8a8-sparse-embedding-two-slot-v2" : "original-convrot-float-a-sparse-embedding-two-slot-v2") :
             convrot_request ? "original-bf16-convrot-companion-two-slot-v1" : "original-bf16-two-slot-private-v1",{std::move(stage)},
         {{source.logical_id,identity.content_digest,identity.bytes,streaming::SourceIdentityKind::content_sha256}},
         {{"component",encoder ? "encoder" : "denoiser"},{"full_layers",std::to_string(layers)},{"resident_prefix",std::to_string(prefix)}}};
