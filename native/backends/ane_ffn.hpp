@@ -39,6 +39,7 @@ struct FfnWeight {
 // No adapter or model weights are embedded in the Core ML graph.
 class HybridFfn {
   public:
+    enum class SourceMemory { Resident, StreamedConvrot };
     // Declare AFTER the borrowed source owners. A retained executor can
     // outlive those owners, including when attention throws after staging.
     // finish() drains and disarms on success; unwinding preserves the primary
@@ -105,7 +106,8 @@ class HybridFfn {
               std::optional<int> calibrated_channels = std::nullopt,
               std::optional<int> channel_override = std::nullopt,
               std::optional<int> bucket_override = std::nullopt,
-              int request_rows = 0, int fixed_bucket_rows = 0);
+              int request_rows = 0, int fixed_bucket_rows = 0,
+              SourceMemory source_memory = SourceMemory::Resident);
     HybridFfn(const std::filesystem::path &manifest, int hidden, int width,
               size_t memory_budget, std::atomic<bool> &cancelled, bool require_lora_inputs,
               const CalibrationWorkload *calibration,
@@ -115,11 +117,6 @@ class HybridFfn {
         : HybridFfn(manifest, hidden, width, memory_budget, cancelled, require_lora_inputs,
                     std::nullopt, {}, calibration, calibrated_channels, channel_override, bucket_override) {}
     ~HybridFfn();
-#if TURBOCIDER_ENABLE_PRIVATE_ANE
-    // The fixed ConvRot diagnostic borrows only the guarded stream bank's
-    // current slot. Select its physical admission before the first request.
-    void enable_streamed_convrot_admission();
-#endif
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
     void begin_request(const std::string &adapter_identity = {},
@@ -232,7 +229,7 @@ class HybridFfn {
     bool fp32_channel_join_ = false;
     bool lora_channel_range_ = true;
     bool fixed_async_ = false;
-    bool streamed_convrot_admission_ = false;
+    const bool streamed_convrot_admission_;
     bool defer_channel_join_ = false;
     bool channel_gpu_first_ = false;
     int prefetched_layer_ = -1;

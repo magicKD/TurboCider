@@ -17,12 +17,18 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
 BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size_t budget,
                                     GraphGeometry expected, BackendPolicy policy,
                                     std::optional<int> calibrated_channels,std::optional<int> channel_override,
-                                    std::optional<int> bucket_override, int fixed_bucket_rows) {
+                                    std::optional<int> bucket_override, int fixed_bucket_rows,
+                                    std::optional<uint64_t> streamed_convrot_mlx_bytes) {
     BuiltExecutor result;
     const bool fixed_program=configured_fixed_program();
     const auto projection=configured_w8_projection();
     const auto activation=configured_w8_activation();
     const auto function_rows=configured_w8_function_rows();
+    if (streamed_convrot_mlx_bytes && (!fixed_program || policy.preferred != BackendPreference::Private ||
+        !policy.allow_private || expected.kind != Kind::SwiGLU || expected.require_lora_inputs ||
+        calibrated_channels || channel_override != 4096 || bucket_override || fixed_bucket_rows ||
+        expected.request_rows || !function_rows.empty()))
+        throw std::runtime_error("streamed ConvRot admission requires the authorized fixed Private channel graph");
     if(!function_rows.empty() && (!fixed_program || policy.preferred!=BackendPreference::Private || !policy.allow_private ||
         expected.kind!=Kind::SwiGLU || expected.require_lora_inputs || calibrated_channels || bucket_override || fixed_bucket_rows ||
         configured_request_rows() || projection!=W8Projection::Descriptor ||
@@ -126,11 +132,16 @@ BuiltExecutor build_runtime_executor(const std::filesystem::path &manifest, size
             if(bf16_boundaries && path!="convrot_w8a8")throw std::runtime_error("BF16 value boundaries require convrot_w8a8 data path");
             if(fp16_values && path!="fp16")throw std::runtime_error("FP16 BF16 values require the fp16 data path");
             if (channels && path == "fp16") throw std::runtime_error("channel split requires the W8A8 data path");
+            if (streamed_convrot_mlx_bytes && (path != "convrot_w8a8" || descriptor.has_public_artifact() ||
+                shape.lora_inputs || shape.rows != 1024 || shape.hidden != 4096 || shape.width != 12288 ||
+                channels != 4096 || shape.tile_k != 2048 || shape.tile_n != 1024))
+                throw std::runtime_error("streamed ConvRot admission requires the fixed signed-source geometry");
             if (channels) shape.width = channels; // base template still validated against the FULL model
             if (calibrated_channels) shape.lora_inputs = expected.require_lora_inputs;
             std::unique_ptr<Executor> graph = !function_rows.empty()?std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,
                 private_cache,W8Basis::SylvesterDH,function_rows)):path != "fp16" ? std::unique_ptr<Executor>(std::make_unique<PrivateW8Graph>(shape,budget,
-                private_cache,path=="convrot_w8a8"?W8Basis::ComfyH256:W8Basis::SylvesterDH)) :
+                private_cache,path=="convrot_w8a8"?W8Basis::ComfyH256:W8Basis::SylvesterDH,
+                std::vector<int>{},streamed_convrot_mlx_bytes)) :
                 std::unique_ptr<Executor>(std::make_unique<PrivateGraph>(shape,budget,private_cache));
             std::string error;
             const auto start = std::chrono::steady_clock::now();

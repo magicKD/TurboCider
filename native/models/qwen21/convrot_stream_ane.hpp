@@ -99,11 +99,9 @@ public:
     ConvrotStreamAne(const std::filesystem::path& manifest,std::atomic<bool>& cancelled)
         : cancelled_(cancelled),
           runtime_(validate(manifest),hidden_,width_,size_t(640)<<20,cancelled,false,
-                   std::nullopt,{},nullptr,std::nullopt,ane_channels_),
+                   std::nullopt,{},nullptr,std::nullopt,ane_channels_,std::nullopt,0,0,
+                   ane::HybridFfn::SourceMemory::StreamedConvrot),
           full_(compile_gpu(true)), channels_(compile_gpu(false)) {
-#if TURBOCIDER_ENABLE_PRIVATE_ANE
-        runtime_.enable_streamed_convrot_admission();
-#endif
         runtime_.begin_request();
     }
 

@@ -25,6 +25,13 @@ using private_api::Surface;
 using private_api::Element;
 double elapsed(Clock::time_point x) { return std::chrono::duration<double>(Clock::now() - x).count(); }
 void check(bool ok, const char *reason) { if (!ok) throw std::runtime_error(reason); }
+uint64_t capability_payload(const GraphShape &s) {
+    // g/u/d, x/y, sg/su/sd in self_test(). All extents are page-aligned
+    // for the fixed streamed geometry that consumes this estimate.
+    return uint64_t(s.width) * s.hidden * 3 * sizeof(float) +
+        uint64_t(s.rows) * s.hidden * (sizeof(float) + sizeof(uint16_t)) +
+        uint64_t(2 * s.width + s.hidden) * sizeof(float);
+}
 class Worker {
     std::mutex mutex_;
     std::condition_variable cv_;
@@ -69,6 +76,7 @@ struct PrivateW8Graph::Impl {
     const std::vector<int> function_rows;
     std::atomic<uint64_t> program_instances{0},blocked_rebuilds{0};
     std::atomic<uint64_t> capability_predictions{0};
+    std::optional<uint64_t> streamed_convrot_mlx_bytes;
     GraphShape shape;
     W8Basis basis = W8Basis::SylvesterDH;
     int activation_group_size = 0;
@@ -307,7 +315,8 @@ struct PrivateW8Graph::Impl {
 };
 PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache,W8Basis basis)
     :PrivateW8Graph(shape,budget,cache,basis,{}) {}
-PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache,W8Basis basis,std::vector<int> fixed_rows)
+PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesystem::path &cache,W8Basis basis,
+        std::vector<int> fixed_rows,std::optional<uint64_t> streamed_convrot_mlx_bytes)
     :impl_(std::make_unique<Impl>(configured_fixed_program(),configured_w8_projection(),configured_w8_activation(),
         fixed_rows.empty()?std::vector<int>{}:checked_w8_function_rows(shape,fixed_rows))) {
     @autoreleasepool {
@@ -348,8 +357,24 @@ PrivateW8Graph::PrivateW8Graph(GraphShape shape,size_t budget,const std::filesys
         if(p.activation_group_size)p.estimate+=uint64_t(shape.hidden/256-1)*
             ((uint64_t(shape.rows)*2+63)/64*64+128)*(p.a8_lookahead?2:1)+(64u<<10);
         if (p.estimate>budget) throw MemoryBudgetError("W8 graph/banks exceed memory budget");
-        const auto decision=admit_memory(observe_runtime_memory(0),{uint64_t(4)<<30,budget},0,p.estimate);
-        if (!decision.allowed()) throw MemoryBudgetError("W8 system memory admission denied");
+        p.streamed_convrot_mlx_bytes = streamed_convrot_mlx_bytes;
+        if (streamed_convrot_mlx_bytes) {
+            check(p.fixed_program && basis==W8Basis::ComfyH256 && shape.kind==Kind::SwiGLU &&
+                  shape.rows==1024 && shape.hidden==4096 && shape.width==4096 && !shape.lora_inputs &&
+                  p.function_rows.empty() && !p.a8_lookahead && !p.bf16_value_boundaries &&
+                  !p.activation_group_size && !p.hidden_group_size,
+                  "streamed W8 memory admission requires fixed base Comfy geometry");
+            const auto scratch = capability_payload(shape);
+            if (scratch > budget - p.estimate)
+                throw MemoryBudgetError("W8 graph and capability buffers exceed streamed memory budget");
+            try {
+                require_streaming_memory_headroom(*streamed_convrot_mlx_bytes, p.estimate + scratch,
+                                                  "W8 streamed graph memory admission denied");
+            } catch (const std::invalid_argument &error) { throw MemoryBudgetError(error.what()); }
+        } else {
+            const auto decision=admit_memory(observe_runtime_memory(0),{uint64_t(4)<<30,budget},0,p.estimate);
+            if (!decision.allowed()) throw MemoryBudgetError("W8 system memory admission denied");
+        }
         p.cache=cache;
         if (p.cache.empty()) { NSString *dir=NSSearchPathForDirectoriesInDomains(NSCachesDirectory,NSUserDomainMask,YES).firstObject;
             check(dir!=nil,"W8 cache unavailable"); p.cache=std::filesystem::path(dir.UTF8String)/"TurboCider/ane/private"; }
@@ -482,6 +507,15 @@ RunResult PrivateW8Graph::finish(){auto&p=*impl_;try{p.worker.join();}catch(cons
 bool PrivateW8Graph::self_test(std::string &error){
     discard_prefetched_weights();
     auto &p=*impl_;p.worker.join();p.verified=false;
+    if (p.streamed_convrot_mlx_bytes) {
+        try {
+            require_streaming_memory_headroom(*p.streamed_convrot_mlx_bytes, capability_payload(p.shape),
+                                              "W8 streamed capability memory admission denied");
+        } catch (const std::invalid_argument &failure) {
+            error = failure.what();
+            return false;
+        }
+    }
     p.worker.submit([&p]{
         const auto&s=p.shape;auto gpu=MTLCreateSystemDefaultDevice();
         Buffer g(gpu,size_t(s.width)*s.hidden*4),u(gpu,size_t(s.width)*s.hidden*4),d(gpu,size_t(s.hidden)*s.width*4),

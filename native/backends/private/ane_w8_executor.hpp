@@ -9,7 +9,8 @@ class PrivateW8Graph final : public Executor {
     PrivateW8Graph(GraphShape, size_t budget, const std::filesystem::path &cache = {},
                    W8Basis basis = W8Basis::SylvesterDH);
     // Explicit research constructor; no environment/default/Session adoption.
-    PrivateW8Graph(GraphShape,size_t,const std::filesystem::path &,W8Basis,std::vector<int> fixed_rows);
+    PrivateW8Graph(GraphShape,size_t,const std::filesystem::path &,W8Basis,std::vector<int> fixed_rows,
+                   std::optional<uint64_t> streamed_convrot_mlx_bytes = std::nullopt);
     const std::vector<int> &fixed_row_functions() const override;
     int device_row_alignment() const override;
     uint64_t capability_calls() const override;

@@ -148,10 +148,16 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
                      std::string scheduler_identity,
                      const CalibrationWorkload *calibration, std::optional<int> calibrated_channels,
                      std::optional<int> channel_override, std::optional<int> bucket_override,
-                     int request_rows, int fixed_bucket_rows)
-    : memory_budget_(budget) {
+                     int request_rows, int fixed_bucket_rows, SourceMemory source_memory)
+    : streamed_convrot_admission_(source_memory == SourceMemory::StreamedConvrot), memory_budget_(budget) {
     checkpoint(cancelled);
+#if !TURBOCIDER_ENABLE_PRIVATE_ANE
+    require(!streamed_convrot_admission_, "streamed ConvRot admission requires a private diagnostic build");
+#endif
     metrics_.runtime_weight_fixed_program_requested=configured_fixed_program();
+    require(!streamed_convrot_admission_ || (!prepared && !calibration && !calibrated_channels &&
+        !require_lora_inputs && channel_override == 4096 && !bucket_override && !request_rows && !fixed_bucket_rows),
+        "streamed ConvRot admission requires one fixed base-only channel split");
     validate_w8_activation_backend(configured_w8_activation(),configured_w8_projection(),metrics_.runtime_weight_fixed_program_requested,configured_backend(),
         std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH")?std::getenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH"):"fp16",require_lora_inputs);
     validate_w8_projection_backend(configured_w8_projection(),metrics_.runtime_weight_fixed_program_requested,configured_backend(),
@@ -238,7 +244,9 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
             graph_ = std::make_unique<RuntimeGraph>(std::move(prepared->value), budget);
         } else {
             auto built = build_runtime_executor(manifest, budget,
-                GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs, request_rows}, configured_backend(), calibrated_channels,channel_override,bucket_override,fixed_bucket_rows);
+                GraphGeometry{Kind::SwiGLU, hidden, width, require_lora_inputs, request_rows}, configured_backend(),
+                calibrated_channels,channel_override,bucket_override,fixed_bucket_rows,
+                streamed_convrot_admission_ ? std::optional<uint64_t>(mx::get_active_memory()) : std::nullopt);
             graph_ = std::move(built.executor); verified = built.self_test_passed;
             verified_seconds = built.self_test_seconds;
             metrics_.runtime_weight_backend_fallback_reason = std::move(built.fallback_reason);
@@ -312,6 +320,10 @@ HybridFfn::HybridFfn(const std::filesystem::path &manifest, int hidden, int widt
     // measures a profitable policy; never silently lose the row/channel win.
     prefetch_ = graph_->supports_weight_prefetch() && prefetch && std::string(prefetch)=="1";
     metrics_.runtime_weight_prefetch_enabled = prefetch_;
+    require(!streamed_convrot_admission_ || (graph_->backend() == BackendKind::PrivateANE && channel_split() &&
+        graph_->data_path() == "w8a8_convrot" && fp32_channel_join_ && fixed_async_ && !prefetch_ &&
+        metrics_.runtime_weight_fixed_program_requested),
+        "streaming source admission requires fixed Private ConvRot channel split without prefetch");
     checkpoint(cancelled);
 }
 HybridFfn::~HybridFfn() { drain(); save_scheduler(); }
@@ -450,16 +462,6 @@ void HybridFfn::drain(bool discard_future) {
 void HybridFfn::release_for_memory(const std::string &reason) {
     degrade(reason, -1);
 }
-#if TURBOCIDER_ENABLE_PRIVATE_ANE
-void HybridFfn::enable_streamed_convrot_admission() {
-    require(!streamed_convrot_admission_ && layer_ == -1 && !planned_ && !pending_ && !block_plan_ &&
-            (!available() || (graph_->backend() == BackendKind::PrivateANE && channel_split() &&
-                graph_->data_path() == "w8a8_convrot" && fp32_channel_join_ && fixed_async_ && !prefetch_ &&
-                metrics_.runtime_weight_fixed_program_requested)),
-            "streaming source admission requires an idle fixed Private ConvRot FFN without prefetch");
-    streamed_convrot_admission_ = true;
-}
-#endif
 std::optional<std::string> HybridFfn::source_memory_denial(uint64_t resident, uint64_t growth,
         std::optional<MemoryObservation> observation) const {
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
