@@ -85,6 +85,12 @@ class Bf16StreamBank final {
     // At a drained pass boundary, free optional cached raw layers. The
     // original fixed weights and two refill buffers remain allocated.
     bool evict_cached_layers();
+    // Only at a quiescent boundary, including before the first pass. Remove
+    // fixed-field ownership from both the pager and the same resident Weights
+    // object. Return actual retired allocation capacity, not physical bytes
+    // freed: external graph/tensor aliases can retain the buffers. Cached
+    // layers, refill pools, budgets and historical read counts are untouched.
+    uint64_t release_fixed_fields(const std::vector<std::string> &names);
     void finish();
     QwenBf16StreamStageMetrics metrics() const;
 };

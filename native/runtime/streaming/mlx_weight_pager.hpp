@@ -45,6 +45,15 @@ class MlxWeightPager {
 
     void load_resident(Weights &destination,
                        const std::atomic<bool> *cancel = nullptr);
+    // Owner-thread operation after the caller stops constructing readers.
+    // Validate the entire selection and its exact destination bindings, drain
+    // submitted GPU readers, and revalidate the source before removing either
+    // owner. Return the actual capacity of the distinct retired buffers. Other
+    // aliases may keep those buffers alive; this is not physical-free telemetry.
+    // Pool storage, source-read metrics and the original layout stay unchanged.
+    uint64_t release_resident_fields(Weights &destination,
+        const std::vector<std::string> &names,
+        const std::atomic<bool> *cancel = nullptr);
     // Private bounded core source adapters opt in before any payload exists.
     // Fresh allocator bins and actual size checks; old pager defaults unchanged.
     void use_exact_allocations(bool streaming_headroom = false);

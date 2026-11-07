@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace tc {
 struct QwenBf16StreamStageMetrics {
@@ -26,8 +27,19 @@ struct QwenBf16StreamStageMetrics {
 struct QwenBf16StreamingMetrics {
     QwenBf16StreamStageMetrics encoder,denoiser;
 };
+struct QwenStreamTimestepCacheMetrics {
+    std::string source_sha256,schedule_identity;
+    uint32_t frames=0;
+    uint64_t condition_logical_bytes=0,condition_capacity_bytes=0,released_weight_capacity_bytes=0;
+    uint64_t active_before_prepare=0,cache_before_prepare=0;
+    uint64_t active_before_release=0,cache_before_release=0;
+    uint64_t active_after_release=0,cache_after_release=0;
+    uint64_t active_after_clear=0,cache_after_clear=0;
+    double prepare_seconds=0,release_seconds=0;
+};
 struct QwenConvrotStreamingMetrics {
     QwenBf16StreamStageMetrics encoder,denoiser;
     uint64_t requested_weight_budget_bytes=0;
+    std::optional<QwenStreamTimestepCacheMetrics> timestep_cache;
 };
 }

@@ -28,6 +28,41 @@ struct TransformerConfig {
 // retain one instance for a matched-conditioning prefix-KV experiment.
 class Transformer {
   public:
+    // Request-local, evaluated M=2 values. Construction is private so a
+    // caller cannot attach another source, shape or unfinished graph.
+    class PreparedTimestepCondition {
+      public:
+        PreparedTimestepCondition(const PreparedTimestepCondition &)=default;
+        PreparedTimestepCondition(PreparedTimestepCondition &&)=default;
+        PreparedTimestepCondition &operator=(const PreparedTimestepCondition &)=default;
+        PreparedTimestepCondition &operator=(PreparedTimestepCondition &&)=default;
+        const Tensor &modulation() const { return modulation_; }
+        const Tensor &raw_output_scale() const { return raw_output_scale_; }
+        const std::string &source_sha256() const { return source_sha256_; }
+        uint32_t sigma_bits() const { return sigma_bits_; }
+        mx::Dtype dtype() const { return dtype_; }
+        uint64_t logical_bytes() const { return modulation_.nbytes()+raw_output_scale_.nbytes(); }
+        uint64_t capacity_bytes() const { return capacity_bytes_; }
+      private:
+        friend class Transformer;
+        PreparedTimestepCondition(std::weak_ptr<const uint8_t> owner,std::string source,
+            uint32_t sigma,mx::Dtype dtype,Tensor modulation,Tensor raw_output_scale,uint64_t capacity)
+            : owner_(std::move(owner)),source_sha256_(std::move(source)),sigma_bits_(sigma),dtype_(dtype),
+              modulation_(std::move(modulation)),raw_output_scale_(std::move(raw_output_scale)),capacity_bytes_(capacity) {}
+        std::weak_ptr<const uint8_t> owner_;
+        std::string source_sha256_;
+        uint32_t sigma_bits_;
+        mx::Dtype dtype_;
+        Tensor modulation_,raw_output_scale_;
+        uint64_t capacity_bytes_;
+    };
+    // Exact authored Turbo8 sigmas, BF16, no LoRA/packed time projections.
+    // All returned values are complete independent leaves before publication.
+    // A Transformer prepares once; prefix geometry/reset does not invalidate
+    // these externally owned frames. Another Transformer cannot consume them.
+    std::vector<PreparedTimestepCondition> prepare_timestep_conditions(
+        const std::vector<float> &sigmas,mx::Dtype,const std::string &source_sha256);
+    static const std::vector<std::string> &timestep_condition_weight_names();
     // Evaluated values only: no Transformer, compiled function or weight bank.
     // The Session must additionally bind this entry to its checkpoint/LoRA
     // identity and route. Tensor identities retain their immutable owners.
@@ -68,7 +103,8 @@ class Transformer {
     Tensor forward(const Tensor &latents, const Tensor &text, float timestep,
                    int latent_height, int latent_width, bool cache_prefix = true,
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
-                   const std::vector<ReferenceLatents> &references = {});
+                   const std::vector<ReferenceLatents> &references = {},
+                   const PreparedTimestepCondition *prepared_timestep = nullptr);
     size_t cached_layers() const { return prefix_.size(); }
     // Read-only ownership diagnostics; never evaluate or retain tensors.
     struct PrefixStorageInfo {
@@ -201,6 +237,10 @@ class Transformer {
   private:
     struct KV { Tensor key, value; };
     const Weights &weights_;
+    std::shared_ptr<const uint8_t> timestep_condition_owner_;
+    std::string timestep_condition_source_;
+    std::array<uintptr_t,4> timestep_condition_weight_ids_{};
+    void validate_timestep_condition(const PreparedTimestepCondition &,float,mx::Dtype) const;
     Tensor project_dit(const Tensor &, const Weights &, const std::string &) const;
     // Only the eight non-block projections persist for this request. Full
     // transformer block matrices retain their existing per-layer lifetime.

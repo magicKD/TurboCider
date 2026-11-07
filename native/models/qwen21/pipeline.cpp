@@ -296,6 +296,7 @@ RunResult Session::generate(const Request &request, const Event &event, std::ato
 }
 RunResult Session::run(const Request &requested, const Event &event, std::atomic<bool> &cancelled,
                        bool warmup, bool prepare_only) try {
+    validate_stream_timestep_cache_route(requested,std::getenv("TURBOCIDER_QWEN21_STREAM_TIMESTEP_CACHE"));
     validate_checkpoint_recipe(requested,transformer_source_,convrot_w8a8_available());
     if (requested.residency == "streamed") {
         require(!bf16_streaming_enabled(), "Qwen21 ConvRot streaming cannot combine with the BF16 streaming diagnostic");
