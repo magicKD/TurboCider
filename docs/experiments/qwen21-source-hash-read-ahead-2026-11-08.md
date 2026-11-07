@@ -70,13 +70,57 @@ arm: encoder and all eight denoise steps completed, but elevated system
 memory pressure prevented VAE admission. No PNG was produced in that arm.
 That failed comparison remains preserved; the separate successful
 candidate establishes output correctness, not paired whole-image speed.
-No memory guard was weakened. Actual GUI interaction and the latest
-read-ahead build's desktop packaging are outside this validation.
+No memory guard was weakened. This initial validation did not include
+desktop packaging or actual GUI interaction.
+
+## Final packaged CLI comparison
+
+The follow-up campaign rebuilt the Swift App and model-library helper,
+packaged the new native build, and passed local ad-hoc signature
+verification and the packaged CLI GPU self-test. App and CLI native
+libraries are byte-identical and report the runtime ID above. The App
+also contains the Qwen Tiny VAE weights. Actual GUI interaction remains
+pending manual Mac unlock; Computer Use still reports a locked desktop.
+
+Four complete process-cold requests then passed in fixed ABBA order:
+serial, read-ahead, read-ahead, serial. Each arm used a fresh registration
+directory and fully verified both original model files, with zero
+verification-cache hits. OS/driver caches were not flushed. The request
+is the same short prompt, seed 73, 512px Turbo8, GPU W8A8 and streaming
+workload above. There were no tensor dumps or strong-sync profiling.
+
+| Read-ahead | Request times | Median request | Median process harness |
+| --- | --- | ---: | ---: |
+| Off | 19.040, 18.406 s | 18.723 s | 19.051 s |
+| On | 15.164, 14.958 s | 15.061 s | 15.309 s |
+
+In this small campaign, complete request time decreased by **19.56%**
+(3.662 s; 1.243×). There are only two samples per mode. The gain is
+primarily fresh source verification overlap, not a change to GPU matrix
+arithmetic; repeated requests that already hit the verification cache do
+not pay this source-hash cost and need a separate comparison.
+
+Every complete PNG was byte-identical to the same baseline hash above.
+Every arm recorded 252 encoder and 1536 DiT W8A8 projections with the
+existing dynamic-token-A8 recipe, and dyld loaded the final packaged
+library. Process-tree sampling covered all four runs with maximum gaps
+below 111 ms and zero swap-in/out traffic. Sampled peak physical
+footprints ranged from 3,959,817,584 to 4,461,561,080 B; this experiment
+does not establish a memory reduction.
+
+Following each completed image, macOS pressure recovered to normal in
+about 41.7 s before the next arm launched. These waits are outside the
+reported generation timers and are preserved in the report. Thus the
+campaign establishes process-cold request latency under normal-pressure
+admission, not uninterrupted back-to-back throughput on the occupied
+24 GiB host. The original unsuccessful comparison is still retained.
 
 Local evidence is under
 `outputs/qwen-convrot-gpu-fusion-20261107/source-hash-read-ahead-tests/`
 and `outputs/qwen-convrot-gpu-fusion-20261107/source-sha-overlap/`.
 The latter contains `production/sha/report.json`, the failed
 `production/cli/` comparison, both Qwen regression logs, and the successful
-`candidate-image/report.json`. Raw logs, model weights and build products
-are not committed.
+`candidate-image/report.json`. The follow-up evidence is
+`packaged-cli/cli/report.json`; `packaged-cli/package-verification.json`
+binds the App/CLI files and signing result. Raw logs, model weights and
+build products are not committed.
