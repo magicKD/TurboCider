@@ -18,6 +18,7 @@ attempts. They do not by themselves establish supported product behavior.
 | GGUF / ConvRot quantized execution | [Implementation and experiment ledger](quantized-execution/README.md) | Historical CPU/GPU/ANE component and full-request observations; quality, speed and memory limits retained |
 | Quantization and streaming design | [Quantized execution](../design/quantized-execution/README.md) · [Streaming](../design/streaming/README.md) | Proposals, contracts and links to their validation records |
 | Qwen-Image-2.1 frozen W8A8 | [Records and evidence boundaries](qwen21-w8a8/README.md) | M4 Max component, generator and resident Session comparisons; 512²/1024² and reference-size limits kept separate |
+| M5 ConvRot streaming / Runtime ANE | [2026-11-07 M5 Pro measurements](qwen21-convrot/2026-11-07-m5-streaming.md) | Exact sparse embedding parity, bounded residency, ABBA/BAAB and FFN sweeps; no stable ANE acceleration qualification |
 | Native LoRA implementation and experiments | [Six 2026-10-08 records](native-lora/README.md) | M4 Pro component, real-FFN and complete-request scopes; negative speed results and budget stop retained |
 | Qwen edit encoder and prefill | [Six 2026-10-08 records](qwen-encoder/README.md) | M4 Pro GPU/ANE and Native Metal experiments; component, full encoder, edit step and cold/warm request boundaries retained |
 | Native Metal / Qwen command graph | [Design and evidence index](../design/qwen-image-gpu-ane-command-graph/README.md) | Experimental backends and qualification boundaries |
