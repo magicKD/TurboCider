@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace MTL {
 class ComputePipelineState;
@@ -26,6 +27,9 @@ namespace mx = mlx::core;
 bool convrot_w8a8_available();
 struct ConvrotW8A8Stats { uint64_t projections = 0, activation_rows = 0; };
 ConvrotW8A8Stats convrot_w8a8_stats();
+// Physical A8 dispatches, separate from the historical per-projection rows.
+struct ConvrotW8A8QuantStats { uint64_t dispatches = 0, activation_rows = 0; };
+ConvrotW8A8QuantStats convrot_w8a8_quant_stats();
 mx::array convrot_linear(const mx::array& rotated,
                         const mx::array& signed_codes,
                         const mx::array& row_scales,
@@ -38,6 +42,33 @@ mx::array convrot_linear_typed(const mx::array& rotated,
                               const mx::array& row_scales,
                               mx::Dtype output_dtype,
                               mx::StreamOrDevice s = {});
+// Share one per-token A8 operation across independent original weight arrays.
+// Each result is a contiguous view into one flat output; no weight concat and
+// no multi-output primitive siblings. Callers must not retain a small view
+// as a persistent KV cache without compacting its shared output backing.
+std::vector<mx::array> convrot_linear_many_typed(
+    const mx::array& rotated, const std::vector<mx::array>& signed_codes,
+    const std::vector<mx::array>& row_scales, mx::Dtype output_dtype,
+    mx::StreamOrDevice s = {});
+
+class ConvrotW8A8ManyLinear : public mx::Primitive {
+ public:
+  ConvrotW8A8ManyLinear(mx::Stream stream, mx::Dtype output_dtype,
+                       std::vector<int> widths)
+      : mx::Primitive(stream), output_dtype_(output_dtype), widths_(std::move(widths)) {}
+  void eval_cpu(const std::vector<mx::array>&, std::vector<mx::array>&) override {
+    throw std::runtime_error("ConvrotW8A8ManyLinear: CPU not supported");
+  }
+  void eval_gpu(const std::vector<mx::array>&, std::vector<mx::array>&) override;
+  const char* name() const override { return "ConvrotW8A8ManyLinear"; }
+  bool is_equivalent(const mx::Primitive& other) const override {
+    const auto* typed = dynamic_cast<const ConvrotW8A8ManyLinear*>(&other);
+    return typed && output_dtype_ == typed->output_dtype_ && widths_ == typed->widths_;
+  }
+ private:
+  mx::Dtype output_dtype_;
+  std::vector<int> widths_;
+};
 
 class ConvrotW8A8Linear : public mx::Primitive {
  public:

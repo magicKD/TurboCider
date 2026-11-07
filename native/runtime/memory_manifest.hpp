@@ -181,6 +181,8 @@ std::string memory_sha256_hex(std::string_view value);
 // Hash exactly [0, bytes) from a borrowed descriptor with bounded heap memory.
 // Uses pread so callers' offsets are preserved. The caller must revalidate the
 // file generation after hashing before treating this as an artifact identity.
+// Large files overlap one reader with the sequential hash using two 1 MiB
+// heap buffers; that reader is joined on success, cancellation, and failure.
 std::string memory_sha256_fd(int fd, uint64_t bytes,
                              const std::atomic<bool> *cancelled = nullptr,
                              const std::atomic<bool> *stopped = nullptr);

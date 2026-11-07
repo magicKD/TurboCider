@@ -5,11 +5,17 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
+#include <condition_variable>
+#include <cstdlib>
+#include <exception>
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <tuple>
+#include <thread>
 #include <unistd.h>
 #if defined(__APPLE__)
 #include <CommonCrypto/CommonDigest.h>
@@ -138,6 +144,112 @@ class Sha256 {
 template <typename T>
 void append_enum(std::ostringstream &out, std::string_view name, T value) {
     append_number(out, name, static_cast<unsigned>(value));
+}
+
+constexpr size_t sha256_chunk_bytes = 1u << 20;
+
+// Only the consumer updates the hash. A single reader fills at most two
+// bounded heap buffers from the original borrowed descriptor. Every exit
+// joins it before either the buffers or the caller's descriptor can expire.
+template <typename Check, typename Consume>
+void sha256_read_ahead(int fd, uint64_t bytes, Check &&check, Consume &&consume) {
+    struct Block {
+        std::vector<char> data = std::vector<char>(sha256_chunk_bytes);
+        size_t count = 0;
+        uint64_t offset = 0;
+        bool ready = false;
+    };
+    std::array<Block, 2> blocks;
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool done = false;
+    std::exception_ptr failure;
+    std::jthread reader([&](std::stop_token stop) {
+        try {
+            uint64_t offset = 0, sequence = 0;
+            const auto reader_check = [&] {
+                if (stop.stop_requested()) throw Cancelled();
+                check();
+            };
+            while (offset < bytes) {
+                reader_check();
+                auto &block = blocks[sequence % blocks.size()];
+                {
+                    std::unique_lock lock(mutex);
+                    while (block.ready) {
+                        reader_check();
+                        changed.wait_for(lock, std::chrono::milliseconds(1));
+                    }
+                }
+                reader_check();
+                const size_t count = static_cast<size_t>(
+                    std::min<uint64_t>(block.data.size(), bytes - offset));
+                const ssize_t read = ::pread(fd, block.data.data(), count,
+                                             static_cast<off_t>(offset));
+                if (read < 0 && errno == EINTR) continue;
+                require(read > 0, "SHA-256 source read failed or truncated");
+                reader_check();
+                {
+                    std::lock_guard lock(mutex);
+                    block.count = static_cast<size_t>(read);
+                    block.offset = offset;
+                    block.ready = true;
+                }
+                changed.notify_all();
+                offset += static_cast<uint64_t>(read);
+                ++sequence;
+            }
+        } catch (...) {
+            std::lock_guard lock(mutex);
+            failure = std::current_exception();
+        }
+        {
+            std::lock_guard lock(mutex);
+            done = true;
+        }
+        changed.notify_all();
+    });
+    try {
+        uint64_t offset = 0, sequence = 0;
+        while (offset < bytes) {
+            auto &block = blocks[sequence % blocks.size()];
+            {
+                std::unique_lock lock(mutex);
+                while (!block.ready && !done) {
+                    check();
+                    changed.wait_for(lock, std::chrono::milliseconds(1));
+                }
+                check();
+                if (!block.ready) {
+                    if (failure) std::rethrow_exception(failure);
+                    throw std::runtime_error("SHA-256 source read failed or truncated");
+                }
+                require(block.offset == offset && block.count > 0 &&
+                            block.count <= block.data.size(),
+                        "SHA-256 source read order changed");
+            }
+            // Keep ready=true until consumption completes: the producer can
+            // fill the other buffer, but cannot overwrite this input.
+            consume(block.data.data(), block.count);
+            offset += block.count;
+            {
+                std::lock_guard lock(mutex);
+                block.ready = false;
+            }
+            changed.notify_all();
+            ++sequence;
+        }
+        check();
+        reader.join();
+        if (failure) std::rethrow_exception(failure);
+    } catch (...) {
+        if (reader.joinable()) {
+            reader.request_stop();
+            changed.notify_all();
+            reader.join();
+        }
+        throw;
+    }
 }
 
 } // namespace
@@ -508,28 +620,39 @@ std::string memory_sha256_fd(int fd, uint64_t bytes,
             throw Cancelled();
     };
     check_cancelled();
-    std::vector<char> buffer(1024 * 1024);
+    const auto *control = std::getenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD");
+    require(!control || std::string_view(control) == "0" || std::string_view(control) == "1",
+            "source hash read-ahead control requires 0 or 1");
 #if defined(__APPLE__)
     CC_SHA256_CTX hash;
     CC_SHA256_Init(&hash);
 #else
     Sha256 hash;
 #endif
-    uint64_t offset = 0;
-    while (offset < bytes) {
+    const auto consume = [&](const char *data, size_t count) {
         check_cancelled();
-        const size_t count = static_cast<size_t>(
-            std::min<uint64_t>(buffer.size(), bytes - offset));
-        const ssize_t read = ::pread(fd, buffer.data(), count,
-                                     static_cast<off_t>(offset));
-        if (read < 0 && errno == EINTR) continue;
-        require(read > 0, "SHA-256 source read failed or truncated");
 #if defined(__APPLE__)
-        CC_SHA256_Update(&hash, buffer.data(), static_cast<CC_LONG>(read));
+        CC_SHA256_Update(&hash, data, static_cast<CC_LONG>(count));
 #else
-        hash.update(std::string_view(buffer.data(), static_cast<size_t>(read)));
+        hash.update(std::string_view(data, count));
 #endif
-        offset += static_cast<uint64_t>(read);
+    };
+    if (bytes >= 2 * sha256_chunk_bytes && (!control || std::string_view(control) == "1")) {
+        sha256_read_ahead(fd, bytes, check_cancelled, consume);
+    } else {
+        std::vector<char> buffer(sha256_chunk_bytes);
+        uint64_t offset = 0;
+        while (offset < bytes) {
+            check_cancelled();
+            const size_t count = static_cast<size_t>(
+                std::min<uint64_t>(buffer.size(), bytes - offset));
+            const ssize_t read = ::pread(fd, buffer.data(), count,
+                                         static_cast<off_t>(offset));
+            if (read < 0 && errno == EINTR) continue;
+            require(read > 0, "SHA-256 source read failed or truncated");
+            consume(buffer.data(), static_cast<size_t>(read));
+            offset += static_cast<uint64_t>(read);
+        }
     }
     check_cancelled();
 #if defined(__APPLE__)

@@ -8,9 +8,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -31,6 +33,19 @@ bool same_bytes(const array& a,const array& b) {
     mx::eval(first,second);
     return std::memcmp(first.data<uint8_t>(),second.data<uint8_t>(),first.nbytes())==0;
 }
+class ScopedTestEnvironment {
+    std::string name_,previous_;
+    bool had_previous_;
+  public:
+    ScopedTestEnvironment(const char* name,const char* value):name_(name),had_previous_(std::getenv(name)!=nullptr) {
+        if(had_previous_)previous_=std::getenv(name);
+        check(setenv(name,value,1)==0,"could not configure test environment");
+    }
+    ~ScopedTestEnvironment() {
+        if(had_previous_)setenv(name_.c_str(),previous_.c_str(),1);
+        else unsetenv(name_.c_str());
+    }
+};
 double relative(const std::vector<float>& actual,const std::vector<float>& expected) {
     check(actual.size()==expected.size(),"output geometry changed");
     double error=0,denominator=0;
@@ -242,8 +257,187 @@ void typed_output_cases() {
     check(rejected,"typed ConvRot accepted a non-floating output dtype");
     std::cout<<"typed_output_cases="<<checked<<" eager_compiled_full_bytes=PASS f32_api_unchanged=true bias_after_cast=true\n";
 }
+void shared_a8_cases() {
+    const std::array<mx::Dtype,3> dtypes{mx::bfloat16,mx::float16,mx::float32};
+    const auto stream=mx::to_stream(mx::StreamOrDevice{});
+    const cider::ConvrotW8A8ManyLinear a(stream,mx::bfloat16,{17,129,3}),
+        same(stream,mx::bfloat16,{17,129,3}),different_dtype(stream,mx::float16,{17,129,3}),
+        reordered(stream,mx::bfloat16,{129,17,3}),different_count(stream,mx::bfloat16,{149});
+    check(a.is_equivalent(same) && !a.is_equivalent(different_dtype) &&
+          !a.is_equivalent(reordered) && !a.is_equivalent(different_count),
+          "shared A8 equivalence omitted output dtype or ordered projection widths");
+    uint64_t checked=0;
+    auto references=[](const array& x,const std::vector<array>& codes,const std::vector<array>& scales,mx::Dtype dtype) {
+        std::vector<array> expected;
+        for(size_t i=0;i<codes.size();++i)
+            expected.push_back(cider::convrot_linear_typed(x,codes[i],scales[i],dtype));
+        mx::eval(expected);return expected;
+    };
+    auto check_counts=[](const cider::ConvrotW8A8Stats& before,const cider::ConvrotW8A8QuantStats& quant,
+                         size_t count,int rows) {
+        const auto after=cider::convrot_w8a8_stats();
+        const auto after_quant=cider::convrot_w8a8_quant_stats();
+        check(after.projections-before.projections==count &&
+              after.activation_rows-before.activation_rows==count*uint64_t(rows),
+              "shared A8 changed historical per-projection receipt coverage");
+        check(after_quant.dispatches-quant.dispatches==1 &&
+              after_quant.activation_rows-quant.activation_rows==uint64_t(rows),
+              "shared A8 did not execute exactly one physical quantization");
+    };
+    // Every group has odd/tail widths and distinct coefficients. Odd M*N
+    // lengths exercise byte offsets such as 34 bytes for BF16/F16 stores.
+    // Production token count uses small N to keep this a bounded GPU test.
+    for(const auto shape:{std::array{1,256},std::array{33,768},std::array{64,512},
+                          std::array{65,256},std::array{1024,256}})
+        for(const auto input_dtype:dtypes) {
+            const auto [m,k]=shape;
+            const bool strided=m==33;
+            const auto wide=input(m,k+(strided?256:0),input_dtype,false);
+            const auto x=strided ? mx::slice(wide,{0,256},{m,k+256}) : wide;
+            std::vector<array> codes,scales;
+            for(const int n:{17,129,3}) {
+                auto [w,s]=weights(n+(strided?2:0),k+(strided?256:0));
+                s=s*array(float(codes.size()+1),mx::float32);
+                if(strided) {
+                    w=mx::slice(w,{1,256},{n+1,k+256});
+                    s=mx::slice(s,{1,0},{n+1,1});
+                    // The scale column is also a nonzero-offset strided view.
+                    s=mx::slice(mx::concatenate({s,-s},1),{0,1},{n,2});
+                }
+                scales.push_back(s);
+                codes.push_back(w);
+            }
+            for(const auto dtype:dtypes) {
+                const auto expected=references(x,codes,scales,dtype);
+                const auto before=cider::convrot_w8a8_stats();
+                const auto quant=cider::convrot_w8a8_quant_stats();
+                const auto actual=cider::convrot_linear_many_typed(x,codes,scales,dtype);
+                check(actual.size()==codes.size(),"shared A8 omitted a projection");
+                mx::eval(actual[1]);
+                check_counts(before,quant,codes.size(),m);
+                // A single requested view computes the opaque flat operation.
+                // Other views must reuse its completed allocation and dispatch.
+                mx::eval(actual[2],actual[0]);
+                check_counts(before,quant,codes.size(),m);
+                int64_t element_offset=0;
+                for(size_t i=0;i<actual.size();++i) {
+                    check(actual[i].shape()==mx::Shape{m,codes[i].shape(0)} && actual[i].dtype()==dtype &&
+                          same_bytes(actual[i],expected[i]),
+                          "shared A8 tail/strided/heterogeneous projection differs from independent typed output");
+                    check(actual[i].data_shared_ptr()==actual[0].data_shared_ptr() &&
+                          actual[i].offset()-actual[0].offset()==element_offset*int64_t(actual[i].itemsize()),
+                          "shared A8 flat views lost their contiguous byte origins");
+                    check(actual[i].siblings().empty(),"shared A8 introduced multi-output siblings");
+                    element_offset+=int64_t(m)*codes[i].shape(0);++checked;
+                }
+            }
+        }
+    // W and row scales are explicit graph arguments, as in streamed slots.
+    // Same x + changed W, then changed scales, changed x, and restored sources
+    // must each replay numerically; only dtype is captured by the function.
+    std::vector<array> codes,scales;
+    for(const int n:{17,129,3}) {auto [w,s]=weights(n,256);codes.push_back(w);scales.push_back(s);}
+    const auto x=input(33,256,mx::bfloat16,false);
+    for(const auto dtype:dtypes) {
+        auto compiled=mx::compile([dtype](const std::vector<array>& args) {
+            return cider::convrot_linear_many_typed(args[0],{args[1],args[3],args[5]},
+                                                    {args[2],args[4],args[6]},dtype);
+        });
+        const auto original=references(x,codes,scales,dtype);
+        for(int replay=0;replay<5;++replay) {
+            auto ws=codes,ss=scales;auto changed=x;
+            if(replay==1)ws[1]=-ws[1];
+            if(replay==2)ss[0]=ss[0]*array(2.f,mx::float32);
+            if(replay==3)changed=x*array(2.f,mx::bfloat16);
+            const auto expected=references(changed,ws,ss,dtype);
+            if(replay>=1 && replay<=3)
+                check(!same_bytes(expected[replay==1?1:0],original[replay==1?1:0]),
+                      "compiled shared A8 changed-source fixture produced no visible difference");
+            const auto before=cider::convrot_w8a8_stats();
+            const auto quant=cider::convrot_w8a8_quant_stats();
+            const auto actual=compiled({changed,ws[0],ss[0],ws[1],ss[1],ws[2],ss[2]});
+            mx::eval(actual[1]);check_counts(before,quant,3,33);
+            mx::eval(actual);check_counts(before,quant,3,33);
+            for(size_t i=0;i<actual.size();++i) {
+                check(same_bytes(actual[i],expected[i]),"compiled shared A8 reused stale W/scale/input or wrong dtype");
+                ++checked;
+            }
+        }
+    }
+    // Keep both the compiled function and all returned views alive while
+    // releasing source owners after evaluating ONLY the middle projection.
+    // A completed flat output may own its allocation, never retired W or x.
+    auto owner_graph=mx::compile([](const std::vector<array>& args) {
+        return cider::convrot_linear_many_typed(args[0],{args[1],args[3],args[5]},
+                                                {args[2],args[4],args[6]},mx::bfloat16);
+    });
+    for(bool compiled_mode:{false,true}) {
+        std::vector<std::weak_ptr<array::Data>> owners;
+        std::vector<array> retained,expected;
+        auto before=cider::convrot_w8a8_stats();auto quant=cider::convrot_w8a8_quant_stats();
+        {
+            std::vector<array> args{input(33,256,mx::bfloat16,false)};
+            std::vector<array> ws,ss;
+            for(const int n:{128,256,128}) {
+                auto [w,s]=weights(n,256);ws.push_back(w);ss.push_back(s);
+                args.push_back(w);args.push_back(s);
+            }
+            mx::eval(args);
+            for(const auto& argument:args)owners.emplace_back(argument.data_shared_ptr());
+            expected=references(args[0],ws,ss,mx::bfloat16);
+            before=cider::convrot_w8a8_stats();quant=cider::convrot_w8a8_quant_stats();
+            retained=compiled_mode ? owner_graph(args) :
+                cider::convrot_linear_many_typed(args[0],ws,ss,mx::bfloat16);
+            mx::eval(retained[1]);check_counts(before,quant,3,33);
+        }
+        mx::synchronize();
+        for(const auto& owner:owners)
+            check(owner.expired(),"evaluated shared A8 views or compiled graph retained a retired source owner");
+        mx::eval(retained);check_counts(before,quant,3,33);
+        for(size_t i=0;i<retained.size();++i) {
+            check(same_bytes(retained[i],expected[i]),"shared A8 output changed after source-owner retirement");
+            ++checked;
+        }
+    }
+    // Sharing must propagate the original nonfinite-row contract to every
+    // projection, including a zero source coefficient in the same group.
+    for(const float invalid:{std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+        std::vector<float> source(256,1.f);source[173]=invalid;
+        const auto bad=array(source.data(),{1,256},mx::float32);
+        for(const auto dtype:dtypes) {
+            const auto expected=references(bad,codes,scales,dtype);
+            const auto actual=cider::convrot_linear_many_typed(bad,codes,scales,dtype);
+            mx::eval(actual);
+            for(size_t i=0;i<actual.size();++i) {
+                check(same_bytes(actual[i],expected[i]),"shared A8 hid or changed a nonfinite row");
+                ++checked;
+            }
+        }
+    }
+    const auto single=cider::convrot_linear_many_typed(x,{codes[0]},{scales[0]},mx::bfloat16);
+    check(single.size()==1 && same_bytes(single[0],cider::convrot_linear_typed(x,codes[0],scales[0],mx::bfloat16)),
+          "single-projection shared A8 API changed the existing typed path");
+    auto reject=[](auto&& call) {
+        bool rejected=false;try {call();}catch(const std::invalid_argument&) {rejected=true;}
+        check(rejected,"shared A8 accepted an invalid projection contract");
+    };
+    reject([&]{cider::convrot_linear_many_typed(x,{}, {},mx::bfloat16);});
+    reject([&]{cider::convrot_linear_many_typed(x,codes,{scales[0]},mx::bfloat16);});
+    reject([&]{cider::convrot_linear_many_typed(x,codes,scales,mx::int8);});
+    reject([&]{cider::convrot_linear_many_typed(x,{mx::astype(codes[0],mx::float16)},{scales[0]},mx::bfloat16);});
+    reject([&]{cider::convrot_linear_many_typed(x,{codes[0]},{mx::astype(scales[0],mx::bfloat16)},mx::bfloat16);});
+    reject([&]{cider::convrot_linear_many_typed(mx::slice(x,{0,0},{33,255}),codes,scales,mx::bfloat16);});
+    // Bounded lazy views exercise the shape-overflow guard without creating
+    // or evaluating multi-gigabyte input/output allocations.
+    reject([&]{cider::convrot_linear_many_typed(
+        mx::broadcast_to(array(1.f),{65536,256}),
+        {mx::broadcast_to(array(int8_t(1)),{32768,256})},
+        {mx::broadcast_to(array(1.f),{32768,1})},mx::bfloat16);});
+    std::cout<<"shared_a8_cases="<<checked<<" eager_compiled_full_bytes=PASS one_quant=true partial_eval_no_replay=true source_owners_released=true\n";
+}
 #ifndef TC_CONVROT_PRIMITIVE_ONLY
-void shared_weights_cases() {
+void shared_weights_cases(const std::filesystem::path& adapter={}) {
+    const ScopedTestEnvironment shared_a8("TURBOCIDER_QWEN21_CONVROT_SHARED_A8","1");
     using namespace tc;configure_streams();Weights source;
     auto [w,s]=weights(33,512);auto tag=mx::zeros({1},mx::uint8);
     auto bias=mx::full({33},.125f,mx::bfloat16);
@@ -251,8 +445,15 @@ void shared_weights_cases() {
     check(!source.convrot_w8a8(),"Weights owner flag must be configured explicitly");
     source.set_convrot_w8a8(true);check(source.at("p.weight").dtype()==mx::int8,"original codes mutated");
     auto x=mx::reshape(input(33,512,mx::bfloat16,false),{1,33,512});
-    auto full=source.project(x,"p");auto many=source.project_many(x,{"p","p"});mx::eval(full,many[0],many[1]);
+    auto full=source.project(x,"p");mx::eval(full);
+    const auto quant_before=cider::convrot_w8a8_quant_stats();
+    auto many=source.project_many(x,{"p","p"});mx::eval(many);
+    const auto quant_after=cider::convrot_w8a8_quant_stats();
+    check(quant_after.dispatches-quant_before.dispatches==1 &&
+          quant_after.activation_rows-quant_before.activation_rows==33,
+          "Weights::project_many did not share one A8 dispatch");
     check(values(full)==values(many[0]) && values(full)==values(many[1]),"shared projection or bias boundary changed");
+    check(same_bytes(full,many[0]) && same_bytes(full,many[1]),"shared typed bias changed signed-zero or rounding bytes");
     auto slice=source.project_base_slice(x,"p",1,32,0,512,false);
     auto partial=source.project_base_slice_fp32(x,"p",1,32,0,512);mx::eval(slice,partial);
     check(values(slice)==values(mx::astype(partial,x.dtype())),"FP32 partial was narrowed before the join");
@@ -270,6 +471,38 @@ void shared_weights_cases() {
     check(source.at("p.weight").id()==w.id() && source.at("p.weight_scale").id()==s.id(),"source identity changed");
     bool rejected=false;try{source.pack_convrot_q8(128,mx::float32);}catch(const std::exception&){rejected=true;}
     check(rejected,"packed recipe replaced live raw W8A8 source");
+    if(!adapter.empty()) {
+        // Both the independent and shared base paths must apply the online
+        // LoRA to ORIGINAL x, keep its typed addition, then add typed bias.
+        // The existing driver owns this adapter directory and removes it.
+        auto fixture=adapter;fixture+=".shared.safetensors";
+        constexpr int rank=2;
+        const auto down=mx::reshape(mx::astype((mx::arange(rank*512,mx::int32)*3)%13-6,mx::float32)/32.f,{rank,512});
+        const auto up=mx::reshape(mx::astype((mx::arange(33*rank,mx::int32)*5)%11-5,mx::float32)/16.f,{33,rank});
+        mx::save_safetensors(fixture.string(),{{"p.lora_A.weight",down},{"p.lora_B.weight",up},{"p.alpha",array(1.f)}});
+        Weights corrected=source;
+        std::atomic<bool> cancelled{false};
+        check(corrected.apply_loras({{fixture.string(),.75f,"transformer"}},"transformer",
+              [](const std::string&,int,int){},cancelled,true,true)==1 && corrected.has_runtime_loras(),
+              "shared A8 LoRA/bias fixture did not bind its original logical projection");
+        const auto expected=corrected.project(x,"p");mx::eval(expected);
+        check(!same_bytes(expected,full),"shared A8 LoRA fixture made no visible correction");
+        const auto projections_before=cider::convrot_w8a8_stats();
+        const auto lora_quant_before=cider::convrot_w8a8_quant_stats();
+        const auto corrected_many=corrected.project_many(x,{"p","p"});mx::eval(corrected_many);
+        const auto projections_after=cider::convrot_w8a8_stats();
+        const auto lora_quant_after=cider::convrot_w8a8_quant_stats();
+        check(same_bytes(expected,corrected_many[0]) && same_bytes(expected,corrected_many[1]),
+              "shared A8 changed online LoRA or the following typed bias boundary");
+        check(lora_quant_after.dispatches-lora_quant_before.dispatches==1 &&
+              lora_quant_after.activation_rows-lora_quant_before.activation_rows==33 &&
+              projections_after.projections-projections_before.projections==2 &&
+              projections_after.activation_rows-projections_before.activation_rows==66,
+              "shared LoRA/bias path changed quant or historical projection receipt coverage");
+        check(corrected.at("p.weight").id()==w.id() && corrected.at("p.weight_scale").id()==s.id(),
+              "shared online LoRA replaced original ConvRot source owners");
+        std::filesystem::remove(fixture);
+    }
     source.set_convrot_w8a8(false);auto old=source.project(x,"p");mx::eval(old);
     check(relative(values(full),values(old))<.025,"full ConvRot projection exceeds approximation budget");
     std::cout<<"shared_weights=PASS explicit_owner_flag=true source_unchanged=true\n";
@@ -365,9 +598,9 @@ int main(int argc,char** argv) { try {
     if(argc==2) qwen_lora_cases(argv[1],has_w8a8);
 #endif
     if(!has_w8a8){std::cout<<"SKIP M5 TensorOps unavailable\n";return 0;}
-    mx::set_default_device(mx::Device::gpu);primitive_cases();typed_output_cases();
+    mx::set_default_device(mx::Device::gpu);primitive_cases();typed_output_cases();shared_a8_cases();
 #ifndef TC_CONVROT_PRIMITIVE_ONLY
-    shared_weights_cases();
+    shared_weights_cases(argc==2 ? std::filesystem::path(argv[1]) : std::filesystem::path{});
 #endif
     std::cout<<"PASS ConvRot original-code W8A8 CPU oracle, dtype/range, padding, compiled and GPU receipts\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;} }

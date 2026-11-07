@@ -19,6 +19,9 @@ using Tensor = mx::array;
 bool convrot_w8a8_available();
 struct ConvrotW8A8Stats { uint64_t projections = 0, activation_rows = 0; };
 ConvrotW8A8Stats convrot_w8a8_stats();
+struct ConvrotW8A8QuantStats { uint64_t dispatches = 0, activation_rows = 0; };
+ConvrotW8A8QuantStats convrot_w8a8_quant_stats();
+bool convrot_shared_a8_enabled();
 class Weights {
   public:
     struct ResolvedLoRATerm {

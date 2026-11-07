@@ -43,6 +43,7 @@ class OriginalConvrotW8A8Tests(unittest.TestCase):
                 self.skipTest("M5 TensorOps unavailable; raw/packed ConvRot LoRA regression passed")
             self.assertIn("PASS ConvRot original-code W8A8", result.stdout)
             self.assertIn("shared_weights=PASS", result.stdout)
+            self.assertIn("shared_a8_cases=", result.stdout)
             print(result.stdout.strip())
 
 

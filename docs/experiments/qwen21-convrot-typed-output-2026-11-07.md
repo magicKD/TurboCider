@@ -53,6 +53,33 @@ TURBOCIDER_TEST_GPU=1 MLX_ENABLE_TF32=0 \
   .venv/bin/python -B tests/native/test_qwen21_convrot_w8a8.py
 ```
 
+## Projection timing pilot
+
+On the same M5 Pro, original extracted checkpoint matrices and two seeded
+BF16 rotated-domain inputs were compared in compiled, synchronized Cider
+calls. A is F32 GEMM output followed by BF16 cast; B is direct BF16 store.
+H256, bias, checkpoint loading, encoder/DiT scheduling, and image output are
+outside these timers. Each shape has ABBA and BAAB windows, five warmups
+per arm/window and 20 samples per block. Complete output bytes are checked
+before and after each window; formal windows contain no CPU output reads.
+
+| Shape (M,N,K) | A median ms | B median ms | A/B |
+| --- | ---: | ---: | ---: |
+| encoder Q (64,4096,4096) | 0.5670 | 0.5573 | 1.017 |
+| encoder Q (256,4096,4096) | 0.4855 | 0.4590 | 1.058 |
+| DiT Q (1024,4096,4096) | 1.1764 | 1.1130 | 1.057 |
+| DiT gate/up (1024,24576,4096) | 5.5401 | 4.9501 | 1.119 |
+| DiT down (1024,4096,12288) | 3.0512 | 2.9951 | 1.019 |
+
+The M64 ordering reversed between windows (1.042 versus 0.890); no stable
+gain is established there. The other four shapes improved in both orders.
+All 800 formal samples and 980 actual projection executions passed their
+coverage checks, and all output byte comparisons passed. An initial
+observer-affected attempt is preserved separately and excluded. These
+component results do not establish an end-to-end speedup.
+
+Raw evidence: `outputs/qwen-convrot-gpu-fusion-20261107/typed-store-micro/`.
+
 ## Limits
 
 An additional complete 512×512 image comparison could not finish on this

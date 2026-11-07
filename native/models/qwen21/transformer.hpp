@@ -70,6 +70,13 @@ class Transformer {
                    std::unordered_map<std::string, Tensor> *trace = nullptr,
                    const std::vector<ReferenceLatents> &references = {});
     size_t cached_layers() const { return prefix_.size(); }
+    // Read-only ownership diagnostics; never evaluate or retain tensors.
+    struct PrefixStorageInfo {
+        uint64_t logical_bytes=0,backing_bytes=0;
+        uint32_t arrays=0;
+        bool evaluated=true,compact=true;
+    };
+    PrefixStorageInfo prefix_storage() const;
     // The caller resolves device/request policy once. Existing environment
     // choices remain in effect unless this effective configuration is applied.
     // Reconfiguration invalidates prefix and compiled state from the old recipe.

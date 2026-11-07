@@ -36,6 +36,8 @@ std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,co
         raw=mx::split(linear(input,weights,p+".self_attn.qk_proj"),mx::Shape{config.heads*config.head_dim},-1);
         raw.push_back(linear(input,weights,p+".self_attn.v_proj"));
     }
+    else if(weights.convrot_w8a8() && convrot_shared_a8_enabled())
+        raw=weights.project_many(input,{p+".self_attn.q_proj",p+".self_attn.k_proj",p+".self_attn.v_proj"});
     else raw={linear(input,weights,p+".self_attn.q_proj"),linear(input,weights,p+".self_attn.k_proj"),linear(input,weights,p+".self_attn.v_proj")};
     auto q=raw[0],k=raw[1],v=heads(raw[2],config.kv_heads,config.head_dim);
     if(config.fused_gpu_prefill) {
@@ -61,6 +63,10 @@ Tensor full_ffn(const Tensor &x,const Weights &weights,const std::string &mlp) {
     if(weights.has(mlp+".gate_up.weight")) {
         auto gu=mx::split(linear(x,weights,mlp+".gate_up"),2,-1);
         return linear(silu(gu[0])*gu[1],weights,mlp+".down_proj");
+    }
+    if(weights.convrot_w8a8() && convrot_shared_a8_enabled()) {
+        const auto pair=weights.project_many(x,{mlp+".gate_proj",mlp+".up_proj"});
+        return linear(silu(pair[0])*pair[1],weights,mlp+".down_proj");
     }
     return linear(silu(linear(x,weights,mlp+".gate_proj"))*linear(x,weights,mlp+".up_proj"),weights,mlp+".down_proj");
 }
