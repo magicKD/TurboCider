@@ -32,6 +32,23 @@ int main(int argc,char**argv){try{
     check(turbo_checkpoint(convrot)&&convrot_checkpoint(convrot),"Turbo ConvRot recipe not distinct");
     rejected([&]{validate_checkpoint_recipe(r,convrot);});r.execution="gpu";validate_checkpoint_recipe(r,convrot);
     check(configured_convrot_packed(),"ConvRot default must preserve compact original codes/F32 coefficients");
+    check(!configured_convrot_w8a8(false,false)&&!configured_convrot_w8a8(true,false),"older GPU must retain floating activations");
+    check(configured_convrot_w8a8(false,true)&&configured_convrot_w8a8(true,true),"M5+ must default both components to W8A8");
+    setenv("TURBOCIDER_QWEN21_CONVROT_W8A8","1",1);
+    check(configured_convrot_w8a8()&&configured_convrot_w8a8(true),"common switch must select both components");
+    validate_checkpoint_recipe(r,convrot);
+    r.execution="gpu_ane";rejected([&]{validate_checkpoint_recipe(r,convrot);});r.execution="gpu";
+    setenv("TURBOCIDER_QWEN21_CONVROT_W8A8_ENCODER","0",1);
+    check(configured_convrot_w8a8()&&!configured_convrot_w8a8(true),"encoder ablation changed DiT");
+    check(!configured_convrot_w8a8(true,true),"explicit encoder reference override lost to hardware default");
+    setenv("TURBOCIDER_QWEN21_CONVROT_W8A8_DIT","0",1);
+    setenv("TURBOCIDER_QWEN21_CONVROT_W8A8_ENCODER","1",1);
+    check(!configured_convrot_w8a8()&&configured_convrot_w8a8(true),"DiT ablation changed encoder");
+    for(const char* key:{"TURBOCIDER_QWEN21_CONVROT_W8A8","TURBOCIDER_QWEN21_CONVROT_W8A8_DIT","TURBOCIDER_QWEN21_CONVROT_W8A8_ENCODER"}) {
+        setenv(key,"invalid",1);
+        rejected([&]{configured_convrot_w8a8(std::string_view(key).ends_with("ENCODER"));});
+        unsetenv(key);
+    }
     r.execution="gpu_ane";r.ane_manifest="fixed.json";
     setenv("TURBOCIDER_ANE_BACKEND","private",1);setenv("TURBOCIDER_ALLOW_PRIVATE_ANE","1",1);
     setenv("TURBOCIDER_PRIVATE_ANE_DATA_PATH","convrot_w8a8",1);setenv("TURBOCIDER_PRIVATE_ANE_FIXED_PROGRAM","1",1);
@@ -42,5 +59,17 @@ int main(int argc,char**argv){try{
     setenv("TURBOCIDER_QWEN21_PRIVATE_QKV","1",1);rejected([&]{validate_checkpoint_recipe(r,convrot);});unsetenv("TURBOCIDER_QWEN21_PRIVATE_QKV");
     const float nodes[]={1.f,.978453f,.95418f,.926626f,.89508f,.845148f,.704534f,.414568f,0.f};
     for(size_t i=0;i<9;++i){check(turbo_sigma_nodes[i]==nodes[i],"authored final sigma changed");if(i<8)check(nodes[i]>nodes[i+1],"Turbo nodes not descending");}
+    r.execution="gpu"; r.hybrid_mlp_mode="auto"; r.ane_manifest.clear();
+    r.width=r.height=512; r.residency="streamed";
+    validate_checkpoint_recipe(r,convrot,true);
+    r.width=768; rejected([&]{validate_checkpoint_recipe(r,convrot,true);}); r.width=512;
+    r.loras.emplace_back(); rejected([&]{validate_checkpoint_recipe(r,convrot,true);}); r.loras.clear();
+    r.execution="gpu_ane"; r.hybrid_mlp_mode="runtime"; r.ane_manifest="fixed.json";
+    rejected([&]{validate_checkpoint_recipe(r,convrot,true);});
+    setenv("TURBOCIDER_QWEN21_CONVROT_STREAM_ANE","1",1);
+#if !TURBOCIDER_ENABLE_PRIVATE_ANE
+    rejected([&]{validate_checkpoint_recipe(r,convrot,true);});
+#endif
+    unsetenv("TURBOCIDER_QWEN21_CONVROT_STREAM_ANE");
     std::cout<<"PASS checkpoint selection, separate Turbo fixed8 recipe and strict format/route guards\n";return 0;
 }catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -450,6 +450,36 @@ void HybridFfn::drain(bool discard_future) {
 void HybridFfn::release_for_memory(const std::string &reason) {
     degrade(reason, -1);
 }
+#if TURBOCIDER_ENABLE_PRIVATE_ANE
+void HybridFfn::enable_streamed_convrot_admission() {
+    require(!streamed_convrot_admission_ && layer_ == -1 && !planned_ && !pending_ && !block_plan_ &&
+            (!available() || (graph_->backend() == BackendKind::PrivateANE && channel_split() &&
+                graph_->data_path() == "w8a8_convrot" && fp32_channel_join_ && fixed_async_ && !prefetch_ &&
+                metrics_.runtime_weight_fixed_program_requested)),
+            "streaming source admission requires an idle fixed Private ConvRot FFN without prefetch");
+    streamed_convrot_admission_ = true;
+}
+#endif
+std::optional<std::string> HybridFfn::source_memory_denial(uint64_t resident, uint64_t growth,
+        std::optional<MemoryObservation> observation) const {
+#if TURBOCIDER_ENABLE_PRIVATE_ANE
+    if (streamed_convrot_admission_) {
+        require(!observation, "streamed Runtime ANE requires a live physical memory observation");
+        if (resident > memory_budget_ || growth > memory_budget_ - resident)
+            return "streamed Runtime ANE optional budget exceeded";
+        try {
+            require_streaming_memory_headroom(mx::get_active_memory(), growth, "streamed Runtime ANE");
+        } catch (const std::invalid_argument &error) {
+            return error.what();
+        }
+        return std::nullopt;
+    }
+#endif
+    const auto observed = observation ? *observation : observe_runtime_memory(mx::get_active_memory());
+    const auto decision = admit_memory(observed, {uint64_t(4) << 30, memory_budget_}, resident, growth);
+    if (!decision.allowed()) return memory_denial_reason(decision.denial, observed);
+    return std::nullopt;
+}
 bool HybridFfn::admit_scratch(int ane_rows, bool adapter) {
     if (!graph_ || ane_rows <= 0) return false;
     const auto existing_output = uint64_t(output_.capacity()) * sizeof(uint16_t);
@@ -467,14 +497,9 @@ bool HybridFfn::admit_scratch(int ane_rows, bool adapter) {
     // Recheck immediately before allocating; skip the Mach calls when no new
     // host payload is needed (resident pressure is checked per request).
     if (scratch->new_payload_bytes) {
-        const auto observed = observe_runtime_memory(mx::get_active_memory());
-        const auto decision = admit_memory(observed,
-            {uint64_t(4) << 30, memory_budget_},
-            resident + existing_output + existing_hidden,
-            scratch->new_payload_bytes);
-        if (!decision.allowed()) {
-            release_for_memory("runtime ANE host scratch admission denied (" +
-                               memory_denial_reason(decision.denial, observed) + ")");
+        if (const auto denial = source_memory_denial(resident + existing_output + existing_hidden,
+                                                     scratch->new_payload_bytes)) {
+            release_for_memory("runtime ANE host scratch admission denied (" + *denial + ")");
             return false;
         }
     }
@@ -486,12 +511,8 @@ void HybridFfn::begin_request(const std::string &adapter_identity,
     save_scheduler();
     if (graph_) {
         const auto retained = retained_bytes();
-        const auto observed = observation ? *observation : observe_runtime_memory(mx::get_active_memory());
-        const auto decision = admit_memory(observed,
-            {uint64_t(4) << 30, memory_budget_}, graph_->estimated_bytes() + retained, 0);
-        if (!decision.allowed())
-            release_for_memory("runtime ANE resident memory admission denied (" +
-                               memory_denial_reason(decision.denial, observed) + ")");
+        if (const auto denial = source_memory_denial(graph_->estimated_bytes() + retained, 0, observation))
+            release_for_memory("runtime ANE resident memory admission denied (" + *denial + ")");
     }
     const auto cache_key = scheduler_identity_.empty() ? std::string{} :
         scheduler_identity_ + identity_part(adapter_identity);
@@ -700,9 +721,8 @@ void HybridFfn::materialize_sources(std::vector<FfnWeight> &weights) {
         }
     if(growth){
         require(graph_!=nullptr,"runtime ConvRot metadata requires a live graph");
-        const auto observed=observe_runtime_memory(mx::get_active_memory());
-        const auto decision=admit_memory(observed,{uint64_t(4)<<30,memory_budget_},graph_->estimated_bytes()+retained_bytes(),growth);
-        require(decision.allowed(),"runtime ConvRot metadata scratch admission denied");
+        if (const auto denial = source_memory_denial(graph_->estimated_bytes() + retained_bytes(), growth))
+            throw std::invalid_argument("runtime ConvRot metadata scratch admission denied (" + *denial + ")");
     }
     ready.clear();
     for(auto &weight:weights)if(weight.transform==FfnWeight::Transform::ComfyH256Inverse)
@@ -1136,10 +1156,8 @@ Tensor HybridFfn::run_channels(int layer, const Tensor &input, const Gpu &gpu, c
         (adapter ? uint64_t(rows_) * metrics_.mlp_width * input.itemsize() : 0) + uint64_t(rows_) * h * 4 +
         (fp32_channel_join_ ? uint64_t(rows_) * h * 2 : 0) + rank_scratch;
     const uint64_t resident = graph_->estimated_bytes() + retained_bytes();
-    if (resident > memory_budget_ || scratch > memory_budget_ - resident ||
-        !admit_memory(observe_runtime_memory(mx::get_active_memory()), {uint64_t(4)<<30,memory_budget_},
-                      resident, scratch).allowed()) {
-        release_for_memory("runtime channel scratch memory admission denied");
+    if (const auto denial = source_memory_denial(resident, scratch)) {
+        release_for_memory("runtime channel scratch memory admission denied (" + *denial + ")");
         ++metrics_.runtime_weight_fallback_blocks;
         return fallback();
     }

@@ -28,6 +28,23 @@ inline bool configured_convrot_packed() {
         throw std::invalid_argument("Qwen21 ConvRot packing requires0 or1");
     return !raw || std::string_view(raw)=="1";
 }
+// A single switch selects both components; component overrides allow the
+// encoder and DiT to be measured independently against the same checkpoint.
+// The runtime supplies the Metal capability: M5+ defaults to W8A8, while
+// older GPUs retain floating activations. Overrides are useful for A/B runs.
+inline bool configured_convrot_w8a8(bool encoder=false,bool hardware_supported=false) {
+    const auto read=[](const char* key,const char* raw) {
+        if(raw && std::string_view(raw)!="0" && std::string_view(raw)!="1")
+            throw std::invalid_argument(std::string(key)+" requires 0 or 1");
+        return raw && std::string_view(raw)=="1";
+    };
+    const char* common=std::getenv("TURBOCIDER_QWEN21_CONVROT_W8A8");
+    const bool enabled=common ? read("TURBOCIDER_QWEN21_CONVROT_W8A8",common) : hardware_supported;
+    const char* key=encoder ? "TURBOCIDER_QWEN21_CONVROT_W8A8_ENCODER" :
+                             "TURBOCIDER_QWEN21_CONVROT_W8A8_DIT";
+    const char* component=std::getenv(key);
+    return component ? read(key,component) : enabled;
+}
 inline std::filesystem::path transformer_checkpoint_source(const std::filesystem::path& root) {
     // Existing base roots retain their preference. A separate Turbo/ConvRot
     // root uses the ORIGINAL filename and shared read-only companions. Never
@@ -51,19 +68,56 @@ inline void validate_turbo_request(const Request& r) {
     check((r.operation=="image.generate" && r.inputs.empty()) || (r.operation=="image.edit" && !r.inputs.empty() && r.inputs.size()<=2),
         "Turbo initial route supports generation or one/two-reference editing");
 }
-inline void validate_checkpoint_recipe(const Request& r,const std::filesystem::path& source) {
+inline constexpr uint64_t convrot_stream_weight_budget_bytes = uint64_t(4) << 30;
+
+inline bool convrot_stream_ane_requested(const Request &r) {
+    if (r.residency != "streamed" || r.execution != "gpu_ane" || r.hybrid_mlp_mode != "runtime")
+        return false;
+    const char *value = std::getenv("TURBOCIDER_QWEN21_CONVROT_STREAM_ANE");
+    if (!value || std::string_view(value) != "1") return false;
+#if TURBOCIDER_ENABLE_PRIVATE_ANE
+    return true;
+#else
+    throw std::invalid_argument("Qwen21 ConvRot streaming Runtime ANE requires a private diagnostic build");
+#endif
+}
+
+inline void validate_convrot_stream_request(const Request &r) {
+    const bool canvas = r.width >= 64 && r.height >= 64 && r.width <= 512 && r.height <= 512 &&
+                        r.width % 32 == 0 && r.height % 32 == 0;
+    if (!canvas || r.steps < 2 || r.steps > 40 || r.operation != "image.generate" || !r.inputs.empty())
+        throw std::invalid_argument("Qwen21 ConvRot streaming supports text-to-image up to 512x512 with 2...40 steps (Turbo uses exactly 8)");
+    const bool runtime_ane = convrot_stream_ane_requested(r);
+    const bool ordinary_gpu = (r.execution == "gpu" || r.execution == "auto") &&
+                              r.hybrid_mlp_mode == "auto" && r.ane_manifest.empty();
+    const bool diagnostic = runtime_ane && r.width == 512 && r.height == 512 && r.steps == 8 && !r.ane_manifest.empty();
+    if (!r.allow_approximation || (!ordinary_gpu && !diagnostic) || r.qwen21_denoiser_backend != "mlx" ||
+        !r.encoder_ane_manifest.empty() || !r.loras.empty() ||
+        r.prompt_enhance || r.qwen21_dit_cache != "off" || r.qwen21_w8a8 || r.qwen21_gpu_w8a16 ||
+        r.qwen21_dit_w8a8 || r.qwen21_dit_smoothquant_convrot || !r.qwen21_gpu_full_ffn_blocks.empty() ||
+        r.streaming.active() || r.streaming_offload || r.memory_constrained.enabled || r.memory_budget_bytes)
+        throw std::invalid_argument("Qwen21 ConvRot streaming requires approximate MLX GPU generation without LoRA, ANE, prompt enhancement or another memory/cache recipe");
+}
+
+inline void validate_checkpoint_recipe(const Request& r,const std::filesystem::path& source,bool w8a8_available=false) {
     const bool turbo=turbo_checkpoint(source);
     if(r.model_variant!="auto" && r.model_variant!=(turbo ? "qwen-image-2.1-turbo" : "qwen-image-2.1"))
         throw std::invalid_argument("Qwen21 requested model_variant differs from selected checkpoint; use a separate matching model root");
     if(turbo)validate_turbo_request(r);
+    if (r.residency == "streamed") validate_convrot_stream_request(r);
     if(convrot_checkpoint(source)) {
         const auto check=[](bool ok,const char* error){if(!ok)throw std::invalid_argument(error);};
         const bool packed=configured_convrot_packed();
-        check(r.allow_approximation && r.residency=="resident" && r.loras.empty() && r.qwen21_denoiser_backend=="mlx" &&
+        const bool w8a8=configured_convrot_w8a8(false,w8a8_available);
+        check(r.allow_approximation && (r.residency=="resident" || r.residency=="streamed") && r.loras.empty() && r.qwen21_denoiser_backend=="mlx" &&
             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 && r.qwen21_dit_cache=="off" &&
             !r.streaming.active() && !r.memory_constrained.enabled && !r.prompt_enhance,
             "Qwen21 ConvRot initial route requires explicit approximation, MLX and no base/student LoRA, frozen or temporal recipe");
-        if(r.execution=="gpu_ane") {
+        const bool streamed_runtime_ane = convrot_stream_ane_requested(r);
+        check(!w8a8 || streamed_runtime_ane || ((r.execution=="gpu" || r.execution=="auto") &&
+            r.ane_manifest.empty() && r.encoder_ane_manifest.empty()),
+            "ConvRot Metal W8A8 requires ordinary GPU execution without ANE manifests");
+        if(r.execution=="gpu_ane" && !streamed_runtime_ane) {
             const auto selected=[](const char* key,std::string_view value){const char* v=std::getenv(key);return v&&std::string_view(v)==value;};
             check(packed && r.hybrid_mlp_mode=="runtime" && r.residency=="resident" && !r.ane_manifest.empty() && r.encoder_ane_manifest.empty() &&
                 selected("TURBOCIDER_ANE_BACKEND","private") && selected("TURBOCIDER_ALLOW_PRIVATE_ANE","1") &&

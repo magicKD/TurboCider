@@ -1,4 +1,5 @@
 #include "conditioning.hpp"
+#include "encoder_convrot.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -206,7 +207,7 @@ MultimodalPrompt assemble_prompt(const Tokens &tokens,const Weights &weights,
     require(table.ndim()==2 && table.shape(1)>0,"invalid Qwen21 embedding table");
     for(int id:tokens.ids)require(id>=0 && id<table.shape(0),"Qwen21 prompt token out of vocabulary");
     auto ids=Tensor(tokens.ids.data(),{int(tokens.ids.size())},mx::int32);
-    return assemble_token_rows(tokens,weights.embedding_rows(ids,"model.embed_tokens"),table.shape(0),refs,max_tokens);
+    return assemble_token_rows(tokens,encoder_embedding_rows(weights,ids,"model.embed_tokens"),table.shape(0),refs,max_tokens);
 }
 
 Tensor MultimodalPrompt::retain(const Tensor &hidden) const {

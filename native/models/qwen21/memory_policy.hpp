@@ -2,9 +2,52 @@
 #include "../../core/contracts.hpp"
 #include "diagnostic_options.hpp"
 #include "../../platform/apple/platform.hpp"
+#include <array>
 #include <cstdlib>
+#include <limits>
+#include <stdexcept>
 
 namespace tc::qwen21 {
+// Source-aware resident ConvRot heuristic. The caller supplies the actual
+// selected DiT, encoder and VAE file sizes; a BF16 companion still pays for its
+// complete source. This is an estimate, not a cap or a physical-memory bypass.
+// ResidencyPolicy adds its existing 4 GiB system reserve separately.
+inline uint64_t convrot_resident_memory_estimate(
+    const Request &r, const std::array<uint64_t, 3> &source_bytes) {
+    constexpr uint64_t maximum = std::numeric_limits<uint64_t>::max();
+    const auto add = [](uint64_t left, uint64_t right) {
+        if (right > maximum - left)
+            throw std::invalid_argument("Qwen ConvRot memory estimate addition overflow");
+        return left + right;
+    };
+    const auto multiply = [](uint64_t left, uint64_t right) {
+        if (left && right > maximum / left)
+            throw std::invalid_argument("Qwen ConvRot memory estimate multiplication overflow");
+        return left * right;
+    };
+    if (r.width < 64 || r.height < 64 || r.width > 4096 || r.height > 4096 ||
+        r.width % 32 || r.height % 32)
+        throw std::invalid_argument("Qwen ConvRot estimate requires valid 32-aligned 64...4096 dimensions");
+    const uint64_t pixels = multiply(uint64_t(r.width), uint64_t(r.height));
+    if (pixels > 8388608)
+        throw std::invalid_argument("Qwen ConvRot estimate canvas exceeds the Qwen eight-megapixel geometry");
+    uint64_t estimate = 0;
+    for (const uint64_t bytes : source_bytes) {
+        if (!bytes)
+            throw std::invalid_argument("Qwen ConvRot estimate requires three nonempty source files");
+        estimate = add(estimate, bytes);
+    }
+    // Temporary code packing / one-layer dequantization allowance, followed
+    // by the existing canvas growth and 2 GiB prefix K/V + 512 MiB per reference.
+    estimate = add(estimate, uint64_t(1) << 30);
+    estimate = add(estimate, multiply(pixels, 10240));
+    estimate = add(estimate, multiply(uint64_t(r.inputs.size()), uint64_t(5) << 29));
+    // validate_budget currently adds the reserve without checked arithmetic.
+    // Reject unrepresentable totals here; do not include the reserve twice.
+    (void)add(estimate, uint64_t(4) << 30);
+    return estimate;
+}
+
 // Qualified small-canvas BF16 route: consume the language encoder one layer
 // at a time, then stream DiT layers on every step, then load the VAE. Larger canvases,
 // multimodal conditioning and PE retain their existing estimate.

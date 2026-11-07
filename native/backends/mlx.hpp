@@ -16,6 +16,9 @@ namespace streaming { class SourceLease; }
 void configure_streams();
 namespace mx = mlx::core;
 using Tensor = mx::array;
+bool convrot_w8a8_available();
+struct ConvrotW8A8Stats { uint64_t projections = 0, activation_rows = 0; };
+ConvrotW8A8Stats convrot_w8a8_stats();
 class Weights {
   public:
     struct ResolvedLoRATerm {
@@ -82,6 +85,7 @@ class Weights {
     int affine_bits_ = 0;
     void read_affine_metadata(const std::unordered_map<std::string, std::string> &);
     bool metal_convrot_ = false;
+    bool convrot_w8a8_ = false;
     bool affine_fp32_mpp_ = false;
     bool affine_bf16_fp32_partial_ = false;
     bool qwen_affine_shared_down_ = false;
@@ -122,6 +126,10 @@ class Weights {
     int logical_input_width(const std::string &prefix) const;
     void set_metal_convrot(bool enabled) { metal_convrot_ = enabled; }
     bool metal_convrot() const { return metal_convrot_; }
+    // Explicit request-owner snapshot. Preserve raw I8/F32 row-scale sources;
+    // do not combine with pack_convrot_q8 or mutate while graphs are in use.
+    void set_convrot_w8a8(bool enabled);
+    bool convrot_w8a8() const { return convrot_w8a8_; }
     // Owner-thread request snapshot; never mutate while a compiled closure or
     // submitted projection is reading this Weights generation. Default off.
     void set_affine_fp32_mpp(bool enabled) {

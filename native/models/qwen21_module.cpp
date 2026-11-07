@@ -238,7 +238,7 @@ ModelModule qwen21_module() {
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                             (r.loras.empty() || r.lora_strategy == "inference_time") &&
                             r.qwen21_gpu_full_ffn_blocks.empty() &&
-                            (r.residency == "resident" || runtime_staged) &&
+                            (r.residency == "resident" || runtime_staged || qwen21::convrot_stream_ane_requested(r)) &&
                             (!db_options.enabled || runtime_cache) &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")),
                         "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE (or staged diagnostic), unmerged runtime LoRA and no frozen W8A8; residual cache additionally requires the explicit fixed-base conservative runtime tier");
@@ -614,7 +614,9 @@ ModelModule qwen21_module() {
                             r.qwen21_gpu_full_ffn_blocks.empty(),
                         "Qwen21 ANE manifests require execution=gpu_ane");
             }
-            require(r.residency == "resident" || r.residency == "component_staged", "Qwen21 supports resident or component_staged residency");
+            if (r.residency == "streamed") qwen21::validate_convrot_stream_request(r);
+            else require(r.residency == "resident" || r.residency == "component_staged",
+                         "Qwen21 supports resident, component_staged or ConvRot streamed residency");
             require(!r.streaming_offload && r.quantized_cache.empty(), "Qwen21 streaming/quantized cache are not implemented");
             if (r.operation == "image.generate") require(r.inputs.empty(), "Qwen21 image.generate takes no images");
             else {
@@ -639,7 +641,7 @@ ModelModule qwen21_module() {
             d.runtime_dependency = "bundled-native-mlx-cpp";
             d.candidate_limitations = {
                 "experimental: actual edit material fidelity is under investigation; not quality-qualified",
-                "BF16 Comfy checkpoint plus official processor/tokenizer.json required",
+                "Original Comfy BF16 or ConvRot safetensors plus official processor/tokenizer.json required for weight streaming",
                 "encoder ANE is explicit 512px resident shared runtime language-FFN only; visual tower stays GPU; measured profitability and reference fidelity required",
                 "conservative DiT cache can explicitly combine with resident 512px/40-step BF16 frozen W8A8/6144-channel FFN without LoRA or encoder ANE; full-reference editing retains its diagnostic gate, App and default cache stay unchanged, and the two approximations require joint quality review",
                 "reference images are resized to approximately 1024 squared pixels with 32-aligned dimensions",

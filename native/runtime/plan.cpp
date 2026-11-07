@@ -1,6 +1,7 @@
 #include "session.hpp"
 #include "quantized_execution_profiles.hpp"
 #include "streaming/public_request_validation.hpp"
+#include "../models/qwen21/checkpoint_recipe.hpp"
 #include "../models/qwen21/memory_policy.hpp"
 #include "../models/qwen21/native_route.hpp"
 #include <set>
@@ -275,12 +276,14 @@ static ExecutionPlan make_plan_impl(
         const uint64_t base_gib = r.residency == "resident" ? 40ull :
             staged_hybrid ? 17ull :
             qwen21::layer_staged_t2i(r, device) ? 16ull : 22ull;
+        const uint64_t component_bytes = r.residency == "streamed"
+            ? qwen21::convrot_stream_weight_budget_bytes + (uint64_t(2) << 30) : base_gib << 30;
         // Native W1 retains one runtime MIL slot, not the frozen Core ML
         // model bank. This extra allowance is only a planning heuristic;
         // the native phase separately admits its measured baseline/backings.
         const uint64_t hybrid_gib = qwen21::native_w1_requested(r) ||
             r.hybrid_mlp_mode == "runtime" || r.hybrid_mlp_mode == "runtime_qkv" ? 2ull : 10ull;
-        plan.memory_estimate_bytes = (base_gib << 30) +
+        plan.memory_estimate_bytes = component_bytes +
                                      (hybrid && !staged_hybrid ? hybrid_gib << 30 : 0) + uint64_t(r.width) * r.height * 10240 +
                                      uint64_t(r.inputs.size()) * (reference_prefix_bytes + (512ull << 20));
         // Pinned r128 factors occupy about 648 MiB; native shared rank/gate/up

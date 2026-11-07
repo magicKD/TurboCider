@@ -115,6 +115,11 @@ class HybridFfn {
         : HybridFfn(manifest, hidden, width, memory_budget, cancelled, require_lora_inputs,
                     std::nullopt, {}, calibration, calibrated_channels, channel_override, bucket_override) {}
     ~HybridFfn();
+#if TURBOCIDER_ENABLE_PRIVATE_ANE
+    // The fixed ConvRot diagnostic borrows only the guarded stream bank's
+    // current slot. Select its physical admission before the first request.
+    void enable_streamed_convrot_admission();
+#endif
     // Observation override is for deterministic host tests; production callers
     // use an owner-thread Mach observation on every resident request.
     void begin_request(const std::string &adapter_identity = {},
@@ -227,6 +232,7 @@ class HybridFfn {
     bool fp32_channel_join_ = false;
     bool lora_channel_range_ = true;
     bool fixed_async_ = false;
+    bool streamed_convrot_admission_ = false;
     bool defer_channel_join_ = false;
     bool channel_gpu_first_ = false;
     int prefetched_layer_ = -1;
@@ -237,6 +243,8 @@ class HybridFfn {
     std::chrono::steady_clock::time_point pre_start_;
     void degrade(const std::string &, int layer);
     void release_for_memory(const std::string &reason);
+    std::optional<std::string> source_memory_denial(uint64_t resident, uint64_t growth,
+        std::optional<MemoryObservation> observation = std::nullopt) const;
     bool admit_scratch(int ane_rows, bool adapter);
     void materialize_sources(std::vector<FfnWeight> &);
     Tensor run_channels(int, const Tensor &, const Gpu &, const ChannelGpu &,

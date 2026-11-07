@@ -447,9 +447,15 @@ struct QwenStagedQuantizationMetrics {
     double pack_seconds = 0;
     bool w8a8 = false;
 };
+struct QwenConvrotW8A8Metrics {
+    bool encoder_enabled = false, dit_enabled = false;
+    uint64_t encoder_projections = 0, encoder_activation_rows = 0;
+    uint64_t dit_projections = 0, dit_activation_rows = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
     std::optional<qwen21::CiderCacheReceipt> qwen_dit_w8a8;
+    std::optional<QwenConvrotW8A8Metrics> qwen_convrot_w8a8;
     std::string selection, backend, precision, checkpoint;
     std::string source_comparison_profile="z-mlx-compat-affine-v1";
     std::optional<uint64_t> convrot_allocator_cache_bytes;
@@ -489,6 +495,7 @@ struct RunResult {
     std::optional<SharedLoraRankMetrics> shared_lora_ranks;
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
+    std::optional<QwenConvrotStreamingMetrics> qwen_convrot_streaming;
     std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
     std::optional<QwenTokenizerReuseMetrics> qwen_tokenizer_reuse;
     std::optional<QwenRuntimePrefixSnapshotMetrics> qwen_runtime_prefix_snapshot;

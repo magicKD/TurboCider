@@ -1,4 +1,5 @@
 #include "mlx.hpp"
+#include "../third_party/cider/w8a8_primitive.h"
 #include "convrot_rotation.hpp"
 #include "affine_gpu_fp32.hpp"
 #include "affine_gpu_mpp.hpp"
@@ -15,10 +16,27 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include <type_traits>
 namespace tc {
+bool convrot_w8a8_available() { return cider::convrot_w8a8_available(); }
+ConvrotW8A8Stats convrot_w8a8_stats() {
+    const auto value=cider::convrot_w8a8_stats();
+    return {value.projections,value.activation_rows};
+}
+void Weights::set_convrot_w8a8(bool enabled) {
+    require(!enabled || convrot_w8a8_available(),
+        "ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+    if(enabled)for(const auto& [key,value]:values_)if(key.ends_with(".comfy_quant")) {
+        const auto stem=key.substr(0,key.size()-std::strlen(".comfy_quant"));
+        require(at(stem+".weight").dtype()==mx::int8 && has(stem+".weight_scale") &&
+            at(stem+".weight_scale").dtype()==mx::float32,
+            "ConvRot W8A8 requires original signed I8/F32 row-scale sources; reload before changing packed recipe");
+    }
+    convrot_w8a8_=enabled;
+}
 namespace {
 // MLX 0.32.0 (our pinned runtime) selects fused attention internally. Newer
 // runtimes additionally let the caller force it. Keep both public signatures
@@ -154,6 +172,17 @@ static Tensor convrot_rotate_metal(const Tensor &x) {
 
 static Tensor convrot_rotate(const Tensor &x, bool metal) {
     return metal ? convrot_rotate_metal(x) : convrot_rotate_dense(x);
+}
+
+static Tensor convrot_w8a8_project(const Tensor& rotated,const Tensor& codes,
+                                  const Tensor& row_scales) {
+    require(rotated.ndim()>0 && rotated.shape(-1)>0,"invalid ConvRot W8A8 activation geometry");
+    const auto rows=rotated.size()/size_t(rotated.shape(-1));
+    require(rows>0 && rows<=size_t(std::numeric_limits<int>::max()-128),
+        "ConvRot W8A8 activation row count overflows");
+    auto shape=rotated.shape();shape.back()=codes.shape(0);
+    return mx::reshape(cider::convrot_linear(mx::reshape(rotated,{int(rows),rotated.shape(-1)}),
+        codes,row_scales),shape);
 }
 
 }
@@ -487,6 +516,7 @@ size_t Weights::pack_convrot_q8() {
 }
 
 size_t Weights::pack_convrot_q8(int group_size, mx::Dtype scale_dtype) {
+    require(!convrot_w8a8_,"ConvRot W8A8 consumes original I8 rows; packing would change its source contract");
     require(group_size == 32 || group_size == 64 || group_size == 128,
             "unsupported ConvRot affine group size");
     std::vector<std::string> prefixes;
@@ -560,6 +590,11 @@ QuantizedGeometry quantized_geometry(const Tensor &weight, const Tensor &scales,
 int Weights::logical_input_width(const std::string &prefix) const {
     const auto &weight = at(prefix + ".weight");
     require(weight.ndim() == 2, "logical affine width requires rank2 weight");
+    if (convrot(prefix) && weight.dtype() == mx::uint32) {
+        require(weight.shape(1) <= std::numeric_limits<int>::max() / 4,
+                "packed ConvRot logical width overflows: " + prefix);
+        return weight.shape(1) * 4;
+    }
     if (!quantized(prefix)) return weight.shape(1);
     const auto &scales = at(prefix + ".scales");
     require(scales.ndim() == 2 && scales.shape(1) > 0, "logical affine width requires rank2 scales");
@@ -589,7 +624,9 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
         require(input == logical_input && input % 256 == 0,
                 "ConvRot input does not match " + prefix);
         auto rotated = convrot_rotate(x, metal_convrot_);
-        if (packed) {
+        if (convrot_w8a8_) {
+            output=mx::astype(convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale")),x.dtype());
+        } else if (packed) {
             const auto &scales = at(prefix + ".scales");
             require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
                         logical_input % scales.shape(1) == 0,
@@ -695,7 +732,9 @@ std::vector<Tensor> Weights::project_many(
         require(weight.ndim() == 2 && logical_input == x.shape(-1),
                 "shared ConvRot input does not match " + prefix);
         Tensor output = x;
-        if (packed) {
+        if (convrot_w8a8_) {
+            output=mx::astype(convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale")),x.dtype());
+        } else if (packed) {
             const auto &scales = at(prefix + ".scales");
             require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
                         logical_input % scales.shape(1) == 0,
@@ -1002,6 +1041,11 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
                 col_end % 256 == 0 && x.shape(-1) == col_end - col_start,
             "invalid ConvRot projection range: " + prefix);
     auto rotated = convrot_rotate(x, metal_convrot_);
+    if(convrot_w8a8_) {
+        auto q=slice_axis(slice_axis(weight,0,row_start,row_end),1,col_start,col_end);
+        auto scales=slice_axis(at(prefix+".weight_scale"),0,row_start,row_end);
+        return mx::astype(convrot_w8a8_project(rotated,q,scales),x.dtype());
+    }
     if (weight.dtype() == mx::uint32) {
         const auto &all_scales = at(prefix + ".scales");
         const auto &all_biases = at(prefix + ".biases");
@@ -1033,6 +1077,7 @@ Tensor Weights::project_range(const Tensor &x, const std::string &prefix,
 }
 
 Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
+    if(convrot_w8a8_)return project_base_slice_fp32(x,prefix,rb,re,cb,ce);
     require(convrot(prefix) && at(prefix+".weight").dtype()==mx::uint32 && !has_runtime_loras(),
             "F32 ConvRot partial requires packed base-only source: "+prefix);
     if(affine_bf16_fp32_partial_) {
@@ -1049,6 +1094,14 @@ Tensor Weights::project_range_fp32(const Tensor &x,const std::string &prefix,int
 Tensor Weights::project_base_slice_fp32(const Tensor &x,const std::string &prefix,int rb,int re,int cb,int ce) const {
     const auto &weight=at(prefix+".weight");
     if(convrot(prefix)) {
+        if(convrot_w8a8_) {
+            require(weight.dtype()==mx::int8 && weight.ndim()==2 && rb>=0 && re>rb && re<=weight.shape(0) &&
+                cb>=0 && ce>cb && ce<=weight.shape(1) && cb%256==0 && ce%256==0 && x.shape(-1)==ce-cb,
+                "ConvRot W8A8 F32 base partial requires aligned original I8 source");
+            auto q=slice_axis(slice_axis(weight,0,rb,re),1,cb,ce);
+            auto scales=slice_axis(at(prefix+".weight_scale"),0,rb,re);
+            return convrot_w8a8_project(convrot_rotate(x,metal_convrot_),q,scales);
+        }
         require(weight.dtype()==mx::uint32,"F32 ConvRot partial requires original packed source: "+prefix);
         if(at(prefix+".scales").dtype()==mx::float32) {
             // Original Comfy per-row F32 coefficients must not silently become
@@ -1357,9 +1410,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                         found = values_.find(key);
                         base = found->second;
                     }
-                    const int logical_input = convrot(prefix)
-                        ? (base.dtype() == mx::uint32 ? base.shape(1) * 4 : base.shape(1))
-                        : logical_input_width(prefix);
+                    const int logical_input = logical_input_width(prefix);
                     require(base.ndim() == 2 && logical_input == down.shape(1),
                             "LoRA input does not match " + target);
                     int rows = base.shape(0);
@@ -1403,7 +1454,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                     if (fused != values_.end()) {
                         const auto &base = fused->second;
                         require(base.ndim() == 2 && base.shape(0) == 2 * up.shape(0) &&
-                                    base.shape(1) == down.shape(1),
+                                    logical_input_width(prefix) == down.shape(1),
                                 "Qwen21 fused gate/up LoRA geometry does not match " + target);
                         int start = qwen_mlp[2] == "gate_layer" ? 0 : up.shape(0);
                         bind_runtime(prefix,up,start,start+up.shape(0));
@@ -1427,9 +1478,7 @@ size_t Weights::apply_loras_impl(const std::vector<LoRAAsset> &adapters,const st
                     auto fused = values_.find(fused_prefix + ".weight");
                     if (fused == values_.end()) continue;
                     auto base = fused->second;
-                    const int logical_input = convrot(fused_prefix)
-                        ? (base.dtype() == mx::uint32 ? base.shape(1) * 4 : base.shape(1))
-                        : logical_input_width(fused_prefix);
+                    const int logical_input = logical_input_width(fused_prefix);
                     require(base.ndim() == 2 && base.shape(0) % 3 == 0 &&
                                 logical_input == down.shape(1),
                             "Z-Image fused QKV geometry does not match " + target);

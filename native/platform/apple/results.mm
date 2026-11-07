@@ -17,6 +17,8 @@ static bool native_w1_executed(const RunResult &result) {
         result.native_denoiser_hybrid->completed_hybrid_steps > 0;
 }
 static NSString *gpu_graph_label(const Request &r) {
+    if (r.model == "qwen-image-2.1" && r.residency == "streamed")
+        return @"qwen21_convrot_dynamic_weight_slots";
     if (r.model == "qwen-image-2.1" && r.qwen21_denoiser_backend == "native-metal-graph")
         return qwen21::native_w1_requested(r) ? @"native_full_dit_euler_w1" :
             qwen21::native_viggle_lora_requested(r) ? @"native_full_dit_euler_runtime_lora" : @"native_full_dit_euler";
@@ -116,6 +118,10 @@ static NSString *executed_encoder_backend(const RunResult& result) {
 }
 static NSString *executed_encoder_precision(const RunResult& result) {
     if(result.native_encoder)return @(result.native_encoder->precision.c_str());
+    if (result.qwen_convrot_streaming)
+        return @(result.qwen_convrot_streaming->encoder.matmul_mode.c_str());
+    if (result.qwen_convrot_w8a8 && result.precision.find("convrot_text") != std::string::npos)
+        return result.qwen_convrot_w8a8->encoder_enabled ? @"int8_tensorops_w8a8" : @"convrot_float_activation";
     return encoder_precision_label(result);
 }
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
@@ -144,6 +150,13 @@ static id encoder_reuse_dictionary(const RunResult &result) {
         @"actual_calls_this_request":@(m.calls_this_request),@"retained_estimated_bytes":@(m.retained_estimated_bytes),
         @"weight_residency":result.encoder_weight_residency && result.encoder_weight_residency->retained ? @"resident_source_arrays" : @"request_local",
         @"scope":@"request-local execution evidence; HybridMetrics remain cumulative; estimate is not a RAM cap"};
+}
+static id qwen_convrot_w8a8_dictionary(const QwenConvrotW8A8Metrics &m) {
+    return @{@"recipe":@"comfy-convrot-original-i8-dynamic-token-a8-v1",
+        @"encoder_enabled":@(m.encoder_enabled),@"dit_enabled":@(m.dit_enabled),
+        @"encoder_projections":@(m.encoder_projections),@"encoder_activation_rows":@(m.encoder_activation_rows),
+        @"dit_projections":@(m.dit_projections),@"dit_activation_rows":@(m.dit_activation_rows),
+        @"scope":@"GPU primitive encodes observed during serialized request phases; embedding/vision/VAE are excluded"};
 }
 static id encoder_weight_dictionary(const RunResult &result) {
     if(!result.encoder_weight_residency)return NSNull.null;
@@ -228,9 +241,8 @@ static id qwen_ffn_phase_dictionary(const RunResult &result) {
     return @{@"policy":@(m.policy.c_str()),@"prefill":phase(m.prefill),@"decode":phase(m.decode),
         @"scope":@"completed finite native denoise steps, classified by actual prefix reuse; request-local driver calls and successful channel blocks; host step spans, not physical kernel/overlap proof"};
 }
-static id qwen_bf16_stream_dictionary(const QwenBf16StreamingMetrics &metrics) {
-    auto stage=[](const QwenBf16StreamStageMetrics &m) {
-        return @{ @"source_sha256":@(m.source_sha256.c_str()),@"layout_digest":@(m.layout_digest.c_str()),
+static NSDictionary *qwen_stream_stage_dictionary(const QwenBf16StreamStageMetrics &m, bool convrot) {
+    NSMutableDictionary *stage = [@{ @"source_sha256":@(m.source_sha256.c_str()),@"layout_digest":@(m.layout_digest.c_str()),
             @"source_file_bytes":@(m.source_file_bytes),@"verification_bytes":@(m.verification_bytes),
             @"verification_cache_hits":@(m.verification_cache_hits),@"verification_seconds":@(m.verification_seconds),
             @"managed_weight_capacity_bytes":@(m.managed_weight_capacity_bytes),@"managed_weight_budget_bytes":@(m.managed_weight_budget_bytes),
@@ -239,13 +251,29 @@ static id qwen_bf16_stream_dictionary(const QwenBf16StreamingMetrics &metrics) {
             @"completed_streamed_layers":@(m.completed_streamed_layers),@"reader_fences":@(m.reader_fences),
             @"completed_reader_fences":@(m.completed_reader_fences),@"layers":@(m.layers),@"prefix":@(m.prefix),@"slots":@(m.slots),
             @"completed_passes":@(m.completed_passes),@"resident_load_seconds":@(m.resident_load_seconds),
-            @"streamed_read_seconds":@(m.streamed_read_seconds),@"wait_seconds":@(m.wait_seconds),@"drained":@(m.drained)};
-    };
-    return @{ @"encoder":stage(metrics.encoder),@"denoiser":stage(metrics.denoiser),
+            @"streamed_read_seconds":@(m.streamed_read_seconds),@"wait_seconds":@(m.wait_seconds),@"drained":@(m.drained)} mutableCopy];
+    if (convrot) {
+        stage[@"source_precision"] = @(m.source_precision.c_str());
+        stage[@"matmul_mode"] = @(m.matmul_mode.c_str());
+        stage[@"derived_weight_capacity_bytes"] = @(m.derived_weight_capacity_bytes);
+        stage[@"peak_live_layer_owners"] = @(m.peak_live_layer_owners);
+    }
+    return stage;
+}
+static id qwen_bf16_stream_dictionary(const QwenBf16StreamingMetrics &metrics) {
+    return @{ @"encoder":qwen_stream_stage_dictionary(metrics.encoder, false),
+        @"denoiser":qwen_stream_stage_dictionary(metrics.denoiser, false),
         @"weight_precision":@"original_bf16",@"cpu_refill_workers":@1,@"prefetch_distance":@1,
         @"dynamic_layer_weight_arguments":@YES,@"components_released_before_vae":@YES,
         @"public_memory_qualification":@NO,@"physical_overlap_proved":@NO,
         @"scope":@"private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap"};
+}
+static id qwen_convrot_stream_dictionary(const QwenConvrotStreamingMetrics &metrics) {
+    return @{@"encoder":qwen_stream_stage_dictionary(metrics.encoder, true),
+        @"denoiser":qwen_stream_stage_dictionary(metrics.denoiser, true),
+        @"cpu_refill_workers":@1, @"prefetch_distance":@1,
+        @"dynamic_layer_weight_arguments":@YES, @"components_released_before_vae":@YES,
+        @"scope":@"two raw refill slots and phase-local managed weights; allocator/process memory measured separately"};
 }
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&
@@ -1908,6 +1936,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         } mutableCopy];
         prepared[@"encoder_runtime_reuse"]=encoder_reuse_dictionary(result);
         prepared[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+        if(result.qwen_convrot_w8a8)
+            prepared[@"qwen_convrot_w8a8"]=qwen_convrot_w8a8_dictionary(*result.qwen_convrot_w8a8);
         if(result.qwen_encoder_prefill)
             prepared[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
         if(result.qwen_tokenizer_reuse)
@@ -1986,6 +2016,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
     if(r.model=="qwen-image-2.1" && r.model_variant=="qwen-image-2.1-turbo")
         value[@"qwen21_sampling_schedule"]=@"qwen21-turbo-authored-fixed8-cfg1-v1";
     value[@"encoder_weight_residency"]=encoder_weight_dictionary(result);
+    if(result.qwen_convrot_w8a8)
+        value[@"qwen_convrot_w8a8"]=qwen_convrot_w8a8_dictionary(*result.qwen_convrot_w8a8);
     if(result.student_ffn_reuse_enabled)
         value[@"student_ffn_reuse"]=student_ffn_reuse_dictionary(result);
     if (result.shared_lora_ranks)
@@ -1994,6 +2026,8 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"qwen_ffn_phases"] = qwen_ffn_phase_dictionary(result);
     if(result.qwen_bf16_streaming)
         value[@"qwen_bf16_streaming"] = qwen_bf16_stream_dictionary(*result.qwen_bf16_streaming);
+    if (result.qwen_convrot_streaming)
+        value[@"qwen_convrot_streaming"] = qwen_convrot_stream_dictionary(*result.qwen_convrot_streaming);
     if(result.qwen_encoder_prefill)
         value[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
     if(result.qwen_tokenizer_reuse)

@@ -214,8 +214,8 @@ std::shared_ptr<const SourceLease> SourceLease::capture(
 
 std::shared_ptr<const SourceLease> SourceLease::capture_verified(
         std::vector<SourceFileIdentity> files,
-        const std::atomic<bool> *cancelled) {
-    return capture_impl(std::move(files), true, true, cancelled);
+        const std::atomic<bool> *cancelled, SourceReadPolicy read_policy) {
+    return capture_impl(std::move(files), true, true, cancelled, false, read_policy);
 }
 
 std::shared_ptr<const SourceLease> SourceLease::capture_preverified(
@@ -225,8 +225,9 @@ std::shared_ptr<const SourceLease> SourceLease::capture_preverified(
 }
 
 std::shared_ptr<const SourceLease> SourceLease::capture_registered(
-        std::vector<SourceFileIdentity> files, const std::atomic<bool> *cancelled) {
-    return capture_impl(std::move(files), true, true, cancelled, true);
+        std::vector<SourceFileIdentity> files, const std::atomic<bool> *cancelled,
+        SourceReadPolicy read_policy) {
+    return capture_impl(std::move(files), true, true, cancelled, true, read_policy);
 }
 
 std::shared_ptr<const SourceLease> SourceLease::capture_for_query(
@@ -243,7 +244,7 @@ std::shared_ptr<const SourceLease> SourceLease::capture_for_query(
 
 std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
-        const std::atomic<bool> *cancelled, bool registered) {
+        const std::atomic<bool> *cancelled, bool registered, SourceReadPolicy read_policy) {
     check_cancelled(cancelled);
     for (auto &file : files)
         file.path = normalized_named_path(
@@ -287,6 +288,17 @@ std::shared_ptr<const SourceLease> SourceLease::capture_impl(
         check_same_open_file(opened, target_status,
                              "source target changed during capture");
 
+        if (read_policy == SourceReadPolicy::Uncached) {
+            // The hash, metadata parser and pager all read this same held
+            // descriptor or its duplicate. Never reopen by path to hash.
+#if defined(F_NOCACHE)
+            int status;
+            do { status = ::fcntl(fd.get(), F_NOCACHE, 1); } while (status < 0 && errno == EINTR);
+            lease_require(status == 0, "cannot enable uncached reads on held source descriptor");
+#else
+            lease_require(false, "uncached held-source reads are unsupported on this platform");
+#endif
+        }
         const size_t index = state->files.size();
         state->indexes.emplace(file.logical_id, index);
         state->files.push_back({std::move(file), std::move(fd)});

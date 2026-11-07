@@ -60,21 +60,22 @@ inline void nax_frag_store_int32(const thread int32_t *src, device int32_t *dst,
 }
 
 // ── Fragment store with bounds check and dequant ────────────────
-inline void nax_frag_store_dequant(const thread int32_t *src, device half *dst,
+template<typename Output, bool HasBias = true>
+inline void nax_frag_store_dequant(const thread int32_t *src, device Output *dst,
                                    int ld, short2 sc, short off_m, short off_n,
                                    uint M, uint N, uint m_base, uint n_base,
                                    const device float *scale_a,
                                    const device float *scale_w,
-                                   const device half *bias) {
+                                   const device Output *bias) {
   for (short i = 0; i < 2; i++) {
     for (short j = 0; j < kElemCols; j++) {
       uint mi = m_base + sc.y + off_m + i * kElemRowsJump;
       uint ni = n_base + sc.x + off_n + j;
       if (mi < M && ni < N) {
-        float val = float(src[i * kElemCols + j]) * scale_a[mi] * scale_w[ni] +
-                    float(bias[ni]);
+        float val = float(src[i * kElemCols + j]) * scale_a[mi] * scale_w[ni];
+        if constexpr (HasBias) val += float(bias[ni]);
         dst[(sc.y + off_m + i * kElemRowsJump) * ld + (sc.x + off_n + j)] =
-            half(val);
+            Output(val);
       }
     }
   }
@@ -85,11 +86,12 @@ inline void nax_frag_store_dequant(const thread int32_t *src, device half *dst,
 // A is [M, K] row-major, B is [N, K] row-major
 // B fragments loaded as [N_tile, K_tile] and hardware transposes via
 // transpose_b=true
-template <int BM, int BN, int BK, int SK, int WM, int WN>
+template <int BM, int BN, int BK, int SK, int WM, int WN,
+          typename Output = half, bool HasBias = true>
 void w8a8_gemm_impl(const device int8_t *A, const device int8_t *B,
-                    device half *C, uint M, uint N, uint K,
+                    device Output *C, uint M, uint N, uint K,
                     const device float *scale_a, const device float *scale_w,
-                    const device half *bias, uint swizzle_log, uint tiles_m,
+                    const device Output *bias, uint swizzle_log, uint tiles_m,
                     uint tiles_n, uint2 tgid, uint sgid, uint lid) {
   constexpr int SM = BM / WM;   // 32
   constexpr int SN = BN / WN;   // 32
@@ -246,10 +248,10 @@ void w8a8_gemm_impl(const device int8_t *A, const device int8_t *B,
   }
 
   // ── Store with fused dequant ────────────────────────────────
-  device half *D = C + m_base * N + n_base;
+  device Output *D = C + m_base * N + n_base;
   for (short mm = 0; mm < TM; mm++) {
     for (short nn = 0; nn < TN; nn++) {
-      nax_frag_store_dequant(c_frags[mm * TN + nn], D, int(N), sc,
+      nax_frag_store_dequant<Output,HasBias>(c_frags[mm * TN + nn], D, int(N), sc,
                              short(mm * 16), short(nn * 16), M, N, m_base,
                              n_base, scale_a, scale_w, bias);
     }
@@ -293,6 +295,24 @@ kernel void w8a8_matmul_fused_dequant_small(
                                          bias, swizzle_log, tiles_m, tiles_n,
                                          tgid, sgid, lid);
 }
+
+// Original ConvRot F32 row coefficients (including signed/zero scales).
+// No FP16 output or bias intermediate: the model applies its original output
+// cast and bias outside this primitive. Physical input rows are padded by the
+// host wrapper; logical M/N bound every output store.
+#define TC_CONVROT_GEMM(NAME, BM, WM, WN) \
+kernel void NAME(const device int8_t* A [[buffer(0)]], const device int8_t* B [[buffer(1)]], \
+    device float* C [[buffer(2)]], constant uint& M [[buffer(3)]], \
+    constant uint& N [[buffer(4)]], constant uint& K [[buffer(5)]], \
+    const device float* scale_a [[buffer(6)]], const device float* scale_w [[buffer(7)]], \
+    constant uint& swizzle_log [[buffer(8)]], constant uint& tiles_m [[buffer(9)]], \
+    constant uint& tiles_n [[buffer(10)]], uint2 tgid [[threadgroup_position_in_grid]], \
+    uint sgid [[simdgroup_index_in_threadgroup]], uint lid [[thread_index_in_simdgroup]]) { \
+    w8a8_gemm_impl<BM,128,512,32,WM,WN,float,false>(A,B,C,M,N,K,scale_a,scale_w, \
+        scale_w,swizzle_log,tiles_m,tiles_n,tgid,sgid,lid); \
+}
+TC_CONVROT_GEMM(tc_convrot_w8a8_f32, 128, 4, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_f32_small, 32, 1, 4)
 
 // ============================================================
 // Raw INT32 GEMM impl (B is [N, K], transpose_b=true)

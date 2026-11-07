@@ -22,6 +22,22 @@ void pager_require(bool value, const std::string &reason) {
         throw std::invalid_argument("mlx_weight_pager: " + reason);
 }
 
+struct DirectType {
+    mx::Dtype dtype;
+    uint64_t bytes;
+    const char *conversion;
+};
+
+DirectType direct_type(const FieldSpec &field) {
+    pager_require(field.materialization.has_value(), "field is missing materialization");
+    const auto &format = field.materialization->format;
+    if (format == "BF16") return {mx::bfloat16, 2, "copy-bf16-v1"};
+    if (format == "I8") return {mx::int8, 1, "copy-i8-v1"};
+    if (format == "U8") return {mx::uint8, 1, "copy-u8-v1"};
+    if (format == "F32") return {mx::float32, 4, "copy-f32-v1"};
+    throw std::invalid_argument("mlx_weight_pager: unsupported direct field type " + format);
+}
+
 mx::Shape mlx_shape(const FieldSpec &field) {
     pager_require(field.materialization.has_value(),
                   "field is missing materialization");
@@ -38,9 +54,9 @@ mx::Shape mlx_shape(const FieldSpec &field) {
         elements *= dimension;
         result.push_back(static_cast<int32_t>(dimension));
     }
-    pager_require(elements <= UINT64_MAX / sizeof(uint16_t) &&
-                      elements * sizeof(uint16_t) == field.bytes,
-                  "field bytes differ from BF16 shape");
+    const auto width = direct_type(field).bytes;
+    pager_require(elements <= UINT64_MAX / width && elements * width == field.bytes,
+                  "field bytes differ from typed shape");
     return result;
 }
 
@@ -48,15 +64,14 @@ const SourceRange &direct_source(const FieldSpec &field) {
     pager_require(field.materialization.has_value(),
                   "field is missing materialization");
     const auto &materialization = *field.materialization;
-    pager_require(materialization.format == "BF16" &&
-                      materialization.storage_mode == "mlx-metal-shared" &&
-                      materialization.conversion == "copy-bf16-v1" &&
+    pager_require(materialization.storage_mode == "mlx-metal-shared" &&
+                      materialization.conversion == direct_type(field).conversion &&
                       materialization.derived_from.empty() &&
                       materialization.derived_offset == 0 &&
                       materialization.reads.size() == 1,
-                  "only direct BF16 MLX materialization is supported");
+                  "only matching direct MLX materialization is supported");
     const auto &source = materialization.reads.front();
-    pager_require(source.dtype == "BF16" && source.bytes == field.bytes &&
+    pager_require(source.dtype == materialization.format && source.bytes == field.bytes &&
                       source.shape == materialization.shape &&
                       !source.tensor.empty(),
                   "source range differs from field materialization");
@@ -100,6 +115,7 @@ struct MlxWeightPager::State {
     Slot resident;
     bool resident_loaded = false;
     bool exact_allocations = false;
+    bool streaming_headroom = false;
 
     ~State() {
         for (auto &artifact : artifacts)
@@ -338,7 +354,7 @@ namespace {
 
 void allocate_fields(MlxWeightPager::State::Slot &slot,
                      const std::vector<FieldSpec> &fields,
-                     MlxWeightPagerMetrics &metrics,bool exact) {
+                     MlxWeightPagerMetrics &metrics,bool exact,bool streaming_headroom) {
     pager_require(slot.arrays.empty() && slot.pointers.empty(),
                   "slot backing already exists");
     slot.arrays.reserve(fields.size());
@@ -347,17 +363,20 @@ void allocate_fields(MlxWeightPager::State::Slot &slot,
     if(exact)cache_scope.emplace();
     for (const auto &field : fields) {
         if(exact) {
-            // A core component is allocated in real field increments, not as
-            // one speculative 11GiB optional payload. Reobserve BEFORE every
-            // new backing using the unchanged reserve/inactive/process guards.
-            const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
-            const auto admission=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},
-                0,gguf_storage::capacity_upper(field.bytes));
-            pager_require(admission.allowed(),"incremental core source admission declined: "+
-                ane::memory_denial_reason(admission.denial,observed));
+            // Reobserve immediately before every new managed backing.
+            const auto upper = gguf_storage::capacity_upper(field.bytes);
+            if (streaming_headroom) {
+                ane::require_streaming_memory_headroom(mx::get_active_memory(), upper,
+                    "mlx_weight_pager: incremental ConvRot source admission declined");
+            } else {
+                const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
+                const auto admission=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,upper);
+                pager_require(admission.allowed(),"incremental core source admission declined: "+
+                    ane::memory_denial_reason(admission.denial,observed));
+            }
         }
         slot.arrays.emplace_back(mx::allocator::malloc(field.bytes),
-                                 mlx_shape(field), mx::bfloat16);
+                                 mlx_shape(field), direct_type(field).dtype);
         if(exact) {
             const auto actual=mx::allocator::allocator().size(slot.arrays.back().data_shared_ptr()->buffer);
             pager_require(actual>=field.bytes && actual<=gguf_storage::capacity_upper(field.bytes),
@@ -416,9 +435,10 @@ std::vector<std::string> binding_keys(
 
 } // namespace
 
-void MlxWeightPager::use_exact_allocations() {
+void MlxWeightPager::use_exact_allocations(bool streaming_headroom) {
     pager_require(state_ && !state_->resident_loaded && state_->pools.empty(),"exact source recipe must precede payload allocation");
     state_->exact_allocations=true;
+    state_->streaming_headroom=streaming_headroom;
 }
 
 void MlxWeightPager::load_resident(
@@ -428,7 +448,7 @@ void MlxWeightPager::load_resident(
     check_open_files();
     const auto &fields = state_->stage->resident_fields;
     pager_require(!fields.empty(), "stage has no resident fields");
-    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations);
+    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations,state_->streaming_headroom);
     const auto begin = Clock::now();
     const uint64_t bytes = read_fields(
         fields, state_->resident.pointers, state_->artifacts, cancel);
@@ -471,7 +491,7 @@ void MlxWeightPager::create_pool(const PoolLayout &layout) {
             pager_require(fields[field_index].bytes <=
                               slot_layout.field_capacity[field_index],
                           "slot field capacity is too small");
-        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations);
+        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations,state_->streaming_headroom);
     }
     state_->pools.emplace(layout.id, std::move(pool));
 }

@@ -7,6 +7,7 @@
 #include "mlx/primitives.h"
 
 #include <mutex>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
@@ -17,6 +18,31 @@ class ComputePipelineState;
 namespace cider {
 
 namespace mx = mlx::core;
+
+// Original Comfy ConvRot codes, with no second weight quantization. The
+// caller supplies the already rotated activation; the primitive quantizes
+// it per token in FP32 and retains FP32 output until the model's I/O cast.
+// Unlike the historical perchannel_linear path, M=1 also executes INT8 GEMM.
+bool convrot_w8a8_available();
+struct ConvrotW8A8Stats { uint64_t projections = 0, activation_rows = 0; };
+ConvrotW8A8Stats convrot_w8a8_stats();
+mx::array convrot_linear(const mx::array& rotated,
+                        const mx::array& signed_codes,
+                        const mx::array& row_scales,
+                        mx::StreamOrDevice s = {});
+
+class ConvrotW8A8Linear : public mx::Primitive {
+ public:
+  explicit ConvrotW8A8Linear(mx::Stream stream) : mx::Primitive(stream) {}
+  void eval_cpu(const std::vector<mx::array>&,
+                std::vector<mx::array>&) override {
+    throw std::runtime_error("ConvrotW8A8Linear: CPU not supported");
+  }
+  void eval_gpu(const std::vector<mx::array>&,
+                std::vector<mx::array>&) override;
+  const char* name() const override { return "ConvrotW8A8Linear"; }
+  bool is_equivalent(const mx::Primitive&) const override { return true; }
+};
 
 // ── Custom Primitive ─────────────────────────────────────────────
 // Inputs: [x(M,K) float16, w(N,K) int8, scale_w(N) float32, bias(N) float16]

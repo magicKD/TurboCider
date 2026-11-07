@@ -10,6 +10,7 @@
 #include <iostream>
 #include <limits>
 #include <algorithm>
+#include <string_view>
 
 namespace tc::qwen21 {
 namespace {
@@ -598,10 +599,20 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         const bool measured_block = plan_mlp_ && (plan == MLPPlan::Split || plan == MLPPlan::GpuProbe);
         std::vector<std::string> dynamic_keys;
         std::vector<Tensor> dynamic_sources;
+        bool dynamic_convrot_w8a8 = false;
         if(layer_weights_) {
-            require(!split_this && !external_qkv && !fused_qkv_ && !trace && !capture_ffn && !reuse_ffn_block &&
-                !db_cache_enabled_,"Qwen streamed blocks require complete GPU arithmetic without temporal/ANE experiments");
+            bool streamed_convrot_split=false;
+#if TURBOCIDER_ENABLE_PRIVATE_ANE
+            const char* opt_in=std::getenv("TURBOCIDER_QWEN21_CONVROT_STREAM_ANE");
+            streamed_convrot_split=split_this && plan==MLPPlan::SplitUntimed && reuse && plan_mlp_ &&
+                retire_weights_ && !stage_mlp_ && !prefill_mlp_ && references.empty() && height==32 && width==32 &&
+                opt_in && std::string_view(opt_in)=="1";
+#endif
+            require((!split_this || streamed_convrot_split) && !external_qkv && !fused_qkv_ && !trace &&
+                !capture_ffn && !reuse_ffn_block && !db_cache_enabled_,"Qwen streamed blocks require complete GPU arithmetic or the explicit untimed ConvRot FFN split");
             const auto &source=layer_weights_(i);const auto p="transformer_blocks."+std::to_string(i)+".";
+            dynamic_convrot_w8a8 = source.convrot_w8a8();
+            require(!streamed_convrot_split || dynamic_convrot_w8a8,"Qwen streamed ConvRot FFN split requires W8A8 source weights");
             for(const auto &key:source.sorted_keys())if(key.starts_with(p)) {
                 dynamic_keys.push_back(key);dynamic_sources.push_back(source.at(key));
             }
@@ -624,11 +635,14 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                           profile_ops, profile_segments,
                           metal_rope = metal_qk_rope_, fused_norm_rope = metal_qk_norm_rope_,
                           local_references = reference_local_attention_,
-                          dynamic_keys,
+                          dynamic_keys, dynamic_convrot_w8a8,
                           tracing = trace != nullptr](const std::vector<Tensor> &args) {
                 if (graph_counters_enabled_) block_graph_traces_.fetch_add(1, std::memory_order_relaxed);
                 Weights dynamic;
-                if(!dynamic_keys.empty())dynamic.bind_arrays(dynamic_keys,args,args.size()-dynamic_keys.size());
+                if (!dynamic_keys.empty()) {
+                    dynamic.bind_arrays(dynamic_keys, args, args.size() - dynamic_keys.size());
+                    dynamic.set_convrot_w8a8(dynamic_convrot_w8a8);
+                }
                 const Weights &weights=dynamic_keys.empty() ? weights_ : dynamic;
                 // The last prefill block exports only target queries. Without
                 // a fused QKV/RoPE kernel, avoid projecting and rotating Q for

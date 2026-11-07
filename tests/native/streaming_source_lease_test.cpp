@@ -101,6 +101,16 @@ int main(int argc, char **argv) {
     assert(copied->artifact_digest() == verified->artifact_digest());
     assert(copied->digest() != verified->digest());
     assert(copied->verification_bytes_read() == 3);
+#if defined(F_NOCACHE)
+    const auto uncached_path = root / "uncached-source.safetensors";
+    write_file(uncached_path, "abc");
+    const auto uncached = SourceLease::capture_verified({source_file("weights", uncached_path)}, nullptr,
+                                                        SourceReadPolicy::Uncached);
+    assert(uncached->verification_bytes_read() == 3 && uncached->artifact_digest() == verified->artifact_digest());
+    auto uncached_fd = uncached->duplicate_fd("weights");
+    assert(tc::memory_sha256_fd(uncached_fd.get(), 3) == abc_sha);
+    uncached->revalidate_after_drain();
+#endif
     const auto renamed_role = SourceLease::capture_verified(
         {source_file("different-role", copy_path)});
     assert(renamed_role->artifact_digest() != copied->artifact_digest());

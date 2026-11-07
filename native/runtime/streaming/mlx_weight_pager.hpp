@@ -23,7 +23,7 @@ struct MlxWeightPagerMetrics {
     int64_t maximum_fill_group = -1;
 };
 
-// Direct BF16 safetensors -> MLX shared-buffer pager.  The owner thread
+// Direct typed safetensors -> MLX shared-buffer pager. The owner thread
 // creates every MLX array during setup; refill workers only call pread into a
 // vacant slot and never touch MLX stream state.  The first implementation is
 // deliberately strict: one source range per field, no conversion/derivation,
@@ -47,7 +47,7 @@ class MlxWeightPager {
                        const std::atomic<bool> *cancel = nullptr);
     // Private bounded core source adapters opt in before any payload exists.
     // Fresh allocator bins and actual size checks; old pager defaults unchanged.
-    void use_exact_allocations();
+    void use_exact_allocations(bool streaming_headroom = false);
     void create_pool(const PoolLayout &);
     void destroy_pool(uint32_t pool) noexcept;
     uint64_t fill(const Group &, const tc_stream_slot_ticket_v1 &,

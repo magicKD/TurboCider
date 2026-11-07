@@ -146,8 +146,15 @@ void run(const std::filesystem::path &directory) {
             auto expected=original.forward(b,text,sigma,height,width,true,nullptr,refs);
             auto actual=direct.forward(a,text,sigma,height,width,true,nullptr,refs);
 #if defined(TC_QKV_PREFIX_COUNTEREXAMPLE)
-            require(values(expected)!=values(actual)&&mpp_mismatches>0&&native_base_mismatches==0,"small-GEMM counterexample or native-base isolation changed");
-            std::cout<<"{\"small_shape_not_equivalent\":true,\"native_base_counterfactual_exact\":true}\n";return;
+            // The historical small-GEMM counterexample depends on the GPU's
+            // matmul dispatch. M5 may be exact here; that does not establish
+            // equivalence on other devices. Always retain native-base parity.
+            // The layer-zero observation and the final output are independent
+            // diagnostics: later layers may cancel or introduce differences.
+            const bool differs=values(expected)!=values(actual);
+            require(native_base_mismatches==0,"small-GEMM native-base isolation changed");
+            std::cout<<"{\"small_shape_probe_completed\":true,\"small_shape_not_equivalent\":"<<(differs?"true":"false")
+                <<",\"mpp_mismatches\":"<<mpp_mismatches<<",\"native_base_counterfactual_exact\":true}\n";return;
 #endif
             require(same_bits(expected,actual),"same-prefix original/fused final tensor bits differ");
             a=a+actual*Tensor(-.25f,mx::bfloat16);b=b+expected*Tensor(-.25f,mx::bfloat16);

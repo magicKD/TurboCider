@@ -127,6 +127,7 @@ def main(binary=ROOT / 'build/native/turbocider-hub-tests'):
         assert COUNTS.get(f'/test/tiny/resolve/{REVISION}/weights.bin', 0) == 0, COUNTS
         assert sum(COUNTS.get(f'/test/flux/resolve/{REVISION}/{component}/model.safetensors', 0)
                    for component in ('transformer', 'text_encoder', 'vae')) == 1, COUNTS
+        assert not any('Qwen-Image-2.1' in path for path in COUNTS), COUNTS
         print('PASS: all network traffic stayed on the tiny fixture server; no full model downloaded')
     finally:
         server.shutdown(); server.server_close(); thread.join()

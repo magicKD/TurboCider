@@ -8,17 +8,20 @@
 namespace tc::qwen21 {
 bool bf16_streaming_enabled();
 void bf16_stream_scope(const std::function<void()> &);
+enum class StreamWeightMode { Bf16, Bf16ConvRotCompanion, ConvRotFloat, ConvRotW8A8 };
 struct Bf16StreamPlan {
     std::shared_ptr<const streaming::SourceLease> lease;
     streaming::Descriptor descriptor;
     streaming::Layout layout;
     uint32_t layers=0,prefix=0;
     double verification_seconds=0;
+    StreamWeightMode mode = StreamWeightMode::Bf16;
 };
 // Parses the held-fd safetensors header, validates the complete directory and
 // describes only consumed language/fixed/layer fields. No payload allocation.
 Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &,bool encoder,
-    uint32_t layers,uint32_t prefix,uint32_t passes,std::atomic<bool> &cancel);
+    uint32_t layers,uint32_t prefix,uint32_t passes,std::atomic<bool> &cancel,
+    StreamWeightMode mode = StreamWeightMode::Bf16);
 
 // Private diagnostic adapter, not a public catalog authority or hard RAM cap.
 // CPU refill jobs never allocate/evaluate MLX arrays. Owner graph arguments are
@@ -27,6 +30,11 @@ class Bf16StreamBank final {
     Bf16StreamPlan plan_;
     streaming::MlxWeightPager pager_;
     Weights resident_,current_;
+    struct FloatProjection {
+        std::string name;
+        Tensor codes, scales, biases;
+    };
+    std::vector<FloatProjection> float_projections_;
     std::atomic<bool> &cancel_;
     streaming::CompletionMailbox mailbox_{8};
     std::unique_ptr<streaming::SlotSafetyTracker> safety_;
@@ -36,10 +44,11 @@ class Bf16StreamBank final {
     std::array<std::optional<tc_stream_slot_ticket_v1>,2> pending_{};
     std::optional<tc_stream_slot_ticket_v1> current_ticket_;
     uint32_t pass_=0,next_layer_=0;
-    bool pass_live_=false,finished_=false;
+    bool pass_live_=false,layer_live_=false,finished_=false;
     QwenBf16StreamStageMetrics metrics_;
     void schedule(uint32_t);
     void consume();
+    void bind_float_layer(uint32_t layer);
   public:
     Bf16StreamBank(Bf16StreamPlan,uint64_t managed_weight_budget,std::atomic<bool> &);
     ~Bf16StreamBank();

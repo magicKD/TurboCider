@@ -13,6 +13,8 @@
 #import <Metal/Metal.h>
 
 #include <fstream>
+#include <atomic>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -51,6 +53,7 @@ public:
     matmul_lib_ = compile_source(mtl_device, kernel_dir + "/w8a8_matmul.metal");
     quantize_lib_ = compile_source(mtl_device, kernel_dir + "/w8a8_quantize.metal");
     mv_lib_ = compile_source(mtl_device, kernel_dir + "/w8a8_int8_mv.metal");
+    convrot_quantize_lib_ = compile_source(mtl_device, kernel_dir + "/convrot_quantize.metal");
     kernel_dir_ = kernel_dir;
     pipelines_.clear();
     initialized_ = true;
@@ -76,6 +79,7 @@ private:
   MTL::Library *matmul_lib_ = nullptr;
   MTL::Library *quantize_lib_ = nullptr;
   MTL::Library *mv_lib_ = nullptr;
+  MTL::Library *convrot_quantize_lib_ = nullptr;
   std::mutex mutex_;
 
   MTL::Library *compile_source(MTL::Device *mtl_device,
@@ -84,6 +88,11 @@ private:
     @autoreleasepool {
       NSString *src = [NSString stringWithUTF8String:source.c_str()];
       MTLCompileOptions *opts = [[MTLCompileOptions alloc] init];
+      // A rounded reciprocal can move exact half-way activation values to
+      // the wrong RNE code. Preserve the FP32 absmax/divide contract here;
+      // the historical Cider GEMM compilation policy remains unchanged.
+      if (source_path.ends_with("/convrot_quantize.metal"))
+        opts.mathMode = MTLMathModeSafe;
       // Keep Metal 4 at runtime while allowing builds with pre-26 SDK headers,
       // as in the native Metal graph backend.
       static_assert(MTLLanguageVersion3_1 == ((3U << 16) + 1));
@@ -108,7 +117,7 @@ private:
     @autoreleasepool {
       NSString *fn_name = [NSString stringWithUTF8String:name.c_str()];
       id<MTLFunction> func = nil;
-      for (auto *lib : {matmul_lib_, quantize_lib_, mv_lib_}) {
+      for (auto *lib : {matmul_lib_, quantize_lib_, mv_lib_, convrot_quantize_lib_}) {
         if (!lib) continue;
         id<MTLLibrary> lib_objc = (__bridge id<MTLLibrary>)lib;
         func = [lib_objc newFunctionWithName:fn_name];
@@ -119,8 +128,15 @@ private:
       }
       NSError *error = nil;
       id<MTLDevice> device_objc = (__bridge id<MTLDevice>)mtl_device;
-      id<MTLComputePipelineState> pso =
-          [device_objc newComputePipelineStateWithFunction:func error:&error];
+      // Keep the function name in Metal captures, including for pipelines
+      // compiled and cached before a capture starts.
+      MTLComputePipelineDescriptor *descriptor = [[MTLComputePipelineDescriptor alloc] init];
+      descriptor.computeFunction = func;
+      descriptor.label = fn_name;
+      id<MTLComputePipelineState> pso = [device_objc newComputePipelineStateWithDescriptor:descriptor
+                                                                                options:MTLPipelineOptionNone
+                                                                             reflection:nil
+                                                                                  error:&error];
       if (!pso) {
         std::string err =
             error ? [[error localizedDescription] UTF8String] : "Unknown error";
@@ -131,6 +147,89 @@ private:
     }
   }
 };
+
+namespace {
+std::atomic<uint64_t> convrot_projections{0}, convrot_activation_rows{0};
+}
+
+bool convrot_w8a8_available() {
+  // Integer TensorOps arrived in macOS 26.4 (floating NAX predates it).
+  // MLX's internal capability helper is not exported by its release dylib.
+  if (@available(macOS 26.4, *))
+    return metal::device(Device::gpu).get_architecture_gen() >= 17;
+  return false;
+}
+ConvrotW8A8Stats convrot_w8a8_stats() {
+  return {convrot_projections.load(std::memory_order_relaxed),
+          convrot_activation_rows.load(std::memory_order_relaxed)};
+}
+
+void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
+                                std::vector<array>& outputs) {
+  if (!convrot_w8a8_available())
+    throw std::runtime_error("ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+  const auto& x = inputs[0];
+  const auto& w = inputs[1]; // physically padded N, unchanged signed codes
+  const auto& scales = inputs[2];
+  auto& output = outputs[0];
+  const uint32_t m = output.shape(0), n = output.shape(1), k = x.shape(1);
+  const bool small = m <= 64;
+  const uint32_t bm = small ? 32 : 128, bn = 128;
+  const uint32_t padded_m = ((m+bm-1)/bm)*bm;
+  array activation({int(padded_m),int(k)},int8,nullptr,{});
+  array token_scales({int(padded_m)},float32,nullptr,{});
+  activation.set_data(allocator::malloc(activation.nbytes()));
+  token_scales.set_data(allocator::malloc(token_scales.nbytes()));
+  output.set_data(allocator::malloc(output.nbytes()));
+  auto& cache = PipelineCache::instance();
+  cache.ensure_init("builtin:cider-4d91fcee");
+  auto& enc = metal::get_command_encoder(stream());
+  const char* quantize = x.dtype()==bfloat16 ? "tc_convrot_quantize_bf16" :
+                        x.dtype()==float16 ? "tc_convrot_quantize_f16" : "tc_convrot_quantize_f32";
+  enc.set_compute_pipeline_state(cache.get(quantize));
+  enc.set_input_array(x,0);
+  enc.set_output_array(activation,1);
+  enc.set_output_array(token_scales,2);
+  enc.set_bytes(m,3);
+  enc.set_bytes(k,4);
+  enc.dispatch_threadgroups(MTL::Size(padded_m,1,1),MTL::Size(256,1,1));
+  enc.barrier();
+  enc.set_compute_pipeline_state(cache.get(small ? "tc_convrot_w8a8_f32_small" : "tc_convrot_w8a8_f32"));
+  const uint32_t tiles_m = (m+bm-1)/bm, tiles_n = (n+bn-1)/bn;
+  const uint32_t swizzle = tiles_m<=3 ? 0 : tiles_m<=6 ? 1 : 2;
+  const uint32_t tile = 1u<<swizzle;
+  enc.set_input_array(activation,0);
+  enc.set_input_array(w,1);
+  enc.set_output_array(output,2);
+  enc.set_bytes(m,3); enc.set_bytes(n,4); enc.set_bytes(k,5);
+  enc.set_input_array(token_scales,6); enc.set_input_array(scales,7);
+  enc.set_bytes(swizzle,8); enc.set_bytes(tiles_m,9); enc.set_bytes(tiles_n,10);
+  enc.dispatch_threadgroups(MTL::Size(tiles_n*tile,(tiles_m+tile-1)/tile,1),
+                            MTL::Size(small ? 128 : 512,1,1));
+  enc.add_temporary(activation); enc.add_temporary(token_scales);
+  convrot_projections.fetch_add(1,std::memory_order_relaxed);
+  convrot_activation_rows.fetch_add(m,std::memory_order_relaxed);
+}
+
+array convrot_linear(const array& rotated, const array& codes,
+                     const array& row_scales, StreamOrDevice s) {
+  if (!convrot_w8a8_available())
+    throw std::invalid_argument("ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+  if (rotated.ndim()!=2 || codes.ndim()!=2 || row_scales.ndim()!=2 ||
+      (rotated.dtype()!=bfloat16 && rotated.dtype()!=float16 && rotated.dtype()!=float32) ||
+      codes.dtype()!=int8 || row_scales.dtype()!=float32 ||
+      rotated.shape(0)<=0 || codes.shape(0)<=0 || codes.shape(1)<=0 ||
+      rotated.shape(1)!=codes.shape(1) || codes.shape(1)%256 ||
+      codes.shape(1)>131072 || row_scales.shape()!=Shape{codes.shape(0),1} ||
+      rotated.shape(0)>std::numeric_limits<int>::max()-128 ||
+      codes.shape(0)>std::numeric_limits<int>::max()-128)
+    throw std::invalid_argument("ConvRot W8A8 requires floating [M,K], original I8 [N,K], F32 [N,1], K aligned to256 and <=131072");
+  const int n = codes.shape(0), padded_n = ((n+127)/128)*128;
+  auto w = n==padded_n ? codes : pad(codes,std::vector<std::pair<int,int>>{{0,padded_n-n},{0,0}},array(0,int8),"constant",s);
+  return array({rotated.shape(0),n},float32,
+      std::make_shared<ConvrotW8A8Linear>(to_stream(s)),
+      {contiguous(rotated,false,s),contiguous(w,false,s),contiguous(row_scales,false,s)});
+}
 
 void W8A8Linear::eval_gpu(const std::vector<array> &inputs,
                           std::vector<array> &outputs) {
