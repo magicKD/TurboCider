@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -113,6 +114,10 @@ struct MlxWeightPager::State {
     std::map<uint32_t, const BlockSpec *> blocks;
     std::map<uint32_t, Pool> pools;
     Slot resident;
+    // Surviving array positions retain their immutable descriptor indexes.
+    // Releasing resident fields never reloads or mutates the source layout.
+    std::vector<size_t> resident_field_indices;
+    Weights *resident_destination = nullptr;
     bool resident_loaded = false;
     bool exact_allocations = false;
     bool streaming_headroom = false;
@@ -459,7 +464,95 @@ void MlxWeightPager::load_resident(
                       bytes == *state_->layout->resident_source_read_bytes,
                   "resident read count differs from compiled layout");
     destination.bind_arrays(binding_keys(fields), state_->resident.arrays);
+    state_->resident_field_indices.reserve(fields.size());
+    for (size_t index = 0; index < fields.size(); ++index)
+        state_->resident_field_indices.push_back(index);
+    state_->resident_destination = &destination;
     state_->resident_loaded = true;
+}
+
+uint64_t MlxWeightPager::release_resident_fields(
+    Weights &destination, const std::vector<std::string> &names,
+    const std::atomic<bool> *cancel) {
+    pager_require(state_ && state_->resident_loaded,
+                  "resident weights are not loaded");
+    check_cancel(cancel);
+    pager_require(state_->resident_destination == &destination,
+                  "resident release destination differs from the bound owner");
+    const auto &fields = state_->stage->resident_fields;
+    const auto &resident = state_->resident;
+    pager_require(resident.arrays.size() == resident.pointers.size() &&
+                      resident.arrays.size() == state_->resident_field_indices.size(),
+                  "resident ownership index differs");
+    std::set<std::string> requested;
+    std::vector<size_t> selected;
+    selected.reserve(names.size());
+    for (const auto &name : names) {
+        pager_require(requested.insert(name).second,
+                      "duplicate resident release field: " + name);
+        size_t position = resident.arrays.size();
+        for (size_t index = 0; index < resident.arrays.size(); ++index) {
+            const auto &field = fields.at(state_->resident_field_indices[index]);
+            if (direct_source(field).tensor != name) continue;
+            pager_require(position == resident.arrays.size(),
+                          "ambiguous resident release binding: " + name);
+            position = index;
+        }
+        pager_require(position != resident.arrays.size(),
+                      "unknown or retired resident field: " + name);
+        const auto &array = resident.arrays[position];
+        pager_require(destination.has(name) && destination.at(name).id() == array.id(),
+                      "resident release binding differs: " + name);
+        pager_require(array.data_shared_ptr() && array.buffer().ptr() &&
+                          resident.pointers[position] == array.data<char>(),
+                      "resident release backing is unavailable: " + name);
+        selected.push_back(position);
+    }
+
+    // Build all surviving containers before committing. This also makes a
+    // caller allocation failure atomic with respect to both owning objects.
+    std::sort(selected.begin(), selected.end());
+    std::vector<Tensor> remaining_arrays;
+    std::vector<char *> remaining_pointers;
+    std::vector<size_t> remaining_fields;
+    remaining_arrays.reserve(resident.arrays.size() - selected.size());
+    remaining_pointers.reserve(resident.arrays.size() - selected.size());
+    remaining_fields.reserve(resident.arrays.size() - selected.size());
+    std::map<const void *, uint64_t> retired_buffers;
+    for (size_t index = 0; index < resident.arrays.size(); ++index) {
+        const auto &array = resident.arrays[index];
+        if (std::binary_search(selected.begin(), selected.end(), index)) {
+            const uint64_t capacity = mx::allocator::allocator().size(array.buffer());
+            pager_require(capacity >= array.nbytes(),
+                          "resident release capacity is smaller than its field");
+            retired_buffers.emplace(array.buffer().ptr(), capacity);
+        } else {
+            remaining_arrays.push_back(array);
+            remaining_pointers.push_back(resident.pointers[index]);
+            remaining_fields.push_back(state_->resident_field_indices[index]);
+        }
+    }
+    // Normal direct fields own separate allocations. Still never count a
+    // buffer that a surviving pager field owns, or count one buffer twice.
+    for (const auto &array : remaining_arrays)
+        retired_buffers.erase(array.buffer().ptr());
+    uint64_t retired_capacity = 0;
+    for (const auto &[buffer, capacity] : retired_buffers) {
+        (void)buffer;
+        pager_require(capacity <= UINT64_MAX - retired_capacity,
+                      "resident release capacity overflows");
+        retired_capacity += capacity;
+    }
+    mx::synchronize();
+    check_open_files();
+    check_cancel(cancel);
+    // No allocations or validation remain after the first binding is erased.
+    // The same Weights object, mode flags and unrelated bindings survive.
+    for (const auto &name : names) destination.erase(name);
+    state_->resident.arrays.swap(remaining_arrays);
+    state_->resident.pointers.swap(remaining_pointers);
+    state_->resident_field_indices.swap(remaining_fields);
+    return retired_capacity;
 }
 
 void MlxWeightPager::create_pool(const PoolLayout &layout) {

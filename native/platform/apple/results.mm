@@ -279,12 +279,26 @@ static id qwen_bf16_stream_dictionary(const QwenBf16StreamingMetrics &metrics) {
         @"scope":@"private original-BF16 bounded two-slot source adapter; actual fills/passes/last-reader fences, not physical I/O or whole-request RAM cap"};
 }
 static id qwen_convrot_stream_dictionary(const QwenConvrotStreamingMetrics &metrics) {
-    return @{@"encoder":qwen_stream_stage_dictionary(metrics.encoder, true),
+    NSMutableDictionary *value=[@{@"encoder":qwen_stream_stage_dictionary(metrics.encoder, true),
         @"denoiser":qwen_stream_stage_dictionary(metrics.denoiser, true),
         @"requested_weight_budget_bytes":@(metrics.requested_weight_budget_bytes),
         @"cpu_refill_workers":@1, @"prefetch_distance":@1,
         @"dynamic_layer_weight_arguments":@YES, @"components_released_before_vae":@YES,
-        @"scope":@"two raw refill slots and phase-local managed weights; allocator/process memory measured separately"};
+        @"scope":@"two raw refill slots and phase-local managed weights; allocator/process memory measured separately"} mutableCopy];
+    if(metrics.timestep_cache) {
+        const auto &m=*metrics.timestep_cache;
+        value[@"timestep_cache"]=@{@"enabled":@YES,@"source_sha256":@(m.source_sha256.c_str()),
+            @"schedule_identity":@(m.schedule_identity.c_str()),@"frames":@(m.frames),
+            @"condition_logical_bytes":@(m.condition_logical_bytes),@"condition_capacity_bytes":@(m.condition_capacity_bytes),
+            @"released_weight_capacity_bytes":@(m.released_weight_capacity_bytes),
+            @"active_before_prepare":@(m.active_before_prepare),@"cache_before_prepare":@(m.cache_before_prepare),
+            @"active_before_release":@(m.active_before_release),@"cache_before_release":@(m.cache_before_release),
+            @"active_after_release":@(m.active_after_release),@"cache_after_release":@(m.cache_after_release),
+            @"active_after_clear":@(m.active_after_clear),@"cache_after_clear":@(m.cache_after_clear),
+            @"prepare_seconds":@(m.prepare_seconds),@"release_seconds":@(m.release_seconds),
+            @"scope":@"request-local evaluated original M2 BF16 time conditions; actual retired source capacity; cumulative source reads and initial budget unchanged"};
+    }
+    return value;
 }
 static NSString *encoder_backend_label(const RunResult &result) {
     if (encoder_executed(result) && result.request.model == "qwen-image-2.1" &&

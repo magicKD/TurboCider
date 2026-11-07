@@ -16,6 +16,7 @@
 #include <mlx/random.h>
 #include <cstdlib>
 #include <thread>
+#include <bit>
 
 namespace tc::qwen21 {
 namespace {
@@ -95,6 +96,8 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     require(w8a8_available || (!encoder_w8a8 && !dit_w8a8),
             "ConvRot W8A8 requires M5 or later with macOS 26.4 or later");
     require(!runtime_ane || (turbo && dit_w8a8), "ConvRot streaming Runtime ANE requires the original Turbo ConvRot DiT and GPU W8A8");
+    const bool timestep_cache=stream_timestep_cache_request(requested,turbo,convrot_encoder,convrot_dit,
+        dit_w8a8,runtime_ane,std::getenv("TURBOCIDER_QWEN21_STREAM_TIMESTEP_CACHE"));
     const auto bf16_mode = convrot ? StreamWeightMode::Bf16ConvRotCompanion : StreamWeightMode::Bf16;
     const auto encoder_mode = !convrot_encoder ? bf16_mode :
         encoder_w8a8 ? StreamWeightMode::ConvRotW8A8 : StreamWeightMode::ConvRotFloat;
@@ -229,7 +232,9 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     emit("load_qwen21_transformer", 0, 1);
     const auto denoise_start = Clock::now();
     bf16_stream_scope([&] {
-        Bf16StreamBank bank(make_dit_plan(), budget, cancelled);
+        auto dit_plan=make_dit_plan();
+        const auto time_source=timestep_cache ? dit_plan.lease->descriptor().files.at(0).content_digest : std::string{};
+        Bf16StreamBank bank(std::move(dit_plan), budget, cancelled);
         emit("load_qwen21_transformer", 1, 1);
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
         std::unique_ptr<ConvrotStreamAne> hybrid;
@@ -257,6 +262,42 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         });
         emit("denoise", 0, r.steps);
         const float *sigma = schedule.data<float>();
+        std::vector<Transformer::PreparedTimestepCondition> time_conditions;
+        if(timestep_cache) {
+            require(latents.dtype()==mx::bfloat16 && text.dtype()==mx::bfloat16 &&
+                schedule.dtype()==mx::float32 && schedule.shape()==mx::Shape{9},
+                "Qwen timestep cache requires actual BF16 inputs and the full authored F32 schedule");
+            for(size_t i=0;i<turbo_sigma_nodes.size();++i)
+                require(std::bit_cast<uint32_t>(sigma[i])==std::bit_cast<uint32_t>(turbo_sigma_nodes[i]),
+                    "Qwen timestep cache actual schedule differs from authored F32 sigma bits");
+            auto &metrics=result.qwen_convrot_streaming->timestep_cache.emplace();
+            metrics.source_sha256=time_source;metrics.schedule_identity=std::string(turbo_sampler_identity);
+            metrics.active_before_prepare=mx::get_active_memory();metrics.cache_before_prepare=mx::get_cache_memory();
+            checkpoint(cancelled);const auto prepare_start=Clock::now();
+            time_conditions=dit.prepare_timestep_conditions(std::vector<float>(sigma,sigma+r.steps),latents.dtype(),time_source);
+            metrics.prepare_seconds=elapsed(prepare_start);metrics.frames=uint32_t(time_conditions.size());
+            for(const auto &frame:time_conditions) {
+                metrics.condition_logical_bytes+=frame.logical_bytes();
+                metrics.condition_capacity_bytes+=frame.capacity_bytes();
+            }
+            require(metrics.frames==8 && metrics.condition_logical_bytes==655360,
+                "Qwen timestep cache full original M2 condition coverage changed");
+            // Preparation synchronizes and publishes only independent leaves.
+            // No reader/refill pass has begun. Retire both actual source owners
+            // through the bank; cumulative reads and initial admission stay intact.
+            checkpoint(cancelled);
+            metrics.active_before_release=mx::get_active_memory();metrics.cache_before_release=mx::get_cache_memory();
+            const auto release_start=Clock::now();
+            metrics.released_weight_capacity_bytes=bank.release_fixed_fields(Transformer::timestep_condition_weight_names());
+            metrics.active_after_release=mx::get_active_memory();metrics.cache_after_release=mx::get_cache_memory();
+            mx::clear_cache();
+            metrics.active_after_clear=mx::get_active_memory();metrics.cache_after_clear=mx::get_cache_memory();
+            metrics.release_seconds=elapsed(release_start);
+            require(metrics.released_weight_capacity_bytes==203423744 &&
+                metrics.active_before_release>=metrics.active_after_release &&
+                metrics.active_before_release-metrics.active_after_release>=metrics.released_weight_capacity_bytes,
+                "Qwen timestep source owners did not release their actual independent capacity");
+        }
         for (int step = 0; step < r.steps; ++step) {
           bf16_stream_scope([&] {
             checkpoint(cancelled);
@@ -274,7 +315,9 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
             bank.begin_pass(uint32_t(step));
             const auto step_start = Clock::now();
             const bool reuse = dit.prefix_matches(text, rows, columns, {});
-            auto velocity = dit.forward(latents, text, sigma[step], rows, columns, true);
+            auto velocity = timestep_cache ?
+                dit.forward(latents, text, sigma[step], rows, columns, true,nullptr,{},&time_conditions.at(size_t(step))) :
+                dit.forward(latents, text, sigma[step], rows, columns, true);
             std::optional<Tensor> preview_estimate;
             if (preview.due(step + 1) && step + 1 < r.steps)
                 preview_estimate = components::flow_preview_estimate(latents, velocity, sigma[step]);

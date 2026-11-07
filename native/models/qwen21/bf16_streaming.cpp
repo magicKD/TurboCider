@@ -372,6 +372,30 @@ QwenBf16StreamStageMetrics Bf16StreamBank::metrics() const {
 const streaming::StageLayout &Bf16StreamBank::execution_layout() const {
     return plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0];
 }
+uint64_t Bf16StreamBank::release_fixed_fields(const std::vector<std::string> &names) {
+    checkpoint(cancel_);
+    require(!finished_ && !pass_live_ && !layer_live_ && !current_ticket_ &&
+        !pending_[0] && !pending_[1] && safety_->quiescent() &&
+        metrics_.reader_fences==metrics_.completed_reader_fences,
+        "Qwen fixed-field release requires a drained pass boundary");
+    const auto &stage=plan_.minimum_plan ? plan_.minimum_plan->descriptor.stages[0] :
+        plan_.descriptor.stages[0];
+    for(const auto &name:names) {
+        require(!name.starts_with("transformer_blocks.") && !name.starts_with("model.layers."),
+            "Qwen fixed-field release cannot retire a layer field");
+        const auto found=std::find_if(stage.resident_fields.begin(),stage.resident_fields.end(),
+            [&](const auto &field) {
+                return field.materialization && field.materialization->reads.size()==1 &&
+                    field.materialization->reads.front().tensor==name;
+            });
+        require(found!=stage.resident_fields.end(),"Qwen fixed-field release requires an original fixed field: "+name);
+    }
+    // The pager drains the last submitted GPU readers and revalidates the
+    // held-fd source before atomically retiring its and resident_'s owners.
+    // Optional-cache eviction never rebuilds resident_, so retired fields
+    // cannot be brought back by later prefix or slot transitions.
+    return pager_.release_resident_fields(resident_,names,&cancel_);
+}
 bool Bf16StreamBank::evict_cached_layers() {
     require(!finished_ && !pass_live_ && !layer_live_ && !current_ticket_ && safety_->quiescent(),
         "Qwen cache eviction requires a drained pass boundary");

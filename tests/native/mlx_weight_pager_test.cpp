@@ -39,6 +39,11 @@ bool Weights::has(const std::string &key) const {
     return values_.contains(key);
 }
 
+void Weights::erase(const std::string &key) {
+    values_.erase(key);
+    runtime_loras_.erase(key);
+}
+
 } // namespace tc
 
 namespace {

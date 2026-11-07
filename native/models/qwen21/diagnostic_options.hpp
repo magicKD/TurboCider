@@ -20,6 +20,22 @@ inline bool option_enabled(const char *value) {
 inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
 }
+// Default-off, request-local time-source retirement experiment. Resolve from
+// the original requested route before streaming normalizes execution to GPU.
+inline bool stream_timestep_cache_request(const Request &r,bool turbo,bool convrot_encoder,
+        bool convrot_dit,bool dit_w8a8,bool runtime_ane,const char *raw) {
+    require(binary_option_or_unset(raw),"Qwen stream timestep cache requires 0 or 1");
+    if(!option_enabled(raw))return false;
+    require(r.model=="qwen-image-2.1" && r.residency=="streamed" && turbo && convrot_encoder && convrot_dit &&
+        dit_w8a8 && !runtime_ane && (r.execution=="gpu" || r.execution=="auto") &&
+        r.hybrid_mlp_mode=="auto" && r.qwen21_denoiser_backend=="mlx" &&
+        r.operation=="image.generate" && r.inputs.empty() && r.steps==8 && r.frames==1 && !r.audio && r.loras.empty() &&
+        r.ane_manifest.empty() && r.encoder_ane_manifest.empty() && !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
+        r.qwen21_gpu_full_ffn_blocks.empty() && r.qwen21_dit_cache=="off" && !r.prompt_enhance &&
+        !r.prompt_enhance_edit_experimental && !r.streaming.active() && !r.memory_constrained.enabled && !r.memory_budget_bytes,
+        "Qwen stream timestep cache requires ordinary GPU Turbo8 dual original INT8 ConvRot generation, DiT W8A8 and no LoRA or other math/cache route");
+    return true;
+}
 // Ordinary style adapters must retain the base Euler schedule. Legacy
 // experimental runtime adapters keep their six-step admission unless this
 // separate, default-off research mode is explicitly selected.
