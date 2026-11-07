@@ -169,3 +169,14 @@ Follow-up evidence is in `automatic-validation/`: full default correctness
 `negative-resident-1794086269042062000/`. Actual GUI clicking remains
 unverified because the Mac desktop is locked; App-state acceptance is a
 separate scope.
+
+The verified candidate was then promoted to `dist/TurboCider.app` and
+`dist/cli`, preserving the previous package in the local promotion
+directory. Both final native libraries are byte-identical, SHA256
+`1ba96f426721f4a896e7de90b52b1ab44e02eeee79a5d5defdb07d028ad9428a`,
+and the final CLI C API reports the new runtime ID above. Signature
+verification passed after relocation. Promotion uses macOS `ditto` to
+retain extended signatures on non-Mach-O Metal resources; an earlier
+ordinary-copy validation failed before replacing either old package and
+is retained separately. The successful promotion receipt is
+`automatic-validation/final-app-promotion-ditto-1794086615341385000/report.json`.
