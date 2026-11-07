@@ -22,6 +22,9 @@ struct RunInsights {
     let streamedBlocks: Int?
     let streamReadBytes: Double?
     let streamWaitSeconds: Double?
+    let streamResidentWeightBytes: Double?
+    let streamManagedWeightBytes: Double?
+    let streamResidentLayers: Int?
     let qwen21DiTCacheMode: String?
     let qwen21DiTCacheThreshold: Double?
     let qwen21DiTCacheMaxConsecutive: Int?
@@ -57,10 +60,53 @@ struct RunInsights {
         coreMLPredictionSeconds = number(hybrid, "prediction_seconds_session_total")
         coreMLOutputCopyBytes = number(hybrid, "output_copy_bytes_session_total")
         computeUnits = hybrid["compute_units"] as? String
-        let streaming = raw["block_residency"] as? [String: Any] ?? [:]
-        streamedBlocks = count(streaming, "streamed_blocks")
-        streamReadBytes = number(streaming, "request_bytes_loaded")
-        streamWaitSeconds = number(streaming, "request_wait_seconds")
+        let convrot = raw["qwen_convrot_streaming"] as? [String: Any] ?? [:]
+        if let encoder = convrot["encoder"] as? [String: Any],
+           let denoiser = convrot["denoiser"] as? [String: Any] {
+            func sum(_ key: String) -> Double? {
+                guard let a = number(encoder, key), let b = number(denoiser, key),
+                      (a + b).isFinite else { return nil }
+                return a + b
+            }
+            if let a = count(encoder, "completed_streamed_layers"),
+               let b = count(denoiser, "completed_streamed_layers") {
+                let total = a.addingReportingOverflow(b)
+                streamedBlocks = total.overflow ? nil : total.partialValue
+            } else { streamedBlocks = nil }
+            streamReadBytes = sum("streamed_source_bytes")
+            streamWaitSeconds = sum("wait_seconds")
+            // Maxima describe sequential phases only when the native receipt
+            // confirms that their weights were released before VAE decoding.
+            if let released = convrot["components_released_before_vae"] as? NSNumber,
+               CFGetTypeID(released) == CFBooleanGetTypeID(), released.boolValue {
+                if let a = number(encoder, "resident_source_bytes"),
+                   let b = number(denoiser, "resident_source_bytes") {
+                    streamResidentWeightBytes = max(a, b)
+                } else { streamResidentWeightBytes = nil }
+                if let a = number(encoder, "managed_weight_capacity_bytes"),
+                   let b = number(denoiser, "managed_weight_capacity_bytes"),
+                   let ad = number(encoder, "derived_weight_capacity_bytes"),
+                   let bd = number(denoiser, "derived_weight_capacity_bytes"),
+                   (a + ad).isFinite, (b + bd).isFinite {
+                    streamManagedWeightBytes = max(a + ad, b + bd)
+                } else { streamManagedWeightBytes = nil }
+                if let a = count(encoder, "prefix"), let b = count(denoiser, "prefix") {
+                    streamResidentLayers = max(a, b)
+                } else { streamResidentLayers = nil }
+            } else {
+                streamResidentWeightBytes = nil
+                streamManagedWeightBytes = nil
+                streamResidentLayers = nil
+            }
+        } else {
+            let streaming = raw["block_residency"] as? [String: Any] ?? [:]
+            streamedBlocks = count(streaming, "streamed_blocks")
+            streamReadBytes = number(streaming, "request_bytes_loaded")
+            streamWaitSeconds = number(streaming, "request_wait_seconds")
+            streamResidentWeightBytes = nil
+            streamManagedWeightBytes = nil
+            streamResidentLayers = nil
+        }
         let dit = raw["qwen21_dbcache"] as? [String: Any] ?? [:]
         let mode = dit["mode"] as? String
         qwen21DiTCacheMode = ["off", "conservative", "balanced", "fast", "diagnostic"].contains(mode ?? "") ? mode : nil
