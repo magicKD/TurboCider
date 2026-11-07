@@ -160,3 +160,52 @@ the full FFN, encoder, full model, cold request or another device.
 M1056 remains a historical32-text fixture; M33/65/257 are synthetic tails.
 The reusable mechanism and failure conditions belong in
 [fusion and layout](../../techniques/metal/fusion-and-layout.md).
+
+## Three-arm component performance passed
+
+A separately frozen executable compared the native typed GU plus original
+compiled SiLU×up with the qualified integer and LUT FF-only kernels in the
+same process. Both original per-call A8 quantization and required copies
+were inside the monotonic wall-clock call/eval/synchronize window. H256,
+down projection, source I/O and complete FFN/model/request were excluded.
+The two fixed alternate BF16 inputs and original W/scales were shared.
+
+The native/RNE and native/LUT pairs each used ABBA then BAAB, three batches
+per window and20 calls per block. Candidate pair order reversed in BAAB.
+All1920 timed calls had an actual projection/A8/row receipt. Twelve
+prevalidated output records and32 retained actual last-timed owners passed
+full-byte checks; no diagnostic or LUT-consumer dispatch ran in the windows.
+
+| M | RNE ABBA | RNE BAAB | LUT ABBA | LUT BAAB |
+| --- | ---: | ---: | ---: | ---: |
+| 1024 | 1.126619× | 1.120728× | 1.159365× | 1.156379× |
+| 1048 | 1.109773× | 1.108525× | 1.151529× | 1.145113× |
+
+Ratios are paired native median divided by candidate median, not whole-image
+speedups. Every candidate/shape combination improved in all six batches;
+all samples and their ranges are retained. For M1024, native medians were
+6.335–6.356ms, RNE5.639–5.653ms and LUT5.482–5.495ms. For M1048 they were
+7.041–7.078ms, RNE6.345–6.362ms and LUT6.146–6.181ms.
+
+Actual table preparation was separately measured once: generation99.216709ms,
+pack0.016750ms, GPU materialization0.110750ms and verification0.163166ms,
+total99.507375ms. It regenerated the qualified table SHA from the actual
+compound SiLU; it did not run the64-check domain suite. Operator windows
+start with the table prepared. This one fixed cost and any additional new
+shader compilation must be included in a future complete-request comparison.
+Steady-state LUT superiority alone therefore does not select a cold-request
+winner or prove how the App's reusable runtime will behave.
+
+The process had150 samples, max gap110.033334ms, physical peak697320312B,
+no guard denial, no new compression and0 new swap-in/out. Existing swap
+allocation remained1445.19MiB. Native/RNE/LUT actual projection/A8 counts
+were972/488/488, all exact. Both compile and GPU execution returned0.
+Evidence:
+`gateup-swiglu-fusion/integer-dequant-barrier/performance/attempt-1794092095226455000/execution/`.
+
+These results justify preparing native opt-in integration. The no-table
+integer route is being wired in an isolated worktree first, preserving
+default behavior and requiring actual native API, streamed full trajectory,
+image and complete-request qualification before promotion. LUT preparation
+layout/reuse remains a separate optimization hypothesis. Neither route has
+been enabled in the packaged App by this component campaign.
