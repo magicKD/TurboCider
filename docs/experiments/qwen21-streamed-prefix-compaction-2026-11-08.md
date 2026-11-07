@@ -64,7 +64,26 @@ worker. It produced no long image. The batch sampler recorded about
 marks the whole batch unsuccessful because that second request failed.
 No memory guard was disabled and no complete-batch or speedup claim is made.
 
+After host pressure returned to normal, a separate experiment used the
+final packaged `dist/cli/turbocider` for the outstanding long request.
+Two preflight observations reported pressure level 1. The full long PNG
+matched the original `02-long.png` byte for byte, with zero pixel error:
+`e2fa61caaa98983cc6034bd1aac19b76db71cc12b07cd15a2b939c433ef90d58`.
+Its 252 encoder / 1536 DiT projections and three finite tensor dumps were
+verified. The complete sampler covered 195 samples, maximum gap 110 ms,
+about 3.87 GiB peak footprint and zero swap I/O. Dyld loaded the packaged
+library, whose runtime ID matched the 683 verified source inputs.
+The original failed batch remains unchanged. Pressure returned to level 2
+after the successful long request, so this does not qualify sustained
+back-to-back generation under arbitrary host load.
+
+The Swift desktop App build, local ad-hoc packaging/release check and
+packaged CLI GPU self-test passed. Actual GUI preview verification remains
+pending manual Mac unlock; Computer Use reported a locked desktop.
+
 Raw logs and both real-model ownership receipts are local under
 `outputs/qwen-convrot-gpu-fusion-20261107/`. The complete-image failed batch
 and successful short-image witness are under `kv-compact-full-image/run/`;
 `postmortem.json` supplements rather than replaces its failed `report.json`.
+The separate successful packaged long run is under
+`kv-compact-packaged-long/`.
