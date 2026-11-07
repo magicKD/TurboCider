@@ -11,9 +11,21 @@
 #include <limits>
 #include <algorithm>
 #include <string_view>
+#include <unordered_set>
 
 namespace tc::qwen21 {
 namespace {
+Tensor owned_prefix_copy(const Tensor& value) {
+    // A plain copy can alias its source. Preserve all dtype bytes while
+    // forcing separate, compact storage outside the compiled block.
+    return mx::copy(mx::contiguous(mx::astype(value,value.dtype(),std::optional<bool>{true})));
+}
+bool compact_stream_prefix() {
+    const auto* value=std::getenv("TURBOCIDER_QWEN21_STREAM_COMPACT_KV");
+    require(!value || std::string_view(value)=="0" || std::string_view(value)=="1",
+        "streamed prefix compaction control requires 0 or 1");
+    return !value || std::string_view(value)=="1";
+}
 Tensor rotate(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
     auto shape = x.shape();
     auto paired_shape = shape;
@@ -153,6 +165,22 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
     return true;
 }
 
+Transformer::PrefixStorageInfo Transformer::prefix_storage() const {
+    PrefixStorageInfo info;
+    std::unordered_set<const void*> buffers;
+    for(const auto& kv:prefix_)for(const auto* value:{&kv.key,&kv.value}) {
+        ++info.arrays;info.logical_bytes+=value->nbytes();
+        const bool ready=value->is_available();
+        info.evaluated=info.evaluated && ready;
+        info.compact=info.compact && ready && !value->has_primitive() &&
+            value->inputs().empty() && value->siblings().empty() &&
+            value->flags().row_contiguous && value->offset()==0 && value->data_size()==value->size();
+        if(ready && value->data_shared_ptr() && buffers.insert(value->data_shared_ptr().get()).second)
+            info.backing_bytes+=value->buffer_size();
+    }
+    return info;
+}
+
 bool Transformer::graph_geometry_matches(const Tensor &text, int height, int width,
                                          const std::vector<ReferenceLatents> &references) const {
     if (!cosine_ || text.ndim() != 3 || text_length_ != text.shape(1) || height_ != height ||
@@ -211,10 +239,8 @@ Transformer::export_prefix_snapshot(uint64_t max_bytes, bool allow_db_cache, boo
         // AsType(copy=true) outside compile forces a value-preserving copy;
         // the live prefix_ owner prevents allocator donation. Contiguous
         // compacts transposed/sliced head rows instead of retaining targets.
-        snapshot.keys.push_back(mx::copy(mx::contiguous(
-            mx::astype(kv.key, kv.key.dtype(), std::optional<bool>{true}))));
-        snapshot.values.push_back(mx::copy(mx::contiguous(
-            mx::astype(kv.value, kv.value.dtype(), std::optional<bool>{true}))));
+        snapshot.keys.push_back(owned_prefix_copy(kv.key));
+        snapshot.values.push_back(owned_prefix_copy(kv.value));
         completed.push_back(snapshot.keys.back());
         completed.push_back(snapshot.values.back());
     }
@@ -996,6 +1022,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         if(retire_weights_) {
             mx::eval(outputs);mx::eval(hidden);
+            if(!reuse && cache_prefix && compact_stream_prefix()) {
+                // Prefix slices otherwise retain every target token in the
+                // full prefill K/V backing for all remaining denoise steps.
+                // Complete exact owned copies before the slot is retired.
+                auto& kv=new_prefix.back();
+                auto key=owned_prefix_copy(kv.key),value=owned_prefix_copy(kv.value);
+                mx::eval(key,value);
+                kv={std::move(key),std::move(value)};
+            }
             retire_weights_(i);
         }
         if (db_decode && i == config_.layers - db_back_blocks - 1) {

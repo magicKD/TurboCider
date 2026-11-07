@@ -29,6 +29,9 @@ class CacheTrajectoryTests(unittest.TestCase):
                 "-Wl,-rpath," + str(library), "-Wl,-rpath," + str(mlx / "lib"), "-o", str(binary)], check=True)
             environment = {k: v for k, v in os.environ.items() if not k.startswith("TURBOCIDER_")}
             environment.update(MLX_ENABLE_TF32="0", TURBOCIDER_SOURCE_REGISTRATION_CACHE=str(Path(temporary) / "registration"))
+            compact = os.environ.get("TURBOCIDER_QWEN21_STREAM_COMPACT_KV", "1")
+            self.assertIn(compact, ("0", "1"))
+            environment["TURBOCIDER_QWEN21_STREAM_COMPACT_KV"] = compact
             configured = os.environ.get("TURBOCIDER_QWEN21_CONVROT_SHARED_A8")
             self.assertIn(configured, (None, "0", "1"))
             modes = ((configured, 1088 if configured == "1" else 1536),) if configured is not None else (("0", 1536), ("1", 1088))
