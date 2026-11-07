@@ -45,6 +45,30 @@ microbenchmark into an end-to-end claim.
   in `native/THIRD_PARTY_NOTICES.md`.
 - Regenerate branding with `swift tools/branding/generate.swift` on macOS.
 
+## Focused cleanup and documentation changes
+
+Work one directory or closely related component at a time. Split independent
+cleanup into separate PRs; include another directory only when the same change
+needs a consumer, test, build registration or documentation link updated.
+
+Before removing code, check build/package lists, imports, dynamic entry points,
+tests and documented commands. A lack of direct textual references alone does
+not prove a file is unused. Preserve third-party provenance and do not mix
+behavior changes with a mechanical move.
+
+New experiment narratives belong under `docs/experiments/<topic>/`, with small
+portable evidence beside them and raw runs under ignored `outputs/`. Designs
+belong in `docs/design/`, user instructions in `docs/public/`, curated comparisons
+in `docs/benchmark/`, and implementation checkpoints in `docs/status/`. Link to a
+record instead of copying it between directories. Migrate existing experiments
+one topic at a time, keeping old published links usable and updating executable
+consumers when moving data files.
+
+For documentation-only changes, check relative links and review moved content
+for lost context. Report the checks actually run and distinguish them from
+native builds or hardware/model validation. For code changes, follow the tests
+and packaging requirements above and record any environment limitations.
+
 Pull requests should explain the user-visible behavior, relevant validation,
 and remaining limitations. For bugs, include the request with private prompts
 and paths redacted, `doctor` output, and the error/progress events.

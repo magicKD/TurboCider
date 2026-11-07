@@ -12,12 +12,13 @@
 
 namespace tc::qwen21 {
 namespace {
-double span(Clock::time_point start){return std::chrono::duration<double>(Clock::now()-start).count();}
-constexpr int H=4096,N=12288,B=512,M=1024;
+constexpr int M=1024;
 }
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
 namespace pa=ane::private_api;
 namespace {
+constexpr int H=4096,N=12288,B=512;
+double span(Clock::time_point start){return std::chrono::duration<double>(Clock::now()-start).count();}
 ane::DeviceMatrixView matrix(const Tensor &a,int rows,int cols,int begin=0) {
     require(a.is_available()&&a.flags().row_contiguous&&a.dtype()==mx::bfloat16&&a.buffer().ptr()&&
         begin>=0&&rows>0&&size_t(begin+rows)*cols<=a.size(),"Private QKV needs ready owned BF16 matrices");

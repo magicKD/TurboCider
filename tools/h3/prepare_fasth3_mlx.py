@@ -18,16 +18,17 @@ Examples::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 import struct
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
+
+
+# Keep direct CLI invocation and file-based tooling imports working.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from h3_download_common import download_file as _download_file, sha256_file as _sha256_file  # noqa: E402
 
 
 DEFAULT_REPO = "FastVideo/FastVideo-FastH3-4-step-Preview-v1-Dense-DataFree"
@@ -37,11 +38,7 @@ REQUIRED_FILES = ("config.json",)
 
 
 def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return _sha256_file(path, chunk_bytes=8 * 1024 * 1024)
 
 
 def directory_bytes(path: Path) -> int:
@@ -129,43 +126,9 @@ def download_file(url: str, target: Path, *, retries: int = 3) -> None:
     if target.is_file():
         print(f"[skip] {target}", flush=True)
         return
-    part = target.with_name(target.name + ".part")
-    for attempt in range(1, retries + 1):
-        offset = part.stat().st_size if part.exists() else 0
-        headers = {"Range": f"bytes={offset}-"} if offset else {}
-        request = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=90) as response:
-                status = getattr(response, "status", response.getcode())
-                if offset and status != 206:
-                    offset = 0
-                    part.unlink(missing_ok=True)
-                mode = "ab" if offset else "wb"
-                content_length = int(response.headers.get("Content-Length", "0"))
-                total = offset + content_length if content_length else 0
-                downloaded = offset
-                last_report = time.monotonic()
-                with part.open(mode) as stream:
-                    while True:
-                        chunk = response.read(16 * 1024 * 1024)
-                        if not chunk:
-                            break
-                        stream.write(chunk)
-                        downloaded += len(chunk)
-                        now = time.monotonic()
-                        if now - last_report > 10:
-                            suffix = f"/{total / 2**30:.2f} GiB" if total else ""
-                            print(f"  {target.name}: {downloaded / 2**30:.2f} GiB{suffix}", flush=True)
-                            last_report = now
-                if total and downloaded != total:
-                    raise IOError(f"short response ({downloaded} != {total} bytes)")
-            part.replace(target)
-            print(f"[done] {target}", flush=True)
-            return
-        except (OSError, urllib.error.URLError, TimeoutError) as error:
-            print(f"[retry {attempt}/{retries}] {target.name}: {error}", flush=True)
-            if attempt == retries:
-                raise
+    _download_file(url, target, retries=retries, timeout=90, strict_progress=True)
+    if retries > 0:
+        print(f"[done] {target}", flush=True)
 
 
 def validate_transformer(root: Path) -> None:

@@ -1,11 +1,14 @@
 # 验收证据的版本控制约定
 
-## Z-Image 性能证据入口
+## Z-Image 历史性能证据入口
+
+实验正文已统一存入 [Z-Image Metal 实验目录](../../experiments/z-image-metal/README.md)。
+此处的旧 Markdown 入口只保留转发；JSON 摘要和性能账本继续使用原路径。
 
 Z-Image 性能分析必须先读取 `z-image-performance-ledger-2026-09-23.json`。
 其中列出的 2026-09-22/重启前记录只可保留作 parity、实现历史或诊断证据，
-不得再用于 kernel 选择、加速比、回归阈值或容量判断。当前权威结果是
-`z-image-clean-performance-2026-09-23.json`。
+不得再用于 kernel 选择、加速比、回归阈值或容量判断。该次复验的权威结果是
+`z-image-clean-performance-2026-09-23.json`，不能自动外推为当前版本的性能保证。
 
 此目录保留经审阅、被设计文档引用的验收摘要，不应整体加入 `.gitignore`。
 

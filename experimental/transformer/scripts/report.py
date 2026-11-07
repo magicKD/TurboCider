@@ -1,5 +1,5 @@
 """Fill the technical report with computed evidence; keep the narrative reviewable."""
-import json,statistics,re,collections
+import json,statistics,re,collections,os
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];N=ROOT/'notes';summary=json.loads((N/'summary.json').read_text());rows=json.loads((N/'measurements.json').read_text());S={x['group']:x for x in summary}
 def table(headers,rs):return '\n'.join(['| '+' | '.join(headers)+' |','| '+' | '.join(['---']*len(headers))+' |']+['| '+' | '.join(map(str,r))+' |' for r in rs])
@@ -35,9 +35,15 @@ logical=sum(x['logical_bytes_removed'] for x in logs)
 if cleanup:
     last=sum(x['logical_bytes'] for x in cleanup['final_cleanup']);repl['CLEANUP_TEXT']=f"每个配置测量后删除其专属 Core ML package、compiled model 和权重。累计清理 {logical/2**30:.2f} GiB **逻辑工件字节**（包含多轮重新生成，不能等同于一次释放的物理空间）。最后又删除剩余 smoke 工件及本次新建的 5 个 executable cache，共 {last/2**20:.2f} MiB 逻辑数据；已检查这些目录不存在。private 临时 model 目录在卸载时删除。清理明细见 [final_cleanup.json](raw/final_cleanup.json) 与各 suite 的 cleanup.jsonl。保留用户原有共享 Core ML/其他应用缓存、源代码和原始数据。磁盘空间受 APFS 与其他进程影响，不以全盘空闲变化估算模型大小。"
 else:repl['CLEANUP_TEXT']='缓存清理尚未完成。'
-s=(N/'REPORT.template.md').read_text()
+archive=ROOT.parents[1]/'docs/experiments/transformer/m4-pro'
+s=(archive/'REPORT.template.md').read_text()
 for k,v in repl.items():s=s.replace('@@'+k+'@@',v)
 assert '@@' not in s
-(N/'REPORT.md').write_text(s)
+# Keep archived prose links valid from the local output directory. Figures and
+# measurements still refer to this rerun's local evidence, not historical data.
+for name in ['PROTOCOL.md','RELATED_WORK.md','THIRD_PARTY.md']:
+    s=s.replace(f']({name})', f']({os.path.relpath(archive/name, N)})')
+s=s.replace('](../../../../experimental/transformer/README.md)', '](../README.md)')
+(N/'REPORT.generated.md').write_text(s)
 (N/'campaign_summary.json').write_text(json.dumps({'valid_processes':len(rows),'paired_samples':pairs,'suite_counts':dict(counts),'largest_confirmed_group':max(summary,key=lambda x:x['speedup']),'logical_artifacts_cleaned_bytes':logical,'cleanup_complete':cleanup is not None},indent=2))
 print('report written',len(s),'characters')

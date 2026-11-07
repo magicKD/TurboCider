@@ -4910,12 +4910,6 @@ static int configure_ssd_pinned_prefix(h3_dit *dit, int requested,
     return 1;
 }
 
-static unsigned next_active_block(const h3_dit *dit, unsigned current) {
-    for (unsigned block = current + 1; block < H3_DIT_BLOCKS; block++)
-        if (dit->block_active[block]) return block;
-    return H3_DIT_BLOCKS;
-}
-
 static int configure_gate_ranked_blocks(h3_dit *dit) {
     const char *policy = h3_runtime_getenv("H3_DIT_LAYER_POLICY");
     if ((policy && !strcmp(policy, "uniform")) ||

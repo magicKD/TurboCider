@@ -34,27 +34,17 @@
 | [05 M5 W8A8](05-m5-w8a8-backend.md) | MPP、INT32 累加、动态 A8、能力门禁、无 M5 验证合同 |
 | [06 静态与 runtime ANE](06-static-and-runtime-ane.md) | 两种 artifact、动态 scale 难点、tiling、模块复用、并行与内存 |
 | [07 实施和验收](07-implementation-and-acceptance.md) | 逐文件工作包、测试矩阵、性能/质量/内存/发布门禁 |
-| [08 本轮交付与实验](08-experiments-and-delivery.md) | 实际改动、命令、已跑/未跑证据，不与规划混用 |
 | [09 首发与组件合同](09-release-scope-and-component-contracts.md) | R0–R5、真实 GGUF 目录差异、Z/Qwen3 映射、逐类 dtype profile |
 | [10 执行与产品接入](10-execution-and-product-integration.md) | 配置冲突、同步/异步 decode、slot/lazy graph、分片恢复、P4 产品接入 |
 | [11 固定验收与可行性](11-acceptance-profiles-and-feasibility.md) | 数值/媒体/内存/性能硬判定、runner 合同、INT8 证据与退出规则 |
-| [12 实施进度](12-implementation-progress.md) | 已实现的安全目录/CPU Q4–Q8 decoder、真实 Z 权重验证、SIMD 原始回执与剩余工作 |
-| [13 有界 GPU 实验实现](13-gguf-bounded-runtime-progress.md) | SourceLease/ledger/slots接入真实Z生成、MLX浮点加载差异、兼容profiles与通过/失败记录 |
-| [14 ANE直填与W8A8筛选](14-packed-ane-staging-and-w8a8-screen.md) | GGUF/ConvRot FP16 staging API、有界转换并行、CPU SIMD实测、动态QDQ完整投影与负结果 |
-| [15 Qwen3 GGUF conditioning](15-qwen3-gguf-conditioning.md) | verified config/tokenizer与gather、逐层固定槽、Q8/mixed K真实组件及Z组合、质量差异与剩余资格 |
-| [16 CPU量化SIMD加速](16-cpu-quant-simd-acceleration.md) | Q4/Q5/K直填SIMD、同源encoder控制、独占投影/encoder实测与完整Z exact回归 |
-| [17 packed-streamed/三槽](17-packed-streamed-and-three-slots.md) | 单有界read buffer、source/task读取复用、p2真实12格与Z/取消exact，剩余floor/envelope |
-| [18 refiner流式/银行交接](18-streamed-refiners-and-bank-boundaries.md) | interleaved refiners单槽、drained银行释放重建、浮点SIMD转换、真实Q8/Q4 exact与取消；6/8/10/16 GB速度优先方向 |
-| [19 预算速度筛选](19-speed-and-memory-budget-screen.md) | 七候选完整Q8请求的独立测速/内存采样、6/8/10/16 GB及GiB经验选择，native额外驻留负结果与后续优化 |
-| [20 direct packed导入/阶段释放](20-direct-packed-import-and-stage-release.md) | compute-ready压缩bank直填、cache0对照、refiner eval/VAE前verified释放、Q8/Q4 exact与分预算较快候选 |
-| [21 最快BF16与compiled packed](21-fastest-bf16-and-compiled-packed-screen.md) | 实际更快BF16基线、Q8/Q4原算术参数图/压缩bank复用、独立速度内存screen；BF16密集槽和ConvRot runtime FP16质量负结果 |
-| [22 FP16 packed compute/逐block N1](22-fp16-packed-compute-and-block-validation.md) | explicit FP16 QMM/FP32 glue、cache分账与独立source轨迹；Q8/Q4单cell全部block N1及≤20%/lower-memory screen通过，dynamic refiner中间层负结果 |
-| [23 raw-GPU affine streaming](23-raw-gpu-affine-streaming.md) | raw Ready/CPU只读与当前GPU bank、有界批量packing/claims/cache容量拒绝；K1/K2/K3和真实Q8/Q4 exact，6/8GB组合observed fit但BF16速度门失败 |
-| [24 fixed bank/dependency-ready](24-fixed-gpu-bank-and-dependency-ready.md) | 固定GPU输出bank/ticket、常驻浮点refiners、显式packing依赖；Q8/Q4全部block N1与取消exact、逐tensor压缩预测；全请求内存下降但BF16速度门仍失败 |
-| [25 verified encoder metadata](25-verified-encoder-metadata-cache.md) | 仅CPU metadata/tokenizer复用、文件/配置/取消失效与publish门；同库cache-hit省约.34s、4.93GB observed fit；非保留Q4约2s CPU repack负结果，速度/整体资格未完成 |
-| [26 lossless fused affine](26-lossless-fused-affine-import.md) | Q4/Q8一次遍历NEON packing、half bias穷举、direct BF16 alias；非保留Q4同库6.716→5.058s、全部block/端点exact；BF16速度门仍失败，10/16GB仅observed fit |
+
+08 与 12–26 的实施/测量账本已按原编号统一收录于
+[量化执行实验归档](../../experiments/quantized-execution/README.md)，旧页面及章节链接保留。
 
 ## 当前状态速查
+
+> 2026-11-06 归档说明：下表保留本专题历史阶段的状态，不是当前版本的完整支持矩阵。
+> 对应测量、失败和剩余范围请按编号阅读[实验记录](../../experiments/quantized-execution/README.md)。
 
 | 能力 | 本轮状态 |
 | --- | --- |

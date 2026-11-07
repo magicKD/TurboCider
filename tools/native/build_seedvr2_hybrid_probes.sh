@@ -6,7 +6,7 @@ OUT="$PWD/build/seedvr2"
 mkdir -p "$OUT/module-cache"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-TARGET="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '/cmd LC_BUILD_VERSION/{build=1; next} build && /minos /{print $2; exit}')"
+TARGET="$(turbocider_mlx_min_macos)"
 xcrun clang++ -std=c++20 -O2 -isysroot "$SDK" -mmacosx-version-min="$TARGET" \
   -I native/core -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp" \
   tools/native/coreml_partitions_probe.cpp -L build/native -lturbocider -L "$MLX_ROOT/lib" -lmlx \

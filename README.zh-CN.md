@@ -117,4 +117,11 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 
 [文档入口](docs/public/README.md) · [模型库](docs/public/MODEL_LIBRARY.md) · [缓存与内存](docs/public/CACHES.md)
 
-TurboCider 原创代码采用 MIT 许可证；第三方代码与模型权重遵循各自许可证。仓库不包含大型模型权重和生成结果。
+## 参与贡献
+
+开发流程、测试要求和仓库约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。每个 PR 聚焦一个目录或紧密相关的组件。
+开始相关研究前，先查看[完整文档](docs/)和[实验归档](docs/experiments/)；保留失败结果及其测量边界。
+
+通过 Issue 模板报告可复现问题或提出功能建议。报告问题时请提供芯片、macOS 版本、代码版本和最小请求。
+
+TurboCider 原创代码采用 [MIT 许可证](LICENSE)；第三方代码与模型权重遵循各自许可证。仓库不包含大型模型权重和生成结果。
