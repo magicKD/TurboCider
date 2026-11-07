@@ -42,17 +42,64 @@ bool bf16_streaming_enabled() {
     const auto *value=std::getenv("TURBOCIDER_QWEN21_BF16_STREAMING");
     require(binary_option_or_unset(value),"Qwen BF16 streaming requires0 or1");return option_enabled(value);
 }
+uint64_t bf16_stream_managed_capacity(const Bf16StreamPlan &plan) {
+    const auto &layout=plan.layout.stages.at(0);
+    auto capacity=gguf::checked_add(layout.resident_bytes,layout.peak_pool_bytes);
+    if(plan.mode==StreamWeightMode::ConvRotFloat)
+        capacity=gguf::checked_add(capacity,float_layer_capacity(plan.descriptor.stages.at(0).blocks.front()));
+    return capacity;
+}
+Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan base,uint64_t budget,
+        const std::function<bool(uint64_t)> &admit) {
+    require(base.prefix==0 && base.descriptor.stages.size()==1 &&
+        base.descriptor.stages[0].id=="denoiser" && base.mode!=StreamWeightMode::Bf16,
+        "Qwen weight caching requires the original zero-prefix streamed denoiser plan");
+    const auto minimum=bf16_stream_managed_capacity(base);
+    require(minimum<=budget,"Qwen streamed weight budget is below the required weights and two refill buffers; minimum MiB="+
+        std::to_string((minimum+((uint64_t(1)<<20)-1))>>20));
+    auto selected=base;
+    uint32_t target=0;
+    for(uint32_t prefix=1;prefix<=base.layers-2;++prefix) {
+        auto candidate=base;
+        auto &stage=candidate.descriptor.stages[0];
+        for(uint32_t layer=0;layer<prefix;++layer) for(auto field:stage.blocks[layer].fields) {
+            field.name="transformer_blocks."+std::to_string(layer)+"."+field.name;
+            stage.resident_fields.push_back(std::move(field));
+        }
+        stage.blocks.erase(stage.blocks.begin(),stage.blocks.begin()+prefix);
+        candidate.prefix=prefix;
+        candidate.descriptor.workload["resident_prefix"]=std::to_string(prefix);
+        candidate.descriptor.backend_revision+="-cached-prefix-v1";
+        StreamingConfig config;config.enabled=true;config.schema_version=1;config.selection="manual";config.retention="request";
+        config.stages[stage.id]={"streamed",1,2,0,1,1};
+        candidate.layout=streaming::compile_layout(config,candidate.descriptor);
+        const auto capacity=bf16_stream_managed_capacity(candidate);
+        if(capacity>budget)break;
+        target=prefix;
+        if(!admit || admit(capacity))selected=std::move(candidate);
+    }
+    selected.cache_budget_prefix=target;
+    selected.cache_limited_by_memory=selected.prefix<target;
+    if(selected.prefix)selected.minimum_plan=std::make_shared<const Bf16StreamPlan>(std::move(base));
+    return selected;
+}
 Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<bool> &cancel)
-    :plan_(std::move(plan)),pager_(plan_.lease,plan_.descriptor,plan_.descriptor.stages[0],plan_.layout.stages[0]),cancel_(cancel) {
+    :plan_(std::move(plan)),pager_(plan_.lease,
+        plan_.minimum_plan ? plan_.minimum_plan->descriptor : plan_.descriptor,
+        plan_.minimum_plan ? plan_.minimum_plan->descriptor.stages[0] : plan_.descriptor.stages[0],
+        plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0]),cancel_(cancel) {
     const auto &layout=plan_.layout.stages[0];
     const auto &stage = plan_.descriptor.stages[0];
     const bool convrot_request = plan_.mode != StreamWeightMode::Bf16;
     const bool convrot = plan_.mode == StreamWeightMode::ConvRotFloat || plan_.mode == StreamWeightMode::ConvRotW8A8;
     const bool tensorops = plan_.mode == StreamWeightMode::ConvRotW8A8;
-    require(!convrot_request || plan_.prefix == 0, "Qwen ConvRot bank requires zero resident layer prefix");
+    require(!convrot_request || stage.id=="denoiser" || plan_.prefix==0,
+        "Qwen ConvRot encoder bank requires zero resident layer prefix");
     const auto capacity = gguf::checked_add(layout.resident_bytes, layout.peak_pool_bytes);
     const auto derived = plan_.mode == StreamWeightMode::ConvRotFloat ? float_layer_capacity(stage.blocks.front()) : 0;
     const auto managed = gguf::checked_add(capacity, derived);
+    require(execution_layout().peak_pool_bytes<=layout.peak_pool_bytes,
+        "Qwen cached layers require the same reusable refill capacity as the suffix");
     require(managed <= budget, "Qwen streaming managed weight budget floor");
     if (convrot_request) {
         ane::require_streaming_memory_headroom(mx::get_active_memory(), managed,
@@ -70,7 +117,7 @@ Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<b
     pager_.use_exact_allocations(convrot_request);
     pager_.load_resident(resident_,&cancel_);plan_.lease->revalidate_after_drain();
     if (tensorops) resident_.set_convrot_w8a8(true);
-    pager_.create_pool(layout.pools[0]);
+    pager_.create_pool(execution_layout().pools[0]);
     if (derived) {
         // Each block in this pool shares the same validated geometry. Reserve
         // one reusable exact Q8 bank for the current layer. The raw embedding
@@ -89,17 +136,45 @@ Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<b
                 allocate_float_backing(coefficients, mx::float32, plane_bytes)});
         }
     }
+    if(plan_.minimum_plan) {
+        cache_plan_=plan_;
+        auto &cache_stage=cache_plan_->descriptor.stages[0];
+        std::erase_if(cache_stage.resident_fields,[](const auto &field) {
+            return !field.name.starts_with("transformer_blocks.");
+        });
+        StreamingConfig config;config.enabled=true;config.schema_version=1;config.selection="manual";config.retention="request";
+        config.stages[cache_stage.id]={"streamed",1,2,0,1,1};
+        cache_plan_->layout=streaming::compile_layout(config,cache_plan_->descriptor);
+        cache_pager_=std::make_unique<streaming::MlxWeightPager>(plan_.lease,cache_plan_->descriptor,
+            cache_stage,cache_plan_->layout.stages[0]);
+        cache_pager_->use_exact_allocations(true);
+        try {
+            cache_pager_->load_resident(cached_,&cancel_);
+            if(tensorops)cached_.set_convrot_w8a8(true);
+        } catch(const std::invalid_argument &error) {
+            if(std::string_view(error.what()).find("incremental ConvRot source admission declined")==std::string_view::npos)throw;
+            retired_cache_metrics_=cache_pager_->metrics();
+            cached_.clear();cache_pager_.reset();cache_plan_.reset();
+            plan_.prefix=0;plan_.cache_limited_by_memory=true;
+            ++metrics_.cache_evictions;
+        }
+    }
     std::vector<uint64_t> capacities;for(const auto &slot:layout.pools[0].slots)capacities.push_back(slot.capacity_bytes);
     safety_=std::make_unique<streaming::SlotSafetyTracker>(layout.pools[0].id,plan_.lease->generation(),capacities);
     io_=std::make_unique<streaming::IoExecutor>(1,2,mailbox_);
     const auto &file=plan_.lease->descriptor().files[0];
-    metrics_.source_sha256=file.content_digest;metrics_.source_file_bytes=file.bytes;metrics_.layout_digest=plan_.layout.digest;
+    metrics_.source_sha256=file.content_digest;metrics_.source_file_bytes=file.bytes;
+    metrics_.layout_digest=plan_.minimum_plan ? plan_.minimum_plan->layout.digest : plan_.layout.digest;
+    if(cache_plan_)metrics_.cache_layout_digest=cache_plan_->layout.digest;
     metrics_.verification_bytes=plan_.lease->verification_bytes_read();metrics_.verification_cache_hits=plan_.lease->verification_cache_hits();
     metrics_.verification_seconds=plan_.verification_seconds;metrics_.managed_weight_capacity_bytes=capacity;metrics_.managed_weight_budget_bytes=budget;
     metrics_.derived_weight_capacity_bytes=derived;
     metrics_.source_precision=convrot ? "original_i8_convrot" : "original_bf16";
     metrics_.matmul_mode=tensorops ? "int8_tensorops_w8a8" : convrot ? "q8_g128_float_a" : "bf16";
     metrics_.layers=plan_.layers;metrics_.prefix=plan_.prefix;metrics_.slots=2;
+    metrics_.cache_budget_prefix=plan_.cache_budget_prefix;
+    metrics_.cache_limited_by_memory=plan_.cache_limited_by_memory;
+    metrics_.final_prefix=plan_.prefix;
 }
 Bf16StreamBank::~Bf16StreamBank() {
     if(io_)io_->shutdown_and_join();
@@ -163,7 +238,7 @@ Tensor Bf16StreamBank::embedding_rows(const Tokens &tokens) {
 }
 void Bf16StreamBank::schedule(uint32_t layer) {
     if(layer>=plan_.layers)return;
-    const auto &group=plan_.layout.stages[0].groups.at(layer-plan_.prefix);
+    const auto &group=execution_layout().groups.at(plan_.minimum_plan ? layer : layer-plan_.prefix);
     if(pending_[group.slot]) {
         require(pending_[group.slot]->item.group==group.id && pending_[group.slot]->item.pass==pass_,
             "Qwen BF16 pending slot belongs to another layer/pass");return;
@@ -194,6 +269,7 @@ void Bf16StreamBank::begin_pass(uint32_t pass) {
     checkpoint(cancel_);require(!finished_ && !pass_live_ && pass==metrics_.completed_passes &&
         pass<plan_.descriptor.stages[0].pass_count && safety_->quiescent(),"Qwen BF16 invalid pass boundary");
     plan_.lease->revalidate_after_drain();pass_=pass;next_layer_=0;pass_live_=true;
+    metrics_.prefix_per_pass.push_back(plan_.prefix);
     if(!plan_.prefix)schedule(0);
 }
 void Bf16StreamBank::bind_float_layer(uint32_t layer) {
@@ -237,9 +313,14 @@ const Weights &Bf16StreamBank::acquire(int layer) {
         if(uint32_t(layer)+1==plan_.prefix)schedule(plan_.prefix);
         layer_live_=true;
         metrics_.peak_live_layer_owners=1;
-        return resident_;
+        if(plan_.mode==StreamWeightMode::ConvRotFloat) {
+            current_=plan_.minimum_plan ? cached_ : resident_;
+            bind_float_layer(uint32_t(layer));
+            return current_;
+        }
+        return plan_.minimum_plan ? cached_ : resident_;
     }
-    schedule(uint32_t(layer));const auto &group=plan_.layout.stages[0].groups.at(uint32_t(layer)-plan_.prefix);
+    schedule(uint32_t(layer));const auto &group=execution_layout().groups.at(plan_.minimum_plan ? uint32_t(layer) : uint32_t(layer)-plan_.prefix);
     const auto ticket=*pending_[group.slot];const auto begin=Clock::now();
     while(!safety_->ready(ticket)) {checkpoint(cancel_);consume();if(!safety_->ready(ticket))mailbox_.wait_for(std::chrono::milliseconds(10));}
     metrics_.wait_seconds+=std::chrono::duration<double>(Clock::now()-begin).count();
@@ -260,7 +341,7 @@ void Bf16StreamBank::retire(int layer) {
         safety_->seal_readers(*current_ticket_,{&fence,1});++metrics_.reader_fences;
         safety_->complete_reader(*current_ticket_,fence);++metrics_.completed_reader_fences;
         pending_[current_ticket_->slot].reset();current_ticket_.reset();current_.clear();++metrics_.completed_streamed_layers;
-    }else ++metrics_.completed_prefix_layers;
+    }else {current_.clear();++metrics_.completed_prefix_layers;}
     layer_live_=false;
     ++metrics_.completed_layers;++next_layer_;
 }
@@ -274,14 +355,33 @@ void Bf16StreamBank::finish() {
         "Qwen BF16 missing complete pass coverage");
     io_->shutdown_and_join();consume();mx::synchronize();plan_.lease->revalidate_after_drain();
     require(safety_->quiescent() && metrics_.completed_reader_fences==metrics_.reader_fences &&
-        metrics_.fills==uint64_t(plan_.layers-plan_.prefix)*metrics_.completed_passes,
+        metrics_.fills==metrics_.completed_streamed_layers &&
+        metrics_.completed_prefix_layers+metrics_.completed_streamed_layers==uint64_t(plan_.layers)*metrics_.completed_passes,
         "Qwen BF16 incomplete source/reader coverage");
     finished_=true;metrics_.drained=true;
 }
 QwenBf16StreamStageMetrics Bf16StreamBank::metrics() const {
     require(finished_,"Qwen BF16 final metrics require drain");auto result=metrics_;const auto &pager=pager_.metrics();
     result.resident_source_bytes=pager.resident_bytes_loaded;result.streamed_source_bytes=pager.streamed_bytes_loaded;
-    result.slot_arrays=pager.slot_arrays_allocated;result.resident_load_seconds=pager.resident_load_seconds;
+    const auto cache=cache_pager_ ? cache_pager_->metrics() : retired_cache_metrics_;
+    result.resident_source_bytes+=cache.resident_bytes_loaded;
+    result.slot_arrays=pager.slot_arrays_allocated+cache.slot_arrays_allocated;
+    result.resident_load_seconds=pager.resident_load_seconds+cache.resident_load_seconds;
     result.streamed_read_seconds=pager.streamed_load_seconds;return result;
+}
+const streaming::StageLayout &Bf16StreamBank::execution_layout() const {
+    return plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0];
+}
+bool Bf16StreamBank::evict_cached_layers() {
+    require(!finished_ && !pass_live_ && !layer_live_ && !current_ticket_ && safety_->quiescent(),
+        "Qwen cache eviction requires a drained pass boundary");
+    if(!cache_pager_)return false;
+    checkpoint(cancel_);mx::synchronize();plan_.lease->revalidate_after_drain();
+    retired_cache_metrics_=cache_pager_->metrics();
+    cached_.clear();cache_pager_.reset();cache_plan_.reset();
+    plan_.prefix=0;metrics_.final_prefix=0;metrics_.cache_limited_by_memory=true;
+    ++metrics_.cache_evictions;
+    mx::clear_cache();
+    return true;
 }
 }

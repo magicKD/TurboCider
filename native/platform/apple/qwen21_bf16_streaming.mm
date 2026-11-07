@@ -71,7 +71,8 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
     const bool tensorops = mode == StreamWeightMode::ConvRotW8A8;
     require(layers>=2 && layers<=128 && prefix<=layers-2 && passes>0 && passes<=40,
         "Qwen weight stream requires at least two suffix groups and bounded passes");
-    require(!convrot_request || prefix == 0, "Qwen ConvRot weight streaming requires zero resident layer prefix");
+    require(!convrot_request || !encoder || prefix == 0,
+        "Qwen ConvRot encoder streaming requires zero resident layer prefix");
     require(!tensorops || convrot_w8a8_available(), "Qwen ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
     Bf16StreamPlan plan;plan.layers=layers;plan.prefix=prefix;plan.mode=mode;
     const auto begin=Clock::now();streaming::SourceFileIdentity source;
@@ -221,10 +222,16 @@ Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &path,bool encoder,
         fixed.erase("model.embed_tokens.comfy_quant");
     }
     for(auto &[name,field]:fixed)stage.resident_fields.push_back(std::move(field));
+    std::map<std::string,std::vector<uint64_t>> projection_shapes;
     for(uint32_t i=0;i<layers;++i) {
         require(block_fields[i].size()==expected.size(),"Qwen weight stream layer source closure incomplete");
-        if (convrot) for (const auto &projection : projections)
+        if (convrot) for (const auto &projection : projections) {
             validate_projection(block_fields[i], projection, tensorops);
+            const auto &shape=block_fields[i].at(projection+".weight").materialization->shape;
+            if(!i)projection_shapes.emplace(projection,shape);
+            else require(shape==projection_shapes.at(projection),
+                "Qwen streamed ConvRot requires homogeneous projection geometry");
+        }
         streaming::BlockSpec block;block.id=i;block.layout_class=encoder ? "language" : "dit";
         for(auto &[name,field]:block_fields[i]) {
             if(i<prefix) {field.name=stem+std::to_string(i)+"."+name;stage.resident_fields.push_back(std::move(field));}

@@ -287,6 +287,8 @@ struct StudioDraft: Codable, Sendable {
     var promptEnhanceEditExperimental = false
     var promptEnhancerPath = ""
     var qwen21DiTCache = "off"
+    var qwen21WeightCacheBudget = "minimum"
+    var qwen21WeightCacheCustomMiB = 3072
     var qwen21DiTW8A8 = false
     var qwen21DiTSmoothQuantConvRot = false
     // Editing preference; text-to-image always requests standard encoding.
@@ -312,6 +314,7 @@ struct StudioDraft: Codable, Sendable {
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
+        case qwen21WeightCacheBudget, qwen21WeightCacheCustomMiB
         case tinyVAEPaths, tinyVAEEncoder, tinyVAEDecoder, tinyPreview, tinyPreviewInterval
     }
     init(from decoder: Decoder) throws {
@@ -350,6 +353,8 @@ struct StudioDraft: Codable, Sendable {
         promptEnhanceEditExperimental = try c.decodeIfPresent(Bool.self, forKey: .promptEnhanceEditExperimental) ?? false
         promptEnhancerPath = try c.decodeIfPresent(String.self, forKey: .promptEnhancerPath) ?? promptEnhancerPath
         qwen21DiTCache = try c.decodeIfPresent(String.self, forKey: .qwen21DiTCache) ?? "off"
+        qwen21WeightCacheBudget = try c.decodeIfPresent(String.self, forKey: .qwen21WeightCacheBudget) ?? "minimum"
+        qwen21WeightCacheCustomMiB = try c.decodeIfPresent(Int.self, forKey: .qwen21WeightCacheCustomMiB) ?? 3072
         qwen21DiTW8A8 = try c.decodeIfPresent(Bool.self, forKey: .qwen21DiTW8A8) ?? false
         qwen21DiTSmoothQuantConvRot = try c.decodeIfPresent(Bool.self, forKey: .qwen21DiTSmoothQuantConvRot) ?? false
         qwen21ReferenceSize = try c.decodeIfPresent(Int.self, forKey: .qwen21ReferenceSize) ?? 1024
@@ -373,6 +378,16 @@ struct StudioDraft: Codable, Sendable {
         // selector stays Off until explicitly selected by the user.
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
+    func qwen21WeightCacheBytes() throws -> UInt64 {
+        guard let selection=Qwen21WeightCacheBudget(rawValue:qwen21WeightCacheBudget) else {
+            throw NativeFailure(message:"权重缓存预算档位无效，请重新选择。")
+        }
+        let mib=selection == .custom ? qwen21WeightCacheCustomMiB : selection.fixedMiB
+        guard selection == .minimum || (1024...16384).contains(mib) else {
+            throw NativeFailure(message:"自定义权重缓存预算需为 1024–16384 MiB（1–16 GiB）。")
+        }
+        return UInt64(mib)<<20
+    }
     var qwen21CheckpointName: String? {
         guard modelID == "qwen-image-2.1", !modelPath.isEmpty else { return nil }
         return Qwen21Installation.checkpointName(at: modelPath)
@@ -761,6 +776,7 @@ struct StudioDraft: Codable, Sendable {
             throw NativeFailure(message: "Qwen Image 2.1 当前画布上限为 8 百万像素。")
         }
         if modelID == "qwen-image-2.1", residency == "streamed" {
+            _ = try qwen21WeightCacheBytes()
             guard supportsQwen21ConvrotStreaming, activeAssets.isEmpty, width <= 512, height <= 512 else {
                 throw NativeFailure(message: "Qwen ConvRot 流式加载支持不超过 512×512 的纯文生图。请调整尺寸或切换常驻加载。")
             }
@@ -976,6 +992,10 @@ struct StudioDraft: Codable, Sendable {
             operation == "image.edit" && promptEnhance && promptEnhanceEditExperimental
         request.prompt_enhancer_path = modelID == "qwen-image-2.1" && !promptEnhancerPath.isEmpty ? promptEnhancerPath : nil
         request.qwen21_dit_cache = modelID == "qwen-image-2.1" ? qwen21DiTCache : nil
+        if supportsQwen21ConvrotStreaming && residency == "streamed" {
+            let budget=try qwen21WeightCacheBytes()
+            request.qwen21_stream_weight_budget_bytes = budget > 0 ? budget : nil
+        }
         // Omit the inactive extension so the existing Runtime ANE worker wire stays compatible.
         request.qwen21_dit_w8a8 = modelID == "qwen-image-2.1" && qwen21DiTW8A8 ? true : nil
         request.qwen21_dit_smoothquant_convrot = modelID == "qwen-image-2.1" && qwen21DiTSmoothQuantConvRot ? true : nil
@@ -2273,6 +2293,15 @@ final class StudioState: ObservableObject {
         draft.promptEnhanceEditExperimental = request.prompt_enhance_edit_experimental ?? false
         draft.promptEnhancerPath = request.prompt_enhancer_path ?? ""
         draft.qwen21DiTCache = request.qwen21_dit_cache ?? "off"
+        let cacheBudget=request.qwen21_stream_weight_budget_bytes ?? 0
+        if let preset=Qwen21WeightCacheBudget.allCases.first(where: {
+            $0 != .custom && UInt64($0.fixedMiB)<<20 == cacheBudget
+        }) {
+            draft.qwen21WeightCacheBudget=preset.rawValue
+        } else {
+            draft.qwen21WeightCacheBudget=Qwen21WeightCacheBudget.custom.rawValue
+            draft.qwen21WeightCacheCustomMiB=Int(min(cacheBudget>>20,16384))
+        }
         draft.qwen21DiTW8A8 = request.qwen21_dit_w8a8 ?? false
         draft.qwen21DiTSmoothQuantConvRot = request.qwen21_dit_smoothquant_convrot ?? false
         draft.tinyVAEEncoder = request.tiny_vae?.encoder ?? "original"

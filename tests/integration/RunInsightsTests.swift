@@ -49,7 +49,7 @@ import Foundation
             return RunInsights(json: String(decoding: data, as: UTF8.self))
         }
         let convrot = try convrotInsights(convrotReceipt)
-        try check(convrot.streamedBlocks == 292 && convrot.streamReadBytes == 9000 && convrot.streamWaitSeconds == 2,
+        try check(convrot.streamedBlocks == 292 && convrot.streamReadBytes == 9800 && convrot.streamWaitSeconds == 2,
                   "ConvRot streaming reads and repeated layer executions were hidden")
         try check(convrot.streamResidentWeightBytes == 600 && convrot.streamManagedWeightBytes == 1100 &&
             convrot.streamResidentLayers == 0, "Sequential phase capacities were added or derived weights lost")
@@ -68,6 +68,17 @@ import Foundation
         let partialInsights = try convrotInsights(partial)
         try check(partialInsights.streamResidentWeightBytes == nil && partialInsights.streamedBlocks == nil,
                   "Missing or boolean ConvRot measurements became measured zero")
+        var budgetReceipt=convrotReceipt
+        budgetReceipt["requested_weight_budget_bytes"]=2_147_483_648
+        var cachedStage=budgetReceipt["denoiser"] as! [String:Any]
+        cachedStage["prefix"]=6
+        cachedStage["cache_limited_by_memory"]=true
+        cachedStage["cache_evictions"]=1
+        budgetReceipt["denoiser"]=cachedStage
+        let budgetInfo=try convrotInsights(budgetReceipt)
+        try check(budgetInfo.streamWeightBudgetBytes == 2_147_483_648 && budgetInfo.streamResidentLayers == 6 &&
+            budgetInfo.streamCacheLimitedByMemory == true && budgetInfo.streamCacheEvictions == 1,
+            "Selected budget, actual retained layers or headroom eviction was lost")
         for value in ["-1", "1.5", "true", "1e100"] {
             let invalidStream = RunInsights(json: "{\"block_residency\":{\"streamed_blocks\":\(value)}}")
             try check(invalidStream.streamedBlocks == nil, "Invalid streaming layer count was accepted")

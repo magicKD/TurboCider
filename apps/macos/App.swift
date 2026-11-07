@@ -1235,6 +1235,24 @@ struct StudioView: View {
                             Text("常驻").tag("resident")
                         }.disabled(store.busy || submitting).accessibilityIdentifier("qwenConvrotResidency")
                         if studio.draft.residency == "streamed" {
+                            Picker("权重缓存预算", selection: $studio.draft.qwen21WeightCacheBudget) {
+                                ForEach(Qwen21WeightCacheBudget.allCases,id: \.rawValue) { budget in
+                                    Text(budget.title).tag(budget.rawValue)
+                                }
+                            }.disabled(store.busy || submitting).accessibilityIdentifier("qwenWeightCacheBudget")
+                            if studio.draft.qwen21WeightCacheBudget == Qwen21WeightCacheBudget.custom.rawValue {
+                                HStack {
+                                    Text("自定义预算")
+                                    Spacer()
+                                    TextField("MiB",value:$studio.draft.qwen21WeightCacheCustomMiB,format:.number)
+                                        .frame(width:85).accessibilityLabel("自定义权重缓存预算（MiB）")
+                                        .accessibilityIdentifier("qwenWeightCacheCustomMiB")
+                                        .help("1024–16384 MiB（1–16 GiB）")
+                                    Text("MiB")
+                                }.accessibilityElement(children:.contain).disabled(store.busy || submitting)
+                            }
+                            Text("增加预算会缓存更多 DiT 权重，减少重复读取，不改变计算精度，采样后释放。预算包含固定权重和流式缓冲；激活、预览与 VAE 另计。实际缓存层数受可用内存限制，可在任务详情查看。")
+                                .font(.caption2).foregroundStyle(.secondary)
                             Text("按层读取编码器和 DiT，适用于最大 512×512 的文生图。M5 及更新芯片在 macOS 26.4 或更新版本使用 W8A8。")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }

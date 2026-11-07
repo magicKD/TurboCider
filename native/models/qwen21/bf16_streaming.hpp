@@ -18,6 +18,9 @@ struct Bf16StreamPlan {
     streaming::Descriptor descriptor;
     streaming::Layout layout;
     uint32_t layers=0,prefix=0;
+    uint32_t cache_budget_prefix=0;
+    bool cache_limited_by_memory=false;
+    std::shared_ptr<const Bf16StreamPlan> minimum_plan;
     double verification_seconds=0;
     StreamWeightMode mode = StreamWeightMode::Bf16;
     std::optional<StreamEmbeddingSource> embedding;
@@ -27,6 +30,11 @@ struct Bf16StreamPlan {
 Bf16StreamPlan bf16_stream_plan(const std::filesystem::path &,bool encoder,
     uint32_t layers,uint32_t prefix,uint32_t passes,std::atomic<bool> &cancel,
     StreamWeightMode mode = StreamWeightMode::Bf16);
+uint64_t bf16_stream_managed_capacity(const Bf16StreamPlan &);
+// Retains an exact raw DiT prefix within both the requested weight budget and
+// the caller's physical-headroom policy. Encoder layers are consumed once.
+Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan, uint64_t budget,
+    const std::function<bool(uint64_t)> &admit = {});
 
 // Private diagnostic adapter, not a public catalog authority or hard RAM cap.
 // CPU refill jobs never allocate/evaluate MLX arrays. Owner graph arguments are
@@ -35,6 +43,10 @@ class Bf16StreamBank final {
     Bf16StreamPlan plan_;
     streaming::MlxWeightPager pager_;
     Weights resident_,current_;
+    std::optional<Bf16StreamPlan> cache_plan_;
+    std::unique_ptr<streaming::MlxWeightPager> cache_pager_;
+    Weights cached_;
+    streaming::MlxWeightPagerMetrics retired_cache_metrics_;
     struct FloatProjection {
         std::string name;
         Tensor codes, scales, biases;
@@ -54,6 +66,7 @@ class Bf16StreamBank final {
     void schedule(uint32_t);
     void consume();
     void bind_float_layer(uint32_t layer);
+    const streaming::StageLayout &execution_layout() const;
   public:
     Bf16StreamBank(Bf16StreamPlan,uint64_t managed_weight_budget,std::atomic<bool> &);
     ~Bf16StreamBank();
@@ -69,6 +82,9 @@ class Bf16StreamBank final {
     // Caller must have synchronously evaluated ALL outputs/prefix readers.
     void retire(int layer);
     void finish_pass();
+    // At a drained pass boundary, free optional cached raw layers. The
+    // original fixed weights and two refill buffers remain allocated.
+    bool evict_cached_layers();
     void finish();
     QwenBf16StreamStageMetrics metrics() const;
 };

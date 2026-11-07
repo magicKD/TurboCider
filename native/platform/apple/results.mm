@@ -259,6 +259,14 @@ static NSDictionary *qwen_stream_stage_dictionary(const QwenBf16StreamStageMetri
         stage[@"peak_live_layer_owners"] = @(m.peak_live_layer_owners);
         stage[@"gathered_embedding_rows"] = @(m.gathered_embedding_rows);
         stage[@"gathered_embedding_source_bytes"] = @(m.gathered_embedding_source_bytes);
+        stage[@"cache_budget_prefix"] = @(m.cache_budget_prefix);
+        stage[@"cache_limited_by_memory"] = @(m.cache_limited_by_memory);
+        stage[@"final_prefix"] = @(m.final_prefix);
+        stage[@"cache_evictions"] = @(m.cache_evictions);
+        NSMutableArray *prefixes=[NSMutableArray arrayWithCapacity:m.prefix_per_pass.size()];
+        for(auto prefix:m.prefix_per_pass)[prefixes addObject:@(prefix)];
+        stage[@"prefix_per_pass"] = prefixes;
+        if(!m.cache_layout_digest.empty())stage[@"cache_layout_digest"] = @(m.cache_layout_digest.c_str());
     }
     return stage;
 }
@@ -273,6 +281,7 @@ static id qwen_bf16_stream_dictionary(const QwenBf16StreamingMetrics &metrics) {
 static id qwen_convrot_stream_dictionary(const QwenConvrotStreamingMetrics &metrics) {
     return @{@"encoder":qwen_stream_stage_dictionary(metrics.encoder, true),
         @"denoiser":qwen_stream_stage_dictionary(metrics.denoiser, true),
+        @"requested_weight_budget_bytes":@(metrics.requested_weight_budget_bytes),
         @"cpu_refill_workers":@1, @"prefetch_distance":@1,
         @"dynamic_layer_weight_arguments":@YES, @"components_released_before_vae":@YES,
         @"scope":@"two raw refill slots and phase-local managed weights; allocator/process memory measured separately"};
@@ -817,6 +826,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         report[@"qwen21_gpu_w8a16"] = @(r.qwen21_gpu_w8a16);
         report[@"qwen21_reference_size"] = @(r.qwen21_reference_size);
         report[@"qwen21_dit_cache"] = @(r.qwen21_dit_cache.c_str());
+        if(r.qwen21_stream_weight_budget_bytes)
+            report[@"qwen21_stream_weight_budget_bytes"] = @(r.qwen21_stream_weight_budget_bytes);
         report[@"qwen21_denoiser_backend"] = @(r.qwen21_denoiser_backend.c_str());
         if (r.qwen21_denoiser_backend == "native-metal-graph")
             report[@"qwen21_denoiser_qualification"] = @"experimental-unqualified";

@@ -27,6 +27,51 @@ for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
 
+## INT8 ConvRot streaming and weight-cache budget
+
+The App supports the original ModelScope Turbo INT8 ConvRot DiT with
+`qwen3vl_8b_int8_convrot.safetensors`. Select that installation, use text-to-image
+up to 512×512, and keep its authored eight-step schedule. In **高级参数**, choose
+**模型驻留 → 流式加载**, then **权重缓存预算**. Choices are minimum residency
+(the default), 1/2/4/6/8 GiB, or a custom 1024–16384 MiB budget. The choice is
+saved with the draft and restored when reusing a task.
+
+The budget covers phase-local fixed weights, retained raw DiT layers and two
+refill buffers. It excludes activations, Tiny VAE previews, the final VAE,
+allocator overhead, other processes and the OS file cache. It is an upper bound,
+not a reservation or a whole-App memory limit. The engine retains as many whole
+DiT layers as fit, while preserving physical headroom (4 GiB system reserve and
+an additional 2 GiB work allowance when choosing extra cached layers).
+Only half of the remaining observed headroom is available to optional cached
+weights, to leave room for competing apps and uncertain file-cache reclamation.
+Task details show the chosen budget, actual retained layer count, admitted
+weight-capacity upper bound, and
+whether available memory reduced that count. At least two DiT layers continue
+to use the refill buffers; all phase weights are released before final decoding.
+If memory pressure rises during sampling, optional cached weights can be
+released between completed steps. The original fixed weights and two refill
+buffers stay allocated, so remaining steps stream without restarting the
+sampler. Task details report this eviction. Persistent system pressure can
+still stop generation; the budget does not override physical-memory guards.
+Transient pressure after a completed release can wait up to fifteen seconds for
+recovery before admission is refused; cancellation remains available.
+
+Caching avoids rereading retained DiT layers on each sampling step. The encoder
+runs once and continues streaming with sparse token embedding reads. The cache
+retains original values: it does not skip denoise steps, change the schedule, or
+change activation precision. M5 and later use GPU Metal TensorOps W8A8 when
+available on macOS 26.4 or later; earlier chips retain floating activations.
+Larger budgets can improve speed, with diminishing returns and dependence on
+memory pressure and storage/file-cache behavior. Measure on your own workload.
+
+For legacy JSON/C API requests set `qwen21_stream_weight_budget_bytes` at the
+root; schema v2 uses `execution.qwen21_stream_weight_budget_bytes`. Omit it or
+use zero for minimum residency; positive values require Qwen streamed residency
+and 1–16 GiB. For example, 2 GiB is `2147483648` bytes. These options belong to
+the GPU ConvRot streaming recipe; the private Runtime ANE composition is not
+enabled with retained-layer budgets. This exact weight cache is separate from
+the approximate DiT computation cache described below.
+
 ## Turbo checkpoint (native research support)
 
 The original `qwen_image_2.1_turbo_bf16.safetensors` can now be installed in a

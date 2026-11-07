@@ -98,9 +98,11 @@ class ConvRotStreamingTests(unittest.TestCase):
         marker = b'{"attention":"unknown"}'
         bad_attention["transformer_blocks.1.attn.comfy_attention.config"] = ("U8", [len(marker)], marker)
         bad_visual = {**encoder, "model.visual.fixture": ("F32", [128], None)}
+        heterogeneous = dict(denoiser)
+        projection(heterogeneous, "transformer_blocks.1.attn.to_q", 512, 256)
         cls.fixtures = []
-        for name, fields in zip(("encoder", "denoiser", "bad-marker", "missing-scale", "bad-attention", "bad-visual"),
-                                (encoder, denoiser, bad_marker, missing_scale, bad_attention, bad_visual)):
+        for name, fields in zip(("encoder", "denoiser", "bad-marker", "missing-scale", "bad-attention", "bad-visual", "heterogeneous"),
+                                (encoder, denoiser, bad_marker, missing_scale, bad_attention, bad_visual, heterogeneous)):
             fixture = folder / f"{name}.safetensors"
             write_fixture(fixture, fields)
             cls.fixtures.append(str(fixture))

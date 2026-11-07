@@ -55,10 +55,13 @@ Weights reference_weights(const std::filesystem::path &path, bool w8a8) {
     return weights;
 }
 
-void check_bank(const QwenBf16StreamStageMetrics &metrics, uint32_t passes, bool w8a8) {
+void check_bank(const QwenBf16StreamStageMetrics &metrics, uint32_t passes, bool w8a8, uint32_t prefix=0,
+        uint64_t retained_layers=UINT64_MAX) {
+    if(retained_layers==UINT64_MAX)retained_layers=prefix*passes;
     require(metrics.drained && metrics.slots == 2 && metrics.peak_live_layer_owners == 1 &&
             metrics.completed_passes == passes && metrics.completed_layers == layers * passes &&
-            metrics.fills == metrics.completed_layers && metrics.completed_reader_fences == metrics.fills &&
+            metrics.prefix==prefix && metrics.completed_prefix_layers==retained_layers &&
+            metrics.fills == layers*passes-retained_layers && metrics.completed_reader_fences == metrics.fills &&
             metrics.reader_fences == metrics.fills, "ConvRot slot epochs or reader lifetime were not completed");
     require(metrics.source_precision == "original_i8_convrot" &&
             metrics.matmul_mode == (w8a8 ? "int8_tensorops_w8a8" : "q8_g128_float_a") &&
@@ -117,7 +120,8 @@ void check_encoder(const char *path, StreamWeightMode mode, bool w8a8, std::atom
             "encoder lost its selected layer mode");
 }
 
-void check_denoiser(const char *path, StreamWeightMode mode, bool w8a8, std::atomic<bool> &cancel) {
+void check_denoiser(const char *path, StreamWeightMode mode, bool w8a8, std::atomic<bool> &cancel,
+        bool cached=false,bool evict=false) {
     auto weights = reference_weights(path, w8a8);
     TransformerConfig config;
     config.layers = layers;
@@ -128,7 +132,11 @@ void check_denoiser(const char *path, StreamWeightMode mode, bool w8a8, std::ato
     auto context = mx::astype(mx::reshape(mx::cos(mx::arange(3 * 256, mx::float32) * .013f), {1, 3, 256}), mx::bfloat16);
     mx::eval({input, context});
     constexpr uint32_t passes = 3;
-    Bf16StreamBank bank(bf16_stream_plan(path, false, layers, 0, passes, cancel, mode), budget, cancel);
+    auto plan=bf16_stream_plan(path, false, layers, 0, passes, cancel, mode);
+    if(cached)plan=bf16_stream_cache_plan(std::move(plan),budget);
+    const auto prefix=plan.prefix;
+    require(prefix==(cached ? layers-2 : 0),"cache selection did not retain the expected exact prefix");
+    Bf16StreamBank bank(std::move(plan), budget, cancel);
     Transformer streamed(bank.resident(), config);
     streamed.set_layer_weights([&](int layer) -> const Weights & { return bank.acquire(layer); },
                               [&](int layer) { bank.retire(layer); });
@@ -138,44 +146,70 @@ void check_denoiser(const char *path, StreamWeightMode mode, bool w8a8, std::ato
         mx::eval(expected);
         const auto before = convrot_w8a8_stats();
         bank.begin_pass(pass);
+        if(evict)rejects([&]{bank.evict_cached_layers();},"drained pass boundary");
         equal(streamed.forward(input, context, sigma, 2, 2, true), expected,
               "compiled DiT changed numerics across streamed slots");
         bank.finish_pass();
+        if(evict && pass==0) {
+            const auto before=mx::get_active_memory();
+            require(bank.evict_cached_layers() && !bank.evict_cached_layers(),"cache eviction was missing or not idempotent");
+            require(mx::get_active_memory()<before,"optional raw weight allocations survived cache eviction");
+        }
         require(convrot_w8a8_stats().projections - before.projections == (w8a8 ? 6 * layers : 0),
                 "compiled DiT lost its selected layer mode");
         input = input + expected * Tensor(-.2f, mx::bfloat16);
         mx::eval(input);
     }
     bank.finish();
-    check_bank(bank.metrics(), passes, w8a8);
+    check_bank(bank.metrics(), passes, w8a8,prefix,prefix*(evict ? 1 : passes));
+    require(bank.metrics().cache_evictions==(evict ? 1u : 0u) &&
+        bank.metrics().final_prefix==(evict ? 0u : prefix),"cache eviction receipt was lost");
+    if(evict)require(bank.metrics().prefix_per_pass==std::vector<uint32_t>{prefix,0,0},
+        "per-pass cache residency did not cover the exact work");
 }
 } // namespace
 
 int main(int argc, char **argv) {
     try {
-        require(argc == 8, "expected six owned safetensors fixtures and a mode");
+        require(argc == 9, "expected seven owned safetensors fixtures and a mode");
         std::atomic<bool> cancel{false};
         const auto mode = StreamWeightMode::ConvRotFloat;
         auto encoder = bf16_stream_plan(argv[1], true, layers, 0, 1, cancel, mode);
         check_plan(encoder, true);
         check_plan(bf16_stream_plan(argv[2], false, layers, 0, 3, cancel, mode), false);
+        auto cache_base=bf16_stream_plan(argv[2],false,layers,0,3,cancel,mode);
+        const auto floor=bf16_stream_managed_capacity(cache_base);
+        const auto one=bf16_stream_managed_capacity(bf16_stream_plan(argv[2],false,layers,1,3,cancel,mode));
+        auto selected=bf16_stream_cache_plan(cache_base,one);
+        require(selected.prefix==1 && selected.cache_budget_prefix==1 && !selected.cache_limited_by_memory,
+            "weight budget did not select exactly one complete layer");
+        selected=bf16_stream_cache_plan(cache_base,budget,[&](uint64_t n){return n<=floor;});
+        require(selected.prefix==0 && selected.cache_budget_prefix==2 && selected.cache_limited_by_memory,
+            "physical headroom did not reduce the cached prefix");
+        rejects([&] { bf16_stream_cache_plan(cache_base,floor-1); },"below the required");
+        std::cout<<"PASS ConvRot cache budget selection, exact floor and physical-headroom fallback\n";
         rejects([&] { bf16_stream_plan(argv[3], true, layers, 0, 1, cancel, mode); }, "H256 marker");
         rejects([&] { bf16_stream_plan(argv[4], true, layers, 0, 1, cancel, mode); }, "layer source closure incomplete");
         rejects([&] { bf16_stream_plan(argv[5], false, layers, 0, 1, cancel, mode); }, "attention marker");
         rejects([&] { bf16_stream_plan(argv[6], true, layers, 0, 1, cancel, mode); }, "visual tensor");
+        rejects([&] { bf16_stream_plan(argv[7], false, layers, 0, 1, cancel, mode); }, "homogeneous projection geometry");
         const auto &layout = encoder.layout.stages.at(0);
         rejects([&] { Bf16StreamBank bank(encoder, layout.resident_bytes + layout.peak_pool_bytes, cancel); },
                 "managed weight budget floor");
         std::cout << "PASS ConvRot typed source closure and derived-capacity admission\n";
-        if (std::string_view(argv[7]) == "gpu") {
+        if (std::string_view(argv[8]) == "gpu") {
             configure_streams();
             mx::set_cache_limit(0);
             check_encoder(argv[1], mode, false, cancel);
             check_denoiser(argv[2], mode, false, cancel);
+            check_denoiser(argv[2], mode, false, cancel,true);
+            check_denoiser(argv[2], mode, false, cancel,true,true);
             std::cout << "PASS ConvRot Float-A streamed/resident numerics and reader retirement\n";
             if (convrot_w8a8_available()) {
                 check_encoder(argv[1], StreamWeightMode::ConvRotW8A8, true, cancel);
                 check_denoiser(argv[2], StreamWeightMode::ConvRotW8A8, true, cancel);
+                check_denoiser(argv[2], StreamWeightMode::ConvRotW8A8, true, cancel,true);
+                check_denoiser(argv[2], StreamWeightMode::ConvRotW8A8, true, cancel,true,true);
                 std::cout << "PASS ConvRot W8A8 streamed/resident numerics and projection coverage\n";
             } else std::cout << "SKIP ConvRot W8A8 GPU unavailable\n";
         }

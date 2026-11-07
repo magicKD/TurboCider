@@ -7,6 +7,7 @@
 #include "conditioning.hpp"
 #include "diagnostic_options.hpp"
 #include "encoder_convrot.hpp"
+#include "memory_policy.hpp"
 #include "scheduler.hpp"
 #include "vae.hpp"
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
@@ -14,6 +15,7 @@
 #endif
 #include <mlx/random.h>
 #include <cstdlib>
+#include <thread>
 
 namespace tc::qwen21 {
 namespace {
@@ -34,7 +36,18 @@ struct ScopedCacheLimit {
     ~ScopedCacheLimit() { mx::set_cache_limit(previous); }
 };
 
-void check_convrot_stream_headroom() {
+void check_convrot_stream_headroom(std::atomic<bool> &cancelled) {
+    // Pressure notifications can lag a phase's completed releases. Wait only
+    // for that transient flag, retaining cancellation and every memory guard.
+    for(int retry=0;retry<300;++retry) {
+        checkpoint(cancelled);
+        const auto observed=ane::observe_streaming_memory(mx::get_active_memory());
+        const auto admission=ane::admit_streaming_memory(observed,
+            {uint64_t(4)<<30,observed.memory.physical_bytes},0);
+        if(admission.allowed())return;
+        if(admission.denial!=ane::MemoryDenial::SystemPressure)break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     ane::require_streaming_memory_headroom(mx::get_active_memory(), 0, "Qwen21 ConvRot streaming");
 }
 }
@@ -89,7 +102,8 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         dit_w8a8 ? StreamWeightMode::ConvRotW8A8 : StreamWeightMode::ConvRotFloat;
     const auto encoder_prefix = convrot ? 0u : option("TURBOCIDER_QWEN21_BF16_STREAM_ENCODER_PREFIX", 24, 34);
     const auto dit_prefix = convrot ? 0u : option("TURBOCIDER_QWEN21_BF16_STREAM_DIT_PREFIX", 24, 30);
-    const uint64_t budget = convrot ? convrot_stream_weight_budget_bytes :
+    const uint64_t budget = convrot ? (r.qwen21_stream_weight_budget_bytes ?
+        r.qwen21_stream_weight_budget_bytes : convrot_stream_weight_budget_bytes) :
         uint64_t(option("TURBOCIDER_QWEN21_BF16_STREAM_WEIGHT_GIB", 11, 20)) << 30;
     require(budget > 0, "Qwen streaming weight budget must be positive");
 
@@ -98,7 +112,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     checkpoint(cancelled);
     mx::synchronize();
     unload();
-    if (convrot) check_convrot_stream_headroom();
+    if (convrot) check_convrot_stream_headroom(cancelled);
     mx::reset_peak_memory();
     ScopedCacheLimit cache_limit(convrot ? std::min(r.allocator_cache_bytes, uint64_t(256) << 20) : r.allocator_cache_bytes);
     const auto stats_start = convrot_w8a8_stats();
@@ -121,7 +135,15 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         return bf16_stream_plan(encoder_source_, true, 36, encoder_prefix, 1, cancelled, encoder_mode);
     };
     auto make_dit_plan = [&] {
-        return bf16_stream_plan(transformer_source_, false, 32, dit_prefix, uint32_t(r.steps), cancelled, dit_mode);
+        auto plan=bf16_stream_plan(transformer_source_, false, 32, dit_prefix, uint32_t(r.steps), cancelled, dit_mode);
+        if(convrot && r.qwen21_stream_weight_budget_bytes) {
+            const auto observation=ane::observe_streaming_memory(mx::get_active_memory());
+            const auto cache_headroom=convrot_stream_cache_headroom(observation);
+            plan=bf16_stream_cache_plan(std::move(plan),budget,[cache_headroom](uint64_t capacity) {
+                return capacity<=cache_headroom;
+            });
+        }
+        return plan;
     };
     if (prepare_only) {
         bf16_stream_scope([&] {
@@ -138,7 +160,10 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         result.peak_bytes = mx::get_peak_memory();
         return result;
     }
-    if (convrot) result.qwen_convrot_streaming.emplace();
+    if (convrot) {
+        result.qwen_convrot_streaming.emplace();
+        result.qwen_convrot_streaming->requested_weight_budget_bytes=r.qwen21_stream_weight_budget_bytes;
+    }
     else result.qwen_bf16_streaming.emplace();
     result.qwen_ffn_phases.emplace();
     result.qwen_ffn_phases->policy = runtime_ane ? "convrot_stream_runtime_ane_decode" : "gpu";
@@ -233,8 +258,19 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
         emit("denoise", 0, r.steps);
         const float *sigma = schedule.data<float>();
         for (int step = 0; step < r.steps; ++step) {
+          bf16_stream_scope([&] {
             checkpoint(cancelled);
-            if (convrot) check_convrot_stream_headroom();
+            if (convrot) {
+                const auto observed=ane::observe_streaming_memory(mx::get_active_memory());
+                const auto admission=ane::admit_streaming_memory(observed,
+                    {uint64_t(4)<<30,observed.memory.physical_bytes},uint64_t(1)<<29);
+                if(!admission.allowed()) {
+                    // No new weight allocation or source read is needed to
+                    // resume: the original two slots have stayed live.
+                    bank.evict_cached_layers();
+                }
+                check_convrot_stream_headroom(cancelled);
+            }
             bank.begin_pass(uint32_t(step));
             const auto step_start = Clock::now();
             const bool reuse = dit.prefix_matches(text, rows, columns, {});
@@ -253,6 +289,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
             ++result.actual_steps;
             emit("denoise", step + 1, r.steps);
             if (preview.due(step + 1)) preview.publish(spatial(preview_estimate ? *preview_estimate : latents), step + 1);
+          });
         }
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
         if (hybrid) {
@@ -282,7 +319,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     dump("qwen21_latents", latents);
 
     checkpoint(cancelled);
-    if (convrot) check_convrot_stream_headroom();
+    if (convrot) check_convrot_stream_headroom(cancelled);
     const auto decode_start = Clock::now();
     auto pixels = [&] {
         Tensor decoded(0.f);

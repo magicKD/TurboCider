@@ -98,6 +98,52 @@ class ConvrotBenchmarkTests(unittest.TestCase):
             self.assertEqual(metrics["maximum_absolute"], 1.0)
             self.assertAlmostEqual(metrics["relative_l2"], 1 / 5**0.5)
 
+    def test_stream_budget_requires_authorized_prefix_and_complete_uncached_suffix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "output.png"
+            output.write_bytes(b"fixture")
+            request = dict(model="qwen-image-2.1", model_variant="qwen-image-2.1-turbo", operation="image.generate",
+                width=512, height=512, steps=8, seed=73, output=str(output), residency="streamed",
+                qwen21_stream_weight_budget_bytes=2 << 30)
+            record = {**request, "checkpoint": benchmark.CHECKPOINT, "actual_denoise_steps": 8,
+                "qwen21_sampling_schedule": benchmark.SCHEDULE, "prompt_cache_hit": False,
+                "plan": {"residency": "streamed"},
+                "timings_seconds": {key: 1. for key in ("request_wall", "text_encode", "denoise", "vae_decode")},
+                "memory": {"mlx_peak_bytes": 100, "mlx_active_bytes": 50},
+                "qwen_convrot_w8a8": {f"{name}_{key}": value for name in ("encoder", "dit")
+                    for key, value in (("enabled", True), ("projections", 100), ("activation_rows", 128))},
+                "qwen_convrot_streaming": {"requested_weight_budget_bytes": 2 << 30}}
+            for name, layers, passes, prefix in (("encoder", 36, 1, 0), ("denoiser", 32, 8, 6)):
+                fills = (layers-prefix)*passes
+                record["qwen_convrot_streaming"][name] = dict(prefix=prefix, source_precision="original_i8_convrot",
+                    matmul_mode="int8_tensorops_w8a8", drained=True, slots=2, peak_live_layer_owners=1,
+                    completed_passes=passes, completed_layers=layers*passes, completed_prefix_layers=prefix*passes,
+                    fills=fills, completed_streamed_layers=fills, reader_fences=fills, completed_reader_fences=fills,
+                    managed_weight_capacity_bytes=1 << 30, derived_weight_capacity_bytes=0,
+                    managed_weight_budget_bytes=2 << 30, streamed_source_bytes=1000)
+            spec = {"index": 0, "request": request}
+            benchmark.validate_record(record, spec, "11")
+            evicted = copy.deepcopy(record)
+            stage = evicted["qwen_convrot_streaming"]["denoiser"]
+            stage.update(prefix_per_pass=[6, 6, 0, 0, 0, 0, 0, 0], final_prefix=0, cache_evictions=1,
+                         completed_prefix_layers=12)
+            stage.update({key: 244 for key in ("fills", "completed_streamed_layers", "reader_fences", "completed_reader_fences")})
+            benchmark.validate_record(evicted, spec, "11")
+            invalid = copy.deepcopy(evicted)
+            invalid["qwen_convrot_streaming"]["denoiser"]["prefix_per_pass"][3] = 6
+            with self.assertRaisesRegex(ValueError, "eviction/pass"):
+                benchmark.validate_record(invalid, spec, "11")
+            for field, value in (("completed_prefix_layers", 0), ("fills", 256), ("prefix", 32),
+                                 ("managed_weight_capacity_bytes", 3 << 30), ("managed_weight_budget_bytes", 4 << 30)):
+                bad = copy.deepcopy(record)
+                bad["qwen_convrot_streaming"]["denoiser"][field] = value
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    benchmark.validate_record(bad, spec, "11")
+            legacy = copy.deepcopy(spec)
+            legacy["request"].pop("qwen21_stream_weight_budget_bytes")
+            with self.assertRaises(ValueError):
+                benchmark.validate_record(record, legacy, "11")
+
 
 if __name__ == "__main__":
     unittest.main()

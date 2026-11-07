@@ -7,6 +7,18 @@
 int main() {
     using namespace tc;
     constexpr uint64_t gib = uint64_t(1) << 30;
+    ane::StreamingMemoryObservation observation{{true,24*gib,gib,2*gib,0,0},8*gib,true};
+    assert(qwen21::convrot_stream_cache_headroom(observation)==2*gib);
+    observation.memory.free_bytes=6*gib;
+    assert(qwen21::convrot_stream_cache_headroom(observation)==4*gib);
+    observation.pressure_normal=false;
+    assert(qwen21::convrot_stream_cache_headroom(observation)==0);
+    observation.pressure_normal=true;observation.file_backed_non_speculative_bytes.reset();
+    assert(qwen21::convrot_stream_cache_headroom(observation)==0);
+    observation.file_backed_non_speculative_bytes=0;observation.memory.free_bytes=6*gib;
+    assert(qwen21::convrot_stream_cache_headroom(observation)==0);
+    observation.memory.free_bytes=7*gib;
+    assert(qwen21::convrot_stream_cache_headroom(observation)==gib/2);
     // Exact lengths of the user's verified ModelScope Turbo/encoder/VAE files.
     const std::array<uint64_t, 3> int8_sources{7256787829, 9350798360, 675509688};
     Request request;

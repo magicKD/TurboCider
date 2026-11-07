@@ -138,7 +138,8 @@ import ImageIO
             )
             return
         }
-        let streamedConvrot = args.count == 4 && args[1] == "--gpu-convrot"
+        let cachedConvrot = args.count == 4 && args[1] == "--gpu-convrot-cache"
+        let streamedConvrot = cachedConvrot || (args.count == 4 && args[1] == "--gpu-convrot")
         guard streamedConvrot || (args.count == 6 && ["--gpu", "--gpu-base"].contains(args[1])) else { return }
         let authoredBase = args[1] == "--gpu-base"
         let modelID = streamedConvrot ? "qwen-image-2.1" : args[2]
@@ -170,6 +171,7 @@ import ImageIO
                 throw NativeFailure(message: "ConvRot acceptance requires the bundled TAEQI2.1")
             }
             library.useTinyVAE(asset, studio: studio)
+            if cachedConvrot { studio.draft.qwen21WeightCacheBudget = "gib2" }
             tiny = bundledPath
             streamedStudio = studio
         } else {
@@ -244,6 +246,7 @@ import ImageIO
                 request = pair.legacy
                 try check(pair.v2 == nil && request.residency == "streamed" && request.execution == "gpu" &&
                     request.allow_approximation == true && request.steps == 8 &&
+                    request.qwen21_stream_weight_budget_bytes == (cachedConvrot ? UInt64(2) << 30 : nil) &&
                     (mode == "baseline" ? request.tiny_vae == nil : request.tiny_vae?.path == tiny),
                     "Creation request lost its ConvRot streaming or bundled preview settings")
             }
@@ -290,6 +293,15 @@ import ImageIO
                     if let receipt = job.resultJSON {
                         try Data(receipt.utf8).write(to: output.appendingPathComponent("\(mode)-native.json"),
                             options: .withoutOverwriting)
+                        if cachedConvrot {
+                            let raw = try JSONSerialization.jsonObject(with: Data(receipt.utf8)) as? [String: Any]
+                            let streaming = raw?["qwen_convrot_streaming"] as? [String: Any]
+                            let denoiser = streaming?["denoiser"] as? [String: Any]
+                            try check((streaming?["requested_weight_budget_bytes"] as? NSNumber)?.uint64Value == UInt64(2) << 30 &&
+                                (((denoiser?["prefix"] as? NSNumber)?.intValue ?? 0) > 0 ||
+                                 (denoiser?["cache_limited_by_memory"] as? Bool) == true),
+                                "Packaged acceptance lost the budget or failed to explain its physical-headroom fallback")
+                        }
                     }
                     let intermediate = previews.filter { $0 < request.steps }
                     let expected = mode == "baseline" ? [] : mode == "tiny-final" ? [3, 6] : [2, 4, 6]

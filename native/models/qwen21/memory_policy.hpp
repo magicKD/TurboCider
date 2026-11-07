@@ -1,5 +1,6 @@
 #pragma once
 #include "../../core/contracts.hpp"
+#include "../../backends/ane_memory.hpp"
 #include "diagnostic_options.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <array>
@@ -8,6 +9,19 @@
 #include <stdexcept>
 
 namespace tc::qwen21 {
+// Optional retained weights must not consume all credited file-cache
+// headroom. A busy desktop can compress anonymous pages before file-backed
+// pages become reclaimable. Keep half the remaining observed headroom after
+// the normal 4 GiB system reserve and a 2 GiB runtime-work allowance. The
+// minimum two-slot recipe retains its existing, separate physical admission.
+inline uint64_t convrot_stream_cache_headroom(const ane::StreamingMemoryObservation &observation) {
+    constexpr uint64_t workspace = uint64_t(2) << 30;
+    const auto admission = ane::admit_streaming_memory(observation,
+        {uint64_t(4) << 30, observation.memory.physical_bytes}, 0);
+    if (!admission.allowed() || admission.headroom_bytes <= workspace) return 0;
+    return (admission.headroom_bytes - workspace) / 2;
+}
+
 // Source-aware resident ConvRot heuristic. The caller supplies the actual
 // selected DiT, encoder and VAE file sizes; a BF16 companion still pays for its
 // complete source. This is an estimate, not a cap or a physical-memory bypass.

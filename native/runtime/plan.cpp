@@ -148,6 +148,11 @@ static ExecutionPlan make_plan_impl(
                 "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(!r.qwen21_stream_weight_budget_bytes ||
+                (r.model == "qwen-image-2.1" && r.residency == "streamed" &&
+                 r.qwen21_stream_weight_budget_bytes >= (uint64_t(1) << 30) &&
+                 r.qwen21_stream_weight_budget_bytes <= (uint64_t(16) << 30)),
+            "qwen21_stream_weight_budget_bytes requires Qwen21 streamed residency and 1...16 GiB (or 0 for minimum residency)");
     require(r.qwen21_dit_cache == "off" || r.qwen21_dit_cache == "conservative" ||
                 r.qwen21_dit_cache == "balanced" || r.qwen21_dit_cache == "fast",
             "qwen21_dit_cache must be off, conservative, balanced or fast");

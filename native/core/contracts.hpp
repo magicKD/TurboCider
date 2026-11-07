@@ -81,6 +81,9 @@ struct Request {
     bool qwen21_native_lora_kernel_specified = false;
     int qwen21_reference_size = 1024;
     std::string qwen21_dit_cache = "off";
+    // Managed streamed weights, not a process RAM cap. Zero preserves the
+    // minimum-residency recipe; positive budgets may retain exact DiT layers.
+    uint64_t qwen21_stream_weight_budget_bytes = 0;
     // Explicit JSON off overrides diagnostic environment defaults. Requests
     // constructed without this option retain the legacy diagnostic route.
     bool qwen21_dit_cache_explicit = false;

@@ -223,18 +223,35 @@ def validate_record(record: dict, spec: dict, arm: str) -> None:
         if (record.get("plan") or {}).get("residency") != "streamed":
             raise ValueError("the runtime plan did not retain streamed residency")
         streamed = record.get("qwen_convrot_streaming") or {}
+        cache_budget=request.get("qwen21_stream_weight_budget_bytes",0)
+        if streamed.get("requested_weight_budget_bytes",0)!=cache_budget:
+            raise ValueError("runtime receipt changed the requested weight budget")
         for index, (name, layers, passes) in enumerate((("encoder", 36, 1), ("denoiser", 32, 8))):
             stage = streamed.get(name) or {}
+            prefix=stage.get("prefix")
+            if (type(prefix) is not int or not 0 <= prefix <= layers-2 or
+                    (name=="encoder" or not cache_budget) and prefix!=0):
+                raise ValueError(f"{name} has an unauthorized resident prefix")
+            prefixes=stage.get("prefix_per_pass",[prefix]*passes)
+            if (not isinstance(prefixes,list) or len(prefixes)!=passes or
+                    any(type(value) is not int or value not in (0,prefix) for value in prefixes) or
+                    prefixes!=sorted(prefixes,reverse=True) or stage.get("final_prefix",prefix)!=prefixes[-1]):
+                raise ValueError("invalid cache eviction/pass coverage")
+            retained=sum(prefixes)
             mode = "int8_tensorops_w8a8" if arm[index] == "1" else "q8_g128_float_a"
             if (stage.get("source_precision") != "original_i8_convrot" or stage.get("matmul_mode") != mode or
-                    stage.get("drained") is not True or stage.get("slots") != 2 or stage.get("prefix") != 0 or
+                    stage.get("drained") is not True or stage.get("slots") != 2 or
                     stage.get("peak_live_layer_owners") != 1 or stage.get("completed_passes") != passes or
-                    any(stage.get(key) != layers * passes for key in
+                    stage.get("completed_layers") != layers*passes or
+                    stage.get("completed_prefix_layers") != retained or
+                    any(stage.get(key) != layers*passes-retained for key in
                         ("fills", "completed_streamed_layers", "reader_fences", "completed_reader_fences"))):
                 raise ValueError(f"{name} did not complete the requested ConvRot streaming schedule")
             raw = stage["managed_weight_capacity_bytes"]
             derived = stage["derived_weight_capacity_bytes"]
             budget = stage["managed_weight_budget_bytes"]
+            if cache_budget and budget!=cache_budget:
+                raise ValueError("runtime did not retain the requested weight budget")
             if (not 0 < raw + derived <= budget or not stage["streamed_source_bytes"] or
                     (derived != 0 if arm[index] == "1" else derived <= 0)):
                 raise ValueError(f"{name} managed streaming capacity is invalid")

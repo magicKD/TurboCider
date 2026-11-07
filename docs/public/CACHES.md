@@ -33,6 +33,15 @@ session and releases its model and prompt caches; the next request reloads.
 App-owned API sessions are released by stopping the service. Original model
 weights, media and source files remain on disk.
 
+## Streamed weight cache
+
+Qwen INT8 ConvRot streaming also has a per-generation **weight-cache budget**
+under Creation → Advanced parameters. It retains original DiT layers across
+sampling steps and releases them before final VAE decoding. The default uses
+minimum residency. See [Qwen streaming budgets](QWEN_IMAGE_21.md#int8-convrot-streaming-and-weight-cache-budget)
+for preset/custom limits, physical-headroom behavior and memory accounting.
+This RAM cache is independent of saved tensor retention and approximate DiT caching.
+
 ## Tensor retention
 
 App Settings provide inventory, manual cleanup and retention of 7/30/90 days.

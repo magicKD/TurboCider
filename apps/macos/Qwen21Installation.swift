@@ -1,5 +1,26 @@
 import Foundation
 
+enum Qwen21WeightCacheBudget: String, CaseIterable {
+    case minimum, gib1, gib2, gib4, gib6, gib8, custom
+    var title: String {
+        switch self {
+        case .minimum: return "最低占用（按层读取）"
+        case .custom: return "自定义"
+        default: return "\(fixedMiB / 1024) GiB"
+        }
+    }
+    var fixedMiB: Int {
+        switch self {
+        case .gib1: return 1024
+        case .gib2: return 2048
+        case .gib4: return 4096
+        case .gib6: return 6144
+        case .gib8: return 8192
+        default: return 0
+        }
+    }
+}
+
 struct Qwen21Installation {
     static let modelID = "qwen-image-2.1"
     static let turboID = "qwen-image-2.1-turbo"

@@ -88,6 +88,8 @@ inline void validate_convrot_stream_request(const Request &r) {
     if (!canvas || r.steps < 2 || r.steps > 40 || r.operation != "image.generate" || !r.inputs.empty())
         throw std::invalid_argument("Qwen21 ConvRot streaming supports text-to-image up to 512x512 with 2...40 steps (Turbo uses exactly 8)");
     const bool runtime_ane = convrot_stream_ane_requested(r);
+    if (runtime_ane && r.qwen21_stream_weight_budget_bytes)
+        throw std::invalid_argument("Qwen21 cached streamed weights currently require the ordinary GPU route");
     const bool ordinary_gpu = (r.execution == "gpu" || r.execution == "auto") &&
                               r.hybrid_mlp_mode == "auto" && r.ane_manifest.empty();
     const bool diagnostic = runtime_ane && r.width == 512 && r.height == 512 && r.steps == 8 && !r.ane_manifest.empty();

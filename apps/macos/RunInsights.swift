@@ -25,6 +25,9 @@ struct RunInsights {
     let streamResidentWeightBytes: Double?
     let streamManagedWeightBytes: Double?
     let streamResidentLayers: Int?
+    let streamWeightBudgetBytes: Double?
+    let streamCacheLimitedByMemory: Bool?
+    let streamCacheEvictions: Int?
     let qwen21DiTCacheMode: String?
     let qwen21DiTCacheThreshold: Double?
     let qwen21DiTCacheMaxConsecutive: Int?
@@ -61,6 +64,12 @@ struct RunInsights {
         coreMLOutputCopyBytes = number(hybrid, "output_copy_bytes_session_total")
         computeUnits = hybrid["compute_units"] as? String
         let convrot = raw["qwen_convrot_streaming"] as? [String: Any] ?? [:]
+        streamWeightBudgetBytes = number(convrot,"requested_weight_budget_bytes").flatMap { $0 > 0 ? $0 : nil }
+        let cacheStage=convrot["denoiser"] as? [String:Any] ?? [:]
+        streamCacheEvictions=count(cacheStage,"cache_evictions")
+        if let flag=cacheStage["cache_limited_by_memory"] as? NSNumber, CFGetTypeID(flag)==CFBooleanGetTypeID() {
+            streamCacheLimitedByMemory=flag.boolValue
+        } else { streamCacheLimitedByMemory=nil }
         if let encoder = convrot["encoder"] as? [String: Any],
            let denoiser = convrot["denoiser"] as? [String: Any] {
             func sum(_ key: String) -> Double? {
@@ -73,7 +82,19 @@ struct RunInsights {
                 let total = a.addingReportingOverflow(b)
                 streamedBlocks = total.overflow ? nil : total.partialValue
             } else { streamedBlocks = nil }
-            streamReadBytes = sum("streamed_source_bytes")
+            func loadedBytes(_ stage: [String:Any]) -> Double? {
+                guard let resident=number(stage,"resident_source_bytes"),
+                      let streamed=number(stage,"streamed_source_bytes") else { return nil }
+                let gathered: Double
+                if stage["gathered_embedding_source_bytes"] == nil { gathered=0 }
+                else if let value=number(stage,"gathered_embedding_source_bytes") { gathered=value }
+                else { return nil }
+                let total=resident+streamed+gathered
+                return total.isFinite ? total : nil
+            }
+            if let a=loadedBytes(encoder),let b=loadedBytes(denoiser),(a+b).isFinite {
+                streamReadBytes=a+b
+            } else { streamReadBytes=nil }
             streamWaitSeconds = sum("wait_seconds")
             // Maxima describe sequential phases only when the native receipt
             // confirms that their weights were released before VAE decoding.
