@@ -130,6 +130,83 @@ import Foundation
         let job = NativeJob(id: UUID(), createdAt: Date(), request: request, state: "succeeded", phase: "export",
                             completed: 1, total: 1, elapsed: 1, resultJSON: result, modelPath: int8.path)
         try check(job.routeSummary == "GPU · INT8 ConvRot", "INT8 result was mislabeled as BF16")
+        let qwen = root.appendingPathComponent("qwen-turbo-convrot")
+        for leaf in ["diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+                     "text_encoders/qwen3vl_8b_int8_convrot.safetensors"] {
+            let file = qwen.appendingPathComponent(leaf)
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 0, count: 16).write(to: file)
+        }
+        studio.selectModel("qwen-image-2.1")
+        studio.draft.prompt = "preserve Qwen prompt"
+        studio.draft.steps = 40; studio.draft.promptEnhance = true
+        studio.draft.residency = "component_staged"; studio.draft.qwen21DiTCache = "conservative"
+        studio.draft.loras = [StudioLoRA(path: "/test/base-adapter.safetensors")]
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/base.json")
+        let turboInstall = LibraryInstallation(id: "turbo", modelID: "qwen-image-2.1", name: "Turbo INT8",
+            path: qwen.path, managed: true, components: [:], createdAt: Date())
+        studio.applyLibraryInstallation(turboInstall, replace: false)
+        try check(studio.draft.hasQwen21TurboCheckpoint && studio.draft.hasQwen21ConvrotCheckpoint &&
+            studio.draft.steps == 8 && studio.draft.residency == "streamed" && !studio.draft.usesANE &&
+            !studio.draft.promptEnhance && studio.draft.qwen21DiTCache == "off",
+            "A model download did not activate Turbo's eight-step streamed GPU recipe in the open draft")
+        try check(studio.draft.prompt == "preserve Qwen prompt" && studio.draft.loras.count == 1 &&
+            studio.draft.activeLoRAs.isEmpty, "Turbo selection lost prompt/adapter choices instead of disabling incompatible LoRA")
+        if let adapter = studio.draft.loras.first {
+            studio.setLoRAEnabled(adapter.id, enabled: true)
+            try check(studio.draft.activeLoRAs.isEmpty, "Turbo draft accepted enabling a saved base adapter")
+        }
+        let qwenRequest = try studio.draft.request(output: root.appendingPathComponent("qwen.png"))
+        try check(qwenRequest.model == "qwen-image-2.1" && qwenRequest.steps == 8 && qwenRequest.allow_approximation == true && qwenRequest.execution == "gpu" &&
+            qwenRequest.residency == "streamed",
+            "ConvRot App request omitted approximate execution or authored Turbo steps")
+        var wrongSteps = studio.draft; wrongSteps.steps = 40
+        do {
+            _ = try wrongSteps.request(output: root.appendingPathComponent("wrong.png"))
+            throw NativeFailure(message: "Turbo checkpoint accepted base sampling steps")
+        } catch { try check(error.localizedDescription.contains("固定 8 步"), "Wrong Turbo step validation") }
+        var oversized = studio.draft; oversized.width = 768
+        do {
+            _ = try oversized.request(output: root.appendingPathComponent("large.png"))
+            throw NativeFailure(message: "ConvRot streaming accepted an oversized canvas")
+        } catch { try check(error.localizedDescription.contains("512×512"), "Wrong streaming canvas validation") }
+        studio.draft.steps = 40
+        studio.draft.residency = "component_staged"
+        studio.draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/stale.json")
+        studio.save()
+        let restoredTurbo = StudioState(directory: root.appendingPathComponent("studio"))
+        try check(restoredTurbo.draft.steps == 8 && restoredTurbo.draft.residency == "streamed" &&
+            !restoredTurbo.draft.usesANE && restoredTurbo.draft.prompt == "preserve Qwen prompt",
+            "Restored Turbo draft kept incompatible base settings")
+        restoredTurbo.changeOperation("image.edit")
+        try check(restoredTurbo.draft.residency == "resident", "Image editing reused the text-only streamed route")
+        restoredTurbo.changeOperation("image.generate")
+        try check(restoredTurbo.draft.residency == "streamed", "Returning to text generation did not restore streaming")
+        let base = root.appendingPathComponent("qwen-base")
+        let baseDiT = base.appendingPathComponent("diffusion_models/qwen_image_2.1_bf16.safetensors")
+        try fm.createDirectory(at: baseDiT.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(repeating: 0, count: 16).write(to: baseDiT)
+        let baseInstall = LibraryInstallation(id: "base", modelID: "qwen-image-2.1", name: "Base BF16",
+            path: base.path, managed: false, components: [:], createdAt: Date())
+        let qwenChoices = Qwen21Installation.choices([baseInstall, turboInstall], currentPath: qwen.path)
+        try check(qwenChoices.count == 2 && qwenChoices.contains { $0.path == qwen.path && $0.title.contains("Turbo") && $0.title.contains("8 步") } &&
+            Qwen21Installation.displayName(at: qwen.path) == "Qwen Image 2.1 Turbo" &&
+            Qwen21Installation.displayName(at: base.path) == "Qwen Image 2.1",
+            "Creation version picker lost Turbo/base identity")
+        restoredTurbo.applyLibraryInstallation(baseInstall, replace: true)
+        try check(!restoredTurbo.draft.hasQwen21TurboCheckpoint && restoredTurbo.draft.steps == 40 &&
+            restoredTurbo.draft.residency == "component_staged" && restoredTurbo.draft.prompt == "preserve Qwen prompt",
+            "Changing from a streamed Turbo draft to base retained its incompatible settings")
+        let streamedRoute = #"{"plan":{"execution":"gpu","residency":"streamed"},"qwen_convrot_w8a8":{"encoder_enabled":true,"dit_enabled":true}}"#
+        var qwenJob = NativeJob(id: UUID(), createdAt: Date(), request: qwenRequest, state: "succeeded", phase: "complete",
+            completed: 8, total: 8, elapsed: 1, resultJSON: streamedRoute, modelPath: qwen.path)
+        try check(qwenJob.routeSummary == "GPU · W8A8 ConvRot · 流式加载", "App mislabeled the measured W8A8 route")
+        qwenJob.resultJSON = streamedRoute.replacingOccurrences(of: "true", with: "false")
+        try check(qwenJob.routeSummary == "GPU · INT8 ConvRot · 浮点激活 · 流式加载", "App mislabeled float activation ConvRot")
+        try Data(repeating: 0, count: 16).write(to: qwen.appendingPathComponent("diffusion_models/qwen_image_2.1_bf16.safetensors"))
+        try check(!studio.draft.hasQwen21TurboCheckpoint && studio.draft.hasQwen21ConvrotCheckpoint,
+            "App source priority differs from native when base and Turbo coexist")
+        try check(!Qwen21Installation.isTurbo(at: qwen.path), "Turbo discovery ignores native checkpoint priority")
         print("PASS: version labels, aliases, external selection, parameter/LoRA persistence, BF16/INT8 ANE switching, residency validation and result precision")
     }
 }

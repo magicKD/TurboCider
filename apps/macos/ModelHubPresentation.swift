@@ -38,7 +38,8 @@ struct ModelHubEntry: Identifiable {
     let localPaths: [String]
     let installationCount: Int
     let localState: ModelHubLocalState
-    var title: String { model?.displayName ?? upscaler?.title ?? id }
+    var isQwen21Turbo: Bool { id == Qwen21Installation.turboID }
+    var title: String { isQwen21Turbo ? Qwen21Installation.turboName : model?.displayName ?? upscaler?.title ?? id }
 }
 
 /// Pure display metadata. No filesystem checks, network requests, model catalog
@@ -53,21 +54,25 @@ struct ModelHubPresentation {
                      selectionID: String?, query: String = "",
                      category: ModelHubCategory = .all, scope: ModelHubScope = .discover,
                      inspections: [String: InstallationInspection] = [:],
-                     searchMetadata: [String: [String]] = [:]) -> Self {
+                     searchMetadata: [String: [String]] = [:],
+                     qwenTurboPaths: Set<String> = []) -> Self {
         let tokens = query.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         var seenIDs = Set<String>()
         let upscalerIDs = Set(UpscaleVariant.allCases.map(\.modelID))
         var entries: [ModelHubEntry] = []
 
-        func append(id: String, model: StudioModel?, upscaler: UpscaleVariant?, currentPath: String?) {
+        func append(id: String, model: StudioModel?, upscaler: UpscaleVariant?, currentPath: String?,
+                    matchingPaths: Set<String>? = nil) {
             guard seenIDs.insert(id).inserted else { return }
-            let registered = installations.filter { $0.modelID == id }
+            let runtimeModelID = model?.id ?? id
+            let registered = installations.filter { $0.modelID == runtimeModelID && (matchingPaths?.contains($0.path) ?? true) }
             var paths: [String] = []
             for path in [currentPath].compactMap({ $0 }) + registered.map(\.path) {
-                guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !paths.contains(path) else { continue }
+                guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !paths.contains(path),
+                      matchingPaths?.contains(path) ?? true else { continue }
                 paths.append(path)
             }
-            let localState = state(modelID: id, paths: paths, currentPath: currentPath, inspections: inspections)
+            let localState = state(modelID: runtimeModelID, paths: paths, currentPath: currentPath, inspections: inspections)
             guard scope != .local || localState != .unconfigured else { return }
             switch category {
             case .all: break
@@ -80,6 +85,7 @@ struct ModelHubPresentation {
             var terms = [id, model?.name ?? upscaler?.title ?? ""] + paths + (searchMetadata[id] ?? [])
             terms += registered.flatMap { [$0.name, $0.path, $0.provider ?? "", $0.repository ?? "", $0.revision ?? ""] }
             terms += aliases(for: id)
+            if id == Qwen21Installation.turboID { terms.append("Qwen Image 2.1 Turbo 固定 8 步 INT8 ConvRot") }
             if model?.availableOperations.contains(where: { $0.hasSuffix(".upscale") }) == true {
                 terms.append("超分 upscale restoration 图像 image 视频 video")
             }
@@ -93,6 +99,10 @@ struct ModelHubPresentation {
 
         for model in models where !upscalerIDs.contains(model.id) {
             append(id: model.id, model: model, upscaler: nil, currentPath: modelPaths[model.id])
+            if model.id == Qwen21Installation.modelID {
+                append(id: Qwen21Installation.turboID, model: model, upscaler: nil,
+                       currentPath: modelPaths[model.id], matchingPaths: qwenTurboPaths)
+            }
         }
         for upscaler in UpscaleVariant.allCases {
             append(id: upscaler.modelID, model: nil, upscaler: upscaler,

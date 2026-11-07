@@ -866,7 +866,9 @@ struct StudioView: View {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
                     ForEach(studio.creationModels) { item in
                         let downloaded = !(studio.draft.modelPaths[item.id] ?? "").isEmpty
-                        Label("\(item.displayName) · \(downloaded ? "已配置" : "未配置")",
+                        let name = item.id == Qwen21Installation.modelID
+                            ? Qwen21Installation.displayName(at: studio.draft.modelPaths[item.id] ?? "") : item.displayName
+                        Label("\(name) · \(downloaded ? "已配置" : "未配置")",
                               systemImage: downloaded ? "checkmark.circle.fill" : "arrow.down.circle")
                             .tag(item.id)
                     }
@@ -886,11 +888,25 @@ struct StudioView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
+                if studio.draft.modelID == Qwen21Installation.modelID {
+                    let versions = Qwen21Installation.choices(library.installations, currentPath: studio.draft.modelPath)
+                    if !versions.isEmpty {
+                        Picker("权重版本", selection: Binding(get: { studio.draft.modelPath }, set: {
+                            studio.selectInstallation(modelID: Qwen21Installation.modelID, path: $0)
+                        })) {
+                            ForEach(versions) { version in Text(version.title).tag(version.path) }
+                        }.disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || api.running || api.changing)
+                            .accessibilityIdentifier("qwenWeightVersion")
+                    }
+                }
                 Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
             Divider()
-            VStack(alignment: .leading, spacing: 6) {
+            if studio.draft.hasQwen21TurboCheckpoint {
+                LabeledContent("采样步数", value: "8 步（Turbo 固定）")
+                    .accessibilityIdentifier("qwenTurboFixedSteps")
+            } else { VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("采样步数")
                     TextField("采样步数", value: $studio.draft.steps, format: .number)
@@ -909,7 +925,7 @@ struct StudioView: View {
                     Text("当前未启用六步 LoRA；基础模型推荐使用 40 步。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-            }
+            } }
             DisclosureGroup("画幅与分辨率") {
             VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom) {
@@ -942,21 +958,27 @@ struct StudioView: View {
             } else {
                 HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in
                     Button("\(size)") { studio.draft.width = size; studio.draft.height = size }
-                        .font(.caption).disabled(qwenCanvasLocked && size != 512)
+                        .font(.caption).disabled((qwenCanvasLocked && size != 512) ||
+                            (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512))
                 } }
                 if studio.draft.modelID == "qwen-image-2.1" {
-                    Menu("更多比例") {
-                        ForEach(Qwen21CanvasPreset.recommended) { preset in
-                            Button(preset.title) {
-                                studio.draft.width = preset.width
-                                studio.draft.height = preset.height
+                    if studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" {
+                        Text("流式加载的宽高上限均为 512，可手动输入 32 的倍数。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Menu("更多比例") {
+                            ForEach(Qwen21CanvasPreset.recommended) { preset in
+                                Button(preset.title) {
+                                    studio.draft.width = preset.width
+                                    studio.draft.height = preset.height
+                                }
                             }
-                        }
-                    }.accessibilityIdentifier("qwen21CanvasPresets").disabled(qwenCanvasLocked)
-                    Text(qwenCanvasLocked
-                         ? "当前 LoRA 或 DiT 缓存路径支持 512 × 512；点击 512 可恢复兼容画布。基础模型关闭这些选项后可使用其他画幅。"
-                         : "基础模型可选择其他画幅；更大的画布需要更多时间和内存。")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        }.accessibilityIdentifier("qwen21CanvasPresets").disabled(qwenCanvasLocked)
+                        Text(qwenCanvasLocked
+                             ? "当前 LoRA 或 DiT 缓存路径支持 512 × 512；点击 512 可恢复兼容画布。基础模型关闭这些选项后可使用其他画幅。"
+                             : "基础模型可选择其他画幅；更大的画布需要更多时间和内存。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
             }
             }
@@ -994,8 +1016,11 @@ struct StudioView: View {
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
                 let qwenLoRA = studio.draft.modelID == "qwen-image-2.1" && !studio.draft.activeLoRAs.isEmpty && !studio.draft.usesRuntimeANE
                 Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && !qwenLoRA }, set: { studio.setANEEnabled($0) }))
-                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA).accessibilityIdentifier("enableANE")
-                Text(studio.draft.aneConfigurationNotice ?? (qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。"))).font(.caption2).foregroundStyle(.secondary)
+                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true ||
+                        studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA || studio.draft.usesQwen21InstalledRecipe)
+                    .accessibilityIdentifier("enableANE")
+                Text(studio.draft.usesQwen21InstalledRecipe ? "此 Qwen 安装使用 GPU。" :
+                     studio.draft.aneConfigurationNotice ?? (qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。"))).font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.modelID == "qwen-image-2.1", (studio.draft.acceleration?.policy ?? "gpu") != "gpu" || !studio.draft.profilePath.isEmpty {
                     Button("改用纯 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
                         .disabled(store.busy || submitting).accessibilityIdentifier("qwenLoRAUseGPU")
@@ -1003,7 +1028,10 @@ struct StudioView: View {
                 if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID) { Button("高级加速与缓存配置") { librarySelection = studio.draft.modelID; page = .models } }
                 if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }
-            if model?.supports_lora == true {
+            if studio.draft.usesQwen21InstalledRecipe {
+                Text("LoRA 暂不可用于此 Qwen 安装。已保存的适配器可在兼容模型中使用。")
+                    .font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("qwenInstalledLoRAUnavailable")
+            } else if model?.supports_lora == true {
                 Divider()
                 HStack {
                     Text("LoRA 独立文件").font(.caption); Spacer()
@@ -1067,10 +1095,12 @@ struct StudioView: View {
                         locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
                         setSize: { studio.setQwen21ReferenceSize($0) })
                 }
-                Divider()
-                qwen21DiTCacheSettings
-                Divider()
-                DisclosureGroup("提示词增强") { promptEnhancementSettings.padding(.top, 8) }
+                if !studio.draft.usesQwen21InstalledRecipe {
+                    Divider()
+                    qwen21DiTCacheSettings
+                    Divider()
+                    DisclosureGroup("提示词增强") { promptEnhancementSettings.padding(.top, 8) }
+                }
             }
             if studio.creationKind != "video" && studio.draft.modelID != "seedvr2-3b" {
                 Divider()
@@ -1199,6 +1229,15 @@ struct StudioView: View {
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
+                    } else if studio.draft.supportsQwen21ConvrotStreaming {
+                        Picker("模型驻留", selection: $studio.draft.residency) {
+                            Text("流式加载").tag("streamed")
+                            Text("常驻").tag("resident")
+                        }.disabled(store.busy || submitting).accessibilityIdentifier("qwenConvrotResidency")
+                        if studio.draft.residency == "streamed" {
+                            Text("按层读取编码器和 DiT，适用于最大 512×512 的文生图。M5 及更新芯片在 macOS 26.4 或更新版本使用 W8A8。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
@@ -1214,7 +1253,9 @@ struct StudioView: View {
                     } else if !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
                     }
-                    Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
+                    if !studio.draft.usesQwen21InstalledRecipe {
+                        Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
+                    }
                     if !studio.draft.profilePath.isEmpty {
                         Text(URL(fileURLWithPath: studio.draft.profilePath).lastPathComponent).font(.caption2)
                         Button("恢复默认 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
@@ -1511,10 +1552,15 @@ struct StudioView: View {
         catch { studio.message = error.localizedDescription }
     }
     private func chooseModel(_ id: String) {
+        let modelID = id == Qwen21Installation.turboID ? Qwen21Installation.modelID : id
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.message = "选择与 \(id) 对应的本地模型目录。TurboCider 会在打开时校验所需权重。"
+        panel.message = "选择与 \(id == Qwen21Installation.turboID ? Qwen21Installation.turboName : modelID) 对应的本地模型目录。TurboCider 会在打开时校验所需权重。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if id == "z-image-turbo" {
+        if id == Qwen21Installation.turboID, !Qwen21Installation.isTurbo(at: url.path) {
+            studio.message = "所选目录的优先权重不是 Qwen Image 2.1 Turbo，请选择原始 Turbo 权重所在的独立目录。"
+            return
+        }
+        if modelID == "z-image-turbo" {
             var shared: URL?
             if ZImageInstallation.needsSharedText(url) {
                 let textPanel = NSOpenPanel(); textPanel.canChooseDirectories = true; textPanel.canChooseFiles = false
@@ -1525,7 +1571,9 @@ struct StudioView: View {
             }
             do { try studio.installZImage(model: url, sharedText: shared) }
             catch { studio.message = error.localizedDescription }
-        } else { studio.draft.modelPaths[id] = url.path; studio.selectModel(id); studio.save() }
+        } else if modelID == Qwen21Installation.modelID {
+            studio.selectInstallation(modelID: modelID, path: url.path)
+        } else { studio.draft.modelPaths[modelID] = url.path; studio.selectModel(modelID); studio.save() }
     }
     private func importConfiguration() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]

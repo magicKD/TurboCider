@@ -486,10 +486,15 @@ enum LibraryTool {
         }
     }
     func useTinyVAE(_ asset: TinyVAEAsset, studio: StudioState) {
-        guard !busy, !studio.imageInputsBusy, let path = tinyVAEPath(asset) else {
+        guard !busy, !studio.imageInputsBusy else { return }
+        if let path = tinyVAEPath(asset) {
+            studio.draft.tinyVAEPaths[asset.id] = path
+        } else if asset.bundledPath() != nil {
+            // Discover it through Bundle.main after the app is moved or updated.
+            studio.draft.tinyVAEPaths.removeValue(forKey: asset.id)
+        } else {
             message = "请先完成 Tiny VAE 下载与校验。"; return
         }
-        studio.draft.tinyVAEPaths[asset.id] = path
         message = "已选择 \(asset.title)。请在对应模型的“Tiny VAE 与实时预览”中开启所需功能。"
     }
     func download(_ request: LibraryDownloadRequest, studio: StudioState) {

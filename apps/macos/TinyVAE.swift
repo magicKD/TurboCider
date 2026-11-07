@@ -1,6 +1,16 @@
 import Foundation
 import ImageIO
 
+extension TinyVAEAsset {
+    func bundledPath(in resources: URL? = Bundle.main.resourceURL) -> String? {
+        guard let url = resources?.appendingPathComponent("tiny-vae").appendingPathComponent(filename),
+              (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            return nil
+        }
+        return url.path
+    }
+}
+
 extension StudioDraft {
     var supportsTinyVAE: Bool {
         ["qwen-image-2.1", "z-image-turbo", "z-image-turbo-gguf"].contains(modelID)
@@ -8,16 +18,14 @@ extension StudioDraft {
     var tinyArchitecture: String { modelID == "qwen-image-2.1" ? "taeqi2_1" : "taef1" }
     var resolvedTinyVAEPath: String? {
         if let explicit = tinyVAEPaths[tinyArchitecture], !explicit.isEmpty { return explicit }
+        if let asset = TinyVAEAsset.all.first(where: { $0.id == tinyArchitecture }),
+           let bundled = asset.bundledPath() { return bundled }
+        guard !modelPath.isEmpty else { return nil }
         let name = tinyArchitecture + ".safetensors"
-        var roots = [Bundle.main.resourceURL?.appendingPathComponent("tiny-vae")]
-        if !modelPath.isEmpty {
-            let model = URL(fileURLWithPath: modelPath)
-            roots += [
-                model.appendingPathComponent("tiny-vae"),
-                model.deletingLastPathComponent().appendingPathComponent("tiny-vae"),
-            ]
-        }
-        return roots.compactMap { $0?.appendingPathComponent(name).path }.first {
+        let model = URL(fileURLWithPath: modelPath)
+        return [model, model.deletingLastPathComponent()].map {
+            $0.appendingPathComponent("tiny-vae").appendingPathComponent(name).path
+        }.first {
             FileManager.default.fileExists(atPath: $0)
         }
     }

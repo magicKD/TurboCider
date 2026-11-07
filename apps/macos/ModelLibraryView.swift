@@ -16,7 +16,12 @@ struct ModelLibraryView: View {
     @State private var scope = ModelHubScope.discover
     @State private var section = "models"
     private var showsLoRAs: Bool { section == "loras" }
-    @State private var downloadModel: StudioModel?
+    private struct DownloadSelection: Identifiable {
+        let model: StudioModel
+        let presetID: String?
+        var id: String { model.id + ":" + (presetID ?? "default") }
+    }
+    @State private var downloadSelection: DownloadSelection?
     @State private var componentModel: StudioModel?
     @State private var replacementPaths: [String: String] = [:]
     @State private var componentName = ""
@@ -25,10 +30,14 @@ struct ModelLibraryView: View {
         let metadata = Dictionary(uniqueKeysWithValues: LibraryRecipe.all.map { recipe in
             (recipe.modelID, recipe.downloadVariants.map { $0.title + " " + $0.repository + " " + $0.components.map { $0.format + " " + $0.precision }.joined(separator: " ") })
         })
+        let qwenPaths = library.installations.filter { $0.modelID == Qwen21Installation.modelID }.map(\.path)
+            + [studio.draft.modelPaths[Qwen21Installation.modelID] ?? ""]
+        let turboPaths = Set(qwenPaths.filter { Qwen21Installation.isTurbo(at: $0) })
+        let currentID = studio.draft.hasQwen21TurboCheckpoint ? Qwen21Installation.turboID : studio.draft.modelID
         return ModelHubPresentation.make(models: studio.models, installations: library.installations,
             modelPaths: studio.draft.modelPaths, upscalePaths: studio.draft.upscaleModelPaths,
-            selectionID: selection ?? studio.draft.modelID, query: query, category: category, scope: scope,
-            inspections: library.inspections, searchMetadata: metadata)
+            selectionID: selection ?? currentID, query: query, category: category, scope: scope,
+            inspections: library.inspections, searchMetadata: metadata, qwenTurboPaths: turboPaths)
     }
     private var selected: StudioModel? { hub.selectedEntry?.model }
     private var selectedUpscaler: UpscaleVariant? { hub.selectedEntry?.upscaler }
@@ -108,7 +117,10 @@ struct ModelLibraryView: View {
                 Divider()
                 ScrollView {
                     if let variant = selectedUpscaler { upscalerDetails(variant).padding(22) }
-                    else if let selected { details(selected).padding(22) }
+                    else if let entry = hub.selectedEntry, let selected {
+                        if entry.isQwen21Turbo { turboDetails(entry, model: selected).padding(22) }
+                        else { details(selected).padding(22) }
+                    }
                     else { ContentUnavailableView("找到适合你的模型", systemImage: "square.stack.3d.up", description: Text("浏览兼容模型，或管理本机已有文件。")).padding(30) }
                 }.id(hub.selectedID).frame(maxWidth: .infinity)
             }.background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
@@ -123,7 +135,9 @@ struct ModelLibraryView: View {
             .onChange(of: componentKey) { _, _ in refreshComponents() }
             .onChange(of: section) { _, _ in refreshComponents() }
             .onChange(of: library.busy) { _, busy in if !busy { refreshComponents() } }
-            .sheet(item: $downloadModel) { item in ModelDownloadView(model: item, library: library, studio: studio) }
+            .sheet(item: $downloadSelection) { selection in
+                ModelDownloadView(model: selection.model, library: library, studio: studio, initialPresetID: selection.presetID)
+            }
             .sheet(item: $componentModel) { item in componentEditor(item) }
             .onChange(of: studio.draft.upscaleModelPaths) { _, _ in library.refresh(studio: studio, migrate: true) }
             .onChange(of: studio.draft.modelPaths) { _, _ in library.refresh(studio: studio, migrate: true) }
@@ -161,7 +175,7 @@ struct ModelLibraryView: View {
             .background(tint.opacity(0.08), in: Capsule())
     }
     private func refreshComponents() {
-        guard section == "models", let selected, !library.busy else { return }
+        guard section == "models", hub.selectedEntry?.isQwen21Turbo != true, let selected, !library.busy else { return }
         let path = studio.draft.modelPaths[selected.id] ?? ""
         if !path.isEmpty { library.inspectComponents(modelID: selected.id, path: path) }
     }
@@ -170,7 +184,7 @@ struct ModelLibraryView: View {
             ModelBrandBadge(modelID: entry.id, size: 38)
             VStack(alignment: .leading, spacing: 5) {
                 Text(entry.title).font(.callout.weight(.semibold)).multilineTextAlignment(.leading).lineLimit(2)
-                Text(entry.model?.isVideo == true ? "视频生成" : entry.upscaler != nil ? "图像超分" : "图像生成")
+                Text(entry.isQwen21Turbo ? "固定 8 步 · Turbo 原始权重" : entry.model?.isVideo == true ? "视频生成" : entry.upscaler != nil ? "图像超分" : "图像生成")
                     .font(.caption).foregroundStyle(.secondary)
                 if entry.localState == .missing { Label("文件缺失或无效", systemImage: "exclamationmark.circle").font(.caption2).foregroundStyle(.orange) }
                 else if entry.installationCount > 0 { Text("\(entry.installationCount) 个本机安装").font(.caption2).foregroundStyle(.tint) }
@@ -181,6 +195,53 @@ struct ModelLibraryView: View {
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(hub.selectedID == entry.id ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
             .contentShape(Rectangle())
+    }
+
+    private func turboDetails(_ entry: ModelHubEntry, model: StudioModel) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 14) {
+                ModelBrandBadge(modelID: model.id, size: 64)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(Qwen21Installation.turboName).font(.title2.weight(.semibold))
+                    Text("Qwen · Alibaba").font(.callout).foregroundStyle(.secondary)
+                    Text("Turbo 原始权重 · 固定 8 步").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 6) {
+                hubTag("文生图", symbol: "photo", tint: .accentColor)
+                hubTag("GPU · 流式加载")
+                hubTag("8 步")
+            }
+            Text("选择 Turbo 安装后自动使用 8 步采样。双 INT8 ConvRot 支持最大 512×512 的流式文生图，M5 及更新芯片在 macOS 26.4 或更新版本使用 W8A8。")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Button("选择已下载的文件夹…") { chooseModel(Qwen21Installation.turboID) }
+                    .disabled(store.busy || library.busy || studio.imageInputsBusy)
+                    .accessibilityIdentifier("chooseQwenTurboModel")
+                Button("下载 Qwen Image 2.1 Turbo…") {
+                    downloadSelection = DownloadSelection(model: model, presetID: Qwen21Installation.turboPresetID)
+                }.buttonStyle(.borderedProminent).disabled(library.busy)
+                    .accessibilityIdentifier("downloadQwenTurboModel")
+            }
+            if entry.localPaths.isEmpty {
+                Text("下载或导入 Turbo 权重后，可在这里选择用于创作。").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("本机 Turbo 安装").font(.headline)
+                ForEach(entry.localPaths, id: \.self) { path in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(Qwen21Installation.title(at: path)).font(.callout.weight(.medium))
+                        Text(path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        Button(studio.draft.modelID == model.id && studio.draft.modelPath == path ? "当前创作模型" : "用于创作") {
+                            studio.selectInstallation(modelID: model.id, path: path)
+                        }.disabled(store.busy || store.resolvingAcceleration || library.busy || studio.imageInputsBusy ||
+                            (studio.draft.modelID == model.id && studio.draft.modelPath == path))
+                            .accessibilityIdentifier("useQwenTurboModel")
+                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            if let message = studio.message { Text(message).font(.caption).foregroundStyle(.secondary) }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func upscalerDetails(_ variant: UpscaleVariant) -> some View {
@@ -288,7 +349,7 @@ struct ModelLibraryView: View {
                     Text(path.isEmpty ? "尚未登记模型文件夹" : path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     HStack {
                         Button("选择文件夹…") { chooseModel(item.id) }.disabled(store.busy || library.busy).accessibilityIdentifier("chooseModel")
-                        Button("下载模型…") { downloadModel = item }.buttonStyle(.borderedProminent).disabled(library.busy || LibraryRecipe.all.first(where: { $0.modelID == item.id }) == nil).accessibilityIdentifier("downloadModel")
+                        Button("下载模型…") { downloadSelection = DownloadSelection(model: item, presetID: nil) }.buttonStyle(.borderedProminent).disabled(library.busy || LibraryRecipe.all.first(where: { $0.modelID == item.id }) == nil).accessibilityIdentifier("downloadModel")
                         if !path.isEmpty {
                             Button("在 Finder 中显示") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
                             Button("检查安装") { library.inspect(modelID: item.id, path: path) }
@@ -481,6 +542,7 @@ struct ModelLibraryView: View {
                 Text("\(issue.path)：\(issue.message)").font(.caption).textSelection(.enabled)
             }
             ForEach(report.preparation, id: \.self) { Text($0).font(.caption).textSelection(.enabled) }
+            ForEach(report.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
             Text("检查于 \(report.checkedAt.formatted(date: .omitted, time: .shortened))。仅检查所需文件、索引和张量字节范围；实际加载仍会验证权重内容。共享文件的引用大小不代表新增磁盘占用。")
                 .font(.caption2).foregroundStyle(.secondary)
         }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))

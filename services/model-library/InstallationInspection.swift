@@ -17,6 +17,7 @@ struct InstallationInspection: Codable, Sendable {
     var scope = "Required files, shard references and safetensors byte ranges; no tensor math, full-file hashes, GPU or ANE validation."
     var issues: [InstallationIssue] = []
     var preparation: [String] = []
+    var notes: [String] = []
     var checkedWeightFiles = 0
     var referencedWeightBytes: UInt64 = 0
     var status: String { !issues.isEmpty ? "incomplete" : preparation.isEmpty ? "files_present" : "needs_preparation" }
@@ -28,12 +29,13 @@ struct InstallationInspection: Codable, Sendable {
         }
     }
     // Include derived status for CLI consumers without trusting persisted results.
-    enum CodingKeys: String, CodingKey { case modelID, path, checkedAt, scope, issues, preparation, checkedWeightFiles, referencedWeightBytes, status }
+    enum CodingKeys: String, CodingKey { case modelID, path, checkedAt, scope, issues, preparation, notes, checkedWeightFiles, referencedWeightBytes, status }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(modelID, forKey: .modelID); try c.encode(path, forKey: .path)
         try c.encode(checkedAt, forKey: .checkedAt); try c.encode(scope, forKey: .scope)
         try c.encode(issues, forKey: .issues); try c.encode(preparation, forKey: .preparation)
+        try c.encode(notes, forKey: .notes)
         try c.encode(checkedWeightFiles, forKey: .checkedWeightFiles)
         try c.encode(referencedWeightBytes, forKey: .referencedWeightBytes); try c.encode(status, forKey: .status)
     }
@@ -44,6 +46,7 @@ struct InstallationInspection: Codable, Sendable {
         checkedAt = try c.decode(Date.self, forKey: .checkedAt); scope = try c.decode(String.self, forKey: .scope)
         issues = try c.decode([InstallationIssue].self, forKey: .issues)
         preparation = try c.decode([String].self, forKey: .preparation)
+        notes = try c.decodeIfPresent([String].self, forKey: .notes) ?? []
         checkedWeightFiles = try c.decode(Int.self, forKey: .checkedWeightFiles)
         referencedWeightBytes = try c.decode(UInt64.self, forKey: .referencedWeightBytes)
     }
@@ -112,18 +115,27 @@ private struct InstallationProbe {
             report.referencedWeightBytes += UInt64(value.st_size)
         } catch { issue("invalid_weights", relative, error.localizedDescription) }
     }
-    private mutating func qwenComponent(_ bf16: String, _ gguf: String) {
-        // Preserve native component_source priority: a present BF16 file wins.
-        if let value = info(bf16), (value.st_mode & S_IFMT) == S_IFREG { weights(bf16); return }
-        guard exists(gguf) else { weights(bf16); return }
+    private mutating func qwenComponent(_ kind: String) {
+        let candidates = LibraryComponents.qwen[kind]!
+        guard let path = candidates.first(where: { relative in
+            info(relative).map { ($0.st_mode & S_IFMT) == S_IFREG } ?? false
+        }) else { weights(candidates[0]); return }
+        let gguf = path.hasSuffix(".gguf"), convrot = path.contains("int8_convrot")
+        if path.contains("qwen_image_2.1_turbo_") {
+            report.notes.append("Qwen Image 2.1 Turbo 使用固定 8 步调度。选择此安装时，App 会自动应用 8 步与 GPU 设置。")
+        }
+        if !gguf && !convrot { weights(path); return }
         do {
-            try LibraryComponents.validateQwen(url(gguf), kind: gguf.hasPrefix("diffusion_models/") ? "dit" : "encoder")
-            guard let value = info(gguf) else { throw LibraryFailure(message: "GGUF 权重不可访问。") }
+            try LibraryComponents.validateQwen(url(path), kind: kind)
+            guard let value = info(path) else { throw LibraryFailure(message: "Qwen 权重不可访问。") }
             report.checkedWeightFiles += 1; report.referencedWeightBytes += UInt64(value.st_size)
-            if report.preparation.isEmpty {
+            if gguf && !report.preparation.contains(where: { $0.contains("Q4_K_M") }) {
                 report.preparation.append("Qwen Q4_K_M GGUF 是实验性近似文生图组件：需显式允许近似，当前不支持图片编辑、LoRA 或编码器 ANE；文件检查不代表推理或画质通过。其它 GGUF 精度尚未接入。")
             }
-        } catch { issue("invalid_weights", gguf, error.localizedDescription) }
+            if convrot && !report.notes.contains(where: { $0.contains("INT8 ConvRot") }) {
+                report.notes.append("Qwen INT8 ConvRot 使用近似计算，App 会随此安装设置。M5 及更新设备在 macOS 26.4+ 默认 W8A8，其余设备使用浮点激活回退。")
+            }
+        } catch { issue("invalid_weights", path, error.localizedDescription) }
     }
     private mutating func component(_ relative: String, mlxDirectory: Bool = false, allowSingleLink: Bool = false) {
         do {
@@ -171,8 +183,8 @@ private struct InstallationProbe {
             weights("vae/seedvr2_ema_vae_fp16.safetensors")
         case "qwen-image-2.1":
             json("processor/tokenizer.json")
-            qwenComponent("diffusion_models/qwen_image_2.1_bf16.safetensors", "diffusion_models/qwen-image-2.1-Q4_K_M.gguf")
-            qwenComponent("text_encoders/qwen3vl_8b_bf16.safetensors", "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf")
+            qwenComponent("dit")
+            qwenComponent("encoder")
             weights("vae/qwen_image_2.1_vae_bf16.safetensors")
         case "z-image-turbo":
             json("tokenizer/tokenizer.json")

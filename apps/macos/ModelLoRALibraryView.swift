@@ -57,9 +57,16 @@ import UniformTypeIdentifiers
         return studio.draft.loras.first { sameFile($0.path, row.path) }
     }
     private func fileReady(_ row: LoRALibraryRow) -> Bool { !checkingFiles && fileStates[row.path]?.readable == true }
+    private func qwenInstallationDisablesLoRA(_ row: LoRALibraryRow) -> Bool {
+        guard row.modelID == "qwen-image-2.1" else { return false }
+        var target = studio.draft
+        target.modelID = row.modelID
+        return target.usesQwen21InstalledRecipe
+    }
     private func supportsActivation(_ row: LoRALibraryRow) -> Bool {
         guard let model = studio.models.first(where: { $0.id == row.modelID }) else { return false }
-        return model.executor && model.supports_lora == true && model.runtime_lora != false
+        return model.executor && model.supports_lora == true && model.runtime_lora != false &&
+            !qwenInstallationDisablesLoRA(row)
     }
     private func replacesQwenLoRA(_ row: LoRALibraryRow) -> Bool {
         guard row.modelID == "qwen-image-2.1" else { return false }
@@ -228,7 +235,10 @@ import UniformTypeIdentifiers
                     Spacer(minLength: 0)
                 }
             }
-            if !supportsActivation(item) {
+            if qwenInstallationDisablesLoRA(item) {
+                Text("所选 Qwen 权重与此 LoRA 加载方式不兼容。可在模型中心切换到支持 LoRA 的基础权重。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if !supportsActivation(item) {
                 Text("此基础模型没有独立 LoRA 运行入口，或需要离线预融合 checkpoint；登记文件不会自动改写模型。")
                     .font(.caption).foregroundStyle(.secondary)
             } else if item.modelID == "qwen-image-2.1" {

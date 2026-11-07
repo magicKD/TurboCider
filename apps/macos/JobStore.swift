@@ -86,6 +86,19 @@ struct NativeJob: Codable, Identifiable, Sendable {
             return execution.hasPrefix("gpu_ane")
                 ? "GPU + Core ML · \(precision) · ANE 驻留未知" : "GPU · \(precision)"
         }
+        if request.model == "qwen-image-2.1", execution == "gpu",
+           let convrot = result["qwen_convrot_w8a8"] as? [String: Any] {
+            let precision: String
+            switch (convrot["encoder_enabled"] as? Bool, convrot["dit_enabled"] as? Bool) {
+            case (true, true): precision = "W8A8 ConvRot"
+            case (true, false): precision = "ConvRot · 编码器 W8A8"
+            case (false, true): precision = "ConvRot · DiT W8A8"
+            case (false, false): precision = "INT8 ConvRot · 浮点激活"
+            default: precision = "INT8 ConvRot"
+            }
+            let residency = plan["residency"] as? String == "streamed" ? " · 流式加载" : ""
+            return "GPU · " + precision + residency
+        }
         if execution.hasPrefix("gpu_ane") {
             if request.model == "qwen-image-2.1", result["runtime_precision"] as? String == "bf16_gpu+fp16_mlp_fp16_io" {
                 return "GPU + Core ML · BF16/FP16 · ANE 驻留未知"
@@ -638,7 +651,11 @@ final class NativeJobStore: ObservableObject {
             sessionReport = resourceReport
             let plan = report?["plan"] as? [String: Any]
             let mode = (report?["execution"] as? String) ?? (plan?["execution"] as? String) ?? "gpu"
-            sessionState = (warmup ? "当前任务已预热 · 未保存图片" : "权重与当前文本已就绪") + (mode.hasPrefix("gpu_ane") ? " · GPU + ANE" : " · GPU")
+            if request.model == "qwen-image-2.1", request.residency == "streamed" {
+                sessionState = warmup ? "流式任务已预热 · 未保存图片" : "流式权重布局已校验 · 生成时按层加载"
+            } else {
+                sessionState = (warmup ? "当前任务已预热 · 未保存图片" : "权重与当前文本已就绪") + (mode.hasPrefix("gpu_ane") ? " · GPU + ANE" : " · GPU")
+            }
         } catch { if !recordProcessQuarantine(error) { sessionState = "准备未完成 · 可重试" }; throw error }
     }
     func maintainCache(modelURL: URL, action: String, source: URL? = nil, directory: URL? = nil) async throws -> Data {
@@ -1022,7 +1039,9 @@ final class NativeJobStore: ObservableObject {
             if runtimeOptions != nil { sessionState = "图片完成 · Runtime 实验进程已释放" }
             else if usesImageWorker { sessionState = "图片完成 · 工作进程已释放" }
             else if usesLTXWorker { sessionState = "视频完成 · 独立进程已释放" }
-            else if request.residency == "component_staged" {
+            else if request.model == "qwen-image-2.1", request.residency == "streamed" {
+                sessionState = "图片完成 · 流式权重已释放"
+            } else if request.residency == "component_staged" {
                 sessionState = request.model == "seedvr2-3b"
                     ? "会话就绪 · DiT 已释放，VAE 可复用" : "会话就绪 · 图像权重已释放"
             } else { sessionState = "会话可复用" }
@@ -1087,10 +1106,16 @@ final class NativeJobStore: ObservableObject {
                 actualRoute = receipt.label
             } else if jobs[i].runtimeOptions != nil {
                 actualRoute = event.phase == "route_gpu_ane" ? "Runtime 实验运行中 · 实际路线等待回执" : "GPU · Runtime 实验"
+            } else if event.phase == "route_gpu_ane" {
+                actualRoute = "GPU + Core ML · ANE 驻留未知"
             } else {
-                actualRoute = event.phase == "route_gpu_ane" ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU · BF16"
+                actualRoute = jobs[i].request.model == "qwen-image-2.1" ? "Metal GPU" : "Metal GPU · BF16"
             }
             return
+        }
+        if jobs[i].request.model == "qwen-image-2.1", jobs[i].request.residency == "streamed",
+           event.phase == "load_qwen21_text" {
+            actualRoute = "GPU · ConvRot · 流式加载"
         }
         if cancelRequested { engine?.cancel() }
         // Block callbacks keep cancellation responsive but must not replace the

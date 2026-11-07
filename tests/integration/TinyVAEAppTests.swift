@@ -81,6 +81,26 @@ import ImageIO
             "Tiny VAE App defaults, persistence, request conversion, memory guard and preview correlation passed"
         )
         let args = CommandLine.arguments
+        if args.count == 2 && args[1] == "--bundled" {
+            guard let asset = TinyVAEAsset.all.first(where: { $0.id == "taeqi2_1" }),
+                  let bundledPath = asset.bundledPath() else {
+                throw NativeFailure(message: "bundle fixture is missing TAEQI2.1")
+            }
+            let library = ModelLibraryController(root: temporary.appendingPathComponent("clean-library"))
+            let studio = StudioState(directory: temporary.appendingPathComponent("clean-studio"))
+            studio.draft.modelID = asset.modelID
+            studio.draft.tinyVAEPaths[asset.id] = weights.path
+            try check(library.tinyVAEPath(asset) == nil, "bundle fixture has a downloaded installation")
+            library.useTinyVAE(asset, studio: studio)
+            studio.draft.tinyPreview = true
+            studio.draft.tinyVAEDecoder = "tiny"
+            let selected = try studio.draft.tinyVAEConfiguration()
+            try check(studio.draft.tinyVAEPaths[asset.id] == nil && selected?.path == bundledPath
+                && selected?.preview == true && selected?.decoder == "tiny",
+                "bundled selection did not resolve from a clean library")
+            print("PASS App bundled TAEQI2.1 discovery, selection and request binding with an empty library")
+            return
+        }
         if args.count == 3 && args[1] == "--download" {
             let library = ModelLibraryController(root: URL(fileURLWithPath: args[2]))
             let studio = StudioState(directory: temporary.appendingPathComponent("download-ui"))
@@ -118,17 +138,49 @@ import ImageIO
             )
             return
         }
-        guard args.count == 6 && ["--gpu", "--gpu-base"].contains(args[1]) else { return }
+        let streamedConvrot = args.count == 4 && args[1] == "--gpu-convrot"
+        guard streamedConvrot || (args.count == 6 && ["--gpu", "--gpu-base"].contains(args[1])) else { return }
         let authoredBase = args[1] == "--gpu-base"
-        let modelID = args[2], model = URL(fileURLWithPath: args[3]),
-            tiny = URL(fileURLWithPath: args[4]).standardizedFileURL.path
-        let output = URL(fileURLWithPath: args[5])
+        let modelID = streamedConvrot ? "qwen-image-2.1" : args[2]
+        let model = URL(fileURLWithPath: args[streamedConvrot ? 2 : 3]).standardizedFileURL
+        let output = URL(fileURLWithPath: args[streamedConvrot ? 3 : 5]).standardizedFileURL
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let streamedStudio: StudioState?
+        let tiny: String
+        if streamedConvrot {
+            let contents = try FileManager.default.contentsOfDirectory(atPath: output.path)
+            try check(contents.isEmpty, "ConvRot acceptance requires an empty output directory")
+            let studio = StudioState(directory: output)
+            let library = ModelLibraryController(root: output.appendingPathComponent("library"))
+            studio.selectModel(modelID)
+            let registration = output.appendingPathComponent("model-import.json")
+            try JSONEncoder().encode(["modelPaths": [modelID: model.path]]).write(to: registration, options: .withoutOverwriting)
+            library.importPaths(registration, studio: studio)
+            let started = ContinuousClock.now
+            while library.busy {
+                try check(started.duration(to: .now) < .seconds(30), "Model library import did not finish")
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            try check(library.installations.contains { $0.modelID == modelID && $0.path == model.path } &&
+                studio.draft.hasQwen21TurboCheckpoint && studio.draft.hasQwen21ConvrotCheckpoint &&
+                studio.draft.steps == 8 && studio.draft.residency == "streamed" && !studio.draft.usesANE,
+                "Fresh model registration did not activate the streamed Turbo recipe: \(library.message ?? "")")
+            guard let asset = TinyVAEAsset.all.first(where: { $0.id == "taeqi2_1" }),
+                  let bundledPath = asset.bundledPath() else {
+                throw NativeFailure(message: "ConvRot acceptance requires the bundled TAEQI2.1")
+            }
+            library.useTinyVAE(asset, studio: studio)
+            tiny = bundledPath
+            streamedStudio = studio
+        } else {
+            tiny = URL(fileURLWithPath: args[4]).standardizedFileURL.path
+            streamedStudio = nil
+        }
         let store = NativeJobStore(directory: output)
         var reports: [[String: Any]] = []
         var baseline: Data?
         var modes = authoredBase ? ["tiny-final"] : ["baseline", "preview", "cancel", "tiny-final"]
-        if modelID == "qwen-image-2.1" && !authoredBase { modes.append("tiny-edit") }
+        if modelID == "qwen-image-2.1" && !authoredBase && !streamedConvrot { modes.append("tiny-edit") }
         for mode in modes {
             var request = NativeRequest(
                 prompt:
@@ -180,6 +232,21 @@ import ImageIO
                         && request.steps == 20,
                     "ordinary Creation draft lost tiny settings/approximation permission")
             }
+            if let studio = streamedStudio {
+                studio.draft.prompt = request.prompt
+                studio.draft.randomSeed = false
+                studio.draft.seedText = "73"
+                studio.draft.tinyPreview = mode != "baseline"
+                studio.draft.tinyPreviewInterval = mode == "tiny-final" ? 3 : 2
+                studio.draft.tinyVAEDecoder = mode == "tiny-final" ? "tiny" : "original"
+                let resolved = try await store.resolveAcceleration(studio.draft)
+                let pair = try resolved.publicStreamingRequest(output: URL(fileURLWithPath: request.output))
+                request = pair.legacy
+                try check(pair.v2 == nil && request.residency == "streamed" && request.execution == "gpu" &&
+                    request.allow_approximation == true && request.steps == 8 &&
+                    (mode == "baseline" ? request.tiny_vae == nil : request.tiny_vae?.path == tiny),
+                    "Creation request lost its ConvRot streaming or bundled preview settings")
+            }
             var previews: [Int] = [], phases = Set<String>(), cancelled = false
             let progress = store.$jobs.sink { jobs in
                 if let job = jobs.first(where: { $0.request.output == request.output }) {
@@ -215,6 +282,19 @@ import ImageIO
                     try check(
                         phases.contains("tiny_vae_encode"), "tiny reference encoder not invoked")
                 }
+                if streamedConvrot {
+                    try check(job.routeSummary?.contains("ConvRot") == true &&
+                        job.routeSummary?.contains("流式加载") == true &&
+                        phases.contains("denoise") && (mode != "tiny-final" || phases.contains("tiny_vae_decode")),
+                        "App progress or history lost the measured ConvRot route")
+                    if let receipt = job.resultJSON {
+                        try Data(receipt.utf8).write(to: output.appendingPathComponent("\(mode)-native.json"),
+                            options: .withoutOverwriting)
+                    }
+                    let intermediate = previews.filter { $0 < request.steps }
+                    let expected = mode == "baseline" ? [] : mode == "tiny-final" ? [3, 6] : [2, 4, 6]
+                    try check(intermediate == expected, "App missed or reordered live previews: \(previews)")
+                }
                 reports.append([
                     "mode": mode, "state": job.state, "preview_steps": previews,
                     "phase_count": phases.count,
@@ -225,6 +305,10 @@ import ImageIO
                 try check(
                     !FileManager.default.fileExists(atPath: request.output),
                     "cancelled output was published")
+                if streamedConvrot {
+                    try check(error is CancellationError && store.jobs.first?.state == "cancelled",
+                        "Cancelled ConvRot generation did not finish as a cancelled job")
+                }
                 reports.append(["mode": mode, "state": "cancelled", "preview_steps": previews])
             }
             observation.cancel()
@@ -232,6 +316,14 @@ import ImageIO
             try check(
                 store.livePreview == nil && !store.busy,
                 "preview or busy state leaked after terminal result")
+        }
+        if streamedConvrot {
+            let restored = NativeJobStore(directory: output)
+            try check(restored.jobs.filter { $0.state == "succeeded" && $0.hasOutput }.count == 3 &&
+                restored.jobs.filter { $0.state == "cancelled" }.count == 1,
+                "Fresh App profile lost ConvRot success or cancellation history")
+            try await store.unload()
+            try check(store.loadedPath == nil, "ConvRot acceptance did not release the App session")
         }
         try JSONSerialization.data(withJSONObject: reports, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("acceptance.json"))

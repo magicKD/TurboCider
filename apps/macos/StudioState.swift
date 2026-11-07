@@ -373,6 +373,41 @@ struct StudioDraft: Codable, Sendable {
         // selector stays Off until explicitly selected by the user.
     }
     var activeLoRAs: [StudioLoRA] { loras.filter(\.enabled) }
+    var qwen21CheckpointName: String? {
+        guard modelID == "qwen-image-2.1", !modelPath.isEmpty else { return nil }
+        return Qwen21Installation.checkpointName(at: modelPath)
+    }
+    var hasQwen21TurboCheckpoint: Bool { qwen21CheckpointName?.hasPrefix("qwen_image_2.1_turbo_") == true }
+    private var qwen21EncoderCheckpointName: String? {
+        guard modelID == "qwen-image-2.1", !modelPath.isEmpty else { return nil }
+        let root = URL(fileURLWithPath: modelPath).appendingPathComponent("text_encoders")
+        return ["qwen3vl_8b_bf16.safetensors", "qwen3vl_8b_int8_convrot.safetensors", "Qwen3-VL-8B-Instruct-Q4_K_M.gguf"].first {
+            FileManager.default.fileExists(atPath: root.appendingPathComponent($0).path)
+        }
+    }
+    var hasQwen21ConvrotCheckpoint: Bool {
+        qwen21CheckpointName?.contains("int8_convrot") == true || qwen21EncoderCheckpointName?.contains("int8_convrot") == true
+    }
+    var usesQwen21InstalledRecipe: Bool { hasQwen21TurboCheckpoint || hasQwen21ConvrotCheckpoint }
+    var supportsQwen21ConvrotStreaming: Bool {
+        operation == "image.generate" && hasQwen21ConvrotCheckpoint &&
+            qwen21CheckpointName?.hasSuffix(".safetensors") == true && qwen21EncoderCheckpointName?.hasSuffix(".safetensors") == true
+    }
+    mutating func normalizeQwen21CheckpointRecipe(preferStreaming: Bool = true) {
+        guard usesQwen21InstalledRecipe else { return }
+        if hasQwen21TurboCheckpoint { steps = 8 }
+        let streamingCanvas = supportsQwen21ConvrotStreaming && width <= 512 && height <= 512
+        residency = streamingCanvas && (preferStreaming || residency != "resident") ? "streamed" : "resident"
+        streaming = StudioStreamingState()
+        profilePath = ""; promptEnhance = false
+        qwen21DiTCache = "off"; qwen21DiTW8A8 = false; qwen21DiTSmoothQuantConvRot = false
+        var config = acceleration ?? StudioAcceleration()
+        config.policy = "gpu"; config.manifest = ""; config.sourceManifest = ""
+        config.runtimeAneProfileID = nil; config.runtimeDescriptor = nil
+        config.qwen21W8A8 = nil; config.compileGPU = nil
+        acceleration = config
+        for index in loras.indices { loras[index].enabled = false }
+    }
     static let qwen21TurboAdapterNames: Set<String> = [
         "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
         "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r256.safetensors"
@@ -602,6 +637,9 @@ struct StudioDraft: Codable, Sendable {
         if qwen21TurboLoRA != nil { return "GPU · BF16 · LoRA 运行时加载" }
         if usesANE, aneLoRARequiresGPU { return "GPU · LoRA 运行时加载" }
         let policy = acceleration?.policy ?? (profilePath.isEmpty ? "gpu" : "profile")
+        if policy == "gpu", hasQwen21ConvrotCheckpoint {
+            return residency == "streamed" ? "GPU · ConvRot · 流式加载" : "GPU · ConvRot"
+        }
         if policy == "gpu", let variant = zImageVariant, variant.id != "bf16" {
             return "GPU · \(variant.title)"
         }
@@ -722,6 +760,15 @@ struct StudioDraft: Codable, Sendable {
         if modelID == "qwen-image-2.1", width * height > 8_388_608 {
             throw NativeFailure(message: "Qwen Image 2.1 当前画布上限为 8 百万像素。")
         }
+        if modelID == "qwen-image-2.1", residency == "streamed" {
+            guard supportsQwen21ConvrotStreaming, activeAssets.isEmpty, width <= 512, height <= 512 else {
+                throw NativeFailure(message: "Qwen ConvRot 流式加载支持不超过 512×512 的纯文生图。请调整尺寸或切换常驻加载。")
+            }
+            guard !usesANE, profilePath.isEmpty, activeLoRAs.isEmpty, !promptEnhance, qwen21DiTCache == "off",
+                  !qwen21DiTW8A8, !qwen21DiTSmoothQuantConvRot else {
+                throw NativeFailure(message: "Qwen ConvRot 流式加载使用 GPU，请关闭 ANE、LoRA、提示词增强和额外的 DiT 缓存。")
+            }
+        }
         if usesPublicStreaming {
             guard publicStreamingModel else {
                 throw NativeFailure(message: "当前模型尚未加入 public 流式加载目录，请选择 Off。")
@@ -825,6 +872,14 @@ struct StudioDraft: Codable, Sendable {
         }
         if let max = model.max_images, activeAssets.count > max { throw NativeFailure(message: "当前模型最多接受 \(max) 张输入图片。") }
         if !activeLoRAs.isEmpty && model.supports_lora != true { throw NativeFailure(message: "当前模型不支持 LoRA。") }
+        if hasQwen21TurboCheckpoint {
+            guard steps == 8, activeLoRAs.isEmpty, !promptEnhance, qwen21DiTCache == "off" else {
+                throw NativeFailure(message: "Qwen Image 2.1 Turbo 权重使用固定 8 步，请关闭 LoRA、提示词增强和 DiT 缓存。")
+            }
+            guard operation != "image.edit" || activeAssets.count <= 2 else {
+                throw NativeFailure(message: "Qwen Image 2.1 Turbo 当前最多支持 2 张参考图。")
+            }
+        }
         if modelID == "qwen-image-2.1", !activeLoRAs.isEmpty {
             if hasQwen21TurboAdapter {
                 guard qwen21TurboLoRA != nil else { throw NativeFailure(message: "六步 Viggle 需单独启用一个适配器，不能与其他 LoRA 混用。") }
@@ -925,6 +980,7 @@ struct StudioDraft: Codable, Sendable {
         request.qwen21_dit_w8a8 = modelID == "qwen-image-2.1" && qwen21DiTW8A8 ? true : nil
         request.qwen21_dit_smoothquant_convrot = modelID == "qwen-image-2.1" && qwen21DiTSmoothQuantConvRot ? true : nil
         request.qwen21_reference_size = modelID == "qwen-image-2.1" ? effectiveQwen21ReferenceSize : nil
+        if hasQwen21ConvrotCheckpoint { request.allow_approximation = true }
         request.tiny_vae = try tinyVAEConfiguration()
         if request.tiny_vae?.encoder == "tiny" || request.tiny_vae?.decoder == "tiny" { request.allow_approximation = true }
         if usesQwen21FastReferenceEncoding { request.allow_approximation = true }
@@ -1341,6 +1397,7 @@ final class StudioState: ObservableObject {
             message = "此设备未启用当前权重的流式加载，已恢复常驻。"
             save()
         }
+        draft.normalizeQwen21CheckpointRecipe(preferStreaming: false)
     }
     var streamingQueryKey: String {
         // Include installation, prompt/token policy and every route input.
@@ -1514,6 +1571,10 @@ final class StudioState: ObservableObject {
         workspaceResetID = UUID()
     }
     func setANEEnabled(_ enabled: Bool) {
+        guard !enabled || !draft.usesQwen21InstalledRecipe else {
+            message = "此 Qwen 安装使用 GPU，当前 App 没有适用的 ANE 配置。"
+            return
+        }
         var config = draft.acceleration ?? StudioAcceleration()
         config.policy = enabled ? "gpu_ane" : "gpu"
         if !enabled { config.runtimeAneProfileID = nil; config.runtimeDescriptor = nil }
@@ -1575,6 +1636,7 @@ final class StudioState: ObservableObject {
             else if let sameKind = model.availableOperations.first(where: { $0.hasPrefix(operation.hasPrefix("video.") ? "video." : "image.") }) {
                 draft.operation = sameKind
             }
+            draft.normalizeQwen21CheckpointRecipe()
             synchronizeUpscaleSource()
             return
         }
@@ -1606,6 +1668,7 @@ final class StudioState: ObservableObject {
             restored.upscaleAutoPreload = draft.upscaleAutoPreload
             restored.seedvr2VAE = draft.seedvr2VAE
             restored.promptEnhancerPath = draft.promptEnhancerPath
+            restored.normalizeQwen21CheckpointRecipe(preferStreaming: false)
             draft = restored
         } else {
             // Older versions saved only the SeedVR2 draft. Recover a usable
@@ -1677,7 +1740,9 @@ final class StudioState: ObservableObject {
             switchedModel = candidate
         }
         message = switchedModel.map { "已切换至 \($0.name)，模型参数与加速配置已重置，已恢复该模型的 LoRA 选择。" + (draft.modelPath.isEmpty ? "请在模型中心配置模型文件。" : "请核对生成参数。") }
+        let operationChanged = draft.operation != operation
         draft.operation = operation
+        if operationChanged { draft.normalizeQwen21CheckpointRecipe() }
         if draft.initImageID == nil { draft.initImageID = draft.assets.first?.id }
         synchronizeUpscaleSource()
     }
@@ -1685,6 +1750,7 @@ final class StudioState: ObservableObject {
         guard !imageInputsBusy, !path.isEmpty else { return }
         if draft.modelID != modelID { selectModel(modelID) }
         guard draft.modelID == modelID, draft.modelPath != path else { return }
+        let wasQwenTurbo = draft.hasQwen21TurboCheckpoint
         draft.modelPaths[modelID] = path
         draft.profilePath = ""
         var config = draft.acceleration ?? StudioAcceleration()
@@ -1696,7 +1762,14 @@ final class StudioState: ObservableObject {
         if config.policy == "profile" || draft.zImageVariant?.id == "nvfp4" { config.policy = "gpu" }
         draft.acceleration = config
         draft.normalizeZImageResidency()
-        let title = draft.zImageVariant?.title ?? "所选安装"
+        if modelID == "qwen-image-2.1", let model = models.first(where: { $0.id == modelID }) {
+            if wasQwenTurbo && !draft.hasQwen21TurboCheckpoint { draft.steps = model.default_steps }
+            if draft.residency == "streamed", !draft.supportsQwen21ConvrotStreaming {
+                draft.residency = model.default_residency ?? "resident"
+            }
+        }
+        draft.normalizeQwen21CheckpointRecipe()
+        let title = draft.hasQwen21TurboCheckpoint ? "Qwen Image 2.1 Turbo（8 步）" : draft.zImageVariant?.title ?? "所选安装"
         message = "已切换至 \(title)。" + (draft.usesANE ? "生成时自动匹配此版本的 ANE 分区。" : "")
         save()
     }
@@ -1733,6 +1806,7 @@ final class StudioState: ObservableObject {
         draft.loras = draft.modelLoRAs[id] ?? []
         draft.loraStrategy = "auto"
         if draft.qwen21TurboLoRA != nil { configureQwen21TurboPreset() }
+        draft.normalizeQwen21CheckpointRecipe()
         if !model.operations.contains(where: { $0 != "image.generate" && $0 != "video.generate" }) {
             draft.assets.removeAll(); draft.initImageID = nil
         }
@@ -1807,6 +1881,10 @@ final class StudioState: ObservableObject {
     }
     func addLoRA(_ path: String) {
         guard !imageInputsBusy, !path.isEmpty else { return }
+        guard !draft.usesQwen21InstalledRecipe else {
+            message = "此 Qwen 安装的采样方案尚未支持 LoRA。"
+            return
+        }
         let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
         guard !draft.loras.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == normalized }) else {
             message = "此 LoRA 已添加，可使用开关启用。"; return
@@ -1819,6 +1897,10 @@ final class StudioState: ObservableObject {
     }
     func setLoRAEnabled(_ id: UUID, enabled: Bool) {
         guard !imageInputsBusy, let index = draft.loras.firstIndex(where: { $0.id == id }), draft.loras[index].enabled != enabled else { return }
+        guard !enabled || !draft.usesQwen21InstalledRecipe else {
+            message = "此 Qwen 安装的采样方案尚未支持 LoRA。"
+            return
+        }
         let wasTurbo = draft.qwen21TurboLoRA != nil
         draft.loras[index].enabled = enabled
         synchronizeQwen21TurboSettings(wasTurbo: wasTurbo)
@@ -1852,6 +1934,7 @@ final class StudioState: ObservableObject {
         rememberAssets()
         if operation == "image.edit" { draft.assets = [asset] }
         draft.operation = operation; draft.initImageID = asset.id
+        draft.normalizeQwen21CheckpointRecipe(preferStreaming: false)
         message = operation == "image.edit" ? "已使用这张图片进行单图编辑，其他参考图可撤销恢复。" : nil
     }
     @discardableResult
@@ -1881,6 +1964,7 @@ final class StudioState: ObservableObject {
             if draft.modelID != model.id { applyModel(model) }
             if model.id == job.request.model, let path = job.modelPath { draft.modelPaths[model.id] = path }
             draft.assets = [asset]; draft.initImageID = asset.id; draft.operation = operation
+            draft.normalizeQwen21CheckpointRecipe(preferStreaming: false)
             if draft.prompt == previousPrompt { draft.prompt = "" }
             message = "已将结果副本设为编辑原图，请输入修改要求。原结果已保留，参考图替换可撤销。"
             save()
@@ -1933,14 +2017,17 @@ final class StudioState: ObservableObject {
         // Output canvas is independent of the native reference encoding size.
         // Keep examples inside the maintained 512-square regression scope.
         let size = (512, 512)
-        draft.operation = example.referenceCount == 0 ? "image.generate" : "image.edit"
+        let operation = example.referenceCount == 0 ? "image.generate" : "image.edit"
+        let operationChanged = draft.operation != operation
+        draft.operation = operation
         draft.prompt = example.prompt
-        let steps = draft.qwen21TurboLoRA != nil ? 6 : 40
+        let steps = draft.hasQwen21TurboCheckpoint ? 8 : draft.qwen21TurboLoRA != nil ? 6 : 40
         draft.width = size.0; draft.height = size.1; draft.steps = steps
         draft.profilePath = ""
         var acceleration = draft.acceleration ?? StudioAcceleration()
         acceleration.policy = "gpu"
         draft.acceleration = acceleration
+        draft.normalizeQwen21CheckpointRecipe(preferStreaming: operationChanged)
         message = "已替换为可编辑的示例提示词，使用 GPU / \(steps) 步 / \(size.0)×\(size.1)。这不是模型提示词重写；蒙版与标注作为视觉参考，不保证逐像素锁定未编辑区。"
     }
     func applyQwen21TurboPreset() {
@@ -2006,6 +2093,7 @@ final class StudioState: ObservableObject {
                 message = "已在参考 \(index + 1) 使用标注副本；原文件未改动，可撤销。请在提示词中说明圈选 / 涂抹区域的修改，并要求移除标注。"
             }
             draft.operation = "image.edit"
+            draft.normalizeQwen21CheckpointRecipe(preferStreaming: false)
             return true
         } catch {
             await importer.discard(staged)
@@ -2216,6 +2304,7 @@ final class StudioState: ObservableObject {
         draft.modelLoRAs[request.model] = draft.loras
         draft.loraStrategy = request.lora_strategy ?? "auto"
         draft.initImageID = draft.assets.first?.id; draft.strength = request.inputs?.first?.strength ?? 0.75
+        draft.normalizeQwen21CheckpointRecipe(preferStreaming: false)
         undoAssets = []
         message = "已恢复此任务的模型、输入顺序与生成参数，请核对后重新生成。"
         save()
@@ -2245,6 +2334,10 @@ final class StudioState: ObservableObject {
             draft.upscaleModelPaths[variant.rawValue] = item.path
             if draft.upscaleVariant == variant { draft.upscaleModelPath = item.path }
         } else if replace || (draft.modelPaths[item.modelID] ?? "").isEmpty {
+            if item.modelID == "qwen-image-2.1", draft.modelID == item.modelID {
+                selectInstallation(modelID: item.modelID, path: item.path)
+                return
+            }
             draft.modelPaths[item.modelID] = item.path
         }
         save()
@@ -2272,7 +2365,9 @@ final class StudioState: ObservableObject {
         }
         if let model {
             let operation = model.isVideo ? "video.generate" : "image.generate"
+            let wasEditing = draft.operation == "image.edit"
             draft.operation = model.supports(operation) ? operation : model.availableOperations.first ?? operation
+            draft.normalizeQwen21CheckpointRecipe(preferStreaming: wasEditing)
         }
         draft.prompt = ""; draft.assets = []; draft.initImageID = nil
         undoAssets = []; lastSeed = nil

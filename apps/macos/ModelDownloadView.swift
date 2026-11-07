@@ -6,6 +6,7 @@ struct ModelDownloadView: View {
     let model: StudioModel
     @ObservedObject var library: ModelLibraryController
     @ObservedObject var studio: StudioState
+    var initialPresetID: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var provider: HubProvider = .modelscope
     @State private var repository = ""
@@ -22,7 +23,13 @@ struct ModelDownloadView: View {
     private var recipe: LibraryRecipe? { LibraryRecipe.all.first { $0.modelID == model.id } }
     private var presets: [LibraryVariant] { recipe?.downloadVariants ?? [] }
     private var preset: LibraryVariant? { presets.first { $0.id == presetID } ?? presets.first }
+    private var downloadName: String {
+        model.id == Qwen21Installation.modelID && preset?.id == Qwen21Installation.turboPresetID
+            ? Qwen21Installation.turboName : model.displayName
+    }
     private var isPreset: Bool { model.id != "z-image-turbo" && repository == preset?.repository }
+    private var hasPinnedSource: Bool { isPreset && preset?.modelScopePins != nil }
+    private var downloadProvider: HubProvider { hasPinnedSource ? .modelscope : provider }
     private var isComfy: Bool { model.id == "z-image-turbo" && repository == ZImageVariant.repository }
     private var variant: ZImageVariant { ZImageVariant.all.first { $0.id == variantID } ?? ZImageVariant.all[0] }
     private var estimatedWeightBytes: Int64 {
@@ -42,8 +49,8 @@ struct ModelDownloadView: View {
             return try include.map { try base.subset(include: $0) } ?? base
         }
         if isPreset, let preset {
-            var base = try preset.request(modelID: model.id, provider: provider, componentKind: componentKind == "all" ? nil : componentKind)
-            base.revision = revision.isEmpty ? nil : revision
+            var base = try preset.request(modelID: model.id, provider: downloadProvider, componentKind: componentKind == "all" ? nil : componentKind)
+            if !hasPinnedSource { base.revision = revision.isEmpty ? nil : revision }
             return try include.map { try base.subset(include: $0) } ?? base
         }
         return LibraryDownloadRequest(modelID: model.id, repository: repository.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider,
@@ -54,7 +61,7 @@ struct ModelDownloadView: View {
             HStack(spacing: 12) {
                 ModelBrandBadge(modelID: model.id, size: 44)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("下载 \(model.displayName)").font(.title2.weight(.semibold))
+                    Text("下载 \(downloadName)").font(.title2.weight(.semibold))
                     Text("选择版本与组件，先预览再下载。").font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -65,12 +72,18 @@ struct ModelDownloadView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("下载来源").font(.headline)
-                        Picker("来源", selection: $provider) {
-                            Text("ModelScope · 默认").tag(HubProvider.modelscope)
-                            Text("Hugging Face").tag(HubProvider.huggingface)
-                        }.pickerStyle(.segmented).accessibilityIdentifier("downloadProvider")
-                        Text("预览会核对主仓库与配套组件。若来源缺少所需文件，可切换另一来源；不会自动下载替代版本。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if hasPinnedSource {
+                            Text("ModelScope · 固定版本").accessibilityIdentifier("downloadPinnedProvider")
+                            Text("预览来自内置文件清单。下载逐文件核对大小和 SHA-256。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Picker("来源", selection: $provider) {
+                                Text("ModelScope · 默认").tag(HubProvider.modelscope)
+                                Text("Hugging Face").tag(HubProvider.huggingface)
+                            }.pickerStyle(.segmented).accessibilityIdentifier("downloadProvider")
+                            Text("预览会核对主仓库与配套组件。若来源缺少所需文件，可切换另一来源；不会自动下载替代版本。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     if presets.count > 1 && model.id != "z-image-turbo" {
                         VStack(alignment: .leading, spacing: 10) {
@@ -116,12 +129,14 @@ struct ModelDownloadView: View {
                     if isComfy { zImageOptions }
                     if model.id == "z-image-turbo" { sharedTextOptions }
                     if presets.count <= 1, let recipe { Text(recipe.preparation).font(.caption).foregroundStyle(.secondary) }
-                    DisclosureGroup("仓库与版本") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            TextField("仓库 owner/name", text: $repository).textFieldStyle(.roundedBorder).accessibilityIdentifier("downloadRepository")
-                            TextField("版本 · 留空使用来源默认版本", text: $revision).textFieldStyle(.roundedBorder)
-                            Text("修改仓库后将使用该仓库的自定义文件选择；请核对模型兼容性。").font(.caption).foregroundStyle(.secondary)
-                        }.padding(.top, 10)
+                    if !hasPinnedSource {
+                        DisclosureGroup("仓库与版本") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                TextField("仓库 owner/name", text: $repository).textFieldStyle(.roundedBorder).accessibilityIdentifier("downloadRepository")
+                                TextField("版本 · 留空使用来源默认版本", text: $revision).textFieldStyle(.roundedBorder)
+                                Text("修改仓库后将使用该仓库的自定义文件选择；请核对模型兼容性。").font(.caption).foregroundStyle(.secondary)
+                            }.padding(.top, 10)
+                        }
                     }
                     Link("查看来源与模型许可证 · \(repository)", destination: repositoryURL(repository)).font(.caption)
                     if isPreset {
@@ -177,7 +192,7 @@ struct ModelDownloadView: View {
             }.padding(18)
         }.frame(width: 680, height: 700)
             .onAppear {
-                presetID = presets.first?.id ?? "default"
+                presetID = presets.first(where: { $0.id == initialPresetID })?.id ?? presets.first?.id ?? "default"
                 repository = model.id == "z-image-turbo" ? ZImageVariant.repository : preset?.repository ?? ""
                 library.message = nil
             }
@@ -191,7 +206,7 @@ struct ModelDownloadView: View {
             .interactiveDismissDisabled(busy)
     }
     private func repositoryURL(_ repository: String) -> URL {
-        provider.endpoint.appendingPathComponent(provider == .modelscope ? "models/" + repository : repository)
+        downloadProvider.endpoint.appendingPathComponent(downloadProvider == .modelscope ? "models/" + repository : repository)
     }
     private func preview() {
         localError = nil

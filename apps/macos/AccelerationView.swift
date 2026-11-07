@@ -6,7 +6,7 @@ struct AccelerationView: View {
     @ObservedObject var studio: StudioState
     @ObservedObject var library: ModelLibraryController
     private var model: StudioModel? { studio.models.first { $0.id == studio.draft.modelID } }
-    private var supportsGPUANE: Bool { model?.supports_gpu_ane == true }
+    private var supportsGPUANE: Bool { model?.supports_gpu_ane == true && !studio.draft.usesQwen21InstalledRecipe }
     private var supportsAutomaticGPUANE: Bool {
         studio.draft.modelID == "flux2-klein-4b" || studio.draft.modelID == "z-image-turbo"
     }
@@ -64,7 +64,7 @@ struct AccelerationView: View {
                     .disabled(store.busy).accessibilityIdentifier("accelerationLoRAUseGPU")
             }
             if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
-            if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID) {
+            if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID), !studio.draft.usesQwen21InstalledRecipe {
                 Toggle("Runtime · Hadamard W8A8 数据路径（本机实验）", isOn: Binding(
                     get: { studio.draft.usesRuntimeANE },
                     set: { enabled in

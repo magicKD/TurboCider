@@ -20,14 +20,20 @@ struct LibraryDownloadRequest: Codable, Sendable {
     var components: [String: LibraryComponent] = [:]
     var supplements: [LibrarySupplement] = []
     var destinations: [String: String] = [:]
+    /// Resolve the selected files against an immutable entry in the built-in catalog.
+    var pinnedVariantID: String?
     init(modelID: String, repository: String, provider: HubProvider = .modelscope,
-         revision: String? = nil, name: String? = nil, include: [String] = [], components: [String: LibraryComponent] = [:], supplements: [LibrarySupplement] = [], destinations: [String: String] = [:]) {
+         revision: String? = nil, name: String? = nil, include: [String] = [], components: [String: LibraryComponent] = [:],
+         supplements: [LibrarySupplement] = [], destinations: [String: String] = [:], pinnedVariantID: String? = nil) {
         self.modelID = modelID; self.repository = repository; self.provider = provider
         self.revision = revision; self.name = name; self.include = include; self.components = components
         self.supplements = supplements
         self.destinations = destinations
+        self.pinnedVariantID = pinnedVariantID
     }
-    private enum CodingKeys: String, CodingKey { case modelID, repository, provider, revision, name, include, components, supplements, destinations }
+    private enum CodingKeys: String, CodingKey {
+        case modelID, repository, provider, revision, name, include, components, supplements, destinations, pinnedVariantID
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         modelID = try c.decode(String.self, forKey: .modelID)
@@ -39,6 +45,7 @@ struct LibraryDownloadRequest: Codable, Sendable {
         components = try c.decodeIfPresent([String: LibraryComponent].self, forKey: .components) ?? [:]
         supplements = try c.decodeIfPresent([LibrarySupplement].self, forKey: .supplements) ?? []
         destinations = try c.decodeIfPresent([String: String].self, forKey: .destinations) ?? [:]
+        pinnedVariantID = try c.decodeIfPresent(String.self, forKey: .pinnedVariantID)
     }
 
     /// Narrow a preset to explicit source paths. Never turn an empty selection
@@ -121,34 +128,7 @@ struct LibraryDownloader: Sendable {
                 throw LibraryFailure(message: "共享 tokenizer 与文本编码器不属于同一组已检查组件。")
             }
         }
-        let snapshot = try await client.snapshot(repository: request.repository, revision: request.revision)
-        guard request.supplements.count <= 8 else { throw LibraryFailure(message: "At most eight supplementary repositories are supported.") }
-        for path in request.destinations.keys {
-            guard snapshot.files.contains(where: { $0.path == path }) else {
-                throw LibraryFailure(message: "Mapped source file is missing: \(path)")
-            }
-        }
-        var allFiles = snapshot.files.map { original in
-            var file = original; file.destinationPath = request.destinations[file.path]; return file
-        }
-        var additional: [HubSnapshot] = []
-        for supplement in request.supplements {
-            guard !supplement.include.isEmpty else { throw LibraryFailure(message: "Supplementary repositories require an explicit file selection.") }
-            for path in supplement.include { try LibraryStore.validateRelativePath(path) }
-            guard (supplement.destinations ?? [:]).keys.allSatisfy(supplement.include.contains) else {
-                throw LibraryFailure(message: "Supplementary destination mapping must select an explicit source file.")
-            }
-            // The same provider/client enforces the same credential and redirect rules.
-            let source = try await client.snapshot(repository: supplement.repository, revision: supplement.revision)
-            for path in supplement.include {
-                guard let original = source.files.first(where: { $0.path == path }) else {
-                    throw LibraryFailure(message: "Required supplementary file is missing: \(supplement.repository)/\(path)")
-                }
-                var file = original; file.sourceRepository = supplement.repository
-                file.destinationPath = supplement.destinations?[path]; allFiles.append(file)
-            }
-            additional.append(source)
-        }
+        let (snapshot, allFiles, additional) = try await sources(for: request)
         let selected = allFiles.filter { file in
             (request.include.isEmpty || request.include.contains { $0 == file.path || ($0.hasSuffix("/") && file.path.hasPrefix($0)) }) &&
             !(request.modelID == "z-image-turbo" && request.components["text_encoder"] != nil && file.path.hasPrefix("split_files/text_encoders/")) &&
@@ -191,6 +171,66 @@ struct LibraryDownloader: Sendable {
         }
         return LibraryDownloadPlan(snapshot: snapshot, files: selected, reusedComponents: request.components,
                                    downloadBytes: missing, cachedBytes: cached, additionalSnapshots: additional.isEmpty ? nil : additional)
+    }
+
+    private func sources(for request: LibraryDownloadRequest) async throws -> (HubSnapshot, [HubFile], [HubSnapshot]) {
+        if let id = request.pinnedVariantID {
+            let recipe = LibraryRecipe.all.first { $0.modelID == request.modelID }
+            guard let variant = recipe?.downloadVariants.first(where: { $0.id == id }),
+                  let pins = variant.modelScopePins, let primaryPin = pins.first,
+                  request.provider == .modelscope, request.repository == variant.repository,
+                  request.revision == nil, request.components.isEmpty,
+                  request.supplements.isEmpty, request.destinations.isEmpty,
+                  !request.include.isEmpty else {
+                throw LibraryFailure(message: "ModelScope 固定版本只能使用内置来源和明确的文件选择。")
+            }
+            let selected = pins.filter { request.include.contains($0.path) }
+            guard selected.count == request.include.count else {
+                throw LibraryFailure(message: "文件选择超出此 ModelScope 固定版本。")
+            }
+            // Planning consumes only the catalog. The usual installer still
+            // verifies each file's exact length and SHA-256 before publishing.
+            let snapshot = HubSnapshot(provider: .modelscope, repository: variant.repository,
+                revision: primaryPin.revision, files: selected.filter { $0.sourceRepository == nil })
+            let supplements = Dictionary(grouping: selected.filter { $0.sourceRepository != nil }) {
+                $0.sourceRepository ?? variant.repository
+            }
+            let additional = supplements.keys.sorted().compactMap { repository -> HubSnapshot? in
+                guard let files = supplements[repository], let first = files.first else { return nil }
+                return HubSnapshot(provider: .modelscope, repository: repository, revision: first.revision, files: files)
+            }
+            return (snapshot, selected, additional)
+        }
+
+        let snapshot = try await client.snapshot(repository: request.repository, revision: request.revision)
+        guard request.supplements.count <= 8 else { throw LibraryFailure(message: "At most eight supplementary repositories are supported.") }
+        for path in request.destinations.keys {
+            guard snapshot.files.contains(where: { $0.path == path }) else {
+                throw LibraryFailure(message: "Mapped source file is missing: \(path)")
+            }
+        }
+        var files = snapshot.files.map { original in
+            var file = original; file.destinationPath = request.destinations[file.path]; return file
+        }
+        var additional: [HubSnapshot] = []
+        for supplement in request.supplements {
+            guard !supplement.include.isEmpty else { throw LibraryFailure(message: "Supplementary repositories require an explicit file selection.") }
+            for path in supplement.include { try LibraryStore.validateRelativePath(path) }
+            guard (supplement.destinations ?? [:]).keys.allSatisfy(supplement.include.contains) else {
+                throw LibraryFailure(message: "Supplementary destination mapping must select an explicit source file.")
+            }
+            // The same provider/client enforces the same credential and redirect rules.
+            let source = try await client.snapshot(repository: supplement.repository, revision: supplement.revision)
+            for path in supplement.include {
+                guard let original = source.files.first(where: { $0.path == path }) else {
+                    throw LibraryFailure(message: "Required supplementary file is missing: \(supplement.repository)/\(path)")
+                }
+                var file = original; file.sourceRepository = supplement.repository
+                file.destinationPath = supplement.destinations?[path]; files.append(file)
+            }
+            additional.append(source)
+        }
+        return (snapshot, files, additional)
     }
 
     private func cachedBlob(_ file: HubFile) throws -> URL? {

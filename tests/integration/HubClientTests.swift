@@ -35,16 +35,21 @@ private final class ProgressProbe: @unchecked Sendable {
                       "Downloaded snapshot must contain regular hard links to its content blobs")
         }
         let decoded = try JSONDecoder().decode(LibraryDownloadRequest.self, from: Data("{\"modelID\":\"fixture\",\"repository\":\"test/tiny\"}".utf8))
-        try check(decoded.provider == .modelscope && decoded.include.isEmpty && decoded.destinations.isEmpty, "ModelScope/layout is not the JSON default")
+        try check(decoded.provider == .modelscope && decoded.include.isEmpty && decoded.destinations.isEmpty
+            && decoded.pinnedVariantID == nil, "ModelScope/layout is not the JSON default")
         guard let qwen = LibraryRecipe.all.first(where: { $0.modelID == "qwen-image-2.1" }) else {
             throw LibraryFailure(message: "Qwen recipe missing")
         }
         try check(qwen.include.contains("processor/tokenizer.json"), "Qwen default recipe excludes its required tokenizer supplement")
-        try check(qwen.downloadVariants.count == 8 && qwen.downloadVariants[0].id == "bf16", "Qwen BF16/Q4–Q8 catalog incomplete")
-        for variant in qwen.downloadVariants {
+        let existingQwen = qwen.downloadVariants.filter { $0.id != "turbo-int8-convrot" }
+        try check(existingQwen.map(\.id) == ["bf16", "unsloth-q4_k_m", "unsloth-q4_k_s", "unsloth-q5_k_m",
+            "unsloth-q5_k_s", "unsloth-q6_k", "unsloth-q6_k_xl", "unsloth-q8_0"], "Qwen BF16/Q4–Q8 catalog incomplete")
+        for variant in existingQwen {
             let request = try variant.request(modelID: qwen.modelID)
-            try check(request.provider == .modelscope && request.repository == variant.repository,
+            try check(request.provider == .modelscope && request.repository == variant.repository && request.pinnedVariantID == nil,
                       "Variant did not preserve provider default/source")
+            try check(try variant.request(modelID: qwen.modelID, provider: .huggingface).provider == .huggingface,
+                      "Existing Qwen variant lost the Hugging Face option")
             for supplement in request.supplements {
                 try check(supplement.include.allSatisfy(request.include.contains), "Variant excludes a required supplementary file")
             }
@@ -74,6 +79,64 @@ private final class ProgressProbe: @unchecked Sendable {
                 throw LibraryFailure(message: "Preset subset admitted unrelated weights")
             } catch let error as LibraryFailure where error.message.hasPrefix("Preset subset admitted") { throw error }
             catch {}
+        }
+        guard let turbo = qwen.downloadVariants.first(where: { $0.id == "turbo-int8-convrot" }) else {
+            throw LibraryFailure(message: "Qwen Turbo dual ConvRot preset missing")
+        }
+        try check(turbo.title.contains("8 步") && turbo.runnable, "Turbo preset must identify its fixed schedule and runnable route")
+        let turboRequest = try turbo.request(modelID: qwen.modelID)
+        let roundtrip = try JSONDecoder().decode(LibraryDownloadRequest.self, from: JSONEncoder().encode(turboRequest))
+        try check(roundtrip.pinnedVariantID == turbo.id, "Helper request lost its pinned catalog identity")
+        let pinned = LibraryDownloader(store: store, client: HubClient(provider: .modelscope, testEndpoint: endpoint))
+        let turboPlan = try await pinned.plan(roundtrip)
+        let expectedPins: [(path: String, bytes: Int64, sha256: String, revision: String, repository: String)] = [
+            ("diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors", 7_256_787_829,
+             "8144a0182964aa8403ad6dbc011db837304167d235161b9aabaa8532e967314c", "8c798285d642b81a1af415b70f2e444e809820d7", "Comfy-Org/Qwen-Image-2.1"),
+            ("text_encoders/qwen3vl_8b_int8_convrot.safetensors", 9_350_798_360,
+             "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f", "5dc8a8352312860d67e07cc9bee310dc7ed3e55c", "Comfy-Org/Qwen-Image-2.1"),
+            ("vae/qwen_image_2.1_vae_bf16.safetensors", 675_509_688,
+             "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9", "5dc8a8352312860d67e07cc9bee310dc7ed3e55c", "Comfy-Org/Qwen-Image-2.1"),
+            ("processor/tokenizer.json", 11_422_654,
+             "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4", "c491be04a88fa35fbd86443f78f9c3002a503677", "Qwen/Qwen-Image-2.1"),
+        ]
+        try check(turboPlan.files.count == 4 && turboPlan.downloadBytes == 17_294_518_531
+            && turboPlan.cachedBytes == 0 && turboPlan.snapshot.provider == .modelscope,
+            "Turbo plan included other files, lost a component, or changed transfer size")
+        for expected in expectedPins {
+            let actual = turboPlan.files.first { $0.path == expected.path }
+            try check(actual?.installationPath == expected.path && actual?.size == expected.bytes
+                && actual?.sha256 == expected.sha256 && actual?.revision == expected.revision
+                && (actual?.sourceRepository ?? turboPlan.snapshot.repository) == expected.repository,
+                "Turbo plan changed the pinned source, size, hash, revision or installation path: \(expected.path)")
+        }
+        for (kind, indices) in [("dit", [0]), ("encoder", [1, 3]), ("vae", [2])] {
+            let scope = try turbo.request(modelID: qwen.modelID, componentKind: kind)
+            let plan = try await pinned.plan(scope)
+            try check(Set(plan.files.map(\.path)) == Set(indices.map { expectedPins[$0].path })
+                && (plan.additionalSnapshots?.count ?? 0) == (kind == "encoder" ? 1 : 0),
+                "Pinned component scope fetched unrelated files or lost its companion")
+        }
+        func rejectPinned(_ change: (inout LibraryDownloadRequest) -> Void) async throws {
+            var altered = roundtrip
+            change(&altered)
+            do {
+                _ = try await pinned.plan(altered)
+                throw LibraryFailure(message: "Altered Turbo pins were accepted")
+            } catch let error as LibraryFailure {
+                try check(error.message.contains("ModelScope 固定版本"), error.message)
+            }
+        }
+        try await rejectPinned { $0.include = [] }
+        try await rejectPinned { $0.include = ["diffusion_models/"] }
+        try await rejectPinned { $0.include = [expectedPins[0].path, expectedPins[0].path] }
+        try await rejectPinned { $0.revision = "master" }
+        try await rejectPinned { $0.repository = "test/tiny" }
+        try await rejectPinned { $0.destinations = [expectedPins[0].path: "renamed.safetensors"] }
+        do {
+            _ = try turbo.request(modelID: qwen.modelID, provider: .huggingface)
+            throw LibraryFailure(message: "Turbo pins were accepted on another provider")
+        } catch let error as LibraryFailure {
+            try check(error.message.contains("ModelScope 固定权重"), error.message)
         }
         try check(LibraryRecipe.all.allSatisfy { !$0.downloadVariants.isEmpty }, "Existing model lost its default download preset")
         guard let zImage = LibraryRecipe.all.first(where: { $0.modelID == "z-image-turbo" }) else {
@@ -242,6 +305,6 @@ private final class ProgressProbe: @unchecked Sendable {
             stripped = next != nil && next?.value(forHTTPHeaderField: "Authorization") == nil && next?.value(forHTTPHeaderField: "Cookie") == nil
         }
         try check(stripped, "Credentials leaked to the CDN redirect")
-        print("PASS: MS traversal, HF pinned pagination, shared-component skip, cross-provider hard-link dedup, FLUX inspection/reuse, Qwen BF16/GGUF catalog, explicit supplement selection, mapped component hardlinks/provenance/roundtrip/collisions, integrity errors, cancellation, redirect credentials")
+        print("PASS: MS traversal, HF pinned pagination, shared-component skip, cross-provider hard-link dedup, FLUX inspection/reuse, Qwen BF16/GGUF and offline pinned Turbo ConvRot catalog, explicit supplement selection, mapped component hardlinks/provenance/roundtrip/collisions, integrity errors, cancellation, redirect credentials")
     }
 }
