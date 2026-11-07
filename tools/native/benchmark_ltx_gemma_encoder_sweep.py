@@ -22,13 +22,18 @@ import platform
 import re
 import statistics
 import subprocess
+import sys
 from pathlib import Path
+
+
+# Keep direct CLI invocation and file-based tooling imports working.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ltx_gemma_quality import INVALID_METRIC, array_quality, bf16  # noqa: E402
 
 
 VIDEO_DIM = 4096
 AUDIO_DIM = 2048
 MAX_ROWS = 1024
-INVALID_METRIC = 1e30
 VARIANTS = ("staged", "fused", "fused_gpu_taps")
 ALL_VARIANTS = VARIANTS + ("hybrid_ane",)
 MIN_QUALIFYING_WARM_RUNS = 3
@@ -445,13 +450,6 @@ def args_runs_from_command(command: list[str]) -> int:
         raise ValueError("probe command is missing warm-run count") from error
 
 
-def bf16(path: Path):
-    import numpy as np
-
-    words = np.fromfile(path, dtype="<u2")
-    return (words.astype(np.uint32) << np.uint32(16)).view(np.float32)
-
-
 def tensor_quality(candidate_path: Path, reference_path: Path) -> dict:
     import numpy as np
 
@@ -470,33 +468,7 @@ def tensor_quality(candidate_path: Path, reference_path: Path) -> dict:
             "relative_l2": INVALID_METRIC, "cosine": -1.0,
             "max_abs": INVALID_METRIC, "relative_max_abs": INVALID_METRIC,
         }
-    finite = bool(np.isfinite(candidate).all() and np.isfinite(reference).all())
-    if not finite:
-        return {
-            "shape_match": True, "all_finite": False,
-            "relative_l2": INVALID_METRIC, "cosine": -1.0,
-            "max_abs": INVALID_METRIC, "relative_max_abs": INVALID_METRIC,
-        }
-    delta = candidate - reference
-    delta2 = float(np.dot(delta, delta))
-    candidate2 = float(np.dot(candidate, candidate))
-    reference2 = float(np.dot(reference, reference))
-    denominator = math.sqrt(candidate2 * reference2)
-    maximum = float(np.max(np.abs(delta), initial=0.0))
-    amplitude = float(np.max(np.abs(reference), initial=0.0))
-    return {
-        "shape_match": True,
-        "all_finite": True,
-        "relative_l2": math.sqrt(delta2 / reference2)
-        if reference2 > 0 else (0.0 if delta2 == 0 else INVALID_METRIC),
-        "cosine": max(-1.0, min(
-            1.0, float(np.dot(candidate, reference)) / denominator
-            if denominator > 0 else (1.0 if candidate2 == reference2 == 0 else 0.0),
-        )),
-        "max_abs": maximum,
-        "relative_max_abs": maximum / amplitude
-        if amplitude > 0 else (0.0 if maximum == 0 else INVALID_METRIC),
-    }
+    return array_quality(candidate, reference)
 
 
 def conditioning_quality(candidate: dict, reference: dict) -> dict:

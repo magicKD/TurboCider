@@ -5,7 +5,7 @@ source tools/native/dependencies.sh
 # Independent output directory: never overwrites an App/library candidate.
 VAE_IO_OUT="${TURBOCIDER_VAE_IO_PROBE_OUT:-$PWD/build/seedvr2-vae-ane-io-probe-v2}"
 mkdir -p "$VAE_IO_OUT"
-VAE_IO_TARGET="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '/cmd LC_BUILD_VERSION/{b=1;next} b && /minos /{print $2;exit}')"
+VAE_IO_TARGET="$(turbocider_mlx_min_macos)"
 xcrun clang++ -std=c++20 -O2 -fobjc-arc -Wall -Wextra \
   -mmacosx-version-min="${VAE_IO_TARGET:-26.0}" \
   -framework Foundation -framework CoreML -framework CoreVideo \

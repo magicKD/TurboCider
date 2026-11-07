@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 source tools/native/dependencies.sh
 CAUSAL_PROBE_OUT="${TURBOCIDER_VAE_CAUSAL_PROBE_OUT:-$PWD/build/seedvr2-vae-causal-probe-v1}"
 mkdir -p "$CAUSAL_PROBE_OUT"
-CAUSAL_TARGET="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '/cmd LC_BUILD_VERSION/{b=1;next} b && /minos /{print $2;exit}')"
+CAUSAL_TARGET="$(turbocider_mlx_min_macos)"
 CAUSAL_FLAGS=(-std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc
   -DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_EXPERIMENT=1 -DTURBOCIDER_ENABLE_VAE_CAUSAL_CONV_PROBE=1
   -mmacosx-version-min="${CAUSAL_TARGET:-26.0}" -I native/core -isystem "$MLX_ROOT/include" -isystem "$MLX_ROOT/include/metal_cpp"

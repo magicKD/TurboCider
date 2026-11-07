@@ -1,124 +1,76 @@
 # TurboCider 设计文档
 
-2026-10-08：[Native encoder 与无 KV 编辑首步 ANE](qwen-image-gpu-ane-command-graph/23-native-encoder-prefill-ane.md)补上共享行适配、Session预热、物理完成后复用和提交后的下一层源准备；仍是W1实验路径。
+这里保存架构、接口和待验证方案。设计文档中的目标、伪代码和历史实验结果不等于
+当前版本已交付的能力；运行方式以[用户指南](../public/README.md)为准，
+实验记录从[实验归档](../experiments/README.md)进入，实施历史见[状态索引](../status/README.md)。
 
-2026-10-08：[Qwen Image GPU / ANE Command Graph 改造设计](qwen-image-gpu-ane-command-graph/README.md)。
-A 路线保留 MLX 并验证事件适配；N 路线是独立的 Splash 风格 Native Metal Graph 后端，
-自己编码完整 DiT／Euler，管理 command buffers、实际资源和 GPU／ANE 交接。
-[后端定位与 MLX 能力边界](qwen-image-gpu-ane-command-graph/10-native-metal-graph-backend.md)说明两路线；
-[完整后端规格](qwen-image-gpu-ane-command-graph/16-splash-native-backend-spec.md)对照 Splash 全部 runtime 层，
-细化可信算子、graph lowering、buffer liveness、有界 segment、完成证据和两个 block 的 W2 方案。
-先 Base、再 LoRA；复用 vpipe 的批处理／residency 思路及本地模型、source、内存合同，不另建模型库或账本。
+## 从主题开始
 
-当前 Native Base／private W1S 已有一组完整请求记录，见
-[Base E2E](../status/2026-10-08-native-register-w1-base-e2e.md)；GPU LoRA 全目标接入与
-后续 hybrid ABI 见 [17](qwen-image-gpu-ane-command-graph/17-native-lora-integration.md)。
-新 SGMMA 的[组件筛选](../status/2026-10-08-native-lora-sgmma-screen.md)和
-[六步整图配对](../status/2026-10-08-native-lora-sgmma-e2e.md)分别记录：单层有收益，但整图仍比 MLX 慢。
-当前[LoRA hybrid 基础实现](../status/2026-10-08-native-lora-foundation.md)已补齐 Spec／MIL emitter 与 validated low 拆分，
-CPU 和 tiny 共享 low 检查通过；真实暖机对照受内存预算保护提前结束，stages／controller 尚未接通。
-新增[Edit encoder GPU 融合实现](qwen-image-gpu-ane-command-graph/18-edit-encoder-acceleration.md)：真实1–3图1024 reference计算有收益，512 reference整图encoder没有明显收益；[本轮证据](../status/2026-10-08-qwen-edit-encoder.md)明确质量／性能范围。
-第一版[Edit encoder ANE runtime](qwen-image-gpu-ane-command-graph/19-edit-encoder-ane-runtime.md)参考Splash当前HEAD，复用私有W8A8语言FFN通道executor；单层有收益，但完整encoder慢10.03%、conditioning未过5%线，见[历史状态](../status/2026-10-08-qwen-ane-encoder.md)。
-前轮[encoder runtime继续优化](qwen-image-gpu-ane-command-graph/20-encoder-runtime-optimization.md)加入BF16 MPP partial／dynamic compiled复用，完整encoder少3.93%、语言少10.09%；新旧hybrid输出一致，8%数值筛选通过，完整性能未达5%筛选，见[状态](../status/2026-10-08-qwen-encoder-followup.md)。
-最新[encoder调度与校准](qwen-image-gpu-ane-command-graph/21-encoder-scheduling-and-calibration.md)补齐1152/1664分区、Session准备复用、提交当前GPU后的下一层预取和36层S1校准；三图完整encoder省时8.85%，准备复用后11.01%，误差仍5.754%，保持诊断和GPU默认，见[新状态](../status/2026-10-08-qwen-encoder-scheduling.md)。
-新增[完整Native Metal编辑encoder](qwen-image-gpu-ane-command-graph/22-native-edit-encoder.md)完成视觉27层＋语言36层和单图实验：
-独立FP32 encoder省时24.93%，实际六步编辑encoder省时7.49%、整图少1.59%，见[状态](../status/2026-10-08-qwen-native-encoder.md)。
-保持显式GPU实验与MLX默认，Native encoder ANE/W2、统一IR、内存档位和App UI继续独立验收；设计伪代码不当作实际API或性能证据。
+| 主题 | 入口 |
+| --- | --- |
+| 原生引擎职责、类型接口与重构验收 | [C++ 引擎边界](native-cpp-engine.md) |
+| 任务路由与 GPU/ANE 分工 | [任务感知加速](task-aware-acceleration.md) · [并行加速](parallel-acceleration.md) |
+| 受限内存、权重驻留与调度 | [驻留调度器](memory-constrained-residency-scheduler-20260915.md) · [Streaming 设计目录](streaming/README.md) |
+| GGUF、量化执行与有限解码 | [量化执行设计](quantized-execution/README.md) · [实施与实验账本](../experiments/quantized-execution/README.md) · [量化与 streaming 对照](quantized-streaming-vpipe-comparison.md) |
+| Qwen Native Metal / GPU+ANE command graph | [专项设计目录](qwen-image-gpu-ane-command-graph/README.md) |
+| Apple 芯片与 kernel 优化 | [Mac kernel 优化](mac-kernel-opt.md) · [M5 ANE 适配](m5-ane-adaptation.md) |
+| H3 C++/MLX INT6 | [加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md) |
+| LTX 2.5 与 VDN H3 | [实施与验收方案](ltx25-vdn-h3-ane-implementation-plan.md) · [ltx-mac 对齐方案](ltx25-ltx-mac-acceleration-parity-plan.md) |
+| LTX Video VAE 生命周期 | [生命周期与职责整理](ltx25-vae-lifecycle-and-code-cleanup-20260913.md) |
 
-2026-09-30：受限内存下的 encoder/DiT GGUF Q4–Q8、默认提前1层/可扩至2层的有限解码、
-ConvRot优化、M5 GPU W8A8及静态/runtime ANE设计，见
-[量化执行设计目录](quantized-execution/README.md)。该目录区分设计、现有能力和
-本轮实测；不以全模型浮点展开作为低内存方案，也不将未验证M5/ANE路径标为已交付。
-实施入口已补充首发范围/组件合同（09）、执行与产品接入（10）、固定验收与硬件
-可行性规则（11）；从单一 Q8 端到端纵切开始，未绑定验收模板不是生产资格凭证。
+## Streaming 实施与验收
 
-当前任务感知路由与实时资源设计：[按任务选择计算路径](task-aware-acceleration.md)。
-当前独立部署入口：[项目独立性与完整链路](standalone-project.md)。构建、转换工具链及加速产物均由 TurboCider 管理，原始模型路径可在外部。
+按[专题索引](streaming/README.md)选择具体阶段，不把未绑定的模板作为发布证据。
+常用入口：
 
-最新磁盘管理：[Core ML 源模型、编译与缓存管理](coreml-artifacts-and-storage.md)，包含实际占用检查、safetensors 离线导出、CLI/API 和 App 清理入口。
+- [Public Adapter 代码规格](streaming/36-public-adapter-code-implementation-spec.md)
+- [校准、性能与验收规格](streaming/37-public-streaming-calibration-performance-acceptance.md)
+- [Framework 代码合同与工作台](streaming/38-framework-code-contracts-and-implementation-workbench.md)
+- [验证与发布工作簿](streaming/39-validation-benchmark-and-release-workbook.md)
 
-最新实现：[模型准备、GPU/ANE 管理与性能](model-preparation-and-performance.md)，包含本机自动 GPU/ANE 适配、App 加载/预热、分区编译缓存及纯 GPU compile 实测。
+## Qwen command graph 与 encoder
 
-**已实现的 Studio 首版与测试：[实现记录](app-studio-implementation.md)。** 包含原生 FLUX 三操作、图片输入、种子、load/unload 及实际验证；早期设计中的目录/能力以当前实现记录为准。
+[专题索引](qwen-image-gpu-ane-command-graph/README.md)保留设计顺序和实验边界。
+以下文档分别讨论后端、LoRA 和 encoder，不能合并理解成已通过完整产品验收：
 
-当前项目目录与旧代码退役：[项目重构](project-restructure.md)。
+- [后端定位与 MLX 边界](qwen-image-gpu-ane-command-graph/10-native-metal-graph-backend.md)
+- [完整 Native 后端规格](qwen-image-gpu-ane-command-graph/16-splash-native-backend-spec.md)
+- [LoRA 接入](qwen-image-gpu-ane-command-graph/17-native-lora-integration.md)
+- [Edit encoder GPU 融合](qwen-image-gpu-ane-command-graph/18-edit-encoder-acceleration.md)
+- [Edit encoder ANE runtime](qwen-image-gpu-ane-command-graph/19-edit-encoder-ane-runtime.md)
+- [Encoder runtime 优化](qwen-image-gpu-ane-command-graph/20-encoder-runtime-optimization.md)
+- [Encoder 调度与校准](qwen-image-gpu-ane-command-graph/21-encoder-scheduling-and-calibration.md)
+- [Native Metal 编辑 encoder](qwen-image-gpu-ane-command-graph/22-native-edit-encoder.md)
+- [Native encoder 与编辑首步 ANE](qwen-image-gpu-ane-command-graph/23-native-encoder-prefill-ane.md)
 
-当前 main→dev 合并与阶段性六模型/App 回归见 [2026-09-06 合并验收](../status/main-dev-merge-2026-09-06.md)。当前状态、真实性能和剩余工作统一见 [2026-09-08 当前状态](../status/current-status-2026-09-08.md) 与 [状态文档入口](../status/README.md)，独立运行边界见 [外部依赖说明](../status/independence-and-dependencies-2026-09-06.md)，提交边界见 [版本准备度](../status/release-readiness-2026-09-06.md)。模型职责的详细说明见 [原生重构状态](rewrite-implementation-status.md)、[FLUX 同条件性能对比](flux-performance-comparison.md) 和 [H3/LTX 验收契约](video-model-acceptance.md)。以下长期设计不等于已交付能力。
+对应的[Base E2E](../status/2026-10-08-native-register-w1-base-e2e.md)、
+[LoRA 基础实现](../experiments/native-lora/2026-10-08-native-lora-foundation.md)、
+[SGMMA 组件筛选](../experiments/native-lora/2026-10-08-native-lora-sgmma-screen.md)和
+[整图配对](../experiments/native-lora/2026-10-08-native-lora-sgmma-e2e.md)保留其各自结论。
+Encoder 的[GPU 融合](../experiments/qwen-encoder/2026-10-08-qwen-edit-encoder.md)、
+[ANE 初版](../experiments/qwen-encoder/2026-10-08-qwen-ane-encoder.md)、
+[后续优化](../experiments/qwen-encoder/2026-10-08-qwen-encoder-followup.md)、
+[调度校准](../experiments/qwen-encoder/2026-10-08-qwen-encoder-scheduling.md)和
+[Native 实验](../experiments/qwen-encoder/2026-10-08-qwen-native-encoder.md)是独立历史记录。
 
-当前各模型在 M4 Max/M4 Pro 及其他 Apple Silicon 上的 GPU/ANE fork-join 方案、自动门禁和实测口径见 [GPU/ANE 并行化方案](parallel-acceleration.md) 与 [并行化 SVG 图](parallel-acceleration.svg)。Transformer 的 CPU/GPU/ANE 轴、public/private ANE 对照和 vpipe/H3/LTX 结论见 [Transformer 异构并行技术报告](transformer-heterogeneous-report.md)；Core ML 启动生命周期见 [Core ML / ANE 启动开销](coreml-ane-startup.md)，量化和低内存对照见 [量化与 Streaming 对照](quantized-streaming-vpipe-comparison.md)。
+## SeedVR2 专项设计
 
-通用 block/slot streaming、App 五档内存目标、四模型 public adapter、完整进程树校准、swap 对照和发布验收的当前入口见
-[Streaming 设计目录](streaming/README.md)。直接实施代码先读
-[Public Adapter 代码规格](streaming/36-public-adapter-code-implementation-spec.md)，再读
-[Streaming Framework 代码工作台](streaming/38-framework-code-contracts-and-implementation-workbench.md)；执行档位探索与发布验收读
-[校准、性能与验收规格](streaming/37-public-streaming-calibration-performance-acceptance.md) 和
-[验证与发布工作簿](streaming/39-validation-benchmark-and-release-workbook.md)。
+历史测量单独保存在 [SeedVR2 实验归档](../experiments/seedvr2/README.md)，下面同时列出设计与证据入口。
 
-截至 2026-09-15 的 encoder、DiT、VAE、Core ML 生命周期和各模型采用决策统一见
-[ANE 加速现状与分阶段决策](ane-acceleration-status-2026-09-15.md)。该文档区分
-resident encoder-prefill、DiT/denoiser、VAE 和完整请求，不把局部 microbenchmark
-或历史单次结果写成默认产品收益。
+- [Block 权重驻留](../experiments/seedvr2/2026-10-15-block-weight-residency.md)
+- [VAE 优化总览](seedvr2-vae-optimization.md)与[空间调度](../experiments/seedvr2/2026-10-14-vae-spatial-scheduler.md)
+- [Halo 对齐分块](../experiments/seedvr2/2026-10-15-vae-halo-aligned-tiles.md)与[norm packing / 资源建议](../experiments/seedvr2/2026-10-15-vae-norm-pack-and-resource-advice.md)
+- [ANE 可行性](../experiments/seedvr2/2026-10-15-vae-ane-feasibility.md)、[超分 causal convolution](../experiments/seedvr2/2026-10-15-vae-upscale-causal-conv.md)与[virtual causal convolution](../experiments/seedvr2/2026-10-15-vae-virtual-causal-conv.md)
+- [阶段性能与超分历史](../experiments/seedvr2/2026-10-15-vae-phase-and-upscale-history.md)
 
-跨后端不要求逐像素一致时的 RGB 回归、视频运动和公开 Vision feature-print 分层判定见 [感知质量诊断](vision-quality-diagnostics.md)。
+## 历史实验与证据
 
-## App 产品、界面与实现方案
+- [LTX Stage-2 sparse 结果](../experiments/ltx-stage2-sparse/results.md)与[研究账本](../experiments/ltx-stage2-sparse/research.md)：保留速度与质量未同时达标的结论。
+- [M4 Max reproduction](../../experimental/transformer/notes/M4_MAX_REPRODUCTION.md)：GPU/ANE、LTX Stage-2 与 VAE 生命周期的独立复验记录。
+- [Transformer 异构报告](../experiments/transformer/2026-09-08-adoption-report.md)与[2026-09-15 ANE 分阶段决策](../experiments/transformer/2026-09-15-ane-decisions.md)：历史设备、版本和计时边界不能外推到当前产品。
+- [Z-Image Metal 历史实验](../experiments/z-image-metal/README.md)：分开保存失效计时、健康状态对照和 M4 Pro 探索，保留原结论与性能账本。
+- [验证摘要索引](validation/README.md)与[VDN H3/MLX GPU 验证](validation/vdn-h3-mlx-gpu-validation-2026-09-12.json)：小型证据与依赖身份保留原路径。
 
-2026-09-05 的 App 设计提案，基于现有 SwiftUI 界面、兼容控制平面与新原生纵切的能力差异。以下为待实施设计，不代表三模型原生功能或实时资源遥测已完成。
-
-1. [App 整体产品与交互设计](app-product-design.md)：Studio、图像/编辑/视频流程、素材/任务/模型中心、首发范围及状态设计。
-2. [视觉系统与组件规范](app-visual-system.md)：现代原生风格、明暗配色、窗口布局、组件、动效与可访问性。
-3. [App 实现、契约与验收方案](app-implementation-plan.md)：SwiftUI 分层、运行时迁移、真实速度/ETA、模型加载与分阶段验收。
-
-4. [首版多模态输入、种子与高级参数](app-inputs-and-parameters.md)：图片插入/拖放/粘贴、角色槽、有序多图、默认 42 与随机种子、单输出首版及按代码开放参数。
-
-最新范围：每次一张图或一个视频，App 一次一个活动生成；多图输入不等于批量输出。原生代码的后续推进与现有文档差异见第 4 项的代码核对。
-
-## 原生引擎与运行时设计
-
-**后续整体重构主设计：[统一多模态框架](unified-multimodal-framework.md)。**
-
-该文重新梳理旧系统、新 native 纵切、多模态输入、ModelModule、设备配置/分区策略及原生服务。以下文档保留为此前架构背景和实际实现证据；不能把旧纵切状态当成最终架构。
-
-**模块职责、完整 App 与性能主线：[模块与高性能运行时详设](runtime-modules-and-performance.md)。**
-
-该文细化分区构建、编译与会话缓存、预热调度、统一内存 offloading、复用边界和功能清单。默认行为为原生 GPU，混合路线由用户配置启用。
-
-背景与验证文档：
-
-1. [总体架构](native-engine-rearchitecture.md)：长期目标、Metal/ANE 边界、模块划分与迁移原则。
-2. [本机实施设计](native-implementation-plan.md)：代码结构、共同抽象、依赖、真实 FLUX 路径，以及从纵切到完整 runtime 的迁移顺序。
-3. [本机验证记录](native-validation-report.md)：实际完成项、逐张量证据、性能、App 与独立包测试，明确未完成范围。
-4. [H3/LTX 迁移与验收](video-model-acceptance.md)：源文件迁移归属、无模型静态检查、权重到位后的数学和媒体退出条件。
-5. [原生代码使用说明](../public/USAGE.md)：构建、打包、CLI/SDK 与离线验收复现命令。
-
-H3 在 Apple Silicon 上迁移到 FastH3 C++/MLX、固定四步 affine INT6/g64，并对齐 FastVideo 性能/质量的具体实施合同见 [H3 C++/MLX INT6 加速方案与验收计划](h3-mlx-int6-fastvideo-parity-plan.md)。该文档包含当前原型边界、分阶段工作包、checkpoint/量化合同、同条件 ABBA benchmark 和发布门禁；在真实模型验收完成前不代表已交付能力。
-
-LTX 2.5 的 C++/MLX/Core ML 融合与受限内存 streaming、VDN H3 独立 profile、以及两者完整 denoise 的 ANE 1.2× 门禁，统一记录在 [LTX 2.5、VDN H3 与 ANE 加速实施及验收方案](ltx25-vdn-h3-ane-implementation-plan.md)。
-
-LTX 2.5 对照 `ltx-mac` 的逐项实现审计、C/Metal Fast A/V 默认路径、fixed-shape
-GPU+ANE profile、Stage-2 Sol/text256 可选近似、T2V/I2V/音频矩阵和严格 ABBA 质量门见
-[LTX 2.5 加速对齐与验收方案](ltx25-ltx-mac-acceleration-parity-plan.md)。当前 ANE
-复跑受 E5 bundle 重编译警告污染，不能把该轮耗时视为正式性能结果。
-
-当前 Stage-2 sparse/Sol attention 的实现模式、Metal core、完整视频速度与画质
-结论见 [交付摘要](ltx-stage2-sparse-results.md)，完整实验账本见
-[研究记录](ltx-stage2-sparse-research.md)。M4 Max 上 GPU/ANE Transformer、真实 LTX
-Stage-2、VAE 驻留干扰和 256-pixel 分块解码的持续复验见
-[M4 Max reproduction](../../experimental/transformer/notes/M4_MAX_REPRODUCTION.md)。
-这些入口严格区分 synthetic kernel、Stage-2、完整请求和视频画质证据。
-
-当前 Video VAE 的进程生命周期、clean `exec` finalizer、带音频 component-staged 路径、
-VAE/Transformer 分阶段性能门和代码职责整理见
-[LTX 2.5 Video VAE 生命周期优化与代码整理](ltx25-vae-lifecycle-and-code-cleanup-20260913.md)。
-Sol attention 与 ANE 在该路径中继续默认关闭。
-
-2026-09-12 的 VDN H3/MLX GPU 复验记录见
-[VDN H3 MLX GPU 验证](validation/vdn-h3-mlx-gpu-validation-2026-09-12.json)。该记录明确
-区分了 MLX 官方算子能力、TurboCider 自定义 Metal solve、CPU/GPU 数值对照以及仍未
-完成的 vpipe matched ABBA；不能把一次可生成 MP4 的 smoke 当成性能达标。
-
-[架构图](native-engine-architecture.svg) 表达最终方向，并非每个方框都已经实现。当前 FLUX、H3、FastMetal 和 LTX T2V/I2V/音频已有执行入口；LTX 完整 GPU+ANE 性能与多样本质量门、通用执行器与自有 allocator 仍待完成。
-
-`validation/` 存放小型 JSON 证据和依赖身份。原始大张量、图像及过程日志保留在本机 `outputs/native-validation/`，不提交模型或大文件。
-
-- [原生 C++ 引擎边界与重构验收](native-cpp-engine.md)：当前源码划分、类型化接口、驻留策略与性能验证。
+新实验叙述及小型证据放入 `docs/experiments/<topic>/`。原始张量、生成媒体和过程日志
+保留在忽略的 `outputs/` 中。已有 `validation/` 数据可能被工具或测试读取，迁移时必须
+一并更新消费者；不要为了索引整理删除历史证据或复制出另一份结果。

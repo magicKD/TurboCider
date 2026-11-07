@@ -7,7 +7,7 @@ if [[ "$OUT" != /* ]]; then OUT="$PWD/$OUT"; fi
 mkdir -p "$OUT" "$OUT/module-cache"
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 export CLANG_MODULE_CACHE_PATH="$OUT/module-cache"
-MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '/cmd LC_BUILD_VERSION/{build=1; next} build && /minos /{print $2; exit}')"
+MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 VAE_UPSCALE_FLAGS=(-DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=0)
 case "${TURBOCIDER_VAE_UPSCALE_EXPERIMENT:-0}" in
  0) ;;

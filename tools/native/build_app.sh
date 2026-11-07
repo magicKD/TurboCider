@@ -18,10 +18,7 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 TOOLCHAIN="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 [[ -d "$TOOLCHAIN" ]] || TOOLCHAIN="$DEVELOPER_DIR/usr/bin"
 SWIFTC="$TOOLCHAIN/swiftc"
-MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
- /cmd LC_BUILD_VERSION/{build=1; next}
- build && /minos /{print $2; exit}
-')"
+MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 FLAGS=(-sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -I bindings/c/include -L "$OUT" -lturbocider -Xlinker -rpath -Xlinker @executable_path -parse-as-library -O)
 SDK_SOURCE=bindings/swift/TurboCiderNative.swift

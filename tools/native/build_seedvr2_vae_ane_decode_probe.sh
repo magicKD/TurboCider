@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 source tools/native/dependencies.sh
 ANE_DECODE_OUT="${TURBOCIDER_VAE_ANE_DECODE_OUT:-$PWD/build/seedvr2-vae-ane-decode-probe-v1}"
 mkdir -p "$ANE_DECODE_OUT"
-ANE_DECODE_TARGET="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '/cmd LC_BUILD_VERSION/{b=1;next} b && /minos /{print $2;exit}')"
+ANE_DECODE_TARGET="$(turbocider_mlx_min_macos)"
 ANE_DECODE_FLAGS=(-std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc
   -DTURBOCIDER_ENABLE_VAE_UPSCALE_EXPERIMENT=1 -DTURBOCIDER_ENABLE_VAE_ANE_PROJECTION_PROBE=1
   -mmacosx-version-min="${ANE_DECODE_TARGET:-26.0}"

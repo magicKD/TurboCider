@@ -12,15 +12,17 @@ not created on a nearly-full Apple Silicon SSD.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 import struct
-import time
-import urllib.error
-import urllib.request
+import sys
 from pathlib import Path
 from typing import Any
+
+
+# Keep direct CLI invocation and file-based tooling imports working.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from h3_download_common import download_file as _download_file, sha256_file  # noqa: E402
 
 
 MODEL_ID = "OpenVDN/vdn-minimax-h3"
@@ -274,52 +276,9 @@ def validate_download_manifest(root: Path) -> None:
             "VDN ModelScope download manifest is inconsistent")
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(16 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def download_file(url: str, target: Path, *, retries: int = 4) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    part = target.with_name(target.name + ".part")
-    for attempt in range(1, retries + 1):
-        offset = part.stat().st_size if part.exists() else 0
-        headers = {"Range": f"bytes={offset}-"} if offset else {}
-        request = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                status = getattr(response, "status", response.getcode())
-                if offset and status != 206:
-                    offset = 0
-                    part.unlink(missing_ok=True)
-                mode = "ab" if offset else "wb"
-                length = int(response.headers.get("Content-Length", "0"))
-                total = offset + length if length else 0
-                downloaded = offset
-                last_report = time.monotonic()
-                with part.open(mode) as stream:
-                    while True:
-                        chunk = response.read(16 * 1024 * 1024)
-                        if not chunk:
-                            break
-                        stream.write(chunk)
-                        downloaded += len(chunk)
-                        now = time.monotonic()
-                        if now - last_report >= 10:
-                            suffix = f"/{total / 2**30:.2f} GiB" if total else ""
-                            print(f"  {target.name}: {downloaded / 2**30:.2f} GiB{suffix}", flush=True)
-                            last_report = now
-                if total and downloaded != total:
-                    raise IOError(f"short response ({downloaded} != {total} bytes)")
-            part.replace(target)
-            return
-        except (OSError, urllib.error.URLError, TimeoutError) as error:
-            print(f"[retry {attempt}/{retries}] {target.name}: {error}", flush=True)
-            if attempt == retries:
-                raise
+    """Keep the VDN retry and timeout policy over the shared transport."""
+    _download_file(url, target, retries=retries, timeout=120)
 
 
 def parse_args() -> argparse.Namespace:

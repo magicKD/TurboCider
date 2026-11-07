@@ -16,7 +16,6 @@ pruned Comfy ConvRot checkpoint.  Those checkpoints do not contain the full
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
@@ -24,6 +23,11 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any
+
+
+# Keep direct CLI invocation and file-based tooling imports working.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from h3_download_common import sha256_file  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,14 +52,6 @@ def load_module(path: Path, name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(16 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def read_json(path: Path) -> dict[str, Any]:

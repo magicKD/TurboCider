@@ -1,41 +1,9 @@
 #include "ltx_mlx_vocoder.h"
 
-#include <errno.h>
+#include "ltx_audio_decode_io.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
-static void fail(const char *message) {
-    fprintf(stderr, "error: %s\n", message);
-    exit(1);
-}
-
-static void *read_file(const char *path, size_t expected_bytes) {
-    FILE *stream = fopen(path, "rb");
-    if (!stream) fail(strerror(errno));
-    if (fseek(stream, 0, SEEK_END) != 0) fail("cannot seek input");
-    long length = ftell(stream);
-    if (length < 0 || (size_t)length != expected_bytes) {
-        fail("input byte count does not match BCTF mel shape");
-    }
-    rewind(stream);
-    void *data = malloc(expected_bytes);
-    if (!data) fail("out of memory reading mel input");
-    if (fread(data, 1, expected_bytes, stream) != expected_bytes) {
-        fail("cannot read mel input");
-    }
-    fclose(stream);
-    return data;
-}
-
-static void write_file(const char *path, const void *data, size_t bytes) {
-    FILE *stream = fopen(path, "wb");
-    if (!stream) fail(strerror(errno));
-    if (fwrite(data, 1, bytes, stream) != bytes || fclose(stream) != 0) {
-        fail("cannot write waveform output");
-    }
-}
 
 int main(int argc, char **argv) {
     if (argc != 6 && argc != 7) {
@@ -57,7 +25,10 @@ int main(int argc, char **argv) {
     uint32_t mel_time = (uint32_t)time_value;
     size_t input_elements = (size_t)batch * 2u * mel_time * 64u;
     size_t output_elements = (size_t)batch * mel_time * 160u * 2u;
-    uint16_t *input = read_file(argv[2], input_elements * sizeof(uint16_t));
+    uint16_t *input = read_file(
+        argv[2], input_elements * sizeof(uint16_t),
+        "input byte count does not match BCTF mel shape",
+        "out of memory reading mel input", "cannot read mel input");
     float *output = calloc(output_elements, sizeof(float));
     if (!output) fail("out of memory allocating waveform output");
     char error[1024] = {0};
@@ -73,7 +44,8 @@ int main(int argc, char **argv) {
         vocoder, output, output_elements, input, input_elements,
         batch, mel_time, error, sizeof(error));
     if (!decoded) fail(error);
-    write_file(argv[5], output, output_elements * sizeof(float));
+    write_file(argv[5], output, output_elements * sizeof(float),
+               "cannot write waveform output");
     printf("{\"batch\":%u,\"mel_time\":%u,\"samples\":%u,"
            "\"channels\":2,\"sample_rate\":16000,\"weight_tensors\":%u,"
            "\"source_weight_bytes\":%llu,\"resident_weight_bytes\":%llu}\n",

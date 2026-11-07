@@ -53,10 +53,7 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 TOOLCHAIN="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 [[ -d "$TOOLCHAIN" ]] || TOOLCHAIN="$DEVELOPER_DIR/usr/bin"
 CXX="$TOOLCHAIN/clang++"
-MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
- /cmd LC_BUILD_VERSION/{build=1; next}
- build && /minos /{print $2; exit}
-')"
+MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
