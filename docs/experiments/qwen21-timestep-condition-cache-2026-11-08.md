@@ -180,3 +180,7 @@ retain extended signatures on non-Mach-O Metal resources; an earlier
 ordinary-copy validation failed before replacing either old package and
 is retained separately. The successful promotion receipt is
 `automatic-validation/final-app-promotion-ditto-1794086615341385000/report.json`.
+The canonical `build/native` was also synchronized to the same verified
+runtime after checking all 683 source fingerprints; its previous build
+was archived. The copy and actual C API identity check are recorded in
+`automatic-validation/canonical-build-promotion-1794088445339184000/report.json`.
