@@ -159,7 +159,12 @@ MLX 的默认约简精度 GEMM 判断 FP32 求解误差。库存与 VDN 测试�
 
 相应本机原始日志为 `build/setup-logs/m5-main-optimized-contract-tests-serial.log`、
 `m5-main-optimized-app-tests.log` 与 `m5-main-packaged-app-acceptance-verified/`。
-桌面 Computer Use 当前遇到系统锁屏，等待用户手动解锁；此次桌面点击验收尚未完成。
+用户解锁后，Computer Use 已操作最终发布 App：确认 Turbo 双 INT8、512×512、固定 8 步、
+streaming 与 Tiny VAE 预览；看到第 2 步预览后取消，再重试成功。任务详情显示真实
+W8A8 路线、0 个常驻 Transformer 层及 0.66 GiB 权重/缓冲容量；重启后仍能选择历史
+并查看最终图片。单次成功请求约 11.25 s，编码器与 DiT 分别记录 252 与 1,536 次
+W8A8 projection。桌面阶段内存采样完整，新增 swap-out 为 0。原始证据另见
+`build/setup-logs/m5-main-final-desktop/`。
 
 当前结论适用于这台主机、512×512、Turbo 固定 8 步、已记录的提示词与 seed。较大
 画布、其他芯片、其他模型、LoRA 和编码器 ANE 没有由这组结果完成性能资格验证。

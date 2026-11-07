@@ -521,8 +521,43 @@
       "root_lifetime_max_physical_bytes": 4563207704
     },
     "desktop": {
-      "status": "waiting_for_manual_unlock",
-      "packaged_app": "dist/TurboCider.app"
+      "status": "complete",
+      "packaged_app": "dist/TurboCider.app",
+      "width": 512,
+      "height": 512,
+      "seed": 42,
+      "cancelled_job": "F5B36DE0-7B1D-4F50-9D44-84845A268F9B",
+      "successful_job": "EDF00A7D-72D0-4917-95CC-B7872EF142E0",
+      "tiny_preview_observed_step": 2,
+      "retry_succeeded": true,
+      "relaunch_history_and_image_verified": true,
+      "actual_route": "GPU W8A8 ConvRot + streamed",
+      "native_w8a8": {
+        "dit_activation_rows": 1579584,
+        "dit_enabled": true,
+        "dit_projections": 1536,
+        "encoder_activation_rows": 12348,
+        "encoder_enabled": true,
+        "encoder_projections": 252,
+        "recipe": "comfy-convrot-original-i8-dynamic-token-a8-v1",
+        "scope": "GPU primitive encodes observed during serialized request phases; embedding/vision/VAE are excluded"
+      },
+      "native_timings_seconds": {
+        "denoise": 8.901774792,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 11.250047417,
+        "text_encode": 1.075320875,
+        "vae_decode": 1.231191959
+      },
+      "displayed_weight_resident_gib": 0.25,
+      "displayed_weight_capacity_gib": 0.66,
+      "displayed_resident_transformer_layers": 0,
+      "png_sha256": "7931990732cd0e7a1552adf79ae703dc5edc134b12fed59a8b76fb44aa70eb63",
+      "sampled_process_physical_peak_bytes": 4345693960,
+      "swap_out_bytes": 0,
+      "memory_evidence_complete": true,
+      "raw_evidence_directory": "build/setup-logs/m5-main-final-desktop"
     },
     "release_signature": "verified --deep --strict"
   }
