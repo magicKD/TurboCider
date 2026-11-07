@@ -30,10 +30,20 @@ mx::array convrot_linear(const mx::array& rotated,
                         const mx::array& signed_codes,
                         const mx::array& row_scales,
                         mx::StreamOrDevice s = {});
+// Fuse only the final model I/O cast into the dequantizing store. Integer
+// accumulation and both FP32 scale multiplications match convrot_linear;
+// any bias/LoRA/residual must still follow the original typed boundary.
+mx::array convrot_linear_typed(const mx::array& rotated,
+                              const mx::array& signed_codes,
+                              const mx::array& row_scales,
+                              mx::Dtype output_dtype,
+                              mx::StreamOrDevice s = {});
 
 class ConvrotW8A8Linear : public mx::Primitive {
  public:
-  explicit ConvrotW8A8Linear(mx::Stream stream) : mx::Primitive(stream) {}
+  explicit ConvrotW8A8Linear(mx::Stream stream,
+                            mx::Dtype output_dtype = mx::float32)
+      : mx::Primitive(stream), output_dtype_(output_dtype) {}
   void eval_cpu(const std::vector<mx::array>&,
                 std::vector<mx::array>&) override {
     throw std::runtime_error("ConvrotW8A8Linear: CPU not supported");
@@ -41,7 +51,13 @@ class ConvrotW8A8Linear : public mx::Primitive {
   void eval_gpu(const std::vector<mx::array>&,
                 std::vector<mx::array>&) override;
   const char* name() const override { return "ConvrotW8A8Linear"; }
-  bool is_equivalent(const mx::Primitive&) const override { return true; }
+  bool is_equivalent(const mx::Primitive& other) const override {
+    const auto* typed = dynamic_cast<const ConvrotW8A8Linear*>(&other);
+    return typed && output_dtype_ == typed->output_dtype_;
+  }
+
+ private:
+  mx::Dtype output_dtype_;
 };
 
 // ── Custom Primitive ─────────────────────────────────────────────

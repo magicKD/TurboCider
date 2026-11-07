@@ -297,22 +297,26 @@ kernel void w8a8_matmul_fused_dequant_small(
 }
 
 // Original ConvRot F32 row coefficients (including signed/zero scales).
-// No FP16 output or bias intermediate: the model applies its original output
-// cast and bias outside this primitive. Physical input rows are padded by the
-// host wrapper; logical M/N bound every output store.
-#define TC_CONVROT_GEMM(NAME, BM, WM, WN) \
+// Dequantize in F32, then round once to the requested output type. Bias stays
+// outside this primitive, after that rounding. Physical input rows are padded
+// by the host wrapper; logical M/N bound every output store.
+#define TC_CONVROT_GEMM(NAME, TYPE, BM, WM, WN) \
 kernel void NAME(const device int8_t* A [[buffer(0)]], const device int8_t* B [[buffer(1)]], \
-    device float* C [[buffer(2)]], constant uint& M [[buffer(3)]], \
+    device TYPE* C [[buffer(2)]], constant uint& M [[buffer(3)]], \
     constant uint& N [[buffer(4)]], constant uint& K [[buffer(5)]], \
     const device float* scale_a [[buffer(6)]], const device float* scale_w [[buffer(7)]], \
     constant uint& swizzle_log [[buffer(8)]], constant uint& tiles_m [[buffer(9)]], \
     constant uint& tiles_n [[buffer(10)]], uint2 tgid [[threadgroup_position_in_grid]], \
     uint sgid [[simdgroup_index_in_threadgroup]], uint lid [[thread_index_in_simdgroup]]) { \
-    w8a8_gemm_impl<BM,128,512,32,WM,WN,float,false>(A,B,C,M,N,K,scale_a,scale_w, \
-        scale_w,swizzle_log,tiles_m,tiles_n,tgid,sgid,lid); \
+    w8a8_gemm_impl<BM,128,512,32,WM,WN,TYPE,false>(A,B,C,M,N,K,scale_a,scale_w, \
+        nullptr,swizzle_log,tiles_m,tiles_n,tgid,sgid,lid); \
 }
-TC_CONVROT_GEMM(tc_convrot_w8a8_f32, 128, 4, 4)
-TC_CONVROT_GEMM(tc_convrot_w8a8_f32_small, 32, 1, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_f32, float, 128, 4, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_f32_small, float, 32, 1, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_bf16, bfloat, 128, 4, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_bf16_small, bfloat, 32, 1, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_f16, half, 128, 4, 4)
+TC_CONVROT_GEMM(tc_convrot_w8a8_f16_small, half, 32, 1, 4)
 
 // ============================================================
 // Raw INT32 GEMM impl (B is [N, K], transpose_b=true)

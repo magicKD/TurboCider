@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -20,6 +21,15 @@ void check(bool ok,const char* reason) { if(!ok)throw std::runtime_error(reason)
 std::vector<float> values(const array& a) {
     auto f=mx::contiguous(mx::astype(a,mx::float32));mx::eval(f);
     return {f.data<float>(),f.data<float>()+f.size()};
+}
+bool same_bytes(const array& a,const array& b) {
+    if(a.shape()!=b.shape() || a.dtype()!=b.dtype())return false;
+    // Compare original dtype bytes in logical order, including signed zero.
+    // Floating conversion or raw traversal of a strided view can hide errors.
+    auto first=mx::view(mx::contiguous(a),mx::uint8);
+    auto second=mx::view(mx::contiguous(b),mx::uint8);
+    mx::eval(first,second);
+    return std::memcmp(first.data<uint8_t>(),second.data<uint8_t>(),first.nbytes())==0;
 }
 double relative(const std::vector<float>& actual,const std::vector<float>& expected) {
     check(actual.size()==expected.size(),"output geometry changed");
@@ -127,6 +137,110 @@ void primitive_cases() {
     check(after.projections-before.projections==calls && after.activation_rows-before.activation_rows==rows,
         "actual GPU W8A8 receipt differs from evaluated projections");
     std::cout<<"primitive_calls="<<calls<<" rows="<<rows<<" max_cpu_a8_rel="<<max_oracle<<" max_float_reference_rel="<<max_approximation<<'\n';
+}
+void typed_output_cases() {
+    const std::array<mx::Dtype,3> dtypes{mx::bfloat16,mx::float16,mx::float32};
+    const auto stream=mx::to_stream(mx::StreamOrDevice{});
+    const cider::ConvrotW8A8Linear fp32(stream,mx::float32),fp32_again(stream,mx::float32),
+        bf16(stream,mx::bfloat16),fp16(stream,mx::float16);
+    check(fp32.is_equivalent(fp32_again) && !fp32.is_equivalent(bf16) &&
+          !fp32.is_equivalent(fp16) && !bf16.is_equivalent(fp16),
+          "ConvRot primitive equivalence omitted its output dtype");
+    uint64_t checked=0;
+    auto check_cast=[&](const array& x,const array& w,const array& s,const array& baseline,mx::Dtype dtype) {
+        const auto actual=cider::convrot_linear_typed(x,w,s,dtype);
+        check(actual.shape()==baseline.shape() && actual.dtype()==dtype,
+              "typed ConvRot output geometry/dtype changed");
+        check(same_bytes(actual,mx::astype(baseline,dtype)),
+              "typed dequant store differs from the original F32 projection then cast");
+        ++checked;
+    };
+    // Both GEMM selectors, their M=64 boundary, unaligned N, and a partial
+    // 512-wide K iteration. The original F32 path remains CPU-oracle checked.
+    for(const auto input_dtype:dtypes)
+        for(const auto shape:{std::array{1,129,256},std::array{33,129,512},
+                              std::array{64,127,768},std::array{65,1,768},std::array{129,128,256}}) {
+            const auto [m,n,k]=shape;const auto [w,s]=weights(n,k);
+            const auto x=input(m,k,input_dtype,false);
+            const auto baseline=cider::convrot_linear(x,w,s);mx::eval(baseline);
+            check(baseline.dtype()==mx::float32 && relative(values(baseline),oracle(x,w,s,true))<2e-6,
+                  "typed-output test lost the original F32 integer-dot contract");
+            for(const auto output_dtype:dtypes)check_cast(x,w,s,baseline,output_dtype);
+        }
+    // Actual DiT channel dimensions, including the 24576-row fused gate/up
+    // matrix. Inputs/codes are synthetic; this exercises real Metal dispatch,
+    // physical row pitch and complete output arrays without loading a model.
+    for(const auto shape:{std::array{1,4096,4096},std::array{17,24576,4096},std::array{65,4096,12288}}) {
+        const auto [m,n,k]=shape;const auto [w,s]=weights(n,k);
+        const auto x=input(m,k,mx::bfloat16,false);
+        const auto baseline=cider::convrot_linear(x,w,s);mx::eval(baseline);
+        for(const auto dtype:dtypes)check_cast(x,w,s,baseline,dtype);
+    }
+    // A compiled graph publishes three dtypes for the same source operands.
+    // Replay changed inputs to reject stale outputs and unsafe dtype CSE.
+    auto [w,s]=weights(131,512);
+    const auto wcut=mx::slice(w,{1,0},{130,256}),scut=mx::slice(s,{1,0},{130,1});
+    auto compiled=mx::compile([wcut,scut](const std::vector<array>& a) {
+        return std::vector<array>{cider::convrot_linear_typed(a[0],wcut,scut,mx::bfloat16),
+            cider::convrot_linear_typed(a[0],wcut,scut,mx::float16),
+            cider::convrot_linear_typed(a[0],wcut,scut,mx::float32)};
+    });
+    const auto wide=input(65,512,mx::bfloat16,false);
+    const auto cut=mx::slice(wide,{0,0},{65,256});
+    for(float factor:{1.f,2.f}) {
+        const auto changed=factor==1.f ? cut : cut*array(factor,mx::bfloat16);
+        const auto baseline=cider::convrot_linear(changed,wcut,scut);
+        const auto actual=compiled({changed});mx::eval(actual);
+        for(size_t i=0;i<dtypes.size();++i) {
+            check(actual[i].dtype()==dtypes[i] && same_bytes(actual[i],mx::astype(baseline,dtypes[i])),
+                  "compiled typed ConvRot mixed dtype/strided/changed-input result changed");
+            ++checked;
+        }
+    }
+    // BF16 values above FP16 range stay wide until the final output cast.
+    // F16 output may overflow, exactly as an explicit F32-to-F16 cast does.
+    const auto large=mx::full({2,256},131072.f,mx::bfloat16);
+    const auto positive_codes=mx::full({3,256},127,mx::int8);
+    const std::array<float,3> edge_scales{1.f,0.f,-0.f};
+    const auto edge_s=array(edge_scales.data(),{3,1},mx::float32);
+    const auto large_baseline=cider::convrot_linear(large,positive_codes,edge_s);
+    for(const auto dtype:dtypes)check_cast(large,positive_codes,edge_s,large_baseline,dtype);
+    // Nonfinite activation rows must remain nonfinite, including zero source
+    // scales. Compare cast bytes as well as classification; never hide NaNs
+    // behind an allclose or a plausible finite-zero projection.
+    for(float invalid:{std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+        std::vector<float> source(256,1.f);source[177]=invalid;
+        const auto bad=array(source.data(),{1,256},mx::float32);
+        const auto baseline=cider::convrot_linear(bad,positive_codes,edge_s);
+        for(const auto dtype:dtypes) {
+            check_cast(bad,positive_codes,edge_s,baseline,dtype);
+            const auto result=values(cider::convrot_linear_typed(bad,positive_codes,edge_s,dtype));
+            check(std::all_of(result.begin(),result.end(),[](float v){return !std::isfinite(v);}),
+                  "typed ConvRot hid a nonfinite activation with a zero scale");
+        }
+    }
+    // The new API must not pull bias into FP32 before the output cast. Each
+    // fixture lands on an RNE midpoint where those two orders differ.
+    std::vector<int8_t> one(256,0);one[0]=1;
+    const auto one_code=array(one.data(),{1,256},mx::int8);
+    const auto ones=mx::ones({1,256},mx::bfloat16);
+    for(const auto dtype:{mx::bfloat16,mx::float16}) {
+        const float half_ulp=dtype==mx::bfloat16 ? 0.00390625f : 0.00048828125f;
+        const auto scale=mx::full({1,1},1.f+half_ulp,mx::float32);
+        const auto bias=mx::full({1},half_ulp,dtype);
+        const auto baseline=cider::convrot_linear(ones,one_code,scale);
+        const auto expected=mx::astype(baseline,dtype)+bias;
+        const auto actual=cider::convrot_linear_typed(ones,one_code,scale,dtype)+bias;
+        const auto wrong=mx::astype(baseline+mx::astype(bias,mx::float32),dtype);
+        check(same_bytes(actual,expected) && !same_bytes(expected,wrong),
+              "external typed bias rounding boundary changed or midpoint fixture is ineffective");
+        ++checked;
+    }
+    bool rejected=false;
+    try {(void)cider::convrot_linear_typed(ones,one_code,mx::ones({1,1},mx::float32),mx::int8);}
+    catch(const std::invalid_argument&) {rejected=true;}
+    check(rejected,"typed ConvRot accepted a non-floating output dtype");
+    std::cout<<"typed_output_cases="<<checked<<" eager_compiled_full_bytes=PASS f32_api_unchanged=true bias_after_cast=true\n";
 }
 #ifndef TC_CONVROT_PRIMITIVE_ONLY
 void shared_weights_cases() {
@@ -251,7 +365,7 @@ int main(int argc,char** argv) { try {
     if(argc==2) qwen_lora_cases(argv[1],has_w8a8);
 #endif
     if(!has_w8a8){std::cout<<"SKIP M5 TensorOps unavailable\n";return 0;}
-    mx::set_default_device(mx::Device::gpu);primitive_cases();
+    mx::set_default_device(mx::Device::gpu);primitive_cases();typed_output_cases();
 #ifndef TC_CONVROT_PRIMITIVE_ONLY
     shared_weights_cases();
 #endif

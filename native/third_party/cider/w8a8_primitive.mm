@@ -172,6 +172,9 @@ void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
   const auto& w = inputs[1]; // physically padded N, unchanged signed codes
   const auto& scales = inputs[2];
   auto& output = outputs[0];
+  if (output.dtype()!=output_dtype_ ||
+      (output_dtype_!=bfloat16 && output_dtype_!=float16 && output_dtype_!=float32))
+    throw std::runtime_error("ConvRot W8A8 output must match its BF16/F16/F32 primitive dtype");
   const uint32_t m = output.shape(0), n = output.shape(1), k = x.shape(1);
   const bool small = m <= 64;
   const uint32_t bm = small ? 32 : 128, bn = 128;
@@ -194,7 +197,12 @@ void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
   enc.set_bytes(k,4);
   enc.dispatch_threadgroups(MTL::Size(padded_m,1,1),MTL::Size(256,1,1));
   enc.barrier();
-  enc.set_compute_pipeline_state(cache.get(small ? "tc_convrot_w8a8_f32_small" : "tc_convrot_w8a8_f32"));
+  const char* gemm = output_dtype_==bfloat16 ?
+      (small ? "tc_convrot_w8a8_bf16_small" : "tc_convrot_w8a8_bf16") :
+      output_dtype_==float16 ?
+      (small ? "tc_convrot_w8a8_f16_small" : "tc_convrot_w8a8_f16") :
+      (small ? "tc_convrot_w8a8_f32_small" : "tc_convrot_w8a8_f32");
+  enc.set_compute_pipeline_state(cache.get(gemm));
   const uint32_t tiles_m = (m+bm-1)/bm, tiles_n = (n+bn-1)/bn;
   const uint32_t swizzle = tiles_m<=3 ? 0 : tiles_m<=6 ? 1 : 2;
   const uint32_t tile = 1u<<swizzle;
@@ -213,8 +221,16 @@ void ConvrotW8A8Linear::eval_gpu(const std::vector<array>& inputs,
 
 array convrot_linear(const array& rotated, const array& codes,
                      const array& row_scales, StreamOrDevice s) {
+  return convrot_linear_typed(rotated,codes,row_scales,float32,s);
+}
+
+array convrot_linear_typed(const array& rotated, const array& codes,
+                           const array& row_scales, Dtype output_dtype,
+                           StreamOrDevice s) {
   if (!convrot_w8a8_available())
     throw std::invalid_argument("ConvRot W8A8 requires M5 Metal TensorOps and macOS 26.4 or later");
+  if (output_dtype!=bfloat16 && output_dtype!=float16 && output_dtype!=float32)
+    throw std::invalid_argument("ConvRot W8A8 output dtype must be BF16, F16 or F32");
   if (rotated.ndim()!=2 || codes.ndim()!=2 || row_scales.ndim()!=2 ||
       (rotated.dtype()!=bfloat16 && rotated.dtype()!=float16 && rotated.dtype()!=float32) ||
       codes.dtype()!=int8 || row_scales.dtype()!=float32 ||
@@ -226,8 +242,8 @@ array convrot_linear(const array& rotated, const array& codes,
     throw std::invalid_argument("ConvRot W8A8 requires floating [M,K], original I8 [N,K], F32 [N,1], K aligned to256 and <=131072");
   const int n = codes.shape(0), padded_n = ((n+127)/128)*128;
   auto w = n==padded_n ? codes : pad(codes,std::vector<std::pair<int,int>>{{0,padded_n-n},{0,0}},array(0,int8),"constant",s);
-  return array({rotated.shape(0),n},float32,
-      std::make_shared<ConvrotW8A8Linear>(to_stream(s)),
+  return array({rotated.shape(0),n},output_dtype,
+      std::make_shared<ConvrotW8A8Linear>(to_stream(s),output_dtype),
       {contiguous(rotated,false,s),contiguous(w,false,s),contiguous(row_scales,false,s)});
 }
 

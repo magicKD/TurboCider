@@ -175,14 +175,23 @@ static Tensor convrot_rotate(const Tensor &x, bool metal) {
 }
 
 static Tensor convrot_w8a8_project(const Tensor& rotated,const Tensor& codes,
-                                  const Tensor& row_scales) {
+                                  const Tensor& row_scales,mx::Dtype output_dtype=mx::float32) {
     require(rotated.ndim()>0 && rotated.shape(-1)>0,"invalid ConvRot W8A8 activation geometry");
     const auto rows=rotated.size()/size_t(rotated.shape(-1));
     require(rows>0 && rows<=size_t(std::numeric_limits<int>::max()-128),
         "ConvRot W8A8 activation row count overflows");
     auto shape=rotated.shape();shape.back()=codes.shape(0);
-    return mx::reshape(cider::convrot_linear(mx::reshape(rotated,{int(rows),rotated.shape(-1)}),
-        codes,row_scales),shape);
+    const auto *control=std::getenv("TURBOCIDER_QWEN21_CONVROT_TYPED_OUTPUT");
+    require(!control || std::string_view(control)=="0" || std::string_view(control)=="1",
+        "ConvRot typed output control requires 0 or 1");
+    auto input=mx::reshape(rotated,{int(rows),rotated.shape(-1)});
+    // Preserve the old F32 projection for partial/split consumers. Ordinary
+    // projections retain the same F32 accumulator/scale math and perform
+    // their existing output rounding directly in the GEMM store epilogue.
+    auto projected=control && std::string_view(control)=="0" ?
+        mx::astype(cider::convrot_linear(input,codes,row_scales),output_dtype) :
+        cider::convrot_linear_typed(input,codes,row_scales,output_dtype);
+    return mx::reshape(projected,shape);
 }
 
 }
@@ -625,7 +634,7 @@ Tensor Weights::project(const Tensor &x, const std::string &prefix) const {
                 "ConvRot input does not match " + prefix);
         auto rotated = convrot_rotate(x, metal_convrot_);
         if (convrot_w8a8_) {
-            output=mx::astype(convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale")),x.dtype());
+            output=convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale"),x.dtype());
         } else if (packed) {
             const auto &scales = at(prefix + ".scales");
             require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
@@ -733,7 +742,7 @@ std::vector<Tensor> Weights::project_many(
                 "shared ConvRot input does not match " + prefix);
         Tensor output = x;
         if (convrot_w8a8_) {
-            output=mx::astype(convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale")),x.dtype());
+            output=convrot_w8a8_project(rotated,weight,at(prefix+".weight_scale"),x.dtype());
         } else if (packed) {
             const auto &scales = at(prefix + ".scales");
             require(scales.ndim() == 2 && scales.shape(0) == weight.shape(0) &&
