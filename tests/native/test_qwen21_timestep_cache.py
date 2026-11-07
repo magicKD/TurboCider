@@ -1,4 +1,4 @@
-"""Default-off policy, exact M2 BF16 conditions and detached source lifetimes."""
+"""Qualified automatic policy, exact M2 BF16 conditions and detached source lifetimes."""
 import hashlib
 import json
 import os

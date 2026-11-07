@@ -111,9 +111,61 @@ Local raw evidence is under
 `performance-attempt-1794083730652014000/`. Component/build evidence is
 in the isolated worktree's `outputs/convrot-time-cache-validation/`.
 
-This qualification used explicit
-`TURBOCIDER_QWEN21_STREAM_TIMESTEP_CACHE=0/1`; the research implementation
-is default off. Positive optional weight budgets, an automatic selector,
-its newly built DLL, final desktop packaging and actual GUI interaction
-are separate remaining gates. The current packaged App was not replaced
-by this experiment. Mac desktop interaction remains blocked by its lock.
+The initial qualification above used explicit
+`TURBOCIDER_QWEN21_STREAM_TIMESTEP_CACHE=0/1` with a default-off build.
+A subsequent candidate-only real trajectory used a 1280 MiB weight budget,
+retained two layers for three passes, and explicitly evicted them after
+step 2. All sixteen full velocity/Euler payloads and the older final
+fixture matched, with 6 cached layer uses and 250 drained refills. Actual
+time-source release remained 194 MiB; eviction released 436,569,952 active
+bytes. All guards passed, peak sampled footprint was 1,322,042,640 B and
+swap-in/out were zero. This is correctness/resource evidence, not a new
+performance comparison. Evidence is `prefix2/attempt-1794084734055500000/`.
+
+The automatic-selector follow-up enables only the qualified GPU Turbo8
+dual original ConvRot request domain. M4/Float-A, base schedules, Runtime
+ANE and other routes keep their previous behavior. Explicit `0` preserves
+the original path; explicit `1` strictly rejects incompatible requests,
+including a nonstream request at the central Session entry.
+
+The new native build is
+`tc-runtime-build-v1-568c0c336d02400ca962f6ff74cc979c9bfec792fe8970b77b20721e2a0af721`,
+with original library SHA256
+`5db5c5de2a58ccaf2c5823741f6cfc0087ba5d4e4169dd0cfa2d9e87849557bf`.
+The automatic policy and newly linked actual Metal component tests passed.
+A fresh CLI request with the timestep option absent recorded automatic
+preparation/retirement and matched all four complete tensor payloads and
+the final PNG. A real packaged CLI nonstream negative request with
+explicit `1` rejected at the central entry without producing a PNG.
+
+The desktop App and library helper compiled. Their unchanged Swift/C ABI
+inputs (71 files) and four built target hashes were checked before reuse
+with the new native library. The separate candidate App packaged and
+passed ad-hoc signature verification. An App-state acceptance executable
+in a signed copy then exercised fresh model registration, bundled Tiny
+discovery, the ordinary Studio request, generation and history/cleanup.
+No Qwen Time/W8 diagnostic flag was present. Its actual runtime was the
+new build above and dyld loaded only the copied candidate library.
+Previews were exactly steps 2/4/6/8; final decoding used the original VAE
+and the complete PNG matched the baseline bytes. Time retirement and
+252/1536 W8A8 counters were observed. Peak sampled footprint was
+4,075,292,064 B, with zero swap and maximum sample gap 110.1 ms.
+
+The original outer App checker failed after successful generation on a
+receipt key (`tiny_vae` belongs to the saved request). Its failed report
+is retained. The separate CPU-only `validation-addendum.json` completed
+all remaining checks without another GPU run.
+
+An additional default-build ABBA performance attempt was **not qualified**:
+its first disabled arm returned a system-memory-pressure rejection and
+produced no PNG or complete timing record. No candidate arm ran. This
+does not replace the earlier complete eight-arm opt-in campaign or
+establish another speed claim. Admission guards remain unchanged.
+
+Follow-up evidence is in `automatic-validation/`: full default correctness
+`correctness-attempt-1794085315663872000/`, interrupted timing
+`performance-attempt-1794085486991836000/`, App acceptance
+`tiny-preview-attempt-1794086011598516000/`, and central-entry rejection
+`negative-resident-1794086269042062000/`. Actual GUI clicking remains
+unverified because the Mac desktop is locked; App-state acceptance is a
+separate scope.

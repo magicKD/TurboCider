@@ -16,7 +16,7 @@ int main() {try {
     auto selected=[&](const Request &request,const char *raw) {
         return stream_timestep_cache_request(request,true,true,true,true,false,raw);
     };
-    require(!selected(r,nullptr)&&!selected(r,"0")&&selected(r,"1"),"timestep cache default is not off");
+    require(selected(r,nullptr)&&!selected(r,"0")&&selected(r,"1"),"qualified automatic timestep cache or explicit control changed");
     auto unqualified=r;unqualified.steps=7;
     require(!selected(unqualified,"0"),"disabled flag altered old request admission");
     for(const char *bad:{"","true","2","01"," 1","1\n"})rejects([&]{selected(r,bad);},"0 or 1");
@@ -36,6 +36,7 @@ int main() {try {
             case 10:bad.frames=2;break;
             case 11:bad.memory_budget_bytes=1;break;
         }
+        require(!selected(bad,nullptr),"automatic timestep cache selected an incompatible request");
         rejects([&]{selected(bad,"1");},"ordinary GPU Turbo8");
     }
     rejects([&]{stream_timestep_cache_request(r,false,true,true,true,false,"1");},"ordinary GPU Turbo8");
@@ -43,6 +44,17 @@ int main() {try {
     rejects([&]{stream_timestep_cache_request(r,true,true,false,true,false,"1");},"ordinary GPU Turbo8");
     rejects([&]{stream_timestep_cache_request(r,true,true,true,false,false,"1");},"ordinary GPU Turbo8");
     rejects([&]{stream_timestep_cache_request(r,true,true,true,true,true,"1");},"ordinary GPU Turbo8");
-    r.execution="auto";require(selected(r,"1"),"ordinary auto GPU route was rejected");
+    require(!stream_timestep_cache_request(r,false,true,true,true,false,nullptr) &&
+        !stream_timestep_cache_request(r,true,false,true,true,false,nullptr) &&
+        !stream_timestep_cache_request(r,true,true,false,true,false,nullptr) &&
+        !stream_timestep_cache_request(r,true,true,true,false,false,nullptr) &&
+        !stream_timestep_cache_request(r,true,true,true,true,true,nullptr),
+        "automatic cache must preserve base, non-dual, Float-A/older-device and Runtime ANE routes");
+    r.qwen21_stream_weight_budget_bytes=1280ull<<20;
+    require(selected(r,nullptr),"qualified optional weight cache disabled automatic time retirement");
+    r.execution="auto";require(selected(r,nullptr)&&selected(r,"1"),"ordinary auto GPU route was rejected");
+    auto resident=r;resident.residency="resident";
+    validate_stream_timestep_cache_route(resident,nullptr);validate_stream_timestep_cache_route(resident,"0");
+    rejects([&]{validate_stream_timestep_cache_route(resident,"1");},"streamed generation");
     std::cout<<"PASS timestep cache strict request policy\n";return 0;
 }catch(const std::exception &error) {std::cerr<<error.what()<<'\n';return 1;}}
