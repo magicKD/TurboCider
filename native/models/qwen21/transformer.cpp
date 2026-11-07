@@ -706,6 +706,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         metal::prepare_corrected_qkv(input,corrected_qkv_->at(i),low,up,scales,
                         weights.at(p+".attn.norm_q.weight"),weights.at(p+".attn.norm_k.weight"),cosine,sine,32);
                     q=all[0];k=all[1];v=all[2];
+                } else if(reuse && !cider_cache_ && weights.convrot_w8a8() && convrot_shared_a8_enabled()) {
+                    // Decode outputs are consumed within this block. Preserve
+                    // independent prefill V storage: its prefix enters the KV
+                    // cache and must not pin a full shared Q/K/V allocation.
+                    const auto all=weights.project_many(input,
+                        {p+".attn.to_q",p+".attn.to_k",p+".attn.to_v"});
+                    q=all[0];k=all[1];v=heads(all[2],config_.heads,config_.head_dim);
                 } else {
                     q = project_dit(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
                                weights, p + ".attn.to_q");

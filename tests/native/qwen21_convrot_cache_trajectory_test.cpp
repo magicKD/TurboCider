@@ -30,13 +30,19 @@ int main(int argc,char **argv) {
         auto schedule=turbo_sigmas(512,512,8);mx::eval(schedule);
         const auto *sigma=schedule.data<float>();
         const auto before=convrot_w8a8_stats();
+        const auto quant_before=convrot_w8a8_quant_stats();
+        const bool shared=convrot_shared_a8_enabled();
         for(uint32_t step=0;step<8;++step) {
+            const auto step_quant=convrot_w8a8_quant_stats();
             bf16_stream_scope([&] {
                 bank.begin_pass(step);
                 auto velocity=dit.forward(latents,text,sigma[step],32,32,true);
                 latents=latents+velocity*Tensor(sigma[step+1]-sigma[step],latents.dtype());
                 mx::eval(latents);bank.finish_pass();
             });
+            require(convrot_w8a8_quant_stats().dispatches-step_quant.dispatches==
+                uint64_t(shared && step>0 ? 128 : 192),
+                "shared A8 changed prefill storage or missed decode projection groups");
             if(step==2) {
                 const auto active=mx::get_active_memory();
                 require(bank.evict_cached_layers(),"full-model cache did not evict");
@@ -50,7 +56,9 @@ int main(int argc,char **argv) {
             metrics.completed_streamed_layers==253 && metrics.fills==253 && metrics.completed_reader_fences==253 &&
             metrics.prefix_per_pass==std::vector<uint32_t>{1,1,1,0,0,0,0,0},"incomplete full-model eviction coverage");
         require(convrot_w8a8_stats().projections-before.projections==1536,"cache eviction changed actual W8A8 projection coverage");
-        std::cout<<"PASS real 512px Turbo8: forced cache eviction after step 3; exact final latents; 1536 W8A8 projections; 253 drained refills; optional memory released\n";
+        const auto quantizations=convrot_w8a8_quant_stats().dispatches-quant_before.dispatches;
+        require(quantizations==uint64_t(shared ? 1088 : 1536),"incomplete physical A8 dispatch coverage");
+        std::cout<<"PASS real 512px Turbo8: forced cache eviction after step 3; exact final latents; 1536 W8A8 projections; 253 drained refills; optional memory released; physical A8 dispatches="<<quantizations<<'\n';
         return 0;
     }catch(const std::exception &error) {std::cerr<<error.what()<<'\n';return 1;}
 }
