@@ -1,17 +1,25 @@
 #include "../../native/runtime/streaming/source_lease.hpp"
 #include "../../native/runtime/streaming/resolved_request.hpp"
 #include "../../native/runtime/memory_manifest.hpp"
+#include "../../native/core/common.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <cerrno>
+#include <chrono>
+#include <cstdlib>
 #include <fcntl.h>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
+#include <limits>
 #include <pthread.h>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 
@@ -46,12 +54,159 @@ SourceFileIdentity source_file(std::string id,
     return value;
 }
 
+class HashReadAheadControl {
+    bool had_previous_;
+    std::string previous_;
+  public:
+    explicit HashReadAheadControl(const char *value)
+        : had_previous_(std::getenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD") != nullptr) {
+        if (had_previous_) previous_ = std::getenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD");
+        const int changed = value ? ::setenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD", value, 1)
+                                  : ::unsetenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD");
+        if (changed != 0) throw std::runtime_error("cannot configure fd hash fixture");
+    }
+    ~HashReadAheadControl() {
+        if (had_previous_) ::setenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD", previous_.c_str(), 1);
+        else ::unsetenv("TURBOCIDER_SOURCE_HASH_READ_AHEAD");
+    }
+};
+
+struct FdHashCases {
+    uint64_t portable_comparisons = 0, range_rejections = 0;
+    uint64_t pre_cancel_checks = 0, in_flight_cancel_checks = 0, fd_reuse_checks = 0;
+    double maximum_cancel_return_ms = 0;
+};
+
+FdHashCases fd_hash_cases(const std::filesystem::path &root) {
+    FdHashCases checked;
+    constexpr size_t mib = 1u << 20;
+    std::string payload(4 * mib + 17, '\0');
+    for (size_t i = 0; i < payload.size(); ++i)
+        payload[i] = static_cast<char>((i * 37 + (i >> 8) * 17 + (i >> 16)) & 255);
+    const auto path = root / "fd-hash-ranges.bin";
+    write_file(path, payload);
+    const OwnedSourceFd fd(::open(path.c_str(), O_RDONLY | O_CLOEXEC));
+    assert(fd);
+    constexpr off_t sentinel = 123;
+    const std::array<size_t, 12> ranges{0, 1, 63, 64, 65, mib - 1, mib, mib + 1,
+                                      2 * mib - 1, 2 * mib, 2 * mib + 1, 4 * mib + 17};
+    std::array<std::string, ranges.size()> portable;
+    for (size_t i = 0; i < ranges.size(); ++i)
+        portable[i] = tc::memory_sha256_hex(std::string_view(payload.data(), ranges[i]));
+    for (const char *mode : {"0", "1", static_cast<const char *>(nullptr)}) {
+        const HashReadAheadControl control(mode);
+        for (size_t i = 0; i < ranges.size(); ++i) {
+            assert(::lseek(fd.get(), sentinel, SEEK_SET) == sentinel);
+            assert(tc::memory_sha256_fd(fd.get(), ranges[i]) == portable[i]);
+            assert(::lseek(fd.get(), 0, SEEK_CUR) == sentinel);
+            assert(::fcntl(fd.get(), F_GETFD) != -1); // The descriptor is borrowed.
+            ++checked.portable_comparisons;
+        }
+        assert(rejects([&] { tc::memory_sha256_fd(fd.get(), payload.size() + 1); }, "truncated"));
+        assert(::lseek(fd.get(), 0, SEEK_CUR) == sentinel);
+        ++checked.range_rejections;
+        assert(rejects([&] {
+            tc::memory_sha256_fd(fd.get(), uint64_t(std::numeric_limits<off_t>::max()) + 1);
+        }, "invalid"));
+        ++checked.range_rejections;
+        // A short source crossing the read-ahead eligibility threshold must
+        // also report EOF, without closing the fd or consuming its cursor.
+        const auto short_path = root / "fd-hash-short.bin";
+        write_file(short_path, std::string_view(payload.data(), 2 * mib - 1));
+        const OwnedSourceFd short_fd(::open(short_path.c_str(), O_RDONLY | O_CLOEXEC));
+        assert(short_fd && ::lseek(short_fd.get(), sentinel, SEEK_SET) == sentinel);
+        assert(rejects([&] { tc::memory_sha256_fd(short_fd.get(), 2 * mib); }, "truncated"));
+        assert(::lseek(short_fd.get(), 0, SEEK_CUR) == sentinel && ::fcntl(short_fd.get(), F_GETFD) != -1);
+        ++checked.range_rejections;
+        for (const uint64_t bytes : {uint64_t(0), uint64_t(2 * mib + 1)})
+            for (const bool stop : {false, true}) {
+                const std::atomic<bool> cancelled{!stop}, stopped{stop};
+                bool observed = false;
+                try { (void)tc::memory_sha256_fd(fd.get(), bytes, &cancelled, &stopped); }
+                catch (const tc::Cancelled &) { observed = true; }
+                assert(observed && ::lseek(fd.get(), 0, SEEK_CUR) == sentinel);
+                ++checked.pre_cancel_checks;
+            }
+    }
+    for (const char *invalid : {"2", "true"}) {
+        const HashReadAheadControl control(invalid);
+        assert(rejects([&] { tc::memory_sha256_fd(fd.get(), 0); }, "requires 0 or 1"));
+        ++checked.range_rejections;
+    }
+    // Black-box cancellation of the production fd hash. A sparse extent is
+    // deliberately much larger than can finish before cancellation; the test
+    // allocates only a few blocks and never reads a model or a large payload.
+    // Return must be bounded, after which the borrowed descriptor can be
+    // closed, reused for different content and unlinked immediately. Running
+    // this under TSan/ASan also exercises the reader's resource drain.
+    for (const char *mode : {"0", "1"}) {
+        const HashReadAheadControl control(mode);
+        for (unsigned repeat = 0; repeat < 2; ++repeat)
+            for (const bool stop : {false, true}) {
+                const auto suffix = std::string(mode) + "-" + std::to_string(repeat) + (stop ? "-stop" : "-cancel");
+                const auto sparse_path = root / ("fd-hash-sparse-" + suffix);
+                const auto replacement_path = root / ("fd-hash-reused-" + suffix);
+                const std::string replacement = "new independent source after cancellation " + suffix;
+                write_file(replacement_path, replacement);
+                OwnedSourceFd sparse(::open(sparse_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600));
+                constexpr uint64_t sparse_bytes = uint64_t(64) << 30;
+                assert(sparse && ::ftruncate(sparse.get(), static_cast<off_t>(sparse_bytes)) == 0);
+                assert(::pwrite(sparse.get(), "sentinel", 8, 0) == 8);
+                struct stat info{};
+                assert(::fstat(sparse.get(), &info) == 0 && uint64_t(info.st_size) == sparse_bytes &&
+                       uint64_t(info.st_blocks) * 512 < sparse_bytes);
+                assert(::lseek(sparse.get(), sentinel, SEEK_SET) == sentinel);
+                std::atomic<bool> cancelled{false}, stopped{false};
+                std::promise<void> entered, finished;
+                auto started = entered.get_future(), completed = finished.get_future();
+                std::exception_ptr error;
+                bool observed = false;
+                std::thread caller([&] {
+                    entered.set_value();
+                    try { (void)tc::memory_sha256_fd(sparse.get(), sparse_bytes, &cancelled, &stopped); }
+                    catch (const tc::Cancelled &) { observed = true; }
+                    catch (...) { error = std::current_exception(); }
+                    finished.set_value();
+                });
+                assert(started.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+                assert(completed.wait_for(std::chrono::milliseconds(5)) == std::future_status::timeout);
+                const auto cancel_begin = std::chrono::steady_clock::now();
+                (stop ? stopped : cancelled).store(true, std::memory_order_relaxed);
+                assert(completed.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+                caller.join();
+                checked.maximum_cancel_return_ms = std::max(checked.maximum_cancel_return_ms,
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cancel_begin).count());
+                if (error) std::rethrow_exception(error);
+                assert(observed && ::lseek(sparse.get(), 0, SEEK_CUR) == sentinel);
+                ++checked.in_flight_cancel_checks;
+                const int borrowed_number = sparse.get();
+                assert(::close(sparse.release()) == 0 && ::unlink(sparse_path.c_str()) == 0);
+                OwnedSourceFd reused(::open(replacement_path.c_str(), O_RDONLY | O_CLOEXEC));
+                assert(reused);
+                if (reused.get() != borrowed_number) {
+                    assert(::dup2(reused.get(), borrowed_number) == borrowed_number);
+                    reused = OwnedSourceFd(borrowed_number);
+                }
+                assert(::lseek(reused.get(), 7, SEEK_SET) == 7);
+                const auto expected = tc::memory_sha256_hex(replacement);
+                assert(tc::memory_sha256_fd(reused.get(), replacement.size()) == expected);
+                assert(::lseek(reused.get(), 0, SEEK_CUR) == 7);
+                assert(::unlink(replacement_path.c_str()) == 0);
+                assert(tc::memory_sha256_fd(reused.get(), replacement.size()) == expected);
+                assert(::lseek(reused.get(), 0, SEEK_CUR) == 7);
+                checked.fd_reuse_checks += 2;
+            }
+    }
+    return checked;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
     const std::filesystem::path root = argv[1];
     std::filesystem::create_directories(root);
+    const auto actual_fd_hash = fd_hash_cases(root);
     // Content identity must survive a copy while request binding changes.
     const auto content_path = root / "content.bin";
     const auto copy_path = root / "copy.bin";
@@ -101,6 +256,16 @@ int main(int argc, char **argv) {
     assert(copied->artifact_digest() == verified->artifact_digest());
     assert(copied->digest() != verified->digest());
     assert(copied->verification_bytes_read() == 3);
+#if defined(F_NOCACHE)
+    const auto uncached_path = root / "uncached-source.safetensors";
+    write_file(uncached_path, "abc");
+    const auto uncached = SourceLease::capture_verified({source_file("weights", uncached_path)}, nullptr,
+                                                        SourceReadPolicy::Uncached);
+    assert(uncached->verification_bytes_read() == 3 && uncached->artifact_digest() == verified->artifact_digest());
+    auto uncached_fd = uncached->duplicate_fd("weights");
+    assert(tc::memory_sha256_fd(uncached_fd.get(), 3) == abc_sha);
+    uncached->revalidate_after_drain();
+#endif
     const auto renamed_role = SourceLease::capture_verified(
         {source_file("different-role", copy_path)});
     assert(renamed_role->artifact_digest() != copied->artifact_digest());
@@ -203,6 +368,8 @@ int main(int argc, char **argv) {
     }
     // App worker stacks are small: the 1 MiB read buffer must stay on the heap.
     const auto large_fd = large_lease->duplicate_fd("large");
+    {
+    const HashReadAheadControl pipeline("1");
     struct HashWorker {
         int fd;
         uint64_t bytes;
@@ -223,6 +390,7 @@ int main(int argc, char **argv) {
     assert(pthread_join(thread, nullptr) == 0);
     if (worker.error) std::rethrow_exception(worker.error);
     assert(worker.digest == large_sha);
+    }
     assert(rejects([&] { tc::memory_sha256_fd(-1, 3); }, "invalid"));
     const auto first_path = root / "first.safetensors";
     const auto second_path = root / "second.safetensors";
@@ -400,4 +568,11 @@ int main(int argc, char **argv) {
                  "verified content, copy identity, cache invalidation, cancellation, "
                  "fd duplication, generation, same-size mutation, path/alias replace, "
                  "empty/digest rejection and snapshot revalidation\n";
+    std::cout << "PASS actual fd SHA: controls=0/1/auto portable_prefixes=" << actual_fd_hash.portable_comparisons
+              << " range_control_rejections=" << actual_fd_hash.range_rejections
+              << " pre_cancel_stop=" << actual_fd_hash.pre_cancel_checks
+              << " in_flight_cancel_stop=" << actual_fd_hash.in_flight_cancel_checks
+              << " post_return_fd_reuse_unlink=" << actual_fd_hash.fd_reuse_checks
+              << " maximum_cancel_return_ms=" << actual_fd_hash.maximum_cancel_return_ms
+              << " small_stack_pipeline=256KiB max_portable_fixture_bytes=" << (4 * 1024 * 1024 + 17) << '\n';
 }

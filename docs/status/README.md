@@ -1,5 +1,10 @@
 # TurboCider 状态文档入口
 
+2026-10-27 [dev 合并至 dev-verify：Tiny VAE 预览修复与本机 App 验收](2026-10-27-dev-verify-tiny-preview.md)：
+合并无冲突，超分模型可在右侧直接切换。修正带噪 latent 预览和 App 裁切布局，
+真实 512×512 Z-Image / Qwen Viggle Turbo 预览与最终图尺寸一致，最终 PNG 与关闭预览基线相同。
+同时记录 Tiny 最终解码、Qwen 参考编码、缓存及取消/重试；只下载两份对应 Tiny 权重。
+
 2026-10-15 [本机 App 更新与 SeedVR2 超分入口](2026-10-15-seedvr2-app-update.md)：
 新增独立 SeedVR2 侧栏、图片/视频切换、源尺寸预设和省内存建议；修复模型中心的超分类别。
 公有 API 新包通过发布/签名校验、7 个真实超分/驻留切换任务并更新至原 App 路径，已重新启动。
@@ -21,53 +26,53 @@ Qwen GPU/冻结混合和 Z GPU 基本持平，Z 冻结混合小幅省时 1.75%�
 39/43个双方独有提交、19个冲突文件整合；8/6/4步关键对照全图一致，普通路径耗时基本持平。
 新增BF16 streaming峰值28.62→13.67GiB，后续请求23.19→30.38s；编辑木屋指令仍未达标。
 没有下载模型，完整边界与单元测试记录见报告。
-最新[Native encoder / 无 KV 编辑首步 ANE](2026-10-08-qwen-native-prefill-ane.md)已接入共享变长 FFN、Session 预热/资源复用与提交后下一层源准备。
+最新[Native encoder / 无 KV 编辑首步 ANE](../experiments/qwen-encoder/2026-10-08-qwen-native-prefill-ane.md)已接入共享变长 FFN、Session 预热/资源复用与提交后下一层源准备。
 完整encoder资源复用省时16.56%；同构建预热后的单步base编辑首步少13.22%、生成等待少6.62%，冷全成本少4.67%。
 保留冷启动慢8.62%的负结果；仍为显式BaseOnly实验，无W2/LoRA/App UI发布资格，未下载模型。
 
-上一轮[完整 Native Metal encoder 单图验证](2026-10-08-qwen-native-encoder.md)已执行视觉27层＋语言36层；
+上一轮[完整 Native Metal encoder 单图验证](../experiments/qwen-encoder/2026-10-08-qwen-native-encoder.md)已执行视觉27层＋语言36层；
 单图1024-reference独立encoder省时24.93%（FP32视觉）／26.77%（BF16视觉GEMM）。
 实际512²六步编辑的FP32路径encoder省时7.49%、请求少1.59%，图像pixel RRMS0.88%，保持显式实验和MLX默认。
 该轮实际为Native GPU，尚无Native encoder ANE/W2或App UI发布资格；没有下载模型。
 
-上一轮[Qwen encoder 调度与校准](2026-10-08-qwen-encoder-scheduling.md)补上有界分区、Session准备复用、当前GPU提交后的下一层预取及36层独立S1校准。
+上一轮[Qwen encoder 调度与校准](../experiments/qwen-encoder/2026-10-08-qwen-encoder-scheduling.md)补上有界分区、Session准备复用、当前GPU提交后的下一层预取及36层独立S1校准。
 三图1024-reference完整encoder从12.37s到11.28s，复用准备后11.01s，省时约8.85%／11.01%；
 conditioning误差仍5.754%，通过预声明8%筛选。S1仅通过组件，默认GPU；当时尚无完整Metal encoder／整图发布资格。
 
-上一轮[Qwen encoder runtime 继续优化](2026-10-08-qwen-encoder-followup.md)复用BF16 MPP partial和动态compiled FFN，
+上一轮[Qwen encoder runtime 继续优化](../experiments/qwen-encoder/2026-10-08-qwen-encoder-followup.md)复用BF16 MPP partial和动态compiled FFN，
 真实三图FFN两顺序省时约22%，完整encoder总时间少3.93%、语言少10.09%；
 新旧hybrid输出逐值一致，conditioning RRMS5.754%通过本轮预声明8%encoder筛选。
 完整收益未达5%性能筛选，单样本、默认GPU；未做整图/UI测试。两个有限设备组、无模型下载，清理owned缓存约215.58MiB。
 
-上一轮[Qwen Edit ANE encoder runtime](2026-10-08-qwen-ane-encoder.md)已接入显式诊断桥。
+上一轮[Qwen Edit ANE encoder runtime](../experiments/qwen-encoder/2026-10-08-qwen-ane-encoder.md)已接入显式诊断桥。
 三图真实layer0 FFN两顺序省时约16%，但完整encoder慢10.03%、最终conditioning RRMS5.75%超过预声明5%线；
 保留候选、默认GPU，不追加整图或App开关。只有两个成功设备组，没有下载模型；程序与owned编译缓存按本轮结果清理。
 
-本轮[Qwen Edit 1–3 图 encoder GPU 融合加速](2026-10-08-qwen-edit-encoder.md)已接入原生 pipeline，App 编译通过。
+本轮[Qwen Edit 1–3 图 encoder GPU 融合加速](../experiments/qwen-encoder/2026-10-08-qwen-edit-encoder.md)已接入原生 pipeline，App 编译通过。
 真实1024 reference视觉＋语言计算省时18.70%／20.54%／21.77%；5%张量筛选通过，2%严格线未通过。
 512 reference三图六步完整请求质量通过、总时间少1.21%，但encoder没有净收益，不授稳定性能资格。
 该轮实际执行GPU，Native encoder／ANE／VAE未迁移；没有下载或导出模型，owned缓存已清理约232.06 MiB。
 
-本轮[Native LoRA hybrid 基础实现与验证结论](2026-10-08-native-lora-foundation.md)使用 `47d3ed80…` 新库。
+本轮[Native LoRA hybrid 基础实现与验证结论](../experiments/native-lora/2026-10-08-native-lora-foundation.md)使用 `47d3ed80…` 新库。
 Spec、MIL emitter 和 low／apply 拆分已落地，CPU 与 tiny 共享 low 检查通过。
 真实单层暖机对照在完成两对后触发 framework 内存预算保护；未重跑，不授性能资格。
 hybrid stages／controller／模型路线仍待接入；owned 编译缓存和生成 fixture 已清理约 33.01 MiB。
 
-独立 paired gate/up base 原语的[真实单层筛选](2026-10-08-native-lora-paired-base-screen.md)使用 `e6ea1909…` 新库。
+独立 paired gate/up base 原语的[真实单层筛选](../experiments/native-lora/2026-10-08-native-lora-paired-base-screen.md)使用 `e6ea1909…` 新库。
 暖机后两种顺序分别慢 0.0970%／0.5691%，与 split 输出逐位一致，属于当前输入 NoGain。
 保留组件，未接模型／App、未追加 E2E；570 个身份源与物理释放通过，owned 编译缓存已清理。
 
-新原生 LoRA SGMMA 的[真实单层筛选](2026-10-08-native-lora-sgmma-screen.md)与
-[六步整图配对](2026-10-08-native-lora-sgmma-e2e.md)使用同一 `77863b3f…` 构建。
+新原生 LoRA SGMMA 的[真实单层筛选](../experiments/native-lora/2026-10-08-native-lora-sgmma-screen.md)与
+[六步整图配对](../experiments/native-lora/2026-10-08-native-lora-sgmma-e2e.md)使用同一 `77863b3f…` 构建。
 单层完整 FFN 省时 7.26%／3.59%，两内核输出逐位一致；整图 Native 23.987 s、MLX 20.960 s，仍慢 14.44%。
 图像目视接近、227 target 和 Native 阶段释放通过，保持显式实验，默认不变；owned 缓存／fixture 已清理。
 
 独立原生后端的 GPU Viggle r128 六步窄域及首次真实配对见
-[2026-10-08 Native GPU LoRA E2E](2026-10-08-native-lora-gpu-e2e.md)。
+[2026-10-08 Native GPU LoRA E2E](../experiments/native-lora/2026-10-08-native-lora-gpu-e2e.md)。
 全部 227 target／物理释放通过，图片目视接近；完整请求慢 21.48%，保持显式实验，默认不变。没有下载模型，仅一组配对，owned 编译缓存已清理。
 
 此前完整 GPU LoRA 组件、held-fd／重绑／内存接线与 generated 验证见
-[2026-10-08 Native GPU LoRA](2026-10-08-native-lora-gpu-components.md)。
+[2026-10-08 Native GPU LoRA](../experiments/native-lora/2026-10-08-native-lora-gpu-components.md)。
 小型两层图 Base→LoRA→Base 与 MLX 对照一致；当时请求门关闭，历史记录不转授后续构建资格。
 
 请求内 compact row-scale 缓存的真实 FFN OFF／ON 筛选见
@@ -355,7 +360,7 @@ GPU/runtime全热为0.998×、预声明较晚窗口1.016×，不改变默认选�
 | Qwen 完整 LoRA，共用冻结 base 图 | [Qwen 实验](qwen21-runtime-lora-fused-2026-09-28.md) |
 | Z 完整 LoRA、可选 direct-FP16 | [Z 实验](z-image-runtime-lora-fused-2026-09-28.md) |
 | Qwen GPU、编辑、序列切片与已撤回实验 | [路线索引](qwen21-acceleration-routes-2026-09-27.md) |
-| Qwen 1024² base 文生图，不含编辑/LoRA | [1024² 诊断](qwen21-w8a8-ane-1024-diagnostics.md) |
+| Qwen 冻结 W8A8：512² / 1024² 文生图、参考图编辑与证据边界 | [五篇历史实验](../experiments/qwen21-w8a8/README.md) · [1024² 诊断](../experiments/qwen21-w8a8/qwen21-w8a8-ane-1024-diagnostics.md) |
 | Qwen 20–40 步可选残差缓存 | [DBCache](qwen21-dbcache-2026-09-27.md) |
 | Qwen 矩形画布复用固定行数图 | [矩形画布](qwen21-rectangular-w8a8-2026-09-27.md) |
 | 集成前单层探针，不作为整请求成绩 | [早期组件实验](runtime-ane-component-2026-09-28.md) |
@@ -387,8 +392,8 @@ optional 选择统一维护在[决策入口](acceleration.md)，不复制逐轮�
 - [Streaming/App 集成](streaming-app-integration-2026-09-27.md)
 - [Z-Image Metal 优化](z-image-metal-2026-09-23.md)
 - [Z-Image INT8 streaming](z-image-int8-streaming-2026-09-20.md)
-- [Encoder prefill 可选路径](encoder-prefill-optional-2026-09-15.md)
-- [ANE 加速分阶段决策](../design/ane-acceleration-status-2026-09-15.md)
+- [Encoder prefill 可选路径](../experiments/transformer/2026-09-15-encoder-prefill.md)
+- [ANE 加速分阶段决策](../experiments/transformer/2026-09-15-ane-decisions.md)
 - [2026-09-10 状态快照](current-status-2026-09-10.md)
 - [原始目标审计](objective-audit-2026-09-09.md)
 

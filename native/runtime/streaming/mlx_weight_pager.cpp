@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -20,6 +21,22 @@ using Clock = std::chrono::steady_clock;
 void pager_require(bool value, const std::string &reason) {
     if (!value)
         throw std::invalid_argument("mlx_weight_pager: " + reason);
+}
+
+struct DirectType {
+    mx::Dtype dtype;
+    uint64_t bytes;
+    const char *conversion;
+};
+
+DirectType direct_type(const FieldSpec &field) {
+    pager_require(field.materialization.has_value(), "field is missing materialization");
+    const auto &format = field.materialization->format;
+    if (format == "BF16") return {mx::bfloat16, 2, "copy-bf16-v1"};
+    if (format == "I8") return {mx::int8, 1, "copy-i8-v1"};
+    if (format == "U8") return {mx::uint8, 1, "copy-u8-v1"};
+    if (format == "F32") return {mx::float32, 4, "copy-f32-v1"};
+    throw std::invalid_argument("mlx_weight_pager: unsupported direct field type " + format);
 }
 
 mx::Shape mlx_shape(const FieldSpec &field) {
@@ -38,9 +55,9 @@ mx::Shape mlx_shape(const FieldSpec &field) {
         elements *= dimension;
         result.push_back(static_cast<int32_t>(dimension));
     }
-    pager_require(elements <= UINT64_MAX / sizeof(uint16_t) &&
-                      elements * sizeof(uint16_t) == field.bytes,
-                  "field bytes differ from BF16 shape");
+    const auto width = direct_type(field).bytes;
+    pager_require(elements <= UINT64_MAX / width && elements * width == field.bytes,
+                  "field bytes differ from typed shape");
     return result;
 }
 
@@ -48,15 +65,14 @@ const SourceRange &direct_source(const FieldSpec &field) {
     pager_require(field.materialization.has_value(),
                   "field is missing materialization");
     const auto &materialization = *field.materialization;
-    pager_require(materialization.format == "BF16" &&
-                      materialization.storage_mode == "mlx-metal-shared" &&
-                      materialization.conversion == "copy-bf16-v1" &&
+    pager_require(materialization.storage_mode == "mlx-metal-shared" &&
+                      materialization.conversion == direct_type(field).conversion &&
                       materialization.derived_from.empty() &&
                       materialization.derived_offset == 0 &&
                       materialization.reads.size() == 1,
-                  "only direct BF16 MLX materialization is supported");
+                  "only matching direct MLX materialization is supported");
     const auto &source = materialization.reads.front();
-    pager_require(source.dtype == "BF16" && source.bytes == field.bytes &&
+    pager_require(source.dtype == materialization.format && source.bytes == field.bytes &&
                       source.shape == materialization.shape &&
                       !source.tensor.empty(),
                   "source range differs from field materialization");
@@ -98,8 +114,14 @@ struct MlxWeightPager::State {
     std::map<uint32_t, const BlockSpec *> blocks;
     std::map<uint32_t, Pool> pools;
     Slot resident;
+    // Surviving array positions retain their immutable descriptor indexes.
+    // Releasing resident fields never reloads or mutates the source layout.
+    std::vector<size_t> resident_field_indices;
+    Weights *resident_destination = nullptr;
     bool resident_loaded = false;
     bool exact_allocations = false;
+    bool streaming_headroom = false;
+    ane::StreamingAllocationAdmission admission = ane::StreamingAllocationAdmission::Guarded;
 
     ~State() {
         for (auto &artifact : artifacts)
@@ -338,7 +360,8 @@ namespace {
 
 void allocate_fields(MlxWeightPager::State::Slot &slot,
                      const std::vector<FieldSpec> &fields,
-                     MlxWeightPagerMetrics &metrics,bool exact) {
+                     MlxWeightPagerMetrics &metrics,bool exact,bool streaming_headroom,
+                     ane::StreamingAllocationAdmission admission) {
     pager_require(slot.arrays.empty() && slot.pointers.empty(),
                   "slot backing already exists");
     slot.arrays.reserve(fields.size());
@@ -347,17 +370,20 @@ void allocate_fields(MlxWeightPager::State::Slot &slot,
     if(exact)cache_scope.emplace();
     for (const auto &field : fields) {
         if(exact) {
-            // A core component is allocated in real field increments, not as
-            // one speculative 11GiB optional payload. Reobserve BEFORE every
-            // new backing using the unchanged reserve/inactive/process guards.
-            const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
-            const auto admission=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},
-                0,gguf_storage::capacity_upper(field.bytes));
-            pager_require(admission.allowed(),"incremental core source admission declined: "+
-                ane::memory_denial_reason(admission.denial,observed));
+            // Reobserve immediately before every new managed backing.
+            const auto upper = gguf_storage::capacity_upper(field.bytes);
+            if (streaming_headroom) {
+                ane::require_streaming_memory_headroom(mx::get_active_memory(), upper,
+                    "mlx_weight_pager: incremental ConvRot source admission declined", admission);
+            } else {
+                const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
+                const auto admission=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,upper);
+                pager_require(admission.allowed(),"incremental core source admission declined: "+
+                    ane::memory_denial_reason(admission.denial,observed));
+            }
         }
-        slot.arrays.emplace_back(mx::allocator::malloc(field.bytes),
-                                 mlx_shape(field), mx::bfloat16);
+        slot.arrays.emplace_back(mx::allocator::malloc(field.bytes), mlx_shape(field), direct_type(field).dtype);
+        pager_require(slot.arrays.back().data_shared_ptr()->buffer.ptr() != nullptr, "MLX weight allocation failed");
         if(exact) {
             const auto actual=mx::allocator::allocator().size(slot.arrays.back().data_shared_ptr()->buffer);
             pager_require(actual>=field.bytes && actual<=gguf_storage::capacity_upper(field.bytes),
@@ -416,9 +442,14 @@ std::vector<std::string> binding_keys(
 
 } // namespace
 
-void MlxWeightPager::use_exact_allocations() {
+void MlxWeightPager::use_exact_allocations(bool streaming_headroom, ane::StreamingAllocationAdmission admission) {
     pager_require(state_ && !state_->resident_loaded && state_->pools.empty(),"exact source recipe must precede payload allocation");
+    pager_require(admission == ane::StreamingAllocationAdmission::Guarded ||
+        (streaming_headroom && admission == ane::StreamingAllocationAdmission::SystemManaged),
+        "system-managed exact allocation requires a bounded streaming source");
     state_->exact_allocations=true;
+    state_->streaming_headroom=streaming_headroom;
+    state_->admission=admission;
 }
 
 void MlxWeightPager::load_resident(
@@ -428,7 +459,7 @@ void MlxWeightPager::load_resident(
     check_open_files();
     const auto &fields = state_->stage->resident_fields;
     pager_require(!fields.empty(), "stage has no resident fields");
-    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations);
+    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations,state_->streaming_headroom,state_->admission);
     const auto begin = Clock::now();
     const uint64_t bytes = read_fields(
         fields, state_->resident.pointers, state_->artifacts, cancel);
@@ -439,7 +470,95 @@ void MlxWeightPager::load_resident(
                       bytes == *state_->layout->resident_source_read_bytes,
                   "resident read count differs from compiled layout");
     destination.bind_arrays(binding_keys(fields), state_->resident.arrays);
+    state_->resident_field_indices.reserve(fields.size());
+    for (size_t index = 0; index < fields.size(); ++index)
+        state_->resident_field_indices.push_back(index);
+    state_->resident_destination = &destination;
     state_->resident_loaded = true;
+}
+
+uint64_t MlxWeightPager::release_resident_fields(
+    Weights &destination, const std::vector<std::string> &names,
+    const std::atomic<bool> *cancel) {
+    pager_require(state_ && state_->resident_loaded,
+                  "resident weights are not loaded");
+    check_cancel(cancel);
+    pager_require(state_->resident_destination == &destination,
+                  "resident release destination differs from the bound owner");
+    const auto &fields = state_->stage->resident_fields;
+    const auto &resident = state_->resident;
+    pager_require(resident.arrays.size() == resident.pointers.size() &&
+                      resident.arrays.size() == state_->resident_field_indices.size(),
+                  "resident ownership index differs");
+    std::set<std::string> requested;
+    std::vector<size_t> selected;
+    selected.reserve(names.size());
+    for (const auto &name : names) {
+        pager_require(requested.insert(name).second,
+                      "duplicate resident release field: " + name);
+        size_t position = resident.arrays.size();
+        for (size_t index = 0; index < resident.arrays.size(); ++index) {
+            const auto &field = fields.at(state_->resident_field_indices[index]);
+            if (direct_source(field).tensor != name) continue;
+            pager_require(position == resident.arrays.size(),
+                          "ambiguous resident release binding: " + name);
+            position = index;
+        }
+        pager_require(position != resident.arrays.size(),
+                      "unknown or retired resident field: " + name);
+        const auto &array = resident.arrays[position];
+        pager_require(destination.has(name) && destination.at(name).id() == array.id(),
+                      "resident release binding differs: " + name);
+        pager_require(array.data_shared_ptr() && array.buffer().ptr() &&
+                          resident.pointers[position] == array.data<char>(),
+                      "resident release backing is unavailable: " + name);
+        selected.push_back(position);
+    }
+
+    // Build all surviving containers before committing. This also makes a
+    // caller allocation failure atomic with respect to both owning objects.
+    std::sort(selected.begin(), selected.end());
+    std::vector<Tensor> remaining_arrays;
+    std::vector<char *> remaining_pointers;
+    std::vector<size_t> remaining_fields;
+    remaining_arrays.reserve(resident.arrays.size() - selected.size());
+    remaining_pointers.reserve(resident.arrays.size() - selected.size());
+    remaining_fields.reserve(resident.arrays.size() - selected.size());
+    std::map<const void *, uint64_t> retired_buffers;
+    for (size_t index = 0; index < resident.arrays.size(); ++index) {
+        const auto &array = resident.arrays[index];
+        if (std::binary_search(selected.begin(), selected.end(), index)) {
+            const uint64_t capacity = mx::allocator::allocator().size(array.buffer());
+            pager_require(capacity >= array.nbytes(),
+                          "resident release capacity is smaller than its field");
+            retired_buffers.emplace(array.buffer().ptr(), capacity);
+        } else {
+            remaining_arrays.push_back(array);
+            remaining_pointers.push_back(resident.pointers[index]);
+            remaining_fields.push_back(state_->resident_field_indices[index]);
+        }
+    }
+    // Normal direct fields own separate allocations. Still never count a
+    // buffer that a surviving pager field owns, or count one buffer twice.
+    for (const auto &array : remaining_arrays)
+        retired_buffers.erase(array.buffer().ptr());
+    uint64_t retired_capacity = 0;
+    for (const auto &[buffer, capacity] : retired_buffers) {
+        (void)buffer;
+        pager_require(capacity <= UINT64_MAX - retired_capacity,
+                      "resident release capacity overflows");
+        retired_capacity += capacity;
+    }
+    mx::synchronize();
+    check_open_files();
+    check_cancel(cancel);
+    // No allocations or validation remain after the first binding is erased.
+    // The same Weights object, mode flags and unrelated bindings survive.
+    for (const auto &name : names) destination.erase(name);
+    state_->resident.arrays.swap(remaining_arrays);
+    state_->resident.pointers.swap(remaining_pointers);
+    state_->resident_field_indices.swap(remaining_fields);
+    return retired_capacity;
 }
 
 void MlxWeightPager::create_pool(const PoolLayout &layout) {
@@ -471,7 +590,7 @@ void MlxWeightPager::create_pool(const PoolLayout &layout) {
             pager_require(fields[field_index].bytes <=
                               slot_layout.field_capacity[field_index],
                           "slot field capacity is too small");
-        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations);
+        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations,state_->streaming_headroom,state_->admission);
     }
     state_->pools.emplace(layout.id, std::move(pool));
 }

@@ -41,6 +41,10 @@ struct PlaygroundView: View {
     }
     private var statusText: String? {
         if let job = ownedActiveJob {
+            if let memory = Qwen21MemoryPresentation.phaseTitle(job.phase) {
+                let progress = Qwen21MemoryPresentation.progressText(phase: job.phase, completed: job.completed, total: job.total)
+                return [state.template.title, memory, progress].compactMap { $0 }.joined(separator: " · ")
+            }
             return "\(state.template.title) · \(job.phase) · \(job.completed)/\(job.total) · \(Int(job.elapsed)) 秒"
         }
         if submitting { return "正在检查参数与执行资源…" }
@@ -660,7 +664,7 @@ struct PlaygroundView: View {
                 if state.template == workflow { selectedResultID = job.id; showReference = false }
             } catch {
                 state.message = error is CancellationError ? "生成已取消，模板参数与参考图已保留，可重新生成。"
-                    : "\(error.localizedDescription)\n模板参数与参考图已保留，可调整后重新生成。"
+                    : "\(Qwen21MemoryPresentation.message(for: error))\n模板参数与参考图已保留，可调整后重新生成。"
             }
         }
     }

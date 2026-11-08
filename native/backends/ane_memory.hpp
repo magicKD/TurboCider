@@ -33,13 +33,41 @@ struct MemoryObservation {
     uint64_t inactive_bytes = 0;
 };
 
+enum class StreamingMemoryPressure { Normal, Warning, Critical };
+
+// Darwin's public sysctl uses discrete dispatch NOTE_MEMORYSTATUS values,
+// not XNU's internal pressure enum. Unknown values must remain unavailable.
+inline std::optional<StreamingMemoryPressure> streaming_memory_pressure_from_flags(uint32_t flags) {
+    switch (flags) {
+    case 1: return StreamingMemoryPressure::Normal;
+    case 2: return StreamingMemoryPressure::Warning;
+    case 4: return StreamingMemoryPressure::Critical;
+    default: return std::nullopt;
+    }
+}
+inline const char *streaming_memory_pressure_name(std::optional<StreamingMemoryPressure> pressure) {
+    if (!pressure) return "unavailable";
+    switch (*pressure) {
+    case StreamingMemoryPressure::Normal: return "normal";
+    case StreamingMemoryPressure::Warning: return "warning";
+    case StreamingMemoryPressure::Critical: return "critical";
+    }
+    return "unavailable";
+}
+
+struct StreamingMemoryObservation {
+    MemoryObservation memory;
+    std::optional<uint64_t> file_backed_non_speculative_bytes;
+    std::optional<StreamingMemoryPressure> pressure;
+};
+
 struct MemoryLimits {
     uint64_t system_reserve_bytes = uint64_t(4) << 30;
     uint64_t optional_bytes = uint64_t(2) << 30;
 };
 
 enum class MemoryDenial {
-    None, Unavailable, Invalid, SystemReserve, ProcessReserve,
+    None, Unavailable, Invalid, SystemPressure, SystemReserve, ProcessReserve,
     MlxReserve, OptionalLimit, GrowthLimit,
 };
 
@@ -49,6 +77,7 @@ inline std::string memory_denial_reason(MemoryDenial denial, const MemoryObserva
     case MemoryDenial::None: name = "none"; break;
     case MemoryDenial::Unavailable: name = "observation_unavailable"; break;
     case MemoryDenial::Invalid: name = "observation_invalid"; break;
+    case MemoryDenial::SystemPressure: name = "system_memory_pressure"; break;
     case MemoryDenial::SystemReserve: name = "system_reserve"; break;
     case MemoryDenial::ProcessReserve: name = "process_reserve"; break;
     case MemoryDenial::MlxReserve: name = "mlx_reserve"; break;
@@ -66,6 +95,11 @@ struct MemoryDecision {
     bool allowed() const { return denial == MemoryDenial::None; }
 };
 
+// Mandatory bounded GPU weights may use the OS allocator directly. Memory
+// observations remain useful for OPTIONAL cache policy, not a prerequisite
+// for allocating the fixed two-slot working set.
+enum class StreamingAllocationAdmission { Guarded, SystemManaged };
+
 inline std::optional<uint64_t> free_page_bytes(uint64_t pages, uint64_t size) {
     if (!size || pages > std::numeric_limits<uint64_t>::max() / size) return std::nullopt;
     return pages * size;
@@ -74,16 +108,17 @@ inline std::optional<uint64_t> free_page_bytes(uint64_t pages, uint64_t size) {
 // Resident optional bytes already contribute to process/free observations;
 // charge them only to the logical optional-tier ceiling. growth is the NEW
 // payload needed before old allocations can be released, not net growth.
-inline MemoryDecision admit_memory(const MemoryObservation &o, MemoryLimits limits,
-                                   uint64_t resident, uint64_t growth) {
+namespace detail {
+inline MemoryDecision admit_memory_with_credit(const MemoryObservation &o, MemoryLimits limits,
+                                               uint64_t resident, uint64_t growth,
+                                               uint64_t reclaimable_credit) {
     if (!o.available) return {MemoryDenial::Unavailable, 0};
     if (!o.physical_bytes || o.process_bytes > o.physical_bytes ||
         o.mlx_active_bytes > o.physical_bytes || o.free_bytes > o.physical_bytes ||
         o.inactive_bytes > o.physical_bytes)
         return {MemoryDenial::Invalid, 0};
     const auto reserve = limits.system_reserve_bytes;
-    const auto credited_inactive = std::min(o.inactive_bytes / 2, uint64_t(8) << 30);
-    const auto available = o.free_bytes + std::min(credited_inactive,
+    const auto available = o.free_bytes + std::min(reclaimable_credit,
                                                  o.physical_bytes - o.free_bytes);
     if (reserve > o.physical_bytes || available < reserve)
         return {MemoryDenial::SystemReserve, 0};
@@ -94,6 +129,48 @@ inline MemoryDecision admit_memory(const MemoryObservation &o, MemoryLimits limi
     const auto headroom = std::min({available - reserve, ceiling - o.process_bytes,
                                    ceiling - o.mlx_active_bytes, limits.optional_bytes - resident});
     return {growth <= headroom ? MemoryDenial::None : MemoryDenial::GrowthLimit, headroom};
+}
+} // namespace detail
+
+inline MemoryDecision admit_memory(const MemoryObservation &o, MemoryLimits limits,
+                                   uint64_t resident, uint64_t growth) {
+    return detail::admit_memory_with_credit(o, limits, resident, growth,
+                                           std::min(o.inactive_bytes / 2, uint64_t(8) << 30));
+}
+
+inline MemoryDecision admit_streaming_memory(const StreamingMemoryObservation &o,
+                                             MemoryLimits limits, uint64_t growth) {
+    if (!o.memory.available || !o.pressure || !o.file_backed_non_speculative_bytes)
+        return {MemoryDenial::Unavailable, 0};
+    const auto file_backed = *o.file_backed_non_speculative_bytes;
+    if (file_backed > o.memory.physical_bytes) return {MemoryDenial::Invalid, 0};
+    // Mach reports pageable file-backed pages separately from anonymous
+    // pages. Under normal or warning pressure, count that pool once and keep the full
+    // system reserve inside the estimate to allow for active or dirty pages.
+    // A second fractional reserve can reject small streamed banks on a
+    // healthy desktop. Never credit anonymous inactive pages.
+    const auto credit = std::min(file_backed, uint64_t(8) << 30);
+    const auto decision = detail::admit_memory_with_credit(o.memory, limits, 0, growth, credit);
+    if (decision.denial == MemoryDenial::Invalid || decision.denial == MemoryDenial::ProcessReserve ||
+        decision.denial == MemoryDenial::MlxReserve) return decision;
+    // Warning is advisory: macOS can reclaim file pages without requiring a
+    // normal notification first. Optional prefix caching is disabled separately.
+    // Critical pressure still pauses all new growth, including zero-growth phases.
+    switch (*o.pressure) {
+    case StreamingMemoryPressure::Critical: return {MemoryDenial::SystemPressure, 0};
+    case StreamingMemoryPressure::Normal:
+    case StreamingMemoryPressure::Warning: return decision;
+    }
+    return {MemoryDenial::Unavailable, 0};
+}
+
+inline MemoryDecision admit_required_streaming_memory(const StreamingMemoryObservation &observation,
+        MemoryLimits limits, uint64_t growth, StreamingAllocationAdmission policy) {
+    switch (policy) {
+    case StreamingAllocationAdmission::SystemManaged: return {MemoryDenial::None, 0};
+    case StreamingAllocationAdmission::Guarded: return admit_streaming_memory(observation, limits, growth);
+    }
+    return {MemoryDenial::Invalid, 0};
 }
 
 // Only the two host vectors owned by HybridFfn. MLX corrections and retained
@@ -125,5 +202,8 @@ inline std::optional<HostScratchPlan> plan_host_scratch(uint64_t rows, uint64_t 
 }
 
 MemoryObservation observe_runtime_memory(uint64_t mlx_active_bytes);
+StreamingMemoryObservation observe_streaming_memory(uint64_t mlx_active_bytes);
+void require_streaming_memory_headroom(uint64_t mlx_active_bytes, uint64_t growth_bytes,
+    const char *context, StreamingAllocationAdmission policy = StreamingAllocationAdmission::Guarded);
 
 } // namespace tc::ane

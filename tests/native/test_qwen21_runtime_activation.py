@@ -18,13 +18,15 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertTrue(library.is_file(), "build the native library first")
         mlx = Path(os.environ.get("MLX_ROOT", str(Path(sysconfig.get_paths()["purelib"]) / "mlx")))
         self.assertTrue((mlx / "lib/libmlx.dylib").is_file())
-        sdk = os.environ.get("SDKROOT", "/Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk")
+        sdk = os.environ.get("SDKROOT") or subprocess.check_output(
+            ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
         env = {key: value for key, value in os.environ.items()
                if not key.startswith(("TURBOCIDER_", "DYLD_"))}
         with tempfile.TemporaryDirectory(prefix="tc-qwen-activation-", dir="/private/tmp") as temporary:
             root = Path(temporary)
             binary = root / "test"
-            compiler = "/Library/Developer/CommandLineTools/usr/bin/clang++"
+            compiler = subprocess.check_output(
+                ["xcrun", "--find", "clang++"], text=True).strip()
             command = [compiler, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror",
                        "-isysroot", sdk, "-mmacosx-version-min=26.2",
                        "-I", str(ROOT / "native/core"), "-isystem", str(mlx / "include"),

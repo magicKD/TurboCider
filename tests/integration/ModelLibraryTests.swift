@@ -77,8 +77,9 @@ import Foundation
     }
 }
 
-/// The controller talks to a suspended metadata fixture: no helper process,
-/// registry settings, weights, model catalog or inference is used by these cases.
+/// The controller talks to a suspended metadata fixture. ANE cases inspect tiny
+/// local manifest fixtures; no helper process, user registry, weights or inference
+/// is used by these cases.
 @MainActor private enum ModelLibraryRegistrationRegression {
     @MainActor private final class Helper {
         var calls: [[String]] = []
@@ -122,6 +123,16 @@ import Foundation
                     ?? LibraryLoRA(id: UUID().uuidString, modelID: modelID, path: path, name: URL(fileURLWithPath: path).lastPathComponent)
                 if !(index.loras ?? []).contains(where: { $0.id == item.id }) { index.loras = (index.loras ?? []) + [item] }
                 indexes[root] = index
+                return try response(item)
+            case "register-ane":
+                let modelID = arguments[1], path = arguments[2], root = arguments[4]
+                var item = try LibraryANEPartition.inspect(modelID: modelID, manifest: URL(fileURLWithPath: path))
+                var index = indexes[root] ?? LibraryIndex()
+                var items = index.anePartitions ?? []
+                if let position = items.firstIndex(where: { $0.modelID == item.modelID && $0.path == item.path }) {
+                    item.id = items[position].id; items[position] = item
+                } else { items.append(item) }
+                index.anePartitions = items; indexes[root] = index
                 return try response(item)
             case "list":
                 if failListOnce { failListOnce = false; throw NativeFailure(message: "fixture index read failed") }
@@ -236,6 +247,103 @@ import Foundation
         try await wait("manual component retry") { !componentController.busy }
         try check(componentController.components(modelID: "qwen-image-2.1", path: "/fixture/qwen")?.supported == true && componentController.componentError(modelID: "qwen-image-2.1", path: "/fixture/qwen") == nil,
                   "Manual component retry did not clear cancellation state")
+        try await aneSelection(directory: directory)
         print("PASS: queued LoRA registration FIFO, duplicate/model identity, failure/index visibility, root switching and cancellation")
+    }
+
+    private static func aneSelection(directory: URL) async throws {
+        let fm = FileManager.default
+        let base = directory.appendingPathComponent("ane-selection").resolvingSymlinksInPath()
+        let partitions = base.appendingPathComponent("partitions")
+        var artifacts: [String: [String: String]] = [:]
+        for block in 0..<32 {
+            let name = "block\(block).mlmodelc"
+            try fm.createDirectory(at: partitions.appendingPathComponent(name), withIntermediateDirectories: true)
+            artifacts[String(block)] = ["int8_pc": name]
+        }
+        let manifest = partitions.appendingPathComponent("manifest.json")
+        let raw: [String: Any] = ["schema_version": 2,
+            "shape": ["K": 4096, "N": 4096, "mlp_width": 12288, "buckets": [1024]],
+            "source": ["checkpoint": base.appendingPathComponent("qwen.safetensors").path,
+                       "checkpoint_bytes": 16, "blocks": Array(0..<32)],
+            "export_identity": ["owner": "turbocider.qwen21.dit.coreml.v1", "tensor_layout": "qwen21"],
+            "artifacts": artifacts]
+        let manifestData = try JSONSerialization.data(withJSONObject: raw)
+        try manifestData.write(to: manifest)
+        func makeState(_ name: String) throws -> StudioState {
+            let stateDirectory = base.appendingPathComponent(name)
+            try fm.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+            var draft = StudioDraft()
+            draft.modelID = "qwen-image-2.1"
+            draft.modelPaths = ["qwen-image-2.1": base.appendingPathComponent("qwen").path,
+                                "flux2-klein-4b": base.appendingPathComponent("flux").path]
+            draft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/fixture/previous.json")
+            draft.prompt = "Keep the user's current prompt."
+            try JSONEncoder().encode(draft).write(to: stateDirectory.appendingPathComponent("studio-draft.json"))
+            return StudioState(directory: stateDirectory, models: [])
+        }
+
+        let helper = Helper()
+        defer { helper.release() }
+        let controller = ModelLibraryController(root: base.appendingPathComponent("library"), metadataRunner: helper.run)
+        let studio = try makeState("success")
+        let previous = studio.draft.acceleration?.manifest
+        helper.holdCommand = "register-ane"
+        controller.registerANE(manifest, modelID: studio.draft.modelID, studio: studio, select: true)
+        try await wait("held ANE selection") { helper.isHeld }
+        try check(studio.draft.acceleration?.manifest == previous, "ANE selection changed before manifest validation completed")
+        helper.release()
+        try await wait("validated ANE selection") { !controller.busy }
+        try check(studio.draft.acceleration?.manifest == manifest.path && studio.draft.acceleration?.policy == "gpu_ane" &&
+                  controller.anePartitions.count == 1 && studio.draft.prompt == "Keep the user's current prompt.",
+                  "Validated ANE selection did not publish the manifest or changed unrelated draft data")
+        let saved = StudioState(directory: base.appendingPathComponent("success"), models: [])
+        try check(saved.draft.acceleration?.manifest == manifest.path, "Validated ANE selection was not persisted")
+
+        // Reusing an existing entry must inspect files again, rather than trust
+        // its previous metadata. Both missing manifests and partial bundles fail.
+        studio.draft.acceleration?.manifest = previous ?? ""
+        try fm.removeItem(at: partitions.appendingPathComponent("block0.mlmodelc"))
+        controller.registerANE(manifest, modelID: studio.draft.modelID, studio: studio, select: true)
+        try await wait("incomplete ANE selection") { !controller.busy }
+        try check(studio.draft.acceleration?.manifest == previous && controller.message != nil,
+                  "Incomplete registered ANE partition replaced the previous selection")
+        try fm.createDirectory(at: partitions.appendingPathComponent("block0.mlmodelc"), withIntermediateDirectories: true)
+        try fm.removeItem(at: manifest)
+        controller.registerANE(manifest, modelID: studio.draft.modelID, studio: studio, select: true)
+        try await wait("missing ANE selection") { !controller.busy }
+        try check(studio.draft.acceleration?.manifest == previous && controller.message != nil,
+                  "Missing registered ANE manifest cleared the previous selection")
+        try manifestData.write(to: manifest)
+
+        let mutations: [(String, (StudioState) -> Void)] = [
+            ("model", { $0.draft.modelID = "flux2-klein-4b" }),
+            ("path", { $0.draft.modelPaths["qwen-image-2.1"] = "/fixture/replacement-model" }),
+            ("policy", { $0.setANEEnabled(false) }),
+            ("runtime", { $0.draft.acceleration?.runtimeAneProfileID = "new-runtime-profile" }),
+            ("quantization", { $0.draft.acceleration?.qwen21W8A8 = true }),
+            ("selection", { $0.draft.acceleration?.manifest = "/fixture/newer-selection.json" })
+        ]
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        for (name, change) in mutations {
+            let changed = try makeState(name)
+            // Pause after registration, during the asynchronous index refresh,
+            // to cover changes throughout the complete operation.
+            helper.holdCommand = "list"
+            controller.registerANE(manifest, modelID: changed.draft.modelID, studio: changed, select: true)
+            try await wait("held ANE index refresh \(name)") { helper.isHeld }
+            change(changed)
+            let expected = try encoder.encode(changed.draft)
+            helper.release()
+            try await wait("stale ANE completion \(name)") { !controller.busy }
+            try check(try encoder.encode(changed.draft) == expected && controller.message?.contains("已变化") == true,
+                      "Late ANE registration overwrote the changed \(name) context")
+        }
+        helper.failListOnce = true
+        controller.registerANE(manifest, modelID: studio.draft.modelID, studio: studio, select: true)
+        try await wait("failed ANE index refresh") { !controller.busy }
+        try check(studio.draft.acceleration?.manifest == previous && controller.message?.contains("fixture index read failed") == true,
+                  "Failed index refresh replaced the previous ANE selection")
+        print("PASS: ANE revalidation, persistent selection, missing/incomplete artifacts, stale model/path/route/selection protection and index failure")
     }
 }

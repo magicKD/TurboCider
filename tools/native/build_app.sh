@@ -18,14 +18,12 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 TOOLCHAIN="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 [[ -d "$TOOLCHAIN" ]] || TOOLCHAIN="$DEVELOPER_DIR/usr/bin"
 SWIFTC="$TOOLCHAIN/swiftc"
-MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
- /cmd LC_BUILD_VERSION/{build=1; next}
- build && /minos /{print $2; exit}
-')"
+MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
-FLAGS=(-sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -I bindings/c/include -L "$OUT" -lturbocider -Xlinker -rpath -Xlinker @executable_path -parse-as-library -O)
+FLAGS=(-sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -I bindings/c/include -L "$OUT" -lturbocider -Xlinker -rpath -Xlinker @executable_path -parse-as-library -O -whole-module-optimization)
 SDK_SOURCE=bindings/swift/TurboCiderNative.swift
 STATE=(apps/macos/ZImageInstallation.swift apps/macos/JobStore.swift apps/macos/ReferenceImagePreparation.swift apps/macos/StudioState.swift apps/macos/AccelerationDiscovery.swift apps/macos/ResourceMonitor.swift apps/macos/ResourceInventory.swift)
+STATE+=(apps/macos/Qwen21Installation.swift)
 LIBRARY=(services/model-library/LibraryStore.swift services/model-library/LibrarySettings.swift services/model-library/LibraryRecipes.swift services/model-library/HubClient.swift services/model-library/LibraryDownload.swift)
 LIBRARY+=(services/model-library/LibraryANE.swift)
 LIBRARY+=(services/model-library/LibraryInventory.swift)
@@ -64,7 +62,8 @@ esac
 if [[ "$APP_TARGETS" == qwen21 ]]; then
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21WorkflowTests.swift -o "$OUT/turbocider-qwen21-workflow-tests"
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PlaygroundStateTests.swift -o "$OUT/turbocider-playground-tests"
- printf 'Built Qwen21 workflow and Playground contract tests\n'
+ "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/StudioVariantTests.swift -o "$OUT/turbocider-studio-variant-tests"
+ printf 'Built Qwen21 workflow, Playground and model-variant contract tests\n'
  exit 0
 fi
 if [[ "$APP_TARGETS" == tiny-vae ]]; then

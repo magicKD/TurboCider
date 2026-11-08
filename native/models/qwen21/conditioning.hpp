@@ -34,5 +34,7 @@ MultimodalPrompt assemble_prompt(const Tokens &, const Tensor &embedding_table,
 // Packed checkpoint variant gathers codes/scales/biases before token decode.
 MultimodalPrompt assemble_prompt(const Tokens &, const Weights &,
                                 const std::vector<VisualReference> &, int max_tokens = 32768);
+MultimodalPrompt assemble_prompt_rows(const Tokens &, const Tensor &rows, int vocabulary,
+                                     const std::vector<VisualReference> &, int max_tokens = 32768);
 std::string reference_prompt_template(const std::string &, size_t reference_count);
 } // namespace tc::qwen21

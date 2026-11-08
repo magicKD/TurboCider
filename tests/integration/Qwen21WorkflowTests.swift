@@ -72,11 +72,22 @@ import ImageIO
             #"{"gpu":"Apple M5 Pro","physical_memory_bytes":25769803776.5}"#,
             "{}", "invalid JSON"
         ]
+        func qwenManifest(_ name: String, w8a8: Bool) throws -> String {
+            let path = root.appendingPathComponent(name + ".json")
+            try JSONSerialization.data(withJSONObject: ["schema_version": 2,
+                "export_identity": ["owner": "turbocider.qwen21.dit.coreml.v1", "tensor_layout": "qwen21",
+                    "variant": w8a8 ? "int8_pc" : "fp16", "activation_precision": w8a8 ? "int8" : "fp16"]])
+                .write(to: path)
+            return path.path
+        }
+        let fp16Manifest = try qwenManifest("fp16", w8a8: false)
+        let w8Manifest = try qwenManifest("w8a8", w8a8: true)
         var aneDraft = studio.draft
         aneDraft.operation = "image.generate"; aneDraft.assets = []
-        aneDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/test/qwen-compiled.json")
+        aneDraft.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: fp16Manifest)
         try check(try aneDraft.request(output: output, systemJSON: "{}").qwen21_w8a8 == nil,
                   "Existing FP16 ANE selection silently enabled W8A8")
+        aneDraft.acceleration?.manifest = w8Manifest
         aneDraft.acceleration?.qwen21W8A8 = true
         let aneRequest = try aneDraft.request(output: output, systemJSON: eligibleHardware)
         let savedANE = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(aneDraft))
@@ -94,6 +105,7 @@ import ImageIO
             catch { rejected = error.localizedDescription.contains("Apple M5 Pro") }
             try check(rejected, "A migrated low-memory ANE draft bypassed the hardware gate")
             var ordinaryANE = savedANE; ordinaryANE.acceleration?.qwen21W8A8 = false
+            ordinaryANE.acceleration?.manifest = fp16Manifest
             let ordinaryRequest = try ordinaryANE.request(output: output, systemJSON: systemJSON)
             try check(ordinaryRequest.execution == "gpu_ane" && ordinaryRequest.qwen21_w8a8 == nil &&
                       ordinaryRequest.hybrid_mlp_mode == nil,
@@ -130,31 +142,152 @@ import ImageIO
             try check(submitted.qwen21_w8a8 == true && submitted.hybrid_mlp_mode == "base_fused",
                       "Low-memory ANE history retained an unqualified MLP mode")
         }
-        for cacheMode in Qwen21DiTCacheMode.allCases where cacheMode != .off {
+        for cacheMode in Qwen21DiTCacheMode.allCases {
             var cachedANE = aneDraft; cachedANE.qwen21DiTCache = cacheMode.rawValue
             let migrated = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(cachedANE))
             try check(migrated.qwen21DiTCache == cacheMode.rawValue &&
                       migrated.acceleration?.qwen21W8A8 == true,
                       "Draft migration silently changed cache or ANE selection")
-            var rejected = false
-            do { _ = try migrated.request(output: output, systemJSON: eligibleHardware) }
-            catch { rejected = error.localizedDescription.contains("DiT 缓存") }
-            try check(rejected, "Low-memory ANE accepted an approximation cache")
+            try check(migrated.qwen21DiTCacheIssue(systemJSON: eligibleHardware) == nil,
+                      "Qualified low-memory ANE cache remains unavailable in the picker")
+            for steps in [20, 25, 40] {
+                var configured = migrated; configured.steps = steps
+                let request = try configured.request(output: output, systemJSON: eligibleHardware)
+                try check(configured.qualifiedQwen21StagedANECache(systemJSON: eligibleHardware) &&
+                          request.execution == "gpu_ane" && request.qwen21_w8a8 == true &&
+                          request.hybrid_mlp_mode == "base_fused" && request.qwen21_dit_cache == cacheMode.rawValue &&
+                          request.allow_approximation == true && request.residency == "component_staged" &&
+                          request.profile == nil && request.steps == steps,
+                          "Qualified low-memory ANE cache was not forwarded unchanged")
+                let roundtrip = try JSONDecoder().decode(NativeRequest.self, from: JSONEncoder().encode(request))
+                try check(roundtrip.qwen21_dit_cache == cacheMode.rawValue && roundtrip.qwen21_w8a8 == true,
+                          "Low-memory ANE request roundtrip lost cache or precision selection")
+            }
 
             var historical = aneRequest; historical.qwen21_dit_cache = cacheMode.rawValue
             reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: historical,
                 state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
-            rejected = false
-            do { _ = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware) }
-            catch { rejected = error.localizedDescription.contains("DiT 缓存") }
-            try check(rejected, "History reuse bypassed the low-memory ANE cache restriction")
+            let reused = try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)
+            try check(reused.qwen21_dit_cache == cacheMode.rawValue && reused.qwen21_w8a8 == true &&
+                      reused.hybrid_mlp_mode == "base_fused",
+                      "History reuse changed the selected low-memory ANE cache")
+
+            for systemJSON in unsupportedHardware {
+                try check(!migrated.qualifiedQwen21StagedANECache(systemJSON: systemJSON) &&
+                          migrated.qwen21DiTCacheIssue(systemJSON: systemJSON) != nil,
+                          "Unsupported hardware enabled the low-memory ANE cache picker")
+                var rejected = false
+                do { _ = try migrated.request(output: output, systemJSON: systemJSON) } catch { rejected = true }
+                try check(rejected, "Low-memory ANE cache bypassed its exact hardware gate")
+            }
 
             cachedANE.acceleration?.policy = "gpu"
             let gpuCacheRequest = try cachedANE.request(output: output, systemJSON: "{}")
             try check(gpuCacheRequest.qwen21_dit_cache == cacheMode.rawValue &&
-                      gpuCacheRequest.allow_approximation == true &&
+                      (gpuCacheRequest.allow_approximation == true) == (cacheMode != .off) &&
                       gpuCacheRequest.qwen21_w8a8 == nil && gpuCacheRequest.hybrid_mlp_mode == nil,
                       "Switching to GPU lost its selected cache or retained ANE flags")
+        }
+        try check(!aneDraft.qwen21DiTW8A8 && aneRequest.qwen21_dit_w8a8 == nil &&
+                  NativeRequestV2(legacy: aneRequest).execution.qwen21_dit_w8a8 == nil,
+                  "Inactive DiT extension must stay absent for existing worker protocols")
+        var aneOnly = aneDraft
+        aneOnly.acceleration?.qwen21W8A8 = false
+        let isolated = try aneOnly.request(output: output, systemJSON: eligibleHardware)
+        try check(isolated.qwen21_w8a8 == true && isolated.qwen21_staged_fast == false &&
+                  isolated.qwen21_dit_w8a8 == nil && isolated.qwen21_dit_smoothquant_convrot == nil &&
+                  isolated.qwen21_dit_cache == "off" && isolated.residency == "component_staged",
+                  "ANE-only request lost artifact precision or enabled GPU/cache approximations")
+        try check(NativeRequestV2(legacy: isolated).execution.qwen21_staged_fast == false,
+                  "V2 request lost the explicit GPU preset opt-out")
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: isolated,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.acceleration?.qwen21W8A8 == false &&
+                  (try reuseStudio.draft.request(output: output, systemJSON: eligibleHardware)).qwen21_staged_fast == false,
+                  "History silently enabled GPU optimizations for ANE-only work")
+        aneOnly.qwen21DiTW8A8 = true
+        let independentDiT = try aneOnly.request(output: output, systemJSON: eligibleHardware)
+        try check(independentDiT.qwen21_dit_w8a8 == true && independentDiT.qwen21_staged_fast == false,
+                  "DiT W8A8 incorrectly depends on the separate GPU 4-bit preset")
+        var missingManifest = aneDraft; missingManifest.acceleration?.manifest = root.appendingPathComponent("missing.json").path
+        var missingRejected = false
+        do { _ = try missingManifest.request(output: output, systemJSON: eligibleHardware) }
+        catch { missingRejected = error.localizedDescription.contains("manifest") }
+        try check(missingRejected, "Missing ANE artifact did not report an actionable manifest error")
+        var int8Draft = aneDraft; int8Draft.qwen21DiTW8A8 = true
+        let int8Request = try int8Draft.request(output: output, systemJSON: eligibleHardware)
+        let savedInt8 = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(int8Draft))
+        try check(savedInt8.qwen21DiTW8A8 && int8Request.qwen21_dit_w8a8 == true,
+                  "DiT W8A8 opt-in lost across draft or request persistence")
+        let int8V2 = NativeRequestV2(legacy: int8Request)
+        let int8V2JSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(int8V2)) as! [String: Any]
+        try check((int8V2JSON["execution"] as? [String: Any])?["qwen21_dit_w8a8"] as? Bool == true,
+                  "V2 execution dropped DiT W8A8")
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: int8Request,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.qwen21DiTW8A8, "History dropped DiT W8A8")
+        reuseStudio.selectModel("z-image-turbo")
+        try check(!reuseStudio.draft.qwen21DiTW8A8, "Model change retained DiT W8A8")
+        for hardware in unsupportedHardware {
+            try check(int8Draft.qwen21DiTW8A8Issue(systemJSON: hardware) != nil, "DiT W8A8 hardware gate bypass")
+        }
+        try check(!int8Draft.qwen21DiTSmoothQuantConvRot && int8Request.qwen21_dit_smoothquant_convrot == nil,
+                  "Existing W8A8 must remain the default")
+        var combinedDraft = int8Draft; combinedDraft.qwen21DiTSmoothQuantConvRot = true
+        let combinedRequest = try combinedDraft.request(output: output, systemJSON: eligibleHardware)
+        let savedCombined = try JSONDecoder().decode(StudioDraft.self, from: JSONEncoder().encode(combinedDraft))
+        try check(savedCombined.qwen21DiTSmoothQuantConvRot && combinedRequest.qwen21_dit_smoothquant_convrot == true &&
+                  NativeRequestV2(legacy: combinedRequest).execution.qwen21_dit_smoothquant_convrot == true,
+                  "Combined quantization lost across draft, v1 or v2")
+        reuseStudio.reuse(NativeJob(id: UUID(), createdAt: Date(), request: combinedRequest,
+            state: "succeeded", phase: "done", completed: 40, total: 40, elapsed: 0, modelPath: root.path))
+        try check(reuseStudio.draft.qwen21DiTSmoothQuantConvRot, "History dropped combination")
+        reuseStudio.selectModel("z-image-turbo")
+        try check(!reuseStudio.draft.qwen21DiTSmoothQuantConvRot, "Model switch retained combination")
+        var missingW8 = combinedDraft; missingW8.qwen21DiTW8A8 = false
+        var rejectedCombined = false
+        do { _ = try missingW8.request(output: output, systemJSON: eligibleHardware) } catch { rejectedCombined = true }
+        try check(rejectedCombined, "Combination without W8A8 accepted")
+        for hardware in unsupportedHardware {
+            try check(combinedDraft.qwen21DiTSmoothQuantConvRotIssue(systemJSON: hardware) != nil,
+                      "Combination bypassed hardware gate")
+        }
+        let invalidANECacheChanges: [(String, (inout StudioDraft) -> Void)] = [
+            ("short schedule", { $0.steps = 19 }), ("long schedule", { $0.steps = 41 }),
+            ("resident", { $0.residency = "resident" }), ("canvas", { $0.height = 1024 }),
+            ("reference", { $0.operation = "image.edit"; $0.assets = Array(original.prefix(1)) }),
+            ("LoRA", { $0.loras = [StudioLoRA(path: fixture.path)] }),
+            ("PE", { $0.promptEnhance = true }),
+            ("PE edit", { $0.promptEnhanceEditExperimental = true }),
+            ("PE path", { $0.promptEnhancerPath = root.path }),
+            ("profile", { $0.profilePath = "/test/device-profile.json" }),
+            ("ordinary ANE", { $0.acceleration?.manifest = fp16Manifest }),
+            ("automatic ANE", { $0.acceleration?.policy = "auto" }),
+            ("runtime ANE", { $0.acceleration?.runtimeAneProfileID = RuntimeImageWorker.profileID }),
+            ("compile GPU", { $0.acceleration?.compileGPU = true }),
+            ("missing manifest", { $0.acceleration?.manifest = "" }),
+            ("public streaming", { $0.streaming.selection = .tier16 })
+        ]
+        for cacheMode in Qwen21DiTCacheMode.allCases where cacheMode != .off {
+            for (name, change) in invalidANECacheChanges {
+                var invalidInt8 = combinedDraft; change(&invalidInt8)
+                var rejectedInt8 = false
+                do { _ = try invalidInt8.request(output: output, systemJSON: eligibleHardware) } catch { rejectedInt8 = true }
+                try check(rejectedInt8, "DiT W8A8 accepted invalid configuration: \(name)")
+                var invalid = aneDraft; invalid.qwen21DiTCache = cacheMode.rawValue; change(&invalid)
+                try check(!invalid.qualifiedQwen21StagedANECache(systemJSON: eligibleHardware) &&
+                          invalid.qwen21DiTCacheIssue(systemJSON: eligibleHardware) != nil,
+                          "Unqualified ANE cache capability accepted: \(name)")
+                var rejected = false
+                do { _ = try invalid.request(output: output, systemJSON: eligibleHardware) } catch { rejected = true }
+                try check(rejected, "Unqualified ANE cache request accepted: \(name)")
+            }
+        }
+        for steps in [2, 19, 41] {
+            var baseline = aneDraft; baseline.steps = steps; baseline.qwen21DiTCache = "off"
+            let request = try baseline.request(output: output, systemJSON: eligibleHardware)
+            try check(request.qwen21_w8a8 == true && request.qwen21_dit_cache == "off" && request.steps == steps,
+                      "Cache integration changed the existing uncached 2+-step low-memory ANE route")
         }
         try await verifyTurboAndEditing(root: root, fixture: fixture, assets: original)
         try verifyDiTCacheAndOrdinaryLoRA(root: root, fixture: fixture, assets: original)

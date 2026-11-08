@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../backends/mlx.hpp"
+#include "../../backends/ane_memory.hpp"
 #include "../../core/stream_slot_c.h"
 #include "layout.hpp"
 #include "source_lease.hpp"
@@ -23,7 +24,7 @@ struct MlxWeightPagerMetrics {
     int64_t maximum_fill_group = -1;
 };
 
-// Direct BF16 safetensors -> MLX shared-buffer pager.  The owner thread
+// Direct typed safetensors -> MLX shared-buffer pager. The owner thread
 // creates every MLX array during setup; refill workers only call pread into a
 // vacant slot and never touch MLX stream state.  The first implementation is
 // deliberately strict: one source range per field, no conversion/derivation,
@@ -45,9 +46,21 @@ class MlxWeightPager {
 
     void load_resident(Weights &destination,
                        const std::atomic<bool> *cancel = nullptr);
+    // Owner-thread operation after the caller stops constructing readers.
+    // Validate the entire selection and its exact destination bindings, drain
+    // submitted GPU readers, and revalidate the source before removing either
+    // owner. Return the actual capacity of the distinct retired buffers. Other
+    // aliases may keep those buffers alive; this is not physical-free telemetry.
+    // Pool storage, source-read metrics and the original layout stay unchanged.
+    uint64_t release_resident_fields(Weights &destination,
+        const std::vector<std::string> &names,
+        const std::atomic<bool> *cancel = nullptr);
     // Private bounded core source adapters opt in before any payload exists.
     // Fresh allocator bins and actual size checks; old pager defaults unchanged.
-    void use_exact_allocations();
+    // SystemManaged skips host-headroom heuristics for required streaming slots;
+    // allocation errors, typed geometry and exact-capacity checks still apply.
+    void use_exact_allocations(bool streaming_headroom = false,
+        ane::StreamingAllocationAdmission admission = ane::StreamingAllocationAdmission::Guarded);
     void create_pool(const PoolLayout &);
     void destroy_pool(uint32_t pool) noexcept;
     uint64_t fill(const Group &, const tc_stream_slot_ticket_v1 &,

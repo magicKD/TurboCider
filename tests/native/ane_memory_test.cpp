@@ -6,6 +6,7 @@
 
 int main() {
     using namespace tc::ane;
+    using Pressure = StreamingMemoryPressure;
     constexpr uint64_t GiB = uint64_t(1) << 30;
     constexpr uint64_t MiB = uint64_t(1) << 20;
     constexpr auto max = std::numeric_limits<uint64_t>::max();
@@ -58,6 +59,38 @@ int main() {
     sample.mlx_active_bytes = 60 * GiB + 1;
     assert(admit_memory(sample, limits, 0, 0).denial == MemoryDenial::MlxReserve);
 
+    // The real ConvRot smoke saw 246 MiB free and 7774 MiB inactive after
+    // its cold source hash. The old optional-tier heuristic rejected the
+    // small source bank. Streaming admits a bounded increment from the
+    // separately observed file-backed pool only under normal pressure.
+    const MemoryObservation cold{true, 24 * GiB, 12 * MiB, 246 * MiB, 0, 7774 * MiB};
+    const MemoryLimits streaming_limits{4 * GiB, 24 * GiB};
+    StreamingMemoryObservation stream{cold, 8780 * MiB, Pressure::Normal};
+    assert(!admit_memory(cold, streaming_limits, 0, 1200 * MiB).allowed());
+    assert(admit_streaming_memory(stream, streaming_limits, 1200 * MiB).allowed());
+    // Opening the signed desktop App gave this normal-pressure observation.
+    // The two-thirds haircut fell below the 4 GiB reserve even before the
+    // first allocation. The encoder bank needs less than 1,000 MiB.
+    const MemoryObservation desktop{true, 24 * GiB, 77 * MiB, 291 * MiB, 0, 8462 * MiB};
+    const StreamingMemoryObservation desktop_stream{desktop, 5354 * MiB, Pressure::Normal};
+    assert(admit_streaming_memory(desktop_stream, streaming_limits, 1000 * MiB).allowed());
+    assert(admit_streaming_memory(desktop_stream, streaming_limits, 1550 * MiB).denial == MemoryDenial::GrowthLimit);
+    stream.pressure = Pressure::Warning;
+    assert(admit_streaming_memory(stream, streaming_limits, 1200 * MiB).allowed());
+    stream.pressure = Pressure::Critical;
+    assert(admit_streaming_memory(stream, streaming_limits, 0).denial == MemoryDenial::SystemPressure);
+    stream.pressure.reset();
+    assert(admit_streaming_memory(stream, streaming_limits, 0).denial == MemoryDenial::Unavailable);
+    stream.pressure = Pressure::Normal;
+    stream.file_backed_non_speculative_bytes = 2 * GiB;
+    assert(admit_streaming_memory(stream, streaming_limits, 0).denial == MemoryDenial::SystemReserve);
+    stream.file_backed_non_speculative_bytes = 8780 * MiB;
+    stream.memory.process_bytes = 20 * GiB + 1;
+    assert(admit_streaming_memory(stream, streaming_limits, 0).denial == MemoryDenial::ProcessReserve);
+    stream.memory = cold;
+    stream.memory.mlx_active_bytes = 20 * GiB + 1;
+    assert(admit_streaming_memory(stream, streaming_limits, 0).denial == MemoryDenial::MlxReserve);
+
     const auto one = plan_host_scratch(1792, 4096, 12288, true, 0, 0);
     assert(one && one->output_bytes == 14 * MiB && one->hidden_bytes == 42 * MiB);
     assert(one->retained_bytes == 56 * MiB && one->new_payload_bytes == 56 * MiB);
@@ -85,6 +118,11 @@ int main() {
     std::cout << "Mach free_bytes=" << actual.free_bytes
               << " inactive_bytes=" << actual.inactive_bytes
               << " process_bytes=" << actual.process_bytes << '\n';
+    const auto streamed = observe_streaming_memory(12345);
+    assert(streamed.memory.available && streamed.pressure && streamed.file_backed_non_speculative_bytes &&
+           *streamed.file_backed_non_speculative_bytes <= streamed.memory.physical_bytes);
+    std::cout << "Darwin pressure=" << streaming_memory_pressure_name(streamed.pressure)
+              << " non_speculative_file_backed_bytes=" << *streamed.file_backed_non_speculative_bytes << '\n';
 #else
     assert(!actual.available);
 #endif

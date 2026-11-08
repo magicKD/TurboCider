@@ -13,6 +13,8 @@ namespace tc::streaming {
 
 class PendingSourceVerification;
 
+enum class SourceReadPolicy { Default, Uncached };
+
 class ArtifactVerificationRequired final : public std::invalid_argument {
   public:
     ArtifactVerificationRequired()
@@ -95,7 +97,8 @@ class SourceLease final {
     // bytes and is cancellable. No serialized descriptor grants this trust.
     static std::shared_ptr<const SourceLease> capture_verified(
         std::vector<SourceFileIdentity> files,
-        const std::atomic<bool> *cancelled = nullptr);
+        const std::atomic<bool> *cancelled = nullptr,
+        SourceReadPolicy read_policy = SourceReadPolicy::Default);
 
     // Model registration: first capture hashes all bytes; later processes may
     // reuse an authenticated, owner-private native receipt for the exact named
@@ -104,7 +107,8 @@ class SourceLease final {
     // Cache unavailability falls back to capture_verified semantics.
     static std::shared_ptr<const SourceLease> capture_registered(
         std::vector<SourceFileIdentity> files,
-        const std::atomic<bool> *cancelled = nullptr);
+        const std::atomic<bool> *cancelled = nullptr,
+        SourceReadPolicy read_policy = SourceReadPolicy::Default);
 
     // Request-time capture: consumes native generation-bound proofs without
     // reading model contents. Missing/evicted/changed proofs fail explicitly.
@@ -156,7 +160,8 @@ class SourceLease final {
     struct State;
     static std::shared_ptr<const SourceLease> capture_impl(
         std::vector<SourceFileIdentity> files, bool verify_content, bool allow_hash,
-        const std::atomic<bool> *cancelled, bool registered = false);
+        const std::atomic<bool> *cancelled, bool registered = false,
+        SourceReadPolicy read_policy = SourceReadPolicy::Default);
     static std::shared_ptr<const SourceLease> seal_state(
         std::unique_ptr<State>, bool verify_content, bool allow_hash,
         const std::atomic<bool> *cancelled, const std::atomic<bool> *stopped = nullptr,

@@ -26,6 +26,37 @@ approximations, separate from resizing the imported file or output canvas.
 Six-step Viggle Turbo keeps DiT cache off; its preset is applied only when
 requested. Incompatible parameters display a reason and recovery controls.
 
+## Choosing a compiled ANE manifest
+
+In advanced acceleration settings, select a manifest from the registered
+partitions menu, or add one from a file. The menu only lists compiled partitions
+for the current model weights. Selection rechecks the files; a failed check
+preserves the previous selection. The selected path and capacity remain visible.
+
+For Z-Image at 512×512 without LoRA, the image uses 1024 rows in addition to
+the caption rows, each rounded to a multiple of 32. A 1056–1536 partition
+therefore fits up to 512 text tokens in one call. Longer captions now use
+multiple FFN calls with that partition while attention retains the full
+sequence. The existing 1024-text-token model limit still applies. When choosing
+among compatible partitions, the smallest-partition option compares total
+padded work, including the number of calls. Other canvas sizes and LoRA
+configurations still require a partition covering their complete input.
+
+For the qualified Qwen Image 2.1 ANE route (M5 Pro, 24 GiB, 512×512 text-to-image,
+component-staged loading, no LoRA or prompt enhancement), the selected manifest
+determines the ANE precision. The GPU 4-bit weight-cache switch controls only
+the optional GPU optimization. Turning it off retains BF16 GPU weights and
+layer-staged loading; it no longer switches to the conservative full-resident
+memory plan. DiT W8A8, SmoothQuant+ConvRot and DiT cache remain separate options.
+To measure ANE alone, disable those options and the GPU 4-bit cache. A W8A8
+manifest still uses W8A8 on its ANE prefix; it cannot become an FP16 artifact
+by changing a checkbox.
+
+API clients can set `qwen21_staged_fast: false` (inside `execution` in schema 2)
+to disable the GPU fast preset while keeping `qwen21_w8a8: true` for a W8A8
+manifest. Omission preserves the previous qualified defaults. Explicit DiT
+W8A8 uses its own 8-bit settings even when the GPU fast preset is disabled.
+
 ## Requests and CLI
 
 ```sh
@@ -78,7 +109,8 @@ Reference order affects positional encoding.
 
 General image limits are 64–2048 pixels per dimension, multiples of 16,
 seed 0–2147483647 and 1–50 steps. Model-specific limits may be narrower.
-Dynamic text is capped at 512 encoded tokens, including template tokens.
+FLUX dynamic text is capped at 512 encoded tokens, including template tokens;
+Z-Image supports up to 1024 encoded text tokens.
 
 stdout contains final JSON; stderr contains progress events. Ctrl-C cancels at
 a safe boundary, with exit code 2 for cancellation. Once an output has been

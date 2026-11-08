@@ -18,3 +18,11 @@ if [ ! -f "$MLX_ROOT/include/mlx/mlx.h" ] || [ ! -f "$MLX_ROOT/lib/libmlx.dylib"
   exit 1
 fi
 export MLX_ROOT
+
+# Keep fallback and explicit deployment overrides in each build entry point.
+turbocider_mlx_min_macos() {
+  otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
+    /cmd LC_BUILD_VERSION/{build=1; next}
+    build && /minos /{print $2; exit}
+  '
+}

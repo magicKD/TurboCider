@@ -81,6 +81,7 @@ private func stateName(_ value: String) -> String {
     ["preparing": "准备中", "running": "生成中", "cleanup_pending": "等待进程清理", "finalizing": "正在保存结果", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
 }
 private func phaseName(_ value: String) -> String {
+    if let memory = Qwen21MemoryPresentation.phaseTitle(value) { return memory }
     if value.hasPrefix("seedvr2_") { return SeedVR2ProgressPresentation(phase: value, completed: 0, total: 0).title }
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
     if value == "upscale" { return "图像超分" }
@@ -303,12 +304,28 @@ struct StudioView: View {
                 imageUpscaling = false; page = studio.draft.modelID == "seedvr2-3b" ? .upscale : .studio
             }
         }
-        .onChange(of: page) { _, next in
+        .onChange(of: page) { previous, next in
             showingRecentResults = false
-            if next == .upscale, !imageUpscaling, studio.draft.modelID != "seedvr2-3b" { showSeedVR2() }
+            if next == .studio {
+                if imageUpscaling || studio.draft.operation.hasSuffix(".upscale") {
+                    guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
+                          !store.resolvingAcceleration else {
+                        page = previous
+                        studio.message = "请先完成当前任务或停止本地 API，再返回创作。"
+                        return
+                    }
+                }
+                guard studio.activateCreation() else { page = previous; return }
+                imageUpscaling = false
+            }
+            if next == .upscale, !imageUpscaling, studio.draft.modelID != "seedvr2-3b" {
+                showSeedVR2()
+                if studio.draft.modelID != "seedvr2-3b" { page = previous }
+            }
         }
         .onChange(of: studio.draft.modelID) { _, id in
             if page == .upscale && id != "seedvr2-3b" && !imageUpscaling { page = .studio }
+            if page == .studio && id == "seedvr2-3b" { page = .upscale }
         }
         .onChange(of: upscaleSourcePath) { _, _ in
             if imageUpscaling { selected = nil; compareOriginal = false; resultSelection.clear() }
@@ -357,7 +374,7 @@ struct StudioView: View {
     private var workspace: some View {
         VStack(spacing: 0) {
             if page == .upscale { upscaleHeader.padding(.horizontal,18).padding(.top,12) }
-            if studio.draft.modelID == "seedvr2-3b" && !imageUpscaling {
+            if page == .upscale && studio.draft.modelID == "seedvr2-3b" && !imageUpscaling {
                 SeedVR2UpscaleControls(studio: studio,
                     locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
                     manageModels: { librarySelection = "seedvr2-3b"; page = .models })
@@ -367,6 +384,7 @@ struct StudioView: View {
             if imageUpscaling {
                 ImageUpscaleView(store: store, studio: studio, showSettings: inspector, sourcePath: $upscaleSourcePath,
                                  showsWorkspaceTitle: page != .upscale,
+                                 modelSelection: upscaleModelSelection,
                                  manageModels: { librarySelection = studio.draft.upscaleVariant.modelID; page = .models },
                                  historyContent: imageHistoryJobs.isEmpty ? nil : AnyView(resultStrip), selectedPreviewJob: selectedJob,
                                  usePreviewAsSource: useHistoryAsUpscaleSource) { job in
@@ -383,19 +401,21 @@ struct StudioView: View {
                     guard kind != (imageUpscaling ? "image" : studio.creationKind) else { return }
                     if imageUpscaling || studio.draft.modelID != "seedvr2-3b" { showSeedVR2(kind: kind) }
                     else { studio.changeOperation(kind + ".upscale"); focusInput() }
-                }),
-                modelID: Binding(get: {
-                    imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b"
-                }, set: { id in
-                    guard id != (imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b") else { return }
-                    if id == "seedvr2-3b" { showSeedVR2(kind: "image") }
-                    else if let variant = UpscaleVariant.from(modelID: id) {
-                        if let asset = studio.draft.activeAssets.first, asset.mediaKind == "image", upscaleSourcePath.isEmpty {
-                            upscaleSourcePath = asset.path
-                        }
-                        studio.selectUpscaleVariant(variant); imageUpscaling = true; focusInput()
-                    }
                 }), locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
+    }
+    private var upscaleModelSelection: Binding<String> {
+        Binding(get: {
+            imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b"
+        }, set: { id in
+            guard id != (imageUpscaling ? studio.draft.upscaleVariant.modelID : "seedvr2-3b") else { return }
+            if id == "seedvr2-3b" { showSeedVR2(kind: "image") }
+            else if let variant = UpscaleVariant.from(modelID: id) {
+                if let asset = studio.draft.activeAssets.first, asset.mediaKind == "image", upscaleSourcePath.isEmpty {
+                    upscaleSourcePath = asset.path
+                }
+                studio.selectUpscaleVariant(variant); imageUpscaling = true; focusInput()
+            }
+        })
     }
     private func showSeedVR2(kind: String? = nil) {
         guard !store.busy, !submitting, !studio.imageInputsBusy, !api.running, !api.changing,
@@ -436,6 +456,7 @@ struct StudioView: View {
                     imageUpscaling = true; page = .upscale
                     return
                 }
+                if $0 == "video.upscale" { showSeedVR2(kind: "video"); return }
                 imageUpscaling = false
                 studio.changeOperation(studio.draft.modelID == "qwen-image-2.1" && $0 == "image.transform" ? "image.edit" : $0)
                 focusInput()
@@ -500,7 +521,11 @@ struct StudioView: View {
     private var mediaStage: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                if let job = selectedJob {
+                if store.livePreview != nil, store.livePreviewWorkflowID == nil {
+                    Label("实时采样预览", systemImage: "photo")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                } else if let job = selectedJob {
                     Label(compareOriginal ? "修改前" : "生成结果", systemImage: "photo")
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
@@ -544,7 +569,7 @@ struct StudioView: View {
                     Button { page = .library } label: { Image(systemName: "clock.arrow.circlepath") }
                         .buttonStyle(.borderless).help("全部历史结果").accessibilityLabel("全部历史结果")
                 }
-            }.controlSize(.small)
+            }.controlSize(.small).frame(height: 24)
             if let data = store.livePreview, store.livePreviewWorkflowID == nil {
                 TinyLivePreview(data: data, step: store.livePreviewStep, total: store.livePreviewTotal)
             } else if let job = selectedJob {
@@ -835,13 +860,16 @@ struct StudioView: View {
             Text(studio.draft.modelID == "seedvr2-3b" ? "超分设置" : "生成设置").font(.headline)
             VStack(alignment: .leading, spacing: 8) {
                 if page == .upscale {
-                    Text(model?.displayName ?? "SeedVR2").font(.subheadline)
-                    Text("在页面顶部切换超分模型。").font(.caption).foregroundStyle(.secondary)
+                    UpscaleModelPicker(studio: studio, modelID: upscaleModelSelection,
+                                       kind: studio.creationKind,
+                                       locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing)
                 } else {
                 Picker("模型", selection: Binding(get: { studio.draft.modelID }, set: { studio.changeModel($0) })) {
                     ForEach(studio.creationModels) { item in
                         let downloaded = !(studio.draft.modelPaths[item.id] ?? "").isEmpty
-                        Label("\(item.displayName) · \(downloaded ? "已配置" : "未配置")",
+                        let name = item.id == Qwen21Installation.modelID
+                            ? Qwen21Installation.displayName(at: studio.draft.modelPaths[item.id] ?? "") : item.displayName
+                        Label("\(name) · \(downloaded ? "已配置" : "未配置")",
                               systemImage: downloaded ? "checkmark.circle.fill" : "arrow.down.circle")
                             .tag(item.id)
                     }
@@ -861,11 +889,25 @@ struct StudioView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
+                if studio.draft.modelID == Qwen21Installation.modelID {
+                    let versions = Qwen21Installation.choices(library.installations, currentPath: studio.draft.modelPath)
+                    if !versions.isEmpty {
+                        Picker("权重版本", selection: Binding(get: { studio.draft.modelPath }, set: {
+                            studio.selectInstallation(modelID: Qwen21Installation.modelID, path: $0)
+                        })) {
+                            ForEach(versions) { version in Text(version.title).tag(version.path) }
+                        }.disabled(store.busy || submitting || studio.imageInputsBusy || library.busy || api.running || api.changing)
+                            .accessibilityIdentifier("qwenWeightVersion")
+                    }
+                }
                 Text(studio.draft.accelerationHint).font(.caption).foregroundStyle(.secondary)
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
             Divider()
-            VStack(alignment: .leading, spacing: 6) {
+            if studio.draft.hasQwen21TurboCheckpoint {
+                LabeledContent("采样步数", value: "8 步（Turbo 固定）")
+                    .accessibilityIdentifier("qwenTurboFixedSteps")
+            } else { VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("采样步数")
                     TextField("采样步数", value: $studio.draft.steps, format: .number)
@@ -885,7 +927,7 @@ struct StudioView: View {
                     Text("当前未启用六步 LoRA；基础模型推荐使用 40 步。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-            }
+            } }
             DisclosureGroup("画幅与分辨率") {
             VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom) {
@@ -918,21 +960,27 @@ struct StudioView: View {
             } else {
                 HStack { ForEach([256, 512, 768, 1024], id: \.self) { size in
                     Button("\(size)") { studio.draft.width = size; studio.draft.height = size }
-                        .font(.caption).disabled(qwenCanvasLocked && size != 512)
+                        .font(.caption).disabled((qwenCanvasLocked && size != 512) ||
+                            (studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" && size > 512))
                 } }
                 if studio.draft.modelID == "qwen-image-2.1" {
-                    Menu("更多比例") {
-                        ForEach(Qwen21CanvasPreset.recommended) { preset in
-                            Button(preset.title) {
-                                studio.draft.width = preset.width
-                                studio.draft.height = preset.height
+                    if studio.draft.supportsQwen21ConvrotStreaming && studio.draft.residency == "streamed" {
+                        Text("流式加载的宽高上限均为 512，可手动输入 32 的倍数。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Menu("更多比例") {
+                            ForEach(Qwen21CanvasPreset.recommended) { preset in
+                                Button(preset.title) {
+                                    studio.draft.width = preset.width
+                                    studio.draft.height = preset.height
+                                }
                             }
-                        }
-                    }.accessibilityIdentifier("qwen21CanvasPresets").disabled(qwenCanvasLocked)
-                    Text(qwenCanvasLocked
-                         ? "当前 LoRA 或 DiT 缓存路径支持 512 × 512；点击 512 可恢复兼容画布。基础模型关闭这些选项后可使用其他画幅。"
-                         : "基础模型可选择其他画幅；更大的画布需要更多时间和内存。")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        }.accessibilityIdentifier("qwen21CanvasPresets").disabled(qwenCanvasLocked)
+                        Text(qwenCanvasLocked
+                             ? "当前 LoRA 或 DiT 缓存路径支持 512 × 512；点击 512 可恢复兼容画布。基础模型关闭这些选项后可使用其他画幅。"
+                             : "基础模型可选择其他画幅；更大的画布需要更多时间和内存。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
             }
             }
@@ -970,8 +1018,11 @@ struct StudioView: View {
                 Toggle("GPU", isOn: .constant(true)).toggleStyle(.checkbox).disabled(true)
                 let qwenLoRA = studio.draft.modelID == "qwen-image-2.1" && !studio.draft.activeLoRAs.isEmpty && !studio.draft.usesRuntimeANE
                 Toggle("额外启用 ANE", isOn: Binding(get: { studio.draft.usesANE && !qwenLoRA }, set: { studio.setANEEnabled($0) }))
-                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true || studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA).accessibilityIdentifier("enableANE")
-                Text(studio.draft.aneConfigurationNotice ?? (qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。"))).font(.caption2).foregroundStyle(.secondary)
+                    .toggleStyle(.checkbox).disabled(store.busy || submitting || model?.supports_gpu_ane != true ||
+                        studio.draft.zImageVariant?.id == "nvfp4" || qwenLoRA || studio.draft.usesQwen21InstalledRecipe)
+                    .accessibilityIdentifier("enableANE")
+                Text(studio.draft.usesQwen21InstalledRecipe ? "此 Qwen 安装使用 GPU。" :
+                     studio.draft.aneConfigurationNotice ?? (qwenLoRA ? "App 中 Qwen LoRA 使用纯 GPU，基础模型的 ANE 分区不包含适配器。" : (studio.draft.usesANE ? "生成前检查匹配分区。ANE 不保证更快；首次加载较慢，长文本可优先使用 GPU。" : "默认只使用 GPU。"))).font(.caption2).foregroundStyle(.secondary)
                 if studio.draft.modelID == "qwen-image-2.1", (studio.draft.acceleration?.policy ?? "gpu") != "gpu" || !studio.draft.profilePath.isEmpty {
                     Button("改用纯 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
                         .disabled(store.busy || submitting).accessibilityIdentifier("qwenLoRAUseGPU")
@@ -979,7 +1030,10 @@ struct StudioView: View {
                 if ["z-image-turbo", "qwen-image-2.1"].contains(studio.draft.modelID) { Button("高级加速与缓存配置") { librarySelection = studio.draft.modelID; page = .models } }
                 if studio.draft.usesANE, let status = store.accelerationStatus { Text(status).font(.caption2).foregroundStyle(.secondary) }
             }
-            if model?.supports_lora == true {
+            if studio.draft.usesQwen21InstalledRecipe {
+                Text("LoRA 暂不可用于此 Qwen 安装。已保存的适配器可在兼容模型中使用。")
+                    .font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("qwenInstalledLoRAUnavailable")
+            } else if model?.supports_lora == true {
                 Divider()
                 HStack {
                     Text("LoRA 独立文件").font(.caption); Spacer()
@@ -1052,10 +1106,12 @@ struct StudioView: View {
                         locked: store.busy || submitting || studio.imageInputsBusy || api.running || api.changing,
                         setSize: { studio.setQwen21ReferenceSize($0) })
                 }
-                Divider()
-                qwen21DiTCacheSettings
-                Divider()
-                DisclosureGroup("提示词增强") { promptEnhancementSettings.padding(.top, 8) }
+                if !studio.draft.usesQwen21InstalledRecipe {
+                    Divider()
+                    qwen21DiTCacheSettings
+                    Divider()
+                    DisclosureGroup("提示词增强") { promptEnhancementSettings.padding(.top, 8) }
+                }
             }
             if studio.creationKind != "video" && studio.draft.modelID != "seedvr2-3b" {
                 Divider()
@@ -1184,6 +1240,33 @@ struct StudioView: View {
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
+                    } else if studio.draft.supportsQwen21ConvrotStreaming {
+                        Picker("模型驻留", selection: $studio.draft.residency) {
+                            Text("流式加载").tag("streamed")
+                            Text("常驻").tag("resident")
+                        }.disabled(store.busy || submitting).accessibilityIdentifier("qwenConvrotResidency")
+                        if studio.draft.residency == "streamed" {
+                            Picker("权重缓存预算", selection: $studio.draft.qwen21WeightCacheBudget) {
+                                ForEach(Qwen21WeightCacheBudget.allCases,id: \.rawValue) { budget in
+                                    Text(budget.title).tag(budget.rawValue)
+                                }
+                            }.disabled(store.busy || submitting).accessibilityIdentifier("qwenWeightCacheBudget")
+                            if studio.draft.qwen21WeightCacheBudget == Qwen21WeightCacheBudget.custom.rawValue {
+                                HStack {
+                                    Text("自定义预算")
+                                    Spacer()
+                                    TextField("MiB",value:$studio.draft.qwen21WeightCacheCustomMiB,format:.number)
+                                        .frame(width:85).accessibilityLabel("自定义权重缓存预算（MiB）")
+                                        .accessibilityIdentifier("qwenWeightCacheCustomMiB")
+                                        .help("1024–16384 MiB（1–16 GiB）")
+                                    Text("MiB")
+                                }.accessibilityElement(children:.contain).disabled(store.busy || submitting)
+                            }
+                            Text("增加预算会缓存更多 DiT 权重，减少重复读取，不改变计算精度，采样后释放。预算包含固定权重和流式缓冲；激活、预览与 VAE 另计。实际缓存层数受可用内存限制，可在任务详情查看。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            Text("按层读取编码器和 DiT，适用于最大 512×512 的文生图。M5 及更新芯片在 macOS 26.4 或更新版本使用 W8A8。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     } else if studio.draft.modelID == "z-image-turbo-gguf" {
                         LabeledContent("模型驻留", value: "常驻")
                             .font(.caption)
@@ -1199,7 +1282,9 @@ struct StudioView: View {
                     } else if !studio.draft.usesPublicStreaming {
                         Picker("模型驻留", selection: $studio.draft.residency) { Text("保留图像权重").tag("resident"); Text("分阶段释放").tag("component_staged") }
                     }
-                    Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
+                    if !studio.draft.usesQwen21InstalledRecipe {
+                        Button(studio.draft.profilePath.isEmpty ? "选择加速配置…" : "更换加速配置…", action: chooseProfile)
+                    }
                     if !studio.draft.profilePath.isEmpty {
                         Text(URL(fileURLWithPath: studio.draft.profilePath).lastPathComponent).font(.caption2)
                         Button("恢复默认 GPU") { studio.draft.profilePath = ""; studio.setANEEnabled(false) }
@@ -1267,7 +1352,8 @@ struct StudioView: View {
                     ProgressView().controlSize(.small)
                 }
                 HStack {
-                    Text("\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
+                    Text(Qwen21MemoryPresentation.progressText(phase: job.phase, completed: job.completed, total: job.total)
+                         ?? "\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
                     Spacer()
                     if job.phase == "denoise", let speed = job.secondsPerStep {
                         Text(String(format: "近期均速 %.2f 秒/步", speed)).monospacedDigit()
@@ -1302,7 +1388,12 @@ struct StudioView: View {
                             Spacer(minLength: 8)
                             Button("恢复这次参数") { reuseParameters(job) }.font(.caption).disabled(assetControlsLocked)
                         }
-                        Text(error).font(.caption).textSelection(.enabled)
+                        if let summary = Qwen21MemoryPresentation.timeoutSummary(error) {
+                            Text(summary).font(.caption).textSelection(.enabled)
+                            DisclosureGroup("原生诊断") { Text(error).font(.caption).textSelection(.enabled) }
+                        } else {
+                            Text(error).font(.caption).textSelection(.enabled)
+                        }
                     }.foregroundStyle(.red).padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
@@ -1496,10 +1587,15 @@ struct StudioView: View {
         catch { studio.message = error.localizedDescription }
     }
     private func chooseModel(_ id: String) {
+        let modelID = id == Qwen21Installation.turboID ? Qwen21Installation.modelID : id
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.message = "选择与 \(id) 对应的本地模型目录。TurboCider 会在打开时校验所需权重。"
+        panel.message = "选择与 \(id == Qwen21Installation.turboID ? Qwen21Installation.turboName : modelID) 对应的本地模型目录。TurboCider 会在打开时校验所需权重。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if id == "z-image-turbo" {
+        if id == Qwen21Installation.turboID, !Qwen21Installation.isTurbo(at: url.path) {
+            studio.message = "所选目录的优先权重不是 Qwen Image 2.1 Turbo，请选择原始 Turbo 权重所在的独立目录。"
+            return
+        }
+        if modelID == "z-image-turbo" {
             var shared: URL?
             if ZImageInstallation.needsSharedText(url) {
                 let textPanel = NSOpenPanel(); textPanel.canChooseDirectories = true; textPanel.canChooseFiles = false
@@ -1510,7 +1606,9 @@ struct StudioView: View {
             }
             do { try studio.installZImage(model: url, sharedText: shared) }
             catch { studio.message = error.localizedDescription }
-        } else { studio.draft.modelPaths[id] = url.path; studio.selectModel(id); studio.save() }
+        } else if modelID == Qwen21Installation.modelID {
+            studio.selectInstallation(modelID: modelID, path: url.path)
+        } else { studio.draft.modelPaths[modelID] = url.path; studio.selectModel(modelID); studio.save() }
     }
     private func importConfiguration() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
@@ -1609,7 +1707,7 @@ struct StudioView: View {
                     if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
                     selected = upscaled.id; resultSelection.select(upscaled.id, orderedIDs: outputIDs)
                 }
-            } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : error.localizedDescription }
+            } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : Qwen21MemoryPresentation.message(for: error) }
         }
     }
     private func exportResult(_ path: String) {

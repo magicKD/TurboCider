@@ -53,10 +53,7 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 TOOLCHAIN="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 [[ -d "$TOOLCHAIN" ]] || TOOLCHAIN="$DEVELOPER_DIR/usr/bin"
 CXX="$TOOLCHAIN/clang++"
-MLX_MIN_MACOS="$(otool -l "$MLX_ROOT/lib/libmlx.dylib" | awk '
- /cmd LC_BUILD_VERSION/{build=1; next}
- build && /minos /{print $2; exit}
-')"
+MLX_MIN_MACOS="$(turbocider_mlx_min_macos)"
 DEPLOYMENT_TARGET="${TURBOCIDER_DEPLOYMENT_TARGET:-${MLX_MIN_MACOS:-15.0}}"
 MACOS_FLAGS=(-mmacosx-version-min="$DEPLOYMENT_TARGET")
 COMMON=(-std=c++20 -O2 -fobjc-arc -fvisibility=hidden -isysroot "$SDK" "${MACOS_FLAGS[@]}" -I bindings/c/include -I native/core -isystem "$MLX_ROOT/include" -Wall -Wextra -Wno-unused-parameter)
@@ -84,6 +81,8 @@ runtime_build_identity() {
   --experimental-probes "$EXPERIMENTAL_PROBES" "$@" -- "${BUILD_IDENTITY_FLAGS[@]}"
 }
 runtime_build_identity
+"$BUILD_IDENTITY_PYTHON" tools/native/embed_qwen21_cider_kernels.py --output "$BUILD_IDENTITY_DIR/qwen21_cider_kernels_generated.hpp"
+"$BUILD_IDENTITY_PYTHON" tools/native/embed_qwen21_sq_profile.py --output "$BUILD_IDENTITY_DIR/qwen21_sq_profile_generated.hpp"
 CATALOG_INPUT=(--inventory native/runtime/streaming/bundled_catalog.json)
 if [[ -n "${TURBOCIDER_TEST_BUNDLED_CATALOG:-}" ]]; then
  if [[ "$TEST_HOOKS" != "1" ]]; then
@@ -165,6 +164,7 @@ native/models/h3_mlx/geometry.cpp native/models/h3_mlx/vdn.cpp native/models/h3_
  native/models/z_image/gguf.cpp
  native/models/z_image/gguf_execution.cpp
  native/models/z_image/z_image.cpp native/models/z_image/suffix_materialization.cpp native/models/z_image/coreml_generation.cpp native/platform/apple/z_image_coreml_bundle.mm native/models/z_image/hybrid_math.cpp native/models/z_image/hybrid_layout.cpp
+ native/third_party/cider/w8a8_primitive.mm native/models/qwen21/cider_w8a8.cpp
  native/models/qwen21/transformer.cpp
  native/models/qwen21/runtime_private_qkv.cpp
  native/models/qwen21/native_encoder.cpp native/models/qwen21/native_prefill.cpp
@@ -216,6 +216,7 @@ for src in "${SOURCES[@]}"; do
  obj="$OUT/${relative//\//_}.o"
  flags=(-x c++)
  if [[ "$src" == *.mm ]]; then flags=(-x objective-c++ -fobjc-arc); fi
+ if [[ "$src" == native/third_party/cider/*.mm ]]; then flags+=(-fno-objc-arc); fi
  "$CXX" "${COMMON[@]}" "${flags[@]}" -fvisibility=default -c "$src" -o "$obj"
  OBJECTS+=("$obj")
 done

@@ -14,13 +14,15 @@ inline bool source_registration_enabled() {
 }
 
 inline std::shared_ptr<const streaming::SourceLease> capture_model_source(
-        streaming::SourceFileIdentity source, std::atomic<bool> &cancel) {
+        streaming::SourceFileIdentity source, std::atomic<bool> &cancel,
+        streaming::SourceReadPolicy read_policy = streaming::SourceReadPolicy::Default) {
     const bool registered = source_registration_enabled();
-    auto lease = registered ? streaming::SourceLease::capture_registered({source}, &cancel) :
-                              streaming::SourceLease::capture_verified({source}, &cancel);
+    auto lease = registered ? streaming::SourceLease::capture_registered({source}, &cancel, read_policy) :
+                              streaming::SourceLease::capture_verified({source}, &cancel, read_policy);
     const auto bytes = lease->verification_bytes_read();
     std::cerr << "{\"qwen_source_registration\":{\"component\":\"" << source.logical_id
         << "\",\"enabled\":" << (registered ? "true" : "false")
+        << ",\"uncached_fd\":" << (read_policy == streaming::SourceReadPolicy::Uncached ? "true" : "false")
         << ",\"verification_bytes\":" << bytes
         << ",\"verification_cache_hits\":" << lease->verification_cache_hits()
         << ",\"registration_cache_hits\":" << lease->registration_cache_hits()

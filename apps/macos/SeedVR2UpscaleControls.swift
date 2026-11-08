@@ -2,7 +2,6 @@ import SwiftUI
 
 struct UpscaleWorkspaceHeader: View {
     @Binding var kind: String
-    @Binding var modelID: String
     var locked: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -11,11 +10,6 @@ struct UpscaleWorkspaceHeader: View {
                 Picker("媒体", selection: $kind) {
                     Text("图片").tag("image"); Text("视频").tag("video")
                 }.pickerStyle(.segmented).frame(width: 120).labelsHidden()
-                Picker("超分模型", selection: $modelID) {
-                    ForEach(UpscaleModelChoice.allCases.filter { kind != "video" || $0.supportsVideo }) {
-                        Text($0.title).tag($0.rawValue)
-                    }
-                }.frame(maxWidth: 370).accessibilityIdentifier("upscaleModelChoice")
                 Spacer(minLength: 0)
             }.disabled(locked)
             Text(kind == "video"
@@ -23,6 +17,28 @@ struct UpscaleWorkspaceHeader: View {
                  : "选择模型恢复细节并放大图片。SeedVR2 也支持视频；Real-ESRGAN 为图片专用。")
                 .font(.caption).foregroundStyle(.secondary)
         }.padding(.bottom,8).accessibilityIdentifier("upscaleWorkspace")
+    }
+}
+
+/// Both executors share the same inspector picker, so changing models keeps
+/// the source and workspace in place instead of navigating to the model hub.
+struct UpscaleModelPicker: View {
+    @ObservedObject var studio: StudioState
+    @Binding var modelID: String
+    var kind: String
+    var locked: Bool
+
+    var body: some View {
+        Picker("模型", selection: $modelID) {
+            ForEach(UpscaleModelChoice.allCases.filter { kind != "video" || $0.supportsVideo }) { choice in
+                let configured = choice.isConfigured(in: studio.draft)
+                let name = choice == .seedvr2 ? "SeedVR2 3B"
+                    : choice == .realesrgan2 ? "Real-ESRGAN ×2" : "Real-ESRGAN ×4"
+                Label("\(name) · \(configured ? "已配置" : "未配置")",
+                      systemImage: configured ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .tag(choice.rawValue)
+            }
+        }.disabled(locked).accessibilityIdentifier("upscaleModelChoice")
     }
 }
 

@@ -61,9 +61,13 @@ enum LibraryComponents {
     private static let supported = ["qwen-image-2.1", "z-image-turbo", "flux2-klein-4b", "flux2-klein-9b"]
     private static let kinds = ["encoder", "dit", "vae"]
     private static let titles = ["encoder": "文本编码器", "dit": "DiT", "vae": "VAE"]
-    private static let qwen: [String: [String]] = [
-        "dit": ["diffusion_models/qwen_image_2.1_bf16.safetensors", "diffusion_models/qwen-image-2.1-Q4_K_M.gguf"],
-        "encoder": ["text_encoders/qwen3vl_8b_bf16.safetensors", "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf"],
+    // Match the native checkpoint selectors, including their precedence.
+    static let qwen: [String: [String]] = [
+        "dit": ["diffusion_models/qwen_image_2.1_bf16.safetensors", "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
+                "diffusion_models/qwen_image_2.1_turbo_bf16.safetensors", "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+                "diffusion_models/qwen-image-2.1-Q4_K_M.gguf"],
+        "encoder": ["text_encoders/qwen3vl_8b_bf16.safetensors", "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+                    "text_encoders/Qwen3-VL-8B-Instruct-Q4_K_M.gguf"],
         "vae": ["vae/qwen_image_2.1_vae_bf16.safetensors"]
     ]
     private static var fm: FileManager { .default }
@@ -173,8 +177,13 @@ enum LibraryComponents {
             for kind in kinds {
                 let source = sources[kind]!
                 try validateQwen(source, kind: kind)
-                let destination = qwen[kind]!.first { URL(fileURLWithPath: $0).pathExtension == source.pathExtension }!
-                try link(source, destination, "qwen-image-2.1/\(kind)/\(source.pathExtension == "gguf" ? "Q4_K_M" : "BF16")")
+                // Turbo's authored schedule is selected by the logical file
+                // name, even when the source link resolves to a hash-named blob.
+                let destination = qwen[kind]!.first { URL(fileURLWithPath: $0).lastPathComponent == source.lastPathComponent }
+                    ?? qwen[kind]!.first { URL(fileURLWithPath: $0).pathExtension == source.pathExtension }!
+                let precision = source.pathExtension == "gguf" ? "Q4_K_M" : destination.contains("int8_convrot") ? "INT8-ConvRot" : "BF16"
+                let variant = destination.contains("qwen_image_2.1_turbo_") ? "qwen-image-2.1-turbo" : "qwen-image-2.1"
+                try link(source, destination, "\(variant)/\(kind)/\(precision)")
             }
             let processor = try canonical(base.appendingPathComponent("processor").path)
             guard directory(processor) else { throw LibraryFailure(message: "原安装缺少 processor 目录，无法继承 tokenizer。") }
@@ -232,8 +241,16 @@ enum LibraryComponents {
         }
         let tensors = try ComponentWeightHeader.read(file)
         let description = "Qwen \(titles[kind]!)"
-        if !gguf, tensors.values.contains(where: { !["BF16", "F16", "F32", "I64"].contains($0.dtype) }) {
-            throw LibraryFailure(message: "Qwen safetensors 组件只支持现有浮点权重路线；不能将量化权重重命名为 BF16。")
+        if !gguf {
+            let convrot = file.lastPathComponent.contains("int8_convrot")
+            let hasQuantized = tensors.contains { $0.key.hasSuffix(".comfy_quant") || !["BF16", "F16", "F32", "I64"].contains($0.value.dtype) }
+            if convrot || hasQuantized {
+                guard kind != "vae", convrot,
+                      qwen[kind]!.contains(where: { URL(fileURLWithPath: $0).lastPathComponent == file.lastPathComponent }) else {
+                    throw LibraryFailure(message: "Qwen INT8 ConvRot 组件需保留原始规范文件名，不能重命名为 BF16 或其它量化格式。")
+                }
+                try validateQwenConvrot(file, tensors: tensors)
+            }
         }
         if kind == "dit" {
             let prefix = gguf ? "model.diffusion_model." : ""
@@ -253,6 +270,54 @@ enum LibraryComponents {
             guard [[64, 64, 1, 1, 1], [64, 64, 1, 1]].contains(post?.shape ?? []),
                   [[1152, 64, 1, 3, 3], [1152, 64, 3, 3]].contains(decoder?.shape ?? []) else {
                 throw LibraryFailure(message: "Qwen VAE 架构不匹配：需要 64-channel 单帧 VAE。")
+            }
+        }
+    }
+    private static func validateQwenConvrot(_ file: URL, tensors: [String: ComponentTensor]) throws {
+        let tags = tensors.filter { $0.key.hasSuffix(".comfy_quant") }
+        guard !tags.isEmpty else { throw LibraryFailure(message: "ConvRot 文件缺少量化标记。") }
+        let handle = try FileHandle(forReadingFrom: file); defer { try? handle.close() }
+        for (key, tag) in tags {
+            let prefix = String(key.dropLast(".comfy_quant".count))
+            guard let weight = tensors[prefix + ".weight"], weight.dtype == "I8", weight.shape.count == 2,
+                  weight.shape[0] > 0, weight.shape[1] > 0, weight.shape[1] % 256 == 0,
+                  let scale = tensors[prefix + ".weight_scale"], scale.dtype == "F32", scale.shape == [weight.shape[0], 1],
+                  tag.dtype == "U8", tag.shape.count == 1, tag.shape[0] > 0, tag.shape[0] <= 256,
+                  let offset = tag.payloadOffset else {
+                throw LibraryFailure(message: "ConvRot 需要 I8 矩阵、F32 每行系数和 H256 标记：\(prefix)")
+            }
+            try handle.seek(toOffset: offset)
+            guard let bytes = try handle.read(upToCount: Int(tag.shape[0])), bytes.count == Int(tag.shape[0]),
+                  let marker = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                  marker["format"] as? String == "int8_tensorwise", marker["convrot"] as? Bool == true,
+                  ComponentWeightHeader.integer(marker["convrot_groupsize"]) == 256 else {
+                throw LibraryFailure(message: "不支持的 ConvRot 旋转或量化标记：\(prefix)")
+            }
+        }
+        // Published Qwen DiTs also carry bounded Comfy attention dispatch
+        // hints. These are JSON metadata, not byte-valued weight tensors;
+        // native attention keeps its existing arithmetic independently.
+        var attentionHints = Set<String>()
+        for (key, tensor) in tensors where key.hasSuffix(".comfy_attention.config") {
+            guard file.lastPathComponent.hasPrefix("qwen_image_2.1_"),
+                  key.range(of: "^transformer_blocks\\.(?:[0-9]|[12][0-9]|3[01])\\.attn\\.comfy_attention\\.config$", options: .regularExpression) != nil,
+                  tensor.dtype == "U8", tensor.shape.count == 1, tensor.shape[0] > 0, tensor.shape[0] <= 256,
+                  let offset = tensor.payloadOffset else {
+                throw LibraryFailure(message: "不支持的 Qwen attention 标记位置或格式：\(key)")
+            }
+            try handle.seek(toOffset: offset)
+            guard let bytes = try handle.read(upToCount: Int(tensor.shape[0])), bytes.count == Int(tensor.shape[0]),
+                  let marker = try JSONSerialization.jsonObject(with: bytes) as? [String: Any], marker.count == 1,
+                  marker["attention"] as? String == "comfy_kitchen_int8" else {
+                throw LibraryFailure(message: "不支持的 Qwen attention 标记内容：\(key)")
+            }
+            attentionHints.insert(key)
+        }
+        for (key, tensor) in tensors {
+            if tensor.dtype == "I8", key.hasSuffix(".weight"), tags[String(key.dropLast(".weight".count)) + ".comfy_quant"] != nil { continue }
+            if tensor.dtype == "U8", tags[key] != nil || attentionHints.contains(key) { continue }
+            guard ["BF16", "F16", "F32", "I64"].contains(tensor.dtype) else {
+                throw LibraryFailure(message: "未标记或不支持的 Qwen 量化张量：\(key)")
             }
         }
     }
@@ -321,6 +386,7 @@ enum LibraryComponents {
 struct ComponentTensor {
     var shape: [UInt64]
     var dtype: String
+    var payloadOffset: UInt64? = nil
 }
 
 /// Header-only validation. Even a multi-gigabyte checkpoint uses bounded reads,
@@ -395,7 +461,7 @@ enum ComponentWeightHeader {
             }
             let bytes = elements.multipliedReportingOverflow(by: width)
             guard !bytes.overflow, bytes.partialValue == end - start else { throw LibraryFailure(message: "张量 shape 与实际字节数不符：\(key)") }
-            tensors[key] = .init(shape: shape, dtype: dtype); ranges.append((start, end))
+            tensors[key] = .init(shape: shape, dtype: dtype, payloadOffset: 8 + length + start); ranges.append((start, end))
         }
         guard !tensors.isEmpty else { throw LibraryFailure(message: "权重文件没有张量。") }
         ranges.sort { $0.0 < $1.0 }

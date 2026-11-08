@@ -35,9 +35,9 @@ int main(int argc,char **argv) {try {
             require(error.find(reason)!=std::string::npos,"streaming silently ignored an incompatible request recipe");
         };
         ::setenv("TURBOCIDER_QWEN21_BF16_STREAMING","1",1);
-        request.qwen21_dit_cache="balanced";rejects_with("DiT cache off");
+        request.qwen21_dit_cache="balanced";rejects_with("requires component-staged 512px base GPU generation");
         request.qwen21_dit_cache="off";::setenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU","1",1);
-        rejects_with("excludes another math/cache/profiling recipe");
+        rejects_with("conflicts with another math/cache/profiling recipe");
         ::unsetenv("TURBOCIDER_QWEN21_ENCODER_PREFILL_GPU");::unsetenv("TURBOCIDER_QWEN21_BF16_STREAMING");
     }
     std::atomic<bool> cancel{false};Weights text_weights,dit_weights;

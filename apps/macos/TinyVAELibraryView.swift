@@ -18,6 +18,8 @@ struct TinyVAELibraryView: View {
                 Text("镜像仅提供传输；固定官方版本、大小和 SHA256 校验。公共下载不发送登录凭据。")
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(TinyVAEAsset.all) { asset in
+                    let installed = library.tinyVAEPath(asset) != nil
+                    let bundled = asset.bundledPath() != nil
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Image(systemName: "photo.stack").foregroundStyle(.tint)
@@ -37,22 +39,25 @@ struct TinyVAELibraryView: View {
                         )
                         .font(.caption).foregroundStyle(.secondary)
                         HStack {
-                            if library.tinyVAEPath(asset) != nil {
-                                Label("已安装 · SHA256 已校验", systemImage: "checkmark.circle").font(
+                            if installed || bundled {
+                                Label(installed ? "已安装 · SHA256 已校验" : "App 内置",
+                                      systemImage: "checkmark.circle").font(
                                     .caption
                                 ).foregroundStyle(.green)
                                 Spacer()
                                 Button("用于创作") {
                                     library.useTinyVAE(asset, studio: studio)
-                                }.disabled(locked || studio.imageInputsBusy)
+                                }.disabled(library.busy || locked || studio.imageInputsBusy)
                                     .accessibilityIdentifier("useTinyVAE-\(asset.id)")
                             } else {
                                 Spacer()
                             }
-                            Button(library.tinyVAEPath(asset) == nil ? "下载" : "校验／复用") {
-                                library.downloadTinyVAE(asset, source: source)
-                            }.disabled(library.busy || locked).accessibilityIdentifier(
-                                "downloadTinyVAE-\(asset.id)")
+                            if installed || !bundled {
+                                Button(installed ? "校验／复用" : "下载") {
+                                    library.downloadTinyVAE(asset, source: source)
+                                }.disabled(library.busy || locked).accessibilityIdentifier(
+                                    "downloadTinyVAE-\(asset.id)")
+                            }
                         }
                     }.padding(18).background(
                         Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))

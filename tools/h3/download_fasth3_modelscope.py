@@ -10,9 +10,7 @@ the 66.25 GB (61.70 GiB) transformer on a nearly full Apple Silicon SSD.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -20,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/h3"))
 from prepare_fasth3_mlx import download_file, ensure_transformer_index  # noqa: E402
+from h3_download_common import sha256_file  # noqa: E402
 
 
 DEFAULT_MODEL_ID = "FastVideo/FastVideo-FastH3-4-step-Preview-v1-Dense-DataFree"
@@ -45,14 +44,6 @@ RUNTIME_ROOT_FILES = {
     "modular_model_index.json",
     "provenance.json",
 }
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(16 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def available_bytes(path: Path) -> int:

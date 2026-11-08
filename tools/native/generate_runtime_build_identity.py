@@ -27,7 +27,11 @@ EXPERIMENTAL_VAE_SOURCES=(
     "tools/native/seedvr2_vae_upscale_io.hpp",
 )
 BUILD_SCRIPTS = (
-    "tools/native/build.sh", "tools/native/dependencies.sh",
+    "tools/native/build.sh",
+    "tools/native/embed_qwen21_sq_profile.py",
+    "native/models/qwen21/calibration/sq_convrot_v1.json",
+    "native/models/qwen21/calibration/sq_convrot_v1.f16le",
+    "tools/native/embed_qwen21_cider_kernels.py", "tools/native/dependencies.sh",
     "tools/native/generate_runtime_build_identity.py",
     "tools/native/generate_bundled_streaming_catalog.py",
     "tools/native/generate_image_workflow_catalog.py",

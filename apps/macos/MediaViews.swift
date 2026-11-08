@@ -96,6 +96,7 @@ private struct ImageZoomControls: View {
 /// viewport; decoding remains off the main actor and cancelled loads cannot publish.
 struct InteractiveMediaPreview: View {
     let path: String
+    var imageData: Data? = nil
     var maxPixel = 2400
     var showsControls = true
     @State private var image: NSImage?
@@ -104,6 +105,11 @@ struct InteractiveMediaPreview: View {
     @State private var viewport = ImageViewport()
     @State private var panOrigin: CGSize?
     @State private var magnificationOrigin: ImageViewport?
+    private struct Input: Equatable {
+        let path: String
+        let data: Data?
+        let maxPixel: Int
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -152,12 +158,20 @@ struct InteractiveMediaPreview: View {
                 panOrigin = nil; magnificationOrigin = nil
             }
         }.accessibilityIdentifier("interactiveMediaPreview")
-            .task(id: "\(path)#\(maxPixel)") {
-                image = nil; failed = false; transparent = false
-                viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil
-                let filePath = path, pixelLimit = max(1, maxPixel)
+            .task(id: Input(path: path, data: imageData, maxPixel: maxPixel)) {
+                // Keep the last live frame visible until its replacement has
+                // decoded; use the same fitted viewport as a final image.
+                if imageData == nil || image == nil {
+                    image = nil; transparent = false
+                    viewport = ImageViewport(); panOrigin = nil; magnificationOrigin = nil
+                }
+                failed = false
+                let filePath = path, bytes = imageData, pixelLimit = max(1, maxPixel)
                 let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
-                    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: filePath) as CFURL, nil) else { return nil }
+                    let source: CGImageSource?
+                    if let bytes { source = CGImageSourceCreateWithData(bytes as CFData, nil) }
+                    else { source = CGImageSourceCreateWithURL(URL(fileURLWithPath: filePath) as CFURL, nil) }
+                    guard let source else { return nil }
                     return CGImageSourceCreateThumbnailAtIndex(source, 0, [
                         kCGImageSourceCreateThumbnailFromImageAlways: true,
                         kCGImageSourceCreateThumbnailWithTransform: true,

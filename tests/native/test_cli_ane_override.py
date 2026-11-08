@@ -257,10 +257,18 @@ class CLIAneOverrideTests(unittest.TestCase):
             self.assertEqual(data["backend"], "mlx_cpp_metal_gguf+coreml_runtime_weight")
             self.assertEqual(data["gpu_graph"], "runtime_weight_token_row_ffn")
             self.assertIn("runtime_weight_fp16_token_row_ffn", data["algorithm_approximations"])
+            adapter = [{"path": "adapter.safetensors", "role": "transformer"}]
+            request.write_text(json.dumps({**base, "loras": adapter,
+                                           "lora_strategy": "inference_time"}))
+            result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["lora_strategy"], "inference_time")
+            self.assertEqual(json.loads(result.stdout)["lora_count"], 1)
             for change in ({"execution": "gpu"}, {"execution": "auto"},
                            {"allow_approximation": False}, {"ane_manifest": ""},
                            {"residency": "streamed"}, {"encoder_ane_manifest": "encoder.json"},
-                           {"loras": [{"path": "adapter.safetensors", "role": "transformer"}]},
+                           {"loras": adapter, "lora_strategy": "in_memory_merge"},
+                           {"loras": [{"path": "adapter.safetensors", "role": "text_encoder"}]},
                            {"hybrid_mlp_mode": "lora_fused"}, {"hybrid_mlp_mode": "lora_suffix"}):
                 request.write_text(json.dumps({**base, **change}))
                 rejected = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)

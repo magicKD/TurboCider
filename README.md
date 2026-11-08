@@ -104,4 +104,14 @@ For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`.
 
 [Documentation](docs/public/README.md) · [Model library](docs/public/MODEL_LIBRARY.md) · [Cache and memory](docs/public/CACHES.md)
 
-Original TurboCider code uses the MIT license. Third-party code and model weights retain their respective terms. Large model files and generated outputs are not included in the repository.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, tests and
+repository conventions. Keep each PR focused on one directory or closely related
+component. Browse [all documentation](docs/) and the [experiment archive](docs/experiments/)
+before starting a related study; retain failed results and their measurement limits.
+
+Use the issue templates for reproducible bugs and feature proposals. Include your
+chip, macOS version, source revision and a minimal request when reporting a bug.
+
+Original TurboCider code uses the [MIT license](LICENSE). Third-party code and model weights retain their respective terms. Large model files and generated outputs are not included in the repository.

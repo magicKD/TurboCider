@@ -43,10 +43,15 @@ struct LibraryVariant: Codable, Identifiable, Sendable {
     var components: [LibraryVariantComponent] = []
     var runnable: Bool
     var preparation: String
+    var modelScopePins: [HubFile]? = nil
 
     func request(modelID: String, provider: HubProvider = .modelscope, componentKind: String? = nil) throws -> LibraryDownloadRequest {
+        if modelScopePins != nil && provider != .modelscope {
+            throw LibraryFailure(message: "此版本使用 ModelScope 固定权重，请选择 ModelScope。")
+        }
         let request = LibraryDownloadRequest(modelID: modelID, repository: repository, provider: provider,
-            name: title, include: include, supplements: supplements, destinations: destinations)
+            name: title, include: include, supplements: supplements, destinations: destinations,
+            pinnedVariantID: modelScopePins == nil ? nil : id)
         guard let componentKind else { return request }
         let kinds: [String]
         switch componentKind {
@@ -124,6 +129,36 @@ struct LibraryRecipe: Codable, Sendable {
         .init(kind: "tokenizer", title: "Tokenizer", format: "JSON", precision: "原始词表",
               repository: "Qwen/Qwen-Image-2.1", include: [qwenTokenizer], note: "与编码器配套，从原始发布仓库补齐。")
     ]
+    private static let qwenTurboConvRot: LibraryVariant = {
+        let dit = "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
+        let encoder = "text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+        let companions = "5dc8a8352312860d67e07cc9bee310dc7ed3e55c"
+        // Per-file ModelScope identities from the verified download receipts.
+        // The native loader consumes tokenizer.json directly from processor/.
+        let pins = [
+            HubFile(path: dit, size: 7_256_787_829,
+                sha256: "8144a0182964aa8403ad6dbc011db837304167d235161b9aabaa8532e967314c",
+                revision: "8c798285d642b81a1af415b70f2e444e809820d7"),
+            HubFile(path: encoder, size: 9_350_798_360,
+                sha256: "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f",
+                revision: companions),
+            HubFile(path: qwenVAE, size: 675_509_688,
+                sha256: "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+                revision: companions),
+            HubFile(path: qwenTokenizer, size: 11_422_654,
+                sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+                revision: "c491be04a88fa35fbd86443f78f9c3002a503677", sourceRepository: qwenTokenizerSource.repository),
+        ]
+        return LibraryVariant(id: "turbo-int8-convrot", title: "Turbo · 8 步 · 双 INT8 ConvRot",
+            repository: qwenRepository, include: pins.map(\.path), components: [
+                .init(kind: "dit", title: "Qwen Image 2.1 Turbo DiT", format: "safetensors", precision: "INT8 ConvRot",
+                    repository: qwenRepository, include: [dit], note: "使用 Turbo 固定 8 步调度。"),
+                .init(kind: "text_encoder", title: "Qwen3-VL-8B 编码器", format: "safetensors", precision: "INT8 ConvRot",
+                    repository: qwenRepository, include: [encoder], note: "与 Turbo DiT 配套。"),
+            ] + qwenSharedComponents.filter { $0.kind != "text_encoder" }, runnable: true,
+            preparation: "Turbo 固定 8 步。支持原生 GPU 流式文生图，使用 INT8 ConvRot DiT 和编码器、原始 VAE 与官方 Tokenizer。请确认 Qwen 研究用途许可。",
+            modelScopePins: pins)
+    }()
     private static let qwenVariants: [LibraryVariant] = {
         let baseline = LibraryVariant(id: "bf16", title: "BF16 · 推荐", repository: qwenRepository,
             include: [qwenBF16, qwenEncoder, qwenVAE, qwenTokenizer], supplements: [qwenTokenizerSource],
@@ -134,7 +169,7 @@ struct LibraryRecipe: Codable, Sendable {
         // Exact upstream filenames verified in unsloth/Qwen-Image-2.1-GGUF.
         // Q4_K_M is currently the only filename selected by the native loader.
         let quants = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q5_K_S", "Q6_K", "Q6_K_XL", "Q8_0"]
-        return [baseline] + quants.map { quant in
+        return [baseline, qwenTurboConvRot] + quants.map { quant in
             let filename = "qwen-image-2.1-\(quant).gguf"
             let supported = quant == "Q4_K_M"
             let note = supported

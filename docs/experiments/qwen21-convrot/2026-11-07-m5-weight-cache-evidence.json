@@ -1,0 +1,896 @@
+{
+  "schema": "qwen21-adaptive-weight-cache-evidence-v1",
+  "date": "2026-11-07",
+  "status": "complete",
+  "environment": {
+    "device": "Apple M5 Pro",
+    "physical_memory_bytes": 25769803776,
+    "macos": "26.5.1",
+    "mlx": "0.32.0",
+    "tf32": "0"
+  },
+  "runtime_builds": {
+    "timing_5s": "tc-runtime-build-v1-5301a9c3344629954f6ec855744a96bd9a3f6d06d197cceaead4366a350f91cc",
+    "final_app_15s": "tc-runtime-build-v1-986217963d5d156228a9b3705b2997be93cb3c7f68ff8af6072f233d679e92af",
+    "final_difference": "Only transient pressure recovery bound extends from 5 to 15 seconds; no change to math/cache selection/eviction.",
+    "final_source_count": 683
+  },
+  "sources": {
+    "encoder": {
+      "source_sha256": "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f",
+      "source_file_bytes": 9350798360
+    },
+    "denoiser": {
+      "source_sha256": "8144a0182964aa8403ad6dbc011db837304167d235161b9aabaa8532e967314c",
+      "source_file_bytes": 7256787829
+    }
+  },
+  "policy": {
+    "default": "minimum",
+    "preset_gib": [
+      1,
+      2,
+      4,
+      6,
+      8
+    ],
+    "custom_mib_range": [
+      1024,
+      16384
+    ],
+    "budget_scope": "phase-local fixed weights, retained original DiT layers, two refill buffers, Float-A reusable coefficient bank",
+    "process_ram_cap": false,
+    "system_reserve_bytes": 4294967296,
+    "runtime_work_allowance_bytes": 2147483648,
+    "fraction_of_remaining_observed_headroom": 0.5,
+    "maximum_cached_dit_layers": 30,
+    "eviction": "drained sampling-step boundary; retain fixed weights/two slots/latent/KV/RNG state",
+    "pressure_recovery_limit_seconds": 15,
+    "private_ane_with_positive_budget": false
+  },
+  "sweep": {
+    "dimension": 512,
+    "actual_steps": 8,
+    "seed": 73,
+    "budget_order_mib": [
+      0,
+      8192,
+      4096,
+      2048,
+      1024,
+      6144,
+      6144,
+      1024,
+      2048,
+      4096,
+      8192,
+      0
+    ],
+    "complete_generations": 36,
+    "timed_generations": 24,
+    "per_budget_per_prompt_timed_samples": 2,
+    "all_pixels_exact": true,
+    "all_warmup_text_noise_latents_exact": true,
+    "actual_encoder_projections_each_request": 252,
+    "actual_dit_projections_each_request": 1536,
+    "conditioning_cache_hit_each_request": false,
+    "previews": false,
+    "maximum_sample_gap_ns": 105043833,
+    "swap_out_bytes": 0,
+    "summary": [
+      {
+        "budget_mib": 0,
+        "cached_layers": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "budget_target_layers": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "cache_evictions": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          708427776,
+          708427776,
+          708427776,
+          708427776
+        ],
+        "logical_dit_read_bytes": [
+          56152543232,
+          56152543232,
+          56152543232,
+          56152543232
+        ],
+        "sampled_process_peak_bytes": 4444915128,
+        "timings": {
+          "short": {
+            "request_wall": 10.089533354,
+            "text_encode": 0.9961675625,
+            "denoise": 7.971160333,
+            "vae_decode": 1.084904604
+          },
+          "long": {
+            "request_wall": 10.5411981255,
+            "text_encode": 0.988202542,
+            "denoise": 7.957493958500001,
+            "vae_decode": 1.124185792
+          }
+        }
+      },
+      {
+        "budget_mib": 1024,
+        "cached_layers": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "budget_target_layers": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "cache_evictions": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          926842880,
+          926842880,
+          926842880,
+          926842880
+        ],
+        "logical_dit_read_bytes": [
+          54624548400,
+          54624548400,
+          54624548400,
+          54624548400
+        ],
+        "sampled_process_peak_bytes": 4270966080,
+        "timings": {
+          "short": {
+            "request_wall": 9.9224126875,
+            "text_encode": 0.9612458545,
+            "denoise": 7.8441096045,
+            "vae_decode": 1.1057198745
+          },
+          "long": {
+            "request_wall": 10.0693205835,
+            "text_encode": 0.9928092495,
+            "denoise": 7.8952004785,
+            "vae_decode": 1.087951208
+          }
+        }
+      },
+      {
+        "budget_mib": 2048,
+        "cached_layers": [
+          6,
+          5,
+          6,
+          6
+        ],
+        "budget_target_layers": [
+          6,
+          6,
+          6,
+          6
+        ],
+        "cache_evictions": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6
+          ],
+          [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          [
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6
+          ],
+          [
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          2018918400,
+          1800503296,
+          2018918400,
+          2018918400
+        ],
+        "logical_dit_read_bytes": [
+          46984574240,
+          48512569072,
+          46984574240,
+          46984574240
+        ],
+        "sampled_process_peak_bytes": 4307764592,
+        "timings": {
+          "short": {
+            "request_wall": 9.5933226665,
+            "text_encode": 0.940900584,
+            "denoise": 7.603945145999999,
+            "vae_decode": 1.0375234375
+          },
+          "long": {
+            "request_wall": 9.965749437500001,
+            "text_encode": 0.9958907714999999,
+            "denoise": 7.6112272915000005,
+            "vae_decode": 1.049233146
+          }
+        }
+      },
+      {
+        "budget_mib": 4096,
+        "cached_layers": [
+          8,
+          5,
+          3,
+          4
+        ],
+        "budget_target_layers": [
+          16,
+          16,
+          16,
+          16
+        ],
+        "cache_evictions": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          2455748608,
+          1800503296,
+          1363673088,
+          1582088192
+        ],
+        "logical_dit_read_bytes": [
+          43928584576,
+          48512569072,
+          51568558736,
+          50040563904
+        ],
+        "sampled_process_peak_bytes": 4297000280,
+        "timings": {
+          "short": {
+            "request_wall": 9.214167854500001,
+            "text_encode": 0.993239666,
+            "denoise": 7.134213000000001,
+            "vae_decode": 1.0760104584999999
+          },
+          "long": {
+            "request_wall": 11.4479834375,
+            "text_encode": 1.000640771,
+            "denoise": 7.7946508545,
+            "vae_decode": 1.116431125
+          }
+        }
+      },
+      {
+        "budget_mib": 6144,
+        "cached_layers": [
+          5,
+          5,
+          7,
+          9
+        ],
+        "budget_target_layers": [
+          26,
+          26,
+          26,
+          26
+        ],
+        "cache_evictions": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "prefix_per_pass": [
+          [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          [
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          [
+            9,
+            9,
+            9,
+            9,
+            9,
+            0,
+            0,
+            0
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          1800503296,
+          1800503296,
+          2237333504,
+          2674163712
+        ],
+        "logical_dit_read_bytes": [
+          48512569072,
+          48512569072,
+          45456579408,
+          48294284096
+        ],
+        "sampled_process_peak_bytes": 4418585920,
+        "timings": {
+          "short": {
+            "request_wall": 9.8244487915,
+            "text_encode": 0.986709896,
+            "denoise": 7.621020021,
+            "vae_decode": 1.0382504375
+          },
+          "long": {
+            "request_wall": 11.315401604,
+            "text_encode": 0.9950163745,
+            "denoise": 9.1295024165,
+            "vae_decode": 1.06904525
+          }
+        }
+      },
+      {
+        "budget_mib": 8192,
+        "cached_layers": [
+          5,
+          9,
+          3,
+          4
+        ],
+        "budget_target_layers": [
+          30,
+          30,
+          30,
+          30
+        ],
+        "cache_evictions": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          [
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9
+          ],
+          [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          1800503296,
+          2674163712,
+          1363673088,
+          1582088192
+        ],
+        "logical_dit_read_bytes": [
+          48512569072,
+          42400589744,
+          51568558736,
+          50040563904
+        ],
+        "sampled_process_peak_bytes": 4330096104,
+        "timings": {
+          "short": {
+            "request_wall": 10.2324439585,
+            "text_encode": 0.9999924375,
+            "denoise": 7.888647000000001,
+            "vae_decode": 1.091625708
+          },
+          "long": {
+            "request_wall": 11.5526279585,
+            "text_encode": 0.9881698745,
+            "denoise": 7.268745417,
+            "vae_decode": 1.055806167
+          }
+        }
+      }
+    ],
+    "natural_pressure_evictions": [
+      {
+        "budget_mib": 6144,
+        "case": "long",
+        "prefix_per_pass": [
+          9,
+          9,
+          9,
+          9,
+          9,
+          0,
+          0,
+          0
+        ],
+        "completed_prefix_layers": 45,
+        "fills": 211,
+        "final_prefix": 0,
+        "wall_seconds": 12.552206958,
+        "exact_pixels": true
+      }
+    ],
+    "limits": "Single busy desktop, no frequency/thermal/external-process control; two samples per prompt; no stable larger-budget speedup claim."
+  },
+  "float_a": {
+    "dimension": 256,
+    "budgets_mib": [
+      0,
+      3584
+    ],
+    "complete_generations": 6,
+    "all_pixels_text_noise_latents_exact": true,
+    "actual_mode": "q8_g128_float_a",
+    "physical_device": "M5 forced Float-A; no M4 hardware performance claim",
+    "summary": [
+      {
+        "budget_mib": 0,
+        "cached_layers": [
+          0,
+          0
+        ],
+        "budget_target_layers": [
+          0,
+          0
+        ],
+        "cache_evictions": [
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          940163072,
+          940163072
+        ],
+        "logical_dit_read_bytes": [
+          56152543232,
+          56152543232
+        ],
+        "sampled_process_peak_bytes": 1925153968,
+        "timings": {
+          "short": {
+            "request_wall": 30.101878334,
+            "text_encode": 3.071332,
+            "denoise": 26.635121,
+            "vae_decode": 0.391162625
+          },
+          "long": {
+            "request_wall": 31.019843833,
+            "text_encode": 3.476156625,
+            "denoise": 27.136346041,
+            "vae_decode": 0.40210175
+          }
+        }
+      },
+      {
+        "budget_mib": 3584,
+        "cached_layers": [
+          3,
+          3
+        ],
+        "budget_target_layers": [
+          12,
+          12
+        ],
+        "cache_evictions": [
+          0,
+          0
+        ],
+        "prefix_per_pass": [
+          [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ]
+        ],
+        "managed_weight_capacity_bytes": [
+          1595408384,
+          1595408384
+        ],
+        "logical_dit_read_bytes": [
+          51568558736,
+          51568558736
+        ],
+        "sampled_process_peak_bytes": 2401683304,
+        "timings": {
+          "short": {
+            "request_wall": 30.153886,
+            "text_encode": 3.089763041,
+            "denoise": 26.675944292,
+            "vae_decode": 0.383787417
+          },
+          "long": {
+            "request_wall": 31.030586375,
+            "text_encode": 3.456099083,
+            "denoise": 27.213775,
+            "vae_decode": 0.356411958
+          }
+        }
+      }
+    ]
+  },
+  "forced_full_trajectory": {
+    "dimension": 512,
+    "actual_steps": 8,
+    "evicted_after_step": 3,
+    "retained_layers_before_eviction": 1,
+    "exact_final_latents": true,
+    "actual_w8a8_projections": 1536,
+    "completed_refills": 253,
+    "active_optional_backing_released": true
+  },
+  "packaged_app": {
+    "complete": true,
+    "weight_budget_bytes": 2147483648,
+    "acceptance": [
+      {
+        "mode": "baseline",
+        "phase_count": 9,
+        "preview_steps": [],
+        "preview_unchanged": true,
+        "state": "succeeded"
+      },
+      {
+        "mode": "preview",
+        "phase_count": 9,
+        "preview_steps": [
+          2,
+          4,
+          6,
+          8
+        ],
+        "preview_unchanged": true,
+        "state": "succeeded"
+      },
+      {
+        "mode": "cancel",
+        "preview_steps": [
+          2
+        ],
+        "state": "cancelled"
+      },
+      {
+        "mode": "tiny-final",
+        "phase_count": 8,
+        "preview_steps": [
+          3,
+          6,
+          8
+        ],
+        "preview_unchanged": true,
+        "state": "succeeded"
+      }
+    ],
+    "sampled_process_peak_bytes": 4406658464,
+    "swap_out_bytes": 0,
+    "exact_original_final_with_previews": true,
+    "three_success_one_cancel": true
+  },
+  "desktop": {
+    "status": "complete",
+    "job_id": "F820ECC7-55F2-4945-B769-EC8597B85402",
+    "dimension": 512,
+    "steps": 8,
+    "seed": 42,
+    "requested_budget_bytes": 2147483648,
+    "observed_preview_step": 2,
+    "preview_interval": 2,
+    "decoder": "original",
+    "wall_seconds": 10.876541666,
+    "cached_layers_peak": 3,
+    "weight_capacity_upper_bytes": 1363673088,
+    "limited_by_physical_headroom": true,
+    "actual_w8a8": {
+      "dit_activation_rows": 1579584,
+      "dit_enabled": true,
+      "dit_projections": 1536,
+      "encoder_activation_rows": 12348,
+      "encoder_enabled": true,
+      "encoder_projections": 252,
+      "recipe": "comfy-convrot-original-i8-dynamic-token-a8-v1",
+      "scope": "GPU primitive encodes observed during serialized request phases; embedding/vision/VAE are excluded"
+    },
+    "final_png_sha256": "7931990732cd0e7a1552adf79ae703dc5edc134b12fed59a8b76fb44aa70eb63",
+    "png_bytes_identical_to_previous_minimum_cache_desktop": true,
+    "settings_ui": "preset/custom input, invalid-range generation disabled, custom persistence after restart, actual-budget receipt verified via Computer Use"
+  },
+  "validation": {
+    "native_qwen_suite": {
+      "tests": 148,
+      "passed": 142,
+      "conditional_skips": 6
+    },
+    "legacy_and_v2_plan_contracts": {
+      "tests": 147,
+      "conditional_skips": 3
+    },
+    "swift": "draft compatibility, presets/custom bounds, V2 serialization, history reuse, metrics, workflows passed",
+    "forced_real_trajectory": "passed separately with explicit original model/dumps",
+    "release_codesign": "verified"
+  },
+  "excluded_attempts": [
+    {
+      "local_record": "qwen-cache-budget-w8a8-512",
+      "reason": "optional cache used too much credited headroom; memory guard stopped a request"
+    },
+    {
+      "local_record": "qwen-cache-budget-safe-w8a8-512",
+      "reason": "static headroom reduction alone could not handle changing pressure during sampling"
+    },
+    {
+      "local_record": "qwen-cache-budget-adaptive-w8a8-512",
+      "reason": "baseline next request hit lagging pressure notification; added per-step temporary-object release and bounded recovery"
+    },
+    {
+      "local_record": "qwen-cache-budget-final-packaged-acceptance",
+      "reason": "5-second bound refused second App preflight under sustained pressure; extended bound to 15 seconds and reran successfully"
+    }
+  ],
+  "local_raw_records": "Ignored build/setup-logs/qwen-cache-budget-*; raw traces and generated media are not committed"
+}

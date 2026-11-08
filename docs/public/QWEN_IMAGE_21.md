@@ -31,6 +31,51 @@ for normal operation. The experimental GPU+ANE route requires an explicit
 manifest and approximation opt-in; it is not hardware-placement or image-quality
 proof.
 
+## INT8 ConvRot streaming and weight-cache budget
+
+The App supports the original ModelScope Turbo INT8 ConvRot DiT with
+`qwen3vl_8b_int8_convrot.safetensors`. Select that installation, use text-to-image
+up to 512×512, and keep its authored eight-step schedule. In **高级参数**, choose
+**模型驻留 → 流式加载**, then **权重缓存预算**. Choices are minimum residency
+(the default), 1/2/4/6/8 GiB, or a custom 1024–16384 MiB budget. The choice is
+saved with the draft and restored when reusing a task.
+
+The budget covers phase-local fixed weights, retained raw DiT layers and two
+refill buffers. It excludes activations, Tiny VAE previews, the final VAE,
+allocator overhead, other processes and the OS file cache. It is an upper bound,
+not a reservation or a whole-App memory limit. The engine retains as many whole
+DiT layers as fit, while preserving physical headroom (4 GiB system reserve and
+an additional 2 GiB work allowance when choosing extra cached layers).
+Only half of the remaining observed headroom is available to optional cached
+weights, to leave room for competing apps and uncertain file-cache reclamation.
+Task details show the chosen budget, actual retained layer count, admitted
+weight-capacity upper bound, and
+whether available memory reduced that count. At least two DiT layers continue
+to use the refill buffers; all phase weights are released before final decoding.
+If memory pressure rises during sampling, optional cached weights can be
+released between completed steps. The original fixed weights and two refill
+buffers stay allocated, so remaining steps stream without restarting the
+sampler. Task details report this eviction. Persistent system pressure can
+still stop generation; the budget does not override physical-memory guards.
+Transient pressure after a completed release can wait up to fifteen seconds for
+recovery before admission is refused; cancellation remains available.
+
+Caching avoids rereading retained DiT layers on each sampling step. The encoder
+runs once and continues streaming with sparse token embedding reads. The cache
+retains original values: it does not skip denoise steps, change the schedule, or
+change activation precision. M5 and later use GPU Metal TensorOps W8A8 when
+available on macOS 26.4 or later; earlier chips retain floating activations.
+Larger budgets can improve speed, with diminishing returns and dependence on
+memory pressure and storage/file-cache behavior. Measure on your own workload.
+
+For legacy JSON/C API requests set `qwen21_stream_weight_budget_bytes` at the
+root; schema v2 uses `execution.qwen21_stream_weight_budget_bytes`. Omit it or
+use zero for minimum residency; positive values require Qwen streamed residency
+and 1–16 GiB. For example, 2 GiB is `2147483648` bytes. These options belong to
+the GPU ConvRot streaming recipe; the private Runtime ANE composition is not
+enabled with retained-layer budgets. This exact weight cache is separate from
+the approximate DiT computation cache described below.
+
 ## Turbo checkpoint (native research support)
 
 The original `qwen_image_2.1_turbo_bf16.safetensors` can now be installed in a
@@ -491,7 +536,7 @@ than the fallback. On the two-reference sample, however, full coverage was
 closer to GPU (RGB correlation 0.944 versus 0.928 for fallback). Neither
 route establishes physical ANE occupancy or general image fidelity; GPU
 remains the default. See the
-[full-coverage edit comparison](../status/qwen21-w8a8-full32-edit.md)
+[full-coverage edit comparison](../experiments/qwen21-w8a8/qwen21-w8a8-full32-edit.md)
 for timings and visual caveats.
 
 A separate **diagnostic-only full-size-reference editing** option is now
@@ -509,7 +554,7 @@ three-reference 40-step sticker placement/size visibly changed, and both
 5-step outputs had ghosting. The tested W8A16 GPU suffix was again slower
 than BF16 (BF16/W8A16 median **0.986×** on the full-size two-reference 5-step
 sample). This is not a quality-qualified default or cold-start speed claim;
-see the [full-reference diagnostic report](../status/qwen21-w8a8-fullref-512-diagnostics-2026-09-26.md).
+see the [full-reference diagnostic report](../experiments/qwen21-w8a8/qwen21-w8a8-fullref-512-diagnostics-2026-09-26.md).
 
 For **20–40-step base-model** requests where the user accepts visible
 texture/shadow differences, `TURBOCIDER_QWEN21_DBCACHE_DIAGNOSTIC=1` enables
@@ -601,7 +646,7 @@ resident Session measured GPU **5.999/5.997 s** versus W8A8
 around its legs and tail; an independent glass-bottle-and-cactus prompt/seed
 also gave visually similar results in a diagnostic generator. These are
 limited samples, not a default quality or cold-start speed guarantee; the
-[text-to-image evidence](../status/qwen21-w8a8-6144-t2i.md) distinguishes
+[text-to-image evidence](../experiments/qwen21-w8a8/qwen21-w8a8-6144-t2i.md) distinguishes
 per-step timing from complete resident and first requests.
 
 For the speed-first explicit W8A8 edit candidate, use schema 1 fields like
@@ -649,8 +694,8 @@ compiled manifest for resident Session benchmarking, but does not qualify
 1024² editing or change the default GPU policy. The measured warm-request
 speedups are 1.114× at 5 steps and 1.159× at 40 steps on one prompt/seed;
 physical ANE placement and broad image quality remain unverified. See the
-[512²](../status/qwen21-w8a8-ane-diagnostics-2026-09-25.md) and
-[1024²](../status/qwen21-w8a8-ane-1024-diagnostics.md) reports for timing
+[512²](../experiments/qwen21-w8a8/qwen21-w8a8-ane-diagnostics-2026-09-25.md) and
+[1024²](../experiments/qwen21-w8a8/qwen21-w8a8-ane-1024-diagnostics.md) reports for timing
 scope, visual differences, and remaining validation work.
 
 ## 512² validation snapshot

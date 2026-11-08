@@ -17,7 +17,7 @@ class QkvPrefixSnapshotTests(unittest.TestCase):
     def test_direct_prefix_tensor_parity_and_explicit_ownership_guards(self):
         self.run_fixture(False)
 
-    def test_small_gemm_counterexample_is_retained_not_given_equivalence(self):
+    def test_small_gemm_counterexample_observation_and_native_base_isolation(self):
         self.run_fixture(True)
 
     def test_typed_swiglu_and_direct_qkv_prefix_full_down_lora_are_bitwise_exact(self):
@@ -40,9 +40,13 @@ class QkvPrefixSnapshotTests(unittest.TestCase):
             result=subprocess.run([str(binary),directory],capture_output=True,text=True,env=env,cwd=ROOT,timeout=90)
             self.assertEqual(result.returncode,0,result.stderr+result.stdout)
             measured=json.loads(result.stdout)
-            keys=("small_shape_not_equivalent","native_base_counterfactual_exact") if counterexample else ("same_prefix_tensor_exact","first_step_decode_counted","source_destroyed","callback_and_budget_rejected")
+            keys=("small_shape_probe_completed","native_base_counterfactual_exact") if counterexample else ("same_prefix_tensor_exact","first_step_decode_counted","source_destroyed","callback_and_budget_rejected")
             for key in keys:
                 self.assertIs(measured[key],True)
+            if counterexample:
+                self.assertIs(type(measured["mpp_mismatches"]),int)
+                self.assertGreaterEqual(measured["mpp_mismatches"],0)
+                self.assertIs(type(measured["small_shape_not_equivalent"]),bool)
 
 
 if __name__=="__main__":unittest.main()

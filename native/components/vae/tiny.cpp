@@ -2,6 +2,7 @@
 #include "../../media/image.hpp"
 #include "../../platform/apple/platform.hpp"
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace tc::components {
@@ -16,6 +17,13 @@ Tensor upsample(const Tensor &x) {
                        {s[0], s[1] * 2, s[2] * 2, s[3]});
 }
 } // namespace
+
+Tensor flow_preview_estimate(const Tensor &sample, const Tensor &velocity, float sigma) {
+    require(sample.shape() == velocity.shape() && std::isfinite(sigma) && sigma >= 0.f,
+            "invalid flow preview sample, velocity or sigma");
+    // FP32 here is preview-only. Preserve the sampler's dtype and rounding.
+    return mx::astype(sample, mx::float32) - mx::astype(velocity, mx::float32) * sigma;
+}
 
 TinyAutoencoder::TinyAutoencoder(const std::filesystem::path &path, const std::string &model,
                                  bool encoder, bool decoder)
@@ -225,13 +233,12 @@ bool TinyPreview::due(int step) const {
 void TinyPreview::publish(const Tensor &latent, int completed) {
     if (!due(completed))
         return;
-    // Bound preview activation memory independently of requested final size.
-    // Decimate only a borrowed view; never modify the sampler's latent.
-    const int longest = std::max(latent.shape(2), latent.shape(3)) * decoder_->scale();
-    const int stride = std::max(1, (longest + 511) / 512);
-    auto small = stride == 1 ? latent
-                            : mx::slice(latent, {0, 0, 0, 0}, latent.shape(), {1, 1, stride, stride});
-    auto pixels = decoder_->decode(small, {}, cancelled_);
+    require(latent.ndim() == 4 && int64_t(latent.shape(2)) * decoder_->scale() == request_.height &&
+                int64_t(latent.shape(3)) * decoder_->scale() == request_.width,
+            "tiny preview latent does not match requested output dimensions");
+    // Do not decimate the latent: previews have the same pixel dimensions and
+    // aspect ratio as the final image, including the full Qwen RGBA output.
+    auto pixels = decoder_->decode(latent, {}, cancelled_);
     auto image = mx::transpose(mx::clip(pixels, Tensor(0.f), Tensor(1.f)) * 2.f - 1.f, {0, 2, 3, 1});
     checkpoint(cancelled_);
     if (pixels.shape(1) == 4)

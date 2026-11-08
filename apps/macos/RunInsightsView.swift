@@ -65,10 +65,34 @@ struct RunInsightsView: View {
             }
             if let blocks = info.streamedBlocks, blocks > 0 {
                 HStack(spacing: 16) {
-                    Text("流式加载 \(blocks) 层")
-                    if let bytes = info.streamReadBytes { Text("权重读取 \(RunInsights.memory(bytes))") }
+                    Text("按层加载 \(blocks) 次")
+                    if let bytes = info.streamReadBytes {
+                        Text("权重累计读取 \(RunInsights.memory(bytes))")
+                            .help("源权重的逻辑读取总量，包含跨采样步重复读取；不是磁盘实际传输量。")
+                    }
                     if let seconds = info.streamWaitSeconds { Text(String(format: "等待读取 %.2f 秒", seconds)) }
                 }.font(.caption).monospacedDigit()
+            }
+            if info.streamManagedWeightBytes != nil || info.streamResidentWeightBytes != nil {
+                HStack(spacing: 20) {
+                    if let bytes = info.streamResidentWeightBytes { metric("权重常驻（最大阶段）", RunInsights.memory(bytes)) }
+                    if let bytes = info.streamManagedWeightBytes { metric("权重与缓冲容量上界（最大阶段）", RunInsights.memory(bytes)) }
+                    if let layers = info.streamResidentLayers { metric("常驻 Transformer 层（峰值）", String(layers)) }
+                    Spacer()
+                }
+                if let bytes=info.streamWeightBudgetBytes {
+                    Text("所选权重缓存预算 \(RunInsights.memory(bytes))")
+                        .font(.caption).monospacedDigit().accessibilityIdentifier("streamWeightCacheBudgetReceipt")
+                }
+                if let evictions=info.streamCacheEvictions,evictions>0 {
+                    Text("已因内存压力释放额外权重缓存，后续按层读取。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if info.streamCacheLimitedByMemory == true {
+                    Text("已根据可用内存减少缓存层数；所选预算为上限。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("编码器与 DiT 依次加载并释放。以上仅统计权重与流式缓冲；包含激活值的 App 实时内存见侧栏。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if let calls = info.coreMLCalls, calls > 0 {
                 HStack(spacing: 20) {

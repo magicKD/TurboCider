@@ -1,5 +1,7 @@
 #include "transformer.hpp"
+#include "cider_w8a8.hpp"
 #include "diagnostic_options.hpp"
+#include "checkpoint_recipe.hpp"
 #include "metal/qk_norm_rope.hpp"
 #include "metal/qkv_projection.hpp"
 #include "metal/lora_qkv_prepare.hpp"
@@ -9,9 +11,23 @@
 #include <iostream>
 #include <limits>
 #include <algorithm>
+#include <string_view>
+#include <unordered_set>
+#include <bit>
 
 namespace tc::qwen21 {
 namespace {
+Tensor owned_prefix_copy(const Tensor& value) {
+    // A plain copy can alias its source. Preserve all dtype bytes while
+    // forcing separate, compact storage outside the compiled block.
+    return mx::copy(mx::contiguous(mx::astype(value,value.dtype(),std::optional<bool>{true})));
+}
+bool compact_stream_prefix() {
+    const auto* value=std::getenv("TURBOCIDER_QWEN21_STREAM_COMPACT_KV");
+    require(!value || std::string_view(value)=="0" || std::string_view(value)=="1",
+        "streamed prefix compaction control requires 0 or 1");
+    return !value || std::string_view(value)=="1";
+}
 Tensor rotate(const Tensor &x, const Tensor &cosine, const Tensor &sine) {
     auto shape = x.shape();
     auto paired_shape = shape;
@@ -98,12 +114,38 @@ Transformer::Transformer(const Weights &weights, TransformerConfig config,
     require(sum == config.head_dim, "Qwen21 RoPE axes must sum to head dimension");
 }
 
+void Transformer::configure_staged_optimizations(int attention_bits, bool qk_norm_rope,
+                                                   std::shared_ptr<CiderCache> cider_cache) {
+    cider_dit_small_cache_.clear();
+    require(attention_bits == 0 || attention_bits == 4 || attention_bits == 8,
+            "Qwen21 staged attention bits must be 0, 4 or 8");
+    require((!attention_bits && !qk_norm_rope) || config_ == TransformerConfig{},
+            "Qwen21 staged optimizations require the standard transformer geometry");
+    require(!qk_norm_rope || (!metal_qk_rope_ && !fused_qkv_),
+            "Qwen21 Q/K norm-RoPE fusion cannot combine with another fused QKV/RoPE kernel");
+    const bool cider = bool(cider_cache);
+    require(!cider || attention_bits == 8, "DiT W8A8 requires 8-bit attention weights");
+    if (attention_bits == staged_attention_bits_ && qk_norm_rope == metal_qk_norm_rope_ &&
+        cider_cache == cider_cache_) return;
+    staged_attention_bits_ = attention_bits;
+    staged_attention_cider_ = cider;
+    cider_cache_ = std::move(cider_cache);
+    metal_qk_norm_rope_ = qk_norm_rope;
+    reset();
+    staged_attention_.resize(attention_bits ? config_.layers : 0);
+    prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
+    reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear();
+}
+
 void Transformer::clear_db_residuals() {
     db_prev_front_residual_.reset(); db_middle_residual_.reset();
     db_consecutive_steps_ = 0; db_last_step_ = -1;
 }
 
 void Transformer::reset() {
+    cider_dit_small_cache_.clear();
+    for (auto &entry : staged_attention_) entry.reset();
+    staged_attention_pack_seconds_ = 0;
     prefix_.clear();
     cached_ffn_.clear();
     clear_db_residuals(); db_cached_steps_ = 0;
@@ -125,6 +167,22 @@ bool Transformer::prefix_matches(const Tensor &text, int height, int width,
     return true;
 }
 
+Transformer::PrefixStorageInfo Transformer::prefix_storage() const {
+    PrefixStorageInfo info;
+    std::unordered_set<const void*> buffers;
+    for(const auto& kv:prefix_)for(const auto* value:{&kv.key,&kv.value}) {
+        ++info.arrays;info.logical_bytes+=value->nbytes();
+        const bool ready=value->is_available();
+        info.evaluated=info.evaluated && ready;
+        info.compact=info.compact && ready && !value->has_primitive() &&
+            value->inputs().empty() && value->siblings().empty() &&
+            value->flags().row_contiguous && value->offset()==0 && value->data_size()==value->size();
+        if(ready && value->data_shared_ptr() && buffers.insert(value->data_shared_ptr().get()).second)
+            info.backing_bytes+=value->buffer_size();
+    }
+    return info;
+}
+
 bool Transformer::graph_geometry_matches(const Tensor &text, int height, int width,
                                          const std::vector<ReferenceLatents> &references) const {
     if (!cosine_ || text.ndim() != 3 || text_length_ != text.shape(1) || height_ != height ||
@@ -139,7 +197,7 @@ bool Transformer::plain_prefix_route(bool allow_db_cache, bool allow_direct_qkv,
     // Keep packed storage, DB composition and every callback guard separate.
     if (allow_direct_qkv && (!corrected_qkv_direct_ || corrected_qkv_ || allow_db_cache)) return false;
     if (allow_lora_swiglu && (!lora_swiglu_enabled_ || allow_db_cache)) return false;
-    return !joint_runtime_qkv_mlp_ && !joint_runtime_conservative_cache_ && !runtime_cache_skip_ && !diagnostic_block_observer_ && !fused_qkv_ && !corrected_qkv_ &&
+    return !staged_attention_bits_ && !joint_runtime_qkv_mlp_ && !joint_runtime_conservative_cache_ && !runtime_cache_skip_ && !diagnostic_block_observer_ && !fused_qkv_ && !corrected_qkv_ &&
         (!corrected_qkv_direct_ || allow_direct_qkv) && (!lora_swiglu_enabled_ || allow_lora_swiglu) && !metal_qk_rope_ && !metal_qk_norm_rope_ &&
         !reference_local_attention_ && !prefill_last_target_only_ &&
         !profile_gpu_blocks_ && !profile_gpu_ops_ && !profile_prefill_segments_ &&
@@ -183,10 +241,8 @@ Transformer::export_prefix_snapshot(uint64_t max_bytes, bool allow_db_cache, boo
         // AsType(copy=true) outside compile forces a value-preserving copy;
         // the live prefix_ owner prevents allocator donation. Contiguous
         // compacts transposed/sliced head rows instead of retaining targets.
-        snapshot.keys.push_back(mx::copy(mx::contiguous(
-            mx::astype(kv.key, kv.key.dtype(), std::optional<bool>{true}))));
-        snapshot.values.push_back(mx::copy(mx::contiguous(
-            mx::astype(kv.value, kv.value.dtype(), std::optional<bool>{true}))));
+        snapshot.keys.push_back(owned_prefix_copy(kv.key));
+        snapshot.values.push_back(owned_prefix_copy(kv.value));
         completed.push_back(snapshot.keys.back());
         completed.push_back(snapshot.values.back());
     }
@@ -271,6 +327,32 @@ bool Transformer::import_prefix_snapshot(const PrefixSnapshot &snapshot, const T
     return true;
 }
 
+Tensor Transformer::project_dit(const Tensor &input, const Weights &weights, const std::string &name) const {
+    if (!cider_cache_) return linear(input, weights, name);
+    require(!weights.has_runtime_loras(), "DiT W8A8 requires base weights");
+    auto pack = [&]() {
+        const auto &weight = weights.at(name + ".weight");
+        auto bank = cider_cache_->pack(weight, "dit/" + name);
+        return bank;
+    };
+    std::vector<Tensor> temporary;
+    const std::vector<Tensor> *packed = nullptr;
+    if (!name.starts_with("transformer_blocks.")) {
+        auto found = cider_dit_small_cache_.find(name);
+        if (found == cider_dit_small_cache_.end()) {
+            require(cider_dit_small_cache_.size() < 8,
+                    "Cider non-block cache exceeds eight request-local projections");
+            found = cider_dit_small_cache_.emplace(name, pack()).first;
+        }
+        packed = &found->second;
+    } else {
+        temporary = pack();
+        packed = &temporary;
+    }
+    auto output = cider_project(input, *packed, 0);
+    return weights.has(name + ".bias") ? output + weights.at(name + ".bias") : output;
+}
+
 Tensor Transformer::embedding(float timestep, mx::Dtype dtype) const {
     // Reference constructs these constants in NumPy double then casts to MLX
     // float32. Small frequency errors can cross a BF16 rounding boundary.
@@ -283,8 +365,111 @@ Tensor Transformer::embedding(float timestep, mx::Dtype dtype) const {
     auto times = Tensor(std::vector<float>{timestep, 0.f}.data(), {2, 1}, mx::float32);
     auto angles = (times * 1000.f) * frequencies;
     auto input = mx::astype(mx::concatenate({mx::cos(angles), mx::sin(angles)}, -1), dtype);
-    return linear(silu(linear(input, weights_, "time_text_embed.timestep_embedder.linear_1")),
+    return project_dit(silu(project_dit(input, weights_, "time_text_embed.timestep_embedder.linear_1")),
                   weights_, "time_text_embed.timestep_embedder.linear_2");
+}
+
+const std::vector<std::string> &Transformer::timestep_condition_weight_names() {
+    static const std::vector<std::string> names{
+        "time_text_embed.timestep_embedder.linear_1.weight",
+        "time_text_embed.timestep_embedder.linear_2.weight",
+        "modulation.1.weight", "norm_out.linear.weight"};
+    return names;
+}
+
+namespace {
+bool timestep_leaf(const Tensor &value) {
+    return value.is_available() && !value.has_primitive() && value.inputs().empty() && value.siblings().empty();
+}
+uint64_t timestep_backing_bytes(const Tensor &value) {
+    return mx::allocator::allocator().size(value.data_shared_ptr()->buffer);
+}
+}
+
+std::vector<Transformer::PreparedTimestepCondition> Transformer::prepare_timestep_conditions(
+        const std::vector<float> &sigmas,mx::Dtype dtype,const std::string &source_sha256) {
+    require(!timestep_condition_owner_,"Qwen timestep conditions require a fresh unprepared Transformer");
+    require(dtype==mx::bfloat16 && !weights_.has_runtime_loras() && !cider_cache_,
+        "Qwen timestep conditions require original BF16 time projections without LoRA or Cider packs");
+    require(source_sha256.size()==64 && source_sha256.find_first_not_of("0123456789abcdef")==std::string::npos,
+        "Qwen timestep conditions require a verified lowercase source SHA256");
+    require(sigmas.size()==8,"Qwen timestep conditions require all eight authored sigmas");
+    for(size_t step=0;step<sigmas.size();++step)
+        require(std::bit_cast<uint32_t>(sigmas[step])==std::bit_cast<uint32_t>(turbo_sigma_nodes[step]),
+            "Qwen timestep conditions require exact authored F32 sigma bits");
+    const int h=config_.hidden();
+    const std::array<mx::Shape,4> shapes{mx::Shape{h,256},mx::Shape{h,h},mx::Shape{4*h,h},mx::Shape{h,h}};
+    std::array<uintptr_t,4> ids{};
+    const auto &names=timestep_condition_weight_names();
+    std::unordered_set<const void *> source_buffers;
+    for(size_t i=0;i<names.size();++i) {
+        const auto &weight=weights_.at(names[i]);
+        require(weight.dtype()==mx::bfloat16 && weight.shape()==shapes[i] && timestep_leaf(weight),
+            "Qwen timestep conditions require evaluated original M2 BF16 source geometry");
+        require(!weights_.has(names[i].substr(0,names[i].size()-7)+".bias"),
+            "Qwen timestep conditions require bias-free original time projections");
+        ids[i]=weight.id();source_buffers.insert(weight.data_shared_ptr()->buffer.ptr());
+    }
+    auto owner=std::make_shared<const uint8_t>(0);
+    std::unordered_set<const void *> output_buffers;
+    std::vector<PreparedTimestepCondition> result;result.reserve(sigmas.size());
+    for(const float sigma:sigmas) {
+        // Keep every original M=2 expression and its BF16 boundaries. In
+        // particular, do not reuse one silu node between the two projections.
+        auto temb=embedding(sigma,dtype);
+        auto modulation=project_dit(silu(temb),weights_,"modulation.1");
+        auto raw_output_scale=project_dit(silu(temb),weights_,"norm_out.linear");
+        mx::eval(modulation,raw_output_scale);mx::synchronize();
+        require(modulation.dtype()==dtype && modulation.shape()==mx::Shape{2,4*h} &&
+            raw_output_scale.dtype()==dtype && raw_output_scale.shape()==mx::Shape{2,h} &&
+            timestep_leaf(modulation) && timestep_leaf(raw_output_scale),
+            "Qwen timestep preparation retained an unfinished graph or changed full M2 output geometry");
+        uint64_t capacity=0;
+        for(const auto *value:{&modulation,&raw_output_scale}) {
+            const void *buffer=value->data_shared_ptr()->buffer.ptr();
+            require(!source_buffers.contains(buffer) && output_buffers.insert(buffer).second,
+                "Qwen timestep preparation must own independent compact output backing");
+            const auto bytes=timestep_backing_bytes(*value);
+            require(bytes>=value->nbytes() && bytes<=((value->nbytes()+16383)/16384)*16384,
+                "Qwen timestep output backing exceeds its compact aligned bound");
+            capacity+=bytes;
+        }
+        result.push_back(PreparedTimestepCondition(owner,source_sha256,std::bit_cast<uint32_t>(sigma),dtype,
+            std::move(modulation),std::move(raw_output_scale),capacity));
+    }
+    // Publication is atomic: failed/unfinished preparation leaves no usable
+    // identity and the caller must not release any original source owner.
+    timestep_condition_source_=source_sha256;
+    timestep_condition_weight_ids_=ids;
+    timestep_condition_owner_=std::move(owner);
+    return result;
+}
+
+void Transformer::validate_timestep_condition(const PreparedTimestepCondition &condition,float sigma,mx::Dtype dtype) const {
+    const auto owner=condition.owner_.lock();
+    require(owner && timestep_condition_owner_ && owner==timestep_condition_owner_,
+        "Qwen timestep condition owner mismatch");
+    require(condition.source_sha256_==timestep_condition_source_ && condition.source_sha256_.size()==64,
+        "Qwen timestep condition source identity mismatch");
+    require(condition.sigma_bits_==std::bit_cast<uint32_t>(sigma),"Qwen timestep condition sigma bits mismatch");
+    require(dtype==mx::bfloat16 && condition.dtype_==dtype && !weights_.has_runtime_loras() && !cider_cache_,
+        "Qwen timestep condition dtype or arithmetic route mismatch");
+    const int h=config_.hidden();
+    require(condition.modulation_.dtype()==dtype && condition.modulation_.shape()==mx::Shape{2,4*h} &&
+        condition.raw_output_scale_.dtype()==dtype && condition.raw_output_scale_.shape()==mx::Shape{2,h} &&
+        timestep_leaf(condition.modulation_) && timestep_leaf(condition.raw_output_scale_),
+        "Qwen timestep condition full M2 leaf geometry mismatch");
+    const auto &names=timestep_condition_weight_names();size_t present=0;
+    for(size_t i=0;i<names.size();++i) {
+        require(!weights_.has(names[i].substr(0,names[i].size()-7)+".bias"),
+            "Qwen timestep condition source binding changed");
+        if(weights_.has(names[i])) {
+            ++present;
+            require(weights_.at(names[i]).id()==timestep_condition_weight_ids_[i],
+                "Qwen timestep condition source binding changed");
+        }
+    }
+    require(present==0 || present==names.size(),"Qwen timestep condition source retirement is incomplete");
 }
 
 void Transformer::geometry(int text_length, int height, int width, const std::vector<ReferenceGeometry> &references) {
@@ -325,7 +510,8 @@ void Transformer::geometry(int text_length, int height, int width, const std::ve
 Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float timestep,
                             int height, int width, bool cache_prefix,
                             std::unordered_map<std::string, Tensor> *trace,
-                            const std::vector<ReferenceLatents> &references) try {
+                            const std::vector<ReferenceLatents> &references,
+                            const PreparedTimestepCondition *prepared_timestep) try {
     require(height > 0 && width > 0 && latents.ndim() == 3 && latents.shape(0) == 1 &&
             latents.shape(1) == height * width && latents.shape(2) == config_.channels,
             "Qwen21 latent shape must be [1,H*W,channels]");
@@ -334,6 +520,10 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             "Qwen21 text shape/dtype mismatch");
     require(std::isfinite(timestep) && timestep >= 0.f && timestep <= 1.f,
             "Qwen21 timestep must be a normalized sigma in [0,1]");
+    if(prepared_timestep) {
+        require(!trace,"Qwen prepared timestep conditions do not support tracing");
+        validate_timestep_condition(*prepared_timestep,timestep,latents.dtype());
+    }
     std::vector<ReferenceGeometry> reference_geometry;
     bool same_references = references.size() == cached_references_.size();
     for (size_t i = 0; i < references.size(); ++i) {
@@ -351,6 +541,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     bool reuse = cache_prefix && prefix_.size() == size_t(config_.layers);
     last_ffn_captured_blocks_=last_ffn_reused_blocks_=0;
     const bool split_mlp = reuse ? bool(decode_mlp_) : bool(prefill_mlp_);
+    require(!staged_attention_bits_ ||
+                (cache_prefix && release_layer_ && !trace && !fused_qkv_ &&
+                 !layer_weights_ && !retire_weights_ && !project_qkv_ && !stage_qkv_ &&
+                 !plan_qkv_ && !plan_mlp_ && !prefill_mlp_ &&
+                 !diagnostic_block_observer_ && !weights_.has_runtime_loras() &&
+                 ffn_cache_mode_ == FFNCacheMode::Off),
+            "Qwen21 attention cache requires layer-released base hybrid decode without dynamic weights, QKV or step-FFN reuse");
     if(lora_swiglu_enabled_)require(!trace&&!split_mlp&&!project_qkv_&&!fused_qkv_&&!corrected_qkv_&&!metal_qk_rope_&&!metal_qk_norm_rope_&&
         !reference_local_attention_&&!prefill_last_target_only_&&!db_cache_enabled_&&!diagnostic_block_observer_&&!profile_gpu_blocks_&&!profile_gpu_ops_&&!profile_prefill_segments_&&
         ffn_cache_mode_==FFNCacheMode::Off&&!layer_weights_&&!release_layer_&&!plan_mlp_&&!stage_mlp_&&!observe_mlp_&&!plan_qkv_&&!stage_qkv_&&!observe_qkv_&&
@@ -413,25 +610,28 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     if (half_reuse_ffn) previous_ffn = std::move(cached_ffn_);
     if (capture_ffn) cached_ffn_.clear();
     require(!split_mlp || !trace, "Qwen21 MLP split trace is not supported");
-    auto temb = embedding(timestep, latents.dtype());
-    auto modulation = linear(silu(temb), weights_, "modulation.1");
-    if (trace) { trace->emplace("temb", slice_axis(temb, 0, 0, 1)); trace->emplace("modulation", slice_axis(modulation, 0, 0, 1)); }
+    // Flag0 keeps the original producer positions: modulation at step start,
+    // norm_out.linear only after all blocks. Only prepared values bypass them.
+    std::optional<Tensor> temb;
+    if(!prepared_timestep)temb.emplace(embedding(timestep,latents.dtype()));
+    auto modulation = prepared_timestep ? prepared_timestep->modulation_ : project_dit(silu(*temb), weights_, "modulation.1");
+    if (trace) { trace->emplace("temb", slice_axis(*temb, 0, 0, 1)); trace->emplace("modulation", slice_axis(modulation, 0, 0, 1)); }
     auto mod_target = mx::split(mx::reshape(slice_axis(modulation, 0, 0, 1), {1, 1, 4 * config_.hidden()}), 4, -1);
     auto mods = mod_target;
-    Tensor hidden = linear(latents, weights_, "img_in");
+    Tensor hidden = project_dit(latents, weights_, "img_in");
     const Tensor db_input = hidden;
     int prefix_length = sequence_.prefix_length;
     if (!reuse) {
         auto f = mx::astype(text, mx::float32);
         auto scale = mx::astype(weights_.at("txt_in.text_norm.weight"), mx::float32) + 1.f;
         auto normalized = mx::astype(f * mx::rsqrt(mx::mean(f * f, -1, true) + config_.epsilon) * scale, text.dtype());
-        auto context = linear(gelu(linear(normalized, weights_, "txt_in.in_layer")), weights_, "txt_in.out_layer");
+        auto context = project_dit(gelu(project_dit(normalized, weights_, "txt_in.in_layer")), weights_, "txt_in.out_layer");
         std::vector<Tensor> parts;
         for (const auto &segment : sequence_.segments) {
             if (segment.causal)
                 parts.push_back(slice_axis(context, 1, segment.text_start, segment.text_start + segment.end - segment.start));
             else if (segment.image_index < int(references.size()))
-                parts.push_back(linear(references[segment.image_index].latents, weights_, "img_in"));
+                parts.push_back(project_dit(references[segment.image_index].latents, weights_, "img_in"));
             else parts.push_back(hidden);
         }
         hidden = mx::concatenate(parts, 1);
@@ -507,6 +707,27 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         const auto plan = split_candidate ? (plan_mlp_ ? plan_mlp_(i, ffn_rows) : MLPPlan::Split)
                                           : MLPPlan::Gpu;
         const bool split_this = plan == MLPPlan::Split || plan == MLPPlan::SplitUntimed;
+        const bool quantized_attention = reuse && staged_attention_bits_ != 0;
+        if (quantized_attention) {
+            require(split_this && decode_first_block_ == 0,
+                    "Qwen21 attention cache requires split FFN coverage for every decode layer");
+            auto &saved = staged_attention_.at(i);
+            if (!saved) {
+                const auto started = Clock::now();
+                const auto stem = "transformer_blocks." + std::to_string(i) + ".attn.";
+                for (const char *name : {"to_q", "to_k", "to_v", "to_out.0"})
+                    require(!weights_.has(stem + name + ".bias"),
+                            "Qwen21 staged attention requires bias-free projections");
+                saved.emplace(quantize_staged_attention({weights_.at(stem + "to_q.weight"),
+                    weights_.at(stem + "to_k.weight"), weights_.at(stem + "to_v.weight"),
+                    weights_.at(stem + "to_out.0.weight")}, staged_attention_bits_, staged_attention_cider_,
+                    "attention/block" + std::to_string(i), cider_cache_.get()));
+                staged_attention_pack_seconds_ +=
+                    std::chrono::duration<double>(Clock::now() - started).count();
+            }
+            require(saved->bits == staged_attention_bits_ && saved->cider_w8a8 == staged_attention_cider_,
+                    "Qwen21 staged attention cache recipe changed");
+        }
         const int qkv_rows = hidden.shape(1);
         const auto qkv_plan = project_qkv_ && !trace && plan_qkv_ ?
             plan_qkv_(i, qkv_rows) : QKVPlan::Hybrid;
@@ -517,10 +738,20 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         const bool measured_block = plan_mlp_ && (plan == MLPPlan::Split || plan == MLPPlan::GpuProbe);
         std::vector<std::string> dynamic_keys;
         std::vector<Tensor> dynamic_sources;
+        bool dynamic_convrot_w8a8 = false;
         if(layer_weights_) {
-            require(!split_this && !external_qkv && !fused_qkv_ && !trace && !capture_ffn && !reuse_ffn_block &&
-                !db_cache_enabled_,"Qwen streamed blocks require complete GPU arithmetic without temporal/ANE experiments");
+            bool streamed_convrot_split=false;
+#if TURBOCIDER_ENABLE_PRIVATE_ANE
+            const char* opt_in=std::getenv("TURBOCIDER_QWEN21_CONVROT_STREAM_ANE");
+            streamed_convrot_split=split_this && plan==MLPPlan::SplitUntimed && reuse && plan_mlp_ &&
+                retire_weights_ && !stage_mlp_ && !prefill_mlp_ && references.empty() && height==32 && width==32 &&
+                opt_in && std::string_view(opt_in)=="1";
+#endif
+            require((!split_this || streamed_convrot_split) && !external_qkv && !fused_qkv_ && !trace &&
+                !capture_ffn && !reuse_ffn_block && !db_cache_enabled_,"Qwen streamed blocks require complete GPU arithmetic or the explicit untimed ConvRot FFN split");
             const auto &source=layer_weights_(i);const auto p="transformer_blocks."+std::to_string(i)+".";
+            dynamic_convrot_w8a8 = source.convrot_w8a8();
+            require(!streamed_convrot_split || dynamic_convrot_w8a8,"Qwen streamed ConvRot FFN split requires W8A8 source weights");
             for(const auto &key:source.sorted_keys())if(key.starts_with(p)) {
                 dynamic_keys.push_back(key);dynamic_sources.push_back(source.at(key));
             }
@@ -536,16 +767,21 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
             const bool profile_ops = profile_gpu_ops_ && !split_this && i == 0;
             const bool profile_segments = profile_prefill_segments_ && !reuse && !split_this && i == 0;
             auto block = [this, i, reuse, prefix_length, split_this, external_qkv, capture_ffn,
+                          quantized_attention, attention_bits = staged_attention_bits_,
+                          attention_cider = staged_attention_cider_,
                           target_only_block,
                           reuse_ffn_block,
                           profile_ops, profile_segments,
                           metal_rope = metal_qk_rope_, fused_norm_rope = metal_qk_norm_rope_,
                           local_references = reference_local_attention_,
-                          dynamic_keys,
+                          dynamic_keys, dynamic_convrot_w8a8,
                           tracing = trace != nullptr](const std::vector<Tensor> &args) {
                 if (graph_counters_enabled_) block_graph_traces_.fetch_add(1, std::memory_order_relaxed);
                 Weights dynamic;
-                if(!dynamic_keys.empty())dynamic.bind_arrays(dynamic_keys,args,args.size()-dynamic_keys.size());
+                if (!dynamic_keys.empty()) {
+                    dynamic.bind_arrays(dynamic_keys, args, args.size() - dynamic_keys.size());
+                    dynamic.set_convrot_w8a8(dynamic_convrot_w8a8);
+                }
                 const Weights &weights=dynamic_keys.empty() ? weights_ : dynamic;
                 // The last prefill block exports only target queries. Without
                 // a fused QKV/RoPE kernel, avoid projecting and rotating Q for
@@ -575,7 +811,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 auto attention_input = input;
                 mark("attention_input_norm", {input});
                 Tensor q(0.f), k(0.f), v(0.f);
-                if (external_qkv) {
+                if (quantized_attention) {
+                    q = staged_attention_project(input, args, 9, attention_bits, attention_cider);
+                    k = staged_attention_project(input, args, 12, attention_bits, attention_cider);
+                    v = heads(staged_attention_project(input, args, 15, attention_bits, attention_cider),
+                              config_.heads, config_.head_dim);
+                } else if (external_qkv) {
                     q = args[args.size() - 3];
                     k = args[args.size() - 2];
                     v = heads(args.back(), config_.heads, config_.head_dim);
@@ -604,11 +845,18 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         metal::prepare_corrected_qkv(input,corrected_qkv_->at(i),low,up,scales,
                         weights.at(p+".attn.norm_q.weight"),weights.at(p+".attn.norm_k.weight"),cosine,sine,32);
                     q=all[0];k=all[1];v=all[2];
+                } else if(reuse && !cider_cache_ && weights.convrot_w8a8() && convrot_shared_a8_enabled()) {
+                    // Decode outputs are consumed within this block. Preserve
+                    // independent prefill V storage: its prefix enters the KV
+                    // cache and must not pin a full shared Q/K/V allocation.
+                    const auto all=weights.project_many(input,
+                        {p+".attn.to_q",p+".attn.to_k",p+".attn.to_v"});
+                    q=all[0];k=all[1];v=heads(all[2],config_.heads,config_.head_dim);
                 } else {
-                    q = linear(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
+                    q = project_dit(short_q ? slice_axis(input, 1, prefix_length, input.shape(1)) : input,
                                weights, p + ".attn.to_q");
-                    k = linear(input, weights, p + ".attn.to_k");
-                    v = heads(linear(input, weights, p + ".attn.to_v"), config_.heads, config_.head_dim);
+                    k = project_dit(input, weights, p + ".attn.to_k");
+                    v = heads(project_dit(input, weights, p + ".attn.to_v"), config_.heads, config_.head_dim);
                 }
                 mark("qkv_projection", {q, k, v});
                 if (fused_qkv_ || (reuse && corrected_qkv_enabled())) {
@@ -700,7 +948,9 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                     for (int gate = 1; gate < 4; ++gate)
                         mods[gate] = slice_axis(mods[gate], 1, prefix_length, mods[gate].shape(1));
                 }
-                auto projected = linear(output, weights, p + ".attn.to_out.0");
+                auto projected = quantized_attention
+                    ? staged_attention_project(output, args, 18, attention_bits, attention_cider)
+                    : project_dit(output, weights, p + ".attn.to_out.0");
                 mark("attention_output_projection", {projected});
                 hidden = hidden + mx::tanh(mods[1]) * projected;
                 auto after_attention = hidden;
@@ -718,14 +968,14 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                         auto ranks=weights.lora_input_ranks(input,name,0,config_.hidden());require(ranks.size()==2,"two online F32 gate/up ranks required");
                         ff=metal::prepare_lora_swiglu(base,ranks[terms.index[0]],terms.up[0],ranks[terms.index[1]],terms.up[1],terms.scale[0],terms.scale[1],16,128);
                     } else if (weights.has(p + ".img_mlp.gate_up.weight")) {
-                        auto gate_up = linear(input, weights, p + ".img_mlp.gate_up");
+                        auto gate_up = project_dit(input, weights, p + ".img_mlp.gate_up");
                         const int half = gate_up.shape(-1) / 2;
                         ff = silu(slice_axis(gate_up, -1, 0, half)) *
                              slice_axis(gate_up, -1, half, gate_up.shape(-1));
                     } else {
-                        ff = silu(linear(input, weights, p + ".img_mlp.gate_layer")) * linear(input, weights, p + ".img_mlp.proj");
+                        ff = silu(project_dit(input, weights, p + ".img_mlp.gate_layer")) * project_dit(input, weights, p + ".img_mlp.proj");
                     }
-                    feed = linear(ff, weights, p + ".img_mlp.out");
+                    feed = project_dit(ff, weights, p + ".img_mlp.out");
                 }
                 mark("ffn_gate_up", {ff});
                 hidden = hidden + mx::tanh(mods[3]) * feed;
@@ -734,7 +984,12 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
                 if (capture_ffn) return std::vector<Tensor>{hidden, feed};
                 return reuse ? std::vector<Tensor>{hidden} : std::vector<Tensor>{hidden, pk, pv};
             };
-            auto compiled = profile_ops || profile_segments ? BlockFunction(block) : mx::compile(block);
+            // Packing evaluates weights and cannot run while MLX traces. A decode
+            // with cached attention plus external FFN contains no project_dit calls,
+            // so preserve its original compiled block and fusion behavior.
+            const bool cider_packs_in_block = bool(cider_cache_) &&
+                !(quantized_attention && split_this);
+            auto compiled = profile_ops || profile_segments || cider_packs_in_block ? BlockFunction(block) : mx::compile(block);
             function = std::move(compiled);
         }
         std::vector<Tensor> args{hidden, mods[0], mods[1], mods[2], mods[3], cosine, sine};
@@ -745,6 +1000,13 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         if (reuse_ffn_block) {
             args.push_back(half_reuse_ffn ? previous_ffn[i] : cached_ffn_[i]);
             ++last_ffn_reused_blocks_;
+        }
+        if (quantized_attention) {
+            // Exactly seven block inputs and two prefix K/V arrays precede
+            // this bank. The cache gate excludes every other dynamic ABI.
+            require(args.size() == 9, "Qwen21 staged attention block argument layout changed");
+            const auto &packed = staged_attention_.at(i)->arrays;
+            args.insert(args.end(), packed.begin(), packed.end());
         }
         // Probe complete blocks from the same materialized upstream inputs,
         // including staging, QKV join, attention and GPU FFN. The GPU probe
@@ -873,6 +1135,15 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
         }
         if(retire_weights_) {
             mx::eval(outputs);mx::eval(hidden);
+            if(!reuse && cache_prefix && compact_stream_prefix()) {
+                // Prefix slices otherwise retain every target token in the
+                // full prefill K/V backing for all remaining denoise steps.
+                // Complete exact owned copies before the slot is retired.
+                auto& kv=new_prefix.back();
+                auto key=owned_prefix_copy(kv.key),value=owned_prefix_copy(kv.value);
+                mx::eval(key,value);
+                kv={std::move(key),std::move(value)};
+            }
             retire_weights_(i);
         }
         if (db_decode && i == config_.layers - db_back_blocks - 1) {
@@ -892,8 +1163,9 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     }
     if (!reuse && !(prefill_last_target_only_ && !trace))
         hidden = slice_axis(hidden, 1, prefix_length, hidden.shape(1));
-    auto out_scale = mx::reshape(slice_axis(linear(silu(temb), weights_, "norm_out.linear"), 0, 0, 1), {1, 1, config_.hidden()});
-    auto result = linear(layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + out_scale), weights_, "proj_out");
+    auto out_scale = mx::reshape(slice_axis(prepared_timestep ? prepared_timestep->raw_output_scale_ :
+        project_dit(silu(*temb), weights_, "norm_out.linear"), 0, 0, 1), {1, 1, config_.hidden()});
+    auto result = project_dit(layer_norm(hidden, config_.epsilon) * (Tensor(1.f, hidden.dtype()) + out_scale), weights_, "proj_out");
     if (cache_prefix && !reuse) {
         prefix_ = std::move(new_prefix);
         cached_text_ = text;
@@ -911,6 +1183,11 @@ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float tim
     // A callback or trace failure may occur after front residual publication.
     // Never let a retry consume that partially executed step's caches.
     clear_step_cache();
+    if (staged_attention_bits_) {
+        reset();
+        prefill_blocks_.clear(); decode_blocks_.clear(); capture_blocks_.clear();
+        reuse_blocks_.clear(); reuse_last16_blocks_.clear(); half_reuse_blocks_.clear();
+    }
     throw;
 }
 } // namespace tc::qwen21

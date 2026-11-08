@@ -15,3 +15,18 @@ the Session layer.
 The sibling repository may contain later uncommitted experiments. This
 vendored directory is the source compiled into TurboCider and must be reviewed
 and tested as its own snapshot before release.
+
+## Library boundary
+
+The maintained command-line interface is [apps/cli/](../../../apps/cli/), built
+with the library by [tools/native/build.sh](../../../tools/native/build.sh).
+The upstream standalone `main.c`, interactive `h3_cli.*`, `linenoise.*` editor
+and `h3_super.*` ComfyUI workflow were unreferenced copies outside TurboCider's
+build targets and have been removed from this library directory.
+
+[External reference audits](../../../tools/README.md#retired-entry-points)
+still accept an explicitly supplied upstream checkout; they do not require
+those standalone-program sources in TurboCider. Historical source manifests
+retain their original paths and hashes to describe the recorded revisions,
+not the current library source inventory. New builds fingerprint the current
+working sources through the existing runtime build-identity mechanism.

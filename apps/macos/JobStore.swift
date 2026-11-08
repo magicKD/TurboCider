@@ -2,6 +2,49 @@ import Foundation
 import Combine
 import Darwin
 
+/// Presentation only. Keep the original native error and diagnostics in the
+/// job record, and never turn another error (or cancellation) into a timeout.
+enum Qwen21MemoryPresentation {
+    static func phaseTitle(_ phase: String) -> String? {
+        switch phase {
+        case "memory_wait": return "正在等待可用内存"
+        case "memory_ready": return "内存余量已恢复，继续生成"
+        default: return nil
+        }
+    }
+
+    static func progressText(phase: String, completed: Int, total: Int) -> String? {
+        guard phase == "memory_wait" else { return nil }
+        guard total > 0 else { return "正在等待可用内存，可随时取消。" }
+        let seconds = min(max(0, completed), total)
+        return "已等待 \(seconds) 秒，最多等待 \(total) 秒 · 可随时取消"
+    }
+
+    static func timeoutSummary(_ diagnostic: String) -> String? {
+        let prefix = "Qwen21 ConvRot streaming: memory_wait_timeout;"
+        guard diagnostic.hasPrefix(prefix) else { return nil }
+        var requiredFields: Set<String> = ["waited_ms", "required_growth_mib"]
+        for token in diagnostic.dropFirst(prefix.count).split(separator: ";") {
+            let pair = token.trimmingCharacters(in: .whitespaces).split(separator: "=", maxSplits: 1,
+                                                                       omittingEmptySubsequences: false)
+            guard pair.count == 2 else { continue }
+            let key = String(pair[0])
+            guard key == "waited_ms" || key == "required_growth_mib" else { continue }
+            let value = pair[1]
+            guard requiredFields.remove(key) != nil, !value.isEmpty,
+                  value.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }), UInt64(value) != nil else { return nil }
+        }
+        guard requiredFields.isEmpty else { return nil }
+        return "等待后系统内存仍处于严重压力或可用余量不足，本次生成已停止。请释放其他应用占用的内存后重试，也可将权重缓存预算调为“最小”。原生诊断已保存在本次任务记录中。"
+    }
+
+    static func message(for error: Error) -> String {
+        guard let native = error as? NativeFailure,
+              let summary = timeoutSummary(native.message) else { return error.localizedDescription }
+        return summary
+    }
+}
+
 struct NativeJob: Codable, Identifiable, Sendable {
     let id: UUID
     let createdAt: Date
@@ -85,6 +128,19 @@ struct NativeJob: Codable, Identifiable, Sendable {
             let precision = variant.title.components(separatedBy: " · ")[0]
             return execution.hasPrefix("gpu_ane")
                 ? "GPU + Core ML · \(precision) · ANE 驻留未知" : "GPU · \(precision)"
+        }
+        if request.model == "qwen-image-2.1", execution == "gpu",
+           let convrot = result["qwen_convrot_w8a8"] as? [String: Any] {
+            let precision: String
+            switch (convrot["encoder_enabled"] as? Bool, convrot["dit_enabled"] as? Bool) {
+            case (true, true): precision = "W8A8 ConvRot"
+            case (true, false): precision = "ConvRot · 编码器 W8A8"
+            case (false, true): precision = "ConvRot · DiT W8A8"
+            case (false, false): precision = "INT8 ConvRot · 浮点激活"
+            default: precision = "INT8 ConvRot"
+            }
+            let residency = plan["residency"] as? String == "streamed" ? " · 流式加载" : ""
+            return "GPU · " + precision + residency
         }
         if execution.hasPrefix("gpu_ane") {
             if request.model == "qwen-image-2.1", result["runtime_precision"] as? String == "bf16_gpu+fp16_mlp_fp16_io" {
@@ -408,6 +464,8 @@ final class NativeJobStore: ObservableObject {
         let preferred = config.manifest, known = config.knownManifests ?? []
         let preferSmallestRows = draft.modelID == "z-image-turbo" &&
             AccelerationDiscovery.optimizationEnabled("z_image_smallest_partition")
+        let allowRowTiling = draft.modelID == "z-image-turbo" &&
+            draft.width == 512 && draft.height == 512 && draft.activeLoRAs.isEmpty
         accelerationStatus = "正在检查 ANE 编译缓存…"
         let textTokens = draft.modelID == "z-image-turbo"
             ? try await Task.detached {
@@ -421,13 +479,14 @@ final class NativeJobStore: ObservableObject {
         let match = await Task.detached {
             AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: preferred, cache: cache,
                 minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs, knownManifests: known,
-                preferSmallestRows: preferSmallestRows)
+                preferSmallestRows: preferSmallestRows, allowRowTiling: allowRowTiling)
         }.value
         try Task.checkCancellation()
         if let match {
             config.manifest = match.manifest
             config.sourceManifest = match.source
-            accelerationStatus = "已复用 ANE 编译缓存 · \(match.rows) 行 · 未重新编译"
+            accelerationStatus = "已复用 ANE 编译缓存 · \(match.rows) 行" +
+                (match.tiles > 1 ? " × \(match.tiles) 个 FFN 分块 · 保留完整文本" : "") + " · 未重新编译"
         } else {
             let source = config.sourceManifest
             let sourceMatch = await Task.detached {
@@ -440,7 +499,7 @@ final class NativeJobStore: ObservableObject {
                 return AccelerationDiscovery.find(modelPath: draft.modelPath, preferred: sources.first ?? "", cache: cache,
                     minimumRows: minimumRows, modelID: draft.modelID, loras: draft.activeLoRAs,
                     knownManifests: Array(sources.dropFirst()), requireCompiled: false,
-                    preferSmallestRows: preferSmallestRows)
+                    preferSmallestRows: preferSmallestRows, allowRowTiling: allowRowTiling)
             }.value
             guard let sourceMatch else {
                 accelerationStatus = "没有匹配当前模型、LoRA、强度与文本长度的 ANE 缓存"
@@ -635,7 +694,11 @@ final class NativeJobStore: ObservableObject {
             sessionReport = resourceReport
             let plan = report?["plan"] as? [String: Any]
             let mode = (report?["execution"] as? String) ?? (plan?["execution"] as? String) ?? "gpu"
-            sessionState = (warmup ? "当前任务已预热 · 未保存图片" : "权重与当前文本已就绪") + (mode.hasPrefix("gpu_ane") ? " · GPU + ANE" : " · GPU")
+            if request.model == "qwen-image-2.1", request.residency == "streamed" {
+                sessionState = warmup ? "流式任务已预热 · 未保存图片" : "流式权重布局已校验 · 生成时按层加载"
+            } else {
+                sessionState = (warmup ? "当前任务已预热 · 未保存图片" : "权重与当前文本已就绪") + (mode.hasPrefix("gpu_ane") ? " · GPU + ANE" : " · GPU")
+            }
         } catch { if !recordProcessQuarantine(error) { sessionState = "准备未完成 · 可重试" }; throw error }
     }
     func maintainCache(modelURL: URL, action: String, source: URL? = nil, directory: URL? = nil) async throws -> Data {
@@ -1019,7 +1082,9 @@ final class NativeJobStore: ObservableObject {
             if runtimeOptions != nil { sessionState = "图片完成 · Runtime 实验进程已释放" }
             else if usesImageWorker { sessionState = "图片完成 · 工作进程已释放" }
             else if usesLTXWorker { sessionState = "视频完成 · 独立进程已释放" }
-            else if request.residency == "component_staged" {
+            else if request.model == "qwen-image-2.1", request.residency == "streamed" {
+                sessionState = "图片完成 · 流式权重已释放"
+            } else if request.residency == "component_staged" {
                 sessionState = request.model == "seedvr2-3b"
                     ? "会话就绪 · DiT 已释放，VAE 可复用" : "会话就绪 · 图像权重已释放"
             } else { sessionState = "会话可复用" }
@@ -1074,7 +1139,8 @@ final class NativeJobStore: ObservableObject {
             guard fstat(fd, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
                   info.st_uid == getuid(), info.st_nlink == 1, info.st_size > 0, info.st_size <= 16 << 20 else { return }
             let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
-            guard let data = try? handle.read(upToCount: Int(info.st_size)), data.count == Int(info.st_size) else { return }
+            guard let data = try? handle.read(upToCount: Int(info.st_size)), data.count == Int(info.st_size),
+                  TinyPreviewFrame.matches(data, width: jobs[i].request.width, height: jobs[i].request.height) else { return }
             livePreviewStep = event.completed; livePreview = data
             return
         }
@@ -1083,10 +1149,19 @@ final class NativeJobStore: ObservableObject {
                 actualRoute = receipt.label
             } else if jobs[i].runtimeOptions != nil {
                 actualRoute = event.phase == "route_gpu_ane" ? "Runtime 实验运行中 · 实际路线等待回执" : "GPU · Runtime 实验"
+            } else if event.phase == "route_gpu_ane" {
+                actualRoute = "GPU + Core ML · ANE 驻留未知"
             } else {
-                actualRoute = event.phase == "route_gpu_ane" ? "GPU + Core ML · ANE 驻留未知" : "Metal GPU · BF16"
+                actualRoute = jobs[i].request.model == "qwen-image-2.1" ? "Metal GPU" : "Metal GPU · BF16"
             }
             return
+        }
+        if jobs[i].request.model == "qwen-image-2.1", jobs[i].request.residency == "streamed",
+           event.phase == "load_qwen21_text" {
+            actualRoute = "GPU · ConvRot · 流式加载"
+        }
+        if let title = Qwen21MemoryPresentation.phaseTitle(event.phase) {
+            sessionState = cancelRequested ? "正在安全停止" : title
         }
         if cancelRequested { engine?.cancel() }
         // Block callbacks keep cancellation responsive but must not replace the

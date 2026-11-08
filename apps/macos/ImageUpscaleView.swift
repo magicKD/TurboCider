@@ -8,6 +8,7 @@ struct ImageUpscaleView: View {
     var showSettings = true
     @Binding var sourcePath: String
     var showsWorkspaceTitle = true
+    var modelSelection: Binding<String>? = nil
     var manageModels: () -> Void
     var historyContent: AnyView? = nil
     var selectedPreviewJob: NativeJob? = nil
@@ -15,7 +16,7 @@ struct ImageUpscaleView: View {
     var onResult: (NativeJob) -> Void
     @State private var submitting = false
     @State private var resultID: UUID?
-    private var locked: Bool { store.busy || submitting || store.externalServiceActive }
+    private var locked: Bool { store.busy || submitting || studio.imageInputsBusy || store.externalServiceActive }
     private var result: NativeJob? {
         if let selectedPreviewJob, selectedPreviewJob.hasOutput { return selectedPreviewJob }
         let candidate = store.jobs.first { $0.id == resultID && $0.hasOutput }
@@ -73,7 +74,7 @@ struct ImageUpscaleView: View {
                         InteractiveMediaPreview(path: sourcePath).frame(height: 280)
                     } else {
                         ContentUnavailableView("选择要放大的图片", systemImage: "photo.badge.plus",
-                                               description: Text("选择原图，打开「超分设置」选择模型后开始超分。"))
+                                               description: Text("选择原图，在右侧选择超分模型后开始超分。"))
                             .frame(height: 280)
                     }
                 }.padding(24)
@@ -84,7 +85,8 @@ struct ImageUpscaleView: View {
             if showSettings {
                 Divider()
                 ScrollView {
-                    UpscaleSettingsView(store: store, studio: studio, locked: locked, manageModels: manageModels)
+                    UpscaleSettingsView(store: store, studio: studio, locked: locked,
+                                        modelSelection: modelSelection, manageModels: manageModels)
                         .padding(18)
                 }.frame(width: 270).background(Color(nsColor: .controlBackgroundColor))
                     .accessibilityIdentifier("upscaleInspector")
@@ -124,13 +126,16 @@ struct UpscaleSettingsView: View {
     @ObservedObject var studio: StudioState
     var locked: Bool
     var showsVariantPicker = true
+    var modelSelection: Binding<String>? = nil
     var manageModels: () -> Void
     @State private var showDetails = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("超分设置").font(.headline)
             VStack(alignment: .leading, spacing: 10) {
-                if showsVariantPicker {
+                if let modelSelection {
+                    UpscaleModelPicker(studio: studio, modelID: modelSelection, kind: "image", locked: locked)
+                } else if showsVariantPicker {
                     Picker("超分模型", selection: Binding(get: { studio.draft.upscaleVariant }, set: { studio.selectUpscaleVariant($0) })) {
                         ForEach(UpscaleVariant.allCases, id: \.self) { Text("\($0.rawValue) · \($0.scale)×").tag($0) }
                     }.accessibilityIdentifier("upscaleVariant")

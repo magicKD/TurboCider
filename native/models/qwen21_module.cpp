@@ -1,5 +1,6 @@
 #include "qwen21/pipeline.hpp"
 #include "qwen21/diagnostic_options.hpp"
+#include "qwen21/memory_policy.hpp"
 #include "qwen21/native_route.hpp"
 #include "qwen21/viggle_adapter.hpp"
 #include "qwen21/dmd2_adapter.hpp"
@@ -28,6 +29,9 @@ ModelModule qwen21_module() {
             (void)qwen21::configured_tokenizer_reuse_request(r);
             const bool student_five_step = qwen21::configured_student_five_step_request(r);
             const auto db_options = qwen21::db_cache_options(r);
+            const auto device = device_info();
+            const bool staged_optimizations = qwen21::qualified_staged_optimizations(r, device);
+            (void)qwen21::staged_optimization_options(r, device);
             (void)qwen21::configured_student_graph_request(r);
             (void)qwen21::configured_fp16_vae_decode_request(r);
             (void)qwen21::configured_fused_vae_norm_request(r);
@@ -238,7 +242,7 @@ ModelModule qwen21_module() {
                             !r.qwen21_w8a8 && !r.qwen21_gpu_w8a16 &&
                             (r.loras.empty() || r.lora_strategy == "inference_time") &&
                             r.qwen21_gpu_full_ffn_blocks.empty() &&
-                            (r.residency == "resident" || runtime_staged) &&
+                            (r.residency == "resident" || runtime_staged || qwen21::convrot_stream_ane_requested(r)) &&
                             (!db_options.enabled || runtime_cache) &&
                             !qwen21::option_enabled(std::getenv("TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV")),
                         "Qwen21 runtime-weight FFN requires explicit resident GPU/ANE (or staged diagnostic), unmerged runtime LoRA and no frozen W8A8; residual cache additionally requires the explicit fixed-base conservative runtime tier");
@@ -319,7 +323,7 @@ ModelModule qwen21_module() {
                         "Qwen21 DBCache is diagnostic-only for 20...40-step 512px or validated 768x512/512x768 base GPU or GPU/ANE with 0...3 references and no step-FFN reuse");
             if (db_options.enabled && !db_options.diagnostic) {
                 const bool frozen_cache = qwen21::frozen_conservative_cache_request(r);
-                require(r.allow_approximation && (r.execution == "gpu" || frozen_cache || runtime_cache) &&
+                require(staged_optimizations || (r.allow_approximation && (r.execution == "gpu" || frozen_cache || runtime_cache) &&
                             (r.hybrid_mlp_mode == "auto" || runtime_cache) && r.width == 512 && r.height == 512 &&
                             r.steps >= 20 && r.steps <= 40 && !r.prompt_enhance &&
                             (r.qwen21_reference_size == 1024 ||
@@ -328,8 +332,8 @@ ModelModule qwen21_module() {
                             !r.qwen21_gpu_w8a16 && r.qwen21_gpu_full_ffn_blocks.empty() &&
                             r.dump.empty() &&
                             (r.operation == "image.generate" ? r.inputs.empty() :
-                             (!r.inputs.empty() && r.inputs.size() <= 3)),
-                        "Qwen21 DiT cache presets require approximate 20...40-step 512px GPU base; conservative additionally supports explicit base40 frozen or fixed-runtime tiers without LoRA/encoder ANE, retaining their separate source/shape guards");
+                             (!r.inputs.empty() && r.inputs.size() <= 3))),
+                        "Qwen21 DiT cache presets require qualified staged optimization or approximate 20...40-step 512px GPU base; conservative additionally supports explicit base40 frozen or fixed-runtime tiers without LoRA/encoder ANE, retaining their separate source/shape guards");
                 for (const char *name : {
                         "TURBOCIDER_QWEN21_RESIDENT_PREFIX_KV",
                         "TURBOCIDER_QWEN21_METAL_FUSED_QKV_DIAGNOSTIC",
@@ -347,7 +351,10 @@ ModelModule qwen21_module() {
                         "TURBOCIDER_QWEN21_HYBRID_REUSE_PENULTIMATE_EVEN_FFN_DIAGNOSTIC",
                         "TURBOCIDER_QWEN21_VIGGLE_LORA_FP16"}) {
                     const char *value = std::getenv(name);
-                    require(!value || std::string_view(value) == "0",
+                    require(!value || std::string_view(value) == "0" ||
+                                (staged_optimizations && std::string_view(name) ==
+                                    "TURBOCIDER_QWEN21_METAL_QK_NORM_ROPE" &&
+                                 qwen21::option_enabled(value)),
                             std::string("Qwen21 DiT cache preset conflicts with experimental option ") + name);
                 }
             }
@@ -614,7 +621,9 @@ ModelModule qwen21_module() {
                             r.qwen21_gpu_full_ffn_blocks.empty(),
                         "Qwen21 ANE manifests require execution=gpu_ane");
             }
-            require(r.residency == "resident" || r.residency == "component_staged", "Qwen21 supports resident or component_staged residency");
+            if (r.residency == "streamed") qwen21::validate_convrot_stream_request(r);
+            else require(r.residency == "resident" || r.residency == "component_staged",
+                         "Qwen21 supports resident, component_staged or ConvRot streamed residency");
             require(!r.streaming_offload && r.quantized_cache.empty(), "Qwen21 streaming/quantized cache are not implemented");
             if (r.operation == "image.generate") require(r.inputs.empty(), "Qwen21 image.generate takes no images");
             else {
@@ -639,7 +648,7 @@ ModelModule qwen21_module() {
             d.runtime_dependency = "bundled-native-mlx-cpp";
             d.candidate_limitations = {
                 "experimental: actual edit material fidelity is under investigation; not quality-qualified",
-                "BF16 Comfy checkpoint plus official processor/tokenizer.json required",
+                "Original Comfy BF16 or ConvRot safetensors plus official processor/tokenizer.json required for weight streaming",
                 "encoder ANE is explicit 512px resident shared runtime language-FFN only; visual tower stays GPU; measured profitability and reference fidelity required",
                 "conservative DiT cache can explicitly combine with resident 512px/40-step BF16 frozen W8A8/6144-channel FFN without LoRA or encoder ANE; full-reference editing retains its diagnostic gate, App and default cache stay unchanged, and the two approximations require joint quality review",
                 "reference images are resized to approximately 1024 squared pixels with 32-aligned dimensions",

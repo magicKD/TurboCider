@@ -27,6 +27,8 @@ struct AccelerationDiscovery {
         var mlpWidth: Int
         var aneMLPStart: Int
         var aneMLPEnd: Int
+        var tiles: Int = 1
+        var evaluatedRows: Int { rows * tiles }
     }
     private static func currentHardware() -> (String, UInt64) {
         guard let data = NativeEngine.system().data(using: .utf8),
@@ -68,6 +70,46 @@ struct AccelerationDiscovery {
                   size == recordedBytes.uint64Value else { return false }
         }
         return true
+    }
+    static func checkpoint(modelPath: String, modelID: String) -> URL? {
+        guard !modelPath.isEmpty else { return nil }
+        let model = URL(fileURLWithPath: modelPath).resolvingSymlinksInPath()
+        let paths: [String]
+        switch modelID {
+        case "z-image-turbo":
+            paths = ["split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+                     "split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors",
+                     "transformer/diffusion_pytorch_model.safetensors.index.json",
+                     "transformer/diffusion_pytorch_model.safetensors"]
+        case "qwen-image-2.1": paths = ["diffusion_models/qwen_image_2.1_bf16.safetensors"]
+        default: paths = ["transformer/diffusion_pytorch_model.safetensors"]
+        }
+        return paths.map { model.appendingPathComponent($0) }
+            .first { FileManager.default.fileExists(atPath: $0.path) }?.resolvingSymlinksInPath()
+    }
+    static func registeredCompiled(_ partitions: [LibraryANEPartition],
+                                   modelID: String, modelPath: String) -> [LibraryANEPartition] {
+        guard let active = checkpoint(modelPath: modelPath, modelID: modelID) else { return [] }
+        return partitions.filter {
+            $0.modelID == modelID && $0.kind == "compiled" &&
+                sameCheckpoint(URL(fileURLWithPath: $0.checkpoint), active)
+        }.sorted { $0.path < $1.path }
+    }
+    // This reads the selected artifact's format, not an optimization toggle.
+    // Native loading still verifies all blocks, checkpoint SHA and calibration.
+    static func qwen21ManifestUsesW8A8(_ path: String) throws -> Bool {
+        let file = URL(fileURLWithPath: path)
+        guard let size = fileIdentity(file)?.bytes, size <= 8 * 1024 * 1024,
+              let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any],
+              raw["schema_version"] as? Int == 2,
+              let identity = raw["export_identity"] as? [String: Any],
+              identity["owner"] as? String == "turbocider.qwen21.dit.coreml.v1",
+              identity["tensor_layout"] as? String == "qwen21" else {
+            throw NativeFailure(message: "无法识别 Qwen ANE manifest；请重新选择完整编译分区。")
+        }
+        if identity["variant"] as? String == "int8_pc", identity["activation_precision"] as? String == "int8" { return true }
+        if identity["variant"] as? String == "fp16", identity["activation_precision"] as? String == "fp16" { return false }
+        throw NativeFailure(message: "Qwen ANE manifest 的精度不受支持，请选择 W8A8 或 FP16 分区。")
     }
     static func automaticPolicyMatches(gpu: String, memory: UInt64,
                                        mlpWidth: Int, start: Int, end: Int,
@@ -120,7 +162,8 @@ struct AccelerationDiscovery {
                      modelID: String = "flux2-klein-4b",
                      loras: [StudioLoRA] = [], knownManifests: [String] = [],
                      requireCompiled: Bool = true,
-                     preferSmallestRows: Bool = false) -> Match? {
+                     preferSmallestRows: Bool = false,
+                     allowRowTiling: Bool = false) -> Match? {
         guard !modelPath.isEmpty else { return nil }
         // Adapter-bound partitions remain explicit until each LoRA geometry
         // has its own repeated warm end-to-end validation.
@@ -128,20 +171,7 @@ struct AccelerationDiscovery {
             return nil
         }
         let hardware = enforceAutomaticPolicy ? currentHardware() : nil
-        let model = URL(fileURLWithPath: modelPath).resolvingSymlinksInPath()
-        let checkpointCandidates: [URL]
-        if modelID == "z-image-turbo" {
-            checkpointCandidates = [
-                model.appendingPathComponent("split_files/diffusion_models/z_image_turbo_bf16.safetensors"),
-                model.appendingPathComponent("split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors"),
-                model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors.index.json"),
-                model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")
-            ]
-        } else {
-            checkpointCandidates = [model.appendingPathComponent("transformer/diffusion_pytorch_model.safetensors")]
-        }
-        guard let located = checkpointCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
-        let checkpoint = located.resolvingSymlinksInPath()
+        guard let checkpoint = checkpoint(modelPath: modelPath, modelID: modelID) else { return nil }
         guard let size = fileIdentity(checkpoint)?.bytes else { return nil }
         let fm = FileManager.default
         let appCache = cache ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TurboCiderNative/cache/coreml")
@@ -176,7 +206,11 @@ struct AccelerationDiscovery {
                   buckets.allSatisfy({ (1...8192).contains($0) }),
                   buckets == Array(Set(buckets)).sorted(),
                   (buckets.count == 1 || ["enumerated", "range"].contains(shape["input_mode"] as? String ?? "")),
-                  let selectedRows = buckets.first(where: { $0 >= minimumRows }),
+                  let selectedRows = buckets.first(where: { $0 >= minimumRows }) ??
+                    (allowRowTiling && modelID == "z-image-turbo" && loras.isEmpty &&
+                     (value["export_identity"] as? [String: Any])?["image_only_token_rows"] == nil &&
+                     ((value["export_identity"] as? [String: Any])?["mlp_output_kind"] as? String ?? "").isEmpty &&
+                     (1...2048).contains(minimumRows) ? buckets.last : nil),
                   let source = value["source"] as? [String: Any], let path = source["checkpoint"] as? String,
                   sameCheckpoint(URL(fileURLWithPath: path), checkpoint),
                   (source["checkpoint_bytes"] as? NSNumber)?.uint64Value == size,
@@ -224,7 +258,8 @@ struct AccelerationDiscovery {
             matches.append(Match(manifest: file.path,
                                  source: fm.fileExists(atPath: sourceFile.path) ? sourceFile.path : "",
                                  rows: selectedRows, mlpWidth: mlpWidth,
-                                 aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd))
+                                 aneMLPStart: aneMLPStart, aneMLPEnd: aneMLPEnd,
+                                 tiles: max(1, (minimumRows + selectedRows - 1) / selectedRows)))
         }
         let preferredMatch = matches.first { $0.manifest == preferred }
         guard preferSmallestRows else {
@@ -241,7 +276,8 @@ struct AccelerationDiscovery {
             }
         } ?? matches
         return compatible.min {
-            if $0.rows != $1.rows { return $0.rows < $1.rows }
+            if $0.evaluatedRows != $1.evaluatedRows { return $0.evaluatedRows < $1.evaluatedRows }
+            if $0.tiles != $1.tiles { return $0.tiles < $1.tiles }
             if ($0.manifest == preferred) != ($1.manifest == preferred) {
                 return $0.manifest == preferred
             }

@@ -29,6 +29,8 @@ import ImageIO
 @main
 struct StudioBehaviorTests {
     @MainActor static func main() async throws {
+        try verifyMemoryPresentation()
+        if ProcessInfo.processInfo.environment["TURBOCIDER_TEST_MEMORY_PRESENTATION_ONLY"] == "1" { return }
         if ProcessInfo.processInfo.environment["TURBOCIDER_TEST_ACCELERATION_ONLY"] == "1" {
             try await verifyAccelerationRouting()
             return
@@ -48,6 +50,7 @@ struct StudioBehaviorTests {
             else { unsetenv("TURBOCIDER_MODEL_LIBRARY") }
         }
         defer { try? FileManager.default.removeItem(at: root) }
+        try verifyCreationReturn(directory: root.appendingPathComponent("creation-return"))
         let poisoned = NativeJobStore(directory: root.appendingPathComponent("poisoned-store"))
         try check(!poisoned.recordProcessQuarantine(NativeFailure(message: "ordinary failure")), "Ordinary errors must remain retryable")
         try check(poisoned.recordProcessQuarantine(NativeFailure(message: "streaming_process_quarantined: primary: cancelled; GPU drain incomplete")), "Quarantine error was ignored")
@@ -395,6 +398,25 @@ struct StudioBehaviorTests {
         try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: zLarge, cache: compiled,
                     minimumRows: 1120, modelID: "z-image-turbo", knownManifests: [zSmall])?.manifest == zLarge,
                   "Explicit discovery preference changed without opting into row minimization")
+        for needed in [1568, 1792, 2048] {
+            let tiled = AccelerationDiscovery.find(modelPath: fixture.path, preferred: zLarge, cache: compiled,
+                minimumRows: needed, modelID: "z-image-turbo", knownManifests: [zSmall],
+                preferSmallestRows: true, allowRowTiling: true)
+            try check(tiled?.manifest == zSmall && tiled?.rows == 1536 && tiled?.tiles == 2,
+                      "Long Z-Image caption selected oversized padding instead of complete FFN tiles")
+        }
+        try check(AccelerationDiscovery.find(modelPath: fixture.path, preferred: zSmall, cache: compiled,
+                    minimumRows: 2049, modelID: "z-image-turbo", knownManifests: [],
+                    allowRowTiling: true)?.manifest != zSmall,
+                  "Tiling exceeded the bounded 512-image plus 1024-caption route")
+        let registeredSmall = try LibraryANEPartition.inspect(modelID: "z-image-turbo", manifest: URL(fileURLWithPath: zSmall))
+        var otherWeights = registeredSmall; otherWeights.id = UUID().uuidString
+        otherWeights.checkpoint = root.appendingPathComponent("other-weights.safetensors").path
+        try Data([9]).write(to: URL(fileURLWithPath: otherWeights.checkpoint))
+        let filtered = AccelerationDiscovery.registeredCompiled([registeredSmall, otherWeights],
+            modelID: "z-image-turbo", modelPath: fixture.path)
+        try check(filtered.count == 1 && filtered.first?.id == registeredSmall.id,
+                  "Identical bucket labels exposed partitions compiled for different weights")
         let discoveryLoRAFile = root.appendingPathComponent("discovery-lora.safetensors")
         try Data([7, 8]).write(to: discoveryLoRAFile)
         let discoveryLoRA = StudioLoRA(path: discoveryLoRAFile.path, strength: 0.6)
@@ -742,8 +764,12 @@ struct StudioBehaviorTests {
         try rejects { try invalidZ.validate() }
         let creationStudio = StudioState(directory: root.appendingPathComponent("creation-first"))
         try check(creationStudio.creationOperations.contains("image.generate"), "Image entry missing without installed models")
+        try check(creationStudio.creationOperations.allSatisfy { $0.hasPrefix("image.") },
+                  "Image creation exposed video operations from the dual-media upscaler")
         creationStudio.changeCreationKind("video")
         try check(creationStudio.creationKind == "video" && creationStudio.draft.operation == "video.generate", "Video entry did not select a compatible executor")
+        try check(creationStudio.creationOperations.allSatisfy { $0.hasPrefix("video.") },
+                  "Video creation exposed image operations from the dual-media upscaler")
         try check(creationStudio.creationModels.allSatisfy { $0.availableOperations.contains { $0.hasPrefix("video.") } }, "Image model leaked into video choices")
         creationStudio.changeCreationKind("image")
         creationStudio.changeOperation("image.edit")
@@ -918,7 +944,11 @@ struct StudioBehaviorTests {
         qwen.acceleration?.policy = "gpu"
         try check((try qwen.request(output: output)).execution == "gpu" && qwen.aneConfigurationNotice == nil,
                   "Switching to GPU did not recover the ordinary Qwen LoRA request")
-        qwen.loras = []; qwen.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: "/unused/manifest.json", qwen21W8A8: true)
+        let frozenQwenManifest = root.appendingPathComponent("qwen-w8a8.json")
+        try JSONSerialization.data(withJSONObject: ["schema_version": 2,
+            "export_identity": ["owner": "turbocider.qwen21.dit.coreml.v1", "tensor_layout": "qwen21",
+                "variant": "int8_pc", "activation_precision": "int8"]]).write(to: frozenQwenManifest)
+        qwen.loras = []; qwen.acceleration = StudioAcceleration(policy: "gpu_ane", manifest: frozenQwenManifest.path, qwen21W8A8: true)
         do {
             _ = try qwen.request(output: output, systemJSON: #"{"gpu":"Apple M4 Pro","physical_memory_bytes":51539607552}"#)
             throw NativeFailure(message: "Frozen Qwen W8A8 experiment was enabled on an unsupported device")
@@ -1458,5 +1488,129 @@ struct StudioBehaviorTests {
                   studio.draft.prompt == prompt && studio.draft.assets == assets,
                   "Qwen Turbo controls changed another model's schedule or content")
         print("PASS Turbo controls: add/enable/disable/remove, model round trip, retained TTI references, precise conflict reasons, GPU hint and unchanged old drafts/other models")
+    }
+}
+
+extension StudioBehaviorTests {
+    @MainActor static func verifyCreationReturn(directory: URL) throws {
+        func check(_ condition: Bool, _ message: String) throws {
+            guard condition else { throw NativeFailure(message: message) }
+        }
+        let studio = StudioState(directory: directory)
+        studio.changeModel("flux2-klein-4b")
+        studio.changeOperation("image.edit")
+        let input = StudioAsset(path: "creation-source.png", name: "creation source", width: 512, height: 512)
+        studio.draft.assets = [input]; studio.draft.initImageID = input.id
+        studio.draft.prompt = "Keep my original editing prompt"
+        studio.draft.steps = 7; studio.draft.seedText = "12345"
+        studio.draft.width = 512; studio.draft.height = 512
+        studio.draft.tinyPreview = true
+        let original = studio.draft
+        try check(studio.activateSeedVR2Upscaling(kind: "image"), "Cannot enter upscale from creation")
+        studio.draft.prompt = "Upscale draft text"
+        studio.draft.width = 1024; studio.draft.height = 1024
+        studio.draft.assets = []; studio.draft.initImageID = nil
+        studio.draft.modelPaths["seedvr2-3b"] = "/new/seedvr-registration"
+        studio.selectUpscaleVariant(.x2plus)
+        studio.draft.upscaleModelPath = "/new/esrgan-registration"
+        studio.save()
+        // Simulate a restart in SeedVR2, including switching to Real-ESRGAN.
+        let reopened = StudioState(directory: directory)
+        try check(reopened.draft.modelID == "seedvr2-3b", "Upscale draft was not persisted")
+        reopened.importing = true
+        try check(!reopened.activateCreation() && reopened.draft.modelID == "seedvr2-3b", "Return changed a draft during import")
+        reopened.importing = false
+        try check(reopened.activateCreation(), "Cannot restore creation after restart")
+        try check(reopened.draft.modelID == original.modelID && reopened.draft.operation == original.operation &&
+                  reopened.draft.prompt == original.prompt && reopened.draft.assets == original.assets &&
+                  reopened.draft.initImageID == original.initImageID && reopened.draft.width == original.width &&
+                  reopened.draft.height == original.height && reopened.draft.steps == original.steps &&
+                  reopened.draft.seedText == original.seedText && reopened.draft.tinyPreview,
+                  "Returning from upscale lost creation content/settings")
+        try check(reopened.draft.modelPaths["seedvr2-3b"] == "/new/seedvr-registration" &&
+                  reopened.draft.upscaleVariant == .x2plus && reopened.draft.upscaleModelPath == "/new/esrgan-registration",
+                  "Returning discarded model registrations or auxiliary-upscaler preferences")
+        try check(!reopened.creationModels.contains { $0.id == "seedvr2-3b" } &&
+                  reopened.creationOperations.contains("image.generate") && reopened.creationOperations.contains("image.edit") &&
+                  reopened.creationOperations.allSatisfy { $0.hasPrefix("image.") }, "Creation picker lost its normal operations")
+        // Video creation must also return to its original model and frame count.
+        reopened.changeCreationKind("video")
+        reopened.draft.frames = 25
+        let videoModel = reopened.draft.modelID
+        try check(reopened.activateSeedVR2Upscaling(kind: "video") && reopened.activateCreation(), "Video upscale round trip failed")
+        try check(reopened.draft.modelID == videoModel && reopened.draft.operation == "video.generate" && reopened.draft.frames == 25,
+                  "Video creation state was replaced by upscale state")
+        try check(reopened.activateSeedVR2Upscaling(kind: "image"), "Cannot enter image upscale from video")
+        reopened.newDraft()
+        try check(reopened.draft.modelID == videoModel && reopened.draft.operation == "video.generate" && reopened.draft.prompt.isEmpty,
+                  "New creation remained trapped in an upscale-only model")
+        // Existing installations have no separate creation snapshot yet.
+        let legacyDirectory = directory.appendingPathComponent("legacy")
+        try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
+        var legacy = StudioDraft(); legacy.modelID = "seedvr2-3b"; legacy.operation = "image.upscale"
+        legacy.modelPaths["flux2-klein-4b"] = "/existing/flux"
+        try JSONEncoder().encode(legacy).write(to: legacyDirectory.appendingPathComponent("studio-draft.json"))
+        let migrated = StudioState(directory: legacyDirectory)
+        try check(migrated.activateCreation() && migrated.draft.modelID == "flux2-klein-4b" && migrated.draft.operation == "image.generate",
+                  "Legacy SeedVR2 draft did not recover a configured creation model")
+        // An explicit history/model change already selected a new creation draft;
+        // returning must not overwrite it with an older parked draft.
+        try check(migrated.activateSeedVR2Upscaling(), "Cannot enter upscale for explicit-selection test")
+        migrated.changeModel("qwen-image-2.1"); migrated.draft.prompt = "Explicitly selected new creation"
+        try check(migrated.activateCreation() && migrated.draft.modelID == "qwen-image-2.1" &&
+                  migrated.draft.prompt == "Explicitly selected new creation", "Return overwrote an explicit creation selection")
+        print("PASS creation/upscale return: editing draft, restart, imports, registrations, video, new creation and legacy migration")
+    }
+
+    private static func verifyMemoryPresentation() throws {
+        func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+            guard condition() else { throw NativeFailure(message: message) }
+        }
+        try check(Qwen21MemoryPresentation.phaseTitle("memory_wait") == "正在等待可用内存",
+                  "Memory waiting phase was not localized")
+        try check(Qwen21MemoryPresentation.phaseTitle("memory_ready") == "内存余量已恢复，继续生成",
+                  "Recovered memory phase was not localized")
+        try check(Qwen21MemoryPresentation.phaseTitle("qwen21_memory_wait") == nil &&
+                  Qwen21MemoryPresentation.phaseTitle("denoise") == nil,
+                  "Memory presentation captured unrelated phases")
+        try check(Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: 17, total: 120) ==
+                  "已等待 17 秒，最多等待 120 秒 · 可随时取消", "Memory wait lost its deadline or cancellation guidance")
+        try check(Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: -1, total: 120)?.hasPrefix("已等待 0 秒") == true &&
+                  Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: 121, total: 120)?.hasPrefix("已等待 120 秒") == true,
+                  "Out-of-bound telemetry produced an invalid wait duration")
+        try check(Qwen21MemoryPresentation.progressText(phase: "memory_wait", completed: 1, total: 0) ==
+                  "正在等待可用内存，可随时取消。" &&
+                  Qwen21MemoryPresentation.progressText(phase: "memory_ready", completed: 0, total: 1) == nil,
+                  "Waiting and recovered progress were conflated")
+        let diagnostic = "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120007; required_growth_mib=512; system_memory_pressure; free_mib=1489; inactive_mib=4290; process_mib=207; non_speculative_file_mib=7385; pressure=elevated"
+        let summary = Qwen21MemoryPresentation.timeoutSummary(diagnostic)
+        try check(summary?.contains("本次生成已停止") == true && summary?.contains("任务记录") == true,
+                  "Memory timeout did not explain recovery or preserved diagnostics")
+        let failure = NativeFailure(message: diagnostic, code: "memory_wait_timeout", retryable: true, action: "retry")
+        try check(Qwen21MemoryPresentation.message(for: failure) == summary && failure.message == diagnostic &&
+                  failure.code == "memory_wait_timeout" && failure.retryable && failure.action == "retry",
+                  "Presentation mutated native failure diagnostics or error metadata")
+        for unrelated in [
+            "Qwen21 ConvRot streaming: system_memory_pressure; free_mib=1489",
+            "Qwen21 ConvRot streaming: memory_wait_timeout_extra; waited_ms=120000; required_growth_mib=512",
+            "Other backend: memory_wait_timeout; waited_ms=120000; required_growth_mib=512",
+            "wrapper: " + diagnostic,
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120000",
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=-1; required_growth_mib=512",
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120000; required_growth_mib=18446744073709551616",
+            "Qwen21 ConvRot streaming: memory_wait_timeout; waited_ms=120000; required_growth_mib=512; waited_ms=120001",
+            "streaming_process_quarantined: " + diagnostic
+        ] {
+            try check(Qwen21MemoryPresentation.timeoutSummary(unrelated) == nil &&
+                      Qwen21MemoryPresentation.message(for: NativeFailure(message: unrelated)) == unrelated,
+                      "Unrelated or malformed failure was relabeled as a recoverable memory timeout")
+        }
+        let cancellation = CancellationError()
+        try check(Qwen21MemoryPresentation.message(for: cancellation) == cancellation.localizedDescription,
+                  "Cancellation was relabeled as a memory timeout")
+        let other = NSError(domain: "fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: diagnostic])
+        try check(Qwen21MemoryPresentation.message(for: other) == diagnostic,
+                  "A non-native error was relabeled by matching its description")
+        print("PASS ConvRot memory presentation: waiting, recovery, cancellation, strict timeout matching and preserved diagnostics")
     }
 }

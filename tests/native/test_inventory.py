@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'build/native/turbocider'
+CLI = Path(os.environ.get('TURBOCIDER_TEST_NATIVE_DIR', ROOT / 'build/native')).resolve() / 'turbocider'
 
 class InventoryTests(unittest.TestCase):
     def test_inventory_without_gpu_lease(self):

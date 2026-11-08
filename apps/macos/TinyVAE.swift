@@ -1,4 +1,15 @@
 import Foundation
+import ImageIO
+
+extension TinyVAEAsset {
+    func bundledPath(in resources: URL? = Bundle.main.resourceURL) -> String? {
+        guard let url = resources?.appendingPathComponent("tiny-vae").appendingPathComponent(filename),
+              (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            return nil
+        }
+        return url.path
+    }
+}
 
 extension StudioDraft {
     var supportsTinyVAE: Bool {
@@ -7,16 +18,14 @@ extension StudioDraft {
     var tinyArchitecture: String { modelID == "qwen-image-2.1" ? "taeqi2_1" : "taef1" }
     var resolvedTinyVAEPath: String? {
         if let explicit = tinyVAEPaths[tinyArchitecture], !explicit.isEmpty { return explicit }
+        if let asset = TinyVAEAsset.all.first(where: { $0.id == tinyArchitecture }),
+           let bundled = asset.bundledPath() { return bundled }
+        guard !modelPath.isEmpty else { return nil }
         let name = tinyArchitecture + ".safetensors"
-        var roots = [Bundle.main.resourceURL?.appendingPathComponent("tiny-vae")]
-        if !modelPath.isEmpty {
-            let model = URL(fileURLWithPath: modelPath)
-            roots += [
-                model.appendingPathComponent("tiny-vae"),
-                model.deletingLastPathComponent().appendingPathComponent("tiny-vae"),
-            ]
-        }
-        return roots.compactMap { $0?.appendingPathComponent(name).path }.first {
+        let model = URL(fileURLWithPath: modelPath)
+        return [model, model.deletingLastPathComponent()].map {
+            $0.appendingPathComponent("tiny-vae").appendingPathComponent(name).path
+        }.first {
             FileManager.default.fileExists(atPath: $0)
         }
     }
@@ -51,5 +60,17 @@ enum TinyPreviewPath {
     static func valid(_ event: NativeEvent, output: String, steps: Int) -> Bool {
         event.phase == "preview" && event.preview_path == expected(output: output)
             && event.completed > 0 && event.completed <= steps && event.total == steps
+    }
+}
+
+enum TinyPreviewFrame {
+    static func matches(_ data: Data, width: Int, height: Int) -> Bool {
+        guard width > 0, height > 0,
+              data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let actualWidth = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let actualHeight = properties[kCGImagePropertyPixelHeight] as? NSNumber else { return false }
+        return actualWidth.intValue == width && actualHeight.intValue == height
     }
 }

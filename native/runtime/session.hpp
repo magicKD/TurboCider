@@ -1,4 +1,5 @@
 #pragma once
+#include "../models/qwen21/cider_receipt.hpp"
 #include "common.hpp"
 #include "../core/ane_calibration_report.hpp"
 #include "../core/ane_overflow_report.hpp"
@@ -440,8 +441,21 @@ struct NativePrefillExecutionMetrics {
     double prewarm_seconds=0;
     bool physically_complete=false,preparation_reused=false;
 };
+struct QwenStagedQuantizationMetrics {
+    int bits = 0, cached_layers = 0;
+    uint64_t cache_bytes = 0;
+    double pack_seconds = 0;
+    bool w8a8 = false;
+};
+struct QwenConvrotW8A8Metrics {
+    bool encoder_enabled = false, dit_enabled = false;
+    uint64_t encoder_projections = 0, encoder_activation_rows = 0;
+    uint64_t dit_projections = 0, dit_activation_rows = 0;
+};
 struct RunResult {
     bool prepared = false, warmup = false, prompt_cache_hit = false;
+    std::optional<qwen21::CiderCacheReceipt> qwen_dit_w8a8;
+    std::optional<QwenConvrotW8A8Metrics> qwen_convrot_w8a8;
     std::string selection, backend, precision, checkpoint;
     std::string source_comparison_profile="z-mlx-compat-affine-v1";
     std::optional<uint64_t> convrot_allocator_cache_bytes;
@@ -465,6 +479,8 @@ struct RunResult {
     float db_cache_threshold = 0.f;
     int db_cache_steps = 0, db_cache_max_consecutive = 0;
     int db_cache_front_blocks = 8, db_cache_warmup_steps = 8;
+    QwenStagedQuantizationMetrics qwen_staged_suffix, qwen_staged_attention;
+    bool qwen_qk_norm_rope = false;
     bool student_ffn_reuse_enabled=false;
     int student_ffn_requested_layers=0;
     int student_ffn_captured_blocks=0,student_ffn_reused_blocks=0;
@@ -479,6 +495,8 @@ struct RunResult {
     std::optional<SharedLoraRankMetrics> shared_lora_ranks;
     std::optional<QwenFfnPhaseMetrics> qwen_ffn_phases;
     std::optional<QwenBf16StreamingMetrics> qwen_bf16_streaming;
+    std::optional<QwenConvrotStreamingMetrics> qwen_convrot_streaming;
+    std::optional<QwenStreamVaeDecodeResidencyMetrics> qwen_stream_vae_decode_residency;
     std::optional<QwenEncoderPrefillMetrics> qwen_encoder_prefill;
     std::optional<QwenTokenizerReuseMetrics> qwen_tokenizer_reuse;
     std::optional<QwenRuntimePrefixSnapshotMetrics> qwen_runtime_prefix_snapshot;

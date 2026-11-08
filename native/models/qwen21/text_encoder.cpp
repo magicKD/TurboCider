@@ -1,4 +1,5 @@
 #include "text_encoder.hpp"
+#include "encoder_convrot.hpp"
 #include "metal/encoder_prefill.hpp"
 #include "../../backends/ane_ffn.hpp"
 #include <chrono>
@@ -35,6 +36,8 @@ std::vector<Tensor> attention_block(const Tensor &hidden,const Tensor &cosine,co
         raw=mx::split(linear(input,weights,p+".self_attn.qk_proj"),mx::Shape{config.heads*config.head_dim},-1);
         raw.push_back(linear(input,weights,p+".self_attn.v_proj"));
     }
+    else if(weights.convrot_w8a8() && convrot_shared_a8_enabled())
+        raw=weights.project_many(input,{p+".self_attn.q_proj",p+".self_attn.k_proj",p+".self_attn.v_proj"});
     else raw={linear(input,weights,p+".self_attn.q_proj"),linear(input,weights,p+".self_attn.k_proj"),linear(input,weights,p+".self_attn.v_proj")};
     auto q=raw[0],k=raw[1],v=heads(raw[2],config.kv_heads,config.head_dim);
     if(config.fused_gpu_prefill) {
@@ -61,23 +64,27 @@ Tensor full_ffn(const Tensor &x,const Weights &weights,const std::string &mlp) {
         auto gu=mx::split(linear(x,weights,mlp+".gate_up"),2,-1);
         return linear(silu(gu[0])*gu[1],weights,mlp+".down_proj");
     }
+    if(weights.convrot_w8a8() && convrot_shared_a8_enabled()) {
+        const auto pair=weights.project_many(x,{mlp+".gate_proj",mlp+".up_proj"});
+        return linear(silu(pair[0])*pair[1],weights,mlp+".down_proj");
+    }
     return linear(silu(linear(x,weights,mlp+".gate_proj"))*linear(x,weights,mlp+".up_proj"),weights,mlp+".down_proj");
 }
 BlockFunction compiled_block(const std::vector<std::string> &keys,const TextConfig &config,
-    const std::string &p,bool split) {
-    return mx::compile([keys,config,p,split](const std::vector<Tensor> &a) {
+    const std::string &p,bool split,bool convrot_w8a8) {
+    return mx::compile([keys,config,p,split,convrot_w8a8](const std::vector<Tensor> &a) {
         // Dynamic original source arrays, not checkpoint constants captured at
         // the first trace. Rebinding the owner's Weights cannot read old W.
-        Weights local;local.bind_arrays(keys,a,4);
+        Weights local;local.bind_arrays(keys,a,4);local.set_convrot_w8a8(convrot_w8a8);
         auto result=attention_block(a[0],a[1],a[2],a[3],local,config,p);
         if(split)return result;
         return std::vector<Tensor>{result[0]+full_ffn(result[1],local,p+".mlp")};
     });
 }
 BlockFunction compiled_ffn(const std::vector<std::string> &keys,const std::string &mlp,
-    int first=0,int count=0,int hidden=0,bool fp32=false) {
-    return mx::compile([keys,mlp,first,count,hidden,fp32](const std::vector<Tensor> &a) {
-        Weights local;local.bind_arrays(keys,a,1);
+    bool convrot_w8a8,int first=0,int count=0,int hidden=0,bool fp32=false) {
+    return mx::compile([keys,mlp,convrot_w8a8,first,count,hidden,fp32](const std::vector<Tensor> &a) {
+        Weights local;local.bind_arrays(keys,a,1);local.set_convrot_w8a8(convrot_w8a8);
         if(!count)return std::vector<Tensor>{full_ffn(a[0],local,mlp)};
         auto gate=local.project_base_slice(a[0],mlp+".gate_proj",first,first+count,0,hidden,false);
         auto up=local.project_base_slice(a[0],mlp+".up_proj",first,first+count,0,hidden,false);
@@ -123,7 +130,7 @@ Tensor TextEncoder::encode(const Tokens &tokens, const Event &event, std::atomic
     int count = int(tokens.ids.size());
     auto ids = Tensor(tokens.ids.data(), {count}, mx::int32);
     auto positions = mx::broadcast_to(mx::reshape(mx::arange(count, mx::int32), {1, count}), {3, count});
-    return encode_embeddings(mx::expand_dims(weights_.embedding_rows(ids,language_prefix_+"embed_tokens"),0),
+    return encode_embeddings(mx::expand_dims(encoder_embedding_rows(weights_,ids,language_prefix_+"embed_tokens"),0),
         positions, tokens.valid, event, cancelled);
 }
 
@@ -207,7 +214,7 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
             }
             const auto graph_key=std::make_pair(block_keys,split_ffn);
             auto found=block_graphs.find(graph_key);
-            if(found==block_graphs.end())found=block_graphs.emplace(graph_key,compiled_block(block_keys,config_,"block",split_ffn)).first;
+            if(found==block_graphs.end())found=block_graphs.emplace(graph_key,compiled_block(block_keys,config_,"block",split_ffn,weights_.convrot_w8a8())).first;
             std::vector<Tensor> arguments{hidden,cosine,sine,*mask};
             arguments.insert(arguments.end(),block_sources.begin(),block_sources.end());
             auto result=found->second(arguments);hidden=result[0];
@@ -224,7 +231,7 @@ Tensor TextEncoder::encode_embeddings(const Tensor &embeddings, const Tensor &po
         auto shared_ffn=[&](int first,int count,int width,bool fp32) {
             const auto key=std::make_tuple(block_keys,first,count,width,fp32);
             auto found=ffn_graphs.find(key);
-            if(found==ffn_graphs.end())found=ffn_graphs.emplace(key,compiled_ffn(block_keys,"block.mlp",first,count,width,fp32)).first;
+            if(found==ffn_graphs.end())found=ffn_graphs.emplace(key,compiled_ffn(block_keys,"block.mlp",weights_.convrot_w8a8(),first,count,width,fp32)).first;
             return found->second;
         };
         if(config_.compiled_gpu_blocks && split_ffn)compiled_full=shared_ffn(0,0,0,false);

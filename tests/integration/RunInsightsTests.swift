@@ -35,6 +35,50 @@ import Foundation
         let streamed = RunInsights(json: #"{"block_residency":{"streamed_blocks":17,"request_bytes_loaded":1073741824,"request_wait_seconds":1.5}}"#)
         try check(streamed.streamedBlocks == 17 && streamed.streamReadBytes == 1073741824 && streamed.streamWaitSeconds == 1.5,
                   "Streaming measurements were lost")
+        let convrotReceipt: [String: Any] = [
+            "components_released_before_vae": true,
+            "encoder": ["completed_streamed_layers": 36, "streamed_source_bytes": 1000,
+                "wait_seconds": 0.5, "resident_source_bytes": 600, "managed_weight_capacity_bytes": 1000,
+                "derived_weight_capacity_bytes": 10, "prefix": 0],
+            "denoiser": ["completed_streamed_layers": 256, "streamed_source_bytes": 8000,
+                "wait_seconds": 1.5, "resident_source_bytes": 200, "managed_weight_capacity_bytes": 700,
+                "derived_weight_capacity_bytes": 400, "prefix": 0],
+        ]
+        func convrotInsights(_ receipt: [String: Any]) throws -> RunInsights {
+            let data = try JSONSerialization.data(withJSONObject: ["qwen_convrot_streaming": receipt])
+            return RunInsights(json: String(decoding: data, as: UTF8.self))
+        }
+        let convrot = try convrotInsights(convrotReceipt)
+        try check(convrot.streamedBlocks == 292 && convrot.streamReadBytes == 9800 && convrot.streamWaitSeconds == 2,
+                  "ConvRot streaming reads and repeated layer executions were hidden")
+        try check(convrot.streamResidentWeightBytes == 600 && convrot.streamManagedWeightBytes == 1100 &&
+            convrot.streamResidentLayers == 0, "Sequential phase capacities were added or derived weights lost")
+        var overlapping = convrotReceipt
+        overlapping.removeValue(forKey: "components_released_before_vae")
+        try check(try convrotInsights(overlapping).streamManagedWeightBytes == nil,
+                  "Unconfirmed phase lifetimes advertised a memory maximum")
+        overlapping["components_released_before_vae"] = 1
+        try check(try convrotInsights(overlapping).streamManagedWeightBytes == nil,
+                  "A numeric flag was mistaken for confirmed phase release")
+        var partial = convrotReceipt
+        var partialEncoder = partial["encoder"] as! [String: Any]
+        partialEncoder.removeValue(forKey: "resident_source_bytes")
+        partialEncoder["completed_streamed_layers"] = true
+        partial["encoder"] = partialEncoder
+        let partialInsights = try convrotInsights(partial)
+        try check(partialInsights.streamResidentWeightBytes == nil && partialInsights.streamedBlocks == nil,
+                  "Missing or boolean ConvRot measurements became measured zero")
+        var budgetReceipt=convrotReceipt
+        budgetReceipt["requested_weight_budget_bytes"]=2_147_483_648
+        var cachedStage=budgetReceipt["denoiser"] as! [String:Any]
+        cachedStage["prefix"]=6
+        cachedStage["cache_limited_by_memory"]=true
+        cachedStage["cache_evictions"]=1
+        budgetReceipt["denoiser"]=cachedStage
+        let budgetInfo=try convrotInsights(budgetReceipt)
+        try check(budgetInfo.streamWeightBudgetBytes == 2_147_483_648 && budgetInfo.streamResidentLayers == 6 &&
+            budgetInfo.streamCacheLimitedByMemory == true && budgetInfo.streamCacheEvictions == 1,
+            "Selected budget, actual retained layers or headroom eviction was lost")
         for value in ["-1", "1.5", "true", "1e100"] {
             let invalidStream = RunInsights(json: "{\"block_residency\":{\"streamed_blocks\":\(value)}}")
             try check(invalidStream.streamedBlocks == nil, "Invalid streaming layer count was accepted")

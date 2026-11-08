@@ -1,0 +1,1227 @@
+{
+  "date": "2026-10-27",
+  "device": "Apple M4 Pro",
+  "physical_memory_gib": 48,
+  "mlx_version": "0.32.0",
+  "dev_commit": "082db0f",
+  "measurement": "Single native App UI observations, not a median performance benchmark.",
+  "raw_directory": "outputs/dev-verify-20261027",
+  "cases": [
+    {
+      "mode": "qwen-cancel-preview",
+      "state": "cancelled",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "decoder": "tiny",
+        "preview": true,
+        "interval": 2,
+        "path": "taeqi2_1.safetensors",
+        "encoder": "original"
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 13.477068209,
+      "timings_seconds": null,
+      "preview_observed_steps": [
+        2
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": null,
+      "final_dimensions": null,
+      "prompt_cache_hit": null,
+      "reference_tokens": null,
+      "acceleration_selection": null,
+      "algorithm_approximations": null,
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-edit-original-encoder",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.edit",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "preview": true,
+        "path": "taeqi2_1.safetensors",
+        "decoder": "original",
+        "encoder": "original",
+        "interval": 4
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [
+        "f778e24c9b6d8f3bd011e178b99cea60f661d144915a72ac23fb059020ce63a8"
+      ],
+      "app_elapsed_seconds": 43.486151458,
+      "timings_seconds": {
+        "denoise": 31.855109208,
+        "hybrid_setup": 0,
+        "image_encode": 0.957689542,
+        "request_wall": 43.333001791,
+        "text_encode": 5.912381666,
+        "vae_decode": 1.060882167
+      },
+      "preview_observed_steps": [
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "546fcbfb05c064a0ffd4d59ca6eaa938f06d57316baeea1de76b3aa32be7b4d6",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 4096,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule; edit prefix KV snapshot miss",
+      "algorithm_approximations": [
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-edit-original-warm",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.edit",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "encoder": "original",
+        "preview": true,
+        "decoder": "original",
+        "interval": 4,
+        "path": "taeqi2_1.safetensors"
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [
+        "f778e24c9b6d8f3bd011e178b99cea60f661d144915a72ac23fb059020ce63a8"
+      ],
+      "app_elapsed_seconds": 24.185360334,
+      "timings_seconds": {
+        "denoise": 19.660318084,
+        "hybrid_setup": 0,
+        "image_encode": 8.33e-07,
+        "request_wall": 24.032284625,
+        "text_encode": 0.0008755,
+        "vae_decode": 1.058461167
+      },
+      "preview_observed_steps": [
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "55e35789f46935e8093e22e4608e761af4dda5321ba79f4afc90c44c099a55f9",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 4096,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule; edit prefix KV snapshot hit",
+      "algorithm_approximations": [
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-edit-tiny-encoder",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.edit",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "encoder": "tiny",
+        "decoder": "original",
+        "preview": true,
+        "path": "taeqi2_1.safetensors",
+        "interval": 4
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [
+        "f778e24c9b6d8f3bd011e178b99cea60f661d144915a72ac23fb059020ce63a8"
+      ],
+      "app_elapsed_seconds": 40.551238292,
+      "timings_seconds": {
+        "denoise": 30.447449167,
+        "hybrid_setup": 0,
+        "image_encode": 0.093190208,
+        "request_wall": 40.396983916,
+        "text_encode": 5.425761667,
+        "vae_decode": 1.011071666
+      },
+      "preview_observed_steps": [
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "4c73abf5abb7c06d01dbdc1aede12886b1f45f03143c28fef461abeef1dfbb02",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 4096,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule; edit prefix KV snapshot miss; approximate TAEQI2.1 reference encoding",
+      "algorithm_approximations": [
+        "tiny_vae_reference_encoding",
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-edit-tiny-warm",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.edit",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "encoder": "tiny",
+        "decoder": "original",
+        "preview": true,
+        "path": "taeqi2_1.safetensors",
+        "interval": 4
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [
+        "f778e24c9b6d8f3bd011e178b99cea60f661d144915a72ac23fb059020ce63a8"
+      ],
+      "app_elapsed_seconds": 24.226775042,
+      "timings_seconds": {
+        "denoise": 19.835147333,
+        "hybrid_setup": 0,
+        "image_encode": 9.17e-07,
+        "request_wall": 24.068318625,
+        "text_encode": 0.000608458,
+        "vae_decode": 1.099022042
+      },
+      "preview_observed_steps": [
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "52247ab522bc948f2735720bc2c58fb41582e773b630a334608debaceead11be",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 4096,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule; edit prefix KV snapshot hit; approximate TAEQI2.1 reference encoding",
+      "algorithm_approximations": [
+        "tiny_vae_reference_encoding",
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-original-cold",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": null,
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 25.5342365,
+      "timings_seconds": {
+        "denoise": 16.383243417,
+        "hybrid_setup": 0,
+        "image_encode": 4.666e-06,
+        "request_wall": 23.989232833,
+        "text_encode": 3.426179791,
+        "vae_decode": 1.06560275
+      },
+      "preview_observed_steps": [],
+      "preview_dimensions": [],
+      "sidecars_remaining": 0,
+      "final_sha256": "3eee94c5e9be7be8238a43da02a647233e812308ac17a7c5682e8713cc2005c7",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule",
+      "algorithm_approximations": [
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-original-warm",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": null,
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 22.105956125,
+      "timings_seconds": {
+        "denoise": 17.6926,
+        "hybrid_setup": 0,
+        "image_encode": 2.91e-07,
+        "request_wall": 21.961856667,
+        "text_encode": 4e-06,
+        "vae_decode": 1.073695292
+      },
+      "preview_observed_steps": [],
+      "preview_dimensions": [],
+      "sidecars_remaining": 0,
+      "final_sha256": "3eee94c5e9be7be8238a43da02a647233e812308ac17a7c5682e8713cc2005c7",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule",
+      "algorithm_approximations": [
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-preview-fixed",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "preview": true,
+        "decoder": "original",
+        "encoder": "original",
+        "interval": 2,
+        "path": "taeqi2_1.safetensors"
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 24.526206542,
+      "timings_seconds": {
+        "denoise": 17.1462435,
+        "hybrid_setup": 0,
+        "image_encode": 7.5e-07,
+        "request_wall": 24.004076708,
+        "text_encode": 2.627675791,
+        "vae_decode": 1.053025792
+      },
+      "preview_observed_steps": [
+        2,
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "3eee94c5e9be7be8238a43da02a647233e812308ac17a7c5682e8713cc2005c7",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule",
+      "algorithm_approximations": [
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "clean_x0_shared_canvas"
+    },
+    {
+      "mode": "qwen-preview-original",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "decoder": "original",
+        "preview": true,
+        "interval": 2,
+        "path": "taeqi2_1.safetensors",
+        "encoder": "original"
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 21.529505791,
+      "timings_seconds": {
+        "denoise": 17.733190042,
+        "hybrid_setup": 0,
+        "image_encode": 1.66e-07,
+        "request_wall": 21.412208708,
+        "text_encode": 0.00048125,
+        "vae_decode": 1.067345042
+      },
+      "preview_observed_steps": [
+        2,
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "3eee94c5e9be7be8238a43da02a647233e812308ac17a7c5682e8713cc2005c7",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule",
+      "algorithm_approximations": [
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-preview-tiny-retry",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "decoder": "tiny",
+        "preview": true,
+        "interval": 4,
+        "path": "taeqi2_1.safetensors",
+        "encoder": "original"
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 20.054698625,
+      "timings_seconds": {
+        "denoise": 16.854068291,
+        "hybrid_setup": 0,
+        "image_encode": 2.5e-07,
+        "request_wall": 19.927205459,
+        "text_encode": 0.000600417,
+        "vae_decode": 0.045496709
+      },
+      "preview_observed_steps": [
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "f778e24c9b6d8f3bd011e178b99cea60f661d144915a72ac23fb059020ce63a8",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule; approximate TAEQI2.1 final decode",
+      "algorithm_approximations": [
+        "tiny_vae_final_decoding",
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "qwen-tiny-final",
+      "state": "succeeded",
+      "model": "qwen-image-2.1",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 6,
+      "seed": 20261027,
+      "residency": "component_staged",
+      "execution": "gpu",
+      "tiny_vae": {
+        "preview": false,
+        "path": "taeqi2_1.safetensors",
+        "decoder": "tiny",
+        "encoder": "original",
+        "interval": 2
+      },
+      "loras": [
+        {
+          "name": "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+          "strength": 1,
+          "role": "transformer"
+        }
+      ],
+      "input_sha256": [],
+      "app_elapsed_seconds": 20.174819625,
+      "timings_seconds": {
+        "denoise": 16.839135583,
+        "hybrid_setup": 0,
+        "image_encode": 4.59e-07,
+        "request_wall": 20.052313708,
+        "text_encode": 0.000658542,
+        "vae_decode": 0.049865084
+      },
+      "preview_observed_steps": [],
+      "preview_dimensions": [],
+      "sidecars_remaining": 0,
+      "final_sha256": "f778e24c9b6d8f3bd011e178b99cea60f661d144915a72ac23fb059020ce63a8",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native Qwen Image 2.1 with request-owned prefix KV cache; Viggle v0.2.1 r128 runtime LoRA; six-step student schedule; approximate TAEQI2.1 final decode",
+      "algorithm_approximations": [
+        "tiny_vae_final_decoding",
+        "qwen21_viggle_v021_r128_6step_distillation"
+      ],
+      "lora_applied_projections": 227,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "z-cancel-preview",
+      "state": "cancelled",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": {
+        "preview": true,
+        "interval": 2,
+        "path": "taef1.safetensors",
+        "decoder": "tiny",
+        "encoder": "original"
+      },
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 17.570015167,
+      "timings_seconds": null,
+      "preview_observed_steps": [
+        2,
+        4,
+        6
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": null,
+      "final_dimensions": null,
+      "prompt_cache_hit": null,
+      "reference_tokens": null,
+      "acceleration_selection": null,
+      "algorithm_approximations": null,
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "z-original-cold",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": null,
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 38.22359625,
+      "timings_seconds": {
+        "denoise": 17.192661083,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 25.50001325,
+        "text_encode": 2.939753542,
+        "vae_decode": 2.021138958
+      },
+      "preview_observed_steps": [],
+      "preview_dimensions": [],
+      "sidecars_remaining": 0,
+      "final_sha256": "02d80b5c1c10b6a04ab4e7334ca4550541c47061d381f7c7f97a9eb116574117",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+      "algorithm_approximations": [],
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "z-original-warm",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": null,
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 18.351308208,
+      "timings_seconds": {
+        "denoise": 17.304463417,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 18.2029715,
+        "text_encode": 6.4084e-05,
+        "vae_decode": 0.86741475
+      },
+      "preview_observed_steps": [],
+      "preview_dimensions": [],
+      "sidecars_remaining": 0,
+      "final_sha256": "02d80b5c1c10b6a04ab4e7334ca4550541c47061d381f7c7f97a9eb116574117",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+      "algorithm_approximations": [],
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "z-preview-fixed",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": {
+        "encoder": "original",
+        "decoder": "original",
+        "preview": true,
+        "interval": 2,
+        "path": "taef1.safetensors"
+      },
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 22.359172708,
+      "timings_seconds": {
+        "denoise": 17.155956334,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 21.932174125,
+        "text_encode": 1.265893333,
+        "vae_decode": 0.6467115
+      },
+      "preview_observed_steps": [
+        2,
+        4,
+        6,
+        8
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "02d80b5c1c10b6a04ab4e7334ca4550541c47061d381f7c7f97a9eb116574117",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+      "algorithm_approximations": [],
+      "lora_applied_projections": null,
+      "preview_implementation": "clean_x0_shared_canvas"
+    },
+    {
+      "mode": "z-preview-fixed-cold",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": {
+        "interval": 2,
+        "preview": true,
+        "decoder": "original",
+        "path": "taef1.safetensors",
+        "encoder": "original"
+      },
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 181.310790334,
+      "timings_seconds": {
+        "denoise": 17.704061125,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 22.345123417,
+        "text_encode": 1.401988166,
+        "vae_decode": 0.640687
+      },
+      "preview_observed_steps": [
+        2,
+        4,
+        6,
+        8
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "02d80b5c1c10b6a04ab4e7334ca4550541c47061d381f7c7f97a9eb116574117",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": false,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+      "algorithm_approximations": [],
+      "lora_applied_projections": null,
+      "preview_implementation": "clean_x0_shared_canvas"
+    },
+    {
+      "mode": "z-preview-original",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": {
+        "encoder": "original",
+        "decoder": "original",
+        "preview": true,
+        "path": "taef1.safetensors",
+        "interval": 2
+      },
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 21.429934458,
+      "timings_seconds": {
+        "denoise": 18.803312166,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 21.204812792,
+        "text_encode": 8.4709e-05,
+        "vae_decode": 2.371236583
+      },
+      "preview_observed_steps": [
+        2,
+        4,
+        6,
+        8
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "02d80b5c1c10b6a04ab4e7334ca4550541c47061d381f7c7f97a9eb116574117",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT",
+      "algorithm_approximations": [],
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "z-preview-tiny-retry",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": {
+        "path": "taef1.safetensors",
+        "decoder": "tiny",
+        "interval": 3,
+        "encoder": "original",
+        "preview": true
+      },
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 17.831357042,
+      "timings_seconds": {
+        "denoise": 17.626719958,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 17.694657,
+        "text_encode": 6.3083e-05,
+        "vae_decode": 0.055405875
+      },
+      "preview_observed_steps": [
+        3,
+        6,
+        8
+      ],
+      "preview_dimensions": [
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ],
+        [
+          512,
+          512
+        ]
+      ],
+      "sidecars_remaining": 0,
+      "final_sha256": "0b2075e5a870840aacbbdf425226aad761cdeea4fbcca17dbb119901c49dd58e",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT; approximate TAEF1 final decode",
+      "algorithm_approximations": [
+        "tiny_vae_final_decoding"
+      ],
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    },
+    {
+      "mode": "z-tiny-final",
+      "state": "succeeded",
+      "model": "z-image-turbo",
+      "operation": "image.generate",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "seed": 20261027,
+      "residency": "resident",
+      "execution": "gpu",
+      "tiny_vae": {
+        "preview": false,
+        "interval": 2,
+        "path": "taef1.safetensors",
+        "decoder": "tiny",
+        "encoder": "original"
+      },
+      "loras": [],
+      "input_sha256": [],
+      "app_elapsed_seconds": 17.559126625,
+      "timings_seconds": {
+        "denoise": 17.298055709,
+        "hybrid_setup": 0,
+        "image_encode": 0,
+        "request_wall": 17.441080917,
+        "text_encode": 5.1667e-05,
+        "vae_decode": 0.1268855
+      },
+      "preview_observed_steps": [],
+      "preview_dimensions": [],
+      "sidecars_remaining": 0,
+      "final_sha256": "0b2075e5a870840aacbbdf425226aad761cdeea4fbcca17dbb119901c49dd58e",
+      "final_dimensions": [
+        512,
+        512
+      ],
+      "prompt_cache_hit": true,
+      "reference_tokens": 0,
+      "acceleration_selection": "gpu: native MLX single-stream S3-DiT; approximate TAEF1 final decode",
+      "algorithm_approximations": [
+        "tiny_vae_final_decoding"
+      ],
+      "lora_applied_projections": null,
+      "preview_implementation": "before_preview_fix"
+    }
+  ],
+  "fixed_preview_runtime_build_id": "tc-runtime-build-v1-f15aeaf1057fa579f8eb41f056602b8d83a73408290d811f32e3c827f4110e70",
+  "sampling_preview_policy": "Flow matching x0 estimate; full request dimensions; sampler update unchanged.",
+  "preview_comparison": [
+    {
+      "mode": "z-preview-original",
+      "step": 2,
+      "rgb_mae_255": 58.387106577555336,
+      "psnr_db": 11.469786460414937,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "z-preview-original",
+      "step": 4,
+      "rgb_mae_255": 47.765464782714844,
+      "psnr_db": 13.201062246630713,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "z-preview-original",
+      "step": 6,
+      "rgb_mae_255": 28.468785603841145,
+      "psnr_db": 17.712027978811648,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "z-preview-original",
+      "step": 8,
+      "rgb_mae_255": 0.0,
+      "psnr_db": null,
+      "byte_identical_to_tiny_final": true
+    },
+    {
+      "mode": "z-preview-fixed",
+      "step": 2,
+      "rgb_mae_255": 17.39259211222331,
+      "psnr_db": 20.242112514643775,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "z-preview-fixed",
+      "step": 4,
+      "rgb_mae_255": 7.838949839274089,
+      "psnr_db": 27.549213144945192,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "z-preview-fixed",
+      "step": 6,
+      "rgb_mae_255": 3.6493657430013022,
+      "psnr_db": 33.59022905465595,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "z-preview-fixed",
+      "step": 8,
+      "rgb_mae_255": 0.0,
+      "psnr_db": null,
+      "byte_identical_to_tiny_final": true
+    },
+    {
+      "mode": "qwen-preview-original",
+      "step": 2,
+      "rgb_mae_255": 74.49152247111003,
+      "psnr_db": 8.767318355896602,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "qwen-preview-original",
+      "step": 4,
+      "rgb_mae_255": 49.35572942097982,
+      "psnr_db": 12.144954201745552,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "qwen-preview-original",
+      "step": 6,
+      "rgb_mae_255": 0.0,
+      "psnr_db": null,
+      "byte_identical_to_tiny_final": true
+    },
+    {
+      "mode": "qwen-preview-fixed",
+      "step": 2,
+      "rgb_mae_255": 18.805525461832683,
+      "psnr_db": 19.089896971507343,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "qwen-preview-fixed",
+      "step": 4,
+      "rgb_mae_255": 8.766246795654297,
+      "psnr_db": 24.794243562144942,
+      "byte_identical_to_tiny_final": false
+    },
+    {
+      "mode": "qwen-preview-fixed",
+      "step": 6,
+      "rgb_mae_255": 0.0,
+      "psnr_db": null,
+      "byte_identical_to_tiny_final": true
+    }
+  ],
+  "notes": [
+    "Single observations, no statistical speed claim.",
+    "Fixed preview samples contain text cache misses; do not subtract warm baseline times as preview overhead.",
+    "z-preview-fixed-cold includes long local-file open wait; excluded from performance claims.",
+    "Qwen reference edit uses a standard internal 1024 reference scale; all output images are 512x512.",
+    "Qwen edit original cold/warm are not byte identical; preview on/off generation equality is tested separately."
+  ],
+  "validation": {
+    "app_tests": "passed",
+    "library_tests": "passed",
+    "tiny_download_fixture": "passed",
+    "native_tiny_preview_metal": [
+      "z-image-turbo passed",
+      "qwen-image-2.1 passed"
+    ],
+    "make_test": "All recipe items passed in sequential segments; fixed stale GGUF assertion and pager fixture missing link dependency. Existing conditional skips retained.",
+    "package_codesign_strict": "passed",
+    "swift_integration_executables_built": 51
+  }
+}

@@ -4,6 +4,10 @@
 #include <unordered_map>
 
 namespace tc::components {
+// Flow-matching model output is a velocity, not a clean image latent.
+// Preview x0 = x_sigma - sigma * velocity without changing sampler state.
+Tensor flow_preview_estimate(const Tensor &sample, const Tensor &velocity, float sigma);
+
 // Native port of madebyollin/taesd. Public latents use the diffusion model's
 // normalized latent space; images are NCHW in [0,1] (RGBA for Qwen 2.1).
 class TinyAutoencoder {
@@ -27,7 +31,7 @@ class TinyAutoencoder {
     Tensor block(const Tensor &, const std::string &) const;
 };
 
-// One bounded, replace-in-place preview, separate from final output publication.
+// One full-resolution, replace-in-place preview, separate from final publication.
 // Disabled requests do no model loading, file I/O or GPU preview work.
 class TinyPreview {
   public:

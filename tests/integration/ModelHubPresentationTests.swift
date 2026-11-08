@@ -16,6 +16,7 @@ import Foundation
         try localInstallations(models: models, qwen: qwen, first: first, second: second)
         try unifiedSelection(models: models, qwen: qwen, video: video, readOnly: readOnly)
         try searches(models: models, qwen: qwen, first: first, second: second)
+        try turboDiscovery(qwen: qwen, base: first, turbo: second)
         try inspectionStates(models: models, qwen: qwen, first: first, second: second)
         try seedVR2Categories()
         print("PASS model hub metadata: multiple installations/local filtering, unified selection, categories, alternate paths/brand/variant search, strict inspection identity and conservative local states; no file IO/network/GPU")
@@ -71,7 +72,7 @@ import Foundation
         let upscaler = UpscaleVariant.x4plus
         let all = ModelHubPresentation.make(models: models, installations: [], modelPaths: [:], upscalePaths: [:],
                                              selectionID: upscaler.modelID)
-        try check(all.entries.count == models.count + UpscaleVariant.allCases.count &&
+        try check(all.entries.count == models.count + 1 + UpscaleVariant.allCases.count &&
                   all.selectedID == upscaler.modelID && all.selectedEntry?.model == nil &&
                   all.entries.filter({ $0.id == all.selectedID }).count == 1,
                   "Upscaler selection retained a second selected model")
@@ -79,7 +80,7 @@ import Foundation
                   "A catalog model without a recipe/executor was hidden")
         let images = ModelHubPresentation.make(models: models, installations: [], modelPaths: [:], upscalePaths: [:],
             selectionID: upscaler.modelID, category: .image)
-        try check(images.entries.map(\.id) == [qwen.id, readOnly.id] && images.selectedID == qwen.id,
+        try check(images.entries.map(\.id) == [qwen.id, Qwen21Installation.turboID, readOnly.id] && images.selectedID == qwen.id,
                   "Image filter retained an invisible selection or included video/upscalers")
         let videos = ModelHubPresentation.make(models: models, installations: [], modelPaths: [:], upscalePaths: [:],
             selectionID: qwen.id, category: .video)
@@ -98,7 +99,7 @@ import Foundation
         try check(alternate.entries.map(\.id) == [qwen.id], "Search ignored a non-selected installation path")
         let brand = ModelHubPresentation.make(models: models, installations: [], modelPaths: [:], upscalePaths: [:],
             selectionID: nil, query: "  qWEn   阿里  ")
-        try check(brand.entries.map(\.id) == [qwen.id], "Brand search lost case/whitespace or Chinese aliases")
+        try check(brand.entries.map(\.id) == [qwen.id, Qwen21Installation.turboID], "Brand search lost case/whitespace or Chinese aliases")
         let metadata = [qwen.id: ["Unsloth", "GGUF", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]]
         let variant = ModelHubPresentation.make(models: models, installations: [], modelPaths: [:], upscalePaths: [:],
             selectionID: nil, query: "unsloth GGUF q6_k", searchMetadata: metadata)
@@ -111,6 +112,27 @@ import Foundation
         let provenance = ModelHubPresentation.make(models: models, installations: [registered], modelPaths: [:], upscalePaths: [:],
             selectionID: nil, query: "unsloth huggingface", scope: .local)
         try check(provenance.entries.map(\.id) == [qwen.id], "Local search ignored repository/provider provenance")
+    }
+
+    private static func turboDiscovery(qwen: StudioModel, base: LibraryInstallation, turbo: LibraryInstallation) throws {
+        let discovered = ModelHubPresentation.make(models: [qwen], installations: [], modelPaths: [:], upscalePaths: [:],
+            selectionID: nil, query: "qwen image 2.1 turbo")
+        try check(discovered.entries.map(\.id) == [Qwen21Installation.turboID] &&
+            discovered.selectedEntry?.title == "Qwen Image 2.1 Turbo" && discovered.selectedEntry?.model?.id == qwen.id,
+            "Turbo has no visible discovery entry or uses a different native model")
+        let local = ModelHubPresentation.make(models: [qwen], installations: [base, turbo],
+            modelPaths: [qwen.id: base.path], upscalePaths: [:], selectionID: Qwen21Installation.turboID,
+            scope: .local, qwenTurboPaths: [turbo.path])
+        try check(local.selectedEntry?.localPaths == [turbo.path] && local.selectedEntry?.installationCount == 1,
+            "Turbo discovery reused the selected base installation")
+        let absent = ModelHubPresentation.make(models: [qwen], installations: [base], modelPaths: [qwen.id: base.path],
+            upscalePaths: [:], selectionID: Qwen21Installation.turboID, query: "turbo", scope: .local)
+        try check(absent.entries.isEmpty, "Base weights were presented as an installed Turbo model")
+        var broken = InstallationInspection(modelID: qwen.id, path: turbo.path)
+        broken.issues = [.init(code: "missing_file", path: "processor/tokenizer.json", message: "Missing tokenizer")]
+        let checked = ModelHubPresentation.make(models: [qwen], installations: [turbo], modelPaths: [:], upscalePaths: [:],
+            selectionID: Qwen21Installation.turboID, inspections: ["turbo": broken], qwenTurboPaths: [turbo.path])
+        try check(checked.selectedEntry?.localState == .missing, "Turbo ignored the native-family installation inspection")
     }
 
     private static func inspectionStates(models: [StudioModel], qwen: StudioModel,

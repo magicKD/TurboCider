@@ -28,11 +28,16 @@ import Darwin
         func json(_ path: String, _ object: [String: Any]) throws {
             try write(path, JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]))
         }
-        func tensorFile(_ path: String, _ shapes: [String: [UInt64]], dtype: String = "BF16") throws {
+        func tensorFile(_ path: String, _ shapes: [String: [UInt64]], dtype: String = "BF16",
+                        dtypes: [String: String] = [:], payloads: [String: Data] = [:]) throws {
             var header: [String: Any] = [:]; var offset: UInt64 = 0
+            var offsets: [String: UInt64] = [:]
+            let widths: [String: UInt64] = ["BF16": 2, "F16": 2, "F32": 4, "I8": 1, "U8": 1]
             for key in shapes.keys.sorted() {
-                let shape = shapes[key]!, size = shape.reduce(UInt64(2), *)
-                header[key] = ["dtype": dtype, "shape": shape, "data_offsets": [offset, offset + size]]
+                let format = dtypes[key] ?? dtype
+                let shape = shapes[key]!, size = shape.reduce(widths[format]!, *)
+                header[key] = ["dtype": format, "shape": shape, "data_offsets": [offset, offset + size]]
+                offsets[key] = offset
                 offset += size
             }
             let metadata = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
@@ -43,6 +48,10 @@ import Darwin
             // ftruncate creates holes. Only the small header is written/read;
             // the virtual size makes shape/byte-range validation meaningful.
             try handle.truncate(atOffset: UInt64(data.count) + offset)
+            for (key, payload) in payloads {
+                try handle.seek(toOffset: UInt64(data.count) + offsets[key]!)
+                try handle.write(contentsOf: payload)
+            }
         }
         let qwenDit: [String: [UInt64]] = [
             "img_in.weight": [4096, 64], "txt_in.in_layer.weight": [4096, 4096],
@@ -142,6 +151,82 @@ import Darwin
         try check(defaults.components.isEmpty, "Sparse composition defaults require unnecessary component fields")
         try check((try store.read()).installations.count == beforeFailure, "Rejected composition changed registry")
         try check((try fm.contentsOfDirectory(atPath: store.root.appendingPathComponent("staging").path)).isEmpty, "Rejected composition leaked private staging")
+
+        // Preserve the original recipe-bearing filename, including a logical
+        // snapshot symlink whose physical source has no extension.
+        let turboName = "qwen_image_2.1_turbo_bf16.safetensors"
+        try tensorFile(turboName, qwenDit)
+        try fm.moveItem(at: url(turboName), to: url("turbo-blob"))
+        try fm.createSymbolicLink(at: url(turboName), withDestinationURL: url("turbo-blob"))
+        let turbo = try LibraryComponents.compose(.init(modelID: original.modelID, basePath: original.path,
+            components: ["dit": url(turboName).path]), store: store)
+        let turboRoot = URL(fileURLWithPath: turbo.path)
+        try check(turboRoot.appendingPathComponent("diffusion_models/" + turboName).resolvingSymlinksInPath().path == url("turbo-blob").path, "Turbo DiT lost its authored recipe filename")
+        try check(!fm.fileExists(atPath: turboRoot.appendingPathComponent("diffusion_models/qwen_image_2.1_bf16.safetensors").path), "Composition silently aliased Turbo to the base scheduler")
+        let turboReport = InstallationInspection.inspect(modelID: original.modelID, root: turboRoot)
+        try check(turboReport.status == "files_present" && turboReport.checkedWeightFiles == 3 && turboReport.notes.contains { $0.contains("8 步") }, "Original Turbo checkpoint was not discovered or its supported recipe blocked App activation")
+        let turboAgain = try LibraryComponents.compose(.init(modelID: original.modelID, basePath: turbo.path), store: store)
+        try check(fm.fileExists(atPath: URL(fileURLWithPath: turboAgain.path).appendingPathComponent("diffusion_models/" + turboName).path), "Recomposition lost the Turbo variant")
+
+        func convrotFile(_ path: String, _ shapes: [String: [UInt64]], quantized: [String], group: Int = 256,
+                         badScale: Bool = false, attentionHints: [String: Data] = [:]) throws {
+            var shapes = shapes; var dtypes: [String: String] = [:]; var payloads: [String: Data] = [:]
+            let marker = Data("{\"format\": \"int8_tensorwise\", \"convrot\": true, \"convrot_groupsize\": \(group)}".utf8)
+            for name in quantized {
+                dtypes[name + ".weight"] = "I8"
+                shapes[name + ".weight_scale"] = [shapes[name + ".weight"]![0], badScale ? 2 : 1]
+                dtypes[name + ".weight_scale"] = "F32"
+                shapes[name + ".comfy_quant"] = [UInt64(marker.count)]
+                dtypes[name + ".comfy_quant"] = "U8"; payloads[name + ".comfy_quant"] = marker
+            }
+            for (name, bytes) in attentionHints {
+                shapes[name] = [UInt64(bytes.count)]; dtypes[name] = "U8"; payloads[name] = bytes
+            }
+            try tensorFile(path, shapes, dtypes: dtypes, payloads: payloads)
+        }
+        let int8DitName = "qwen_image_2.1_turbo_int8_convrot.safetensors"
+        let int8EncoderName = "qwen3vl_8b_int8_convrot.safetensors"
+        var int8DitShapes = qwenDit; int8DitShapes["transformer_blocks.0.attn.to_q.weight"] = [4096, 4096]
+        let attentionHintName = "transformer_blocks.14.attn.comfy_attention.config"
+        let attentionHint = Data("{\"attention\": \"comfy_kitchen_int8\"}".utf8)
+        try convrotFile(int8DitName, int8DitShapes, quantized: ["transformer_blocks.0.attn.to_q"],
+                        attentionHints: [attentionHintName: attentionHint])
+        try convrotFile(int8EncoderName, qwenEncoder, quantized: ["model.embed_tokens", "model.layers.35.self_attn.q_proj"])
+        let int8 = try LibraryComponents.compose(.init(modelID: original.modelID, basePath: original.path,
+            components: ["dit": url(int8DitName).path, "encoder": url(int8EncoderName).path]), store: store)
+        let int8Root = URL(fileURLWithPath: int8.path)
+        for (kind, name, old) in [("diffusion_models", int8DitName, "qwen_image_2.1_bf16.safetensors"),
+                                  ("text_encoders", int8EncoderName, "qwen3vl_8b_bf16.safetensors")] {
+            try check(fm.fileExists(atPath: int8Root.appendingPathComponent(kind + "/" + name).path), "INT8 component original filename missing")
+            try check(!fm.fileExists(atPath: int8Root.appendingPathComponent(kind + "/" + old).path), "INT8 component was mislabeled as BF16")
+        }
+        let int8Inventory = try LibraryComponents.inventory(modelID: original.modelID, root: int8Root)
+        try check(int8Inventory.components.filter { $0.kind != "vae" }.allSatisfy { $0.precision == "INT8 ConvRot" && $0.status == "present" }, "INT8 DiT/encoder was not discovered with its real precision")
+        let int8Report = InstallationInspection.inspect(modelID: original.modelID, root: int8Root)
+        try check(int8Report.issues.isEmpty && int8Report.checkedWeightFiles == 3 && int8Report.status == "files_present" && int8Report.notes.contains { $0.contains("INT8 ConvRot") }, "Valid ConvRot installation failed bounded inspection")
+        try fm.createSymbolicLink(at: url("renamed-bf16.safetensors"), withDestinationURL: url(int8EncoderName))
+        try reject("ConvRot encoder accepted under a BF16 alias") { try LibraryComponents.validateQwen(url("renamed-bf16.safetensors"), kind: "encoder") }
+        try convrotFile("bad-group/" + int8EncoderName, qwenEncoder, quantized: ["model.embed_tokens"], group: 64)
+        try reject("Wrong ConvRot rotation accepted") { try LibraryComponents.validateQwen(url("bad-group/" + int8EncoderName), kind: "encoder") }
+        try convrotFile("bad-scale/" + int8EncoderName, qwenEncoder, quantized: ["model.embed_tokens"], badScale: true)
+        try reject("Wrong ConvRot row-scale shape accepted") { try LibraryComponents.validateQwen(url("bad-scale/" + int8EncoderName), kind: "encoder") }
+        try convrotFile("bad-attention/" + int8DitName, int8DitShapes, quantized: ["transformer_blocks.0.attn.to_q"],
+                        attentionHints: [attentionHintName: Data("{\"attention\":\"unrecognized\"}".utf8)])
+        try reject("Unrecognized attention metadata accepted") { try LibraryComponents.validateQwen(url("bad-attention/" + int8DitName), kind: "dit") }
+        try convrotFile("bad-attention-position/" + int8DitName, int8DitShapes, quantized: ["transformer_blocks.0.attn.to_q"],
+                        attentionHints: ["transformer_blocks.32.attn.comfy_attention.config": attentionHint])
+        try reject("Attention metadata outside the model accepted") { try LibraryComponents.validateQwen(url("bad-attention-position/" + int8DitName), kind: "dit") }
+        try convrotFile("unknown-byte-tensor/" + int8DitName, int8DitShapes, quantized: ["transformer_blocks.0.attn.to_q"],
+                        attentionHints: ["unrecognized.weight": attentionHint])
+        try reject("Arbitrary U8 weights accepted as metadata") { try LibraryComponents.validateQwen(url("unknown-byte-tensor/" + int8DitName), kind: "dit") }
+
+        // Inspection/inventory must select the same BF16-first component as
+        // native when an installation contains several supported variants.
+        try fm.createSymbolicLink(at: int8Root.appendingPathComponent("diffusion_models/qwen_image_2.1_bf16.safetensors"),
+                                  withDestinationURL: url("qwen/diffusion_models/qwen_image_2.1_bf16.safetensors"))
+        let precedence = try LibraryComponents.inventory(modelID: original.modelID, root: int8Root)
+        try check(precedence.components.first { $0.kind == "dit" }?.precision == "BF16", "Component discovery precedence differs from native")
+        try check(!InstallationInspection.inspect(modelID: original.modelID, root: int8Root).notes.contains { $0.contains("8 步") }, "Inspection reported a shadowed Turbo recipe")
 
         func gguf(_ path: String, _ shapes: [String: [UInt64]]) throws {
             var data = Data()
@@ -248,6 +333,6 @@ import Darwin
         try check((try store.read()).installations.count == entriesBeforeRemove - 1, "Unregister did not remove the binding record")
         try check(fm.fileExists(atPath: snapshot.path) && fm.fileExists(atPath: url("encoder-blob").path), "Unregister deleted binding or source bytes")
         try check((try fm.contentsOfDirectory(atPath: store.root.appendingPathComponent("staging").path)).isEmpty, "Composition left staging behind")
-        print("PASS: \(assertions) library component assertions; immutable runtime roots, Qwen BF16/GGUF limits, FLUX/Z-Image shapes, source links, rejection/rollback and retained bytes")
+        print("PASS: \(assertions) library component assertions; immutable roots, Qwen Turbo/ConvRot/BF16/GGUF, FLUX/Z-Image shapes, source links, rejection/rollback and retained bytes")
     }
 }

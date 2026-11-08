@@ -17,9 +17,18 @@ int main(int argc,char **argv){try{
     const float h4_values[]={.5f,.5f,.5f,-.5f,.5f,.5f,-.5f,.5f,.5f,-.5f,.5f,.5f,-.5f,.5f,.5f,.5f};
     auto h4=Tensor(h4_values,{4,4},mx::bfloat16),h16=mx::kron(h4,h4),h256=mx::kron(h16,h16);
     auto xr=mx::reshape(mx::matmul(mx::reshape(x,{1,m,1,256}),h256),x.shape());
-    auto logical=mx::astype(slice_axis(slice_axis(q,0,rb,re),1,cb,ce),mx::float32)*slice_axis(s,0,rb,re);
-    auto reference=mx::matmul(mx::astype(xr,mx::float32),mx::transpose(logical));
-    auto partial=w.project_base_slice_fp32(x,"proj",rb,re,cb,ce);mx::eval(reference,partial);
+    auto logical=mx::contiguous(mx::astype(slice_axis(slice_axis(q,0,rb,re),1,cb,ce),mx::float32)*slice_axis(s,0,rb,re));
+    auto input=mx::contiguous(mx::astype(xr,mx::float32));
+    auto partial=w.project_base_slice_fp32(x,"proj",rb,re,cb,ce);mx::eval(input,logical,partial);
+    // A GPU F32 matmul can use TF32 on M5. Keep the independent raw-code
+    // oracle on the CPU so its precision does not depend on GPU dispatch.
+    std::vector<float> expected(m*(re-rb));
+    for(int row=0;row<m;++row)for(int out=0;out<re-rb;++out){
+        double sum=0;
+        for(int k=0;k<ce-cb;++k)sum+=double(input.data<float>()[row*(ce-cb)+k])*logical.data<float>()[out*(ce-cb)+k];
+        expected[row*(re-rb)+out]=float(sum);
+    }
+    auto reference=Tensor(expected.data(),{1,m,re-rb},mx::float32);
     require(partial.dtype()==mx::float32&&partial.shape()==mx::Shape{1,m,re-rb},"actual partial was rounded before join");
     auto rel=mx::sqrt(mx::sum(mx::square(reference-partial))/mx::sum(mx::square(reference)));mx::eval(rel);
     require(rel.item<float>()<1e-4f,"F32 original coefficient output differs from independent raw-code projection");
@@ -33,6 +42,27 @@ int main(int argc,char **argv){try{
     whole.bind_arrays(names,values);auto source=qwen21::convrot_ffn_sources(whole,"block.");require(source.size()==3,"three complete source views required");
     for(const auto&v:source)require(v.bits==8&&v.group_size==128&&v.transform==ane::FfnWeight::Transform::ComfyH256Inverse&&v.scales->dtype()==mx::float32&&v.offsets->dtype()==mx::float32,"source basis/coefficient metadata lost");
     require(source[0].values.shape()==mx::Shape{12288,1024}&&source[1].values.shape()==source[0].values.shape()&&source[2].values.shape()==mx::Shape{4096,3072},"original fused source halves/physical pitch changed");
+    Weights signed_rows;
+    const std::vector<std::string> signed_names{
+        "block.gate_up.weight","block.gate_up.weight_scale","block.gate_up.comfy_quant",
+        "block.out.weight","block.out.weight_scale","block.out.comfy_quant"};
+    std::vector<Tensor> signed_values{mx::zeros({24576,4096},mx::int8),mx::ones({24576,1},mx::float32),tag,
+        mx::zeros({4096,12288},mx::int8),mx::ones({4096,1},mx::float32),tag};
+    signed_rows.bind_arrays(signed_names,signed_values);
+    const auto signed_source=qwen21::convrot_ffn_sources(signed_rows,"block.");
+    require(signed_source.size()==3 && signed_source[0].values.shape()==mx::Shape{12288,4096} &&
+        signed_source[1].values.shape()==signed_source[0].values.shape() &&
+        signed_source[2].values.shape()==mx::Shape{4096,12288},"signed source halves/physical pitch changed");
+    for(const auto& v:signed_source)require(v.values.dtype()==mx::int8 && v.bits==8 && !v.offsets &&
+        v.transform==ane::FfnWeight::Transform::ComfyH256Inverse && v.scales && v.scales->dtype()==mx::float32 &&
+        v.scales->shape()==mx::Shape{v.values.shape(0),1},"signed runtime source lost original row scale/basis");
+    require(signed_source[2].values.id()==signed_values[3].id() && signed_source[2].scales->id()==signed_values[4].id(),
+        "signed down projection must preserve the original device arrays");
+    signed_values[4]=mx::ones({4096,1},mx::bfloat16);
+    signed_rows.bind_arrays(signed_names,signed_values);
+    bool rejected=false;
+    try{(void)qwen21::convrot_ffn_sources(signed_rows,"block.");}catch(const std::invalid_argument&){rejected=true;}
+    require(rejected,"signed source silently accepted narrowed row scales");
     if(argc==2){
         // Real broadcast metadata, lazy gate/up halves and actual private
         // staging. Metadata-only shape tests cannot catch layout changes

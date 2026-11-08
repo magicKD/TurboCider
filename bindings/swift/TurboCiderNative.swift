@@ -101,6 +101,9 @@ public struct NativeRequest: Codable, Sendable {
     public var ane_manifest: String?
     public var allow_approximation: Bool?
     public var qwen21_w8a8: Bool?
+    public var qwen21_staged_fast: Bool?
+    public var qwen21_dit_w8a8: Bool?
+    public var qwen21_dit_smoothquant_convrot: Bool?
     public var hybrid_mlp_mode: String?
     public var dump_tensors: String?
     public var operation: String?
@@ -108,6 +111,7 @@ public struct NativeRequest: Codable, Sendable {
     public var prompt_enhance: Bool?
     public var prompt_enhance_edit_experimental: Bool?
     public var qwen21_dit_cache: String?
+    public var qwen21_stream_weight_budget_bytes: UInt64?
     public var qwen21_reference_size: Int?
     public var qwen21_sampler: String?
     public var inputs: [NativeInput]?
@@ -187,6 +191,10 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var qwen21_dit_cache: String?
     public var hybrid_mlp_mode: String?
     public var qwen21_w8a8: Bool?
+    public var qwen21_staged_fast: Bool?
+    public var qwen21_dit_w8a8: Bool?
+    public var qwen21_dit_smoothquant_convrot: Bool?
+    public var qwen21_stream_weight_budget_bytes: UInt64? = nil
 }
 public struct NativeParametersV2: Codable, Sendable {
     public var qwen21_sampler: String? = nil
@@ -226,9 +234,10 @@ public struct NativeRequestV2: Codable, Sendable {
         sampling = NativeSamplingV2(seed: request.seed, steps: request.steps)
         execution = NativeExecutionV2(
             policy: request.execution,
-            // Preserve SeedVR2's explicit, non-streaming residency choice.
-            // Public streaming intents must continue omitting private knobs.
-            residency: request.model == "seedvr2-3b" && targetBytes == nil ? request.residency : nil,
+            // A Qwen weight-cache budget belongs to its explicit streamed
+            // recipe. Public streaming selectors still omit private knobs.
+            residency: targetBytes == nil && (request.model == "seedvr2-3b" ||
+                request.model == "qwen-image-2.1" && request.qwen21_stream_weight_budget_bytes != nil) ? request.residency : nil,
             profile: request.profile,
             ane_manifest: request.ane_manifest, encoder_ane_manifest: nil,
             allow_approximation: request.allow_approximation,
@@ -245,8 +254,12 @@ public struct NativeRequestV2: Codable, Sendable {
             streaming: targetBytes.map { NativeStreamingSelectorV2(targetBytes: $0) },
             qwen21_dit_cache: request.qwen21_dit_cache,
             hybrid_mlp_mode: request.hybrid_mlp_mode,
-            qwen21_w8a8: request.qwen21_w8a8)
+            qwen21_w8a8: request.qwen21_w8a8,
+            qwen21_staged_fast: request.qwen21_staged_fast,
+            qwen21_dit_w8a8: request.qwen21_dit_w8a8,
+            qwen21_dit_smoothquant_convrot: request.qwen21_dit_smoothquant_convrot)
         execution.seedvr2_vae = request.seedvr2_vae
+        execution.qwen21_stream_weight_budget_bytes = request.qwen21_stream_weight_budget_bytes
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,
             noise_path: request.noise_path, qwen21_reference_size: request.qwen21_reference_size)

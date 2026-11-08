@@ -59,6 +59,10 @@ struct Request {
     // Explicit Qwen21-only W8A8 diagnostics in the public CLI contract.
     // The default remains the original 1024-reference BF16 GPU path.
     bool qwen21_w8a8 = false, qwen21_gpu_w8a16 = false;
+    // Absent preserves the qualified CLI preset; false isolates ANE with BF16 GPU weights.
+    std::optional<bool> qwen21_staged_fast;
+    bool qwen21_dit_w8a8 = false;
+    bool qwen21_dit_smoothquant_convrot = false;
     // Independent executor identity, separate from GPU/ANE device policy.
     // Explicit experimental opt-in; the existing MLX route remains default.
     std::string qwen21_denoiser_backend = "mlx";
@@ -78,6 +82,9 @@ struct Request {
     int qwen21_reference_size = 1024;
     std::string qwen21_sampler = "auto";
     std::string qwen21_dit_cache = "off";
+    // Managed streamed weights, not a process RAM cap. Zero preserves the
+    // minimum-residency recipe; positive budgets may retain exact DiT layers.
+    uint64_t qwen21_stream_weight_budget_bytes = 0;
     // Explicit JSON off overrides diagnostic environment defaults. Requests
     // constructed without this option retain the legacy diagnostic route.
     bool qwen21_dit_cache_explicit = false;
