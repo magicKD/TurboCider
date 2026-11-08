@@ -10,6 +10,7 @@
 #include "memory_policy.hpp"
 #include "scheduler.hpp"
 #include "vae.hpp"
+#include "vae_decode_residency.hpp"
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
 #include "convrot_stream_ane.hpp"
 #endif
@@ -54,7 +55,8 @@ void check_convrot_stream_headroom(std::atomic<bool> &cancelled) {
 }
 
 RunResult Session::run_weight_streamed(const Request &requested, const Event &event,
-                                       std::atomic<bool> &cancelled, bool warmup, bool prepare_only) {
+                                       std::atomic<bool> &cancelled, bool warmup, bool prepare_only,
+                                       bool vae_decode_only) {
     Request r = requested;
     const bool convrot = r.residency == "streamed";
     const bool runtime_ane = convrot_stream_ane_requested(r);
@@ -375,6 +377,8 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
             Weights vae;
             emit("load_qwen21_vae", 0, 1);
             vae.load_file(root_ / "vae/qwen_image_2.1_vae_bf16.safetensors");
+            if (vae_decode_only)
+                result.qwen_stream_vae_decode_residency = retain_streamed_vae_decode_weights(vae, cancelled);
             vae.materialize();
             emit("load_qwen21_vae", 1, 1);
             VAE decoder(vae);

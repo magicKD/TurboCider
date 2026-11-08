@@ -2055,6 +2055,14 @@ NSDictionary *to_dictionary(const RunResult &result) {
         value[@"qwen_bf16_streaming"] = qwen_bf16_stream_dictionary(*result.qwen_bf16_streaming);
     if (result.qwen_convrot_streaming)
         value[@"qwen_convrot_streaming"] = qwen_convrot_stream_dictionary(*result.qwen_convrot_streaming);
+    if (result.qwen_stream_vae_decode_residency) {
+        const auto &m = *result.qwen_stream_vae_decode_residency;
+        value[@"qwen_stream_vae_decode_residency"] = @{
+            @"decoder_weights_only": @YES, @"metadata_preflight": @(m.metadata_preflight),
+            @"retained_tensors": @(m.retained_tensors), @"dropped_tensors": @(m.dropped_tensors),
+            @"retained_logical_bytes": @(m.retained_logical_bytes),
+            @"dropped_logical_bytes": @(m.dropped_logical_bytes)};
+    }
     if(result.qwen_encoder_prefill)
         value[@"qwen_encoder_prefill"]=qwen_encoder_prefill_dictionary(*result.qwen_encoder_prefill);
     if(result.qwen_tokenizer_reuse)

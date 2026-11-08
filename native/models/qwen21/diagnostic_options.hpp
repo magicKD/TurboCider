@@ -20,6 +20,20 @@ inline bool option_enabled(const char *value) {
 inline bool binary_option_or_unset(const char *value) {
     return !value || std::string_view(value) == "0" || option_enabled(value);
 }
+// Freeze this default-off residency experiment once at Session::run entry.
+// Tiny previews may coexist; Tiny final decoding never selects this route.
+inline bool stream_vae_decode_only_request(const Request &r, bool prepare_only, const char *raw) {
+    require(binary_option_or_unset(raw), "Qwen streamed VAE decoder weights require 0 or 1");
+    if (!option_enabled(raw)) return false;
+    require(r.model == "qwen-image-2.1" && r.residency == "streamed" &&
+            r.operation == "image.generate" && r.inputs.empty() && !prepare_only &&
+            (r.execution == "gpu" || r.execution == "auto") &&
+            r.hybrid_mlp_mode == "auto" && r.qwen21_denoiser_backend == "mlx" &&
+            r.ane_manifest.empty() && r.encoder_ane_manifest.empty() && r.frames == 1 && !r.audio &&
+            (!r.tiny_vae || r.tiny_vae->decoder == "original"),
+            "Qwen streamed VAE decoder weights require GPU streamed image.generate without references and original final VAE decoding");
+    return true;
+}
 // Resolve from the original route before streaming normalizes execution to GPU.
 // Unset enables only qualified requests; explicit 0 preserves the old path,
 // and explicit 1 rejects an incompatible route instead of being ignored.

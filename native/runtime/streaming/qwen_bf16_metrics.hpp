@@ -27,6 +27,11 @@ struct QwenBf16StreamStageMetrics {
 struct QwenBf16StreamingMetrics {
     QwenBf16StreamStageMetrics encoder,denoiser;
 };
+struct QwenStreamVaeDecodeResidencyMetrics {
+    uint64_t retained_tensors=0,dropped_tensors=0;
+    uint64_t retained_logical_bytes=0,dropped_logical_bytes=0;
+    bool metadata_preflight=false;
+};
 struct QwenStreamTimestepCacheMetrics {
     std::string source_sha256,schedule_identity;
     uint32_t frames=0;
