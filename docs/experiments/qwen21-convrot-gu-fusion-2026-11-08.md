@@ -207,5 +207,171 @@ These results justify preparing native opt-in integration. The no-table
 integer route is being wired in an isolated worktree first, preserving
 default behavior and requiring actual native API, streamed full trajectory,
 image and complete-request qualification before promotion. LUT preparation
-layout/reuse remains a separate optimization hypothesis. Neither route has
-been enabled in the packaged App by this component campaign.
+layout/reuse has since received the scoped preparation control below.
+Neither route has been enabled in the packaged App by this component campaign.
+
+## Table preparation after a common M2 SiLU
+
+Four fresh processes ran in A1/B1/B2/A2 order. Each first evaluated the
+actual exported `tc::silu` on the same contiguous BF16 `[2,4096]` input.
+It then evaluated the complete BF16 bit-pattern domain as `[6,12288]`,
+using either a gate view with row stride24576 (A) or contiguous row
+stride12288 (B). Both contain the same73728 ordered values. Packing,
+GPU table materialization and complete table read/SHA were timed as well.
+
+| Run | Common M2 (ms) | Generation (ms) | Complete table preparation (ms) | M2 + table (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| A1, strided | 7.960125 | 0.477500 | 0.805000 | 8.765125 |
+| B1, contiguous | 5.694875 | 0.376542 | 0.619625 | 6.314500 |
+| B2, contiguous | 5.408792 | 0.355416 | 0.627708 | 6.036500 |
+| A2, strided | 5.380208 | 0.498500 | 0.760125 | 6.140333 |
+
+All four256KiB tables matched the qualified SHA above. Each process
+executed exactly two actual `tc::silu` calls and zero ConvRot projections
+or A8 operations; no model or weight payload was read. Both layouts had
+sub-millisecond table preparation in this context. The earlier99.507375ms
+observation did not include the same common M2 preparation and is not a
+matched denominator for a speedup or a JIT-cache causal claim. Common M2
+is reported separately and in the combined total; it is not a free warmup.
+The production Time-condition route must still be measured with any table
+integration inside the complete request.
+
+All four commands and samplers completed, with normal pressure and no
+new interval swap-in/out; existing swap use remained1445.19MiB. The100ms
+sampler captured only2–6 samples per short process, so its observed
+footprints cannot bound brief GPU allocation peaks. The original reserve,
+growth and swap guards were unchanged. The initial host logging-string
+compile failure and its one-character syntax fix are retained separately.
+Evidence:
+`gateup-swiglu-fusion/lut-rounding-probe/prep-layout-reuse/host-only-log-syntax-fix-attempt-1794095692362029000/ABBA-readback-summary.json`.
+
+## Actual native API and streamed trajectory passed
+
+The isolated RNE implementation now builds as native runtime
+`9af4581d…`, with the qualified FF-only shader unchanged. The build's684
+source inputs match the fresh library; the actual ID getter and loaded
+library path were checked. The new library/PSO cache is separate from
+the original kernels, and the request-frozen fusion flag remains off by
+default. Shipping artifacts still use the previously qualified runtime.
+
+The component host now calls the actual exported native typed-GU and
+`tc::silu` reference, rather than a local SiLU copy. Its corrected include
+path compiled successfully. Default unset/0 completed the real original
+Weights/H256 path without compiling or dispatching the new GU kernel.
+The20 policy rejections,7 Weights rejections (including an actually bound
+LoRA) and3 primitive input rejections passed.
+
+The first broad numerical case stopped at its unchanged1536MiB admission:
+free100MiB plus non-speculative file5485MiB minus the4GiB system reserve
+provided about1489MiB. No candidate numerical comparison ran; neither
+owner nor candidate H256 checks are qualified by this attempt. The sampler
+completed11 samples, max gap110.03ms, observed footprint267617024B and
+zero new swap-in/out. The earlier host include error is also preserved.
+
+A follow-up delays the96.09375MiB original W/scale CPU copies
+until the owner checks, which are their only consumers. It preserves the
+39-case matrix,24 dynamic cases,4 owner checks, counters and all original
+1536/1280MiB admissions. This removes an unnecessary logical lifetime;
+it does not establish a measured RSS reduction of that amount.
+
+The complete32-layer,8-step streamed trajectory subsequently passed under
+the production4GiB reserve and512MiB per-step growth guard. All16 retained
+velocity/Euler BF16 payloads,131072B each, matched the independent295
+runtime reference byte for byte, including the old final latent. Actual
+counts were1536 logical projections,1536 A8 operations and256 fused GU
+dispatches over262912 fused rows. Only the first step compiled the single
+new GU library and Large PSO. All256 source reader/fill fences, compact KV
+owners and the194MiB Time-source release/640KiB compact frames passed.
+This driver used retained text/noise and excludes encoder/VAE/PNG and
+performance qualification.
+
+The sampler completed123 samples with max gap110.028ms and observed
+footprint916243416B. New interval swap-in/out were0, while system-wide
+compression was7984840704B and decompression1044201472B; existing swap use
+remained1445.19MiB. This is not a no-compression observation or an
+attribution of all system activity to the driver. Native verification
+actually read7256787829B and matched the original DiT SHA, with0 receipt
+cache hits. Evidence is in the isolated worktree:
+`outputs/convrot-fused-gu-draft/trajectory/attempt-1794096370638669000/`.
+
+After that real-model run, a fresh system snapshot gave about4169.7MiB of
+system-side headroom under the same reserve/credit formula. The deferred
+copy component host then compiled and completed its entire matrix once:
+63 actual FF comparisons,907714560B per arm, were byte-exact; all4 source
+owner checks and3 actual compiled Weights/H256 checks (M33/1024/1048,
+51732480B per arm) passed. Matrix counters were130 logical/A8 operations
+and65 fused calls over37001 fused rows, with one new library/two PSOs.
+The earlier defaults and all rejection checks also passed. Its sampler
+completed40 samples, max gap110.037ms, observed footprint757810304B,
+compression0B, decompression6160384B and new swap-in/out0. These are
+actual-API numerical/ownership results, not whole-image speed or memory
+improvement claims. The previous resource refusal remains retained.
+Evidence:
+`outputs/convrot-fused-gu-components/defer-owner-copies-attempt-1794096053248110000/execution/`.
+
+The first complete CLI correctness campaign finished control0 with exact
+text/noise/latents/pixels and the original full PNG. Afterward the system
+pressure flag stayed elevated beyond its60s prelaunch readiness deadline,
+so control1 was never launched and the campaign remains failed/unqualified.
+Its observed footprint was4174890592B, system compression5717835776B,
+decompression2102181888B and new swap-in/out0. A separate controller changes
+only that readiness deadline to180s; the failed record is preserved, and
+normal pressure, native reserves/growth, sampled process cap, zero new
+swap and all numerical gates remain unchanged. Readiness waiting is
+recorded separately from the native Popen-through-wait timer.
+
+That separate controller completed a fresh control0/control1 correctness
+campaign. Both complete PNGs and all four full tensor payloads (text,
+initial noise, final latent and F32 pixels) match the original references.
+Control1 reports all256 fused calls,1536 DiT A8 operations and exactly
+one GU library/Large PSO compilation. Both arms retain the same prefix0,
+271589376 resident-source bytes,55880953856 streamed-source bytes and
+256 fills. Their complete native-command times were10.397327s and
+7.866168s, but this two-run correctness campaign is not speed evidence:
+system compression was7264747520B versus1805828096B and file/driver
+caches were not flushed. Both samplers completed with0 new swap-in/out.
+The separate dump-free ABBA/BAAB complete-request comparison remains the
+performance gate. Correctness evidence:
+`fused-gu-whole-image-long-wait/correctness-attempt-1794096847852555000/`.
+
+## Complete-request performance did not qualify promotion
+
+The separate eight-process, dump-free ABBA/BAAB campaign completed. Each
+candidate actually executed256 fused calls and compiled one GU library
+and one Large PSO. All original W8A8 counts, complete PNGs, source receipts,
+prefix0/fill/read-byte signatures and memory guards passed. The timer covers
+native process launch through exit, including request, PNG/result output
+and cleanup; it excludes sampler/timer startup and recorded readiness waits.
+No OS/driver cache flush was performed.
+
+| Index | GU | Complete CLI (s) | Denoise (s) |
+| --- | ---: | ---: | ---: |
+| 0 | 0 | 9.913343333 | 7.786798250 |
+| 1 | 1 | 7.551347791 | 5.432296583 |
+| 2 | 1 | 7.664601750 | 5.561640916 |
+| 3 | 0 | 7.498239375 | 5.392233209 |
+| 4 | 1 | 8.302063875 | 6.159119833 |
+| 5 | 0 | 7.840152917 | 5.680542375 |
+| 6 | 0 | 7.465453334 | 5.342293625 |
+| 7 | 1 | 7.737048208 | 5.607164000 |
+
+ABBA complete-command medians were8.705791354s native and7.607974771s
+fused (1.144298×), but BAAB was7.652803126s native and8.019556042s
+fused (0.954268×). The reverse window regressed about4.8%. This fails
+consistent whole-request speed qualification, despite exact numerics and
+the earlier precompiled component gain. The first native run is retained;
+removing an inconvenient sample would not change that acceptance decision.
+
+Observed process-tree footprints ranged3663808264–4275832536B. Every
+sampler completed with0 new swap-in/out; system compression ranged
+560447488–3280748544B and decompression144490496–856670208B. These
+varying system observations do not establish process-specific causality.
+Text/VAE timing stayed much narrower than denoise. GU library/PSO timing
+was not instrumented, so cold compilation is a hypothesis rather than a
+measured explanation. The local CLT installation has no `xcrun metal`,
+which also prevents assuming an immediately usable offline-metallib path.
+The candidate remains opt-in/default-off, and shipping App artifacts are
+unchanged. Next work must measure preparation and full-request costs,
+including any overlap inside the request rather than moving it outside
+the timer. Evidence:
+`fused-gu-whole-image-long-wait/performance-attempt-1794096984908139000/`.
