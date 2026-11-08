@@ -8,6 +8,7 @@ namespace tc {
 struct QwenBf16StreamStageMetrics {
     std::string source_sha256,layout_digest,cache_layout_digest;
     std::string source_precision,matmul_mode;
+    std::string allocation_policy="guarded";
     uint64_t source_file_bytes=0,verification_bytes=0,verification_cache_hits=0;
     uint64_t managed_weight_capacity_bytes=0,managed_weight_budget_bytes=0;
     uint64_t derived_weight_capacity_bytes=0;

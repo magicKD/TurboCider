@@ -95,6 +95,11 @@ struct MemoryDecision {
     bool allowed() const { return denial == MemoryDenial::None; }
 };
 
+// Mandatory bounded GPU weights may use the OS allocator directly. Memory
+// observations remain useful for OPTIONAL cache policy, not a prerequisite
+// for allocating the fixed two-slot working set.
+enum class StreamingAllocationAdmission { Guarded, SystemManaged };
+
 inline std::optional<uint64_t> free_page_bytes(uint64_t pages, uint64_t size) {
     if (!size || pages > std::numeric_limits<uint64_t>::max() / size) return std::nullopt;
     return pages * size;
@@ -159,6 +164,15 @@ inline MemoryDecision admit_streaming_memory(const StreamingMemoryObservation &o
     return {MemoryDenial::Unavailable, 0};
 }
 
+inline MemoryDecision admit_required_streaming_memory(const StreamingMemoryObservation &observation,
+        MemoryLimits limits, uint64_t growth, StreamingAllocationAdmission policy) {
+    switch (policy) {
+    case StreamingAllocationAdmission::SystemManaged: return {MemoryDenial::None, 0};
+    case StreamingAllocationAdmission::Guarded: return admit_streaming_memory(observation, limits, growth);
+    }
+    return {MemoryDenial::Invalid, 0};
+}
+
 // Only the two host vectors owned by HybridFfn. MLX corrections and retained
 // output, allocator slack, Core ML internals and competing processes are not
 // represented by this calculation.
@@ -190,6 +204,6 @@ inline std::optional<HostScratchPlan> plan_host_scratch(uint64_t rows, uint64_t 
 MemoryObservation observe_runtime_memory(uint64_t mlx_active_bytes);
 StreamingMemoryObservation observe_streaming_memory(uint64_t mlx_active_bytes);
 void require_streaming_memory_headroom(uint64_t mlx_active_bytes, uint64_t growth_bytes,
-                                       const char *context);
+    const char *context, StreamingAllocationAdmission policy = StreamingAllocationAdmission::Guarded);
 
 } // namespace tc::ane

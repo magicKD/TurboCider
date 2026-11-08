@@ -79,10 +79,15 @@ StreamingMemoryObservation observe_streaming_memory(uint64_t mlx_active_bytes) {
 }
 
 void require_streaming_memory_headroom(uint64_t mlx_active_bytes, uint64_t growth_bytes,
-                                       const char *context) {
+                                       const char *context, StreamingAllocationAdmission policy) {
+    // Do not sample, sleep, or reject a mandatory GPU allocation using a
+    // snapshot of reclaimable memory. Actual allocation failures still throw.
+    if (policy == StreamingAllocationAdmission::SystemManaged) return;
+    if (policy != StreamingAllocationAdmission::Guarded)
+        throw std::invalid_argument(std::string(context) + ": invalid allocation admission policy");
     const auto observed = observe_streaming_memory(mlx_active_bytes);
-    const auto admission = admit_streaming_memory(observed, {uint64_t(4) << 30, observed.memory.physical_bytes},
-                                                  growth_bytes);
+    const auto admission = admit_required_streaming_memory(observed,
+        {uint64_t(4) << 30, observed.memory.physical_bytes}, growth_bytes, policy);
     if (admission.allowed()) return;
     throw std::invalid_argument(std::string(context) + ": " + memory_denial_reason(admission.denial, observed.memory) +
         "; non_speculative_file_mib=" + std::to_string(observed.file_backed_non_speculative_bytes.value_or(0) >> 20) +

@@ -9,7 +9,6 @@
 #include "encoder_convrot.hpp"
 #include "memory_policy.hpp"
 #include "scheduler.hpp"
-#include "streaming_memory_recovery.hpp"
 #include "vae.hpp"
 #include "vae_decode_residency.hpp"
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
@@ -17,7 +16,6 @@
 #endif
 #include <mlx/random.h>
 #include <cstdlib>
-#include <thread>
 #include <bit>
 #include <exception>
 
@@ -40,39 +38,6 @@ struct ScopedCacheLimit {
     ~ScopedCacheLimit() { mx::set_cache_limit(previous); }
 };
 
-void check_convrot_stream_headroom(std::atomic<bool> &cancelled, const Event &event,
-                                   uint64_t growth_bytes = 0) {
-    StreamingMemoryRecovery recovery(growth_bytes);
-    bool reclaimed = false;
-    int last_seconds = -1;
-    for (;;) {
-        checkpoint(cancelled);
-        const auto observed=ane::observe_streaming_memory(mx::get_active_memory());
-        const auto now = Clock::now();
-        const auto status = recovery.evaluate(observed, now);
-        if (status.action == StreamingMemoryRecovery::Action::Ready) {
-            if (observed.pressure == ane::StreamingMemoryPressure::Warning) mx::clear_cache();
-            if (recovery.waited() && event) event("memory_ready", 0, 1);
-            return;
-        }
-        if (status.action != StreamingMemoryRecovery::Action::Wait) {
-            const bool timed_out = status.action == StreamingMemoryRecovery::Action::TimedOut;
-            throw std::invalid_argument(std::string("Qwen21 ConvRot streaming: ") +
-                (timed_out ? "memory_wait_timeout; " : "") +
-                "waited_ms=" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(now - recovery.started()).count()) +
-                "; required_growth_mib=" + std::to_string(growth_bytes >> 20) + "; " +
-                ane::memory_denial_reason(status.decision.denial, observed.memory) +
-                "; non_speculative_file_mib=" + std::to_string(observed.file_backed_non_speculative_bytes.value_or(0) >> 20) +
-                "; pressure=" + ane::streaming_memory_pressure_name(observed.pressure));
-        }
-        // All callers are at a drained phase/pass boundary. Free only our
-        // allocator's unused buffers; live weights and reader owners stay put.
-        if (!reclaimed) { mx::clear_cache(); reclaimed = true; }
-        const int seconds = int(recovery.elapsed_seconds(now));
-        if (seconds != last_seconds && event) { event("memory_wait", seconds, 120); last_seconds = seconds; }
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-    }
-}
 }
 
 RunResult Session::run_weight_streamed(const Request &requested, const Event &event,
@@ -81,6 +46,8 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     Request r = requested;
     const bool convrot = r.residency == "streamed";
     const bool runtime_ane = convrot_stream_ane_requested(r);
+    const auto allocation_admission = convrot && !runtime_ane ?
+        ane::StreamingAllocationAdmission::SystemManaged : ane::StreamingAllocationAdmission::Guarded;
     const bool turbo = turbo_checkpoint(transformer_source_);
     const bool convrot_encoder = convrot_encoder_checkpoint(encoder_source_);
     const bool convrot_dit = convrot_checkpoint(transformer_source_);
@@ -138,7 +105,6 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     checkpoint(cancelled);
     mx::synchronize();
     unload();
-    if (convrot) check_convrot_stream_headroom(cancelled, event);
     mx::reset_peak_memory();
     ScopedCacheLimit cache_limit(convrot ? std::min(r.allocator_cache_bytes, uint64_t(256) << 20) : r.allocator_cache_bytes);
     // Destroy phase-local arrays and TinyPreview before the final cache drain.
@@ -162,12 +128,10 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     auto emit = [&](const char *phase, int completed, int total) { if (event) event(phase, completed, total); };
     auto make_encoder_plan = [&] {
         auto plan = bf16_stream_plan(encoder_source_, true, 36, encoder_prefix, 1, cancelled, encoder_mode);
-        if (convrot && !prepare_only) check_convrot_stream_headroom(cancelled, event, bf16_stream_managed_capacity(plan));
         return plan;
     };
     auto make_dit_plan = [&] {
         auto plan=bf16_stream_plan(transformer_source_, false, 32, dit_prefix, uint32_t(r.steps), cancelled, dit_mode);
-        if (convrot && !prepare_only) check_convrot_stream_headroom(cancelled, event, bf16_stream_managed_capacity(plan));
         if(convrot && r.qwen21_stream_weight_budget_bytes) {
             const auto observation=ane::observe_streaming_memory(mx::get_active_memory());
             const auto cache_headroom=convrot_stream_cache_headroom(observation);
@@ -210,7 +174,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     const auto text_start = Clock::now();
     bf16_stream_scope([&] {
         emit("load_qwen21_text", 0, 1);
-        Bf16StreamBank bank(make_encoder_plan(), budget, cancelled);
+        Bf16StreamBank bank(make_encoder_plan(), budget, cancelled, allocation_admission);
         emit("load_qwen21_text", 1, 1);
         Tokenizer tokenizer(root_ / "processor");
         const auto tokens = tokenizer.raw_bounded(reference_prompt_template(r.prompt, 0), Tokenizer::qwen21_limit);
@@ -263,7 +227,7 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     bf16_stream_scope([&] {
         auto dit_plan=make_dit_plan();
         const auto time_source=timestep_cache ? dit_plan.lease->descriptor().files.at(0).content_digest : std::string{};
-        Bf16StreamBank bank(std::move(dit_plan), budget, cancelled);
+        Bf16StreamBank bank(std::move(dit_plan), budget, cancelled, allocation_admission);
         emit("load_qwen21_transformer", 1, 1);
 #if TURBOCIDER_ENABLE_PRIVATE_ANE
         std::unique_ptr<ConvrotStreamAne> hybrid;
@@ -338,8 +302,8 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
                     // No new weight allocation or source read is needed to
                     // resume: the original two slots have stayed live.
                     bank.evict_cached_layers();
+                    mx::clear_cache();
                 }
-                check_convrot_stream_headroom(cancelled, event, uint64_t(1) << 29);
             }
             bank.begin_pass(uint32_t(step));
             const auto step_start = Clock::now();
@@ -391,7 +355,6 @@ RunResult Session::run_weight_streamed(const Request &requested, const Event &ev
     dump("qwen21_latents", latents);
 
     checkpoint(cancelled);
-    if (convrot) check_convrot_stream_headroom(cancelled, event);
     const auto decode_start = Clock::now();
     auto pixels = [&] {
         Tensor decoded(0.f);

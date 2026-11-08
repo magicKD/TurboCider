@@ -330,6 +330,8 @@ import ImageIO
                         phases.contains("tiny_vae_encode"), "tiny reference encoder not invoked")
                 }
                 if streamedConvrot {
+                    try check(!phases.contains("memory_wait") && !phases.contains("memory_ready"),
+                        "ConvRot GPU generation must start without heuristic memory waiting")
                     try check(job.routeSummary?.contains("ConvRot") == true &&
                         job.routeSummary?.contains("流式加载") == true &&
                         phases.contains("denoise") && (mode != "tiny-final" || phases.contains("tiny_vae_decode")),
@@ -337,6 +339,11 @@ import ImageIO
                     if let receipt = job.resultJSON {
                         try Data(receipt.utf8).write(to: output.appendingPathComponent("\(mode)-native.json"),
                             options: .withoutOverwriting)
+                        let policyResult = try JSONSerialization.jsonObject(with: Data(receipt.utf8)) as? [String: Any]
+                        let policyStreaming = policyResult?["qwen_convrot_streaming"] as? [String: Any]
+                        try check(["encoder", "denoiser"].allSatisfy {
+                            (policyStreaming?[$0] as? [String: Any])?["allocation_policy"] as? String == "system_managed"
+                        }, "ConvRot mandatory weights did not use the system allocator policy")
                         if cachedConvrot {
                             let raw = try JSONSerialization.jsonObject(with: Data(receipt.utf8)) as? [String: Any]
                             let streaming = raw?["qwen_convrot_streaming"] as? [String: Any]

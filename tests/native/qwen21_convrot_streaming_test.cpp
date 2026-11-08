@@ -65,6 +65,7 @@ void check_bank(const QwenBf16StreamStageMetrics &metrics, uint32_t passes, bool
             metrics.fills == layers*passes-retained_layers && metrics.completed_reader_fences == metrics.fills &&
             metrics.reader_fences == metrics.fills, "ConvRot slot epochs or reader lifetime were not completed");
     require(metrics.source_precision == "original_i8_convrot" &&
+            metrics.allocation_policy == "system_managed" &&
             metrics.matmul_mode == (w8a8 ? "int8_tensorops_w8a8" : "q8_g128_float_a") &&
             (metrics.derived_weight_capacity_bytes == 0) == w8a8 &&
             metrics.managed_weight_capacity_bytes + metrics.derived_weight_capacity_bytes <= budget,
@@ -84,7 +85,8 @@ void check_encoder(const char *path, StreamWeightMode mode, bool w8a8, std::atom
     auto expected = reference.encode(tokens, {}, cancel);
     mx::eval(expected);
 
-    Bf16StreamBank bank(bf16_stream_plan(path, true, layers, 0, 1, cancel, mode), budget, cancel);
+    Bf16StreamBank bank(bf16_stream_plan(path, true, layers, 0, 1, cancel, mode), budget, cancel,
+        ane::StreamingAllocationAdmission::SystemManaged);
     require(bank.embedding_vocabulary() == 128, "sparse embedding vocabulary changed");
     Tokens invalid=tokens;
     invalid.ids[0]=-1;
@@ -137,7 +139,7 @@ void check_denoiser(const char *path, StreamWeightMode mode, bool w8a8, std::ato
     if(cached)plan=bf16_stream_cache_plan(std::move(plan),budget);
     const auto prefix=plan.prefix;
     require(prefix==(cached ? layers-2 : 0),"cache selection did not retain the expected exact prefix");
-    Bf16StreamBank bank(std::move(plan), budget, cancel);
+    Bf16StreamBank bank(std::move(plan), budget, cancel, ane::StreamingAllocationAdmission::SystemManaged);
     Transformer streamed(bank.resident(), config);
     streamed.set_layer_weights([&](int layer) -> const Weights & { return bank.acquire(layer); },
                               [&](int layer) { bank.retire(layer); });
@@ -202,7 +204,7 @@ int main(int argc, char **argv) {
         ample.memory.free_bytes=0;
         const auto refused=bf16_stream_recheck_cache_plan(selected,ample);
         require(refused.prefix==0 && !ane::admit_streaming_memory(ample,{4*gib,24*gib},floor).allowed(),
-            "optional fallback bypassed the minimum bank physical admission");
+            "optional fallback incorrectly retained an unadmitted cache prefix");
         selected=bf16_stream_cache_plan(cache_base,budget,[&](uint64_t n){return n<=floor;});
         require(selected.prefix==0 && selected.cache_budget_prefix==2 && selected.cache_limited_by_memory,
             "physical headroom did not reduce the cached prefix");

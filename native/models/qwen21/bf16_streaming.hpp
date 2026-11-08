@@ -38,7 +38,7 @@ uint64_t bf16_stream_managed_capacity(const Bf16StreamPlan &);
 Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan, uint64_t budget,
     const std::function<bool(uint64_t)> &admit = {});
 // Recheck before any allocation. Optional prefix ownership may be discarded;
-// the minimum bank still has to pass the ordinary strict physical admission.
+// the minimum bank retains the caller's required-allocation policy.
 Bf16StreamPlan bf16_stream_recheck_cache_plan(Bf16StreamPlan,
     const ane::StreamingMemoryObservation &);
 
@@ -59,6 +59,7 @@ class Bf16StreamBank final {
     };
     std::vector<FloatProjection> float_projections_;
     std::atomic<bool> &cancel_;
+    ane::StreamingAllocationAdmission allocation_admission_;
     streaming::CompletionMailbox mailbox_{8};
     std::unique_ptr<streaming::SlotSafetyTracker> safety_;
     std::unique_ptr<streaming::IoExecutor> io_;
@@ -74,7 +75,8 @@ class Bf16StreamBank final {
     void bind_float_layer(uint32_t layer);
     const streaming::StageLayout &execution_layout() const;
   public:
-    Bf16StreamBank(Bf16StreamPlan,uint64_t managed_weight_budget,std::atomic<bool> &);
+    Bf16StreamBank(Bf16StreamPlan,uint64_t managed_weight_budget,std::atomic<bool> &,
+        ane::StreamingAllocationAdmission admission = ane::StreamingAllocationAdmission::Guarded);
     ~Bf16StreamBank();
     Bf16StreamBank(const Bf16StreamBank &)=delete;
     Bf16StreamBank &operator=(const Bf16StreamBank &)=delete;

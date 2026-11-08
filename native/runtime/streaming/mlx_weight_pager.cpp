@@ -121,6 +121,7 @@ struct MlxWeightPager::State {
     bool resident_loaded = false;
     bool exact_allocations = false;
     bool streaming_headroom = false;
+    ane::StreamingAllocationAdmission admission = ane::StreamingAllocationAdmission::Guarded;
 
     ~State() {
         for (auto &artifact : artifacts)
@@ -359,7 +360,8 @@ namespace {
 
 void allocate_fields(MlxWeightPager::State::Slot &slot,
                      const std::vector<FieldSpec> &fields,
-                     MlxWeightPagerMetrics &metrics,bool exact,bool streaming_headroom) {
+                     MlxWeightPagerMetrics &metrics,bool exact,bool streaming_headroom,
+                     ane::StreamingAllocationAdmission admission) {
     pager_require(slot.arrays.empty() && slot.pointers.empty(),
                   "slot backing already exists");
     slot.arrays.reserve(fields.size());
@@ -372,7 +374,7 @@ void allocate_fields(MlxWeightPager::State::Slot &slot,
             const auto upper = gguf_storage::capacity_upper(field.bytes);
             if (streaming_headroom) {
                 ane::require_streaming_memory_headroom(mx::get_active_memory(), upper,
-                    "mlx_weight_pager: incremental ConvRot source admission declined");
+                    "mlx_weight_pager: incremental ConvRot source admission declined", admission);
             } else {
                 const auto observed=ane::observe_runtime_memory(mx::get_active_memory());
                 const auto admission=ane::admit_memory(observed,{uint64_t(4)<<30,observed.physical_bytes},0,upper);
@@ -380,8 +382,8 @@ void allocate_fields(MlxWeightPager::State::Slot &slot,
                     ane::memory_denial_reason(admission.denial,observed));
             }
         }
-        slot.arrays.emplace_back(mx::allocator::malloc(field.bytes),
-                                 mlx_shape(field), direct_type(field).dtype);
+        slot.arrays.emplace_back(mx::allocator::malloc(field.bytes), mlx_shape(field), direct_type(field).dtype);
+        pager_require(slot.arrays.back().data_shared_ptr()->buffer.ptr() != nullptr, "MLX weight allocation failed");
         if(exact) {
             const auto actual=mx::allocator::allocator().size(slot.arrays.back().data_shared_ptr()->buffer);
             pager_require(actual>=field.bytes && actual<=gguf_storage::capacity_upper(field.bytes),
@@ -440,10 +442,14 @@ std::vector<std::string> binding_keys(
 
 } // namespace
 
-void MlxWeightPager::use_exact_allocations(bool streaming_headroom) {
+void MlxWeightPager::use_exact_allocations(bool streaming_headroom, ane::StreamingAllocationAdmission admission) {
     pager_require(state_ && !state_->resident_loaded && state_->pools.empty(),"exact source recipe must precede payload allocation");
+    pager_require(admission == ane::StreamingAllocationAdmission::Guarded ||
+        (streaming_headroom && admission == ane::StreamingAllocationAdmission::SystemManaged),
+        "system-managed exact allocation requires a bounded streaming source");
     state_->exact_allocations=true;
     state_->streaming_headroom=streaming_headroom;
+    state_->admission=admission;
 }
 
 void MlxWeightPager::load_resident(
@@ -453,7 +459,7 @@ void MlxWeightPager::load_resident(
     check_open_files();
     const auto &fields = state_->stage->resident_fields;
     pager_require(!fields.empty(), "stage has no resident fields");
-    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations,state_->streaming_headroom);
+    allocate_fields(state_->resident, fields, metrics_,state_->exact_allocations,state_->streaming_headroom,state_->admission);
     const auto begin = Clock::now();
     const uint64_t bytes = read_fields(
         fields, state_->resident.pointers, state_->artifacts, cancel);
@@ -584,7 +590,7 @@ void MlxWeightPager::create_pool(const PoolLayout &layout) {
             pager_require(fields[field_index].bytes <=
                               slot_layout.field_capacity[field_index],
                           "slot field capacity is too small");
-        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations,state_->streaming_headroom);
+        allocate_fields(pool.slots[slot_index], fields, metrics_,state_->exact_allocations,state_->streaming_headroom,state_->admission);
     }
     state_->pools.emplace(layout.id, std::move(pool));
 }

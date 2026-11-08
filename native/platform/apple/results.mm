@@ -255,6 +255,7 @@ static NSDictionary *qwen_stream_stage_dictionary(const QwenBf16StreamStageMetri
     if (convrot) {
         stage[@"source_precision"] = @(m.source_precision.c_str());
         stage[@"matmul_mode"] = @(m.matmul_mode.c_str());
+        stage[@"allocation_policy"] = @(m.allocation_policy.c_str());
         stage[@"derived_weight_capacity_bytes"] = @(m.derived_weight_capacity_bytes);
         stage[@"peak_live_layer_owners"] = @(m.peak_live_layer_owners);
         stage[@"gathered_embedding_rows"] = @(m.gathered_embedding_rows);

@@ -13,7 +13,8 @@ namespace tc::qwen21 {
 // headroom. A busy desktop can compress anonymous pages before file-backed
 // pages become reclaimable. Keep half the remaining observed headroom after
 // the normal 4 GiB system reserve and a 2 GiB runtime-work allowance. The
-// minimum two-slot recipe retains its existing, separate physical admission.
+// minimum GPU two-slot recipe allocates directly through macOS; this estimate
+// only controls extra cached layers and never delays the required working set.
 inline uint64_t convrot_stream_cache_headroom(const ane::StreamingMemoryObservation &observation) {
     if (observation.pressure != ane::StreamingMemoryPressure::Normal) return 0;
     constexpr uint64_t workspace = uint64_t(2) << 30;
