@@ -83,8 +83,19 @@ Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan base,uint64_t budget,
     if(selected.prefix)selected.minimum_plan=std::make_shared<const Bf16StreamPlan>(std::move(base));
     return selected;
 }
+Bf16StreamPlan bf16_stream_recheck_cache_plan(Bf16StreamPlan plan,
+        const ane::StreamingMemoryObservation &observation) {
+    if (!plan.minimum_plan) return plan;
+    const auto admission = ane::admit_streaming_memory(observation,
+        {system_reserve, observation.memory.physical_bytes}, bf16_stream_managed_capacity(plan));
+    if (admission.allowed() && observation.pressure == ane::StreamingMemoryPressure::Normal) return plan;
+    auto minimum = *plan.minimum_plan;
+    minimum.cache_budget_prefix = plan.cache_budget_prefix;
+    minimum.cache_limited_by_memory = true;
+    return minimum;
+}
 Bf16StreamBank::Bf16StreamBank(Bf16StreamPlan plan,uint64_t budget,std::atomic<bool> &cancel)
-    :plan_(std::move(plan)),pager_(plan_.lease,
+    :plan_(bf16_stream_recheck_cache_plan(std::move(plan), ane::observe_streaming_memory(mx::get_active_memory()))),pager_(plan_.lease,
         plan_.minimum_plan ? plan_.minimum_plan->descriptor : plan_.descriptor,
         plan_.minimum_plan ? plan_.minimum_plan->descriptor.stages[0] : plan_.descriptor.stages[0],
         plan_.minimum_plan ? plan_.minimum_plan->layout.stages[0] : plan_.layout.stages[0]),cancel_(cancel) {

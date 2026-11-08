@@ -7,13 +7,18 @@
 int main() {
     using namespace tc;
     constexpr uint64_t gib = uint64_t(1) << 30;
-    ane::StreamingMemoryObservation observation{{true,24*gib,gib,2*gib,0,0},8*gib,true};
+    using Pressure = ane::StreamingMemoryPressure;
+    ane::StreamingMemoryObservation observation{{true,24*gib,gib,2*gib,0,0},8*gib,Pressure::Normal};
     assert(qwen21::convrot_stream_cache_headroom(observation)==2*gib);
     observation.memory.free_bytes=6*gib;
     assert(qwen21::convrot_stream_cache_headroom(observation)==4*gib);
-    observation.pressure_normal=false;
+    observation.pressure=Pressure::Warning;
     assert(qwen21::convrot_stream_cache_headroom(observation)==0);
-    observation.pressure_normal=true;observation.file_backed_non_speculative_bytes.reset();
+    assert(ane::admit_streaming_memory(observation,{4*gib,24*gib},gib).allowed());
+    observation.pressure=Pressure::Critical;
+    assert(qwen21::convrot_stream_cache_headroom(observation)==0);
+    assert(ane::admit_streaming_memory(observation,{4*gib,24*gib},0).denial==ane::MemoryDenial::SystemPressure);
+    observation.pressure=Pressure::Normal;observation.file_backed_non_speculative_bytes.reset();
     assert(qwen21::convrot_stream_cache_headroom(observation)==0);
     observation.file_backed_non_speculative_bytes=0;observation.memory.free_bytes=6*gib;
     assert(qwen21::convrot_stream_cache_headroom(observation)==0);

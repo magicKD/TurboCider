@@ -54,10 +54,11 @@ MemoryObservation observe_memory(uint64_t mlx_active_bytes, StreamingMemoryObser
         uint32_t pressure = 0;
         size = sizeof(pressure);
         // The Darwin sysctl publishes NOTE_MEMORYSTATUS dispatch flags, not
-        // XNU's internal pressure enum. Normal is DISPATCH_MEMORYPRESSURE_NORMAL.
+        // XNU's internal pressure enum. Keep warning distinct from critical:
+        // warning permits bounded streaming while relinquishing optional cache.
         if (sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &size, nullptr, 0) == 0 &&
             size == sizeof(pressure))
-            streaming->pressure_normal = pressure == DISPATCH_MEMORYPRESSURE_NORMAL;
+            streaming->pressure = streaming_memory_pressure_from_flags(pressure);
     }
 #else
     (void)mlx_active_bytes;
@@ -85,7 +86,7 @@ void require_streaming_memory_headroom(uint64_t mlx_active_bytes, uint64_t growt
     if (admission.allowed()) return;
     throw std::invalid_argument(std::string(context) + ": " + memory_denial_reason(admission.denial, observed.memory) +
         "; non_speculative_file_mib=" + std::to_string(observed.file_backed_non_speculative_bytes.value_or(0) >> 20) +
-        "; pressure=" + (observed.pressure_normal ? (*observed.pressure_normal ? "normal" : "elevated") : "unavailable"));
+        "; pressure=" + streaming_memory_pressure_name(observed.pressure));
 }
 
 } // namespace tc::ane

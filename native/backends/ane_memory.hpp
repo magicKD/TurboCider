@@ -33,10 +33,32 @@ struct MemoryObservation {
     uint64_t inactive_bytes = 0;
 };
 
+enum class StreamingMemoryPressure { Normal, Warning, Critical };
+
+// Darwin's public sysctl uses discrete dispatch NOTE_MEMORYSTATUS values,
+// not XNU's internal pressure enum. Unknown values must remain unavailable.
+inline std::optional<StreamingMemoryPressure> streaming_memory_pressure_from_flags(uint32_t flags) {
+    switch (flags) {
+    case 1: return StreamingMemoryPressure::Normal;
+    case 2: return StreamingMemoryPressure::Warning;
+    case 4: return StreamingMemoryPressure::Critical;
+    default: return std::nullopt;
+    }
+}
+inline const char *streaming_memory_pressure_name(std::optional<StreamingMemoryPressure> pressure) {
+    if (!pressure) return "unavailable";
+    switch (*pressure) {
+    case StreamingMemoryPressure::Normal: return "normal";
+    case StreamingMemoryPressure::Warning: return "warning";
+    case StreamingMemoryPressure::Critical: return "critical";
+    }
+    return "unavailable";
+}
+
 struct StreamingMemoryObservation {
     MemoryObservation memory;
     std::optional<uint64_t> file_backed_non_speculative_bytes;
-    std::optional<bool> pressure_normal;
+    std::optional<StreamingMemoryPressure> pressure;
 };
 
 struct MemoryLimits {
@@ -113,18 +135,28 @@ inline MemoryDecision admit_memory(const MemoryObservation &o, MemoryLimits limi
 
 inline MemoryDecision admit_streaming_memory(const StreamingMemoryObservation &o,
                                              MemoryLimits limits, uint64_t growth) {
-    if (!o.memory.available || !o.pressure_normal || !o.file_backed_non_speculative_bytes)
+    if (!o.memory.available || !o.pressure || !o.file_backed_non_speculative_bytes)
         return {MemoryDenial::Unavailable, 0};
-    if (!*o.pressure_normal) return {MemoryDenial::SystemPressure, 0};
     const auto file_backed = *o.file_backed_non_speculative_bytes;
     if (file_backed > o.memory.physical_bytes) return {MemoryDenial::Invalid, 0};
     // Mach reports pageable file-backed pages separately from anonymous
-    // pages. Under normal pressure, count that pool once and keep the full
+    // pages. Under normal or warning pressure, count that pool once and keep the full
     // system reserve inside the estimate to allow for active or dirty pages.
     // A second fractional reserve can reject small streamed banks on a
     // healthy desktop. Never credit anonymous inactive pages.
     const auto credit = std::min(file_backed, uint64_t(8) << 30);
-    return detail::admit_memory_with_credit(o.memory, limits, 0, growth, credit);
+    const auto decision = detail::admit_memory_with_credit(o.memory, limits, 0, growth, credit);
+    if (decision.denial == MemoryDenial::Invalid || decision.denial == MemoryDenial::ProcessReserve ||
+        decision.denial == MemoryDenial::MlxReserve) return decision;
+    // Warning is advisory: macOS can reclaim file pages without requiring a
+    // normal notification first. Optional prefix caching is disabled separately.
+    // Critical pressure still pauses all new growth, including zero-growth phases.
+    switch (*o.pressure) {
+    case StreamingMemoryPressure::Critical: return {MemoryDenial::SystemPressure, 0};
+    case StreamingMemoryPressure::Normal:
+    case StreamingMemoryPressure::Warning: return decision;
+    }
+    return {MemoryDenial::Unavailable, 0};
 }
 
 // Only the two host vectors owned by HybridFfn. MLX corrections and retained

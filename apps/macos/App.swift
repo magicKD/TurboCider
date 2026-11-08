@@ -81,6 +81,7 @@ private func stateName(_ value: String) -> String {
     ["preparing": "准备中", "running": "生成中", "cleanup_pending": "等待进程清理", "finalizing": "正在保存结果", "cancelling": "正在安全停止", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断"][value] ?? value
 }
 private func phaseName(_ value: String) -> String {
+    if let memory = Qwen21MemoryPresentation.phaseTitle(value) { return memory }
     if value.hasPrefix("seedvr2_") { return SeedVR2ProgressPresentation(phase: value, completed: 0, total: 0).title }
     if value == "pack_z_image_suffix" { return "整理 GPU 权重" }
     if value == "upscale" { return "图像超分" }
@@ -1341,7 +1342,8 @@ struct StudioView: View {
                     ProgressView().controlSize(.small)
                 }
                 HStack {
-                    Text("\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
+                    Text(Qwen21MemoryPresentation.progressText(phase: job.phase, completed: job.completed, total: job.total)
+                         ?? "\(stateName(job.state)) · \(phaseName(job.phase)) \(job.completed)/\(job.total)")
                     Spacer()
                     if job.phase == "denoise", let speed = job.secondsPerStep {
                         Text(String(format: "近期均速 %.2f 秒/步", speed)).monospacedDigit()
@@ -1376,7 +1378,12 @@ struct StudioView: View {
                             Spacer(minLength: 8)
                             Button("恢复这次参数") { reuseParameters(job) }.font(.caption).disabled(assetControlsLocked)
                         }
-                        Text(error).font(.caption).textSelection(.enabled)
+                        if let summary = Qwen21MemoryPresentation.timeoutSummary(error) {
+                            Text(summary).font(.caption).textSelection(.enabled)
+                            DisclosureGroup("原生诊断") { Text(error).font(.caption).textSelection(.enabled) }
+                        } else {
+                            Text(error).font(.caption).textSelection(.enabled)
+                        }
                     }.foregroundStyle(.red).padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
@@ -1690,7 +1697,7 @@ struct StudioView: View {
                     if let info = store.upscaleReady { studio.rememberUpscaleModel(info) }
                     selected = upscaled.id; resultSelection.select(upscaled.id, orderedIDs: outputIDs)
                 }
-            } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : error.localizedDescription }
+            } catch { studio.message = error is CancellationError ? "生成已取消，草稿与原图已保留。" : Qwen21MemoryPresentation.message(for: error) }
         }
     }
     private func exportResult(_ path: String) {

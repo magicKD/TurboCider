@@ -2,6 +2,49 @@ import Foundation
 import Combine
 import Darwin
 
+/// Presentation only. Keep the original native error and diagnostics in the
+/// job record, and never turn another error (or cancellation) into a timeout.
+enum Qwen21MemoryPresentation {
+    static func phaseTitle(_ phase: String) -> String? {
+        switch phase {
+        case "memory_wait": return "正在等待可用内存"
+        case "memory_ready": return "内存余量已恢复，继续生成"
+        default: return nil
+        }
+    }
+
+    static func progressText(phase: String, completed: Int, total: Int) -> String? {
+        guard phase == "memory_wait" else { return nil }
+        guard total > 0 else { return "正在等待可用内存，可随时取消。" }
+        let seconds = min(max(0, completed), total)
+        return "已等待 \(seconds) 秒，最多等待 \(total) 秒 · 可随时取消"
+    }
+
+    static func timeoutSummary(_ diagnostic: String) -> String? {
+        let prefix = "Qwen21 ConvRot streaming: memory_wait_timeout;"
+        guard diagnostic.hasPrefix(prefix) else { return nil }
+        var requiredFields: Set<String> = ["waited_ms", "required_growth_mib"]
+        for token in diagnostic.dropFirst(prefix.count).split(separator: ";") {
+            let pair = token.trimmingCharacters(in: .whitespaces).split(separator: "=", maxSplits: 1,
+                                                                       omittingEmptySubsequences: false)
+            guard pair.count == 2 else { continue }
+            let key = String(pair[0])
+            guard key == "waited_ms" || key == "required_growth_mib" else { continue }
+            let value = pair[1]
+            guard requiredFields.remove(key) != nil, !value.isEmpty,
+                  value.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }), UInt64(value) != nil else { return nil }
+        }
+        guard requiredFields.isEmpty else { return nil }
+        return "等待后系统内存仍处于严重压力或可用余量不足，本次生成已停止。请释放其他应用占用的内存后重试，也可将权重缓存预算调为“最小”。原生诊断已保存在本次任务记录中。"
+    }
+
+    static func message(for error: Error) -> String {
+        guard let native = error as? NativeFailure,
+              let summary = timeoutSummary(native.message) else { return error.localizedDescription }
+        return summary
+    }
+}
+
 struct NativeJob: Codable, Identifiable, Sendable {
     let id: UUID
     let createdAt: Date
@@ -1116,6 +1159,9 @@ final class NativeJobStore: ObservableObject {
         if jobs[i].request.model == "qwen-image-2.1", jobs[i].request.residency == "streamed",
            event.phase == "load_qwen21_text" {
             actualRoute = "GPU · ConvRot · 流式加载"
+        }
+        if let title = Qwen21MemoryPresentation.phaseTitle(event.phase) {
+            sessionState = cancelRequested ? "正在安全停止" : title
         }
         if cancelRequested { engine?.cancel() }
         // Block callbacks keep cancellation responsive but must not replace the

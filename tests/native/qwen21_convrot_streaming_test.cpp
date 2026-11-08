@@ -2,6 +2,7 @@
 #include "models/qwen21/text_encoder.hpp"
 #include "models/qwen21/encoder_convrot.hpp"
 #include "models/qwen21/transformer.hpp"
+#include "backends/ane_memory.hpp"
 #include <iostream>
 
 using namespace tc;
@@ -183,6 +184,25 @@ int main(int argc, char **argv) {
         auto selected=bf16_stream_cache_plan(cache_base,one);
         require(selected.prefix==1 && selected.cache_budget_prefix==1 && !selected.cache_limited_by_memory,
             "weight budget did not select exactly one complete layer");
+        using Pressure = ane::StreamingMemoryPressure;
+        constexpr uint64_t gib = uint64_t(1) << 30;
+        ane::StreamingMemoryObservation ample{{true,24*gib,0,8*gib,0,0},0,Pressure::Normal};
+        require(bf16_stream_recheck_cache_plan(selected,ample).prefix==1,
+            "healthy recheck discarded an admitted prefix");
+        ample.pressure=Pressure::Warning;
+        const auto warning=bf16_stream_recheck_cache_plan(selected,ample);
+        require(warning.prefix==0 && warning.cache_budget_prefix==1 && warning.cache_limited_by_memory &&
+            warning.lease==selected.lease && !warning.minimum_plan &&
+            bf16_stream_managed_capacity(warning)==floor,
+            "warning must preserve the exact minimum bank and authenticated source");
+        ample.pressure=Pressure::Normal;
+        ample.memory.free_bytes=4*gib+floor;
+        require(bf16_stream_recheck_cache_plan(selected,ample).prefix==0,
+            "headroom changed after planning but the optional prefix was still retained");
+        ample.memory.free_bytes=0;
+        const auto refused=bf16_stream_recheck_cache_plan(selected,ample);
+        require(refused.prefix==0 && !ane::admit_streaming_memory(ample,{4*gib,24*gib},floor).allowed(),
+            "optional fallback bypassed the minimum bank physical admission");
         selected=bf16_stream_cache_plan(cache_base,budget,[&](uint64_t n){return n<=floor;});
         require(selected.prefix==0 && selected.cache_budget_prefix==2 && selected.cache_limited_by_memory,
             "physical headroom did not reduce the cached prefix");

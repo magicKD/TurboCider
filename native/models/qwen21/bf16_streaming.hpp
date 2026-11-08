@@ -6,6 +6,8 @@
 #include "../../runtime/streaming/qwen_bf16_metrics.hpp"
 #include "../../core/tokenizer.hpp"
 
+namespace tc::ane { struct StreamingMemoryObservation; }
+
 namespace tc::qwen21 {
 struct StreamEmbeddingSource {
     streaming::FieldSpec codes, scales;
@@ -35,6 +37,10 @@ uint64_t bf16_stream_managed_capacity(const Bf16StreamPlan &);
 // the caller's physical-headroom policy. Encoder layers are consumed once.
 Bf16StreamPlan bf16_stream_cache_plan(Bf16StreamPlan, uint64_t budget,
     const std::function<bool(uint64_t)> &admit = {});
+// Recheck before any allocation. Optional prefix ownership may be discarded;
+// the minimum bank still has to pass the ordinary strict physical admission.
+Bf16StreamPlan bf16_stream_recheck_cache_plan(Bf16StreamPlan,
+    const ane::StreamingMemoryObservation &);
 
 // Private diagnostic adapter, not a public catalog authority or hard RAM cap.
 // CPU refill jobs never allocate/evaluate MLX arrays. Owner graph arguments are
