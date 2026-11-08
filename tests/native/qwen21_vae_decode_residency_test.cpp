@@ -22,9 +22,10 @@ void policy() {
     auto selected=[](const Request &request,const char *raw,bool prepare=false) {
         return stream_vae_decode_only_request(request,prepare,raw);
     };
-    require(!selected(r,nullptr) && !selected(r,"0") && selected(r,"1"),"default-off policy changed");
+    require(selected(r,nullptr) && !selected(r,"0") && selected(r,"1"),"eligible automatic selection or explicit control changed");
     for (const char *bad : {"","true","2","01"," 1","1\n"})
         require(rejected([&]{selected(r,bad);}).find("0 or 1")!=std::string::npos,"invalid flag not rejected");
+    require(!selected(r,nullptr,true) && !selected(r,"0",true),"prepare-only automatic path selected");
     require(!rejected([&]{selected(r,"1",true);}).empty(),"prepare-only accepted");
     for (int changed=0;changed<12;++changed) {
         auto bad=r;
@@ -46,8 +47,9 @@ void policy() {
         require(!rejected([&]{selected(bad,"1");}).empty(),"incompatible route accepted");
     }
     r.execution="auto";r.tiny_vae.emplace();r.tiny_vae->preview=true;
-    require(selected(r,"1"),"original decoder with Tiny preview rejected");
+    require(selected(r,nullptr) && selected(r,"1"),"original decoder with Tiny preview rejected");
     r.tiny_vae->decoder="tiny";
+    require(!selected(r,nullptr) && !selected(r,"0"),"Tiny final automatically claimed original VAE route");
     require(!rejected([&]{selected(r,"1");}).empty(),"Tiny final claimed original VAE route");
 }
 
