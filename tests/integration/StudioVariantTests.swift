@@ -269,6 +269,36 @@ import Foundation
         try check(convrotFromDMD2.qwen21Sampler == "auto" && convrotFromDMD2.steps == 40 &&
             convrotFromDMD2.activeLoRAs.isEmpty && !convrotFromDMD2.usesQwen21DMD2,
             "Base ConvRot selection retained an incompatible two-step sampler")
+        let ltxStudio = StudioState(directory: root.appendingPathComponent("ltx098-studio"))
+        ltxStudio.selectModel("ltx-video-0.9.8-distilled")
+        ltxStudio.draft.modelPaths["ltx-video-0.9.8-distilled"] = root.path
+        ltxStudio.draft.prompt = "A lighthouse by the sea"
+        let image = root.appendingPathComponent("ltx098-source.png")
+        try Data([1]).write(to: image)
+        let asset = StudioAsset(path: image.path, name: "source", width: 512, height: 512)
+        ltxStudio.draft.assets = [asset]; ltxStudio.draft.initImageID = asset.id
+        do {
+            _ = try ltxStudio.draft.request(output: root.appendingPathComponent("missing-upscaler.mp4"))
+            throw NativeFailure(message: "LTX multiscale accepted a missing upscaler")
+        } catch { try check(error.localizedDescription.contains("放大器"), "Missing LTX upscaler not explained") }
+        try Data([1]).write(to: root.appendingPathComponent("ltxv-spatial-upscaler-0.9.8.safetensors"))
+        let ltxRequest = try ltxStudio.draft.request(output: root.appendingPathComponent("ltx098.mp4"))
+        try check(ltxRequest.operation == "video.image" && ltxRequest.width == 512 && ltxRequest.height == 512 &&
+                  ltxRequest.frames == 121 && ltxRequest.fps == 24 && ltxRequest.steps == 10 && ltxRequest.audio == false &&
+                  ltxRequest.inputs?.first?.role == "first_frame" && ltxRequest.inputs?.first?.strength == 0.75,
+                  "LTX 0.9.8 creation draft did not preserve its GPU I2V defaults")
+        var fastLTX = ltxStudio.draft; fastLTX.steps = 8
+        try check(try fastLTX.request(output: root.appendingPathComponent("fast-ltx.mp4")).steps == 8,
+                  "LTX 0.9.8 eight-step compatibility path was rejected")
+        var officialLTX = ltxStudio.draft; officialLTX.ltx098ResizeToBase = true
+        let resizedLTX = try officialLTX.request(output: root.appendingPathComponent("resize-ltx.mp4"))
+        try check(resizedLTX.ltx098_resize_to_base == true && NativeRequestV2(legacy: resizedLTX).execution.ltx098_resize_to_base == true,
+                  "LTX 0.9.8 final resize option was not forwarded")
+        var invalidLTX = ltxStudio.draft; invalidLTX.frames = 120
+        do {
+            _ = try invalidLTX.request(output: root.appendingPathComponent("invalid-ltx.mp4"))
+            throw NativeFailure(message: "LTX 0.9.8 accepted unsupported frame geometry")
+        } catch { try check(error.localizedDescription.contains("9–121"), "Wrong LTX 0.9.8 frame validation") }
         print("PASS: version labels, aliases, external selection, parameter/LoRA persistence, BF16/INT8 ANE switching, residency validation and result precision")
     }
 }

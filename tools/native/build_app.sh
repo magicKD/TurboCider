@@ -56,9 +56,15 @@ APP_VIEWS=(
 )
 APP_TARGETS="${TURBOCIDER_APP_TARGETS:-all}"
 case "$APP_TARGETS" in
- all|seedvr2|upscale-presentation|tiny-vae|qwen21) ;;
- *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae or qwen21\n' >&2; exit 2 ;;
+ all|seedvr2|upscale-presentation|tiny-vae|qwen21|library) ;;
+ *) printf 'TURBOCIDER_APP_TARGETS must be all, seedvr2, upscale-presentation, tiny-vae, qwen21 or library\n' >&2; exit 2 ;;
 esac
+if [[ "$APP_TARGETS" == library ]]; then
+ "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/InstallationInspectionTests.swift -o "$OUT/turbocider-installation-tests"
+ "$SWIFTC" -sdk "$SDK" -target "arm64-apple-macosx${DEPLOYMENT_TARGET}" -module-cache-path "$OUT/module-cache" -parse-as-library -O "${LIBRARY[@]}" tests/integration/HubClientTests.swift -o "$OUT/turbocider-hub-tests"
+ printf 'Built model-library inspection and hub contract tests\n'
+ exit 0
+fi
 if [[ "$APP_TARGETS" == qwen21 ]]; then
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/Qwen21WorkflowTests.swift -o "$OUT/turbocider-qwen21-workflow-tests"
  "$SWIFTC" "${FLAGS[@]}" "$SDK_SOURCE" "${STATE[@]}" tests/integration/PlaygroundStateTests.swift -o "$OUT/turbocider-playground-tests"

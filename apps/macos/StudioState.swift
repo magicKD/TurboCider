@@ -276,6 +276,7 @@ struct StudioDraft: Codable, Sendable {
     var ltxFastAV = true
     var ltxVideoAttentionBatch = false
     var ltxAccelerationMode = "quality"
+    var ltx098ResizeToBase = false
     var seedText = "42"
     var randomSeed = false
     var strength = 0.75
@@ -317,7 +318,7 @@ struct StudioDraft: Codable, Sendable {
     var initImageID: UUID?
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode
+        case modelID, modelPaths, operation, prompt, width, height, steps, frames, fps, audio, ltxBackend, ltxFastAV, ltxVideoAttentionBatch, ltxAccelerationMode, ltx098ResizeToBase
         case seedText, randomSeed, strength, dynamicText, streaming, promptEnhance, promptEnhanceEditExperimental, promptEnhancerPath, residency, zImageStreamingBudgetGiB, profilePath, acceleration
         case assets, loras, initImageID, loraStrategy, modelLoRAs, seedvr2VAE, upscaleAfterGeneration, upscaleModelPath, upscaleCompute, upscaleVariant, upscaleModelPaths, upscaleAutoPreload
         case qwen21DiTCache, qwen21DiTW8A8, qwen21DiTSmoothQuantConvRot, qwen21ReferenceSize
@@ -343,6 +344,7 @@ struct StudioDraft: Codable, Sendable {
             Bool.self, forKey: .ltxVideoAttentionBatch) ?? ltxVideoAttentionBatch
         ltxAccelerationMode = try c.decodeIfPresent(
             String.self, forKey: .ltxAccelerationMode) ?? ltxAccelerationMode
+        ltx098ResizeToBase = try c.decodeIfPresent(Bool.self, forKey: .ltx098ResizeToBase) ?? false
         seedText = try c.decodeIfPresent(String.self, forKey: .seedText) ?? seedText
         randomSeed = try c.decodeIfPresent(Bool.self, forKey: .randomSeed) ?? randomSeed
         strength = try c.decodeIfPresent(Double.self, forKey: .strength) ?? strength
@@ -820,6 +822,26 @@ struct StudioDraft: Codable, Sendable {
         let dimensionMultiple = modelID == "qwen-image-2.1" ? 32 : 16
         guard (64...maxDimension).contains(width), (64...maxDimension).contains(height), width % dimensionMultiple == 0, height % dimensionMultiple == 0 else { throw NativeFailure(message: "宽高需为 64–\(maxDimension) 之间的 \(dimensionMultiple) 倍数。") }
         guard frames >= 1 && frames <= 362 else { throw NativeFailure(message: "帧数超出支持范围。") }
+        if modelID == "ltx-video-0.9.8-distilled" {
+            let outputWidth = steps == 10 ? 2 * (Int(Double(width) * 0.6666666) / 32 * 32) : width
+            let outputHeight = steps == 10 ? 2 * (Int(Double(height) * 0.6666666) / 32 * 32) : height
+            guard width <= 1024, height <= 1024, width % 32 == 0, height % 32 == 0,
+                  (9...121).contains(frames), frames % 8 == 1, fps == 24, [8, 10].contains(steps),
+                  (outputWidth / 32) * (outputHeight / 32) * ((frames + 7) / 8) <= (steps == 10 ? 6400 : 4096),
+                  Int64(width) * Int64(height) * Int64(frames) <= Int64(512 * 512 * 121),
+                  Int64(outputWidth) * Int64(outputHeight) * Int64(frames) <= Int64(640 * 640 * 121) else {
+                throw NativeFailure(message: "LTX 0.9.8 使用 32 倍数基准画布、9–121 帧（8n+1）、24 fps，支持 8 步单阶段或 7+3 步双阶段；放大后画布也受 GPU 内存上限约束。")
+            }
+            guard (acceleration?.policy ?? "gpu") == "gpu", residency == "resident", profilePath.isEmpty, !audio else {
+                throw NativeFailure(message: "LTX 0.9.8 当前仅支持常驻纯 GPU、无音轨；ANE 与流式加载仍在验证。")
+            }
+            if steps == 10 {
+                let upscaler = URL(fileURLWithPath: modelPath).appendingPathComponent("ltxv-spatial-upscaler-0.9.8.safetensors")
+                guard FileManager.default.fileExists(atPath: upscaler.path) else {
+                    throw NativeFailure(message: "7+3 步双阶段缺少 0.9.8 潜空间放大器；请在模型中心补齐，或选择 8 步单阶段。")
+                }
+            }
+        }
         if modelID == "qwen-image-2.1", width * height > 8_388_608 {
             throw NativeFailure(message: "Qwen Image 2.1 当前画布上限为 8 百万像素。")
         }
@@ -1024,6 +1046,9 @@ struct StudioDraft: Codable, Sendable {
         request.width = width; request.height = height; request.steps = steps
         request.seed = randomSeed ? random() : try fixedSeed()
         request.frames = frames; request.fps = fps; request.audio = audio
+        if modelID == "ltx-video-0.9.8-distilled", steps == 10 {
+            request.ltx098_resize_to_base = ltx098ResizeToBase
+        }
         if modelID == "ltx-2.5-distilled" {
             request.ltx_backend = ltxBackend
             request.ltx_fast_av = ltxFastAV
@@ -2357,6 +2382,7 @@ final class StudioState: ObservableObject {
         }
         draft.ltxBackend = request.ltx_backend ?? "auto"
         draft.ltxFastAV = request.ltx_fast_av ?? true
+        draft.ltx098ResizeToBase = request.ltx098_resize_to_base ?? false
         draft.ltxVideoAttentionBatch = request.ltx_video_attention_batch ?? false
         draft.ltxAccelerationMode = request.ltx_sol_stage2 == true
             ? (request.ltx_stage2_text_rows == 256 ? "fast_approx" : "sol") : "quality"

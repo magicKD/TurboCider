@@ -87,6 +87,7 @@ For automation, use `dist/cli/turbocider generate MODEL_DIRECTORY REQUEST.json`.
 | Z-Image Turbo | Text-to-image, LoRA and optional GPU / ANE execution |
 | MiniMax H3 Turbo | Video generation, keyframes and references; media tools required |
 | LTX 2.5 Distilled | Text-to-video, image-to-video and optional audio output; backend/configuration limits apply |
+| [LTX-Video 0.9.8 2B Distilled](docs/public/LTX_VIDEO_098.md) | Experimental GPU-only image-to-video; 8-step single-scale or 7+3-step multiscale, 24 fps, up to 121 frames; no audio, LoRA, streaming or ANE yet |
 | Wan 2.1 1.3B QAD | Native three-step video generation; offline-converted assets and verified premerged LoRA required |
 
 `turbocider models` and request `plan` report the executable capabilities. LoRA, input and acceleration options vary by model. See the [model and request reference](docs/public/USAGE.md#model-capabilities), [Qwen guide](docs/public/QWEN_IMAGE_21.md) and [GPU/ANE acceleration status](docs/status/acceleration.md).

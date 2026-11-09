@@ -19,6 +19,10 @@ typedef struct {
 
 ltx_mlx_upsampler *ltx_mlx_upsampler_create(
     const char *checkpoint_path, char *error, size_t error_size);
+/* 0.9.8 uses single-rounding FP32 normalization/activation intermediates.
+ * This separate constructor leaves the existing 2.5 route unchanged. */
+ltx_mlx_upsampler *ltx_mlx_upsampler_create_ltx098(
+    const char *checkpoint_path, char *error, size_t error_size);
 /* Public streaming path: load from the caller-owned open descriptor without
  * reopening diagnostic_path. The implementation duplicates the fd. */
 ltx_mlx_upsampler *ltx_mlx_upsampler_create_fd(

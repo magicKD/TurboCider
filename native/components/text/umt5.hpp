@@ -14,6 +14,19 @@ struct UMT5Config {
     int buckets = 32;
     int max_distance = 128;
     float epsilon = 1e-6f;
+    // UMT5 owns a position-bias table per layer. Standard T5 v1.1, used
+    // by LTX-Video 0.9.8, computes the table once from the first layer and
+    // reuses it throughout the encoder.
+    bool shared_relative_attention_bias = false;
+    // Wan zeroes padded output rows at the DiT boundary. Other consumers
+    // can preserve them while forwarding the corresponding attention mask.
+    bool zero_padding_output = true;
+    // LTX 0.9.8's ComfyUI reference uses PyTorch SDPA for standard T5.
+    // Wan's existing UMT5 path retains its explicit BF16 score boundaries.
+    bool comfy_t5_sdpa = false;
+    // The ComfyUI text encoder upcasts BF16 weights and keeps T5 activations
+    // in FP32. This is only enabled for the LTX 0.9.8 compatibility path.
+    bool comfy_t5_fp32 = false;
 };
 
 // Bidirectional encoder only; no decoder, sampling, tokenizer or process state.

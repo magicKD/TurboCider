@@ -111,6 +111,16 @@ struct NativeJob: Codable, Identifiable, Sendable {
         }
     }
     var hasOutput: Bool { state == "succeeded" && outputDeleted != true }
+    var outputDimensions: (width: Int, height: Int) {
+        if request.model == "ltx-video-0.9.8-distilled", request.steps == 10,
+           let resultJSON, let data = resultJSON.data(using: .utf8),
+           let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let width = result["width"] as? Int, let height = result["height"] as? Int,
+           width > 0, height > 0 {
+            return (width, height)
+        }
+        return (request.width, request.height)
+    }
     var routeSummary: String? {
         if let runtimeReceipt { return runtimeReceipt.label }
         if UpscaleVariant.from(modelID: request.model) != nil, request.operation == "image.upscale" {

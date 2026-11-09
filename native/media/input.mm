@@ -106,4 +106,38 @@ Tensor load_image_tensor(const std::filesystem::path& path,int width,int height,
     auto pixels=mx::astype(Tensor(cropped.data(),{1,height,width,3},mx::uint8),mx::float32)/255.f;
     return pixels*2.f-1.f;
 }
+Tensor load_image_center_crop_tensor(const std::filesystem::path& path, int width, int height) {
+    require(width > 0 && height > 0, "image canvas must be positive");
+    auto image = read_rgb(path);
+    // Match the reference's center crop *before* half-pixel bilinear resize.
+    // Python round uses ties-to-even, including odd source dimensions.
+    auto round_even = [](double value) {
+        const double lower = std::floor(value), fraction = value - lower;
+        return int(lower + (fraction > .5 || (fraction == .5 && int64_t(lower) % 2)));
+    };
+    const double old_aspect = double(image.width) / image.height;
+    const double new_aspect = double(width) / height;
+    int left = 0, top = 0;
+    if (old_aspect > new_aspect)
+        left = round_even((image.width - image.width * (new_aspect / old_aspect)) / 2);
+    else if (old_aspect < new_aspect)
+        top = round_even((image.height - image.height * (old_aspect / new_aspect)) / 2);
+    const int cropped_width = image.width - 2 * left, cropped_height = image.height - 2 * top;
+    require(cropped_width > 0 && cropped_height > 0, "image crop is empty");
+    auto pixels = mx::astype(Tensor(image.bytes.data(), {1, image.height, image.width, 3}, mx::uint8), mx::float32) / 255.f;
+    pixels = mx::slice(pixels, {0, top, left, 0}, {1, top + cropped_height, left + cropped_width, 3});
+    auto bilinear_axis = [](const Tensor &input, int axis, int size) {
+        const int old = input.shape(axis);
+        if (old == size) return input;
+        auto coordinate = mx::maximum((mx::arange(size, mx::float32) + .5f) * (float(old) / size) - .5f, Tensor(0.f));
+        auto lower = mx::astype(coordinate, mx::int32);
+        auto upper = mx::minimum(lower + 1, Tensor(old - 1));
+        mx::Shape shape(input.ndim(), 1);
+        shape[axis] = size;
+        auto fraction = mx::reshape(coordinate - mx::astype(lower, mx::float32), shape);
+        return mx::take(input, lower, axis) * (1.f - fraction) + mx::take(input, upper, axis) * fraction;
+    };
+    pixels = bilinear_axis(bilinear_axis(pixels, 2, width), 1, height);
+    return pixels * 2.f - 1.f;
+}
 }

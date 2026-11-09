@@ -166,7 +166,7 @@ static void parse_seedvr2_vae(NSDictionary *d, Request &r) {
 }
 static NSArray *ltx_option_keys() {
     return @[
-        @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch",
+        @"ltx_backend", @"ltx_fast_av", @"ltx_video_attention_batch", @"ltx098_resize_to_base",
         @"ltx_sol_stage1", @"ltx_sol_stage2", @"ltx_sol_tau",
         @"ltx_sol_dense_edge_blocks", @"ltx_sol_dense_edge_steps",
         @"ltx_stage2_text_rows", @"ltx_sparse_mode", @"ltx_sparse_radius",
@@ -182,6 +182,7 @@ static void keys_with_ltx_options(NSDictionary *d, NSArray *allowed) {
 static void parse_ltx_options(NSDictionary *d, Request &r) {
     r.ltx_backend = string_value(d, @"ltx_backend", r.ltx_backend);
     r.ltx_fast_av = boolean(d, @"ltx_fast_av", r.ltx_fast_av);
+    r.ltx098_resize_to_base = boolean(d, @"ltx098_resize_to_base", r.ltx098_resize_to_base);
     r.ltx_video_attention_batch = boolean(
         d, @"ltx_video_attention_batch", r.ltx_video_attention_batch);
     r.ltx_sol_stage1 = boolean(d, @"ltx_sol_stage1", r.ltx_sol_stage1);

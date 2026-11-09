@@ -75,11 +75,11 @@ std::vector<std::string> expected_weight_names(void) {
 
 class Upsampler {
  public:
-    explicit Upsampler(const char *checkpoint_path)
-        : Upsampler(load_path(checkpoint_path)) {}
+    explicit Upsampler(const char *checkpoint_path, bool ltx098 = false)
+        : Upsampler(load_path(checkpoint_path), ltx098) {}
 
     explicit Upsampler(std::shared_ptr<mx::io::Reader> reader)
-        : Upsampler(mx::load_safetensors(std::move(reader)).first) {}
+        : Upsampler(mx::load_safetensors(std::move(reader)).first, false) {}
 
   private:
     static std::unordered_map<std::string, mx::array> load_path(
@@ -90,7 +90,8 @@ class Upsampler {
     }
 
     explicit Upsampler(
-            std::unordered_map<std::string, mx::array> source_weights) {
+            std::unordered_map<std::string, mx::array> source_weights, bool ltx098)
+        : ltx098_(ltx098) {
         const mx::Device gpu(mx::Device::gpu);
         if (!mx::is_available(gpu)) {
             throw std::runtime_error("MLX Metal GPU is not available");
@@ -204,8 +205,10 @@ class Upsampler {
         return found->second;
     }
 
-    static mx::array silu(const mx::array &value) {
-        return value * mx::sigmoid(value);
+    mx::array silu(const mx::array &value) const {
+        if (!ltx098_) return value * mx::sigmoid(value);
+        auto fp32 = mx::astype(value, mx::float32);
+        return mx::astype(fp32 * mx::sigmoid(fp32), value.dtype());
     }
 
     mx::array convolution3d(const mx::array &input,
@@ -242,6 +245,7 @@ class Upsampler {
             input, {batch, spatial, groups, group_size});
         value = mx::transpose(value, {0, 2, 1, 3});
         value = mx::reshape(value, {batch, groups, spatial * group_size});
+        if (ltx098_) value = mx::astype(value, mx::float32);
         value = mx::fast::layer_norm(
             value, std::nullopt, std::nullopt, 1.0e-5f);
         value = mx::reshape(
@@ -249,12 +253,19 @@ class Upsampler {
         value = mx::transpose(value, {0, 2, 1, 3});
         value = mx::reshape(
             value, {batch, depth, height, width, channels});
-        return value * mx::reshape(
-                           weight(prefix + ".weight"),
+        auto scale = weight(prefix + ".weight");
+        auto bias = weight(prefix + ".bias");
+        if (ltx098_) {
+            scale = mx::astype(scale, mx::float32);
+            bias = mx::astype(bias, mx::float32);
+        }
+        value = value * mx::reshape(
+                           scale,
                            {1, 1, 1, 1, channels}) +
                mx::reshape(
-                   weight(prefix + ".bias"),
+                   bias,
                    {1, 1, 1, 1, channels});
+        return ltx098_ ? mx::astype(value, input.dtype()) : value;
     }
 
     mx::array residual_block(const mx::array &input,
@@ -290,6 +301,7 @@ class Upsampler {
     uint32_t hidden_channels_ = 0;
     uint32_t weight_tensors_ = 0;
     uint64_t weight_bytes_ = 0;
+    bool ltx098_ = false;
 };
 
 }  // namespace
@@ -308,6 +320,19 @@ extern "C" ltx_mlx_upsampler *ltx_mlx_upsampler_create(
     } catch (const std::exception &exception) {
         set_error(error, error_size, "create MLX upsampler: %s",
                   exception.what());
+        return nullptr;
+    }
+}
+
+extern "C" ltx_mlx_upsampler *ltx_mlx_upsampler_create_ltx098(
+        const char *checkpoint_path, char *error, size_t error_size) {
+    if (error && error_size) error[0] = '\0';
+    try {
+        auto result = std::make_unique<ltx_mlx_upsampler>();
+        result->implementation = std::make_unique<Upsampler>(checkpoint_path, true);
+        return result.release();
+    } catch (const std::exception &exception) {
+        set_error(error, error_size, "create 0.9.8 MLX upsampler: %s", exception.what());
         return nullptr;
     }
 }

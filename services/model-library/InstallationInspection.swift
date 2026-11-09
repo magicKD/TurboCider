@@ -218,6 +218,17 @@ private struct InstallationProbe {
         case "ltx-2.5-distilled":
             for path in LibraryRecipe.all.first(where: { $0.modelID == report.modelID })!.include where path.hasSuffix(".safetensors") { weights(path) }
             json("gemma4-12b-ltx-v1/tokenizer.json")
+        case "ltx-video-0.9.8-distilled":
+            weights("ltxv-2b-0.9.8-distilled.safetensors")
+            weights("text_encoders/t5xxl_fp16.safetensors")
+            json("tokenizer/tokenizer.json")
+            if exists("ltxv-spatial-upscaler-0.9.8.safetensors") {
+                weights("ltxv-spatial-upscaler-0.9.8.safetensors")
+                report.notes.append("已找到 0.9.8 潜空间放大器，可选 7+3 步双阶段；最终保留放大后尺寸。")
+            } else {
+                report.notes.append("未安装 0.9.8 潜空间放大器：8 步单阶段仍可使用；7+3 步双阶段需要在模型中心补齐放大器。")
+            }
+            report.notes.append("原生 GPU 候选；ANE 与更广泛画质验证尚未完成。请确认 LTX 权重许可。")
         case "minimax-h3-turbo":
             json("FL2VA/tokenizer/tokenizer.json"); json("FL2VA/transformer/config.json")
             json("FL2VA/transformer/model.safetensors.index.json")

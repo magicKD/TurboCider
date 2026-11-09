@@ -2,6 +2,8 @@
 #include "../backends/mlx.hpp"
 namespace tc {
 Tensor load_image_tensor(const std::filesystem::path &, int, int, bool reference);
+// Resize preserving aspect ratio, then center-crop to the exact canvas.
+Tensor load_image_center_crop_tensor(const std::filesystem::path &, int width, int height);
 // Original oriented dimensions, straight-alpha RGBA in [0,1]. Transparent
 // hidden RGB may be zeroed by the decoder; visible RGB and alpha are retained.
 Tensor load_rgba_image_tensor(const std::filesystem::path &);

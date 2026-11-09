@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream_base_commit": "f1a47138ea18355df8f3df5d8d2d19cd012dd2ad",
   "turbocider_snapshot_commit": "59d9c437f5bae7c23277e35a0dccd7503711d789",
-  "note": "TurboCider shared-runtime snapshot including local adaptations; experimental structured-drop, structured-pooled, CiderSol and direct pooled-QK top-k block patterns were updated September 13, 2026, and the opt-in persistent ANE MLP worker ablation plus GPU-resident Gemma projection taps were updated September 14, 2026. Hashes describe working sources, not exact upstream parity or the snapshot commit alone.",
+  "note": "TurboCider shared-runtime snapshot including local adaptations; experimental structured-drop, structured-pooled, CiderSol and direct pooled-QK top-k block patterns were updated September 13, 2026, the opt-in persistent ANE MLP worker ablation plus GPU-resident Gemma projection taps were updated September 14, 2026, and an opt-in LTX 0.9.8 upsampler precision path was added November 9, 2026. Hashes describe working sources, not exact upstream parity or the snapshot commit alone.",
   "files": {
     "ltx.c": "86441e6e0c60e86e16a45412b1b1cb854ddeb57325b4a07d79c4a98ca4373edc",
     "ltx_conditioning.c": "c460c17aa6a820537b3dbf5d35132654153eceef352f63d79697984e83b9b194",
@@ -15,7 +15,7 @@
     "ltx_ane_v2a.m": "999e1bb81dfe4e4c5122da3275bb6a7fa84c44297a1e651a8e3c916f448ae0d4",
     "ltx_ane_kv.m": "9d9df613f3bd3f03236555b2670cdcfa58e3ab7314795229a150af33dc1002e8",
     "ltx_ane_qkv.m": "0698779f21fc8bc2655f4fc150e083dd947965fa6b514ddeb043f777013cebd6",
-    "ltx_mlx_upsampler.cpp": "0e1e0808b90e020eb778bae7f1b9b546403eea9957611407aaa01422dc286064",
+    "ltx_mlx_upsampler.cpp": "b381dd5ab95cb5df623a0e5440275227b8f092e696f4eac74e9e1b7242fe6456",
     "ltx_upsampler.m": "c01890106546a694aaa4cf9d165875818118e587f0f3cf10fda921ee99ebe69f"
   }
 }

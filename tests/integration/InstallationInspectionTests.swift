@@ -80,6 +80,21 @@ import Foundation
         }
         try json("ltx/gemma4-12b-ltx-v1/tokenizer.json", ["model": ["type": "BPE"]])
         try check(inspect("ltx-2.5-distilled", at: "ltx").status == "files_present", "LTX required layout rejected")
+        try tensor("ltx098/ltxv-2b-0.9.8-distilled.safetensors")
+        try tensor("ltx098/text_encoders/t5xxl_fp16.safetensors")
+        try json("ltx098/tokenizer/tokenizer.json", ["model": ["type": "Unigram"]])
+        let ltx098 = inspect("ltx-video-0.9.8-distilled", at: "ltx098")
+        try check(ltx098.status == "files_present" && ltx098.checkedWeightFiles == 2,
+                  "Single-stage LTX 0.9.8 installation was rejected")
+        try check(ltx098.notes.contains { $0.contains("未安装") && $0.contains("放大器") },
+                  "Missing optional LTX upscaler was not explained")
+        try tensor("ltx098/ltxv-spatial-upscaler-0.9.8.safetensors")
+        let multiscaleLTX = inspect("ltx-video-0.9.8-distilled", at: "ltx098")
+        try check(multiscaleLTX.status == "files_present" && multiscaleLTX.checkedWeightFiles == 3,
+                  "Multiscale LTX installation was rejected")
+        try fm.removeItem(at: root.appendingPathComponent("ltx098/tokenizer/tokenizer.json"))
+        try check(inspect("ltx-video-0.9.8-distilled", at: "ltx098").status == "incomplete",
+                  "LTX 0.9.8 without its tokenizer was accepted")
         try json("h3/FL2VA/tokenizer/tokenizer.json", ["model": ["type": "BPE"]])
         try json("h3/FL2VA/transformer/config.json", ["model_type": "fixture"])
         try json("h3/FL2VA/transformer/model.safetensors.index.json", ["weight_map": ["weight": "model.safetensors"]])

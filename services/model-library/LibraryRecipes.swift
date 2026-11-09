@@ -96,12 +96,12 @@ struct LibraryRecipe: Codable, Sendable {
         }
     }
     private var defaultComponents: [LibraryVariantComponent] {
-        guard ["z-image-turbo", "flux2-klein-4b", "flux2-klein-9b", "ltx-2.5-distilled", "wan2.1-1.3b-qad"].contains(modelID) else { return [] }
+        guard ["z-image-turbo", "flux2-klein-4b", "flux2-klein-9b", "ltx-2.5-distilled", "ltx-video-0.9.8-distilled", "wan2.1-1.3b-qad"].contains(modelID) else { return [] }
         let groups: [(String, String, [String])] = [
-            ("dit", "DiT", include.filter { $0.hasPrefix("transformer/") || $0.hasPrefix("diffusion_models/") || $0.hasPrefix("mlx_dit.") }),
-            ("text_encoder", "Encoder", include.filter { $0.hasPrefix("text_encoder/") || $0.hasPrefix("text_encoders/") }),
+            ("dit", "DiT", include.filter { $0.hasPrefix("transformer/") || $0.hasPrefix("diffusion_models/") || $0.hasPrefix("mlx_dit.") || (modelID == "ltx-video-0.9.8-distilled" && ["ltxv-2b-0.9.8-distilled.safetensors", "ltxv-spatial-upscaler-0.9.8.safetensors"].contains($0)) }),
+            ("text_encoder", "Encoder", include.filter { $0.hasPrefix("text_encoder/") || $0.hasPrefix("text_encoders/") || (modelID == "ltx-video-0.9.8-distilled" && $0 == "t5xxl_fp16.safetensors") }),
             ("vae", "VAE", include.filter { $0.hasPrefix("vae/") }),
-            ("tokenizer", "Tokenizer", include.filter { $0.hasPrefix("tokenizer/") || $0.hasSuffix("/tokenizer.json") })
+            ("tokenizer", "Tokenizer", include.filter { $0.hasPrefix("tokenizer/") || $0.hasSuffix("/tokenizer.json") || (modelID == "ltx-video-0.9.8-distilled" && $0 == "tokenizer.json") })
         ]
         return groups.flatMap { kind, title, paths in
             // Keep supplementary provenance visible even for a single-file
@@ -209,6 +209,15 @@ struct LibraryRecipe: Codable, Sendable {
                         "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", "gemma4-12b-ltx-v1/tokenizer.json"],
               preparation: "权重来自 comfyicu，tokenizer 单独来自 mlx-community/ltx-2.5-mlx；不下载第二份编码器。当前仅文生视频、无音轨。任一仓库没有 ModelScope 镜像时，请选择 Hugging Face。",
               supplements: [.init(repository: "mlx-community/ltx-2.5-mlx", include: ["gemma4-12b-ltx-v1/tokenizer.json"])]),
+        .init(modelID: "ltx-video-0.9.8-distilled", repository: "Lightricks/LTX-Video",
+              include: ["ltxv-2b-0.9.8-distilled.safetensors", "ltxv-spatial-upscaler-0.9.8.safetensors", "t5xxl_fp16.safetensors", "tokenizer.json"],
+              preparation: "实验性原生 GPU 图生视频：默认 7+3 步双阶段并保留放大后的输出，或选择 8 步单阶段；24 fps、最多 121 帧。检查点含 VAE，另需潜空间放大器、T5-XXL 与 tokenizer。请选择 Hugging Face，并确认 LTX 权重许可及商业使用限制。",
+              supplements: [
+                  .init(repository: "comfyanonymous/flux_text_encoders", revision: "6af2a98e3f615bdfa612fbd85da93d1ed5f69ef5",
+                        include: ["t5xxl_fp16.safetensors"], destinations: ["t5xxl_fp16.safetensors": "text_encoders/t5xxl_fp16.safetensors"]),
+                  .init(repository: "google-t5/t5-base", revision: "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1",
+                        include: ["tokenizer.json"], destinations: ["tokenizer.json": "tokenizer/tokenizer.json"])
+              ]),
         .init(modelID: "minimax-h3-turbo", repository: "MiniMaxAI/MiniMax-H3", include: ["FL2VA/"],
               preparation: "默认仅下载 FL2VA（文生视频、首尾帧）。基础权重还需配套 LightX2V Turbo LoRA，并通过离线 prepare-lora 工具生成预融合模型；参考视频另需 Ref2VA 的独立模型与 Turbo 来源记录。"),
         .init(modelID: "wan2.1-1.3b-qad", repository: "FastVideo/FastMetal-1.3B-QAD", include: ["model_index.json", "mlx_dit.json", "mlx_dit.safetensors", "scheduler/", "text_encoder/", "tokenizer/", "vae/"],

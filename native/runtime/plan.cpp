@@ -148,6 +148,8 @@ static ExecutionPlan make_plan_impl(
                 "gpu_ane requires an explicit ANE manifest or profile");
     }
     module_for(r.model).validate(r);
+    require(!r.ltx098_resize_to_base || r.model == "ltx-video-0.9.8-distilled",
+            "ltx098_resize_to_base is only supported for LTX-Video 0.9.8 multiscale");
     require(!r.qwen21_stream_weight_budget_bytes ||
                 (r.model == "qwen-image-2.1" && r.residency == "streamed" &&
                  r.qwen21_stream_weight_budget_bytes >= (uint64_t(1) << 30) &&
@@ -210,6 +212,14 @@ static ExecutionPlan make_plan_impl(
             if (stage.id == "av_stage1")
                 stage.dependencies.push_back("first_frame_vae_encode");
     }
+    if (r.model == "ltx-video-0.9.8-distilled" && r.steps == 10) {
+        recipe.stages = {{"text_encode", {}}, {"first_frame_vae_encode", {}},
+                         {"denoise_stage1", {"text_encode", "first_frame_vae_encode"}, 7},
+                         {"latent_upsample", {"denoise_stage1"}},
+                         {"first_frame_vae_encode_stage2", {"latent_upsample"}},
+                         {"denoise_stage2", {"first_frame_vae_encode_stage2"}, 3},
+                         {"video_vae", {"denoise_stage2"}}, {"export", {"video_vae"}}};
+    }
     /* LTX audio finalization and first-frame I2V are native Session paths.
      * Request-time validation remains fail-closed for missing/invalid audio
      * assets, while the optional MLX denoiser still rejects I2V explicitly. */
@@ -229,6 +239,13 @@ static ExecutionPlan make_plan_impl(
                 geometry;
         else
             plan.memory_estimate_bytes = (36ull << 30) + geometry;
+    }
+    else if (r.model == "ltx-video-0.9.8-distilled") {
+        // Heuristic only: resident T5, DiT and both VAE halves plus video
+        // activations; the 512x512x121 prototype measured ~20.1 GiB MLX peak.
+        const uint64_t output_width = r.steps == 10 ? 2 * (int(double(r.width) * .6666666) / 32 * 32) : r.width;
+        const uint64_t output_height = r.steps == 10 ? 2 * (int(double(r.height) * .6666666) / 32 * 32) : r.height;
+        plan.memory_estimate_bytes = ((r.steps == 10 ? 19ull : 17ull) << 30) + output_width * output_height * r.frames * 160;
     }
     else if (r.model == "minimax-h3-vdn") {
         const uint64_t geometry =

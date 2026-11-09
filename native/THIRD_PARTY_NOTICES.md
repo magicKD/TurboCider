@@ -1,5 +1,12 @@
 # Third-party notices
 
+The T5 precompiled Unicode-map reader in `native/platform/apple/unigram_tokenizer.mm`
+is a modified C++/Foundation implementation developed with reference to Hugging
+Face's `spm_precompiled` and Google's SentencePiece normalizer, under
+Apache-2.0. TurboCider adds bounded trie and replacement-table validation and
+uses Foundation grapheme iteration. The Apache-2.0 license is retained in
+`THIRD_PARTY_NOTICES/Apache-2.0.txt`. Tokenizer/model weights are not distributed.
+
 The native image tiny autoencoder (`native/components/vae/tiny.cpp`) is a C++/MLX
 port of madebyollin/taesd, commit fdbae2df989db95761f482efb8977e1182fb68d2,
 Copyright (c) 2023 Ollin Boer Bohan, MIT. It implements TAEF1 (Z-Image) and

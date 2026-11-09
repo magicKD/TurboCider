@@ -109,6 +109,9 @@ struct Request {
     bool compile_gpu = false;
     bool dynamic_text = true, allow_approximation = false, audio = true;
     bool ltx_fast_av = true;
+    // LTX-Video 0.9.8 multiscale: optional final bilinear resize to the
+    // requested base canvas. False retains the learned upscaler's output.
+    bool ltx098_resize_to_base = false;
     // Strictly equivalent Video attention command batching. This is opt-in
     // because its full-request gain is device/schedule sensitive.
     bool ltx_video_attention_batch = false;

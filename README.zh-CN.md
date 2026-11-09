@@ -101,6 +101,7 @@ dist/cli/turbocider generate /absolute/path/to/z-image-turbo examples/requests/z
 | Z-Image Turbo | 文生图、LoRA、可选 GPU / ANE 混合推理 |
 | MiniMax H3 Turbo | 视频生成、关键帧与参考素材；需要媒体工具 |
 | LTX 2.5 Distilled | 文生视频、图生视频及可选音频输出；受后端与配置限制 |
+| [LTX-Video 0.9.8 2B Distilled](docs/public/LTX_VIDEO_098.zh-CN.md) | 实验性纯 GPU 图生视频；8 步单阶段或 7+3 步双阶段，24 fps、最多 121 帧；暂不支持音频、LoRA、流式加载或 ANE |
 | Wan 2.1 1.3B QAD | 原生三步视频生成；需离线转换产物及已验证预合并 LoRA |
 
 具体可用操作以 `turbocider models` 和请求 `plan` 为准。不同模型的 LoRA、输入和加速选项不能互换。参阅[模型与请求参考](docs/public/USAGE.md#model-capabilities)、[Qwen 指南](docs/public/QWEN_IMAGE_21.md)和[GPU/ANE 加速状态](docs/status/acceleration.md)。

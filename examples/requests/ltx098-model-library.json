@@ -1,0 +1,22 @@
+{
+  "modelID": "ltx-video-0.9.8-distilled",
+  "repository": "Lightricks/LTX-Video",
+  "provider": "huggingface",
+  "revision": "8984fa25007f376c1a299016d0957a37a2f797bb",
+  "name": "LTX-Video 0.9.8 2B Distilled",
+  "include": ["ltxv-2b-0.9.8-distilled.safetensors", "t5xxl_fp16.safetensors", "tokenizer.json"],
+  "supplements": [
+    {
+      "repository": "comfyanonymous/flux_text_encoders",
+      "revision": "6af2a98e3f615bdfa612fbd85da93d1ed5f69ef5",
+      "include": ["t5xxl_fp16.safetensors"],
+      "destinations": {"t5xxl_fp16.safetensors": "text_encoders/t5xxl_fp16.safetensors"}
+    },
+    {
+      "repository": "google-t5/t5-base",
+      "revision": "a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1",
+      "include": ["tokenizer.json"],
+      "destinations": {"tokenizer.json": "tokenizer/tokenizer.json"}
+    }
+  ]
+}

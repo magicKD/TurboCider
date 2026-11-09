@@ -5,8 +5,11 @@
 int main(int argc, char **argv) {
     @autoreleasepool {
         try {
-            tc::require(argc == 2, "usage: unigram-probe TOKENIZER_ROOT < prompts.json");
-            tc::UnigramTokenizer tokenizer(std::filesystem::absolute(argv[1]));
+            tc::require(argc == 2 || (argc == 3 && std::string(argv[2]) == "--t5"),
+                        "usage: unigram-probe TOKENIZER_ROOT [--t5] < prompts.json");
+            const bool t5 = argc == 3;
+            tc::UnigramTokenizer tokenizer(std::filesystem::absolute(argv[1]),
+                t5 ? tc::UnigramFlavor::t5_v1_1 : tc::UnigramFlavor::umt5);
             NSData *input = [[NSFileHandle fileHandleWithStandardInput] readDataToEndOfFile];
             id records = [NSJSONSerialization JSONObjectWithData:input options:0 error:nil];
             tc::require([records isKindOfClass:NSArray.class], "expected JSON prompt array");
@@ -14,8 +17,9 @@ int main(int argc, char **argv) {
             for (NSDictionary *record in records) {
                 NSString *prompt = record[@"prompt"];
                 NSData *bytes = [prompt dataUsingEncoding:NSUTF8StringEncoding];
-                auto tokens = tokenizer.prompt(std::string((const char *)bytes.bytes, bytes.length),
-                                                [record[@"limit"] intValue]);
+                auto raw = std::string((const char *)bytes.bytes, bytes.length);
+                auto tokens = t5 ? tokenizer.t5_prompt(raw, [record[@"limit"] intValue])
+                                 : tokenizer.prompt(raw, [record[@"limit"] intValue]);
                 NSMutableArray *ids = [NSMutableArray array];
                 for (int id : tokens.ids) [ids addObject:@(id)];
                 [results addObject:@{@"ids":ids, @"valid":@(tokens.valid)}];

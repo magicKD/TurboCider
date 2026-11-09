@@ -1,0 +1,231 @@
+--- a/block.hpp
++++ b/block.hpp
+@@ -16,18 +16,30 @@
+     Tensor key, value;
+ };
+ 
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++// Probe-only injection seam. Public sessions never compile or install it.
++using ExperimentalFFNHook = std::function<Tensor(const Tensor &, const Weights &, int)>;
++#endif
++
+ // Video-only LTX 0.9.8 block. The checkpoint is not compatible with the
+ // 2.5 AV block: in particular its RoPE is interleaved and its cross-attention
+ // does not have prompt AdaLN. This component is not yet a complete pipeline.
+ class Block {
+     Weights weights_;
+     BlockConfig config_;
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++    int index_ = -1;
++#endif
+     Tensor attention(const Tensor &, const std::optional<Tensor> &,
+                      const std::string &, const std::optional<ltx_mlx::RopeFrequencies> &,
+                      const std::optional<Tensor> &, const CrossAttentionKV *) const;
+     Tensor forward_impl(const Tensor &, const Tensor &, const Tensor &,
+                         const std::optional<ltx_mlx::RopeFrequencies> &,
+-                        const std::optional<Tensor> &, const CrossAttentionKV *) const;
++                        const std::optional<Tensor> &, const CrossAttentionKV *
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                        , const ExperimentalFFNHook *
++#endif
++                        ) const;
+ 
+   public:
+     void load(const std::filesystem::path &, int index, BlockConfig = {});
+@@ -44,6 +56,12 @@
+     Tensor forward_cached(const Tensor &hidden, const Tensor &context, const Tensor &modulation,
+                           const std::optional<ltx_mlx::RopeFrequencies> &rope,
+                           const std::optional<Tensor> &text_mask, const CrossAttentionKV &) const;
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++    Tensor forward_cached_hooked(const Tensor &, const Tensor &, const Tensor &,
++                                 const std::optional<ltx_mlx::RopeFrequencies> &,
++                                 const std::optional<Tensor> &, const CrossAttentionKV &,
++                                 const ExperimentalFFNHook &) const;
++#endif
+ };
+ 
+ } // namespace tc::ltx098
+--- a/block.cpp
++++ b/block.cpp
+@@ -42,6 +42,9 @@
+     require(std::filesystem::is_regular_file(path), "LTX 0.9.8 checkpoint is missing");
+     weights_.clear();
+     config_ = config;
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++    index_ = index;
++#endif
+     weights_.load_file(path, "model.diffusion_model.transformer_blocks." + std::to_string(index) + ".");
+     require(weights_.has("scale_shift_table") && weights_.at("scale_shift_table").shape() == mx::Shape{6, config.hidden},
+             "LTX 0.9.8 block AdaLN table is missing or incompatible");
+@@ -103,18 +106,39 @@
+ Tensor Block::forward(const Tensor &hidden, const Tensor &context, const Tensor &modulation,
+                       const std::optional<ltx_mlx::RopeFrequencies> &rope,
+                       const std::optional<Tensor> &text_mask) const {
+-    return forward_impl(hidden, context, modulation, rope, text_mask, nullptr);
++    return forward_impl(hidden, context, modulation, rope, text_mask, nullptr
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                        , nullptr
++#endif
++                        );
+ }
+ 
+ Tensor Block::forward_cached(const Tensor &hidden, const Tensor &context, const Tensor &modulation,
+                              const std::optional<ltx_mlx::RopeFrequencies> &rope,
+                              const std::optional<Tensor> &text_mask, const CrossAttentionKV &cached) const {
+-    return forward_impl(hidden, context, modulation, rope, text_mask, &cached);
++    return forward_impl(hidden, context, modulation, rope, text_mask, &cached
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                        , nullptr
++#endif
++                        );
+ }
+ 
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++Tensor Block::forward_cached_hooked(const Tensor &hidden, const Tensor &context, const Tensor &modulation,
++                                    const std::optional<ltx_mlx::RopeFrequencies> &rope,
++                                    const std::optional<Tensor> &text_mask, const CrossAttentionKV &cached,
++                                    const ExperimentalFFNHook &hook) const {
++    return forward_impl(hidden, context, modulation, rope, text_mask, &cached, &hook);
++}
++#endif
++
+ Tensor Block::forward_impl(const Tensor &hidden, const Tensor &context, const Tensor &modulation,
+                            const std::optional<ltx_mlx::RopeFrequencies> &rope,
+-                           const std::optional<Tensor> &text_mask, const CrossAttentionKV *cached) const {
++                           const std::optional<Tensor> &text_mask, const CrossAttentionKV *cached
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                           , const ExperimentalFFNHook *hook
++#endif
++                           ) const {
+     const int dim = config_.hidden;
+     require(hidden.ndim() == 3 && hidden.shape(0) == 1 && hidden.shape(1) > 0 && hidden.shape(2) == dim &&
+                 context.ndim() == 3 && context.shape(0) == 1 && context.shape(1) > 0 && context.shape(2) == dim,
+@@ -137,7 +161,12 @@
+     x = x + attention(x, context, "attn2", {}, text_mask, cached);
+     auto feed_normalized = normalized(x, config_.residual_epsilon);
+     auto feed_input = addcmul(feed_normalized, feed_normalized, params[4]) + params[3];
+-    auto feed = weights_.project(gelu_tanh(weights_.project(feed_input, "ff.net.0.proj")), "ff.net.2");
++    auto feed =
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++        hook ? (*hook)(feed_input, weights_, index_) :
++#endif
++        weights_.project(gelu_tanh(weights_.project(feed_input, "ff.net.0.proj")), "ff.net.2");
++    require(feed.shape() == x.shape() && feed.dtype() == x.dtype(), "LTX 0.9.8 FFN output geometry mismatch");
+     return addcmul(x, feed, params[5]);
+ }
+ 
+--- a/transformer.hpp
++++ b/transformer.hpp
+@@ -16,7 +16,11 @@
+ 
+     const ltx_mlx::RopeFrequencies &positions(int frames, int height, int width, float fps);
+     Tensor forward_impl(const Tensor &, const Tensor &, float, float, bool, float,
+-                        const std::optional<Tensor> &, const std::vector<CrossAttentionKV> *);
++                        const std::optional<Tensor> &, const std::vector<CrossAttentionKV> *
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                        , const ExperimentalFFNHook *
++#endif
++                        );
+ 
+   public:
+     // The block-count parameter is a probe seam. Production must use 28.
+@@ -33,6 +37,11 @@
+     Tensor forward_cached(const Tensor &latents, const Tensor &prepared_text, float sigma,
+                           float fps, bool image_conditioned, float strength,
+                           const std::optional<Tensor> &text_mask, const std::vector<CrossAttentionKV> &);
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++    Tensor forward_cached_hooked(const Tensor &, const Tensor &, float, float, bool, float,
++                                 const std::optional<Tensor> &, const std::vector<CrossAttentionKV> &,
++                                 const ExperimentalFFNHook &);
++#endif
+ };
+ 
+ } // namespace tc::ltx098
+--- a/transformer.cpp
++++ b/transformer.cpp
+@@ -88,18 +88,38 @@
+ 
+ Tensor Transformer::forward(const Tensor &latents, const Tensor &text, float sigma, float fps,
+                             bool image_conditioned, float strength, const std::optional<Tensor> &mask) {
+-    return forward_impl(latents, text, sigma, fps, image_conditioned, strength, mask, nullptr);
++    return forward_impl(latents, text, sigma, fps, image_conditioned, strength, mask, nullptr
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                        , nullptr
++#endif
++                        );
+ }
+ 
+ Tensor Transformer::forward_cached(const Tensor &latents, const Tensor &text, float sigma, float fps,
+                                    bool image_conditioned, float strength, const std::optional<Tensor> &mask,
+                                    const std::vector<CrossAttentionKV> &cached) {
+-    return forward_impl(latents, text, sigma, fps, image_conditioned, strength, mask, &cached);
++    return forward_impl(latents, text, sigma, fps, image_conditioned, strength, mask, &cached
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                        , nullptr
++#endif
++                        );
+ }
+ 
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++Tensor Transformer::forward_cached_hooked(const Tensor &latents, const Tensor &text, float sigma, float fps,
++                                          bool image_conditioned, float strength, const std::optional<Tensor> &mask,
++                                          const std::vector<CrossAttentionKV> &cached, const ExperimentalFFNHook &hook) {
++    return forward_impl(latents, text, sigma, fps, image_conditioned, strength, mask, &cached, &hook);
++}
++#endif
++
+ Tensor Transformer::forward_impl(const Tensor &latents, const Tensor &text, float sigma, float fps,
+                                  bool image_conditioned, float strength, const std::optional<Tensor> &mask,
+-                                 const std::vector<CrossAttentionKV> *cached) {
++                                 const std::vector<CrossAttentionKV> *cached
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                                 , const ExperimentalFFNHook *hook
++#endif
++                                 ) {
+     require(!blocks_.empty(), "LTX 0.9.8 transformer is not loaded");
+     require(latents.ndim() == 5 && latents.shape(0) == 1 && latents.shape(1) > 0 && latents.shape(2) > 0 &&
+                 latents.shape(3) > 0 && latents.shape(4) == 128 && latents.dtype() == mx::bfloat16,
+@@ -132,6 +152,13 @@
+     auto hidden = top_.project(mx::reshape(latents, {1, token_count, 128}), "patchify_proj");
+     const auto &rope = positions(frames, height, width, fps);
+     for (size_t index = 0; index < blocks_.size(); ++index) {
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++        if (hook) {
++            require(cached, "experimental FFN hook requires the prepared text cache");
++            hidden = blocks_[index]->forward_cached_hooked(hidden, text, per_token_modulation, rope, mask,
++                                                           (*cached)[index], *hook);
++        } else
++#endif
+         hidden = cached ? blocks_[index]->forward_cached(hidden, text, per_token_modulation, rope, mask, (*cached)[index])
+                         : blocks_[index]->forward(hidden, text, per_token_modulation, rope, mask);
+         if (evaluate_every_ && (index + 1) % size_t(evaluate_every_) == 0) mx::eval(hidden);
+--- a/pipeline.hpp
++++ b/pipeline.hpp
+@@ -12,6 +12,9 @@
+     float strength = 1.f;
+     // Development-only observer; public requests never install it.
+     std::function<void(const std::string &, const Tensor &)> trace;
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++    ExperimentalFFNHook ffn_hook;
++#endif
+ };
+ 
+ struct GenerateMetrics {
+--- a/pipeline.cpp
++++ b/pipeline.cpp
+@@ -154,7 +154,12 @@
+             if (options.trace) options.trace("model_input_" + trace_index, model_input);
+             const float time_strength = original ? original_first_frame_strength(options.strength, schedule[index]) : options.strength;
+-            auto prediction = transformer_->forward_cached(mx::astype(model_input, mx::bfloat16), text, schedule[index],
+-                                                            float(options.fps), true, time_strength, mask,
+-                                                            cached_cross_attention_);
++            auto prediction =
++#ifdef TURBOCIDER_LTX098_EXPERIMENTAL_HYBRID
++                options.ffn_hook ? transformer_->forward_cached_hooked(mx::astype(model_input, mx::bfloat16), text, schedule[index],
++                                                                       float(options.fps), true, time_strength, mask,
++                                                                       cached_cross_attention_, options.ffn_hook) :
++#endif
++                transformer_->forward_cached(mx::astype(model_input, mx::bfloat16), text, schedule[index],
++                                              float(options.fps), true, time_strength, mask, cached_cross_attention_);
+             if (options.trace) options.trace("prediction_" + trace_index, prediction);
+             auto velocity = mx::astype(prediction, mx::float32);

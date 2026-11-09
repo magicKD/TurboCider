@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "model": "ltx-video-0.9.8-distilled",
+  "operation": "video.image",
+  "prompt": "A lighthouse stands on dark coastal rocks while ocean waves move gently.",
+  "inputs": [{"kind": "image", "role": "first_frame", "path": "/absolute/path/to/input.png", "strength": 1.0}],
+  "output": "/absolute/path/to/new-output.mp4",
+  "width": 512,
+  "height": 512,
+  "frames": 121,
+  "fps": 24,
+  "steps": 10,
+  "ltx098_resize_to_base": false,
+  "seed": 42,
+  "audio": false,
+  "execution": "gpu",
+  "residency": "resident"
+}

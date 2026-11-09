@@ -1,0 +1,11 @@
+--- a/vae.cpp
++++ b/vae.cpp
+@@ -141,7 +141,7 @@
+ Tensor VAEDecoder::convolution(const Tensor &input, const std::string &prefix) const {
+     const int h = input.shape(2), w = input.shape(3);
+     require(h >= 2 && w >= 2, "LTX 0.9.8 decoder reflect padding needs at least 2x2 latents");
+-    auto padded = vae_padding::apply(input);
++    auto padded = vae_padding::reference(input);
+     auto value = mx::conv3d(padded, weights_.at(prefix + ".weight"),
+                             std::tuple<int, int, int>{1, 1, 1}, std::tuple<int, int, int>{0, 0, 0});
+     return value + mx::reshape(weights_.at(prefix + ".bias"), {1, 1, 1, 1, value.shape(4)});

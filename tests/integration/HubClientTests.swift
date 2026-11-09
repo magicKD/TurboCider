@@ -139,6 +139,19 @@ private final class ProgressProbe: @unchecked Sendable {
             try check(error.message.contains("ModelScope 固定权重"), error.message)
         }
         try check(LibraryRecipe.all.allSatisfy { !$0.downloadVariants.isEmpty }, "Existing model lost its default download preset")
+        guard let ltx098 = LibraryRecipe.all.first(where: { $0.modelID == "ltx-video-0.9.8-distilled" }) else {
+            throw LibraryFailure(message: "LTX 0.9.8 recipe missing")
+        }
+        let ltx098Request = try ltx098.downloadVariants[0].request(modelID: ltx098.modelID, provider: .huggingface)
+        try check(ltx098Request.repository == "Lightricks/LTX-Video" &&
+                  Set(ltx098Request.include) == Set(["ltxv-2b-0.9.8-distilled.safetensors", "ltxv-spatial-upscaler-0.9.8.safetensors", "t5xxl_fp16.safetensors", "tokenizer.json"]) &&
+                  ltx098Request.supplements.count == 2 &&
+                  ltx098Request.supplements.contains { $0.destinations?["t5xxl_fp16.safetensors"] == "text_encoders/t5xxl_fp16.safetensors" } &&
+                  ltx098Request.supplements.contains { $0.destinations?["tokenizer.json"] == "tokenizer/tokenizer.json" },
+                  "LTX 0.9.8 recipe lost source files or native installation layout")
+        let ltx098Encoder = try ltx098.downloadVariants[0].request(modelID: ltx098.modelID, provider: .huggingface, componentKind: "encoder")
+        try check(Set(ltx098Encoder.include) == Set(["t5xxl_fp16.safetensors", "tokenizer.json"]) && ltx098Encoder.supplements.count == 2,
+                  "LTX 0.9.8 encoder subset lost its tokenizer or added the checkpoint")
         guard let zImage = LibraryRecipe.all.first(where: { $0.modelID == "z-image-turbo" }) else {
             throw LibraryFailure(message: "Z-Image recipe missing")
         }

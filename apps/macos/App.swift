@@ -603,7 +603,7 @@ struct StudioView: View {
     }
     private func resultMetadata(_ job: NativeJob) -> String {
         if compareOriginal { return "输入原图" }
-        let dimensions = "\(job.request.width) × \(job.request.height)"
+        let dimensions = "\(job.outputDimensions.width) × \(job.outputDimensions.height)"
         let detail = job.request.operation == "image.upscale" ? "超分结果" : "种子 \(job.request.seed)"
         return "\(dimensions) · \(detail)" + (job.routeSummary.map { " · \($0)" } ?? "")
     }
@@ -904,7 +904,22 @@ struct StudioView: View {
                 Button(studio.draft.modelPath.isEmpty ? "选择模型…" : "管理模型") { page = .models }
             }
             Divider()
-            if studio.draft.hasQwen21TurboCheckpoint {
+            if studio.draft.modelID == "ltx-video-0.9.8-distilled" {
+                Picker("采样流程", selection: $studio.draft.steps) {
+                    Text("双阶段 7+3 步").tag(10)
+                    Text("单阶段 8 步").tag(8)
+                }.pickerStyle(.segmented).accessibilityIdentifier("ltx098Workflow")
+                Text(studio.draft.steps == 10
+                     ? "按官方 0.9.8 配置先生成、潜空间放大和统计匹配，再进行 3 步精修；需配套放大器。"
+                     : "快速单分辨率 8 步，不使用潜空间放大；不等同于官方双阶段配置。")
+                    .font(.caption2).foregroundStyle(.secondary)
+                if studio.draft.steps == 10 {
+                    Toggle("最后缩回基准尺寸（官方输出）", isOn: $studio.draft.ltx098ResizeToBase)
+                        .controlSize(.small).accessibilityIdentifier("ltx098ResizeToBase")
+                    Text("关闭时保留放大后尺寸；开启时用双线性缩放回基准画布。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            } else if studio.draft.hasQwen21TurboCheckpoint {
                 LabeledContent("采样步数", value: "8 步（Turbo 固定）")
                     .accessibilityIdentifier("qwenTurboFixedSteps")
             } else { VStack(alignment: .leading, spacing: 6) {
@@ -931,12 +946,21 @@ struct StudioView: View {
             DisclosureGroup("画幅与分辨率") {
             VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 4) { Text("宽度").font(.caption2).foregroundStyle(.secondary); TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width") }
+                VStack(alignment: .leading, spacing: 4) { Text(studio.draft.modelID == "ltx-video-0.9.8-distilled" && studio.draft.steps == 10 ? "基准宽度" : "宽度").font(.caption2).foregroundStyle(.secondary); TextField("宽", value: $studio.draft.width, format: .number).accessibilityIdentifier("width") }
                 Text("×").padding(.bottom, 5)
-                VStack(alignment: .leading, spacing: 4) { Text("高度").font(.caption2).foregroundStyle(.secondary); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }
+                VStack(alignment: .leading, spacing: 4) { Text(studio.draft.modelID == "ltx-video-0.9.8-distilled" && studio.draft.steps == 10 ? "基准高度" : "高度").font(.caption2).foregroundStyle(.secondary); TextField("高", value: $studio.draft.height, format: .number).accessibilityIdentifier("height") }
                 Button { let width = studio.draft.width; studio.draft.width = studio.draft.height; studio.draft.height = width } label: { Image(systemName: "arrow.left.arrow.right") }
                     .disabled(studio.draft.width == studio.draft.height).help("交换宽高").accessibilityLabel("交换宽高").padding(.bottom, 3)
             }.textFieldStyle(.roundedBorder).disabled(qwenCanvasLocked)
+            if studio.draft.modelID == "ltx-video-0.9.8-distilled", studio.draft.steps == 10,
+               (64...1024).contains(studio.draft.width), (64...1024).contains(studio.draft.height) {
+                let firstWidth = Int(Double(studio.draft.width) * 0.6666666) / 32 * 32
+                let firstHeight = Int(Double(studio.draft.height) * 0.6666666) / 32 * 32
+                Text(studio.draft.ltx098ResizeToBase
+                     ? "首阶段 \(firstWidth)×\(firstHeight) → 精修 \(firstWidth * 2)×\(firstHeight * 2) → 输出 \(studio.draft.width)×\(studio.draft.height)。"
+                     : "首阶段 \(firstWidth)×\(firstHeight) → 实际输出 \(firstWidth * 2)×\(firstHeight * 2)，不缩小回基准尺寸。")
+                    .font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("ltx098OutputSize")
+            }
             if editingImage {
                 Button("匹配参考原图 / 自动缩放…") { showingCanvasSizing = true }
                     .disabled(assetControlsLocked || studio.draft.activeAssets.isEmpty)
@@ -1004,7 +1028,10 @@ struct StudioView: View {
                 Divider()
                 HStack { Text(studio.draft.operation == "video.image" ? "首帧保留强度" : "原图保留强度"); Spacer(); Text(studio.draft.strength, format: .number.precision(.fractionLength(2))).monospacedDigit() }.font(.caption)
                 Slider(value: $studio.draft.strength, in: 0...1, step: 0.05).accessibilityLabel("原图保留强度")
-                Text("值越大，保留原图越多；1 仅进行 VAE 重建，0 使用完整采样。实际采样步数随强度变化。").font(.caption2).foregroundStyle(.secondary)
+                Text(studio.draft.operation == "video.image"
+                     ? "值越大，首帧越接近参考图；1 锁定首帧条件，后续画面仍会正常去噪和生成。实际效果取决于模型。"
+                     : "值越大，保留原图越多；1 仅进行 VAE 重建，0 使用完整采样。实际采样步数随强度变化。")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Divider()
             Text("种子").font(.subheadline)
@@ -1492,7 +1519,7 @@ struct StudioView: View {
                             .accessibilityIdentifier("selectTask-\(job.id)")
                         VStack(alignment: .leading) {
                             Text(job.request.prompt).lineLimit(1)
-                            Text("\(job.workflowName ?? operationName(job.request.operation ?? "image.generate")) · \(job.request.width)×\(job.request.height) · 种子 \(job.request.seed)")
+                            Text("\(job.workflowName ?? operationName(job.request.operation ?? "image.generate")) · \(job.outputDimensions.width)×\(job.outputDimensions.height) · 种子 \(job.request.seed)")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(); Text(stateName(job.state)).font(.caption)

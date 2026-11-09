@@ -127,6 +127,7 @@ static NSString *executed_encoder_precision(const RunResult& result) {
 }
 static NSString *encoder_gpu_graph_label(const Request &request, bool hybrid) {
     if (request.model == "seedvr2-3b") return @"embedded_conditioning_no_text_encoder";
+    if (request.model == "ltx-video-0.9.8-distilled") return @"t5xxl_gpu_only";
     if (request.model == "qwen-image-2.1")
         return hybrid ? @"qwen3_vl_language_runtime_ffn_gpu_complement" : @"qwen3_vl_deepstack_gpu_only";
     if (ltx_gemma4_encoder(request))
@@ -311,6 +312,7 @@ static NSString *encoder_backend_label(const RunResult &result) {
     return encoder_backend_label(result.request, encoder_executed(result));
 }
 static NSString *encoder_precision_label(const RunResult &result) {
+    if (result.request.model == "ltx-video-0.9.8-distilled") return @"bf16_weights_fp32_activations";
     if(result.request.model=="qwen-image-2.1" && result.precision.find("q4_k_m_text")!=std::string::npos)
         return @"q4_k_m_affine_fp16_io";
     if (!encoder_executed(result)) return @"bf16";
@@ -332,6 +334,9 @@ static NSString *encoder_weight_validation_label(const Request &request,
                                                   bool hybrid,
                                                   bool executed) {
     if (request.model == "seedvr2-3b") return @"embedded conditioning is part of the DiT checkpoint";
+    if (request.model == "ltx-video-0.9.8-distilled")
+        return executed ? @"native T5-XXL checkpoint loaded directly"
+                        : @"native T5-XXL checkpoint required at execution";
     if (request.model == "qwen-image-2.1")
         return @"native Qwen3-VL language/vision/DeepStack checkpoint loaded directly";
     if (ltx_gemma4_encoder(request)) {
@@ -530,6 +535,10 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         r.model == "llada-image-turbo" ? @"mlx_cpp_metal" :
             @"mlx_cpp_metal";
     int dw = r.width, dh = r.height;
+    if (r.model == "ltx-video-0.9.8-distilled" && r.steps == 10) {
+        dw = 2 * (int(double(r.width) * .6666666) / 32 * 32);
+        dh = 2 * (int(double(r.height) * .6666666) / 32 * 32);
+    }
     NSMutableArray *stages = [NSMutableArray array];
     for (auto &s : recipe.stages) {
         NSMutableArray *deps = [NSMutableArray array];
@@ -730,7 +739,8 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
         @"encoder_execution" : r.model == "seedvr2-3b" ? @"not_applicable" : encoder_hybrid ? @"gpu_ane_experimental" : @"gpu",
         @"encoder_backend" : encoder_backend_label(r, encoder_hybrid),
         @"encoder_gpu_graph" : encoder_gpu_graph_label(r, encoder_hybrid),
-        @"encoder_precision" : r.model == "seedvr2-3b" ? @"not_applicable" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
+        @"encoder_precision" : r.model == "seedvr2-3b" ? @"not_applicable" :
+                                r.model == "ltx-video-0.9.8-distilled" ? @"bf16_weights_fp32_activations" : encoder_hybrid ? @"bf16_gpu+coreml_mlp_fp16_io"
                                                 : @"bf16",
         @"encoder_weight_validation" :
             encoder_weight_validation_label(r, encoder_hybrid, false),
@@ -832,6 +842,11 @@ NSDictionary *to_dictionary(const ExecutionPlan &plan) {
             ? @"capabilities depend on model artifacts and configured hardware"
             : @"native executor migration incomplete"
     } mutableCopy];
+    if (r.model == "ltx-video-0.9.8-distilled") {
+        report[@"output_shape"] = @[@(r.ltx098_resize_to_base ? r.width : dw),
+                                    @(r.ltx098_resize_to_base ? r.height : dh), @(r.frames)];
+        report[@"ltx098_resize_to_base"] = @(r.ltx098_resize_to_base);
+    }
     if (r.model == "qwen-image-2.1") {
         NSMutableArray *blocks = [NSMutableArray array];
         const auto precision = qwen21::staged_quantized_precision(

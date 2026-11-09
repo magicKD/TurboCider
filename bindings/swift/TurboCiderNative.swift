@@ -126,6 +126,7 @@ public struct NativeRequest: Codable, Sendable {
     public var ltx_backend: String?
     public var ltx_fast_av: Bool?
     public var ltx_video_attention_batch: Bool?
+    public var ltx098_resize_to_base: Bool?
     public var ltx_sol_stage1: Bool?
     public var ltx_sol_stage2: Bool?
     public var ltx_sol_tau: Double?
@@ -186,6 +187,7 @@ public struct NativeExecutionV2: Codable, Sendable {
     public var ltx_sol_dense_edge_blocks: Int?
     public var ltx_sol_dense_edge_steps: Int?
     public var ltx_stage2_text_rows: Int?
+    public var ltx098_resize_to_base: Bool? = nil
     public var streaming: NativeStreamingSelectorV2?
     public var seedvr2_vae: NativeSeedVR2VAEConfig? = nil
     public var qwen21_dit_cache: String?
@@ -259,6 +261,7 @@ public struct NativeRequestV2: Codable, Sendable {
             qwen21_dit_w8a8: request.qwen21_dit_w8a8,
             qwen21_dit_smoothquant_convrot: request.qwen21_dit_smoothquant_convrot)
         execution.seedvr2_vae = request.seedvr2_vae
+        execution.ltx098_resize_to_base = request.ltx098_resize_to_base
         execution.qwen21_stream_weight_budget_bytes = request.qwen21_stream_weight_budget_bytes
         parameters = NativeParametersV2(
             dynamic_text: request.dynamic_text, compile_gpu: request.compile_gpu,

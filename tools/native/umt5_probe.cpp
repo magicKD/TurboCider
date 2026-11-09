@@ -4,8 +4,20 @@
 
 int main(int argc, char **argv) {
     try {
-        const bool trace = argc == 5 && std::string(argv[4]) == "--trace-first-block";
-        tc::require(argc == 4 || trace, "usage: umt5-probe WEIGHTS INPUT.safetensors OUTPUT.safetensors [--trace-first-block]");
+        tc::require(argc >= 4, "usage: umt5-probe WEIGHTS INPUT.safetensors OUTPUT.safetensors [--trace-first-block] [--t5-fixture|--umt5-fixture|--t5-xxl]");
+        bool trace = false;
+        bool t5 = false;
+        bool fixture = false, comfy_sdpa = false, comfy_fp32 = false;
+        for (int i = 4; i < argc; ++i) {
+            const std::string arg = argv[i];
+            if (arg == "--trace-first-block") trace = true;
+            else if (arg == "--t5-fixture") { t5 = true; fixture = true; }
+            else if (arg == "--umt5-fixture") { fixture = true; }
+            else if (arg == "--t5-xxl") { t5 = true; }
+            else if (arg == "--comfy-sdpa") { comfy_sdpa = true; }
+            else if (arg == "--comfy-fp32") { comfy_fp32 = true; }
+            else tc::require(false, "unknown UMT5 probe argument: " + arg);
+        }
         auto inputs = tc::mx::load_safetensors(argv[2]).first;
         auto ids = tc::mx::astype(inputs.at("ids"), tc::mx::int32);
         tc::mx::eval(ids);
@@ -17,7 +29,18 @@ int main(int argc, char **argv) {
         tc::Event event = [](const std::string &, int, int) {};
         tc::Weights weights;
         weights.load(std::filesystem::absolute(argv[1]), event, cancelled);
-        tc::components::UMT5Encoder encoder(weights);
+        tc::components::UMT5Config config;
+        config.comfy_t5_sdpa = comfy_sdpa;
+        config.comfy_t5_fp32 = comfy_fp32;
+        if (t5) {
+            config.shared_relative_attention_bias = true;
+            config.zero_padding_output = false;
+        }
+        if (fixture) {
+            config.layers = 2; config.hidden = 32; config.heads = 4;
+            config.head_dim = 8; config.intermediate = 64;
+        }
+        tc::components::UMT5Encoder encoder(weights, config);
         std::unordered_map<std::string, tc::Tensor> outputs;
         auto save = [&](const std::string &name, const tc::Tensor &x) {
             tc::mx::eval(x);
@@ -27,7 +50,7 @@ int main(int argc, char **argv) {
         auto buckets = encoder.relative_buckets(int(tokens.ids.size()));
         save("embedding", x);
         save("buckets", buckets);
-        for (int layer = 0; layer < 24; ++layer) {
+        for (int layer = 0; layer < config.layers; ++layer) {
             tc::components::UMT5Encoder::Trace inspect;
             if (trace && layer == 0) inspect = [&](const std::string &name, const tc::Tensor &value) {
                 save("first_" + name, value);
