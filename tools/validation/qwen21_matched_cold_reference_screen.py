@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import socket
 import statistics
-import subprocess
 import sys
 
 from qwen21_bf16_stream_screen import validate_bf16_rows, validate_bf16_registration

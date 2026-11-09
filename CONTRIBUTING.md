@@ -24,6 +24,9 @@ corresponding derived components. Model weights have separate upstream terms.
 
 ## Tests and benchmarks
 
+Use the [test guide](tests/README.md) to choose a focused suite and distinguish
+host fixtures, native contracts, App checks and model/device acceptance.
+
 Do not require full model downloads in unit tests. Use tiny local fixtures for
 model installation, download, cache and request contracts. Mark tests that need
 real weights, Metal, clipboard access or a specific chip explicitly.

@@ -12,22 +12,11 @@ from pathlib import Path
 
 import numpy as np
 
+from h3_vae_metrics import metrics
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/h3"))
 from run_fastvideo_mlx_converter import install_fastvideo_namespace  # noqa: E402
-
-
-def metrics(reference: np.ndarray, candidate: np.ndarray) -> dict[str, float]:
-    left = reference.astype(np.float64).reshape(-1)
-    right = candidate.astype(np.float64).reshape(-1)
-    diff = left - right
-    denominator = np.linalg.norm(left) * np.linalg.norm(right)
-    return {
-        "max_abs": float(np.max(np.abs(diff))),
-        "mean_abs": float(np.mean(np.abs(diff))),
-        "rmse": float(np.sqrt(np.mean(diff * diff))),
-        "cosine": float(np.dot(left, right) / denominator) if denominator else 1.0,
-    }
 
 
 def main() -> None:

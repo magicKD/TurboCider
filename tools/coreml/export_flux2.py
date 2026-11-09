@@ -3,23 +3,18 @@
 Dependencies: coremltools 8.3.0 and numpy 2.0.2 (validated on Python 3.11).
 The runtime stays C++/Metal. Indexed9B sources are never flattened/duplicated.
 """
-import argparse, fcntl, gc, hashlib, json, mmap, os, shutil, signal, struct, sys, tempfile
+import argparse, fcntl, gc, json, os, signal, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lora import apply as apply_lora
 from lora import load as load_loras
 from lora import provenance as lora_provenance
-from flux_checkpoint import Checkpoint, geometry
+from flux_checkpoint import Checkpoint, geometry, sha
 
 def atom(path, value):
     temporary=path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value,indent=2)+'\n');os.replace(temporary,path)
-def sha(path):
-    result=hashlib.sha256()
-    with path.open('rb') as stream:
-        for block in iter(lambda:stream.read(8<<20),b''):result.update(block)
-    return result.hexdigest()
 def main():
     p=argparse.ArgumentParser();p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--bucket',type=int,required=True);p.add_argument('--ane-mlp-width',type=int);p.add_argument('--lora',action='append',default=[]);p.add_argument('--lora-strength',action='append',default=[]);p.add_argument('--lora-role',default='transformer');a=p.parse_args()
     if not 64<=a.bucket<=8192:raise ValueError('bucket must be 64...8192')

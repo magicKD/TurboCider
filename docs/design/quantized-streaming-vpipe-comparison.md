@@ -1,5 +1,9 @@
 # 量化、Streaming Offload 与 vpipe/H3/LTX 对照
 
+> 2026-11-07 阅读说明：本文保留 2026-09-09 的实现和性能对照，旧 sd.cpp、K-quant 与 streaming 描述不是当前产品能力。
+> 当前 GGUF 支持范围见[模型布局与限制](../public/USAGE.md#z-image-layouts-and-steps)。
+> 下文缺失的历史图示、设计或机器记录已单独[列出](validation/README.md#本次检出中缺失的历史材料)；原数值、结论与命令保留，未补造证据或重新验证。
+
 更新时间：2026-09-09
 
 ## 对照边界
@@ -55,7 +59,7 @@ LoRA 的 256²对照降低 `37.6%` footprint、慢 `3.86%`，4/4 decoded pixels 
 1024² seed 42 首次 LoRA streaming 对照为 resident `135.442 s`、streaming
 `148.673 s`（`1.0977×`）、footprint 降低 `34.85%`、correlation `0.998205`、
 MAE `2.136/255`，质量通过但性能未过门禁。完整证据见
-[`z-image-gguf-streaming-2026-09-09.json`](validation/z-image-gguf-streaming-2026-09-09.json)。
+[`z-image-gguf-streaming-2026-09-09.json`（缺失说明）](validation/README.md#本次检出中缺失的历史材料)。
 
 ### H3
 
@@ -67,7 +71,7 @@ H3 现在有 resident、BF16 SSD streaming 和独立量化 shard streaming 三�
 
 真实 62 GiB Transformer 的 256²、22 帧、四步 A/B/B/A probe 中，16 GiB 预算选择 14 pinned/36 streamed blocks；四份最终 video/audio latent 字节完全一致。无预算与 16 GiB 的 denoise 中位数分别为 17.306 s 和 15.180 s（1.140×），每次读取由 154.91 GB 降到 111.75 GB，等待中位数由 10.738 s 降到 6.917 s；但 pinned 首次装载更慢，fresh 总时间中位数为 22.932 s 对 22.943 s，仅基本持平。
 
-TurboCider Session 现已允许 streamed/pinned DiT 和 conditioning 跨请求保留，同时关闭 streamed 路线的 resident Video VAE/TAEH3 decoder，避免改变原有阶段式 VAE 内存生命周期。同一进程的两次 retained probe 中，四份输出 SHA-256 仍完全一致；第二次 16 GiB pinned denoise 为 11.109 s，无预算 streamed 为 15.469 s，读取量降低 28.0%、未隐藏等待降低 48.4%。这是单机单次 warm 对照，OS file cache 未清空，不替代完整 E2E ABBA。证据见 [fresh DiT probe](validation/h3-ssd-pinned-prefix-dit-2026-09-08.json)与 [retained DiT probe](validation/h3-ssd-pinned-prefix-retained-2026-09-08.json)。
+TurboCider Session 现已允许 streamed/pinned DiT 和 conditioning 跨请求保留，同时关闭 streamed 路线的 resident Video VAE/TAEH3 decoder，避免改变原有阶段式 VAE 内存生命周期。同一进程的两次 retained probe 中，四份输出 SHA-256 仍完全一致；第二次 16 GiB pinned denoise 为 11.109 s，无预算 streamed 为 15.469 s，读取量降低 28.0%、未隐藏等待降低 48.4%。这是单机单次 warm 对照，OS file cache 未清空，不替代完整 E2E ABBA。证据见 [fresh DiT probe（缺失说明）](validation/README.md#本次检出中缺失的历史材料)与 [retained DiT probe（缺失说明）](validation/README.md#本次检出中缺失的历史材料)。
 
 ### LTX 2.5
 
@@ -102,4 +106,4 @@ TurboCider 还不是 vpipe 那种覆盖所有 DiT 的通用低内存调度器；
 H3 量化真实 E2E、GGUF 1024²更多 prompt/seed/adapter，以及 LTX shared-policy streaming 的
 16/24/32 GB 矩阵。
 
-证据：[Z-Image GGUF streaming 2026-09-09](validation/z-image-gguf-streaming-2026-09-09.json)、[Z-Image GGUF 总结](z-image-gguf.md)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。
+证据：[Z-Image GGUF streaming 2026-09-09（缺失说明）](validation/README.md#本次检出中缺失的历史材料)、[Z-Image GGUF 总结（缺失说明）](validation/README.md#本次检出中缺失的历史材料)、[Transformer 异构报告](transformer-heterogeneous-report.md)。vpipe 仅作为外部设计参考，不进入 TurboCider 构建或运行时依赖。

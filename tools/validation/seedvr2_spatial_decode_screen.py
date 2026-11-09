@@ -15,7 +15,7 @@ import sys
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"tools/coreml"))
 from export_seedvr2_vae_conv import CHECKPOINT_SHA, CAUSAL_TILE_EXTENTS
-from seedvr2_framework_screen import sha256, write_json
+from seedvr2_evidence import sha256, write_json
 from seedvr2_vae_coreml_conv_screen import quality
 from export_seedvr2_ffn import tree_identity
 from seedvr2_vae_upscale_screen import validate_manifest

@@ -6,7 +6,6 @@ import hashlib
 import importlib.metadata
 import json
 import math
-import os
 from pathlib import Path
 import statistics
 import subprocess
